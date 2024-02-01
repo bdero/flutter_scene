@@ -1,0 +1,22 @@
+name: shapes
+description: "flutter_scene example project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0-82.0.dev <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene:
+    path: ../../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
