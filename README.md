@@ -1,12 +1,12 @@
 # Flutter Scene
 
-A 3D library for Flutter.
+3D library for Flutter.
 
 <p align="center">
   <img width="260" src="screenshots/flutter_scene_logo.png">
 </p>
 
-## **Please read:** Makeover in progress! :)
+## **Please read:** Makeover in progress!
 
 In 2023, this renderer was shown off at both Flutter Forward and Google I/O (see also the [example repository](https://github.com/bdero/flutter-scene-example)).
 
@@ -30,4 +30,4 @@ As mentioned in the [Flutter GPU](https://docs.google.com/document/d/1Sh1BAC5c_k
 * Textured materials.
 * Blended animation system.
 
-![Video](https://user-images.githubusercontent.com/919017/215621872-ef3dac49-22a0-476e-8fb9-d560121a3c17.mov)
+https://github.com/bdero/flutter_scene/assets/919017/b44fba62-ec48-4ab4-80cc-6449cef21292
