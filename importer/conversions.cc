@@ -26,11 +26,10 @@ Matrix ToMatrix(const std::vector<double>& m) {
 ///
 
 Matrix ToMatrix(const fb::Matrix& m) {
-  auto& a = *m.m();
-  return Matrix{a[0],  a[1],  a[2],  a[3],   //
-                a[4],  a[5],  a[6],  a[7],   //
-                a[8],  a[9],  a[10], a[11],  //
-                a[12], a[13], a[14], a[15]};
+  return Matrix{m.m0(),  m.m1(),  m.m2(),  m.m3(),   //
+                m.m4(),  m.m5(),  m.m6(),  m.m7(),   //
+                m.m8(),  m.m9(),  m.m10(), m.m11(),  //
+                m.m12(), m.m13(), m.m14(), m.m15()};
 }
 
 Vector2 ToVector2(const fb::Vec2& v) {
@@ -54,19 +53,17 @@ Color ToColor(const fb::Color& c) {
 ///
 
 fb::Matrix ToFBMatrix(const Matrix& m) {
-  auto array = std::array<Scalar, 16>{m.m[0],  m.m[1],  m.m[2],  m.m[3],   //
-                                      m.m[4],  m.m[5],  m.m[6],  m.m[7],   //
-                                      m.m[8],  m.m[9],  m.m[10], m.m[11],  //
-                                      m.m[12], m.m[13], m.m[14], m.m[15]};
-  return fb::Matrix(array);
+  return fb::Matrix(m.m[0], m.m[1], m.m[2], m.m[3],    //
+                    m.m[4], m.m[5], m.m[6], m.m[7],    //
+                    m.m[8], m.m[9], m.m[10], m.m[11],  //
+                    m.m[12], m.m[13], m.m[14], m.m[15]);
 }
 
 std::unique_ptr<fb::Matrix> ToFBMatrixUniquePtr(const Matrix& m) {
-  auto array = std::array<Scalar, 16>{m.m[0],  m.m[1],  m.m[2],  m.m[3],   //
-                                      m.m[4],  m.m[5],  m.m[6],  m.m[7],   //
-                                      m.m[8],  m.m[9],  m.m[10], m.m[11],  //
-                                      m.m[12], m.m[13], m.m[14], m.m[15]};
-  return std::make_unique<fb::Matrix>(array);
+  return std::make_unique<fb::Matrix>(m.m[0], m.m[1], m.m[2], m.m[3],    //
+                                      m.m[4], m.m[5], m.m[6], m.m[7],    //
+                                      m.m[8], m.m[9], m.m[10], m.m[11],  //
+                                      m.m[12], m.m[13], m.m[14], m.m[15]);
 }
 
 fb::Vec2 ToFBVec2(const Vector2 v) {

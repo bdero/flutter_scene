@@ -1,7 +1,9 @@
 # Flutter Scene examples
 
-To run an example, enter an example directory and generate a platform specific embedder:
-```
-cd shapes/
-flutter create --platform=[ios|android|windows|linux|macos|web]
+To build the example assets and prepare the example projects, first run `build.sh`.
+
+Then, navigate to one of the example directories and run the Flutter app with impeller enabled. For example:
+```bash
+cd shapes
+flutter run -d macos
 ```

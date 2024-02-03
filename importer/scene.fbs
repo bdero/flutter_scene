@@ -175,7 +175,23 @@ table Skin {
 ///
 
 struct Matrix {
-  m: [float:16];
+  // Unfortunately, arrays aren't supported when targetting Dart, so [float:16] can't be used here.
+  m0: float;
+  m1: float;
+  m2: float;
+  m3: float;
+  m4: float;
+  m5: float;
+  m6: float;
+  m7: float;
+  m8: float;
+  m9: float;
+  m10: float;
+  m11: float;
+  m12: float;
+  m13: float;
+  m14: float;
+  m15: float;
 }
 
 table Node {

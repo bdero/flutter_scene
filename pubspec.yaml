@@ -8,6 +8,7 @@ environment:
   flutter: ">=1.17.0"
 
 dependencies:
+  flat_buffers: ^23.5.26
   flutter:
     sdk: flutter
   vector_math: ^2.1.4
