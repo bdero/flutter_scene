@@ -49,3 +49,4 @@ windows/
 macos/
 web/
 test/
+pubspec.lock
