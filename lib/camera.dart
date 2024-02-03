@@ -1,8 +1,8 @@
 import 'dart:math';
 
-import 'package:vector_math/vector_math_64.dart';
+import 'package:vector_math/vector_math.dart';
 
-Matrix4 matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
+Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
   Vector3 forward = (target - position).normalized();
   Vector3 right = up.cross(forward).normalized();
   up = forward.cross(right).normalized();
@@ -15,7 +15,7 @@ Matrix4 matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
   );
 }
 
-Matrix4 matrix4Perspective(
+Matrix4 _matrix4Perspective(
     double fovRadiansY, double aspectRatio, double zNear, double zFar) {
   double height = tan(fovRadiansY * 0.5);
   double width = height * aspectRatio;
@@ -55,8 +55,8 @@ class Camera {
   Vector3 target;
   Vector3 up;
 
-  Matrix4 computeTransform(double aspectRatio) {
-    return matrix4Perspective(fovRadiansY, aspectRatio, 0.1, 1000) *
-        matrix4LookAt(position, target, up);
+  Matrix4 getTransform(double aspectRatio) {
+    return _matrix4Perspective(fovRadiansY, aspectRatio, 0.1, 1000) *
+        _matrix4LookAt(position, target, up);
   }
 }

@@ -11,6 +11,8 @@ dependencies:
   flat_buffers: ^23.5.26
   flutter:
     sdk: flutter
+  flutter_gpu:
+    path: ../../engine/src/flutter/lib/gpu
   vector_math: ^2.1.4
 
 dev_dependencies:

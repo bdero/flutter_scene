@@ -46,8 +46,8 @@ abstract class Material {
 
 class UnlitMaterial extends Material {
   UnlitMaterial({gpu.Texture? colorTexture}) {
-    setShaders(baseShaderLibrary['TextureVertex']!,
-        baseShaderLibrary['TextureFragment']!);
+    setShaders(
+        baseShaderLibrary['UnlitVertex']!, baseShaderLibrary['UnlitFragment']!);
     setColorTexture(colorTexture ?? Material.getPlaceholderTexture());
   }
 
@@ -60,7 +60,7 @@ class UnlitMaterial extends Material {
   @override
   void bind(
       gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, vm.Matrix4 mvp) {
-    pass.bindTexture(_fragmentShader.getUniformSlot('tex'), _color!);
+    pass.bindTexture(_fragmentShader.getUniformSlot('tex'), _color);
     super.bind(pass, transientsBuffer, mvp);
   }
 }
