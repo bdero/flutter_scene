@@ -1,0 +1,11 @@
+.vscode/settings.json
+
+build/
+_deps/
+CMakeFiles/
+CMakeCache.txt
+MakeFile
+cmake_install.cmake
+compile_commands.json
+generated/
+.cache/
