@@ -1,15 +1,7 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/mesh.dart';
-import 'package:flutter_scene/scene.dart';
-
-import 'package:vector_math/vector_math.dart' as vm;
+import 'example_cuboid.dart';
 
 void main() {
   runApp(const MyApp());
@@ -23,20 +15,26 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  Scene scene = Scene();
   late Ticker ticker;
   double elapsedSeconds = 0;
-  String selectedExample = 'Cuboid';
+  String selectedExample = '';
+  Map<String, WidgetBuilder> examples = {};
 
   @override
   void initState() {
-    super.initState();
     ticker = Ticker((elapsed) {
       setState(() {
         elapsedSeconds = elapsed.inMilliseconds.toDouble() / 1000;
       });
     });
     ticker.start();
+
+    examples = {
+      'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
+    };
+    selectedExample = examples.keys.first;
+
+    super.initState();
   }
 
   @override
@@ -55,9 +53,7 @@ class _MyAppState extends State<MyApp> {
         body: Stack(
           children: [
             SizedBox.expand(
-              child: CustomPaint(
-                painter: ScenePainter(scene, elapsedSeconds),
-              ),
+              child: examples[selectedExample]!(context),
             ),
             // Dropdown menu
             Align(
@@ -66,7 +62,7 @@ class _MyAppState extends State<MyApp> {
                 padding: const EdgeInsets.all(8.0),
                 child: DropdownButton<String>(
                   value: selectedExample,
-                  items: const <String>['Cuboid', 'Sphere']
+                  items: examples.keys
                       .map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
                       value: value,
@@ -86,28 +82,4 @@ class _MyAppState extends State<MyApp> {
       ),
     );
   }
-}
-
-class ScenePainter extends CustomPainter {
-  ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    scene = Scene();
-
-    final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), UnlitMaterial());
-    scene.addMesh(mesh);
-
-    final camera = Camera(
-      position: vm.Vector3(sin(elapsedTime) * 5, 2, cos(elapsedTime) * 5),
-      target: vm.Vector3(0, 0, 0),
-    );
-
-    scene.render(camera, canvas, viewport: Offset.zero & size);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
