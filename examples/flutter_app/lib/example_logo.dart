@@ -3,9 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/mesh.dart';
+import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/scene.dart';
 
 import 'package:vector_math/vector_math.dart' as vm;
@@ -23,8 +21,8 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    final mesh = Mesh(CuboidGeometry(vm.Vector3(2, 1, 1)), UnlitMaterial());
-    scene.addMesh(mesh);
+    Node.fromAsset('../assets_imported/flutter_logo_baked.model')
+        .then((value) => scene.add(value));
 
     super.initState();
   }

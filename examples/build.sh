@@ -9,22 +9,7 @@ cd $SCRIPT_DIR
 
 echo "Building examples..."
 
-# Check if importer is built
-if [ ! -f "$IMPORTER_EXE" ]; then
-    echo "Importer is not built. Building importer..."
-    pushd $IMPORTER_DIR
-    ./build.sh
-    popd
-fi
-
-mkdir -p assets_imported
-
-function import_asset {
-    echo "Importing $1..."
-    $IMPORTER_EXE assets_src/$1.glb assets_imported/$1.model
-}
-import_asset two_triangles
-import_asset flutter_logo_baked
+bash build_assets.sh
 
 # Prepare example projects
 

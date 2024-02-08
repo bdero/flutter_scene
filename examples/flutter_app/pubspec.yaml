@@ -21,3 +21,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - ../assets_imported/flutter_logo_baked.model

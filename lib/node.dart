@@ -1,6 +1,11 @@
+import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_gpu/gpu.dart' as gpu;
+
+import 'package:flutter_scene/generated/scene_impeller.fb_flatbuffers.dart'
+    as fb;
 
 base class Node implements SceneGraph {
   Node({localTransform, this.mesh})
@@ -12,6 +17,34 @@ base class Node implements SceneGraph {
   bool _isRoot = false;
 
   Mesh? mesh;
+
+  static Future<Node> fromAsset(String asset) {
+    return rootBundle.loadStructuredBinaryData<Node>(asset, (data) {
+      return fromFlatbuffer(data);
+    });
+  }
+
+  static Node fromFlatbuffer(ByteData byteData) {
+    fb.Scene fbScene = fb.Scene(byteData.buffer.asInt8List());
+
+    List<gpu.Texture> textures = [];
+    for (fb.Texture fbTexture in fbScene.textures ?? []) {
+      fb.EmbeddedImage image = fbTexture.embeddedImage!;
+      gpu.Texture? texture = gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible, image.width, image.height);
+      if (texture == null) {
+        throw Exception('Failed to allocate texture');
+      }
+      // TODO(bdero): 🤮
+      Uint8List texture_data = Uint8List.fromList(image.bytes!);
+      if (!texture.overwrite(texture_data.buffer.asByteData())) {
+        throw Exception('Failed to overwrite texture data');
+      }
+      textures.add(texture);
+    }
+
+    return Node();
+  }
 
   final List<Node> children = [];
 
