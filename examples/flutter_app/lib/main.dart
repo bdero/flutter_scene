@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'example_cuboid.dart';
+import 'example_logo.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,6 +32,7 @@ class _MyAppState extends State<MyApp> {
 
     examples = {
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
+      'Imported Logo': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
     };
     selectedExample = examples.keys.first;
 
@@ -71,6 +73,8 @@ class _MyAppState extends State<MyApp> {
                   }).toList(),
                   onChanged: (String? newValue) {
                     setState(() {
+                      ticker.stop();
+                      ticker.start();
                       selectedExample = newValue!;
                     });
                   },
