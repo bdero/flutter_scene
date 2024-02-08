@@ -76,8 +76,8 @@ base class Scene implements SceneGraph {
     final gpu.RenderTarget renderTarget =
         surface.getNextRenderTarget(drawArea.size);
 
-    final encoder = SceneEncoder(
-        renderTarget, camera.getTransform(drawArea.width / drawArea.height));
+    final encoder =
+        SceneEncoder(renderTarget, camera.getTransform(drawArea.size));
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
