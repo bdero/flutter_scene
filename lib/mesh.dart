@@ -1,7 +1,7 @@
 import 'package:flutter_scene/flutter_scene.dart';
 
-import 'package:flutter_scene/geometry.dart';
-import 'package:flutter_scene/material.dart';
+import 'package:flutter_scene/geometry/geometry.dart';
+import 'package:flutter_scene/material/material.dart';
 import 'package:vector_math/vector_math.dart';
 
 base class MeshPrimitive {

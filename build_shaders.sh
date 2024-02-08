@@ -18,13 +18,25 @@ function build_shader {
 
 BASE_BUNDLE_JSON='
 {
-    "UnlitVertex": {
+    "SimpleVertex": {
         "type": "vertex",
-        "file": "shaders/unlit.vert"
+        "file": "shaders/flutter_scene_simple.vert"
+    },
+    "SimpleFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_simple.frag"
+    },
+    "UnskinnedVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_unskinned.vert"
+    },
+    "SkinnedVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_skinned.vert"
     },
     "UnlitFragment": {
         "type": "fragment",
-        "file": "shaders/unlit.frag"
+        "file": "shaders/flutter_scene_unlit.frag"
     }
 }'
-build_shader "lib/generated/base.shaderbundle" "$BASE_BUNDLE_JSON"
+build_shader "assets/base.shaderbundle" "$BASE_BUNDLE_JSON"

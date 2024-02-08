@@ -8,8 +8,8 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/camera.dart';
 import 'package:flutter_scene/surface.dart';
-import 'package:flutter_scene/material.dart';
-import 'package:flutter_scene/geometry.dart';
+import 'package:flutter_scene/material/material.dart';
+import 'package:flutter_scene/geometry/geometry.dart';
 
 base class SceneEncoder {
   SceneEncoder(gpu.RenderTarget renderTarget, this._cameraTransform) {
@@ -68,6 +68,9 @@ base class Scene implements SceneGraph {
 
   void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {
     final drawArea = viewport ?? canvas.getLocalClipBounds();
+    if (drawArea.isEmpty) {
+      return;
+    }
     final gpu.RenderTarget renderTarget =
         surface.getNextRenderTarget(drawArea.size);
 

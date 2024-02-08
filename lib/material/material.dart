@@ -46,8 +46,8 @@ abstract class Material {
 
 class UnlitMaterial extends Material {
   UnlitMaterial({gpu.Texture? colorTexture}) {
-    setShaders(
-        baseShaderLibrary['UnlitVertex']!, baseShaderLibrary['UnlitFragment']!);
+    setShaders(baseShaderLibrary['SimpleVertex']!,
+        baseShaderLibrary['SimpleFragment']!);
     setColorTexture(colorTexture ?? Material.getPlaceholderTexture());
   }
 
