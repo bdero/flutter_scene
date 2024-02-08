@@ -16,6 +16,8 @@ base class SceneEncoder {
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
     _renderPass = _commandBuffer.createRenderPass(renderTarget);
+    _renderPass.setDepthWriteEnable(true);
+    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
   }
 
   final Matrix4 _cameraTransform;
