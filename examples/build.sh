@@ -35,4 +35,4 @@ function prepare_example {
     flutter pub get
     popd
 }
-prepare_example shapes
+prepare_example flutter_app

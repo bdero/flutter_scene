@@ -26,7 +26,7 @@ class _MyAppState extends State<MyApp> {
   Scene scene = Scene();
   late Ticker ticker;
   double elapsedSeconds = 0;
-  String selectedShape = 'Cuboid';
+  String selectedExample = 'Cuboid';
 
   @override
   void initState() {
@@ -42,7 +42,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Flutter Scene Examples',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
@@ -50,7 +50,7 @@ class _MyAppState extends State<MyApp> {
       home: Scaffold(
         appBar: AppBar(
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: Text('Shape: $selectedShape'),
+          title: Text('Example: $selectedExample'),
         ),
         body: Stack(
           children: [
@@ -65,7 +65,7 @@ class _MyAppState extends State<MyApp> {
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: DropdownButton<String>(
-                  value: selectedShape,
+                  value: selectedExample,
                   items: const <String>['Cuboid', 'Sphere']
                       .map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
@@ -75,7 +75,7 @@ class _MyAppState extends State<MyApp> {
                   }).toList(),
                   onChanged: (String? newValue) {
                     setState(() {
-                      selectedShape = newValue!;
+                      selectedExample = newValue!;
                     });
                   },
                 ),
