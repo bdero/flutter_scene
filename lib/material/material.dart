@@ -1,10 +1,11 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart' as vm;
-
 import 'package:flutter_scene/shaders.dart';
+
+import 'package:flutter_scene/generated/scene_impeller.fb_flatbuffers.dart'
+    as fb;
 
 abstract class Material {
   static gpu.Texture? _placeholderTexture;
@@ -23,6 +24,17 @@ abstract class Material {
     return _placeholderTexture!;
   }
 
+  static Material fromFlatbuffer(
+      fb.Material fbMaterial, List<gpu.Texture> textures) {
+    if (fbMaterial.type == fb.MaterialType.kUnlit) {
+      return UnlitMaterial.fromFlatbuffer(fbMaterial, textures);
+    } else if (fbMaterial.type == fb.MaterialType.kPhysicallyBased) {
+      throw Exception('PBR materials are not yet supported');
+    } else {
+      throw Exception('Unknown material type');
+    }
+  }
+
   gpu.Shader? _fragmentShader;
   gpu.Shader get fragmentShader {
     if (_fragmentShader == null) {
@@ -39,26 +51,49 @@ abstract class Material {
 }
 
 class UnlitMaterial extends Material {
+  static UnlitMaterial fromFlatbuffer(
+      fb.Material fbMaterial, List<gpu.Texture> textures) {
+    if (fbMaterial.type != fb.MaterialType.kUnlit) {
+      throw Exception('Cannot unpack unlit material from non-unlit material');
+    }
+
+    UnlitMaterial material = UnlitMaterial();
+
+    if (fbMaterial.baseColorFactor != null) {
+      material.baseColorFactor = ui.Color.fromARGB(
+          (fbMaterial.baseColorFactor!.a * 256).toInt(),
+          (fbMaterial.baseColorFactor!.r * 256).toInt(),
+          (fbMaterial.baseColorFactor!.g * 256).toInt(),
+          (fbMaterial.baseColorFactor!.b * 256).toInt());
+    }
+
+    if (fbMaterial.baseColorTexture >= 0 &&
+        fbMaterial.baseColorTexture < textures.length) {
+      material.baseColorTexture = textures[fbMaterial.baseColorTexture];
+    }
+
+    return material;
+  }
+
   UnlitMaterial({gpu.Texture? colorTexture}) {
     setFragmentShader(baseShaderLibrary['UnlitFragment']!);
-    setColorTexture(colorTexture ?? Material.getPlaceholderTexture());
+    baseColorTexture = colorTexture ?? Material.getPlaceholderTexture();
   }
 
-  late gpu.Texture _baseColorTexture;
-
-  setColorTexture(gpu.Texture color) {
-    _baseColorTexture = color;
-  }
+  late gpu.Texture baseColorTexture;
+  ui.Color baseColorFactor = const ui.Color(0xFFFFFFFF);
+  double vertexColorWeight = 1.0;
 
   @override
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer) {
     var fragInfo = Float32List.fromList([
-      1, 1, 1, 1, // color
-      1, // vertex_color_weight
+      baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
+      baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
+      vertexColorWeight, // vertex_color_weight
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
         transientsBuffer.emplace(fragInfo.buffer.asByteData()));
     pass.bindTexture(
-        fragmentShader.getUniformSlot('base_color_texture'), _baseColorTexture);
+        fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture);
   }
 }

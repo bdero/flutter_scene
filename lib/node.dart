@@ -1,14 +1,17 @@
 import 'package:flutter/services.dart' hide Matrix4;
+import 'package:flutter_scene/geometry/geometry.dart';
+import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/conversions.dart';
 
 import 'package:flutter_scene/generated/scene_impeller.fb_flatbuffers.dart'
     as fb;
 
 base class Node implements SceneGraph {
-  Node({localTransform, this.mesh})
+  Node({Matrix4? localTransform, this.mesh})
       : localTransform = localTransform ?? Matrix4.identity();
 
   Matrix4 localTransform = Matrix4.identity();
@@ -27,6 +30,7 @@ base class Node implements SceneGraph {
   static Node fromFlatbuffer(ByteData byteData) {
     fb.Scene fbScene = fb.Scene(byteData.buffer.asInt8List());
 
+    // Unpack textures.
     List<gpu.Texture> textures = [];
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
@@ -35,7 +39,8 @@ base class Node implements SceneGraph {
       if (texture == null) {
         throw Exception('Failed to allocate texture');
       }
-      // TODO(bdero): 🤮
+      // TODO(bdero): Get rid of this copy. 🤮
+      //              https://github.com/google/flatbuffers/issues/8183
       Uint8List texture_data = Uint8List.fromList(image.bytes!);
       if (!texture.overwrite(texture_data.buffer.asByteData())) {
         throw Exception('Failed to overwrite texture data');
@@ -43,7 +48,66 @@ base class Node implements SceneGraph {
       textures.add(texture);
     }
 
-    return Node();
+    Node result = Node(
+        localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity());
+    print("root transform: ${result.localTransform}");
+
+    if (fbScene.nodes == null || fbScene.children == null) {
+      return result; // The scene is empty. ¯\_(ツ)_/¯
+    }
+
+    // Initialize nodes for unpacking the entire scene.
+    List<Node> sceneNodes = [];
+    for (fb.Node fbNode in fbScene.nodes ?? []) {
+      sceneNodes.add(Node());
+    }
+
+    // Connect children to the root node.
+    for (int childIndex in fbScene.children ?? []) {
+      if (childIndex < 0 || childIndex >= sceneNodes.length) {
+        throw Exception('Scene child index out of range.');
+      }
+      result.add(sceneNodes[childIndex]);
+    }
+
+    // Unpack each node.
+    for (int nodeIndex = 0; nodeIndex < sceneNodes.length; nodeIndex++) {
+      sceneNodes[nodeIndex]._unpackFromFlatbuffer(
+          fbScene.nodes![nodeIndex], sceneNodes, textures);
+    }
+
+    // TODO(bdero): Unpack animations.
+
+    return result;
+  }
+
+  void _unpackFromFlatbuffer(
+      fb.Node fbNode, List<Node> sceneNodes, List<gpu.Texture> textures) {
+    localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
+    print("transform: $localTransform");
+
+    // Unpack mesh.
+    if (fbNode.meshPrimitives != null) {
+      List<MeshPrimitive> meshPrimitives = [];
+      for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
+        Geometry geometry = Geometry.fromFlatbuffer(fbPrimitive);
+        Material material = fbPrimitive.material != null
+            ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
+            : UnlitMaterial();
+        meshPrimitives.add(MeshPrimitive(geometry, material));
+      }
+      mesh = Mesh.primitives(primitives: meshPrimitives);
+    }
+
+    // Connect children.
+    for (int childIndex in fbNode.children ?? []) {
+      if (childIndex < 0 || childIndex >= sceneNodes.length) {
+        throw Exception('Node child index out of range.');
+      }
+      add(sceneNodes[childIndex]);
+    }
+
+    // TODO(bdero): Unpack skin.
   }
 
   final List<Node> children = [];
