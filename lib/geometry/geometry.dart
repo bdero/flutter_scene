@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/shaders.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 class Geometry {
@@ -11,11 +13,19 @@ class Geometry {
   gpu.IndexType _indexType = gpu.IndexType.int16;
   int _indexCount = 0;
 
+  gpu.Shader? _vertexShader;
+  gpu.Shader get vertexShader {
+    if (_vertexShader == null) {
+      throw Exception('Vertex shader has not been set');
+    }
+    return _vertexShader!;
+  }
+
   gpu.DeviceBuffer? _deviceBuffer;
 
   // TODO(bdero): This should have an attribute map instead and be fully SoA,
   //              but vertex attributes in Impeller aren't flexible enough yet.
-  //              See also https://github.com/flutter/flutter/issues/139560.
+  //              See also https://github.com/flutter/flutter/issues/116168.
   void setVertices(ByteBuffer vertices, int strideInBytes) {
     _vertices = vertices;
     _vertexCount = vertices.lengthInBytes ~/ strideInBytes;
@@ -33,7 +43,13 @@ class Geometry {
     }
   }
 
-  void bind(gpu.RenderPass pass) {
+  void setVertexShader(gpu.Shader shader) {
+    _vertexShader = shader;
+  }
+
+  @mustCallSuper
+  void bind(
+      gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, vm.Matrix4 mvp) {
     if (_vertices == null) {
       throw Exception(
           'SetBuffer must be called before GetBufferView for Geometry.');
@@ -61,22 +77,36 @@ class Geometry {
           _indexType,
           _indexCount);
     }
+
+    final mvpSlot = vertexShader.getUniformSlot('FrameInfo');
+    final mvpView = transientsBuffer.emplace(mvp.storage.buffer.asByteData());
+    pass.bindUniform(mvpSlot, mvpView);
   }
 }
 
 class CuboidGeometry extends Geometry {
   CuboidGeometry(vm.Vector3 extents) {
-    final e = extents / 2;
+    setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
 
+    final e = extents / 2;
+    // Layout: Position, normal, tangent, uv, color
     final vertices = Float32List.fromList(<double>[
-      -e.x, -e.y, -e.z, /* */ 0, 0, /* */ 1, 0, 0, 1, //
-      e.x, -e.y, -e.z, /*  */ 1, 0, /* */ 0, 1, 0, 1, //
-      e.x, e.y, -e.z, /*   */ 1, 1, /* */ 0, 0, 1, 1, //
-      -e.x, e.y, -e.z, /*  */ 0, 1, /* */ 0, 0, 0, 1, //
-      -e.x, -e.y, e.z, /*  */ 0, 0, /* */ 0, 1, 1, 1, //
-      e.x, -e.y, e.z, /*   */ 1, 0, /* */ 1, 0, 1, 1, //
-      e.x, e.y, e.z, /*    */ 1, 1, /* */ 1, 1, 0, 1, //
-      -e.x, e.y, e.z, /*   */ 0, 1, /* */ 1, 1, 1, 1, //
+      -e.x, -e.y, -e.z, /* */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 0, 0, /* */ 1,
+      0, 0, 1, //
+      e.x, -e.y, -e.z, /*  */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 1, 0, /* */ 0,
+      1, 0, 1, //
+      e.x, e.y, -e.z, /*   */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 1, 1, /* */ 0,
+      0, 1, 1, //
+      -e.x, e.y, -e.z, /*  */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 0, 1, /* */ 0,
+      0, 0, 1, //
+      -e.x, -e.y, e.z, /*  */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 0, 0, /* */ 0,
+      1, 1, 1, //
+      e.x, -e.y, e.z, /*   */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 1, 0, /* */ 1,
+      0, 1, 1, //
+      e.x, e.y, e.z, /*    */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 1, 1, /* */ 1,
+      1, 0, 1, //
+      -e.x, e.y, e.z, /*   */ 0, 0, -1, /* */ 1, 0, 0, 0, /* */ 0, 1, /* */ 1,
+      1, 1, 1, //
     ]);
     setVertices(vertices.buffer, 36);
 

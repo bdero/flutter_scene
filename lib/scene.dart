@@ -28,8 +28,11 @@ base class SceneEncoder {
   void encode(Matrix4 transform, Geometry geometry, Material material) {
     final mvp = _cameraTransform * transform;
     _renderPass.clearBindings();
-    geometry.bind(_renderPass);
-    material.bind(_renderPass, _transientsBuffer, mvp);
+    var pipeline = gpu.gpuContext
+        .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
+    _renderPass.bindPipeline(pipeline);
+    geometry.bind(_renderPass, _transientsBuffer, mvp);
+    material.bind(_renderPass, _transientsBuffer);
     _renderPass.draw();
   }
 
