@@ -2,17 +2,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-IMPORTER_DIR="$SCRIPT_DIR/../importer"
-IMPORTER_EXE="$IMPORTER_DIR/build/importer"
+cd "$SCRIPT_DIR"
+source ../build_utils.sh
 
-cd $SCRIPT_DIR
-
-# Check if importer is built
+IMPORTER_EXE="$(GetImporterExecutable)"
 if [ ! -f "$IMPORTER_EXE" ]; then
-    echo "Importer is not built. Building importer..."
-    pushd $IMPORTER_DIR
-    ./build.sh
-    popd
+    echo "Importer not found. Can't build example assets!"
+    exit 1
 fi
 
 mkdir -p assets_imported

@@ -77,3 +77,13 @@ flatbuffers_schema(
     OUTPUT_DIR ${GENERATED_DIR}
 )
 
+install(TARGETS importer flatc
+    CONFIGURATIONS Debug
+    RUNTIME
+        DESTINATION Debug/bin
+)
+install(TARGETS importer flatc
+    CONFIGURATIONS Release
+    RUNTIME
+        DESTINATION Release/bin
+)

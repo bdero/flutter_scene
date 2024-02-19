@@ -2,8 +2,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-IMPORTER_DIR="$SCRIPT_DIR/../importer"
-IMPORTER_EXE="$IMPORTER_DIR/build/importer"
 
 cd $SCRIPT_DIR
 
