@@ -9,6 +9,8 @@ function GetImporterExecutable {
         Release/importer.exe
         Debug/importer
         Debug/importer.exe
+        importer
+        importer.exe
     )
     FOUND=""
     for LOCATION in ${LOCATIONS[@]}; do
@@ -33,6 +35,8 @@ function GetFlatcExecutable {
         Release/flatc.exe
         Debug/flatc
         Debug/flatc.exe
+        flatc
+        flatc.exe
     )
     FOUND=""
     for LOCATION in ${LOCATIONS[@]}; do
