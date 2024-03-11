@@ -50,3 +50,4 @@ macos/
 web/
 test/
 pubspec.lock
+.metadata
