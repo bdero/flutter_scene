@@ -50,7 +50,6 @@ base class Node implements SceneGraph {
 
     Node result = Node(
         localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity());
-    print("root transform: ${result.localTransform}");
 
     if (fbScene.nodes == null || fbScene.children == null) {
       return result; // The scene is empty. ¯\_(ツ)_/¯
@@ -84,7 +83,6 @@ base class Node implements SceneGraph {
   void _unpackFromFlatbuffer(
       fb.Node fbNode, List<Node> sceneNodes, List<gpu.Texture> textures) {
     localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
-    print("transform: $localTransform");
 
     // Unpack mesh.
     if (fbNode.meshPrimitives != null) {

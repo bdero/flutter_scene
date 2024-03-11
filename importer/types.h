@@ -18,15 +18,15 @@ struct Vector4 {
 };
 
 struct Vector3 {
-  float x, y, z;
+  float x = 0, y = 0, z = 0;
 };
 
 struct Vector2 {
-  float x, y;
+  float x = 0, y = 0;
 };
 
 struct Quaternion {
-  float x, y, z, w;
+  float x = 0, y = 0, z = 0, w = 1;
 };
 
 struct Matrix {
@@ -35,6 +35,35 @@ struct Matrix {
     float e[4][4];
     Vector4 vec[4];
   };
+
+  constexpr Matrix() {
+    vec[0] = {1.0, 0.0, 0.0, 0.0};
+    vec[1] = {0.0, 1.0, 0.0, 0.0};
+    vec[2] = {0.0, 0.0, 1.0, 0.0};
+    vec[3] = {0.0, 0.0, 0.0, 1.0};
+  };
+
+  constexpr Matrix(Scalar m0,
+                   Scalar m1,
+                   Scalar m2,
+                   Scalar m3,
+                   Scalar m4,
+                   Scalar m5,
+                   Scalar m6,
+                   Scalar m7,
+                   Scalar m8,
+                   Scalar m9,
+                   Scalar m10,
+                   Scalar m11,
+                   Scalar m12,
+                   Scalar m13,
+                   Scalar m14,
+                   Scalar m15) {
+    vec[0] = {m0, m1, m2, m3};
+    vec[1] = {m4, m5, m6, m7};
+    vec[2] = {m8, m9, m10, m11};
+    vec[3] = {m12, m13, m14, m15};
+  }
 
   static constexpr Matrix MakeTranslation(const Vector3& t) {
     // clang-format off
@@ -147,7 +176,7 @@ struct Matrix {
 };
 
 struct Color {
-  float red, green, blue, alpha;
+  float red = 0, green = 0, blue = 0, alpha = 0;
 };
 
 enum class SourceType {

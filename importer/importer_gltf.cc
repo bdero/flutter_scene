@@ -219,8 +219,7 @@ static void ProcessNode(const tinygltf::Model& gltf,
       std::cerr << "The `matrix` attribute of node (name: " << in_node.name
                 << ") is set in addition to one or more of the "
                    "`translation/rotation/scale` attributes. Using only the "
-                   "`matrix` "
-                   "attribute.";
+                   "`matrix` attribute.";
     }
     transform = ToMatrix(in_node.matrix);
   }

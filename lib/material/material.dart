@@ -61,10 +61,10 @@ class UnlitMaterial extends Material {
 
     if (fbMaterial.baseColorFactor != null) {
       material.baseColorFactor = ui.Color.fromARGB(
-          (fbMaterial.baseColorFactor!.a * 256).toInt(),
-          (fbMaterial.baseColorFactor!.r * 256).toInt(),
-          (fbMaterial.baseColorFactor!.g * 256).toInt(),
-          (fbMaterial.baseColorFactor!.b * 256).toInt());
+          (fbMaterial.baseColorFactor!.a * 255).toInt(),
+          (fbMaterial.baseColorFactor!.r * 255).toInt(),
+          (fbMaterial.baseColorFactor!.g * 255).toInt(),
+          (fbMaterial.baseColorFactor!.b * 255).toInt());
     }
 
     if (fbMaterial.baseColorTexture >= 0 &&

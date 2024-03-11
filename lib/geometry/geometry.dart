@@ -37,12 +37,12 @@ abstract class Geometry {
           (fbPrimitive.vertices as fb.UnskinnedVertexBuffer?)!;
       // TODO(bdero): This is awful. 🤮 Add a way to grab a ByteData for lists of structs...
       //              https://github.com/google/flatbuffers/issues/8183
-      // position: 3, normal: 3, tangent: 3, textureCoords: 2, color: 4 :: 15 floats
+      // position: 3, normal: 3, tangent: 4, textureCoords: 2, color: 4 :: 16 floats
       verticesCount = unskinned.vertices!.length;
-      int size = verticesCount * 15;
+      int size = verticesCount * 16;
       vertices = Float32List(size);
       for (int i = 0; i < verticesCount; i++) {
-        int offset = i * 15;
+        int offset = i * 16;
         vertices[offset + 0] = unskinned.vertices![i].position.x;
         vertices[offset + 1] = unskinned.vertices![i].position.y;
         vertices[offset + 2] = unskinned.vertices![i].position.z;
@@ -52,12 +52,13 @@ abstract class Geometry {
         vertices[offset + 6] = unskinned.vertices![i].tangent.x;
         vertices[offset + 7] = unskinned.vertices![i].tangent.y;
         vertices[offset + 8] = unskinned.vertices![i].tangent.z;
-        vertices[offset + 9] = unskinned.vertices![i].textureCoords.x;
-        vertices[offset + 10] = unskinned.vertices![i].textureCoords.y;
-        vertices[offset + 11] = unskinned.vertices![i].color.r;
-        vertices[offset + 12] = unskinned.vertices![i].color.g;
-        vertices[offset + 13] = unskinned.vertices![i].color.b;
-        vertices[offset + 14] = unskinned.vertices![i].color.a;
+        vertices[offset + 9] = unskinned.vertices![i].tangent.w;
+        vertices[offset + 10] = unskinned.vertices![i].textureCoords.x;
+        vertices[offset + 11] = unskinned.vertices![i].textureCoords.y;
+        vertices[offset + 12] = unskinned.vertices![i].color.r;
+        vertices[offset + 13] = unskinned.vertices![i].color.g;
+        vertices[offset + 14] = unskinned.vertices![i].color.b;
+        vertices[offset + 15] = unskinned.vertices![i].color.a;
       }
       isSkinned = false;
     } else if (fbPrimitive.vertices! is fb.SkinnedVertexBuffer) {
@@ -65,12 +66,12 @@ abstract class Geometry {
           (fbPrimitive.vertices as fb.SkinnedVertexBuffer?)!;
       // TODO(bdero): This is awful. 🤮 Add a way to grab a ByteData for lists of structs...
       //              https://github.com/google/flatbuffers/issues/8183
-      // vertex: 15, joints: 4, weights: 4 :: 23 floats
+      // vertex: 16, joints: 4, weights: 4 :: 24 floats
       verticesCount = skinned.vertices!.length;
-      int size = verticesCount * 23;
+      int size = verticesCount * 24;
       vertices = Float32List(size);
       for (int i = 0; i < verticesCount; i++) {
-        int offset = i * 23;
+        int offset = i * 24;
         vertices[offset + 0] = skinned.vertices![i].vertex.position.x;
         vertices[offset + 1] = skinned.vertices![i].vertex.position.y;
         vertices[offset + 2] = skinned.vertices![i].vertex.position.z;
@@ -80,20 +81,21 @@ abstract class Geometry {
         vertices[offset + 6] = skinned.vertices![i].vertex.tangent.x;
         vertices[offset + 7] = skinned.vertices![i].vertex.tangent.y;
         vertices[offset + 8] = skinned.vertices![i].vertex.tangent.z;
-        vertices[offset + 9] = skinned.vertices![i].vertex.textureCoords.x;
-        vertices[offset + 10] = skinned.vertices![i].vertex.textureCoords.y;
-        vertices[offset + 11] = skinned.vertices![i].vertex.color.r;
-        vertices[offset + 12] = skinned.vertices![i].vertex.color.g;
-        vertices[offset + 13] = skinned.vertices![i].vertex.color.b;
-        vertices[offset + 14] = skinned.vertices![i].vertex.color.a;
-        vertices[offset + 15] = skinned.vertices![i].joints.x;
-        vertices[offset + 16] = skinned.vertices![i].joints.y;
-        vertices[offset + 17] = skinned.vertices![i].joints.z;
-        vertices[offset + 18] = skinned.vertices![i].joints.w;
-        vertices[offset + 19] = skinned.vertices![i].weights.x;
-        vertices[offset + 20] = skinned.vertices![i].weights.y;
-        vertices[offset + 21] = skinned.vertices![i].weights.z;
-        vertices[offset + 22] = skinned.vertices![i].weights.w;
+        vertices[offset + 9] = skinned.vertices![i].vertex.tangent.w;
+        vertices[offset + 10] = skinned.vertices![i].vertex.textureCoords.x;
+        vertices[offset + 11] = skinned.vertices![i].vertex.textureCoords.y;
+        vertices[offset + 12] = skinned.vertices![i].vertex.color.r;
+        vertices[offset + 13] = skinned.vertices![i].vertex.color.g;
+        vertices[offset + 14] = skinned.vertices![i].vertex.color.b;
+        vertices[offset + 15] = skinned.vertices![i].vertex.color.a;
+        vertices[offset + 16] = skinned.vertices![i].joints.x;
+        vertices[offset + 17] = skinned.vertices![i].joints.y;
+        vertices[offset + 18] = skinned.vertices![i].joints.z;
+        vertices[offset + 19] = skinned.vertices![i].joints.w;
+        vertices[offset + 20] = skinned.vertices![i].weights.x;
+        vertices[offset + 21] = skinned.vertices![i].weights.y;
+        vertices[offset + 22] = skinned.vertices![i].weights.z;
+        vertices[offset + 23] = skinned.vertices![i].weights.w;
       }
       isSkinned = true;
     } else {
