@@ -6,25 +6,14 @@ cd $SCRIPT_DIR
 
 source build_utils.sh
 
-pushd importer
-bash build.sh
-popd
+bash copy_flutter_gpu.sh
 
-echo "Building flatbuffer Dart runtime..."
-FLATC_EXE="$(GetFlatcExecutable)"
-if [ ! -f "$FLATC_EXE" ]; then
-    echo "FlatC not found. Can't build the flatbuffer Dart runtime!"
-    exit 1
-fi
-$FLATC_EXE \
-  -o lib/generated \
-  --warnings-as-errors \
-  --gen-object-api \
-  --filename-suffix _flatbuffers \
-  --dart importer/scene.fbs
+pushd importer >/dev/null
+bash build.sh
+popd >/dev/null
 
 bash build_shaders.sh
 
-pushd examples
+pushd examples >/dev/null
 bash build.sh
-popd
+popd >/dev/null

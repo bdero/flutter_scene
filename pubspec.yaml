@@ -12,7 +12,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu:
-    path: ../../engine/src/flutter/lib/gpu
+    sdk: flutter
+  flutter_scene_importer:
+    path: ./importer
   vector_math: ^2.1.4
 
 dev_dependencies:

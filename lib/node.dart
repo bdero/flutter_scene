@@ -5,9 +5,8 @@ import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/conversions.dart';
-
-import 'package:flutter_scene/generated/scene_impeller.fb_flatbuffers.dart'
+import 'package:flutter_scene_importer/importer.dart';
+import 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart'
     as fb;
 
 base class Node implements SceneGraph {
@@ -28,7 +27,8 @@ base class Node implements SceneGraph {
   }
 
   static Node fromFlatbuffer(ByteData byteData) {
-    fb.Scene fbScene = fb.Scene(byteData.buffer.asInt8List());
+    ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
+    fb.Scene fbScene = importedScene.flatbuffer;
 
     // Unpack textures.
     List<gpu.Texture> textures = [];

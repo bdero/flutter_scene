@@ -49,7 +49,20 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.1"
+  flat_buffers:
+    dependency: "direct main"
+    description:
+      name: flat_buffers
+      sha256: "380bdcba5664a718bfd4ea20a45d39e13684f5318fcd8883066a55e21f37f4c3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "23.5.26"
   flutter:
+    dependency: "direct main"
+    description: flutter
+    source: sdk
+    version: "0.0.0"
+  flutter_gpu:
     dependency: "direct main"
     description: flutter
     source: sdk
@@ -185,7 +198,7 @@ packages:
     source: hosted
     version: "0.7.0"
   vector_math:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: vector_math
       sha256: "80b3257d1492ce4d091729e3a67a60407d227c27241d6927be0130c98e741803"

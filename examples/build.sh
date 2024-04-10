@@ -13,9 +13,11 @@ bash build_assets.sh
 
 function prepare_example {
     echo "Preparing $1..."
-    pushd $1
+    pushd $1 > /dev/null
+    set +e
     flutter create .
     flutter pub get
-    popd
+    set -e
+    popd > /dev/null
 }
 prepare_example flutter_app
