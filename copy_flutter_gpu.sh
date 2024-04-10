@@ -9,7 +9,7 @@ if [ -z "$(which flutter)" ]; then
     exit 1
 fi
 
-FLUTTER_DIR="$(dirname $(dirname $(which flutter))/..)"
+FLUTTER_DIR="$(dirname $(which flutter))/.."
 FLUTTER_PACKAGES_DIR="$FLUTTER_DIR/packages"
 FLUTTER_MACOS_ARTIFACTS="$FLUTTER_DIR/bin/cache/artifacts/engine/darwin-x64"
 

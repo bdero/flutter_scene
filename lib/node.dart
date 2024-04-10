@@ -6,8 +6,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_importer/importer.dart';
-import 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart'
-    as fb;
+import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 base class Node implements SceneGraph {
   Node({Matrix4? localTransform, this.mesh})

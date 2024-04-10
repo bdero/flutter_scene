@@ -4,9 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/shaders.dart';
 import 'package:vector_math/vector_math.dart' as vm;
-import 'package:flutter_scene_importer/importer.dart';
-import 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart'
-    as fb;
+import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 abstract class Geometry {
   gpu.BufferView? _vertices;
