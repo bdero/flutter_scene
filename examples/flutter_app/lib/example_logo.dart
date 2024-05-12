@@ -47,7 +47,7 @@ class _ScenePainter extends CustomPainter {
       target: vm.Vector3(0, 0, 0),
     );
 
-    scene.render(camera, canvas, viewport: Offset.zero & size);
+    //scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 
   @override
