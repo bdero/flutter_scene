@@ -84,10 +84,10 @@ static bool ProcessMeshPrimitive(const tinygltf::Model& gltf,
         continue;
       }
 
-      const auto accessor = gltf.accessors[attribute.second];
-      const auto view = gltf.bufferViews[accessor.bufferView];
+      const auto& accessor = gltf.accessors[attribute.second];
+      const auto& view = gltf.bufferViews[accessor.bufferView];
 
-      const auto buffer = gltf.buffers[view.buffer];
+      const auto& buffer = gltf.buffers[view.buffer];
       const unsigned char* source_start = &buffer.data[view.byteOffset];
 
       VerticesBuilder::ComponentType type;
@@ -477,8 +477,12 @@ bool ParseGLTF(const std::vector<char>& input_bytes, fb::SceneT& out_scene) {
     out_scene.textures.push_back(std::move(texture));
   }
 
+  std::cerr << "Processing " << gltf.nodes.size() << " node"
+            << (gltf.nodes.size() == 1 ? "" : "s") << "." << std::endl;
   for (size_t node_i = 0; node_i < gltf.nodes.size(); node_i++) {
     auto node = std::make_unique<fb::NodeT>();
+    // std::cerr << "Processing node " << node_i << " of " << gltf.nodes.size()
+    //           << ": " << gltf.nodes[node_i].name << std::endl;
     ProcessNode(gltf, gltf.nodes[node_i], *node);
     out_scene.nodes.push_back(std::move(node));
   }
