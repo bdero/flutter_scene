@@ -7,12 +7,11 @@ source build_utils.sh
 
 IMPELLERC_EXE="$(GetImpellercExecutable)"
 if [ ! -f "$IMPELLERC_EXE" ]; then
-    echo "ImpellerC not found. Can't build shader bundle!"
-    exit 1
+    PrintFatal "ImpellerC not found. Can't build shader bundle!"
 fi
 
 function build_shader {
-    echo "Building shader bundle: $1"
+    PrintInfo "Building shader bundle: $1"
 
     SHADER_BUNDLE_JSON=$(echo $2 | tr -d '\n')
     $IMPELLERC_EXE --sl="$1" --shader-bundle="$SHADER_BUNDLE_JSON"

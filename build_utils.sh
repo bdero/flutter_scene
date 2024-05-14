@@ -9,10 +9,44 @@
 FLUTTER_SCENE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 IMPORTER_DIR="${FLUTTER_SCENE_DIR}/importer"
 
+# Reset ANSI color code
+COLOR_RESET='\033[0m'
+# Normal ANSI color codes
+BLACK='\033[0;30m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+# Bold ANSI color codes
+BBLACK='\033[1;30m'
+BRED='\033[1;31m'
+BGREEN='\033[1;32m'
+BYELLOW='\033[1;33m'
+BBLUE='\033[1;34m'
+BPURPLE='\033[1;35m'
+BCYAN='\033[1;36m'
+BWHITE='\033[1;37m'
+
+function PrintInfo {
+    >&2 echo
+    >&2 echo -e "${BCYAN}[INFO] ${CYAN}$1${COLOR_RESET}"
+}
+
+function PrintInfoSub {
+    >&2 echo -e "${CYAN}       $1${COLOR_RESET} $2"
+}
+
+function PrintFatal {
+    >&2 echo -e "${BRED}[FATAL] ${RED}$1${COLOR_RESET}"
+    exit 1
+}
+
 FLUTTER_CMD="$(which flutter 2>/dev/null)"
 if [ -z "$FLUTTER_CMD" ]; then
-    >&2 echo "ERROR: Flutter command not found in the path! Make sure to add the 'flutter/bin' directory to your PATH."
-    exit 1
+    PrintFatal "Flutter command not found in the path! Make sure to add the 'flutter/bin' directory to your PATH."
 fi
 FLUTTER_SDK_DIR="$(dirname ${FLUTTER_CMD})/.."
 ENGINE_ARTIFACTS_DIR="${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine"
@@ -33,16 +67,15 @@ function GetFlutterGpuArtifactsDirectory {
         fi
     done
     if [ -z "$FOUND" ]; then
-        >&2 echo "ERROR: Failed to find the Flutter GPU artifacts directory."
-        exit 1
+        PrintFatal "Failed to find the Flutter GPU artifacts directory."
     fi
-    >&2 echo "  Flutter GPU artifacts directory found: $FOUND"
+    PrintInfoSub "Flutter GPU artifacts directory found:" "$FOUND"
     echo "$FOUND"
 }
 
 function GetImpellercExecutable {
     if [ ! -z "$IMPELLERC" ]; then
-        >&2 echo "Using impellerc environment variable: $IMPELLERC"
+        PrintInfo "Using impellerc environment variable: $IMPELLERC"
         echo "$IMPELLERC"
         return
     fi
@@ -61,10 +94,9 @@ function GetImpellercExecutable {
         fi
     done
     if [ -z "$FOUND" ]; then
-        >&2 echo "ERROR: Failed to find impellerc in the engine artifacts."
-        exit 1
+        PrintFatal "Failed to find impellerc in the engine artifacts."
     fi
-    >&2 echo "  impellerc executable found: $FOUND"
+    PrintInfoSub "impellerc executable found:" "$FOUND"
     echo "$FOUND"
 }
 
@@ -87,10 +119,9 @@ function GetImporterExecutable {
         fi
     done
     if [ -z "$FOUND" ]; then
-        >&2 echo "ERROR: Failed to find importer! Has the importer been built?"
-        exit 1
+        PrintFatal "Failed to find importer! Has the importer been built?"
     fi
-    >&2 echo "  importer executable found: $FOUND"
+    PrintInfoSub "importer executable found:" "$FOUND"
     echo "$FOUND"
 }
 
@@ -113,9 +144,8 @@ function GetFlatcExecutable {
         fi
     done
     if [ -z "$FOUND" ]; then
-        >&2 echo "ERROR: Failed to find flatc! Has the importer been built?"
-        exit 1
+        PrintFatal "Failed to find flatc! Has the importer been built?"
     fi
-    >&2 echo "  flatc executable found: $FOUND"
+    PrintInfoSub "flatc executable found:" "$FOUND"
     echo "$FOUND"
 }

@@ -69,3 +69,9 @@ bash build_shaders.sh
 pushd examples >/dev/null
 bash build.sh
 popd >/dev/null
+
+################################################################################
+##
+##  5. \o/
+##
+PrintInfo "${GREEN}Successfully built ${BGREEN}Flutter Scene${GREEN}!${COLOR_RESET}"

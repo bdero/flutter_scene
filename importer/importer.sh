@@ -9,15 +9,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 pushd $SCRIPT_DIR >/dev/null
 source ../build_utils.sh
-popd > /dev/null
+popd >/dev/null
 
 IMPORTER_EXE="$(GetImporterExecutable)"
 if [ ! -f "$IMPORTER_EXE" ]; then
-    echo "Importer not found. Unable to build!"
-    exit 1
+    PrintFatal "Importer not found. Can't build example assets!"
 fi
 
-echo "Invoking importer..."
-    echo "  input: $1"
-    echo "  output: $2"
+PrintInfo "Invoking importer..."
+
+PrintInfoSub " input:" "$1"
+PrintInfoSub "output:" "$2"
 $IMPORTER_EXE $1 $2

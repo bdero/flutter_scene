@@ -6,11 +6,10 @@ cd $SCRIPT_DIR
 
 source ../build_utils.sh
 
-echo "Building flatbuffer Dart runtime..."
+PrintInfo "Building flatbuffer Dart runtime..."
 FLATC_EXE="$(GetFlatcExecutable)"
 if [ ! -f "$FLATC_EXE" ]; then
-    echo "FlatC not found. Can't build the flatbuffer Dart runtime!"
-    exit 1
+    PrintFatal "FlatC not found. Can't build the flatbuffer Dart runtime!"
 fi
 $FLATC_EXE \
   -o lib/generated \
@@ -19,7 +18,7 @@ $FLATC_EXE \
   --filename-suffix _flatbuffers \
   --dart scene.fbs
 
-echo "Building importer..."
+PrintInfo "Building importer..."
 
 mkdir -p build
 cmake -Bbuild

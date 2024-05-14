@@ -2,17 +2,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-
 cd $SCRIPT_DIR
 
-echo "Building examples..."
+source ../build_utils.sh
+
+PrintInfo "Building examples..."
 
 bash build_assets.sh
 
 # Prepare example projects
 
 function prepare_example {
-    echo "Preparing $1..."
+    PrintInfo "Preparing example app $1..."
     pushd $1 > /dev/null
     set +e
     flutter create .
