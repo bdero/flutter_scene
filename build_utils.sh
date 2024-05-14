@@ -39,7 +39,17 @@ function PrintInfoSub {
     >&2 echo -e "${CYAN}       $1${COLOR_RESET} $2"
 }
 
+function PrintWarning {
+    >&2 echo
+    >&2 echo -e "${BYELLOW}[WARNING] ${YELLOW}$1${COLOR_RESET}"
+}
+
+function PrintWarningSub {
+    >&2 echo -e "${YELLOW}          $1${COLOR_RESET} $2"
+}
+
 function PrintFatal {
+    >&2 echo
     >&2 echo -e "${BRED}[FATAL] ${RED}$1${COLOR_RESET}"
     exit 1
 }

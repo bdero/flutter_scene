@@ -14,6 +14,7 @@ FLUTTER_PACKAGES_DIR="$FLUTTER_SDK_DIR/packages"
 if [ ! -z "$ENGINE_SRC_DIR" ]; then
     FLUTTER_GPU_SOURCE_DIR="$ENGINE_SRC_DIR/flutter/lib/gpu"
 else
+    >&2 echo
     FLUTTER_GPU_SOURCE_DIR="$(GetFlutterGpuArtifactsDirectory)"
 fi
 

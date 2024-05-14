@@ -33,6 +33,31 @@ cd $SCRIPT_DIR
 
 source build_utils.sh
 
+################################################################################
+##
+##  0. Warn the user if they're not using the latest version of Flutter Scene.
+##
+CURRENT_COMMIT=$(git rev-parse HEAD)
+
+# Fetch the JSON line containing the latest commit SHA from the 'flutter-gpu' branch.
+LATEST_COMMIT=$(curl https://api.github.com/repos/bdero/flutter_scene/commits/flutter-gpu 2>/dev/null | grep sha | head -n 1)
+# Remove the JSON key.
+LATEST_COMMIT="${LATEST_COMMIT#*:}"
+# Remove any remaining non-alphanumeric junk (quotes, commas, whitespace).
+LATEST_COMMIT=$(echo $LATEST_COMMIT | sed "s/[^[:alnum:]-]//g")
+
+if [ -z "$LATEST_COMMIT" ]; then
+    PrintWarning "Failed to fetch the latest commit of the 'flutter_scene' repository."
+    LATEST_COMMIT="unknown"
+fi
+if [ "$LATEST_COMMIT" == "$CURRENT_COMMIT" ]; then
+    PrintInfo "${GREEN}You are using the latest commit of ${BGREEN}Flutter Scene${GREEN}!"
+else
+    PrintWarning "${BYELLOW}You are not using the latest commit of Flutter Scene!"
+    PrintWarningSub "Current commit:" "$CURRENT_COMMIT"
+    PrintWarningSub "Latest commit:" "$LATEST_COMMIT"
+fi
+
 
 ################################################################################
 ##
