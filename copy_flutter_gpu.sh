@@ -21,4 +21,8 @@ fi
 echo "Copying 'flutter_gpu' into the packages dir..."
 echo "  from: $FLUTTER_GPU_SOURCE_DIR"
 echo "  to:   $FLUTTER_PACKAGES_DIR/flutter_gpu"
-cp -TR "$FLUTTER_GPU_SOURCE_DIR" "$FLUTTER_PACKAGES_DIR/flutter_gpu"
+
+mkdir -p "$FLUTTER_PACKAGES_DIR/flutter_gpu"
+# Note: macOS doesn't support the -T flag for cp, unfortunately. So we have to
+# be carefully end the source path with a slash.
+cp -R "$FLUTTER_GPU_SOURCE_DIR/" "$FLUTTER_PACKAGES_DIR/flutter_gpu"
