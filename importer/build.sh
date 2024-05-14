@@ -21,5 +21,5 @@ $FLATC_EXE \
 PrintInfo "Building importer..."
 
 mkdir -p build
-cmake -Bbuild
+cmake -Bbuild -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --target=importer -j 4
