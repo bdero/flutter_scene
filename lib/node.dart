@@ -1,10 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
+import 'package:vector_math/vector_math.dart';
+import 'package:flutter_gpu/gpu.dart' as gpu;
+
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:vector_math/vector_math.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
@@ -26,12 +28,19 @@ base class Node implements SceneGraph {
   }
 
   static Node fromFlatbuffer(ByteData byteData) {
+    debugPrint('Unpacking Scene.');
+
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
 
     // Unpack textures.
     List<gpu.Texture> textures = [];
+    int textureIndexPlusOne = 0;
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
+      textureIndexPlusOne++;
+      debugPrint(
+          "    Unpacking texture ($textureIndexPlusOne / ${fbScene.textures!.length})");
+
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture? texture = gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible, image.width, image.height);
@@ -70,6 +79,9 @@ base class Node implements SceneGraph {
 
     // Unpack each node.
     for (int nodeIndex = 0; nodeIndex < sceneNodes.length; nodeIndex++) {
+      debugPrint(
+          "    Unpacking node (${nodeIndex + 1} of ${sceneNodes.length})");
+
       sceneNodes[nodeIndex]._unpackFromFlatbuffer(
           fbScene.nodes![nodeIndex], sceneNodes, textures);
     }

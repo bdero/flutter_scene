@@ -2,8 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/shaders.dart';
 import 'package:vector_math/vector_math.dart' as vm;
+
+import 'package:flutter_scene/shaders.dart';
+import 'package:flutter_scene_importer/constants.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 abstract class Geometry {
@@ -23,118 +25,50 @@ abstract class Geometry {
   }
 
   static Geometry fromFlatbuffer(fb.MeshPrimitive fbPrimitive) {
+    Uint8List vertices;
+    bool isSkinned =
+        fbPrimitive.vertices!.runtimeType == fb.SkinnedVertexBuffer;
+    int perVertexBytes =
+        isSkinned ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
+
+    switch (fbPrimitive.vertices!.runtimeType) {
+      case fb.UnskinnedVertexBuffer:
+        fb.UnskinnedVertexBuffer unskinned =
+            (fbPrimitive.vertices as fb.UnskinnedVertexBuffer?)!;
+        vertices = unskinned.vertices! as Uint8List;
+      case fb.SkinnedVertexBuffer:
+        fb.SkinnedVertexBuffer skinned =
+            (fbPrimitive.vertices as fb.SkinnedVertexBuffer?)!;
+        vertices = skinned.vertices! as Uint8List;
+      default:
+        throw Exception('Unknown vertex buffer type');
+    }
+
+    if (vertices.length % perVertexBytes != 0) {
+      debugPrint('OH NO: Encountered an vertex buffer of size '
+          '${vertices.lengthInBytes} bytes, which doesn\'t match the '
+          'expected multiple of $perVertexBytes bytes. Possible data corruption! '
+          'Attempting to use a vertex count of ${vertices.length ~/ perVertexBytes}. '
+          'The last ${vertices.length % perVertexBytes} bytes will be ignored.');
+    }
+    int vertexCount = vertices.length ~/ perVertexBytes;
+
     gpu.IndexType indexType = fbPrimitive.indices!.type.toIndexType();
+    Uint8List indices = fbPrimitive.indices!.data! as Uint8List;
 
-    Uint8List indices = Uint8List.fromList(fbPrimitive.indices!.data!);
-    Float32List vertices;
-    int verticesCount = 0;
-    bool isSkinned = false;
-
-    if (fbPrimitive.vertices! is fb.UnskinnedVertexBuffer) {
-      fb.UnskinnedVertexBuffer unskinned =
-          (fbPrimitive.vertices as fb.UnskinnedVertexBuffer?)!;
-      // TODO(bdero): This is awful. 🤮 Add a way to grab a ByteData for lists of structs...
-      //              https://github.com/google/flatbuffers/issues/8183
-      // position: 3, normal: 3, tangent: 4, textureCoords: 2, color: 4 :: 16 floats
-      verticesCount = unskinned.vertices!.length;
-      int size = verticesCount * 16;
-      vertices = Float32List(size);
-      for (int i = 0; i < verticesCount; i++) {
-        fb.Vertex vertex = unskinned.vertices![i];
-
-        fb.Vec3 position = vertex.position;
-        fb.Vec3 normal = vertex.normal;
-        fb.Vec4 tangent = vertex.tangent;
-        fb.Vec2 textureCoords = vertex.textureCoords;
-        fb.Color color = vertex.color;
-
-        int offset = i * 16;
-        vertices[offset + 0] = position.x;
-        vertices[offset + 1] = position.y;
-        vertices[offset + 2] = position.z;
-        vertices[offset + 3] = normal.x;
-        vertices[offset + 4] = normal.y;
-        vertices[offset + 5] = normal.z;
-        vertices[offset + 6] = tangent.x;
-        vertices[offset + 7] = tangent.y;
-        vertices[offset + 8] = tangent.z;
-        vertices[offset + 9] = tangent.w;
-        vertices[offset + 10] = textureCoords.x;
-        vertices[offset + 11] = textureCoords.y;
-        vertices[offset + 12] = color.r;
-        vertices[offset + 13] = color.g;
-        vertices[offset + 14] = color.b;
-        vertices[offset + 15] = color.a;
-      }
-      isSkinned = false;
-    } else if (fbPrimitive.vertices! is fb.SkinnedVertexBuffer) {
-      fb.SkinnedVertexBuffer skinned =
-          (fbPrimitive.vertices as fb.SkinnedVertexBuffer?)!;
-      // TODO(bdero): This is awful. 🤮 Add a way to grab a ByteData for lists of structs...
-      //              https://github.com/google/flatbuffers/issues/8183
-      // vertex: 16, joints: 4, weights: 4 :: 24 floats
-      verticesCount = skinned.vertices!.length;
-      int size = verticesCount * 24;
-      vertices = Float32List(size);
-      for (int i = 0; i < verticesCount; i++) {
-        fb.SkinnedVertex skinnedVertex = skinned.vertices![i];
-
-        fb.Vertex vertex = skinnedVertex.vertex;
-        fb.Vec3 position = vertex.position;
-        fb.Vec3 normal = vertex.normal;
-        fb.Vec4 tangent = vertex.tangent;
-        fb.Vec2 textureCoords = vertex.textureCoords;
-        fb.Color color = vertex.color;
-
-        fb.Vec4 joints = skinnedVertex.joints;
-        fb.Vec4 weights = skinnedVertex.weights;
-
-        int offset = i * 24;
-        vertices[offset + 0] = position.x;
-        vertices[offset + 1] = position.y;
-        vertices[offset + 2] = position.z;
-        vertices[offset + 3] = normal.x;
-        vertices[offset + 4] = normal.y;
-        vertices[offset + 5] = normal.z;
-        vertices[offset + 6] = tangent.x;
-        vertices[offset + 7] = tangent.y;
-        vertices[offset + 8] = tangent.z;
-        vertices[offset + 9] = tangent.w;
-        vertices[offset + 10] = textureCoords.x;
-        vertices[offset + 11] = textureCoords.y;
-        vertices[offset + 12] = color.r;
-        vertices[offset + 13] = color.g;
-        vertices[offset + 14] = color.b;
-        vertices[offset + 15] = color.a;
-        vertices[offset + 16] = joints.x;
-        vertices[offset + 17] = joints.y;
-        vertices[offset + 18] = joints.z;
-        vertices[offset + 19] = joints.w;
-        vertices[offset + 20] = weights.x;
-        vertices[offset + 21] = weights.y;
-        vertices[offset + 22] = weights.z;
-        vertices[offset + 23] = weights.w;
-      }
-      isSkinned = true;
-    } else {
-      throw Exception('Unknown vertex buffer type');
+    switch (fbPrimitive.vertices!.runtimeType) {
+      case fb.UnskinnedVertexBuffer:
+        Geometry geometry = UnskinnedGeometry();
+        geometry.uploadVertexData(vertices.buffer.asByteData(), vertexCount,
+            indices.buffer.asByteData(),
+            indexType: indexType);
+        return geometry;
+      case fb.SkinnedVertexBuffer:
+        debugPrint('Skinned geometry not yet implemented!');
+        return UnskinnedGeometry();
+      default:
+        throw Exception('Unknown vertex buffer type');
     }
-
-    gpu.DeviceBuffer? buffer = gpu.gpuContext.createDeviceBuffer(
-        gpu.StorageMode.hostVisible,
-        vertices.lengthInBytes + indices.lengthInBytes);
-    if (buffer == null) {
-      throw Exception('Failed to allocate geometry buffer');
-    }
-    buffer.overwrite(vertices.buffer.asByteData(), destinationOffsetInBytes: 0);
-    buffer.overwrite(indices.buffer.asByteData(),
-        destinationOffsetInBytes: vertices.lengthInBytes);
-
-    Geometry geometry = UnskinnedGeometry();
-    geometry.uploadVertexData(vertices.buffer.asByteData(), verticesCount,
-        indices.buffer.asByteData(),
-        indexType: indexType);
-    return geometry;
   }
 
   void setVertices(gpu.BufferView vertices, int vertexCount) {
@@ -159,7 +93,7 @@ abstract class Geometry {
         gpu.StorageMode.hostVisible,
         indices == null
             ? vertices.lengthInBytes
-            : vertices.lengthInBytes + indices!.lengthInBytes);
+            : vertices.lengthInBytes + indices.lengthInBytes);
 
     if (deviceBuffer == null) {
       throw Exception('Failed to allocate geometry buffer');

@@ -87,7 +87,9 @@ struct Vec4 {
 }
 
 // This attribute layout is expected to be identical to that within
-// `impeller/scene/shaders/geometry.vert`.
+// `shaders/flutter_scene_unskinned.vert`.
+//
+// Note: This struct is currently only used for conveniently packing buffers in the importer.
 struct Vertex {
   position: Vec3;
   normal: Vec3;
@@ -97,9 +99,16 @@ struct Vertex {
 }
 
 table UnskinnedVertexBuffer {
-  vertices: [Vertex];
+  //vertices: [Vertex];
+  // Hack to make Dart flatbuffers easier to work with.
+  vertices: [ubyte];
+  vertex_count: uint32;
 }
 
+// This attribute layout is expected to be identical to that within
+// `shaders/flutter_scene_skinned.vert`.
+//
+// Note: This struct is currently only used for conveniently packing buffers in the importer.
 struct SkinnedVertex {
   vertex: Vertex;
   /// Four joint indices corresponding to this mesh's skin transforms. These
@@ -112,7 +121,10 @@ struct SkinnedVertex {
 }
 
 table SkinnedVertexBuffer {
-  vertices: [SkinnedVertex];
+  //vertices: [SkinnedVertex];
+  // Hack to make Dart flatbuffers easier to work with.
+  vertices: [ubyte];
+  vertex_count: uint32;
 }
 
 union VertexBuffer { UnskinnedVertexBuffer, SkinnedVertexBuffer }

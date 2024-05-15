@@ -1,5 +1,6 @@
 #include "vertices_builder.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -161,12 +162,23 @@ UnskinnedVerticesBuilder::~UnskinnedVerticesBuilder() = default;
 
 void UnskinnedVerticesBuilder::WriteFBVertices(
     fb::MeshPrimitiveT& primitive) const {
+  constexpr size_t kPerVertexBytes = 64;
+  static_assert(sizeof(fb::Vertex) == kPerVertexBytes,
+                "Unexpected Vertex size! If the flatbuffer schama was "
+                "intentionally updated, be sure to also update the size "
+                "constants in `constants.dart`.");
+  const size_t expected_bytes = vertices_.size() * kPerVertexBytes;
+
   auto vertex_buffer = fb::UnskinnedVertexBufferT();
-  vertex_buffer.vertices.resize(0);
-  for (auto& v : vertices_) {
-    vertex_buffer.vertices.push_back(fb::Vertex(
-        ToFBVec3(v.position), ToFBVec3(v.normal), ToFBVec4(v.tangent),
-        ToFBVec2(v.texture_coords), ToFBColor(v.color)));
+  vertex_buffer.vertex_count = vertices_.size();
+  vertex_buffer.vertices.resize(expected_bytes);
+  for (size_t i = 0; i < vertices_.size(); i++) {
+    const auto& v = vertices_[i];
+    auto vertex = fb::Vertex(ToFBVec3(v.position), ToFBVec3(v.normal),
+                             ToFBVec4(v.tangent), ToFBVec2(v.texture_coords),
+                             ToFBColor(v.color));
+    std::memcpy(vertex_buffer.vertices.data() + (i * kPerVertexBytes), &vertex,
+                kPerVertexBytes);
   }
   primitive.vertices.Set(std::move(vertex_buffer));
 }
@@ -199,16 +211,28 @@ SkinnedVerticesBuilder::~SkinnedVerticesBuilder() = default;
 
 void SkinnedVerticesBuilder::WriteFBVertices(
     fb::MeshPrimitiveT& primitive) const {
+  constexpr size_t kPerVertexBytes = 96;
+  static_assert(sizeof(fb::SkinnedVertex) == kPerVertexBytes,
+                "Unexpected SkinnedVertex size! If the flatbuffer schama was "
+                "intentionally updated, be sure to also update the size "
+                "constants in `constants.dart`.");
+  const size_t expected_bytes = vertices_.size() * kPerVertexBytes;
+
   auto vertex_buffer = fb::SkinnedVertexBufferT();
-  vertex_buffer.vertices.resize(0);
-  for (auto& v : vertices_) {
+  vertex_buffer.vertex_count = vertices_.size();
+  vertex_buffer.vertices.resize(expected_bytes);
+  for (size_t i = 0; i < vertices_.size(); i++) {
+    const auto& v = vertices_[i];
     auto unskinned_attributes = fb::Vertex(
         ToFBVec3(v.vertex.position), ToFBVec3(v.vertex.normal),
         ToFBVec4(v.vertex.tangent), ToFBVec2(v.vertex.texture_coords),
         ToFBColor(v.vertex.color));
-    vertex_buffer.vertices.push_back(fb::SkinnedVertex(
-        unskinned_attributes, ToFBVec4(v.joints), ToFBVec4(v.weights)));
+    auto vertex = fb::SkinnedVertex(unskinned_attributes, ToFBVec4(v.joints),
+                                    ToFBVec4(v.weights));
+    std::memcpy(vertex_buffer.vertices.data() + (i * kPerVertexBytes), &vertex,
+                kPerVertexBytes);
   }
+
   primitive.vertices.Set(std::move(vertex_buffer));
 }
 

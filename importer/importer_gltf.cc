@@ -471,6 +471,8 @@ bool ParseGLTF(const std::vector<char>& input_bytes, fb::SceneT& out_scene) {
   out_scene.transform =
       ToFBMatrixUniquePtr(Matrix::MakeScale(Vector3{1, 1, -1}));
 
+  std::cerr << "Processing " << gltf.textures.size() << " texture"
+            << (gltf.textures.size() == 1 ? "" : "s") << "..." << std::endl;
   for (size_t texture_i = 0; texture_i < gltf.textures.size(); texture_i++) {
     auto texture = std::make_unique<fb::TextureT>();
     ProcessTexture(gltf, gltf.textures[texture_i], *texture);
@@ -478,7 +480,7 @@ bool ParseGLTF(const std::vector<char>& input_bytes, fb::SceneT& out_scene) {
   }
 
   std::cerr << "Processing " << gltf.nodes.size() << " node"
-            << (gltf.nodes.size() == 1 ? "" : "s") << "." << std::endl;
+            << (gltf.nodes.size() == 1 ? "" : "s") << "..." << std::endl;
   for (size_t node_i = 0; node_i < gltf.nodes.size(); node_i++) {
     auto node = std::make_unique<fb::NodeT>();
     // std::cerr << "Processing node " << node_i << " of " << gltf.nodes.size()
