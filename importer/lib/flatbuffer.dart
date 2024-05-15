@@ -70,10 +70,8 @@ extension TextureHelpers on fb.Texture {
     if (texture == null) {
       throw Exception('Failed to allocate texture');
     }
-    // TODO(bdero): Get rid of this copy. 🤮
-    //              https://github.com/google/flatbuffers/issues/8183
-    Uint8List textureData = Uint8List.fromList(embeddedImage!.bytes!);
-    if (!texture.overwrite(textureData.buffer.asByteData())) {
+    Uint8List textureData = embeddedImage!.bytes! as Uint8List;
+    if (!texture.overwrite(ByteData.sublistView(textureData))) {
       throw Exception('Failed to overwrite texture data');
     }
 

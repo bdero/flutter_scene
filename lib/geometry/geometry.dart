@@ -59,8 +59,8 @@ abstract class Geometry {
     switch (fbPrimitive.vertices!.runtimeType) {
       case fb.UnskinnedVertexBuffer:
         Geometry geometry = UnskinnedGeometry();
-        geometry.uploadVertexData(vertices.buffer.asByteData(), vertexCount,
-            indices.buffer.asByteData(),
+        geometry.uploadVertexData(ByteData.sublistView(vertices), vertexCount,
+            ByteData.sublistView(indices),
             indexType: indexType);
         return geometry;
       case fb.SkinnedVertexBuffer:
@@ -178,7 +178,7 @@ class CuboidGeometry extends UnskinnedGeometry {
     ]);
 
     uploadVertexData(
-        vertices.buffer.asByteData(), 8, indices.buffer.asByteData(),
+        ByteData.sublistView(vertices), 8, ByteData.sublistView(indices),
         indexType: gpu.IndexType.int16);
   }
 }

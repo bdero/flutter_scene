@@ -15,15 +15,15 @@ class ImportedScene {
   }
 
   static ImportedScene fromFlatbuffer(ByteData data) {
-    final fb.Scene scene = fb.Scene(data.buffer.asUint8List());
-    fb.SceneT unpacked = scene.unpack();
+    final fb.Scene scene = fb.Scene(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
 
     return ImportedScene._(scene);
   }
 
   ImportedScene._(this._scene);
 
-  fb.Scene _scene;
+  final fb.Scene _scene;
 
   get flatbuffer => _scene;
 }

@@ -92,7 +92,7 @@ class UnlitMaterial extends Material {
       vertexColorWeight, // vertex_color_weight
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
-        transientsBuffer.emplace(fragInfo.buffer.asByteData()));
+        transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
     pass.bindTexture(
         fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture);
   }

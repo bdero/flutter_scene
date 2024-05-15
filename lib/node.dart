@@ -47,10 +47,8 @@ base class Node implements SceneGraph {
       if (texture == null) {
         throw Exception('Failed to allocate texture');
       }
-      // TODO(bdero): Get rid of this copy. 🤮
-      //              https://github.com/google/flatbuffers/issues/8183
-      Uint8List texture_data = Uint8List.fromList(image.bytes!);
-      if (!texture.overwrite(texture_data.buffer.asByteData())) {
+      Uint8List textureData = image.bytes! as Uint8List;
+      if (!texture.overwrite(ByteData.sublistView(textureData))) {
         throw Exception('Failed to overwrite texture data');
       }
       textures.add(texture);
