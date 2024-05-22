@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/flutter_scene.dart';
 
 import 'package:flutter_scene/geometry/geometry.dart';

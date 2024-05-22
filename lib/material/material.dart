@@ -17,7 +17,7 @@ abstract class Material {
     _placeholderTexture =
         gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
     if (_placeholderTexture == null) {
-      throw Exception("Failed to create placeholder texture.");
+      throw Exception('Failed to create placeholder texture.');
     }
     _placeholderTexture!
         .overwrite(Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData());

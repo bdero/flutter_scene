@@ -196,23 +196,33 @@ static void ProcessNode(const tinygltf::Model& gltf,
 
   Matrix transform;
   if (in_node.scale.size() == 3) {
-    transform =
-        transform * Matrix::MakeScale({static_cast<Scalar>(in_node.scale[0]),
-                                       static_cast<Scalar>(in_node.scale[1]),
-                                       static_cast<Scalar>(in_node.scale[2])});
+    transform = Matrix::MakeScale({static_cast<Scalar>(in_node.scale[0]),
+                                   static_cast<Scalar>(in_node.scale[1]),
+                                   static_cast<Scalar>(in_node.scale[2])}) *
+                transform;
+  } else if (in_node.scale.size() != 0) {
+    std::cerr << "Unhandled scale size: " << in_node.scale.size() << std::endl;
   }
   if (in_node.rotation.size() == 4) {
-    transform = transform * Matrix::MakeRotation(Quaternion{
-                                static_cast<Scalar>(in_node.rotation[0]),
-                                static_cast<Scalar>(in_node.rotation[1]),
-                                static_cast<Scalar>(in_node.rotation[2]),
-                                static_cast<Scalar>(in_node.rotation[3])});
+    transform = Matrix::MakeRotation(
+                    Quaternion{static_cast<Scalar>(in_node.rotation[0]),
+                               static_cast<Scalar>(in_node.rotation[1]),
+                               static_cast<Scalar>(in_node.rotation[2]),
+                               static_cast<Scalar>(in_node.rotation[3])}) *
+                transform;
+  } else if (in_node.rotation.size() != 0) {
+    std::cerr << "Unhandled rotation size: " << in_node.rotation.size()
+              << std::endl;
   }
   if (in_node.translation.size() == 3) {
-    transform = transform * Matrix::MakeTranslation(
-                                {static_cast<Scalar>(in_node.translation[0]),
+    transform =
+        Matrix::MakeTranslation({static_cast<Scalar>(in_node.translation[0]),
                                  static_cast<Scalar>(in_node.translation[1]),
-                                 static_cast<Scalar>(in_node.translation[2])});
+                                 static_cast<Scalar>(in_node.translation[2])}) *
+        transform;
+  } else if (in_node.translation.size() != 0) {
+    std::cerr << "Unhandled translation size: " << in_node.translation.size()
+              << std::endl;
   }
   if (in_node.matrix.size() == 16) {
     if (!transform.IsIdentity()) {

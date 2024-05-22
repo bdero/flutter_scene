@@ -11,8 +11,10 @@ import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 base class Node implements SceneGraph {
-  Node({Matrix4? localTransform, this.mesh})
+  Node({String? name, Matrix4? localTransform, this.mesh})
       : localTransform = localTransform ?? Matrix4.identity();
+
+  String name = '';
 
   Matrix4 localTransform = Matrix4.identity();
 
@@ -28,18 +30,17 @@ base class Node implements SceneGraph {
   }
 
   static Node fromFlatbuffer(ByteData byteData) {
-    debugPrint('Unpacking Scene.');
-
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
+
+    debugPrint('Unpacking Scene (nodes: ${fbScene.nodes?.length}, '
+        'textures: ${fbScene.textures?.length})');
 
     // Unpack textures.
     List<gpu.Texture> textures = [];
     int textureIndexPlusOne = 0;
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
       textureIndexPlusOne++;
-      debugPrint(
-          "    Unpacking texture ($textureIndexPlusOne / ${fbScene.textures!.length})");
 
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture? texture = gpu.gpuContext.createTexture(
@@ -55,6 +56,7 @@ base class Node implements SceneGraph {
     }
 
     Node result = Node(
+        name: 'root',
         localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity());
 
     if (fbScene.nodes == null || fbScene.children == null) {
@@ -77,9 +79,6 @@ base class Node implements SceneGraph {
 
     // Unpack each node.
     for (int nodeIndex = 0; nodeIndex < sceneNodes.length; nodeIndex++) {
-      debugPrint(
-          "    Unpacking node (${nodeIndex + 1} of ${sceneNodes.length})");
-
       sceneNodes[nodeIndex]._unpackFromFlatbuffer(
           fbScene.nodes![nodeIndex], sceneNodes, textures);
     }
@@ -91,6 +90,7 @@ base class Node implements SceneGraph {
 
   void _unpackFromFlatbuffer(
       fb.Node fbNode, List<Node> sceneNodes, List<gpu.Texture> textures) {
+    name = fbNode.name ?? '';
     localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
     // Unpack mesh.

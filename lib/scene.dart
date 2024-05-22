@@ -26,7 +26,7 @@ base class SceneEncoder {
   late final gpu.RenderPass _renderPass;
 
   void encode(Matrix4 transform, Geometry geometry, Material material) {
-    final mvp = _cameraTransform * transform;
+    final mvp = _cameraTransform * transform.transposed();
     _renderPass.clearBindings();
     var pipeline = gpu.gpuContext
         .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
