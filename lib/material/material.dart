@@ -94,6 +94,9 @@ class UnlitMaterial extends Material {
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
         transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
     pass.bindTexture(
-        fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture);
+        fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture,
+        sampler: gpu.SamplerOptions(
+            widthAddressMode: gpu.SamplerAddressMode.repeat,
+            heightAddressMode: gpu.SamplerAddressMode.repeat));
   }
 }
