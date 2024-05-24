@@ -31,7 +31,8 @@ base class SceneEncoder {
     var pipeline = gpu.gpuContext
         .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
     _renderPass.bindPipeline(pipeline);
-    geometry.bind(_renderPass, _transientsBuffer, mvp);
+    geometry.bind(_renderPass, _transientsBuffer, mvp,
+        -_cameraTransform.getTranslation());
     material.bind(_renderPass, _transientsBuffer);
     _renderPass.draw();
   }

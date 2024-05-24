@@ -121,8 +121,8 @@ abstract class Geometry {
   }
 
   @mustCallSuper
-  void bind(
-      gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, vm.Matrix4 mvp) {
+  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
+      vm.Matrix4 mvp, vm.Vector3 cameraPosition) {
     if (_vertices == null) {
       throw Exception(
           'SetBuffer must be called before GetBufferView for Geometry.');
@@ -133,9 +133,33 @@ abstract class Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
-    final mvpSlot = vertexShader.getUniformSlot('FrameInfo');
-    final mvpView = transientsBuffer.emplace(mvp.storage.buffer.asByteData());
-    pass.bindUniform(mvpSlot, mvpView);
+    // Unskinned vertex UBO.
+    final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
+    final frameInfoFloats = Float32List.fromList([
+      mvp.storage[0],
+      mvp.storage[1],
+      mvp.storage[2],
+      mvp.storage[3],
+      mvp.storage[4],
+      mvp.storage[5],
+      mvp.storage[6],
+      mvp.storage[7],
+      mvp.storage[8],
+      mvp.storage[9],
+      mvp.storage[10],
+      mvp.storage[11],
+      mvp.storage[12],
+      mvp.storage[13],
+      mvp.storage[14],
+      mvp.storage[15],
+      cameraPosition.x,
+      cameraPosition.y,
+      cameraPosition.z,
+      0.0, // padding
+    ]);
+    final frameInfoView =
+        transientsBuffer.emplace(frameInfoFloats.buffer.asByteData());
+    pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
 

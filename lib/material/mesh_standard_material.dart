@@ -33,7 +33,7 @@ class MeshStandardMaterial extends Material {
   }
 
   MeshStandardMaterial({gpu.Texture? colorTexture}) {
-    setFragmentShader(baseShaderLibrary['UnlitFragment']!);
+    setFragmentShader(baseShaderLibrary['StandardFragment']!);
     baseColorTexture = colorTexture ?? Material.getPlaceholderTexture();
   }
 

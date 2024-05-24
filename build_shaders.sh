@@ -38,6 +38,10 @@ BASE_BUNDLE_JSON='
     "UnlitFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_unlit.frag"
+    },
+    "StandardFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_standard.frag"
     }
 }'
 build_shader "assets/base.shaderbundle" "$BASE_BUNDLE_JSON"

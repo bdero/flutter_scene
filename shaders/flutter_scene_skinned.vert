@@ -1,5 +1,6 @@
 uniform FrameInfo {
   mat4 mvp;
+  vec3 camera_position;
   float enable_skinning;
   float joint_texture_size;
 }
@@ -18,6 +19,7 @@ in vec4 weights;
 
 out vec3 v_position;
 out vec3 v_normal;
+out vec3 v_viewvector; // camera pos - vertex pos
 out vec2 v_texture_coords;
 out vec4 v_color;
 
@@ -61,8 +63,7 @@ void main() {
   gl_Position = frame_info.mvp * skin_matrix * vec4(position, 1.0);
   v_position = gl_Position.xyz;
   v_normal = normal;
-
-  vec3 out_normal = (skin_matrix * vec4(normal, 0.0)).xyz;
+  v_viewvector = frame_info.camera_position - v_position;
   v_texture_coords = texture_coords;
   v_color = color;
 }
