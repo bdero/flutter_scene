@@ -33,7 +33,6 @@ class VerticesBuilder {
   enum class AttributeType {
     kPosition,
     kNormal,
-    kTangent,
     kTextureCoords,
     kColor,
     kJoints,
@@ -100,7 +99,6 @@ class UnskinnedVerticesBuilder final : public VerticesBuilder {
   struct Vertex {
     Vector3 position;
     Vector3 normal;
-    Vector4 tangent;
     Vector2 texture_coords;
     Color color = Color{1, 1, 1, 1};
   };

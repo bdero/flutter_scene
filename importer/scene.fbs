@@ -59,7 +59,11 @@ table Material {
   roughness_factor: float = 0.5;
   metallic_roughness_texture: int = -1;  // Red=Metallic, Green=Roughness.
 
+  normal_scale: float = 1.0;
   normal_texture: int = -1;  // Tangent space normal map.
+
+  emissive_factor: Vec3;
+  emissive_texture: int = -1;
 
   occlusion_texture: int = -1;
 }
@@ -93,7 +97,6 @@ struct Vec4 {
 struct Vertex {
   position: Vec3;
   normal: Vec3;
-  tangent: Vec4; // The 4th component determines the handedness of the tangent.
   texture_coords: Vec2;
   color: Color;
 }

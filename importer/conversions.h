@@ -45,6 +45,8 @@ fb::Color ToFBColor(const Color c);
 
 std::unique_ptr<fb::Color> ToFBColor(const std::vector<double>& c);
 
+std::unique_ptr<fb::Vec3> ToFBColor3(const std::vector<double>& c);
+
 }  // namespace importer
 }  // namespace scene
 }  // namespace impeller

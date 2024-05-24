@@ -85,11 +85,6 @@ std::map<VerticesBuilder::AttributeType, VerticesBuilder::AttributeProperties>
           .size_bytes = sizeof(UnskinnedVerticesBuilder::Vertex::normal),
           .component_count = 3,
           .write_proc = PassthroughAttributeWriter}},
-        {VerticesBuilder::AttributeType::kTangent,
-         {.offset_bytes = offsetof(UnskinnedVerticesBuilder::Vertex, tangent),
-          .size_bytes = sizeof(UnskinnedVerticesBuilder::Vertex::tangent),
-          .component_count = 4,
-          .write_proc = PassthroughAttributeWriter}},
         {VerticesBuilder::AttributeType::kTextureCoords,
          {.offset_bytes =
               offsetof(UnskinnedVerticesBuilder::Vertex, texture_coords),
@@ -162,7 +157,7 @@ UnskinnedVerticesBuilder::~UnskinnedVerticesBuilder() = default;
 
 void UnskinnedVerticesBuilder::WriteFBVertices(
     fb::MeshPrimitiveT& primitive) const {
-  constexpr size_t kPerVertexBytes = 64;
+  constexpr size_t kPerVertexBytes = 48;
   static_assert(sizeof(fb::Vertex) == kPerVertexBytes,
                 "Unexpected Vertex size! If the flatbuffer schama was "
                 "intentionally updated, be sure to also update the size "
@@ -175,8 +170,7 @@ void UnskinnedVerticesBuilder::WriteFBVertices(
   for (size_t i = 0; i < vertices_.size(); i++) {
     const auto& v = vertices_[i];
     auto vertex = fb::Vertex(ToFBVec3(v.position), ToFBVec3(v.normal),
-                             ToFBVec4(v.tangent), ToFBVec2(v.texture_coords),
-                             ToFBColor(v.color));
+                             ToFBVec2(v.texture_coords), ToFBColor(v.color));
     std::memcpy(vertex_buffer.vertices.data() + (i * kPerVertexBytes), &vertex,
                 kPerVertexBytes);
   }
@@ -211,7 +205,7 @@ SkinnedVerticesBuilder::~SkinnedVerticesBuilder() = default;
 
 void SkinnedVerticesBuilder::WriteFBVertices(
     fb::MeshPrimitiveT& primitive) const {
-  constexpr size_t kPerVertexBytes = 96;
+  constexpr size_t kPerVertexBytes = 80;
   static_assert(sizeof(fb::SkinnedVertex) == kPerVertexBytes,
                 "Unexpected SkinnedVertex size! If the flatbuffer schama was "
                 "intentionally updated, be sure to also update the size "
@@ -225,8 +219,7 @@ void SkinnedVerticesBuilder::WriteFBVertices(
     const auto& v = vertices_[i];
     auto unskinned_attributes = fb::Vertex(
         ToFBVec3(v.vertex.position), ToFBVec3(v.vertex.normal),
-        ToFBVec4(v.vertex.tangent), ToFBVec2(v.vertex.texture_coords),
-        ToFBColor(v.vertex.color));
+        ToFBVec2(v.vertex.texture_coords), ToFBColor(v.vertex.color));
     auto vertex = fb::SkinnedVertex(unskinned_attributes, ToFBVec4(v.joints),
                                     ToFBVec4(v.weights));
     std::memcpy(vertex_buffer.vertices.data() + (i * kPerVertexBytes), &vertex,

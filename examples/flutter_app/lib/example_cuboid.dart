@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_scene/camera.dart';
 import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/material.dart';
+import 'package:flutter_scene/material/mesh_unlit_material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
 
@@ -23,7 +23,7 @@ class ExampleCuboidState extends State<ExampleCuboid> {
 
   @override
   void initState() {
-    final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), UnlitMaterial());
+    final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), MeshUnlitMaterial());
     scene.addMesh(mesh);
 
     super.initState();

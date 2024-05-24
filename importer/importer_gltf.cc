@@ -21,7 +21,6 @@ namespace importer {
 static const std::map<std::string, VerticesBuilder::AttributeType> kAttributes =
     {{"POSITION", VerticesBuilder::AttributeType::kPosition},
      {"NORMAL", VerticesBuilder::AttributeType::kNormal},
-     {"TANGENT", VerticesBuilder::AttributeType::kTangent},
      {"TEXCOORD_0", VerticesBuilder::AttributeType::kTextureCoords},
      {"COLOR_0", VerticesBuilder::AttributeType::kColor},
      {"JOINTS_0", VerticesBuilder::AttributeType::kJoints},
@@ -36,9 +35,18 @@ static bool MeshPrimitiveIsSkinned(const tinygltf::Primitive& primitive) {
          primitive.attributes.find("WEIGHTS_0") != primitive.attributes.end();
 }
 
+template <typename T>
+static int32_t ResolveMaterialTexture(const tinygltf::Model& gltf,
+                                      const T& texture) {
+  bool is_valid = texture.texCoord == 0 && texture.index >= 0 &&
+                  texture.index < static_cast<int32_t>(gltf.textures.size());
+  return is_valid ? texture.index : -1;
+}
+
 static void ProcessMaterial(const tinygltf::Model& gltf,
                             const tinygltf::Material& in_material,
                             fb::MaterialT& out_material) {
+  /*
   out_material.type = fb::MaterialType::kUnlit;
   out_material.base_color_factor =
       ToFBColor(in_material.pbrMetallicRoughness.baseColorFactor);
@@ -53,6 +61,27 @@ static void ProcessMaterial(const tinygltf::Model& gltf,
           // `Scene->texture`.
           ? in_material.pbrMetallicRoughness.baseColorTexture.index
           : -1;
+  */
+  out_material.type = fb::MaterialType::kPhysicallyBased;
+  out_material.base_color_factor =
+      ToFBColor(in_material.pbrMetallicRoughness.baseColorFactor);
+  out_material.metallic_factor =
+      in_material.pbrMetallicRoughness.metallicFactor;
+  out_material.roughness_factor =
+      in_material.pbrMetallicRoughness.roughnessFactor;
+  out_material.normal_scale = in_material.normalTexture.scale;
+  out_material.emissive_factor = ToFBColor3(in_material.emissiveFactor);
+
+  out_material.base_color_texture = ResolveMaterialTexture(
+      gltf, in_material.pbrMetallicRoughness.baseColorTexture);
+  out_material.metallic_roughness_texture = ResolveMaterialTexture(
+      gltf, in_material.pbrMetallicRoughness.metallicRoughnessTexture);
+  out_material.normal_texture =
+      ResolveMaterialTexture(gltf, in_material.normalTexture);
+  out_material.emissive_texture =
+      ResolveMaterialTexture(gltf, in_material.emissiveTexture);
+  out_material.occlusion_texture = ResolveMaterialTexture(
+      gltf, in_material.occlusionTexture);
 }
 
 static bool ProcessMeshPrimitive(const tinygltf::Model& gltf,

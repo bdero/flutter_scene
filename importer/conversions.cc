@@ -90,6 +90,13 @@ std::unique_ptr<fb::Color> ToFBColor(const std::vector<double>& c) {
   return std::unique_ptr<fb::Color>(color);
 }
 
+std::unique_ptr<fb::Vec3> ToFBColor3(const std::vector<double>& c) {
+  auto* color = new fb::Vec3(c.size() > 0 ? c[0] : 1,  //
+                             c.size() > 1 ? c[1] : 1,  //
+                             c.size() > 2 ? c[2] : 1);
+  return std::unique_ptr<fb::Vec3>(color);
+}
+
 }  // namespace importer
 }  // namespace scene
 }  // namespace impeller

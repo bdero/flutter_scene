@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
+import 'package:flutter_scene/material/mesh_standard_material.dart';
 import 'package:flutter_scene/material/mesh_unlit_material.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
@@ -24,12 +25,13 @@ abstract class Material {
 
   static Material fromFlatbuffer(
       fb.Material fbMaterial, List<gpu.Texture> textures) {
-    if (fbMaterial.type == fb.MaterialType.kUnlit) {
-      return MeshUnlitMaterial.fromFlatbuffer(fbMaterial, textures);
-    } else if (fbMaterial.type == fb.MaterialType.kPhysicallyBased) {
-      throw Exception('PBR materials are not yet supported');
-    } else {
-      throw Exception('Unknown material type');
+    switch (fbMaterial.type) {
+      case fb.MaterialType.kUnlit:
+        return MeshUnlitMaterial.fromFlatbuffer(fbMaterial, textures);
+      case fb.MaterialType.kPhysicallyBased:
+        return MeshStandardMaterial.fromFlatbuffer(fbMaterial, textures);
+      default:
+        throw Exception('Unknown material type');
     }
   }
 

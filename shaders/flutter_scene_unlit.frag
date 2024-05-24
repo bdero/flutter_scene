@@ -7,7 +7,7 @@ frag_info;
 uniform sampler2D base_color_texture;
 
 in vec3 v_position;
-in mat3 v_tangent_space;
+in vec3 v_normal;
 in vec2 v_texture_coords;
 in vec4 v_color;
 
