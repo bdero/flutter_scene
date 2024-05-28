@@ -46,9 +46,17 @@ base class SceneEncoder {
 }
 
 mixin SceneGraph {
+  /// Add a child node.
   void add(Node child);
+
+  /// Add a mesh as a child node.
   void addMesh(Mesh mesh);
+
+  /// Remove a child node.
   void remove(Node child);
+
+  /// Remove all children nodes.
+  void removeAll();
 }
 
 base class Scene implements SceneGraph {
@@ -75,6 +83,11 @@ base class Scene implements SceneGraph {
   @override
   void remove(Node child) {
     root.remove(child);
+  }
+
+  @override
+  void removeAll() {
+    root.removeAll();
   }
 
   void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {

@@ -21,4 +21,6 @@ function import_asset {
 }
 import_asset two_triangles
 import_asset flutter_logo_baked
-#import_asset car
+#import_asset white_car
+#import_asset wheel_minimal
+#import_asset DamagedHelmet

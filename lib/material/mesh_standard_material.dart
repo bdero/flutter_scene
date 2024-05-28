@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/material.dart';
@@ -37,6 +38,9 @@ class MeshStandardMaterial extends Material {
     material.metallicFactor = fbMaterial.metallicFactor;
     material.roughnessFactor = fbMaterial.roughnessFactor;
 
+    debugPrint(
+        'Metallic texture index: ${fbMaterial.metallicRoughnessTexture}');
+    debugPrint('Total texture count: ${textures.length}');
     if (fbMaterial.metallicRoughnessTexture >= 0 &&
         fbMaterial.metallicRoughnessTexture < textures.length) {
       material.metallicRoughnessTexture =
@@ -78,37 +82,30 @@ class MeshStandardMaterial extends Material {
   }
 
   MeshStandardMaterial(
-      {gpu.Texture? colorTexture,
-      gpu.Texture? metallicRoughnessTexture,
-      gpu.Texture? normalTexture,
-      gpu.Texture? emissiveTexture,
-      gpu.Texture? occlusionTexture,
+      {this.baseColorTexture,
+      this.metallicRoughnessTexture,
+      this.normalTexture,
+      this.emissiveTexture,
+      this.occlusionTexture,
       this.environment}) {
     setFragmentShader(baseShaderLibrary['StandardFragment']!);
-    baseColorTexture = colorTexture ?? Material.getWhitePlaceholderTexture();
-    metallicRoughnessTexture =
-        metallicRoughnessTexture ?? Material.getWhitePlaceholderTexture();
-    normalTexture = normalTexture ?? Material.getWhitePlaceholderTexture();
-    emissiveTexture = emissiveTexture ?? Material.getWhitePlaceholderTexture();
-    occlusionTexture =
-        occlusionTexture ?? Material.getWhitePlaceholderTexture();
   }
 
-  late gpu.Texture baseColorTexture;
+  gpu.Texture? baseColorTexture;
   ui.Color baseColorFactor = const ui.Color(0xFFFFFFFF);
   double vertexColorWeight = 1.0;
 
-  late gpu.Texture metallicRoughnessTexture;
+  gpu.Texture? metallicRoughnessTexture;
   double metallicFactor = 1.0;
   double roughnessFactor = 1.0;
 
-  late gpu.Texture normalTexture;
+  gpu.Texture? normalTexture;
   double normalScale = 1.0;
 
-  late gpu.Texture emissiveTexture;
+  gpu.Texture? emissiveTexture;
   ui.Color emissiveFactor = const ui.Color(0x00000000);
 
-  late gpu.Texture occlusionTexture;
+  gpu.Texture? occlusionTexture;
 
   Environment? environment;
 
@@ -116,15 +113,14 @@ class MeshStandardMaterial extends Material {
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment) {
     Environment env = this.environment ?? environment;
-    gpu.Texture environmentTexture =
-        env.texture ?? Material.getWhitePlaceholderTexture();
+    gpu.Texture environmentTexture = Material.whitePlaceholder(env.texture);
 
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
       vertexColorWeight, // vertex_color_weight
       0.0, 0.0, 0.0, // padding
-      1.0, // exposure
+      environment.exposure, // exposure
       0.0, 0.0, 0.0, // padding
       metallicFactor, // metallic
       0.0, 0.0, 0.0, // padding
@@ -137,19 +133,19 @@ class MeshStandardMaterial extends Material {
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
         transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
-    pass.bindTexture(
-        fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture,
+    pass.bindTexture(fragmentShader.getUniformSlot('base_color_texture'),
+        Material.whitePlaceholder(baseColorTexture),
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));
     pass.bindTexture(
         fragmentShader.getUniformSlot('metallic_roughness_texture'),
-        metallicRoughnessTexture,
+        Material.whitePlaceholder(metallicRoughnessTexture),
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(
-        fragmentShader.getUniformSlot('normal_texture'), normalTexture,
+    pass.bindTexture(fragmentShader.getUniformSlot('normal_texture'),
+        Material.whitePlaceholder(normalTexture),
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));

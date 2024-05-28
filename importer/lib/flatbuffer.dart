@@ -41,6 +41,9 @@ extension SceneHelpers on fb.Scene {
   /// Find a root child node in the scene.
   fb.Node? getChild(int index) {
     int? childIndex = children?[index];
+    if (childIndex == null) {
+      return null;
+    }
     return nodes?[childIndex];
   }
 }
@@ -48,6 +51,9 @@ extension SceneHelpers on fb.Scene {
 extension NodeHelpers on fb.Node {
   fb.Node? getChild(fb.Scene scene, int index) {
     int? childIndex = children?[index];
+    if (childIndex == null) {
+      return null;
+    }
     return scene.nodes?[childIndex];
   }
 }

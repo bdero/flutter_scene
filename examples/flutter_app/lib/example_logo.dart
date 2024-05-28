@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_scene/asset_helpers.dart';
 
 import 'package:flutter_scene/camera.dart';
 import 'package:flutter_scene/node.dart';
@@ -18,17 +19,48 @@ class ExampleLogo extends StatefulWidget {
 
 class ExampleLogoState extends State<ExampleLogo> {
   Scene scene = Scene();
+  bool loaded = false;
 
   @override
   void initState() {
-    Node.fromAsset('assets_imported/flutter_logo_baked.model')
-        .then((value) => scene.add(value));
+    final setupEnvironmentMap =
+        gpuTextureFromAsset('assets/little_paris_eiffel_tower.png')
+            .then((value) {
+      scene.environment.texture = value;
+      debugPrint('Envirnoment map updated.');
+    });
+
+    final loadModel = Node.fromAsset('assets_imported/flutter_logo_baked.model')
+        .then((value) {
+      value.name = 'FlutterLogo';
+      scene.add(value);
+      debugPrint('Loaded model: ${value.name}');
+    });
+
+    Future.wait([setupEnvironmentMap, loadModel]).then((_) {
+      debugPrint('Scene loaded.');
+      setState(() {
+        loaded = true;
+      });
+    });
 
     super.initState();
   }
 
   @override
+  void dispose() {
+    // Technically this isn't necessary, since `Node.fromAsset` doesn't perform
+    // a caching import.
+    scene.removeAll();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return CustomPaint(
       painter: _ScenePainter(scene, widget.elapsedSeconds),
     );

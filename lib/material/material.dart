@@ -24,6 +24,10 @@ abstract class Material {
     return _whitePlaceholderTexture!;
   }
 
+  static gpu.Texture whitePlaceholder(gpu.Texture? texture) {
+    return texture ?? getWhitePlaceholderTexture();
+  }
+
   static Material fromFlatbuffer(
       fb.Material fbMaterial, List<gpu.Texture> textures) {
     switch (fbMaterial.type) {

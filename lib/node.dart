@@ -24,10 +24,9 @@ base class Node implements SceneGraph {
 
   Mesh? mesh;
 
-  static Future<Node> fromAsset(String asset) {
-    return rootBundle.loadStructuredBinaryData<Node>(asset, (data) {
-      return fromFlatbuffer(data);
-    });
+  static Future<Node> fromAsset(String assetPath) async {
+    final buffer = await rootBundle.load(assetPath);
+    return fromFlatbuffer(buffer);
   }
 
   static Node fromFlatbuffer(ByteData byteData) {
@@ -149,6 +148,13 @@ base class Node implements SceneGraph {
     }
     children.remove(child);
     child._parent = null;
+  }
+
+  @override
+  void removeAll() {
+    while (children.isNotEmpty) {
+      remove(children.last);
+    }
   }
 
   void detach() {

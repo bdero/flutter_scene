@@ -23,4 +23,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/little_paris_eiffel_tower.png
     - assets_imported/flutter_logo_baked.model
+    #- assets_imported/white_car.model
+    #- assets_imported/wheel_minimal.model
+    #- assets_imported/DamagedHelmet.model

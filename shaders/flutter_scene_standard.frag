@@ -61,10 +61,20 @@ vec4 SampleEnvironmentMap(vec3 direction) {
 
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec4 base_color = texture(base_color_texture, v_texture_coords) * vertex_color *
-               frag_info.color;
+  vec4 base_color = texture(base_color_texture, v_texture_coords) *
+                    vertex_color * frag_info.color;
   vec3 normal =
       PerturbNormal(normalize(v_normal), v_viewvector, v_texture_coords);
-  
+  vec4 metallic_roughness =
+      texture(metallic_roughness_texture, v_texture_coords);
+  vec4 environment_color = SampleEnvironmentMap(normalize(v_viewvector));
+
+  frag_color =
+      // Catch-all for unused uniforms
+      base_color + vec4(normal, 1) + metallic_roughness +
+      environment_color //
+          * frag_info.color * frag_info.exposure * frag_info.metallic_factor *
+          frag_info.roughness_factor * frag_info.normal_scale *
+          frag_info.environment_intensity;
   frag_color = base_color;
 }
