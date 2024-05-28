@@ -2,25 +2,26 @@ import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
+import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/mesh_standard_material.dart';
 import 'package:flutter_scene/material/mesh_unlit_material.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 abstract class Material {
-  static gpu.Texture? _placeholderTexture;
+  static gpu.Texture? _whitePlaceholderTexture;
 
-  static gpu.Texture getPlaceholderTexture() {
-    if (_placeholderTexture != null) {
-      return _placeholderTexture!;
+  static gpu.Texture getWhitePlaceholderTexture() {
+    if (_whitePlaceholderTexture != null) {
+      return _whitePlaceholderTexture!;
     }
-    _placeholderTexture =
+    _whitePlaceholderTexture =
         gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
-    if (_placeholderTexture == null) {
+    if (_whitePlaceholderTexture == null) {
       throw Exception('Failed to create placeholder texture.');
     }
-    _placeholderTexture!
+    _whitePlaceholderTexture!
         .overwrite(Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData());
-    return _placeholderTexture!;
+    return _whitePlaceholderTexture!;
   }
 
   static Material fromFlatbuffer(
@@ -47,5 +48,6 @@ abstract class Material {
     _fragmentShader = shader;
   }
 
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer);
+  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
+      Environment environment);
 }

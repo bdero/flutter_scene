@@ -13,7 +13,7 @@ dependencies:
   flat_buffers:
     git:
       url: https://github.com/NotTsunami/flatbuffers
-      ref: e340a6b2ab9b98ca86a6657afbad8d225934f59b
+      ref: 5665d6f5a92bd655cb0d5c95b4aeb32e527ff4af
       path: dart
   flutter:
     sdk: flutter

@@ -1,12 +1,18 @@
 uniform FragInfo {
   vec4 color;
   float vertex_color_weight;
+  float exposure;
+  float metallic_factor;
+  float roughness_factor;
+  float normal_scale;
+  float environment_intensity;
 }
 frag_info;
 
 uniform sampler2D base_color_texture;
 uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
+uniform sampler2D environment_texture;
 
 in vec3 v_position;
 in vec3 v_normal;
@@ -39,11 +45,26 @@ vec3 PerturbNormal(vec3 N, vec3 V, vec2 texcoord) {
   return normalize(TBN * map);
 }
 
+// From https://learnopengl.com/PBR/IBL/Diffuse-irradiance
+const vec2 kInvAtan = vec2(0.1591, 0.3183);
+vec2 SampleSphericalMap(vec3 direction) {
+  vec2 uv = vec2(atan(direction.z, direction.x), asin(direction.y));
+  uv *= kInvAtan;
+  uv += 0.5;
+  return uv;
+}
+
+vec4 SampleEnvironmentMap(vec3 direction) {
+  vec2 uv = SampleSphericalMap(direction);
+  return texture(environment_texture, uv);
+}
+
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  frag_color = texture(base_color_texture, v_texture_coords) * vertex_color *
+  vec4 base_color = texture(base_color_texture, v_texture_coords) * vertex_color *
                frag_info.color;
   vec3 normal =
       PerturbNormal(normalize(v_normal), v_viewvector, v_texture_coords);
-  frag_color.rgb = normal;
+  
+  frag_color = base_color;
 }

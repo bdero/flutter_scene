@@ -1,18 +1,20 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/mesh.dart';
 
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/surface.dart';
-import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/geometry/geometry.dart';
+import 'package:flutter_scene/material/environment.dart';
+import 'package:flutter_scene/material/material.dart';
+import 'package:flutter_scene/mesh.dart';
+import 'package:flutter_scene/node.dart';
+import 'package:flutter_scene/surface.dart';
 
 base class SceneEncoder {
-  SceneEncoder(gpu.RenderTarget renderTarget, this._cameraTransform) {
+  SceneEncoder(
+      gpu.RenderTarget renderTarget, this._cameraTransform, this._environment) {
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
     _renderPass = _commandBuffer.createRenderPass(renderTarget);
@@ -21,6 +23,7 @@ base class SceneEncoder {
   }
 
   final Matrix4 _cameraTransform;
+  final Environment _environment;
   late final gpu.CommandBuffer _commandBuffer;
   late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
@@ -33,7 +36,7 @@ base class SceneEncoder {
     _renderPass.bindPipeline(pipeline);
     geometry.bind(_renderPass, _transientsBuffer, mvp,
         -_cameraTransform.getTranslation());
-    material.bind(_renderPass, _transientsBuffer);
+    material.bind(_renderPass, _transientsBuffer, _environment);
     _renderPass.draw();
   }
 
@@ -55,6 +58,8 @@ base class Scene implements SceneGraph {
 
   final Node root = Node();
   final Surface surface = Surface();
+
+  final Environment environment = Environment();
 
   @override
   void add(Node child) {
@@ -80,8 +85,8 @@ base class Scene implements SceneGraph {
     final gpu.RenderTarget renderTarget =
         surface.getNextRenderTarget(drawArea.size);
 
-    final encoder =
-        SceneEncoder(renderTarget, camera.getTransform(drawArea.size));
+    final encoder = SceneEncoder(
+        renderTarget, camera.getTransform(drawArea.size), environment);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 

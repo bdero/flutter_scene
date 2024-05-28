@@ -46,22 +46,6 @@ static int32_t ResolveMaterialTexture(const tinygltf::Model& gltf,
 static void ProcessMaterial(const tinygltf::Model& gltf,
                             const tinygltf::Material& in_material,
                             fb::MaterialT& out_material) {
-  /*
-  out_material.type = fb::MaterialType::kUnlit;
-  out_material.base_color_factor =
-      ToFBColor(in_material.pbrMetallicRoughness.baseColorFactor);
-  bool base_color_texture_valid =
-      in_material.pbrMetallicRoughness.baseColorTexture.texCoord == 0 &&
-      in_material.pbrMetallicRoughness.baseColorTexture.index >= 0 &&
-      in_material.pbrMetallicRoughness.baseColorTexture.index <
-          static_cast<int32_t>(gltf.textures.size());
-  out_material.base_color_texture =
-      base_color_texture_valid
-          // This is safe because every GLTF input texture is mapped to a
-          // `Scene->texture`.
-          ? in_material.pbrMetallicRoughness.baseColorTexture.index
-          : -1;
-  */
   out_material.type = fb::MaterialType::kPhysicallyBased;
   out_material.base_color_factor =
       ToFBColor(in_material.pbrMetallicRoughness.baseColorFactor);

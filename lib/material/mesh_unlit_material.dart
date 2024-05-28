@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/shaders.dart';
 
@@ -34,7 +35,7 @@ class MeshUnlitMaterial extends Material {
 
   MeshUnlitMaterial({gpu.Texture? colorTexture}) {
     setFragmentShader(baseShaderLibrary['UnlitFragment']!);
-    baseColorTexture = colorTexture ?? Material.getPlaceholderTexture();
+    baseColorTexture = colorTexture ?? Material.getWhitePlaceholderTexture();
   }
 
   late gpu.Texture baseColorTexture;
@@ -42,7 +43,7 @@ class MeshUnlitMaterial extends Material {
   double vertexColorWeight = 1.0;
 
   @override
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer) {
+  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, Environment environment) {
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color

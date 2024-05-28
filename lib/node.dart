@@ -39,10 +39,7 @@ base class Node implements SceneGraph {
 
     // Unpack textures.
     List<gpu.Texture> textures = [];
-    int textureIndexPlusOne = 0;
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
-      textureIndexPlusOne++;
-
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture? texture = gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible, image.width, image.height);
