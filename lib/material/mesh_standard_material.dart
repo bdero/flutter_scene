@@ -73,6 +73,8 @@ class MeshStandardMaterial extends Material {
 
     // Occlusion.
 
+    material.occlusionStrength = fbMaterial.occlusionStrength;
+
     if (fbMaterial.occlusionTexture >= 0 &&
         fbMaterial.occlusionTexture < textures.length) {
       material.occlusionTexture = textures[fbMaterial.occlusionTexture];
@@ -106,6 +108,7 @@ class MeshStandardMaterial extends Material {
   ui.Color emissiveFactor = const ui.Color(0x00000000);
 
   gpu.Texture? occlusionTexture;
+  double occlusionStrength = 1.0;
 
   Environment? environment;
 
@@ -128,7 +131,9 @@ class MeshStandardMaterial extends Material {
       0.0, 0.0, 0.0, // padding
       normalScale, // normal_scale
       0.0, 0.0, 0.0, // padding
-      normalScale, // environment_intensity
+      occlusionStrength, // occlusion_strength
+      0.0, 0.0, 0.0, // padding
+      environment.intensity, // environment_intensity
       0.0, 0.0, 0.0, // padding
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
@@ -152,7 +157,9 @@ class MeshStandardMaterial extends Material {
     pass.bindTexture(fragmentShader.getUniformSlot('environment_texture'),
         environmentTexture,
         sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
+            minFilter: gpu.MinMagFilter.linear,
+            magFilter: gpu.MinMagFilter.linear,
+            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
   }
 }

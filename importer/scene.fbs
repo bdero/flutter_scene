@@ -65,6 +65,7 @@ table Material {
   emissive_factor: Vec3;
   emissive_texture: int = -1;
 
+  occlusion_strength: float = 1.0;
   occlusion_texture: int = -1;
 }
 

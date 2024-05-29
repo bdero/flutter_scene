@@ -13,8 +13,9 @@ import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/surface.dart';
 
 base class SceneEncoder {
-  SceneEncoder(
-      gpu.RenderTarget renderTarget, this._cameraTransform, this._environment) {
+  SceneEncoder(gpu.RenderTarget renderTarget, this._camera, ui.Size dimensions,
+      this._environment) {
+    _cameraTransform = _camera.getViewTransform(dimensions);
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
     _renderPass = _commandBuffer.createRenderPass(renderTarget);
@@ -22,20 +23,22 @@ base class SceneEncoder {
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
   }
 
-  final Matrix4 _cameraTransform;
+  final Camera _camera;
   final Environment _environment;
+  late final Matrix4 _cameraTransform;
   late final gpu.CommandBuffer _commandBuffer;
   late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
 
   void encode(Matrix4 transform, Geometry geometry, Material material) {
-    final mvp = _cameraTransform * transform.transposed();
     _renderPass.clearBindings();
     var pipeline = gpu.gpuContext
         .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
     _renderPass.bindPipeline(pipeline);
-    geometry.bind(_renderPass, _transientsBuffer, mvp,
-        -_cameraTransform.getTranslation());
+
+    // TODO(bdero): Fix transforms so that we don't need to transpose them...
+    geometry.bind(_renderPass, _transientsBuffer, transform.transposed(),
+        _cameraTransform, _camera.position);
     material.bind(_renderPass, _transientsBuffer, _environment);
     _renderPass.draw();
   }
@@ -98,8 +101,8 @@ base class Scene implements SceneGraph {
     final gpu.RenderTarget renderTarget =
         surface.getNextRenderTarget(drawArea.size);
 
-    final encoder = SceneEncoder(
-        renderTarget, camera.getTransform(drawArea.size), environment);
+    final encoder =
+        SceneEncoder(renderTarget, camera, drawArea.size, environment);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 

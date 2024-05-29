@@ -5,6 +5,7 @@ uniform FragInfo {
   float metallic_factor;
   float roughness_factor;
   float normal_scale;
+  float occlusion_strength;
   float environment_intensity;
 }
 frag_info;
@@ -13,17 +14,117 @@ uniform sampler2D base_color_texture;
 uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
 uniform sampler2D environment_texture;
+uniform sampler2D occlusion_texture;
 
 in vec3 v_position;
 in vec3 v_normal;
-in vec3 v_viewvector; // camera pos - vertex pos
+in vec3 v_viewvector; // camera_position - vertex_position
 in vec2 v_texture_coords;
 in vec4 v_color;
 
 out vec4 frag_color;
 
+const float kPi = 3.14159265358979323846;
+
+//------------------------------------------------------------------------------
+/// Equirectangular projection.
+/// See also: https://learnopengl.com/PBR/IBL/Diffuse-irradiance
+///
+
+const vec2 kInvAtan = vec2(0.1591, 0.3183);
+
+vec2 SphericalToEquirectangular(vec3 direction) {
+  vec2 uv = vec2(atan(direction.z, direction.x), asin(direction.y));
+  uv *= kInvAtan;
+  uv += 0.5;
+  return uv;
+}
+
+vec4 SampleEnvironmentMap(vec3 direction) {
+  vec2 uv = SphericalToEquirectangular(direction);
+  return texture(environment_texture, uv);
+}
+
+//------------------------------------------------------------------------------
+/// Lighting equation.
+/// See also: https://learnopengl.com/PBR/Lighting
+///
+
+const float kGamma = 2.2;
+
+// Convert from sRGB to linear space.
+// This can be removed once Impeller supports sRGB texture inputs.
+vec3 SRGBToLinear(vec3 color) { return pow(color, vec3(kGamma)); }
+
+vec3 FresnelSchlick(float cos_theta, vec3 reflectance) {
+  return reflectance +
+         (1.0 - reflectance) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+float DistributionGGX(vec3 normal, vec3 half_vector, float roughness) {
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float NdotH = max(dot(normal, half_vector), 0.0);
+  float NdotH2 = NdotH * NdotH;
+
+  float num = a2;
+  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+  denom = kPi * denom * denom;
+
+  return num / denom;
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+  float r = (roughness + 1.0);
+  float k = (r * r) / 8.0;
+
+  float num = NdotV;
+  float denom = NdotV * (1.0 - k) + k;
+
+  return num / denom;
+}
+
+float GeometrySmith(vec3 normal, vec3 camera_normal, vec3 light_normal,
+                    float roughness) {
+  float camera_ggx =
+      GeometrySchlickGGX(max(dot(normal, camera_normal), 0.0), roughness);
+  float light_ggx =
+      GeometrySchlickGGX(max(dot(normal, light_normal), 0.0), roughness);
+  return camera_ggx * light_ggx;
+}
+
+vec3 LightFormula(vec3 light_color, vec3 camera_normal, vec3 light_normal,
+                  vec3 albedo, vec3 normal, float metallic, float roughness,
+                  vec3 reflectance) {
+  vec3 half_vector = normalize(camera_normal + light_normal);
+
+  // Cook-Torrance BRDF.
+  float distribution = DistributionGGX(normal, half_vector, roughness);
+  float geometry =
+      GeometrySmith(normal, camera_normal, light_normal, roughness);
+  vec3 fresnel =
+      FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+
+  vec3 kS = fresnel;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - metallic;
+
+  vec3 numerator = distribution * geometry * fresnel;
+  float denominator = 4.0 * max(dot(normal, camera_normal), 0.0) *
+                          max(dot(normal, light_normal), 0.0) +
+                      0.0001;
+  vec3 specular = numerator / denominator;
+
+  float NdotL = max(dot(normal, light_normal), 0.0);
+  return (kD * albedo / kPi + specular) * light_color * NdotL;
+}
+
+//------------------------------------------------------------------------------
+/// Normal resolution.
+/// See also: http://www.thetenthplanet.de/archives/1180
+///
+
 mat3 CotangentFrame(vec3 N, vec3 p, vec2 uv) {
-  // From http://www.thetenthplanet.de/archives/1180
   vec3 dp1 = dFdx(p);
   vec3 dp2 = dFdy(p);
   vec2 duv1 = dFdx(uv);
@@ -37,44 +138,47 @@ mat3 CotangentFrame(vec3 N, vec3 p, vec2 uv) {
 }
 
 vec3 PerturbNormal(vec3 N, vec3 V, vec2 texcoord) {
-  // From http://www.thetenthplanet.de/archives/1180
   vec3 map = texture(normal_texture, texcoord).xyz;
-  map.z = sqrt(1. - dot(map.xy, map.xy));
-  // map.y = -map.y;
+  map = map * 255. / 127. - 128. / 127.;
+  //map.z = sqrt(1. - dot(map.xy, map.xy));
+  //map.y = -map.y;
   mat3 TBN = CotangentFrame(N, -V, texcoord);
-  return normalize(TBN * map);
-}
-
-// From https://learnopengl.com/PBR/IBL/Diffuse-irradiance
-const vec2 kInvAtan = vec2(0.1591, 0.3183);
-vec2 SampleSphericalMap(vec3 direction) {
-  vec2 uv = vec2(atan(direction.z, direction.x), asin(direction.y));
-  uv *= kInvAtan;
-  uv += 0.5;
-  return uv;
-}
-
-vec4 SampleEnvironmentMap(vec3 direction) {
-  vec2 uv = SampleSphericalMap(direction);
-  return texture(environment_texture, uv);
+  return normalize(TBN * map).xzy * vec3(1, -1, -1);
 }
 
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec4 base_color = texture(base_color_texture, v_texture_coords) *
-                    vertex_color * frag_info.color;
+  vec4 base_color_srgb = texture(base_color_texture, v_texture_coords);
+  vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
+                frag_info.color.rgb;
+  float alpha = base_color_srgb.a * vertex_color.a * frag_info.color.a;
+  // Note: PerturbNormal needs the non-normalized view vector
+  //       (camera_position - vertex_position).
   vec3 normal =
       PerturbNormal(normalize(v_normal), v_viewvector, v_texture_coords);
   vec4 metallic_roughness =
       texture(metallic_roughness_texture, v_texture_coords);
-  vec4 environment_color = SampleEnvironmentMap(normalize(v_viewvector));
+  float metallic = metallic_roughness.b * frag_info.metallic_factor;
+  float roughness = metallic_roughness.g * frag_info.roughness_factor;
+
+  float occlusion = texture(occlusion_texture, v_texture_coords).r;
+
+  vec3 camera_normal = normalize(v_viewvector);
+
+  vec3 reflectance = mix(vec3(0.04), albedo, metallic);
+
+  vec4 environment_color = SampleEnvironmentMap(camera_normal);
 
   frag_color =
       // Catch-all for unused uniforms
-      base_color + vec4(normal, 1) + metallic_roughness +
+      vec4(albedo, alpha) + vec4(normal, 1) + metallic_roughness +
       environment_color //
           * frag_info.color * frag_info.exposure * frag_info.metallic_factor *
           frag_info.roughness_factor * frag_info.normal_scale *
-          frag_info.environment_intensity;
-  frag_color = base_color;
+          frag_info.occlusion_strength * frag_info.environment_intensity;
+  frag_color = vec4(albedo, alpha);
+
+  frag_color = SampleEnvironmentMap(reflect(camera_normal, normal));
+  //frag_color = vec4(dot(normal, camera_normal), 0, 0, 1);
+  //frag_color = vec4(v_viewvector, 1);
 }

@@ -8,7 +8,7 @@ uniform sampler2D base_color_texture;
 
 in vec3 v_position;
 in vec3 v_normal;
-in vec3 v_viewvector; // camera pos - vertex pos
+in vec3 v_viewvector; // camera_position - vertex_position
 in vec2 v_texture_coords;
 in vec4 v_color;
 

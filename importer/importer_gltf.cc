@@ -55,6 +55,7 @@ static void ProcessMaterial(const tinygltf::Model& gltf,
       in_material.pbrMetallicRoughness.roughnessFactor;
   out_material.normal_scale = in_material.normalTexture.scale;
   out_material.emissive_factor = ToFBColor3(in_material.emissiveFactor);
+  out_material.occlusion_strength = in_material.occlusionTexture.strength;
 
   out_material.base_color_texture = ResolveMaterialTexture(
       gltf, in_material.pbrMetallicRoughness.baseColorTexture);
@@ -64,8 +65,8 @@ static void ProcessMaterial(const tinygltf::Model& gltf,
       ResolveMaterialTexture(gltf, in_material.normalTexture);
   out_material.emissive_texture =
       ResolveMaterialTexture(gltf, in_material.emissiveTexture);
-  out_material.occlusion_texture = ResolveMaterialTexture(
-      gltf, in_material.occlusionTexture);
+  out_material.occlusion_texture =
+      ResolveMaterialTexture(gltf, in_material.occlusionTexture);
 }
 
 static bool ProcessMeshPrimitive(const tinygltf::Model& gltf,
