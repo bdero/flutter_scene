@@ -1,5 +1,6 @@
 uniform FragInfo {
   vec4 color;
+  vec4 emissive_factor;
   float vertex_color_weight;
   float exposure;
   float metallic_factor;
@@ -11,11 +12,15 @@ uniform FragInfo {
 frag_info;
 
 uniform sampler2D base_color_texture;
+uniform sampler2D emissive_texture;
 uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
 uniform sampler2D occlusion_texture;
+
 uniform sampler2D radiance_texture;
 uniform sampler2D irradiance_texture;
+
+uniform sampler2D brdf_lut;
 
 in vec3 v_position;
 in vec3 v_normal;
@@ -28,12 +33,6 @@ out vec4 frag_color;
 #include <impeller/constants.glsl>
 
 const float kPi = 3.14159265358979323846;
-
-const vec3 kLightNormal = normalize(vec3(2.0, 5.0, -5.0));
-const vec3 kLightColor = vec3(1.0, 0.8, 0.8) * 3.0;
-
-const vec3 kHighlightNormal = normalize(vec3(-2.0, -3.0, 0.0));
-const vec3 kHighlightColor = vec3(1.0, 0.1, 0.0) * 1.5;
 
 //------------------------------------------------------------------------------
 /// Equirectangular projection.
@@ -52,6 +51,11 @@ vec2 SphericalToEquirectangular(vec3 direction) {
 vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
   vec2 uv = SphericalToEquirectangular(direction);
   return texture(tex, uv).rgb;
+}
+
+vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
+  vec2 uv = SphericalToEquirectangular(direction);
+  return textureLod(tex, uv, lod).rgb;
 }
 
 //------------------------------------------------------------------------------
@@ -108,32 +112,6 @@ float GeometrySmith(vec3 normal, vec3 camera_normal, vec3 light_normal,
   return camera_ggx * light_ggx;
 }
 
-vec3 LightFormula(vec3 light_color, vec3 camera_normal, vec3 light_normal,
-                  vec3 albedo, vec3 normal, float metallic, float roughness,
-                  vec3 reflectance) {
-  vec3 half_vector = normalize(camera_normal + light_normal);
-
-  // Cook-Torrance BRDF.
-  float distribution = DistributionGGX(normal, half_vector, roughness);
-  float geometry =
-      GeometrySmith(normal, camera_normal, light_normal, roughness);
-  vec3 fresnel =
-      FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
-
-  vec3 kS = fresnel;
-  vec3 kD = vec3(1.0) - kS;
-  kD *= 1.0 - metallic;
-
-  vec3 numerator = distribution * geometry * fresnel;
-  float denominator = 4.0 * max(dot(normal, camera_normal), 0.0) *
-                          max(dot(normal, light_normal), 0.0) +
-                      0.0001;
-  vec3 specular = numerator / denominator;
-
-  float NdotL = max(dot(normal, light_normal), 0.0);
-  return (kD * albedo / kPi + specular) * light_color * NdotL;
-}
-
 //------------------------------------------------------------------------------
 /// Normal resolution.
 /// See also: http://www.thetenthplanet.de/archives/1180
@@ -186,21 +164,30 @@ void main() {
   vec3 environment_radiance =
       SampleEnvironmentTexture(radiance_texture, reflection_normal);
 
-  vec3 out_radiance =
-      LightFormula(kLightColor, camera_normal, kLightNormal, albedo, normal,
-                   metallic, roughness, reflectance);
-  out_radiance +=
-      LightFormula(kHighlightColor, camera_normal, kHighlightNormal, albedo,
-                   normal, metallic, roughness, reflectance);
-
-  vec3 kS = FresnelSchlickRoughness(max(dot(normal, camera_normal), 0.0),
-                                    reflectance, roughness);
+  vec3 fresnel = FresnelSchlickRoughness(max(dot(normal, camera_normal), 0.0),
+                                         reflectance, roughness);
+  vec3 kS = fresnel;
   vec3 kD = 1.0 - kS;
+  kD *= 1.0 - metallic;
   vec3 irradiance = SampleEnvironmentTexture(irradiance_texture, normal);
   vec3 diffuse = irradiance * albedo;
-  vec3 ambient = (kD * diffuse) * occlusion;
 
-  vec3 out_color = ambient + out_radiance;
+  const float kMaxReflectionLod = 4.0;
+  vec3 prefiltered_color =
+      SampleEnvironmentTextureLod(radiance_texture, reflection_normal,
+                                  roughness * kMaxReflectionLod)
+          .rgb;
+  vec2 environment_brdf =
+      texture(brdf_lut, vec2(max(dot(normal, camera_normal), 0.0), roughness))
+          .rg;
+  vec3 specular =
+      prefiltered_color * (fresnel * environment_brdf.x + environment_brdf.y);
+
+  vec3 ambient = (kD * diffuse + specular) * occlusion;
+
+  vec3 emissive = texture(emissive_texture, v_texture_coords).rgb;
+
+  vec3 out_color = ambient + emissive;
 
   // Tone mapping.
   out_color = vec3(1.0) - exp(-out_color * frag_info.exposure);
@@ -214,9 +201,10 @@ void main() {
       vec4(albedo, alpha) + vec4(normal, 1) + vec4(environment_radiance, 1) +
       vec4(ambient, 1) +
       metallic_roughness //
-          * frag_info.color * frag_info.exposure * frag_info.metallic_factor *
-          frag_info.roughness_factor * frag_info.normal_scale *
-          frag_info.occlusion_strength * frag_info.environment_intensity;
+          * frag_info.color * frag_info.emissive_factor * frag_info.exposure *
+          frag_info.metallic_factor * frag_info.roughness_factor *
+          frag_info.normal_scale * frag_info.occlusion_strength *
+          frag_info.environment_intensity;
 
   frag_color = vec4(out_color, 1);
 }

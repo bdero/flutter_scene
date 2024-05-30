@@ -31,3 +31,4 @@ dev_dependencies:
 flutter:
   assets:
     - assets/base.shaderbundle
+    - assets/ibl_brdf_lut.png

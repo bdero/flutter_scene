@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/asset_helpers.dart';
 
 import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/mesh_standard_material.dart';
@@ -26,6 +27,22 @@ abstract class Material {
 
   static gpu.Texture whitePlaceholder(gpu.Texture? texture) {
     return texture ?? getWhitePlaceholderTexture();
+  }
+
+  static gpu.Texture? _brdfLutTexture;
+
+  static gpu.Texture getBrdfLutTexture() {
+    if (_brdfLutTexture == null) {
+      throw Exception('BRDF LUT texture has not been initialized.');
+    }
+    return _brdfLutTexture!;
+  }
+
+  static Future<void> initializeStaticResources() {
+    return gpuTextureFromAsset('packages/flutter_scene/assets/ibl_brdf_lut.png')
+        .then((gpu.Texture value) {
+      _brdfLutTexture = value;
+    });
   }
 
   static Material fromFlatbuffer(

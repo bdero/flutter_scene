@@ -71,7 +71,7 @@ base class Environment {
   Environment(
       {EnvironmentMap? environmentMap,
       this.intensity = 1.0,
-      this.exposure = 1.0})
+      this.exposure = 2.0})
       : environmentMap = environmentMap ?? EnvironmentMap.empty();
 
   /// The environment map to use for image-based-lighting.

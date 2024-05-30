@@ -120,6 +120,9 @@ class MeshStandardMaterial extends Material {
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
+      emissiveFactor.red / 256.0, emissiveFactor.green / 256.0,
+      emissiveFactor.blue / 256.0,
+      emissiveFactor.alpha / 256.0, // emissive_factor
       vertexColorWeight, // vertex_color_weight
       environment.exposure, // exposure
       metallicFactor, // metallic
@@ -132,6 +135,11 @@ class MeshStandardMaterial extends Material {
         transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
     pass.bindTexture(fragmentShader.getUniformSlot('base_color_texture'),
         Material.whitePlaceholder(baseColorTexture),
+        sampler: gpu.SamplerOptions(
+            widthAddressMode: gpu.SamplerAddressMode.repeat,
+            heightAddressMode: gpu.SamplerAddressMode.repeat));
+    pass.bindTexture(fragmentShader.getUniformSlot('emissive_texture'),
+        Material.whitePlaceholder(emissiveTexture),
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));
@@ -160,6 +168,13 @@ class MeshStandardMaterial extends Material {
             heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
     pass.bindTexture(fragmentShader.getUniformSlot('irradiance_texture'),
         env.environmentMap.irradianceTexture,
+        sampler: gpu.SamplerOptions(
+            minFilter: gpu.MinMagFilter.linear,
+            magFilter: gpu.MinMagFilter.linear,
+            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+    pass.bindTexture(
+        fragmentShader.getUniformSlot('brdf_lut'), Material.getBrdfLutTexture(),
         sampler: gpu.SamplerOptions(
             minFilter: gpu.MinMagFilter.linear,
             magFilter: gpu.MinMagFilter.linear,

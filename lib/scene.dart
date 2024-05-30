@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
 import 'package:vector_math/vector_math.dart';
@@ -64,7 +65,25 @@ mixin SceneGraph {
 
 base class Scene implements SceneGraph {
   Scene() {
+    initializeStaticResources();
     root.registerAsRoot(this);
+  }
+
+  static Future<void>? _initializeStaticResources;
+  static bool _readyToRender = false;
+
+  static Future<void> initializeStaticResources() {
+    if (_initializeStaticResources != null) {
+      return _initializeStaticResources!;
+    }
+    _initializeStaticResources =
+        Material.initializeStaticResources().onError((e, stacktrace) {
+      print('Failed to initialize static Flutter Scene resources: $e');
+      _initializeStaticResources = null;
+    }).then((_) {
+      _readyToRender = true;
+    });
+    return _initializeStaticResources!;
   }
 
   final Node root = Node();
@@ -94,6 +113,13 @@ base class Scene implements SceneGraph {
   }
 
   void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {
+    if (!_readyToRender) {
+      debugPrint('Flutter Scene is not ready to render. Skipping frame.');
+      debugPrint(
+          'You may wait on the Future returned by Scene.initializeStaticResources() before rendering.');
+      return;
+    }
+
     final drawArea = viewport ?? canvas.getLocalClipBounds();
     if (drawArea.isEmpty) {
       return;
