@@ -116,7 +116,7 @@ class MeshStandardMaterial extends Material {
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment) {
     Environment env = this.environment ?? environment;
-    gpu.Texture environmentTexture = Material.whitePlaceholder(env.texture);
+    gpu.Texture environmentTexture = env.environmentMap.radianceTexture;
 
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,

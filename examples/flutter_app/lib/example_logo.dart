@@ -1,9 +1,9 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/asset_helpers.dart';
 
 import 'package:flutter_scene/camera.dart';
+import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/scene.dart';
 
@@ -23,18 +23,20 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    final setupEnvironmentMap =
-        gpuTextureFromAsset('assets/little_paris_eiffel_tower.png')
-            .then((value) {
-      scene.environment.texture = value;
-      debugPrint('Envirnoment map updated.');
+    final setupEnvironmentMap = EnvironmentMap.fromAssets(
+            radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+            irradianceImagePath:
+                'assets/little_paris_eiffel_tower_irradiance.png')
+        .then((value) {
+      scene.environment.environmentMap = value;
+      debugPrint('Environment map updated.');
     });
 
-    final loadModel = Node.fromAsset('assets_imported/flutter_logo_baked.model')
-        .then((value) {
+    final loadModel =
+        Node.fromAsset('assets_imported/DamagedHelmet.model').then((value) {
       value.name = 'FlutterLogo';
       scene.add(value);
-      debugPrint('Loaded model: ${value.name}');
+      debugPrint('Model loaded: ${value.name}');
     });
 
     Future.wait([setupEnvironmentMap, loadModel]).then((_) {

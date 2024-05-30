@@ -31,8 +31,8 @@ class _MyAppState extends State<MyApp> {
     ticker.start();
 
     examples = {
+      'Imported Model': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
-      'Imported Logo': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
     };
     selectedExample = examples.keys.first;
 
