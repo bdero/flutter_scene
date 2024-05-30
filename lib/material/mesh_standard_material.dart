@@ -116,25 +116,17 @@ class MeshStandardMaterial extends Material {
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment) {
     Environment env = this.environment ?? environment;
-    gpu.Texture environmentTexture = env.environmentMap.radianceTexture;
 
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
       vertexColorWeight, // vertex_color_weight
-      0.0, 0.0, 0.0, // padding
       environment.exposure, // exposure
-      0.0, 0.0, 0.0, // padding
       metallicFactor, // metallic
-      0.0, 0.0, 0.0, // padding
       roughnessFactor, // roughness
-      0.0, 0.0, 0.0, // padding
       normalScale, // normal_scale
-      0.0, 0.0, 0.0, // padding
       occlusionStrength, // occlusion_strength
-      0.0, 0.0, 0.0, // padding
       environment.intensity, // environment_intensity
-      0.0, 0.0, 0.0, // padding
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
         transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
@@ -154,8 +146,20 @@ class MeshStandardMaterial extends Material {
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(fragmentShader.getUniformSlot('environment_texture'),
-        environmentTexture,
+    pass.bindTexture(fragmentShader.getUniformSlot('occlusion_texture'),
+        Material.whitePlaceholder(occlusionTexture),
+        sampler: gpu.SamplerOptions(
+            widthAddressMode: gpu.SamplerAddressMode.repeat,
+            heightAddressMode: gpu.SamplerAddressMode.repeat));
+    pass.bindTexture(fragmentShader.getUniformSlot('radiance_texture'),
+        env.environmentMap.radianceTexture,
+        sampler: gpu.SamplerOptions(
+            minFilter: gpu.MinMagFilter.linear,
+            magFilter: gpu.MinMagFilter.linear,
+            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+    pass.bindTexture(fragmentShader.getUniformSlot('irradiance_texture'),
+        env.environmentMap.irradianceTexture,
         sampler: gpu.SamplerOptions(
             minFilter: gpu.MinMagFilter.linear,
             magFilter: gpu.MinMagFilter.linear,
