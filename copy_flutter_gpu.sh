@@ -23,12 +23,23 @@ source build_utils.sh
 ##
 ################################################################################
 
-FLUTTER_PACKAGES_DIR="$FLUTTER_SDK_DIR/bin/cache/pkg"
 if [ ! -z "$ENGINE_SRC_DIR" ]; then
     FLUTTER_GPU_SOURCE_DIR="$ENGINE_SRC_DIR/flutter/lib/gpu"
 else
-    >&2 echo
+    echo >&2
     FLUTTER_GPU_SOURCE_DIR="$(GetFlutterGpuArtifactsDirectory)"
+fi
+
+FLUTTER_PACKAGES_DIR="$FLUTTER_SDK_DIR/bin/cache/pkg"
+
+FLUTTER_OLD_PACKAGES_DIR="$FLUTTER_SDK_DIR/packages/flutter_gpu"
+if (test -d "$FLUTTER_OLD_PACKAGES_DIR"); then
+    PrintWarning "Found the 'flutter_gpu' package in the SDK packages directory!"
+    PrintWarningSub "This is an outdated location and will likely cause problems."
+    PrintWarningSub
+    PrintWarningSub "We strongly recommend you delete it:"
+    PrintWarningSub
+    PrintWarningSub "  rm -r $FLUTTER_OLD_PACKAGES_DIR"
 fi
 
 PrintInfo "Copying 'flutter_gpu' into the packages dir..."
