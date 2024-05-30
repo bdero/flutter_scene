@@ -6,15 +6,16 @@ cd $SCRIPT_DIR
 source build_utils.sh
 
 IMPELLERC_EXE="$(GetImpellercExecutable)"
-if [ ! -f "$IMPELLERC_EXE" ]; then
-    PrintFatal "ImpellerC not found. Can't build shader bundle!"
-fi
+
+SHADER_LIB_DIR="$(GetImpellerShaderLibDirectory)"
 
 function build_shader {
     PrintInfo "Building shader bundle: $1"
 
     SHADER_BUNDLE_JSON=$(echo $2 | tr -d '\n')
-    $IMPELLERC_EXE --sl="$1" --shader-bundle="$SHADER_BUNDLE_JSON"
+    $IMPELLERC_EXE --sl="$1" \
+        --shader-bundle="$SHADER_BUNDLE_JSON" \
+        --include="$SHADER_LIB_DIR"
 }
 
 BASE_BUNDLE_JSON='

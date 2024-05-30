@@ -53,8 +53,8 @@ packages:
     dependency: "direct main"
     description:
       path: dart
-      ref: e340a6b2ab9b98ca86a6657afbad8d225934f59b
-      resolved-ref: e340a6b2ab9b98ca86a6657afbad8d225934f59b
+      ref: "5665d6f5a92bd655cb0d5c95b4aeb32e527ff4af"
+      resolved-ref: "5665d6f5a92bd655cb0d5c95b4aeb32e527ff4af"
       url: "https://github.com/NotTsunami/flatbuffers"
     source: git
     version: "24.3.25"

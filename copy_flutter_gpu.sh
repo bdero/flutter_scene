@@ -6,11 +6,24 @@ cd $SCRIPT_DIR
 
 source build_utils.sh
 
-if [ -z "$(which flutter)" ]; then
-    PrintFatal "Flutter command not found in the path! Make sure to add the 'flutter/bin' directory to your PATH."
-fi
+################################################################################
+##
+##   Finds and copies the 'flutter_gpu' directory from the host artifacts into
+##   the Flutter SDK's package cache directory, effectively making it a part of
+##   the Flutter SDK.
+##
+##   This enables libraries and apps to include `flutter_gpu` as a Flutter SDK
+##   package like so:
+##   ```
+##   # pubspec.yaml
+##   dependencies:
+##     flutter_gpu:
+##       sdk: flutter
+##   ```
+##
+################################################################################
 
-FLUTTER_PACKAGES_DIR="$FLUTTER_SDK_DIR/packages"
+FLUTTER_PACKAGES_DIR="$FLUTTER_SDK_DIR/bin/cache/pkg"
 if [ ! -z "$ENGINE_SRC_DIR" ]; then
     FLUTTER_GPU_SOURCE_DIR="$ENGINE_SRC_DIR/flutter/lib/gpu"
 else
@@ -24,5 +37,6 @@ PrintInfoSub "  to" "${COLOR_RESET}$FLUTTER_PACKAGES_DIR/flutter_gpu"
 
 mkdir -p "$FLUTTER_PACKAGES_DIR/flutter_gpu"
 # Note: macOS doesn't support the -T flag for cp, unfortunately. So we have to
-# be carefully end the source path with a slash.
+#       carefully end the source path with a slash and the destination path
+#       without a slash.
 cp -R "$FLUTTER_GPU_SOURCE_DIR/" "$FLUTTER_PACKAGES_DIR/flutter_gpu"

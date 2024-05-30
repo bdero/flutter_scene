@@ -23,11 +23,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    # Environment map.
-    - assets/little_paris_eiffel_tower.png
-    - assets/little_paris_eiffel_tower_irradiance.png
+    # Environment maps, etc.
+    - assets/
 
-    # Models.
-    - assets_imported/flutter_logo_baked.model
-    - assets_imported/DamagedHelmet.model
-    - #assets_imported/white_car.model
+    # Imported models.
+    - assets_imported/

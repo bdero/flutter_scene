@@ -61,6 +61,10 @@ fi
 FLUTTER_SDK_DIR="$(dirname ${FLUTTER_CMD})/.."
 ENGINE_ARTIFACTS_DIR="${FLUTTER_SDK_DIR}/bin/cache/artifacts/engine"
 
+
+# TODO(bdero): Refactor the routines below to be less repetitive... but don't
+#              carried away. It's a shell script.
+
 function GetFlutterGpuArtifactsDirectory {
     LOCATIONS=(
         darwin-x64/flutter_gpu
@@ -80,6 +84,28 @@ function GetFlutterGpuArtifactsDirectory {
         PrintFatal "Failed to find the Flutter GPU artifacts directory."
     fi
     PrintInfoSub "Flutter GPU artifacts directory found:" "$FOUND"
+    echo "$FOUND"
+}
+
+function GetImpellerShaderLibDirectory {
+    LOCATIONS=(
+        darwin-x64/shader_lib
+        linux-x64/shader_lib
+        windows-x64/shader_lib
+    )
+    FOUND=""
+    for LOCATION in ${LOCATIONS[@]}; do
+        FULL_PATH="${ENGINE_ARTIFACTS_DIR}/${LOCATION}"
+        # >&2 echo "  Checking ${FULL_PATH}..."
+        if test -d "$FULL_PATH"; then
+            FOUND="$FULL_PATH"
+            break
+        fi
+    done
+    if [ -z "$FOUND" ]; then
+        PrintFatal "Failed to find the Impeller shader_lib directory."
+    fi
+    PrintInfoSub "Impeller shader_lib directory found:" "$FOUND"
     echo "$FOUND"
 }
 
