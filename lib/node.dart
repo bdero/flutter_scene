@@ -8,6 +8,7 @@ import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/mesh_unlit_material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 

@@ -91,4 +91,8 @@ abstract class Material {
 
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment);
+
+  bool isOpaque() {
+    return true;
+  }
 }

@@ -2,52 +2,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/node.dart';
+import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene/surface.dart';
-
-base class SceneEncoder {
-  SceneEncoder(gpu.RenderTarget renderTarget, this._camera, ui.Size dimensions,
-      this._environment) {
-    _cameraTransform = _camera.getViewTransform(dimensions);
-    _commandBuffer = gpu.gpuContext.createCommandBuffer();
-    _transientsBuffer = gpu.gpuContext.createHostBuffer();
-    _renderPass = _commandBuffer.createRenderPass(renderTarget);
-    _renderPass.setDepthWriteEnable(true);
-    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-  }
-
-  final Camera _camera;
-  final Environment _environment;
-  late final Matrix4 _cameraTransform;
-  late final gpu.CommandBuffer _commandBuffer;
-  late final gpu.HostBuffer _transientsBuffer;
-  late final gpu.RenderPass _renderPass;
-
-  void encode(Matrix4 transform, Geometry geometry, Material material) {
-    _renderPass.clearBindings();
-    var pipeline = gpu.gpuContext
-        .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
-    _renderPass.bindPipeline(pipeline);
-
-    // TODO(bdero): Fix transforms so that we don't need to transpose them...
-    geometry.bind(_renderPass, _transientsBuffer, transform.transposed(),
-        _cameraTransform, _camera.position);
-    material.bind(_renderPass, _transientsBuffer, _environment);
-    _renderPass.draw();
-  }
-
-  void finish() {
-    _commandBuffer.submit();
-  }
-}
 
 mixin SceneGraph {
   /// Add a child node.

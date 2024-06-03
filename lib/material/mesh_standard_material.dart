@@ -182,4 +182,9 @@ class MeshStandardMaterial extends Material {
             widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
             heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
   }
+
+  @override
+  bool isOpaque() {
+    return baseColorFactor.alpha == 255;
+  }
 }

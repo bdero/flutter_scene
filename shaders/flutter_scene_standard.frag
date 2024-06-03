@@ -98,15 +98,16 @@ void main() {
   out_color = pow(out_color, vec3(1.0 / kGamma));
 #endif
 
-  //frag_color =
-  //    // Catch-all for unused uniforms
-  //    vec4(albedo, alpha) + vec4(normal, 1) + vec4(ambient, 1) +
-  //    vec4(emissive, 1) +
-  //    metallic_roughness //
-  //        * frag_info.color * frag_info.emissive_factor * frag_info.exposure *
-  //        frag_info.metallic_factor * frag_info.roughness_factor *
-  //        frag_info.normal_scale * frag_info.occlusion_strength *
-  //        frag_info.environment_intensity;
+  // // Catch-all for unused uniforms (useful when debugging because unused
+  // //uniforms are automatically culled from the shader).
+  // frag_color =
+  //     vec4(albedo, alpha) + vec4(normal, 1) + vec4(ambient, 1) +
+  //     vec4(emissive, 1) +
+  //     metallic_roughness //
+  //         * frag_info.color * frag_info.emissive_factor * frag_info.exposure
+  //         * frag_info.metallic_factor * frag_info.roughness_factor *
+  //         frag_info.normal_scale * frag_info.occlusion_strength *
+  //         frag_info.environment_intensity;
 
-  frag_color = vec4(out_color, 1);
+  frag_color = vec4(out_color, 1) * alpha;
 }
