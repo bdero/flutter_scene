@@ -68,14 +68,16 @@ void main() {
   vec3 kS = fresnel;
   vec3 kD = 1.0 - kS;
   kD *= 1.0 - metallic;
-  vec3 irradiance = SampleEnvironmentTexture(irradiance_texture, normal);
+  vec3 irradiance = SampleEnvironmentTexture(irradiance_texture, normal) *
+                    frag_info.environment_intensity;
   vec3 diffuse = irradiance * albedo;
 
   const float kMaxReflectionLod = 4.0;
   vec3 prefiltered_color =
       SampleEnvironmentTextureLod(radiance_texture, reflection_normal,
                                   roughness * kMaxReflectionLod)
-          .rgb;
+          .rgb *
+      frag_info.environment_intensity;
   vec2 environment_brdf =
       texture(brdf_lut, vec2(max(dot(normal, camera_normal), 0.0), roughness))
           .rg;
@@ -84,7 +86,8 @@ void main() {
 
   vec3 ambient = (kD * diffuse + specular) * occlusion;
 
-  vec3 emissive = texture(emissive_texture, v_texture_coords).rgb;
+  vec3 emissive = texture(emissive_texture, v_texture_coords).rgb *
+                  frag_info.emissive_factor.rgb;
 
   vec3 out_color = ambient + emissive;
 
@@ -95,26 +98,15 @@ void main() {
   out_color = pow(out_color, vec3(1.0 / kGamma));
 #endif
 
-  frag_color =
-      // Catch-all for unused uniforms
-      vec4(albedo, alpha) + vec4(normal, 1) + vec4(ambient, 1) +
-      metallic_roughness //
-          * frag_info.color * frag_info.emissive_factor * frag_info.exposure *
-          frag_info.metallic_factor * frag_info.roughness_factor *
-          frag_info.normal_scale * frag_info.occlusion_strength *
-          frag_info.environment_intensity;
+  //frag_color =
+  //    // Catch-all for unused uniforms
+  //    vec4(albedo, alpha) + vec4(normal, 1) + vec4(ambient, 1) +
+  //    vec4(emissive, 1) +
+  //    metallic_roughness //
+  //        * frag_info.color * frag_info.emissive_factor * frag_info.exposure *
+  //        frag_info.metallic_factor * frag_info.roughness_factor *
+  //        frag_info.normal_scale * frag_info.occlusion_strength *
+  //        frag_info.environment_intensity;
 
   frag_color = vec4(out_color, 1);
-  // frag_color = vec4(ambient, 1);
-  // frag_color = frag_color * 255. / 127. - 128. / 127.;
-  //  frag_color.z = sqrt(1. - dot(frag_color.xy, frag_color.xy));
-  //  frag_color.y = -frag_color.y;
-  // frag_color = normalize(frag_color);
-  //frag_color = vec4(normal, 1);
-  //frag_color = vec4(v_texture_coords, 0, 1);
-
-  // frag_color = vec4(normalize(v_normal), 1);
-  // frag_color = vec4(texture(normal_texture, v_texture_coords).xyz, 1);
-  // frag_color = frag_color * 255. / 127. - 128. / 127.;
-  // frag_color = vec4(normalize(v_normal), 1);
 }

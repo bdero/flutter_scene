@@ -60,10 +60,10 @@ class MeshStandardMaterial extends Material {
 
     if (fbMaterial.emissiveFactor != null) {
       material.emissiveFactor = ui.Color.fromARGB(
+          255,
           (fbMaterial.emissiveFactor!.x * 255).toInt(),
           (fbMaterial.emissiveFactor!.y * 255).toInt(),
-          (fbMaterial.emissiveFactor!.z * 255).toInt(),
-          255);
+          (fbMaterial.emissiveFactor!.z * 255).toInt());
     }
 
     if (fbMaterial.emissiveTexture >= 0 &&
