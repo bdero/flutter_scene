@@ -18,15 +18,35 @@ abstract class Material {
     _whitePlaceholderTexture =
         gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
     if (_whitePlaceholderTexture == null) {
-      throw Exception('Failed to create placeholder texture.');
+      throw Exception('Failed to create white placeholder texture.');
     }
     _whitePlaceholderTexture!
-        .overwrite(Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData());
+        .overwrite(Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData());
     return _whitePlaceholderTexture!;
   }
 
   static gpu.Texture whitePlaceholder(gpu.Texture? texture) {
     return texture ?? getWhitePlaceholderTexture();
+  }
+
+  static gpu.Texture? _normalPlaceholderTexture;
+
+  static gpu.Texture getNormalPlaceholderTexture() {
+    if (_normalPlaceholderTexture != null) {
+      return _normalPlaceholderTexture!;
+    }
+    _normalPlaceholderTexture =
+        gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
+    if (_normalPlaceholderTexture == null) {
+      throw Exception('Failed to create normal placeholder texture.');
+    }
+    _normalPlaceholderTexture!
+        .overwrite(Uint32List.fromList(<int>[0xFFFF7574]).buffer.asByteData());
+    return _normalPlaceholderTexture!;
+  }
+
+  static gpu.Texture normalPlaceholder(gpu.Texture? texture) {
+    return texture ?? getNormalPlaceholderTexture();
   }
 
   static gpu.Texture? _brdfLutTexture;

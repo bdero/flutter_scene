@@ -15,6 +15,7 @@ function build_shader {
     SHADER_BUNDLE_JSON=$(echo $2 | tr -d '\n')
     $IMPELLERC_EXE --sl="$1" \
         --shader-bundle="$SHADER_BUNDLE_JSON" \
+        --include="shaders/" \
         --include="$SHADER_LIB_DIR"
 }
 

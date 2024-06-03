@@ -127,6 +127,7 @@ class MeshStandardMaterial extends Material {
       environment.exposure, // exposure
       metallicFactor, // metallic
       roughnessFactor, // roughness
+      normalTexture != null ? 1.0 : 0.0, // has_normal_map
       normalScale, // normal_scale
       occlusionStrength, // occlusion_strength
       environment.intensity, // environment_intensity
@@ -150,7 +151,7 @@ class MeshStandardMaterial extends Material {
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));
     pass.bindTexture(fragmentShader.getUniformSlot('normal_texture'),
-        Material.whitePlaceholder(normalTexture),
+        Material.normalPlaceholder(normalTexture),
         sampler: gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat));

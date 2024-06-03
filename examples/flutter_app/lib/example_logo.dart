@@ -77,7 +77,7 @@ class _ScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final camera = PerspectiveCamera(
-      position: vm.Vector3(sin(elapsedTime) * 3, 1.5, cos(elapsedTime) * 3),
+      position: vm.Vector3(sin(elapsedTime) * 5, 2, cos(elapsedTime) * 5),
       target: vm.Vector3(0, 0, 0),
     );
 

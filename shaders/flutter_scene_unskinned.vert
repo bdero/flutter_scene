@@ -23,7 +23,7 @@ void main() {
   v_position = model_position.xyz;
   gl_Position = frame_info.camera_transform * model_position;
   v_viewvector = frame_info.camera_position - v_position;
-  v_normal = normal;
+  v_normal = (mat3(frame_info.model_transform) * normal).xyz;
   v_texture_coords = texture_coords;
   v_color = color;
 }

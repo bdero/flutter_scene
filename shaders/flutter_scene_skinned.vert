@@ -66,7 +66,7 @@ void main() {
   v_position = model_position.xyz;
   gl_Position = frame_info.camera_transform * model_position;
   v_viewvector = frame_info.camera_position - v_position;
-  v_normal = normal;
+  v_normal = (frame_info.model_transform * vec4(normal, 1)).xyz;
   v_texture_coords = texture_coords;
   v_color = color;
 }
