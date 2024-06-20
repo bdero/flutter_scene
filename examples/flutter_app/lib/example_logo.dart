@@ -21,7 +21,7 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    Node.fromAsset('assets_imported/flutter_logo_baked.model')
+    Node.fromAsset('assets_imported/DamagedHelmet.model')
         .then((value) => scene.add(value));
 
     super.initState();
