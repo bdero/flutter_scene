@@ -19,8 +19,12 @@ dependencies:
     sdk: flutter
   flutter_gpu:
     sdk: flutter
+  flutter_gpu_shaders: ^0.1.1
+  #flutter_gpu_shaders:
+  #  path: ../flutter_gpu_shaders
   flutter_scene_importer:
     path: ./importer
+  native_assets_cli: ^0.7.2
   vector_math: ^2.1.4
 
 dev_dependencies:
@@ -30,5 +34,5 @@ dev_dependencies:
 
 flutter:
   assets:
-    - assets/base.shaderbundle
+    - build/shaderbundles/base.shaderbundle
     - assets/ibl_brdf_lut.png

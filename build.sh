@@ -83,13 +83,7 @@ popd >/dev/null
 
 ################################################################################
 ##
-##  3. Build the shaders.
-##
-bash build_shaders.sh
-
-################################################################################
-##
-##  4. Build the example app along with its assets.
+##  3. Build the example app along with its assets.
 ##
 pushd examples >/dev/null
 bash build.sh
@@ -97,6 +91,6 @@ popd >/dev/null
 
 ################################################################################
 ##
-##  5. \o/
+##  4. \o/
 ##
 PrintInfo "${GREEN}Successfully built ${BGREEN}Flutter Scene${GREEN}!${COLOR_RESET}"
