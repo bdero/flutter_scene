@@ -12,6 +12,9 @@ dependencies:
     sdk: flutter
   flutter_scene:
     path: ../../
+  flutter_scene_importer:
+    path: ../../importer
+  native_assets_cli: ^0.7.2
   vector_math: ^2.1.4
 
 dev_dependencies:
@@ -27,4 +30,4 @@ flutter:
     - assets/
 
     # Imported models.
-    - assets_imported/
+    - build/models/

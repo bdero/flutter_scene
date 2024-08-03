@@ -58,29 +58,6 @@ else
     PrintWarningSub "Latest commit:" "$LATEST_COMMIT"
 fi
 
-
-################################################################################
-##
-##  1. Copy the Flutter GPU package source into the Flutter SDK.
-##
-##     By default, the script will copy the 'flutter_gpu' package from the
-##     Flutter SDK engine artifacts.
-##
-##  BIG HACK to hold us over until https://github.com/flutter/flutter/issues/131711
-##  is resolved.
-##  If using a local engine build, override `ENGINE_SRC_DIR` in order to copy in
-##  `flutter_gpu` package from the engine source directory.
-##
-bash copy_flutter_gpu.sh
-
-################################################################################
-##
-##  2. Build the importer.
-##
-pushd importer >/dev/null
-bash build.sh
-popd >/dev/null
-
 ################################################################################
 ##
 ##  3. Build the example app along with its assets.

@@ -33,7 +33,7 @@ class ExampleLogoState extends State<ExampleLogo> {
     });
 
     final loadModel =
-        Node.fromAsset('assets_imported/DamagedHelmet.model').then((value) {
+        Node.fromAsset('build/models/DamagedHelmet.model').then((value) {
       value.name = 'FlutterLogo';
       scene.add(value);
       debugPrint('Model loaded: ${value.name}');

@@ -8,8 +8,6 @@ source ../build_utils.sh
 
 PrintInfo "Building examples..."
 
-bash build_assets.sh
-
 # Prepare example projects
 
 function prepare_example {

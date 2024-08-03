@@ -10,6 +10,7 @@ environment:
 dependencies:
   #flat_buffers: ^23.5.26
   # TODO(bdero): Update after https://github.com/google/flatbuffers/pull/8289 is merged.
+  args: ^2.5.0
   flat_buffers:
     git:
       url: https://github.com/NotTsunami/flatbuffers
@@ -19,6 +20,8 @@ dependencies:
     sdk: flutter
   flutter_gpu:
     sdk: flutter
+  logging: ^1.2.0
+  native_assets_cli: ^0.7.2
   vector_math: ^2.1.4
 
 dev_dependencies:
