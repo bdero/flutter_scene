@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -41,7 +42,8 @@ base class Scene implements SceneGraph {
     }
     _initializeStaticResources =
         Material.initializeStaticResources().onError((e, stacktrace) {
-      print('Failed to initialize static Flutter Scene resources: $e');
+      log('Failed to initialize static Flutter Scene resources',
+          error: e, stackTrace: stacktrace);
       _initializeStaticResources = null;
     }).then((_) {
       _readyToRender = true;

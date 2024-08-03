@@ -1,10 +1,10 @@
 name: flutter_scene
 description: 3D scene widgets for Flutter.
-version: 0.0.1-dev.1
+version: 0.1.0
 repository: https://github.com/bdero/flutter_scene
 
 environment:
-  sdk: '>=3.0.0-122.0.dev <4.0.0'
+  sdk: '>=3.6.0-0 <4.0.0'
   flutter: ">=1.17.0"
 
 dependencies:
@@ -15,8 +15,9 @@ dependencies:
   flutter_gpu_shaders: ^0.1.1
   #flutter_gpu_shaders:
   #  path: ../flutter_gpu_shaders
-  flutter_scene_importer:
-    path: ./importer
+  flutter_scene_importer: ^0.1.0
+  #flutter_scene_importer:
+  #  path: ./importer
   native_assets_cli: ^0.7.2
   vector_math: ^2.1.4
 

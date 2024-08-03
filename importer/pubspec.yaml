@@ -1,10 +1,10 @@
 name: flutter_scene_importer
 description: "An offline 3D model importer for Flutter."
-version: 0.0.1
-homepage:
+version: 0.1.0
+homepage: https://github.com/bdero/flutter_scene
 
 environment:
-  sdk: '>=3.4.0-268.0.dev <4.0.0'
+  sdk: '>=3.6.0-0 <4.0.0'
   flutter: ">=1.17.0"
 
 dependencies:

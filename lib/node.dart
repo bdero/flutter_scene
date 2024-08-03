@@ -63,7 +63,7 @@ base class Node implements SceneGraph {
 
     // Initialize nodes for unpacking the entire scene.
     List<Node> sceneNodes = [];
-    for (fb.Node fbNode in fbScene.nodes ?? []) {
+    for (fb.Node _ in fbScene.nodes ?? []) {
       sceneNodes.add(Node());
     }
 
