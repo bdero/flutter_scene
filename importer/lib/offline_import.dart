@@ -37,7 +37,7 @@ Uri findImporterPackageRoot() {
 }
 
 void generateImporterFlatbufferDart(
-    {String generatedOutputDirectory = "lib/generated"}) {
+    {String generatedOutputDirectory = "lib/generated/"}) {
   final packageRoot = findImporterPackageRoot();
   final flatc = findBuiltExecutable('flatc', packageRoot,
       dir: 'build/_deps/flatbuffers-build/');
@@ -59,6 +59,23 @@ void generateImporterFlatbufferDart(
     throw Exception(
         'Failed to generate importer flatbuffer: ${flatcResult.stderr}\n${flatcResult.stdout}');
   }
+
+  /// Update the generated file's flatbuffer include to use a patched version
+  /// that allows for flatbuffer arrays to be accessed without copies.
+  /// TODO(bdero): Remove after https://github.com/google/flatbuffers/pull/8289
+  ///              makes it into the Dart package.
+  final generatedFile = File.fromUri(packageRoot
+      .resolve(generatedOutputDirectory)
+      .resolve('scene_impeller.fb_flatbuffers.dart'));
+  final lines = generatedFile.readAsLinesSync();
+  final importLineIndex = lines.indexWhere((element) => element
+      .contains("import 'package:flat_buffers/flat_buffers.dart' as fb;"));
+  if (importLineIndex == -1) {
+    throw Exception('Failed to find flat_buffer import line in generated file');
+  }
+  lines[importLineIndex] =
+      "import 'package:flutter_scene_importer/third_party/flat_buffers.dart' as fb;";
+  generatedFile.writeAsStringSync(lines.join('\n'));
 }
 
 /// Takes an input model (glTF file) and

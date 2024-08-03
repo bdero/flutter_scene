@@ -8,13 +8,6 @@ environment:
   flutter: ">=1.17.0"
 
 dependencies:
-  #flat_buffers: ^23.5.26
-  # TODO(bdero): Update after https://github.com/google/flatbuffers/pull/8289 is merged.
-  flat_buffers:
-    git:
-      url: https://github.com/NotTsunami/flatbuffers
-      ref: 5665d6f5a92bd655cb0d5c95b4aeb32e527ff4af
-      path: dart
   flutter:
     sdk: flutter
   flutter_gpu:

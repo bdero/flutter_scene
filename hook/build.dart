@@ -5,7 +5,7 @@ import 'package:flutter_gpu_shaders/build.dart';
 
 void main(List<String> args) async {
   await build(args, (config, output) async {
-    generateImporterFlatbufferDart(generatedOutputDirectory: "lib/generated");
+    generateImporterFlatbufferDart();
 
     await buildShaderBundleJson(
         buildConfig: config,
