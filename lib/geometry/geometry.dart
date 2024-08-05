@@ -56,19 +56,20 @@ abstract class Geometry {
     gpu.IndexType indexType = fbPrimitive.indices!.type.toIndexType();
     Uint8List indices = fbPrimitive.indices!.data! as Uint8List;
 
+    Geometry geometry;
     switch (fbPrimitive.vertices!.runtimeType) {
       case fb.UnskinnedVertexBuffer:
-        Geometry geometry = UnskinnedGeometry();
-        geometry.uploadVertexData(ByteData.sublistView(vertices), vertexCount,
-            ByteData.sublistView(indices),
-            indexType: indexType);
-        return geometry;
+        geometry = UnskinnedGeometry();
       case fb.SkinnedVertexBuffer:
-        debugPrint('Skinned geometry not yet implemented!');
-        return UnskinnedGeometry();
+        geometry = SkinnedGeometry();
       default:
         throw Exception('Unknown vertex buffer type');
     }
+
+    geometry.uploadVertexData(ByteData.sublistView(vertices), vertexCount,
+        ByteData.sublistView(indices),
+        indexType: indexType);
+    return geometry;
   }
 
   void setVertices(gpu.BufferView vertices, int vertexCount) {
@@ -120,7 +121,22 @@ abstract class Geometry {
     _vertexShader = shader;
   }
 
-  @mustCallSuper
+  void setJointsTexture(gpu.Texture? texture, int width) {}
+
+  void bind(
+      gpu.RenderPass pass,
+      gpu.HostBuffer transientsBuffer,
+      vm.Matrix4 modelTransform,
+      vm.Matrix4 cameraTransform,
+      vm.Vector3 cameraPosition);
+}
+
+class UnskinnedGeometry extends Geometry {
+  UnskinnedGeometry() {
+    setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
+  }
+
+  @override
   void bind(
       gpu.RenderPass pass,
       gpu.HostBuffer transientsBuffer,
@@ -129,7 +145,7 @@ abstract class Geometry {
       vm.Vector3 cameraPosition) {
     if (_vertices == null) {
       throw Exception(
-          'SetBuffer must be called before GetBufferView for Geometry.');
+          'SetVertices must be called before GetBufferView for Geometry.');
     }
 
     pass.bindVertexBuffer(_vertices!, _vertexCount);
@@ -183,9 +199,95 @@ abstract class Geometry {
   }
 }
 
-class UnskinnedGeometry extends Geometry {
-  UnskinnedGeometry() {
-    setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
+class SkinnedGeometry extends Geometry {
+  gpu.Texture? _jointsTexture;
+  int _jointsTextureWidth = 0;
+
+  SkinnedGeometry() {
+    setVertexShader(baseShaderLibrary['SkinnedVertex']!);
+  }
+
+  @override
+  void setJointsTexture(gpu.Texture? texture, int width) {
+    _jointsTexture = texture;
+    _jointsTextureWidth = width;
+  }
+
+  @override
+  void bind(
+      gpu.RenderPass pass,
+      gpu.HostBuffer transientsBuffer,
+      vm.Matrix4 modelTransform,
+      vm.Matrix4 cameraTransform,
+      vm.Vector3 cameraPosition) {
+    if (_jointsTexture == null) {
+      throw Exception('Joints texture must be set for skinned geometry.');
+    }
+
+    pass.bindTexture(
+        vertexShader.getUniformSlot('joints_texture'), _jointsTexture!,
+        sampler: gpu.SamplerOptions(
+            minFilter: gpu.MinMagFilter.nearest,
+            magFilter: gpu.MinMagFilter.nearest,
+            mipFilter: gpu.MipFilter.nearest,
+            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+
+    if (_vertices == null) {
+      throw Exception(
+          'SetVertices must be called before GetBufferView for Geometry.');
+    }
+
+    pass.bindVertexBuffer(_vertices!, _vertexCount);
+    if (_indices != null) {
+      pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
+    }
+
+    // Skinned vertex UBO.
+    final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
+    final frameInfoFloats = Float32List.fromList([
+      modelTransform.storage[0],
+      modelTransform.storage[1],
+      modelTransform.storage[2],
+      modelTransform.storage[3],
+      modelTransform.storage[4],
+      modelTransform.storage[5],
+      modelTransform.storage[6],
+      modelTransform.storage[7],
+      modelTransform.storage[8],
+      modelTransform.storage[9],
+      modelTransform.storage[10],
+      modelTransform.storage[11],
+      modelTransform.storage[12],
+      modelTransform.storage[13],
+      modelTransform.storage[14],
+      modelTransform.storage[15],
+      cameraTransform.storage[0],
+      cameraTransform.storage[1],
+      cameraTransform.storage[2],
+      cameraTransform.storage[3],
+      cameraTransform.storage[4],
+      cameraTransform.storage[5],
+      cameraTransform.storage[6],
+      cameraTransform.storage[7],
+      cameraTransform.storage[8],
+      cameraTransform.storage[9],
+      cameraTransform.storage[10],
+      cameraTransform.storage[11],
+      cameraTransform.storage[12],
+      cameraTransform.storage[13],
+      cameraTransform.storage[14],
+      cameraTransform.storage[15],
+      cameraPosition.x,
+      cameraPosition.y,
+      cameraPosition.z,
+      0.0, // padding
+      _jointsTexture != null ? 1 : 0,
+      _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
+    ]);
+    final frameInfoView =
+        transientsBuffer.emplace(frameInfoFloats.buffer.asByteData());
+    pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
 

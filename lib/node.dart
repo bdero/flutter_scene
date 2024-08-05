@@ -8,6 +8,7 @@ import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/unlit_material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/skin.dart';
 import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
@@ -20,10 +21,33 @@ base class Node implements SceneGraph {
 
   Matrix4 localTransform = Matrix4.identity();
 
+  Skin? _skin;
+
+  set globalTransform(Matrix4 transform) {
+    if (_parent == null) {
+      localTransform = transform;
+    } else {
+      Matrix4 g = Matrix4.identity();
+      _parent!.globalTransform.copyInverse(g);
+
+      localTransform = transform * _parent!.globalTransform.invert();
+    }
+  }
+
+  Matrix4 get globalTransform {
+    if (_parent == null) {
+      return localTransform;
+    }
+    return localTransform * _parent!.globalTransform;
+  }
+
   Node? _parent;
+  Node? get parent => _parent;
   bool _isRoot = false;
 
   Mesh? mesh;
+
+  bool isJoint = false;
 
   static Future<Node> fromAsset(String assetPath) async {
     final buffer = await rootBundle.load(assetPath);
@@ -112,7 +136,10 @@ base class Node implements SceneGraph {
       add(sceneNodes[childIndex]);
     }
 
-    // TODO(bdero): Unpack skin.
+    // Skin.
+    if (fbNode.skin != null) {
+      _skin = Skin.fromFlatbuffer(fbNode.skin!, sceneNodes);
+    }
   }
 
   final List<Node> children = [];
@@ -170,7 +197,8 @@ base class Node implements SceneGraph {
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
     final worldTransform = localTransform * parentWorldTransform;
     if (mesh != null) {
-      mesh!.render(encoder, worldTransform);
+      mesh!.render(encoder, worldTransform, _skin?.getJointsTexture(),
+          _skin?.getTextureWidth() ?? 0);
     }
     for (var child in children) {
       child.render(encoder, worldTransform);
