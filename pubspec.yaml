@@ -1,6 +1,6 @@
 name: flutter_scene
 description: 3D scene widgets for Flutter.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/bdero/flutter_scene
 
 environment:
