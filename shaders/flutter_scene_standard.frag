@@ -34,6 +34,7 @@ out vec4 frag_color;
 #include <normals.glsl>
 #include <pbr.glsl>
 #include <texture.glsl>
+#include <tone_mapping.glsl>
 
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
@@ -61,38 +62,57 @@ void main() {
 
   vec3 reflectance = mix(vec3(0.04), albedo, metallic);
 
+  // 1 when the surface is facing the camera, 0 when it's perpendicular to the
+  // camera.
+  float n_dot_v = max(dot(normal, camera_normal), 0.0);
+
   vec3 reflection_normal = reflect(camera_normal, normal);
 
-  vec3 fresnel = FresnelSchlickRoughness(max(dot(normal, camera_normal), 0.0),
-                                         reflectance, roughness);
-  vec3 kS = fresnel;
-  vec3 kD = 1.0 - kS;
-  kD *= 1.0 - metallic;
-  vec3 irradiance = SampleEnvironmentTexture(irradiance_texture, normal) *
-                    frag_info.environment_intensity;
-  vec3 diffuse = irradiance * albedo;
+  vec3 fresnel = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
+  vec3 indirect_diffuse_factor = 1.0 - fresnel;
+  indirect_diffuse_factor *= 1.0 - metallic;
+
+  // TODO(bdero): This multiplier is here because the environment look too dim.
+  //              But this might be resolved once we actually support HDRs.
+  const float kEnvironmentMultiplier = 2.0;
+  vec3 irradiance =
+      SRGBToLinear(SampleEnvironmentTexture(irradiance_texture, normal)) *
+      frag_info.environment_intensity * kEnvironmentMultiplier;
+  vec3 indirect_diffuse = irradiance * albedo * indirect_diffuse_factor;
 
   const float kMaxReflectionLod = 4.0;
   vec3 prefiltered_color =
-      SampleEnvironmentTextureLod(radiance_texture, reflection_normal,
-                                  roughness * kMaxReflectionLod)
-          .rgb *
-      frag_info.environment_intensity;
-  vec2 environment_brdf =
-      texture(brdf_lut, vec2(max(dot(normal, camera_normal), 0.0), roughness))
-          .rg;
-  vec3 specular =
+      SRGBToLinear(SampleEnvironmentTextureLod(radiance_texture,
+                                               reflection_normal,
+                                               roughness * kMaxReflectionLod)
+                       .rgb) *
+      frag_info.environment_intensity * kEnvironmentMultiplier;
+
+  // Hack to replace rough surfaces with irradiance because roughness LoDs are
+  // not being generated yet.
+  // TODO(bdero): Remove this hack once roughness LoDs are generated.
+  // float roughness_map = 1 / (1 + exp(-52.3 * (roughness - 0.786)));
+  // prefiltered_color = mix(prefiltered_color, irradiance, roughness_map);
+  prefiltered_color =
+      mix(irradiance, prefiltered_color, pow(1.02 - roughness, 12));
+
+  float brdf_x = mix(0.0, 0.99, n_dot_v);
+  float brdf_y = mix(0.0, 0.99, roughness);
+  vec2 environment_brdf = texture(brdf_lut, vec2(brdf_x, brdf_y)).rg;
+  vec3 indirect_specular =
       prefiltered_color * (fresnel * environment_brdf.x + environment_brdf.y);
 
-  vec3 ambient = (kD * diffuse + specular) * occlusion;
+  vec3 ambient = (indirect_diffuse + indirect_specular) * occlusion;
 
-  vec3 emissive = texture(emissive_texture, v_texture_coords).rgb *
-                  frag_info.emissive_factor.rgb;
+  vec3 emissive =
+      SRGBToLinear(texture(emissive_texture, v_texture_coords).rgb) *
+      frag_info.emissive_factor.rgb;
 
   vec3 out_color = ambient + emissive;
 
   // Tone mapping.
-  out_color = vec3(1.0) - exp(-out_color * frag_info.exposure);
+  // frag_color = vec4(frag_info.exposure, 0, 0, 0);
+  out_color = ACESFilmicToneMapping(out_color, frag_info.exposure);
 
 #ifndef IMPELLER_TARGET_METAL
   out_color = pow(out_color, vec3(1.0 / kGamma));

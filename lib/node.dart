@@ -5,7 +5,7 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/material/mesh_unlit_material.dart';
+import 'package:flutter_scene/material/unlit_material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/scene_encoder.dart';
@@ -98,7 +98,7 @@ base class Node implements SceneGraph {
         Geometry geometry = Geometry.fromFlatbuffer(fbPrimitive);
         Material material = fbPrimitive.material != null
             ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
-            : MeshUnlitMaterial();
+            : UnlitMaterial();
         meshPrimitives.add(MeshPrimitive(geometry, material));
       }
       mesh = Mesh.primitives(primitives: meshPrimitives);

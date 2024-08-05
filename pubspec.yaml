@@ -30,3 +30,7 @@ flutter:
   assets:
     - build/shaderbundles/base.shaderbundle
     - assets/ibl_brdf_lut.png
+
+    # Default environment map.
+    - assets/royal_esplanade.png
+    - assets/royal_esplanade_irradiance.png

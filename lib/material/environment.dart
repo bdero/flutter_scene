@@ -17,13 +17,12 @@ base class EnvironmentMap {
   }
 
   static Future<EnvironmentMap> fromUIImages(
-      {required ui.Image radianceImagePath,
-      ui.Image? irradianceImagePath}) async {
-    final radianceTexture = await gpuTextureFromImage(radianceImagePath);
+      {required ui.Image radianceImage, ui.Image? irradianceImage}) async {
+    final radianceTexture = await gpuTextureFromImage(radianceImage);
     gpu.Texture? irradianceTexture;
 
-    if (irradianceImagePath != null) {
-      irradianceTexture = await gpuTextureFromImage(irradianceImagePath);
+    if (irradianceImage != null) {
+      irradianceTexture = await gpuTextureFromImage(irradianceImage);
     }
 
     return EnvironmentMap.fromGpuTextures(
@@ -42,6 +41,8 @@ base class EnvironmentMap {
     return EnvironmentMap.fromGpuTextures(
         radianceTexture: radianceTexture, irradianceTexture: irradianceTexture);
   }
+
+  bool isEmpty() => _radianceTexture == null;
 
   gpu.Texture? _radianceTexture;
   gpu.Texture? _irradianceTexture;
@@ -71,8 +72,15 @@ base class Environment {
   Environment(
       {EnvironmentMap? environmentMap,
       this.intensity = 1.0,
-      this.exposure = 5.0})
+      this.exposure = 2.0})
       : environmentMap = environmentMap ?? EnvironmentMap.empty();
+
+  Environment withNewEnvironmentMap(EnvironmentMap environmentMap) {
+    return Environment(
+        environmentMap: environmentMap,
+        intensity: intensity,
+        exposure: exposure);
+  }
 
   /// The environment map to use for image-based-lighting.
   ///

@@ -23,15 +23,6 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    final setupEnvironmentMap = EnvironmentMap.fromAssets(
-            radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-            irradianceImagePath:
-                'assets/little_paris_eiffel_tower_irradiance.png')
-        .then((value) {
-      scene.environment.environmentMap = value;
-      debugPrint('Environment map updated.');
-    });
-
     final loadModel =
         Node.fromAsset('build/models/DamagedHelmet.model').then((value) {
       value.name = 'FlutterLogo';
@@ -39,7 +30,7 @@ class ExampleLogoState extends State<ExampleLogo> {
       debugPrint('Model loaded: ${value.name}');
     });
 
-    Future.wait([setupEnvironmentMap, loadModel]).then((_) {
+    Future.wait([loadModel]).then((_) {
       debugPrint('Scene loaded.');
       setState(() {
         loaded = true;

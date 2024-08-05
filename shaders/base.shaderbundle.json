@@ -1,12 +1,4 @@
 {
-    "SimpleVertex": {
-        "type": "vertex",
-        "file": "shaders/flutter_scene_simple.vert"
-    },
-    "SimpleFragment": {
-        "type": "fragment",
-        "file": "shaders/flutter_scene_simple.frag"
-    },
     "UnskinnedVertex": {
         "type": "vertex",
         "file": "shaders/flutter_scene_unskinned.vert"

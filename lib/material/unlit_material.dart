@@ -8,14 +8,14 @@ import 'package:flutter_scene/shaders.dart';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
-class MeshUnlitMaterial extends Material {
-  static MeshUnlitMaterial fromFlatbuffer(
+class UnlitMaterial extends Material {
+  static UnlitMaterial fromFlatbuffer(
       fb.Material fbMaterial, List<gpu.Texture> textures) {
     if (fbMaterial.type != fb.MaterialType.kUnlit) {
       throw Exception('Cannot unpack unlit material from non-unlit material');
     }
 
-    MeshUnlitMaterial material = MeshUnlitMaterial();
+    UnlitMaterial material = UnlitMaterial();
 
     if (fbMaterial.baseColorFactor != null) {
       material.baseColorFactor = ui.Color.fromARGB(
@@ -33,9 +33,9 @@ class MeshUnlitMaterial extends Material {
     return material;
   }
 
-  MeshUnlitMaterial({gpu.Texture? colorTexture}) {
+  UnlitMaterial({gpu.Texture? colorTexture}) {
     setFragmentShader(baseShaderLibrary['UnlitFragment']!);
-    baseColorTexture = colorTexture ?? Material.getWhitePlaceholderTexture();
+    baseColorTexture = Material.whitePlaceholder(colorTexture);
   }
 
   late gpu.Texture baseColorTexture;
@@ -43,7 +43,8 @@ class MeshUnlitMaterial extends Material {
   double vertexColorWeight = 1.0;
 
   @override
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, Environment environment) {
+  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
+      Environment environment) {
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color

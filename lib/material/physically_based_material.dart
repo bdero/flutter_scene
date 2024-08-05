@@ -8,14 +8,14 @@ import 'package:flutter_scene/shaders.dart';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
-class MeshStandardMaterial extends Material {
-  static MeshStandardMaterial fromFlatbuffer(
+class PhysicallyBasedMaterial extends Material {
+  static PhysicallyBasedMaterial fromFlatbuffer(
       fb.Material fbMaterial, List<gpu.Texture> textures) {
     if (fbMaterial.type != fb.MaterialType.kPhysicallyBased) {
       throw Exception('Cannot unpack PBR material from non-PBR material');
     }
 
-    MeshStandardMaterial material = MeshStandardMaterial();
+    PhysicallyBasedMaterial material = PhysicallyBasedMaterial();
 
     // Base color.
 
@@ -82,7 +82,7 @@ class MeshStandardMaterial extends Material {
     return material;
   }
 
-  MeshStandardMaterial(
+  PhysicallyBasedMaterial(
       {this.baseColorTexture,
       this.metallicRoughnessTexture,
       this.normalTexture,

@@ -4,8 +4,8 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/asset_helpers.dart';
 
 import 'package:flutter_scene/material/environment.dart';
-import 'package:flutter_scene/material/mesh_standard_material.dart';
-import 'package:flutter_scene/material/mesh_unlit_material.dart';
+import 'package:flutter_scene/material/physically_based_material.dart';
+import 'package:flutter_scene/material/unlit_material.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
 abstract class Material {
@@ -50,6 +50,8 @@ abstract class Material {
   }
 
   static gpu.Texture? _brdfLutTexture;
+  static gpu.Texture? _defaultRadianceTexture;
+  static gpu.Texture? _defaultIrradianceTexture;
 
   static gpu.Texture getBrdfLutTexture() {
     if (_brdfLutTexture == null) {
@@ -58,20 +60,41 @@ abstract class Material {
     return _brdfLutTexture!;
   }
 
+  static EnvironmentMap getDefaultEnvironmentMap() {
+    if (_defaultRadianceTexture == null || _defaultIrradianceTexture == null) {
+      throw Exception('Default environment map has not been initialized.');
+    }
+    return EnvironmentMap.fromGpuTextures(
+        radianceTexture: _defaultRadianceTexture!,
+        irradianceTexture: _defaultIrradianceTexture!);
+  }
+
   static Future<void> initializeStaticResources() {
-    return gpuTextureFromAsset('packages/flutter_scene/assets/ibl_brdf_lut.png')
-        .then((gpu.Texture value) {
-      _brdfLutTexture = value;
-    });
+    List<Future<void>> futures = [
+      gpuTextureFromAsset('packages/flutter_scene/assets/ibl_brdf_lut.png')
+          .then((gpu.Texture value) {
+        _brdfLutTexture = value;
+      }),
+      gpuTextureFromAsset('packages/flutter_scene/assets/royal_esplanade.png')
+          .then((gpu.Texture value) {
+        _defaultRadianceTexture = value;
+      }),
+      gpuTextureFromAsset(
+              'packages/flutter_scene/assets/royal_esplanade_irradiance.png')
+          .then((gpu.Texture value) {
+        _defaultIrradianceTexture = value;
+      }),
+    ];
+    return Future.wait(futures);
   }
 
   static Material fromFlatbuffer(
       fb.Material fbMaterial, List<gpu.Texture> textures) {
     switch (fbMaterial.type) {
       case fb.MaterialType.kUnlit:
-        return MeshUnlitMaterial.fromFlatbuffer(fbMaterial, textures);
+        return UnlitMaterial.fromFlatbuffer(fbMaterial, textures);
       case fb.MaterialType.kPhysicallyBased:
-        return MeshStandardMaterial.fromFlatbuffer(fbMaterial, textures);
+        return PhysicallyBasedMaterial.fromFlatbuffer(fbMaterial, textures);
       default:
         throw Exception('Unknown material type');
     }

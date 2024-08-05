@@ -92,8 +92,12 @@ base class Scene implements SceneGraph {
     final gpu.RenderTarget renderTarget =
         surface.getNextRenderTarget(drawArea.size);
 
+    final env = environment.environmentMap.isEmpty()
+        ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
+        : environment;
+
     final encoder =
-        SceneEncoder(renderTarget, camera, drawArea.size, environment);
+        SceneEncoder(renderTarget, camera, drawArea.size, env);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
