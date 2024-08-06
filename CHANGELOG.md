@@ -13,3 +13,8 @@
 * Rename PhysicallyBasedMaterial and UnlitMaterial
 * Fix environment lighting problems in PhysicallyBasedMaterial.
 * Add default environment map.
+
+## 0.2.0
+
+* Skinned mesh import.
+* Fix readme for pub.dev.

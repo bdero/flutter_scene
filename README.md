@@ -2,27 +2,24 @@
 
 3D library for Flutter.
 
-<p align="center">
-  <img width="260" src="screenshots/flutter_scene_logo.png">
-</p>
+![Failed to load Screenshot](./screenshots/flutter_scene_logo.png)
 
 Now running on a phone near you!
 
-## ⚠️ Here be dragons ⚠️
+## ⚠️ Early preview ⚠️
 
-- This package is in an alpha. Things may break!
-- This package uses Flutter GPU for rendering, which is currently in an early preview state.
+- This package is in an early preview state. Things may break!
+- Relies on [Flutter GPU](https://github.com/flutter/engine/blob/main/docs/impeller/Flutter-GPU.md) for rendering, which is also in an early preview state.
 - This package currently only works when [Impeller is enabled](https://docs.flutter.dev/perf/impeller#availability).
-- This package uses the experimental Dart "native assets" feature to automate some build tasks.
-- Given the reliance on non-production features, switching to the master channel is recommended when using Flutter Scene.
+- This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
+- Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
 
 Think you can handle it.....? Then welcome aboard!
 
 ## Features
 
-* Declarative scene widget for building scenes in the Flutter widget tree.
-* GLTF asset import.
-* Textured materials.
+* glTF (.glb) asset import.
+* PBR materials.
 * Blended animation system.
 
 https://github.com/bdero/flutter_scene/assets/919017/b44fba62-ec48-4ab4-80cc-6449cef21292
