@@ -2,7 +2,7 @@
 
 3D library for Flutter.
 
-![Failed to load Screenshot](./screenshots/flutter_scene_logo.png)
+![Failed to load Screenshot](https://raw.githubusercontent.com/bdero/flutter_scene/master/screenshots/flutter_scene_logo.png)
 
 Now running on a phone near you!
 
