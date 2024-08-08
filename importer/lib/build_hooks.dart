@@ -11,21 +11,25 @@ void buildModels({
       Directory.fromUri(buildConfig.packageRoot.resolve(outputDirectory));
   outDir.createSync(recursive: true);
 
+  final Uri dartExec = Uri.file(Platform.resolvedExecutable);
+
   for (final inputFilePath in inputFilePaths) {
     String outputFileName = Uri(path: inputFilePath).pathSegments.last;
 
     // Verify that the input file is a glTF file
     if (!outputFileName.endsWith('.glb')) {
-      throw Exception('Input file must be a .glb file. Given file path: $inputFilePath');
+      throw Exception(
+          'Input file must be a .glb file. Given file path: $inputFilePath');
     }
 
     // Replace output extension with .model
-    outputFileName = '${outputFileName.substring(0, outputFileName.lastIndexOf('.'))}.model';
+    outputFileName =
+        '${outputFileName.substring(0, outputFileName.lastIndexOf('.'))}.model';
 
     /// dart --enable-experiment=native-assets run flutter_scene_importer:import \
     ///      --input <input> --output <output> --working-directory <working-directory>
     final importerResult = Process.runSync(
-      'dart',
+      dartExec.toFilePath(),
       [
         '--enable-experiment=native-assets',
         'run',

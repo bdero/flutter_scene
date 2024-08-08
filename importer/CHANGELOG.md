@@ -12,3 +12,7 @@
 ## 0.1.2-0
 
 * Mark as pre-release.
+
+## 0.1.2-1
+
+* Use Platform.resolvedExecutable in `buildModels` for resolving the Dart executable.

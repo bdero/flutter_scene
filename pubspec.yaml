@@ -1,6 +1,6 @@
 name: flutter_scene
-description: 3D rendering library for Flutter. Currently only supprted when Impeller is enabled.
-version: 0.2.1-0
+description: 3D rendering library for Flutter. Currently only supported when Impeller is enabled.
+version: 0.2.1-1
 repository: https://github.com/bdero/flutter_scene
 
 environment:
@@ -12,10 +12,10 @@ dependencies:
     sdk: flutter
   flutter_gpu:
     sdk: flutter
-  flutter_gpu_shaders: ^0.1.1
+  flutter_gpu_shaders: ^0.1.2
   #flutter_gpu_shaders:
   #  path: ../flutter_gpu_shaders
-  flutter_scene_importer: ^0.1.2-0
+  flutter_scene_importer: ^0.1.2-1
   #flutter_scene_importer:
   #  path: ./importer
   native_assets_cli: ^0.7.2

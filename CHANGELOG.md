@@ -23,3 +23,7 @@
 
 * Switch to pre-release versioning.
 * Bump version of flutter_scene_importer.
+
+## 0.2.1-1
+
+* Bump flutter_scene_importer version.
