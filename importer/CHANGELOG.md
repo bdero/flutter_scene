@@ -4,3 +4,11 @@
 * Importer Flatbuffer & Dart codegen.
 * bin/import.dart command for invoking the model importer.
 * Native assets build hook for compiling the model importer.
+
+## 0.1.1
+
+* Check in generated importer flatbuffer.
+
+## 0.1.2-0
+
+* Mark as pre-release.

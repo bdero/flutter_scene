@@ -18,3 +18,8 @@
 
 * Skinned mesh import.
 * Fix readme for pub.dev.
+
+## 0.2.1-0
+
+* Switch to pre-release versioning.
+* Bump version of flutter_scene_importer.

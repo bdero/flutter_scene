@@ -7,5 +7,5 @@ CMakeCache.txt
 MakeFile
 cmake_install.cmake
 compile_commands.json
-generated/
+/generated/
 .cache/
