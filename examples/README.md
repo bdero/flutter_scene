@@ -4,6 +4,6 @@ To build the example assets and prepare the example projects, first run `build.s
 
 Then, navigate to one of the example directories and run the Flutter app with impeller enabled. For example:
 ```bash
-cd shapes
-flutter run -d macos
+cd flutter_app
+flutter run -d macos --enable-impeller
 ```

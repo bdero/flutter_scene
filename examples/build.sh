@@ -14,7 +14,7 @@ function prepare_example {
     PrintInfo "Preparing example app $1..."
     pushd $1 > /dev/null
     set +e
-    flutter create .
+    flutter create . --platforms macos,ios,android
     flutter pub get
     set -e
     popd > /dev/null
