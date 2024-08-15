@@ -6,7 +6,6 @@ void main(List<String> args) {
     buildModels(buildConfig: config, inputFilePaths: [
       '../assets_src/two_triangles.glb',
       '../assets_src/flutter_logo_baked.glb',
-      '../assets_src/DamagedHelmet.glb',
     ]);
   });
 }
