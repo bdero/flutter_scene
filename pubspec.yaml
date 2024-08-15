@@ -15,8 +15,9 @@ dependencies:
   flutter_gpu_shaders: ^0.1.2
   #flutter_gpu_shaders:
   #  path: ../flutter_gpu_shaders
-  flutter_scene_importer:
-    path: ./importer
+  flutter_scene_importer: ^0.1.2-1
+  #flutter_scene_importer:
+  #  path: ./importer
   native_assets_cli: ^0.7.2
   vector_math: ^2.1.4
 
