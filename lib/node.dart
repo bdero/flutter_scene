@@ -13,12 +13,21 @@ import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
+/// A `Node` represents a single element in a 3D scene graph.
+///
+/// Each node can contain a transform (position, rotation, scale), a mesh (3D geometry and material),
+/// and child nodes. Nodes are used to build complex scenes by establishing relationships
+/// between different elements, allowing for transformations to propagate down the hierarchy.
 base class Node implements SceneGraph {
   Node({String? name, Matrix4? localTransform, this.mesh})
       : localTransform = localTransform ?? Matrix4.identity();
 
+  /// The name of this node, used for identification.
   String name = '';
 
+  /// The transformation matrix representing the node's position, rotation, and scale relative to the parent node.
+  ///
+  /// If the node does not have a parent, `localTransform` and [globalTransform] share the same transformation matrix instance.
   Matrix4 localTransform = Matrix4.identity();
 
   Skin? _skin;
@@ -34,6 +43,9 @@ base class Node implements SceneGraph {
     }
   }
 
+  /// The transformation matrix representing the node's position, rotation, and scale in world space.
+  ///
+  /// If the node does not have a parent, `globalTransform` and [localTransform] share the same transformation matrix instance.
   Matrix4 get globalTransform {
     if (_parent == null) {
       return localTransform;
@@ -42,18 +54,39 @@ base class Node implements SceneGraph {
   }
 
   Node? _parent;
+
+  /// The parent node of this node in the scene graph.
   Node? get parent => _parent;
   bool _isRoot = false;
 
+  /// The collection of vertices, edges, and faces that represent the geometry of this node,
+  /// along with the material that defines the object's appearance.
+  ///
+  /// The mesh defines the shape of the object through its geometry, which is composed of vertices,
+  /// edges, and faces. The mesh may also include a material, which specifies how the surface
+  /// of the object interacts with light, including properties like color, texture, and reflectivity.
   Mesh? mesh;
 
+  /// Whether this node is a joint in a skeleton for animation.
   bool isJoint = false;
 
+  /// The asset file should be in a format that can be converted to a scene graph node.
+  ///
+  /// Flutter Scene uses a specialized 3D model format (`.model`) internally.
+  /// You can convert standard glTF binaries (`.glb` files) to this format using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer).
+  ///
+  /// Example:
+  /// ```dart
+  /// final node = await Node.fromAsset('path/to/asset.model');
+  /// ```
   static Future<Node> fromAsset(String assetPath) async {
     final buffer = await rootBundle.load(assetPath);
     return fromFlatbuffer(buffer);
   }
 
+  /// FlatBuffers are a compact binary serialization format, commonly used for efficiently storing complex 3D data.
+  ///
+  /// If you have a file containing your 3d model, consider using [fromAsset] instead.
   static Node fromFlatbuffer(ByteData byteData) {
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
@@ -142,8 +175,13 @@ base class Node implements SceneGraph {
     }
   }
 
+  /// This list allows the node to act as a parent in the scene graph hierarchy. Transformations
+  /// applied to this node, such as translation, rotation, and scaling, will also affect all child nodes.
   final List<Node> children = [];
 
+  /// Registers this node as the root node of the scene graph.
+  ///
+  /// Throws an exception if the node is already a root or has a parent.
   void registerAsRoot(Scene scene) {
     if (_isRoot) {
       throw Exception('Node is already a root');
@@ -185,6 +223,14 @@ base class Node implements SceneGraph {
     }
   }
 
+  /// Detaches this node from its parent in the scene graph.
+  ///
+  /// Once detached, this node is removed from its parent's list of children, effectively
+  /// disconnecting this node and its subtree (all child nodes) from the scene graph.
+  /// This operation is useful for temporarily removing nodes from the scene without deleting them.
+  ///
+  /// Throws an exception if this is the root node of the scene graph.
+  /// No action is taken if the node already has no parent.
   void detach() {
     if (_isRoot) {
       throw Exception('Root node cannot be detached');
@@ -194,6 +240,15 @@ base class Node implements SceneGraph {
     }
   }
 
+  /// Prepares and renders this node and its children within the scene graph.
+  ///
+  /// This method calculates the final world transform for the node by combining the
+  /// parent's world transform with the node's local transform. It then renders the node's
+  /// mesh primitives using the provided `SceneEncoder`, and recursively renders all child nodes.
+  ///
+  /// The rendering process involves encoding the node's geometry and material data into commands
+  /// that are passed to the GPU for drawing. If the node has associated skinning data (for animated models),
+  /// this data is also passed along to the rendering pipeline.
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
     final worldTransform = localTransform * parentWorldTransform;
     if (mesh != null) {
