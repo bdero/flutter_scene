@@ -84,9 +84,10 @@ base class Node implements SceneGraph {
     return fromFlatbuffer(buffer);
   }
 
-  /// FlatBuffers are a compact binary serialization format, commonly used for efficiently storing complex 3D data.
+  /// Deserialize a model from Flutter Scene's compact model format.
   ///
-  /// If you have a file containing your 3d model, consider using [fromAsset] instead.
+  /// If you're using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer),
+  /// consider using [fromAsset] to load the model directly from the asset bundle instead.
   static Node fromFlatbuffer(ByteData byteData) {
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
@@ -240,15 +241,9 @@ base class Node implements SceneGraph {
     }
   }
 
-  /// Prepares and renders this node and its children within the scene graph.
+  /// Recursively records mesh draw operations for this node and all its children.
   ///
-  /// This method calculates the final world transform for the node by combining the
-  /// parent's world transform with the node's local transform. It then renders the node's
-  /// mesh primitives using the provided `SceneEncoder`, and recursively renders all child nodes.
-  ///
-  /// The rendering process involves encoding the node's geometry and material data into commands
-  /// that are passed to the GPU for drawing. If the node has associated skinning data (for animated models),
-  /// this data is also passed along to the rendering pipeline.
+  /// To display this node in a dart:ui canvas, add this node to a `Scene` and call `Scene.render` instead.
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
     final worldTransform = localTransform * parentWorldTransform;
     if (mesh != null) {
