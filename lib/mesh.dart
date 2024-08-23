@@ -5,6 +5,17 @@ import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/scene_encoder.dart';
 
+/// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
+///
+/// A `MeshPrimitive` defines the [Geometry] and [Material] of one specific part of the model.
+/// By combining multiple `MeshPrimitive` objects, a full 3D model can be created, with different
+/// parts of the model having different [Geometry] and [Material].
+///
+/// For example, imagine a 3D model of a car. The body of the car, the windows, and the wheels
+/// could each be represented by different `MeshPrimitive` objects. The body might have a red
+/// paint [Material], the windows a transparent glass [Material], and the wheels a black rubber [Material].
+/// Each of these parts of the car has its own [Geometry] and [Material], and together
+/// they form the complete model.
 base class MeshPrimitive {
   MeshPrimitive(this.geometry, this.material);
 
