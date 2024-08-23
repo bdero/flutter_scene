@@ -2,18 +2,17 @@ import 'dart:ui' hide Scene;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
-import 'package:vector_math/vector_math.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/unlit_material.dart';
 import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/skin.dart';
 import 'package:flutter_scene/scene_encoder.dart';
-import 'package:flutter_scene_importer/importer.dart';
+import 'package:flutter_scene/skin.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene_importer/importer.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// A `Node` represents a single element in a 3D scene graph.
 ///
