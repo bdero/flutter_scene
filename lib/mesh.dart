@@ -1,9 +1,8 @@
-import 'package:vector_math/vector_math.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/scene_encoder.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
 ///
@@ -26,6 +25,7 @@ base class MeshPrimitive {
 base class Mesh {
   Mesh(Geometry geometry, Material material)
       : primitives = [MeshPrimitive(geometry, material)];
+
   Mesh.primitives({required this.primitives});
 
   final List<MeshPrimitive> primitives;
