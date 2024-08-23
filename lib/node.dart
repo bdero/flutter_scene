@@ -60,12 +60,9 @@ base class Node implements SceneGraph {
   Node? get parent => _parent;
   bool _isRoot = false;
 
-  /// The collection of vertices, edges, and faces that represent the geometry of this node,
-  /// along with the material that defines the object's appearance.
+  /// The collection of [MeshPrimitive] objects that represent the 3D geometry and material properties of this node.
   ///
-  /// The mesh defines the shape of the object through its geometry, which is composed of vertices,
-  /// edges, and faces. The mesh may also include a material, which specifies how the surface
-  /// of the object interacts with light, including properties like color, texture, and reflectivity.
+  /// This property is `null` if this node does not have any associated geometry or material.
   Mesh? mesh;
 
   /// Whether this node is a joint in a skeleton for animation.
