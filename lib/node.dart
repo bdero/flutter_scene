@@ -1,3 +1,5 @@
+import 'dart:ui' hide Scene;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:vector_math/vector_math.dart';
@@ -241,9 +243,9 @@ base class Node implements SceneGraph {
     }
   }
 
-  /// Recursively records mesh draw operations for this node and all its children.
+  /// Recursively records [Mesh] draw operations for this node and all its children.
   ///
-  /// To display this node in a dart:ui canvas, add this node to a `Scene` and call `Scene.render` instead.
+  /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
     final worldTransform = localTransform * parentWorldTransform;
     if (mesh != null) {
