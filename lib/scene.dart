@@ -3,8 +3,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart';
-
 import 'package:flutter_scene/camera.dart';
 import 'package:flutter_scene/material/environment.dart';
 import 'package:flutter_scene/material/material.dart';
@@ -12,6 +10,7 @@ import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene/surface.dart';
+import 'package:vector_math/vector_math.dart';
 
 mixin SceneGraph {
   /// Add a child node.
@@ -96,8 +95,7 @@ base class Scene implements SceneGraph {
         ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
         : environment;
 
-    final encoder =
-        SceneEncoder(renderTarget, camera, drawArea.size, env);
+    final encoder = SceneEncoder(renderTarget, camera, drawArea.size, env);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
