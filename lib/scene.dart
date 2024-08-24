@@ -12,6 +12,10 @@ import 'package:flutter_scene/scene_encoder.dart';
 import 'package:flutter_scene/surface.dart';
 import 'package:vector_math/vector_math.dart';
 
+/// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
+///
+/// `SceneGraph` provides a set of methods that can be implemented by a class
+/// to manage a hierarchy of nodes within a 3D scene.
 mixin SceneGraph {
   /// Add a child node.
   void add(Node child);
@@ -26,6 +30,11 @@ mixin SceneGraph {
   void removeAll();
 }
 
+/// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
+///
+/// `Scene` manages the scene graph and handles rendering operations.
+/// It contains a root [Node] that serves as the entry point for all nodes in this `Scene`, and
+/// it provides methods for adding and removing nodes from the scene graph.
 base class Scene implements SceneGraph {
   Scene() {
     initializeStaticResources();
@@ -35,6 +44,14 @@ base class Scene implements SceneGraph {
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
 
+  /// Prepares the rendering resources, such as textures and shaders,
+  /// that are used to display models in this [Scene].
+  ///
+  /// This method ensures all necessary resources are loaded and ready to be used in the rendering pipeline.
+  /// If the initialization fails, the resources are reset, and the scene
+  /// will not be marked as ready to render.
+  ///
+  /// Returns a [Future] that completes when the initialization is finished.
   static Future<void> initializeStaticResources() {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
@@ -50,9 +67,16 @@ base class Scene implements SceneGraph {
     return _initializeStaticResources!;
   }
 
+  /// The root [Node] of the scene graph.
+  ///
+  /// All [Node] objects in the scene are connected to this node, either directly or indirectly.
+  /// Transformations applied to this [Node] affect all child [Node] objects.
   final Node root = Node();
+
+  /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
+  /// Manages the lighting for this [Scene].
   final Environment environment = Environment();
 
   @override
@@ -76,6 +100,13 @@ base class Scene implements SceneGraph {
     root.removeAll();
   }
 
+  /// Renders the current state of this [Scene] onto the given [ui.Canvas] using the specified [Camera].
+  ///
+  /// The [Camera] provides the perspective from which the scene is viewed, and the [ui.Canvas]
+  /// is the drawing surface onto which this [Scene] will be rendered.
+  ///
+  /// Optionally, a [ui.Rect] can be provided to define a viewport, limiting the rendering area on the canvas.
+  /// If no [ui.Rect] is specified, the entire canvas will be rendered.
   void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {
     if (!_readyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
