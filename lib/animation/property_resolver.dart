@@ -1,0 +1,111 @@
+import 'package:flutter_scene/animation/animation_transform.dart';
+import 'package:flutter_scene/math_extensions.dart';
+import 'package:vector_math/vector_math.dart';
+
+abstract class PropertyResolver {
+  /// Returns the end time of the property in seconds.
+  double getEndTime();
+
+  /// Resolve and apply the property value to a target node. This
+  /// operation is additive; a given node property may be amended by
+  /// many different PropertyResolvers prior to rendering. For example,
+  /// an AnimationPlayer may blend multiple Animations together by
+  /// applying several AnimationClips.
+  void apply(AnimationTransforms target, double timeInSeconds, double weight);
+}
+
+class _TimelineKey {
+  /// The index of the closest previous keyframe.
+  int index = 0;
+
+  /// Used to interpolate between the resolved values for `timeline_index - 1`
+  /// and `timeline_index`. The range of this value should always be `0>N>=1`.
+  double lerp = 1.0;
+
+  _TimelineKey(this.index, this.lerp);
+}
+
+abstract class TimelineResolver implements PropertyResolver {
+  final List<double> _times = [];
+
+  @override
+  double getEndTime() {
+    return _times.isEmpty ? 0.0 : _times.last;
+  }
+
+  _TimelineKey _getTimelineKey(double time) {
+    if (_times.isEmpty || time <= _times.first) {
+      return _TimelineKey(0, 1.0);
+    }
+    if (time >= _times.last) {
+      return _TimelineKey(_times.length - 1, 1.0);
+    }
+    int nextTimeIndex = _times.indexWhere((t) => t >= time);
+
+    double previousTime = _times[nextTimeIndex - 1];
+    double nextTime = _times[nextTimeIndex];
+
+    double lerp = (time - previousTime) / (nextTime - previousTime);
+    return _TimelineKey(nextTimeIndex - 1, lerp);
+  }
+}
+
+class TranslationTimelineResolver extends TimelineResolver {
+  final List<Vector3> _values = [];
+
+  @override
+  void apply(AnimationTransforms target, double timeInSeconds, double weight) {
+    if (_values.isEmpty) {
+      return;
+    }
+
+    _TimelineKey key = _getTimelineKey(timeInSeconds);
+    Vector3 value = _values[key.index];
+    if (key.lerp < 1.0) {
+      value = _values[key.index - 1].lerp(value, key.lerp);
+    }
+
+    target.animatedPose.translation +=
+        (value - target.bindPose.translation) * key.lerp * weight;
+  }
+}
+
+class RotationTimelineResolver extends TimelineResolver {
+  final List<Quaternion> _values = [];
+
+  @override
+  void apply(AnimationTransforms target, double timeInSeconds, double weight) {
+    if (_values.isEmpty) {
+      return;
+    }
+
+    _TimelineKey key = _getTimelineKey(timeInSeconds);
+    Quaternion value = _values[key.index];
+    if (key.lerp < 1.0) {
+      value = _values[key.index - 1].slerp(value, key.lerp);
+    }
+
+    target.animatedPose.rotation = Quaternion.identity()
+        .slerp(target.bindPose.rotation.inverted() * value, weight);
+  }
+}
+
+class ScaleTimelineResolver extends TimelineResolver {
+  final List<Vector3> _values = [];
+
+  @override
+  void apply(AnimationTransforms target, double timeInSeconds, double weight) {
+    if (_values.isEmpty) {
+      return;
+    }
+
+    _TimelineKey key = _getTimelineKey(timeInSeconds);
+    Vector3 value = _values[key.index];
+    if (key.lerp < 1.0) {
+      value = _values[key.index - 1].lerp(value, key.lerp);
+    }
+
+    target.animatedPose.scale +=
+      Vector3(1, 1, 1).lerp(value.divided(target.bindPose.scale), weight);
+  }
+}
