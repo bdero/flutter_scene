@@ -67,13 +67,13 @@ class Animation {
       switch (fbChannel.keyframesType) {
         case fb.KeyframesTypeId.TranslationKeyframes:
           outProperty = AnimationProperty.translation;
-          fb.TranslationKeyframes keyframes =
-              fbChannel.keyframes<fb.TranslationKeyframes>();
-          if (keyframes.values == null) {
+          fb.TranslationKeyframes? keyframes =
+              fbChannel.keyframes as fb.TranslationKeyframes?;
+          if (keyframes?.values == null) {
             continue;
           }
           List<Vector3> outValues = [];
-          for (int i = 0; i < keyframes.values!.length; i++) {
+          for (int i = 0; i < keyframes!.values!.length; i++) {
             outValues.add(keyframes.values![i].toVector3());
           }
           resolver =
@@ -81,26 +81,26 @@ class Animation {
           break;
         case fb.KeyframesTypeId.RotationKeyframes:
           outProperty = AnimationProperty.rotation;
-          fb.RotationKeyframes keyframes =
-              fbChannel.keyframes<fb.RotationKeyframes>();
-          if (keyframes.values == null) {
+          fb.RotationKeyframes? keyframes =
+              fbChannel.keyframes as fb.RotationKeyframes?;
+          if (keyframes?.values == null) {
             continue;
           }
           List<Quaternion> outValues = [];
-          for (int i = 0; i < keyframes.values!.length; i++) {
+          for (int i = 0; i < keyframes!.values!.length; i++) {
             outValues.add(keyframes.values![i].toQuaternion());
           }
           resolver = PropertyResolver.makeRotationTimeline(outTimes, outValues);
           break;
         case fb.KeyframesTypeId.ScaleKeyframes:
           outProperty = AnimationProperty.scale;
-          fb.ScaleKeyframes keyframes =
-              fbChannel.keyframes<fb.ScaleKeyframes>();
-          if (keyframes.values == null) {
+          fb.ScaleKeyframes? keyframes =
+              fbChannel.keyframes as fb.ScaleKeyframes?;
+          if (keyframes?.values == null) {
             continue;
           }
           List<Vector3> outValues = [];
-          for (int i = 0; i < keyframes.values!.length; i++) {
+          for (int i = 0; i < keyframes!.values!.length; i++) {
             outValues.add(keyframes.values![i].toVector3());
           }
           resolver = PropertyResolver.makeScaleTimeline(outTimes, outValues);

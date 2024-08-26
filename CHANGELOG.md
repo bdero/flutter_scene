@@ -27,3 +27,7 @@
 ## 0.2.1-1
 
 * Bump flutter_scene_importer version.
+
+## 0.2.1-2
+
+* Add animation import.

@@ -1,8 +1,11 @@
 import 'dart:ui' hide Scene;
 
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/animation/animation.dart';
+import 'package:flutter_scene/animation/animation_player.dart';
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/unlit_material.dart';
@@ -67,6 +70,13 @@ base class Node implements SceneGraph {
 
   /// Whether this node is a joint in a skeleton for animation.
   bool isJoint = false;
+
+  final List<Animation> _animations = [];
+
+  /// Finds an [Animation] by name.
+  Animation? findAnimation(String name) {
+    return _animations.firstWhereOrNull((element) => element.name == name);
+  }
 
   /// The asset file should be in a format that can be converted to a scene graph node.
   ///
@@ -137,7 +147,12 @@ base class Node implements SceneGraph {
           fbScene.nodes![nodeIndex], sceneNodes, textures);
     }
 
-    // TODO(bdero): Unpack animations.
+    // Unpack animations.
+    if (fbScene.animations != null) {
+      for (fb.Animation fbAnimation in fbScene.animations!) {
+        result._animations.add(Animation.fromFlatbuffer(fbAnimation, sceneNodes));
+      }
+    }
 
     return result;
   }

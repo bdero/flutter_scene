@@ -16,3 +16,7 @@
 ## 0.1.2-1
 
 * Use Platform.resolvedExecutable in `buildModels` for resolving the Dart executable.
+
+## 0.1.2-2
+
+* Add more flatbuffer import helpers.
