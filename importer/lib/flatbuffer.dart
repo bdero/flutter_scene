@@ -21,6 +21,18 @@ extension MatrixHelpers on fb.Matrix {
   }
 }
 
+extension Vector3Helpers on fb.Vec3 {
+  Vector3 toVector3() {
+    return Vector3(x, y, z);
+  }
+}
+
+extension QuaternionHelpers on fb.Vec4 {
+  Quaternion toQuaternion() {
+    return Quaternion(x, y, z, w);
+  }
+}
+
 extension IndexTypeHelpers on fb.IndexType {
   gpu.IndexType toIndexType() {
     switch (this) {

@@ -12,6 +12,21 @@ abstract class PropertyResolver {
   /// an AnimationPlayer may blend multiple Animations together by
   /// applying several AnimationClips.
   void apply(AnimationTransforms target, double timeInSeconds, double weight);
+
+  static PropertyResolver makeTranslationTimeline(
+      List<double> times, List<Vector3> values) {
+    return TranslationTimelineResolver._(times, values);
+  }
+
+  static PropertyResolver makeRotationTimeline(
+      List<double> times, List<Quaternion> values) {
+    return RotationTimelineResolver._(times, values);
+  }
+
+  static PropertyResolver makeScaleTimeline(
+      List<double> times, List<Vector3> values) {
+    return ScaleTimelineResolver._(times, values);
+  }
 }
 
 class _TimelineKey {
@@ -26,7 +41,9 @@ class _TimelineKey {
 }
 
 abstract class TimelineResolver implements PropertyResolver {
-  final List<double> _times = [];
+  final List<double> _times;
+
+  TimelineResolver._(this._times);
 
   @override
   double getEndTime() {
@@ -51,7 +68,12 @@ abstract class TimelineResolver implements PropertyResolver {
 }
 
 class TranslationTimelineResolver extends TimelineResolver {
-  final List<Vector3> _values = [];
+  final List<Vector3> _values;
+
+  TranslationTimelineResolver._(List<double> times, this._values)
+      : super._(times) {
+    assert(times.length == _values.length);
+  }
 
   @override
   void apply(AnimationTransforms target, double timeInSeconds, double weight) {
@@ -71,7 +93,12 @@ class TranslationTimelineResolver extends TimelineResolver {
 }
 
 class RotationTimelineResolver extends TimelineResolver {
-  final List<Quaternion> _values = [];
+  final List<Quaternion> _values;
+
+  RotationTimelineResolver._(List<double> times, this._values)
+      : super._(times) {
+    assert(times.length == _values.length);
+  }
 
   @override
   void apply(AnimationTransforms target, double timeInSeconds, double weight) {
@@ -91,7 +118,11 @@ class RotationTimelineResolver extends TimelineResolver {
 }
 
 class ScaleTimelineResolver extends TimelineResolver {
-  final List<Vector3> _values = [];
+  final List<Vector3> _values;
+
+  ScaleTimelineResolver._(List<double> times, this._values) : super._(times) {
+    assert(times.length == _values.length);
+  }
 
   @override
   void apply(AnimationTransforms target, double timeInSeconds, double weight) {
@@ -106,6 +137,6 @@ class ScaleTimelineResolver extends TimelineResolver {
     }
 
     target.animatedPose.scale +=
-      Vector3(1, 1, 1).lerp(value.divided(target.bindPose.scale), weight);
+        Vector3(1, 1, 1).lerp(value.divided(target.bindPose.scale), weight);
   }
 }
