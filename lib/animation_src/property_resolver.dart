@@ -1,6 +1,4 @@
-import 'package:flutter_scene/animation/animation_transform.dart';
-import 'package:flutter_scene/math_extensions.dart';
-import 'package:vector_math/vector_math.dart';
+part of animation;
 
 abstract class PropertyResolver {
   /// Returns the end time of the property in seconds.

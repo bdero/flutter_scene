@@ -1,4 +1,4 @@
-import 'package:vector_math/vector_math.dart';
+part of animation;
 
 /// A decomposed animation transform consisting of a translation, rotation, and scale.
 class DecomposedTransform {
@@ -29,14 +29,25 @@ class DecomposedTransform {
     Matrix4.compose(translation, rotation, scale);
     return matrix;
   }
+
+  DecomposedTransform clone() {
+    return DecomposedTransform(
+      translation: translation.clone(),
+      rotation: rotation.clone(),
+      scale: scale.clone(),
+    );
+  }
 }
 
 class AnimationTransforms {
   DecomposedTransform bindPose;
-  DecomposedTransform animatedPose;
+  DecomposedTransform animatedPose = DecomposedTransform(
+    translation: Vector3.zero(),
+    rotation: Quaternion.identity(),
+    scale: Vector3.all(1.0),
+  );
 
   AnimationTransforms({
     required this.bindPose,
-    required this.animatedPose,
   });
 }

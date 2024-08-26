@@ -4,8 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/animation/animation.dart';
-import 'package:flutter_scene/animation/animation_player.dart';
+import 'package:flutter_scene/animation.dart';
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/unlit_material.dart';
@@ -73,8 +72,26 @@ base class Node implements SceneGraph {
 
   final List<Animation> _animations = [];
 
+  AnimationPlayer? _animationPlayer;
+
+  Node? findChildByName(String name, {bool excludeAnimationPlayers = false}) {
+    for (var child in children) {
+      if (excludeAnimationPlayers && child._animationPlayer != null) {
+        continue;
+      }
+      if (child.name == name) {
+        return child;
+      }
+      var result = child.findChildByName(name);
+      if (result != null) {
+        return result;
+      }
+    }
+    return null;
+  }
+
   /// Finds an [Animation] by name.
-  Animation? findAnimation(String name) {
+  Animation? findAnimationByName(String name) {
     return _animations.firstWhereOrNull((element) => element.name == name);
   }
 
@@ -150,7 +167,8 @@ base class Node implements SceneGraph {
     // Unpack animations.
     if (fbScene.animations != null) {
       for (fb.Animation fbAnimation in fbScene.animations!) {
-        result._animations.add(Animation.fromFlatbuffer(fbAnimation, sceneNodes));
+        result._animations
+            .add(Animation.fromFlatbuffer(fbAnimation, sceneNodes));
       }
     }
 

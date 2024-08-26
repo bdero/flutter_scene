@@ -1,9 +1,4 @@
-import 'dart:math';
-
-import 'package:flutter_scene/animation/property_resolver.dart';
-import 'package:flutter_scene/node.dart';
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
-import 'package:vector_math/vector_math.dart';
+part of animation;
 
 enum AnimationProperty {
   translation,
