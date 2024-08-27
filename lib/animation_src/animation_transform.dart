@@ -25,9 +25,7 @@ class DecomposedTransform {
 
   /// Converts this [DecomposedTransform] to a [Matrix4].
   Matrix4 toMatrix4() {
-    final matrix = Matrix4.identity();
-    Matrix4.compose(translation, rotation, scale);
-    return matrix;
+    return Matrix4.compose(translation, rotation, scale);
   }
 
   DecomposedTransform clone() {

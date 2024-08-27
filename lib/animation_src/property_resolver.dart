@@ -81,12 +81,12 @@ class TranslationTimelineResolver extends TimelineResolver {
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Vector3 value = _values[key.index];
-    if (key.lerp < 1.0) {
+    if (key.lerp < 1) {
       value = _values[key.index - 1].lerp(value, key.lerp);
     }
 
     target.animatedPose.translation +=
-        (value - target.bindPose.translation) * key.lerp * weight;
+        (value - target.bindPose.translation) * weight;
   }
 }
 
@@ -106,12 +106,13 @@ class RotationTimelineResolver extends TimelineResolver {
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Quaternion value = _values[key.index];
-    if (key.lerp < 1.0) {
+    if (key.lerp < 1) {
       value = _values[key.index - 1].slerp(value, key.lerp);
     }
 
-    target.animatedPose.rotation = Quaternion.identity()
-        .slerp(target.bindPose.rotation.inverted() * value, weight);
+    target.animatedPose.rotation = target.animatedPose.rotation *
+        Quaternion.identity()
+            .slerp(target.bindPose.rotation.inverted() * value, weight);
   }
 }
 
@@ -130,11 +131,16 @@ class ScaleTimelineResolver extends TimelineResolver {
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
     Vector3 value = _values[key.index];
-    if (key.lerp < 1.0) {
+    if (key.lerp < 1) {
       value = _values[key.index - 1].lerp(value, key.lerp);
     }
 
-    target.animatedPose.scale +=
+    Vector3 scale =
         Vector3(1, 1, 1).lerp(value.divided(target.bindPose.scale), weight);
+
+    target.animatedPose.scale = Vector3(
+        target.animatedPose.scale.x * scale.x,
+        target.animatedPose.scale.y * scale.y,
+        target.animatedPose.scale.z * scale.z);
   }
 }

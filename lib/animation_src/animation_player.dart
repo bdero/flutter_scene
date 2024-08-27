@@ -49,5 +49,12 @@ class AnimationPlayer {
       clip.advance(deltaTime);
       clip.applyToBindings(_targetTransforms, weightMultiplier);
     }
+
+    // Apply the animated pose to the bound joints.
+    for (final entry in _targetTransforms.entries) {
+      final node = entry.key;
+      final transforms = entry.value;
+      node.localTransform = transforms.animatedPose.toMatrix4();
+    }
   }
 }

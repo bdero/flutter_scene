@@ -52,8 +52,7 @@ base class SceneEncoder {
         .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
     _renderPass.bindPipeline(pipeline);
 
-    // TODO(bdero): Fix transforms so that we don't need to transpose them...
-    geometry.bind(_renderPass, _transientsBuffer, worldTransform.transposed(),
+    geometry.bind(_renderPass, _transientsBuffer, worldTransform,
         _cameraTransform, _camera.position);
     material.bind(_renderPass, _transientsBuffer, _environment);
     _renderPass.draw();

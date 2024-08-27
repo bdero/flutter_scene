@@ -46,13 +46,15 @@ base class Skin {
     for (int matrixIndex = 0;
         matrixIndex < skin.inverseBindMatrices!.length;
         matrixIndex++) {
-      final matrix = skin.inverseBindMatrices![matrixIndex].toMatrix4();
+      // TODO(bdero): Transpose the matrix in the importer instead of here.
+      final matrix =
+          skin.inverseBindMatrices![matrixIndex].toMatrix4().transposed();
 
       result._inverseBindMatrices.add(matrix);
 
       Matrix4 matrixCopy = Matrix4.identity();
-      matrix.copyInverse(matrixCopy);
-      result._joints[matrixIndex].globalTransform = matrix;
+      matrixCopy.copyInverse(matrix);
+      result._joints[matrixIndex].globalTransform = matrixCopy;
     }
 
     return result;
@@ -74,6 +76,14 @@ base class Skin {
     // 64 bytes per matrix. 4 bytes per pixel.
     Float32List jointMatrixFloats =
         Float32List(dimensionSize * dimensionSize * 4);
+    // Initialize with identity matrices.
+    for (int i = 0; i < jointMatrixFloats.length; i += 16) {
+      jointMatrixFloats[i] = 1.0;
+      jointMatrixFloats[i + 5] = 1.0;
+      jointMatrixFloats[i + 10] = 1.0;
+      jointMatrixFloats[i + 15] = 1.0;
+    }
+
     for (int jointIndex = 0; jointIndex < _joints.length; jointIndex++) {
       Node? joint = _joints[jointIndex];
 
@@ -81,9 +91,9 @@ base class Skin {
       // skeleton root.
       final floatOffset = jointIndex * 16;
       while (joint != null && joint.isJoint) {
-        final Matrix4 matrix = Matrix4.fromFloat32List(
-                jointMatrixFloats.sublist(floatOffset, floatOffset + 16)) *
-            joint.localTransform;
+        final Matrix4 matrix = joint.localTransform *
+            Matrix4.fromFloat32List(
+                jointMatrixFloats.sublist(floatOffset, floatOffset + 16));
 
         jointMatrixFloats.setRange(
             floatOffset, floatOffset + 16, matrix.storage);
@@ -98,9 +108,9 @@ base class Skin {
       // the joint's default pose and the joint's current pose in the scene. This
       // is necessary because the skinned model's vertex positions (which _define_
       // the default pose) are all in model space.
-      final matrix = _inverseBindMatrices[jointIndex] *
-          Matrix4.fromFloat32List(
-              jointMatrixFloats.sublist(floatOffset, floatOffset + 16));
+      final Matrix4 matrix = Matrix4.fromFloat32List(
+              jointMatrixFloats.sublist(floatOffset, floatOffset + 16)) *
+          _inverseBindMatrices[jointIndex];
 
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }

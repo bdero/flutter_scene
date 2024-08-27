@@ -153,6 +153,9 @@ class UnskinnedGeometry extends Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
+    // TODO(bdero): Why do we need to transpose for unskinned by not for skinned?
+    modelTransform = modelTransform.transposed();
+
     // Unskinned vertex UBO.
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([
@@ -191,7 +194,6 @@ class UnskinnedGeometry extends Geometry {
       cameraPosition.x,
       cameraPosition.y,
       cameraPosition.z,
-      0.0, // padding
     ]);
     final frameInfoView =
         transientsBuffer.emplace(frameInfoFloats.buffer.asByteData());
@@ -281,7 +283,6 @@ class SkinnedGeometry extends Geometry {
       cameraPosition.x,
       cameraPosition.y,
       cameraPosition.z,
-      0.0, // padding
       _jointsTexture != null ? 1 : 0,
       _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
     ]);
