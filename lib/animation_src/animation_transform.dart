@@ -3,13 +3,13 @@ part of animation;
 /// A decomposed animation transform consisting of a translation, rotation, and scale.
 class DecomposedTransform {
   /// The translation component of the transform.
-  late final Vector3 translation;
+  Vector3 translation = Vector3.zero();
 
   /// The rotation component of the transform.
-  late final Quaternion rotation;
+  Quaternion rotation = Quaternion.identity();
 
   /// The scale component of the transform.
-  late final Vector3 scale;
+  Vector3 scale = Vector3.all(1.0);
 
   /// Constructs a new instance of [DecomposedTransform].
   DecomposedTransform({

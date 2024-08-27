@@ -72,6 +72,12 @@ base class Node implements SceneGraph {
 
   final List<Animation> _animations = [];
 
+  /// The list of animations parsed when this node was deserialized.
+  ///
+  /// To instantiate an animation on a node, use [createAnimationClip].
+  /// To search for an animation by name, use [findAnimationByName].
+  List<Animation> get parsedAnimations => _animations;
+
   AnimationPlayer? _animationPlayer;
 
   Node? findChildByName(String name, {bool excludeAnimationPlayers = false}) {
@@ -90,9 +96,19 @@ base class Node implements SceneGraph {
     return null;
   }
 
-  /// Finds an [Animation] by name.
+  /// Searches for an [Animation] by name.
+  ///
+  /// Returns `null` if no animation with the specified name is found.
+  ///
+  /// To enumerate all animations on this node, use [parsedAnimations].
+  /// Animations can be instantiated on a nodes using [createAnimationClip].
   Animation? findAnimationByName(String name) {
     return _animations.firstWhereOrNull((element) => element.name == name);
+  }
+
+  AnimationClip createAnimationClip(Animation animation) {
+    _animationPlayer ??= AnimationPlayer();
+    return _animationPlayer!.addAnimation(animation, this);
   }
 
   /// The asset file should be in a format that can be converted to a scene graph node.
@@ -276,6 +292,10 @@ base class Node implements SceneGraph {
   ///
   /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
+    if (_animationPlayer != null) {
+      _animationPlayer!.update();
+    }
+
     final worldTransform = localTransform * parentWorldTransform;
     if (mesh != null) {
       mesh!.render(encoder, worldTransform, _skin?.getJointsTexture(),

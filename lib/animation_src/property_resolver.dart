@@ -49,11 +49,11 @@ abstract class TimelineResolver implements PropertyResolver {
   }
 
   _TimelineKey _getTimelineKey(double time) {
-    if (_times.isEmpty || time <= _times.first) {
-      return _TimelineKey(0, 1.0);
+    if (_times.length <= 1 || time <= _times.first) {
+      return _TimelineKey(0, 1);
     }
     if (time >= _times.last) {
-      return _TimelineKey(_times.length - 1, 1.0);
+      return _TimelineKey(_times.length - 1, 1);
     }
     int nextTimeIndex = _times.indexWhere((t) => t >= time);
 
@@ -61,7 +61,7 @@ abstract class TimelineResolver implements PropertyResolver {
     double nextTime = _times[nextTimeIndex];
 
     double lerp = (time - previousTime) / (nextTime - previousTime);
-    return _TimelineKey(nextTimeIndex - 1, lerp);
+    return _TimelineKey(nextTimeIndex, lerp);
   }
 }
 
