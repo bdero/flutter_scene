@@ -20,3 +20,7 @@
 ## 0.1.2-2
 
 * Add more flatbuffer import helpers.
+
+## 0.1.2-3
+
+* Fix erroneous inverse in the flatbuffer->Dart Matrix4 conversion.

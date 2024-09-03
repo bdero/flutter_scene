@@ -28,6 +28,8 @@
 
 * Bump flutter_scene_importer version.
 
-## 0.2.1-2
+## 0.3.0-0
 
-* Add animation import.
+* Add Animation/playback support (Animation, AnimationPlayer, and AnimationClip).
+* Import animations from scene models.
+* Add support for cloning nodes.
