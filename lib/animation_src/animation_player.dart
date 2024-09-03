@@ -5,7 +5,7 @@ class AnimationPlayer {
   final Map<String, AnimationClip> _clips = {};
   int? _previousTimeInMilliseconds;
 
-  AnimationClip addAnimation(Animation animation, Node bindTarget) {
+  AnimationClip createAnimationClip(Animation animation, Node bindTarget) {
     final clip = AnimationClip(animation, bindTarget);
 
     // Record all of the unique default transforms that this AnimationClip

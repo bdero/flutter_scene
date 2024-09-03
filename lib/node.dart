@@ -108,7 +108,7 @@ base class Node implements SceneGraph {
 
   AnimationClip createAnimationClip(Animation animation) {
     _animationPlayer ??= AnimationPlayer();
-    return _animationPlayer!.addAnimation(animation, this);
+    return _animationPlayer!.createAnimationClip(animation, this);
   }
 
   /// The asset file should be in a format that can be converted to a scene graph node.
@@ -269,6 +269,93 @@ base class Node implements SceneGraph {
     while (children.isNotEmpty) {
       remove(children.last);
     }
+  }
+
+  /// Returns the name lookup path from the ancestor node to the child node.
+  static Iterable<String>? getNamePath(Node ancestor, Node child) {
+    List<String> result = [];
+    Node? current = child;
+    while (current != null) {
+      if (current == ancestor) {
+        return result.reversed;
+      }
+      result.add(current.name);
+      current = current._parent;
+    }
+    return null;
+  }
+
+  /// Returns the index lookup path from the ancestor node to the child node.
+  static Iterable<int>? getIndexPath(Node ancestor, Node child) {
+    List<int> result = [];
+    Node? current = child;
+    while (current != null) {
+      if (current == ancestor) {
+        return result.reversed;
+      }
+      if (current._parent == null) {
+        return null;
+      }
+      result.add(current._parent!.children.indexOf(current));
+      current = current._parent;
+    }
+    return null;
+  }
+
+  /// Returns the child node at the specified name path.
+  Node? getChildByNamePath(Iterable<String> namePath) {
+    Node? current = this;
+    for (var name in namePath) {
+      current = current!.findChildByName(name);
+      if (current == null) {
+        return null;
+      }
+    }
+    return current;
+  }
+
+  /// Returns the child node at the specified index path.
+  Node? getChildByIndexPath(Iterable<int> indexPath) {
+    Node? current = this;
+    for (var index in indexPath) {
+      if (index < 0 || index >= current!.children.length) {
+        return null;
+      }
+      current = current.children[index];
+    }
+    return current;
+  }
+
+  /// Creates a copy of this node.
+  ///
+  /// If [recursive] is `true`, the copy will include all child nodes.
+  Node clone({bool recursive = true}) {
+    final result = Node(name: name, localTransform: localTransform, mesh: mesh);
+    result._animations.addAll(_animations);
+    if (recursive) {
+      for (var child in children) {
+        result.add(child.clone());
+      }
+    }
+
+    if (_skin != null) {
+      result._skin = Skin();
+      for (var inverseBindMatrix in _skin!.inverseBindMatrices) {
+        result._skin!.inverseBindMatrices.add(Matrix4.copy(inverseBindMatrix));
+      }
+      for (var joint in _skin!.joints) {
+        if (joint == null) {
+          result._skin!.joints.add(null);
+          continue;
+        }
+        Iterable<int>? nodeNamePath = Node.getIndexPath(this, joint);
+        Node? newJoint;
+        if (nodeNamePath != null) {
+          newJoint = result.getChildByIndexPath(nodeNamePath);
+        }
+      }
+    }
+    return result;
   }
 
   /// Detaches this node from its parent in the scene graph.

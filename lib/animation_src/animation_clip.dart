@@ -7,6 +7,7 @@ class _ChannelBinding {
   _ChannelBinding(this.channel, this.node);
 }
 
+/// An instance of an [Animation] that has been bound to a specific [Node].
 class AnimationClip {
   final Animation _animation;
   final List<_ChannelBinding> _bindings = [];

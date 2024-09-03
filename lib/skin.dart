@@ -24,8 +24,8 @@ int _getNextPowerOfTwoSize(int x) {
 }
 
 base class Skin {
-  final List<Node> _joints = [];
-  final List<Matrix4> _inverseBindMatrices = [];
+  final List<Node?> joints = [];
+  final List<Matrix4> inverseBindMatrices = [];
 
   static Skin fromFlatbuffer(fb.Skin skin, List<Node> sceneNodes) {
     if (skin.joints == null ||
@@ -40,21 +40,20 @@ base class Skin {
         throw Exception('Skin join index out of range');
       }
       sceneNodes[jointIndex].isJoint = true;
-      result._joints.add(sceneNodes[jointIndex]);
+      result.joints.add(sceneNodes[jointIndex]);
     }
 
     for (int matrixIndex = 0;
         matrixIndex < skin.inverseBindMatrices!.length;
         matrixIndex++) {
       // TODO(bdero): Transpose the matrix in the importer instead of here.
-      final matrix =
-          skin.inverseBindMatrices![matrixIndex].toMatrix4();
+      final matrix = skin.inverseBindMatrices![matrixIndex].toMatrix4();
 
-      result._inverseBindMatrices.add(matrix);
+      result.inverseBindMatrices.add(matrix);
 
       Matrix4 matrixCopy = Matrix4.identity();
       matrixCopy.copyInverse(matrix);
-      result._joints[matrixIndex].globalTransform = matrixCopy;
+      result.joints[matrixIndex]!.globalTransform = matrixCopy;
     }
 
     return result;
@@ -63,7 +62,7 @@ base class Skin {
   gpu.Texture getJointsTexture() {
     // Each joint has a matrix. 1 matrix = 16 floats. 1 pixel = 4 floats.
     // Therefore, each joint needs 4 pixels.
-    int requiredPixels = _joints.length * 4;
+    int requiredPixels = joints.length * 4;
     int dimensionSize =
         max(2, _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()));
 
@@ -84,8 +83,8 @@ base class Skin {
       jointMatrixFloats[i + 15] = 1.0;
     }
 
-    for (int jointIndex = 0; jointIndex < _joints.length; jointIndex++) {
-      Node? joint = _joints[jointIndex];
+    for (int jointIndex = 0; jointIndex < joints.length; jointIndex++) {
+      Node? joint = joints[jointIndex];
 
       // Compute a model space matrix for the joint by walking up the bones to the
       // skeleton root.
@@ -110,7 +109,7 @@ base class Skin {
       // the default pose) are all in model space.
       final Matrix4 matrix = Matrix4.fromFloat32List(
               jointMatrixFloats.sublist(floatOffset, floatOffset + 16)) *
-          _inverseBindMatrices[jointIndex];
+          inverseBindMatrices[jointIndex];
 
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }
@@ -122,6 +121,6 @@ base class Skin {
   }
 
   int getTextureWidth() {
-    return _getNextPowerOfTwoSize(sqrt(_joints.length * 4).ceil());
+    return _getNextPowerOfTwoSize(sqrt(joints.length * 4).ceil());
   }
 }
