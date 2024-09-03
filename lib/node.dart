@@ -353,6 +353,8 @@ base class Node implements SceneGraph {
         if (nodeNamePath != null) {
           newJoint = result.getChildByIndexPath(nodeNamePath);
         }
+        // If the joint isn't found, a null placeholder is added.
+        result._skin!.joints.add(newJoint);
       }
     }
     return result;

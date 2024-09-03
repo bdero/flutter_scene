@@ -1,7 +1,6 @@
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/scene_encoder.dart';
 import 'package:vector_math/vector_math.dart';
 
