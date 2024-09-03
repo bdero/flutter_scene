@@ -153,9 +153,6 @@ class UnskinnedGeometry extends Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
-    // TODO(bdero): Why do we need to transpose for unskinned by not for skinned?
-    modelTransform = modelTransform.transposed();
-
     // Unskinned vertex UBO.
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([

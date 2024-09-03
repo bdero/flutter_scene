@@ -296,7 +296,7 @@ base class Node implements SceneGraph {
       _animationPlayer!.update();
     }
 
-    final worldTransform = localTransform * parentWorldTransform;
+    final worldTransform = parentWorldTransform * localTransform;
     if (mesh != null) {
       mesh!.render(encoder, worldTransform, _skin?.getJointsTexture(),
           _skin?.getTextureWidth() ?? 0);

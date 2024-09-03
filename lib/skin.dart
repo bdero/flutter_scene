@@ -48,7 +48,7 @@ base class Skin {
         matrixIndex++) {
       // TODO(bdero): Transpose the matrix in the importer instead of here.
       final matrix =
-          skin.inverseBindMatrices![matrixIndex].toMatrix4().transposed();
+          skin.inverseBindMatrices![matrixIndex].toMatrix4();
 
       result._inverseBindMatrices.add(matrix);
 
