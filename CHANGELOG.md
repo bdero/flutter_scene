@@ -34,7 +34,7 @@
 * Import animations from scene models.
 * Add support for cloning nodes.
 
-## 0.3.0-0
+## 0.4.0-0
 
 * Support node cloning for skins.
 * Fix default/animation-less pose.
