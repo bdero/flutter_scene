@@ -17,6 +17,9 @@ mixin SceneGraph {
   /// Add a child node.
   void add(Node child);
 
+  /// Add a list of child nodes.
+  void addAll(Iterable<Node> children);
+
   /// Add a mesh as a child node.
   void addMesh(Mesh mesh);
 
@@ -59,6 +62,11 @@ base class Scene implements SceneGraph {
   @override
   void add(Node child) {
     root.add(child);
+  }
+
+  @override
+  void addAll(Iterable<Node> children) {
+    root.addAll(children);
   }
 
   @override

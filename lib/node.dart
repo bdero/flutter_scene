@@ -22,11 +22,11 @@ import 'package:vector_math/vector_math.dart';
 /// and child nodes. Nodes are used to build complex scenes by establishing relationships
 /// between different elements, allowing for transformations to propagate down the hierarchy.
 base class Node implements SceneGraph {
-  Node({String? name, Matrix4? localTransform, this.mesh})
+  Node({this.name = '', Matrix4? localTransform, this.mesh})
       : localTransform = localTransform ?? Matrix4.identity();
 
   /// The name of this node, used for identification.
-  String name = '';
+  String name;
 
   /// The transformation matrix representing the node's position, rotation, and scale relative to the parent node.
   ///
@@ -60,7 +60,7 @@ base class Node implements SceneGraph {
 
   /// The parent node of this node in the scene graph.
   Node? get parent => _parent;
-  bool _isRoot = false;
+  bool _isSceneRoot = false;
 
   /// The collection of [MeshPrimitive] objects that represent the 3D geometry and material properties of this node.
   ///
@@ -80,7 +80,7 @@ base class Node implements SceneGraph {
 
   AnimationPlayer? _animationPlayer;
 
-  Node? findChildByName(String name, {bool excludeAnimationPlayers = false}) {
+  Node? getChildByName(String name, {bool excludeAnimationPlayers = false}) {
     for (var child in children) {
       if (excludeAnimationPlayers && child._animationPlayer != null) {
         continue;
@@ -88,7 +88,7 @@ base class Node implements SceneGraph {
       if (child.name == name) {
         return child;
       }
-      var result = child.findChildByName(name);
+      var result = child.getChildByName(name);
       if (result != null) {
         return result;
       }
@@ -231,13 +231,14 @@ base class Node implements SceneGraph {
   ///
   /// Throws an exception if the node is already a root or has a parent.
   void registerAsRoot(Scene scene) {
-    if (_isRoot) {
+    name = 'root';
+    if (_isSceneRoot) {
       throw Exception('Node is already a root');
     }
     if (_parent != null) {
       throw Exception('Node already has a parent');
     }
-    _isRoot = true;
+    _isSceneRoot = true;
   }
 
   @override
@@ -247,6 +248,13 @@ base class Node implements SceneGraph {
     }
     children.add(child);
     child._parent = this;
+  }
+
+  @override
+  void addAll(Iterable<Node> children) {
+    for (var child in children) {
+      add(child);
+    }
   }
 
   @override
@@ -276,12 +284,15 @@ base class Node implements SceneGraph {
     List<String> result = [];
     Node? current = child;
     while (current != null) {
-      if (current == ancestor) {
+      if (identical(current, ancestor)) {
         return result.reversed;
       }
       result.add(current.name);
       current = current._parent;
     }
+
+    debugPrint(
+        'Name path formation failed because the given ancestor was not an ancestor of the given child.');
     return null;
   }
 
@@ -290,15 +301,18 @@ base class Node implements SceneGraph {
     List<int> result = [];
     Node? current = child;
     while (current != null) {
-      if (current == ancestor) {
+      if (identical(current, ancestor)) {
         return result.reversed;
       }
       if (current._parent == null) {
-        return null;
+        break;
       }
       result.add(current._parent!.children.indexOf(current));
       current = current._parent;
     }
+
+    debugPrint(
+        'Index path formation failed because the given ancestor was not an ancestor of the given child.');
     return null;
   }
 
@@ -306,7 +320,7 @@ base class Node implements SceneGraph {
   Node? getChildByNamePath(Iterable<String> namePath) {
     Node? current = this;
     for (var name in namePath) {
-      current = current!.findChildByName(name);
+      current = current!.getChildByName(name);
       if (current == null) {
         return null;
       }
@@ -326,37 +340,97 @@ base class Node implements SceneGraph {
     return current;
   }
 
+  /// Returns the root node of the graph that this node is a part of.
+  Node getRoot() {
+    Node? current = this;
+    while (current!._parent != null) {
+      current = current._parent;
+    }
+    return current;
+  }
+
+  /// Returns the depth of this node in the scene graph hierarchy.
+  /// The root node has a depth of 0.
+  int getDepth() {
+    int depth = 0;
+    Node? current = this;
+    while (current!._parent != null) {
+      current = current._parent;
+      depth++;
+    }
+    return depth;
+  }
+
+  /// Prints the hierarchy of this node and all its children to the console.
+  void debugPrintHierarchy({int depth = 0}) {
+    String indent = '  ' * depth;
+    debugPrint('$indent$name');
+    for (var child in children) {
+      child.debugPrintHierarchy(depth: depth + 1);
+    }
+  }
+
   /// Creates a copy of this node.
   ///
   /// If [recursive] is `true`, the copy will include all child nodes.
   Node clone({bool recursive = true}) {
-    final result = Node(name: name, localTransform: localTransform, mesh: mesh);
+    // First, clone the node tree and collect any skins that need to be re-bound.
+    List<Skin> clonedSkins = [];
+    Node result = _cloneAndCollectSkins(recursive, clonedSkins);
+
+    // Then, re-bind the skins to the cloned node tree.
+
+    // Each of the clonedSkins currently have joint references in the old tree.
+    for (var clonedSkin in clonedSkins) {
+      for (int jointIndex = 0;
+          jointIndex < clonedSkin.joints.length;
+          jointIndex++) {
+        Node? joint = clonedSkin.joints[jointIndex];
+        if (joint == null) {
+          clonedSkin.joints[jointIndex] = null;
+          continue;
+        }
+
+        Node? newJoint;
+
+        // Get the index path from this node to the joint.
+        Iterable<int>? nodeIndexPath = Node.getIndexPath(this, joint);
+        if (nodeIndexPath != null) {
+          // Then, replay the path on the cloned node tree to find the cloned
+          // joint reference.
+          newJoint = result.getChildByIndexPath(nodeIndexPath);
+        }
+
+        // Inline replace the joint reference with the cloned joint.
+        // If the joint isn't found, a null placeholder is added.
+        clonedSkin.joints[jointIndex] = newJoint;
+      }
+    }
+
+    return result;
+  }
+
+  Node _cloneAndCollectSkins(bool recursive, List<Skin> clonedSkins) {
+    Node result = Node(name: name, localTransform: localTransform, mesh: mesh);
+    result.isJoint = isJoint;
     result._animations.addAll(_animations);
     if (recursive) {
       for (var child in children) {
-        result.add(child.clone());
+        result.add(child._cloneAndCollectSkins(recursive, clonedSkins));
       }
     }
 
     if (_skin != null) {
       result._skin = Skin();
-      for (var inverseBindMatrix in _skin!.inverseBindMatrices) {
+      for (Matrix4 inverseBindMatrix in _skin!.inverseBindMatrices) {
         result._skin!.inverseBindMatrices.add(Matrix4.copy(inverseBindMatrix));
       }
-      for (var joint in _skin!.joints) {
-        if (joint == null) {
-          result._skin!.joints.add(null);
-          continue;
-        }
-        Iterable<int>? nodeNamePath = Node.getIndexPath(this, joint);
-        Node? newJoint;
-        if (nodeNamePath != null) {
-          newJoint = result.getChildByIndexPath(nodeNamePath);
-        }
-        // If the joint isn't found, a null placeholder is added.
-        result._skin!.joints.add(newJoint);
-      }
+      // Initially copy all the original joints. All of these will be replaced
+      // with the cloned joints in Node.clone().
+      result._skin!.joints.addAll(_skin!.joints);
+      clonedSkins.add(result._skin!);
     }
+
     return result;
   }
 
@@ -369,7 +443,7 @@ base class Node implements SceneGraph {
   /// Throws an exception if this is the root node of the scene graph.
   /// No action is taken if the node already has no parent.
   void detach() {
-    if (_isRoot) {
+    if (_isSceneRoot) {
       throw Exception('Root node cannot be detached');
     }
     if (_parent != null) {

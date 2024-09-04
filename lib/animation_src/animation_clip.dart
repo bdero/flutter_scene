@@ -87,7 +87,7 @@ class AnimationClip {
       if (channel.bindTarget.nodeName == target.name) {
         channelTarget = target;
       }
-      Node? result = target.findChildByName(channel.bindTarget.nodeName);
+      Node? result = target.getChildByName(channel.bindTarget.nodeName);
       if (result != null) {
         channelTarget = result;
       } else {

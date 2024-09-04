@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:shapes/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_logo.dart';
@@ -31,6 +32,8 @@ class _MyAppState extends State<MyApp> {
     ticker.start();
 
     examples = {
+      'Animation': (context) =>
+          ExampleAnimation(elapsedSeconds: elapsedSeconds),
       'Imported Model': (context) =>
           ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),

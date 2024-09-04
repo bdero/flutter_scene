@@ -46,14 +46,9 @@ base class Skin {
     for (int matrixIndex = 0;
         matrixIndex < skin.inverseBindMatrices!.length;
         matrixIndex++) {
-      // TODO(bdero): Transpose the matrix in the importer instead of here.
       final matrix = skin.inverseBindMatrices![matrixIndex].toMatrix4();
 
       result.inverseBindMatrices.add(matrix);
-
-      Matrix4 matrixCopy = Matrix4.identity();
-      matrixCopy.copyInverse(matrix);
-      result.joints[matrixIndex]!.globalTransform = matrixCopy;
     }
 
     return result;

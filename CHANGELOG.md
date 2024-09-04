@@ -33,3 +33,8 @@
 * Add Animation/playback support (Animation, AnimationPlayer, and AnimationClip).
 * Import animations from scene models.
 * Add support for cloning nodes.
+
+## 0.3.0-0
+
+* Support node cloning for skins.
+* Fix default/animation-less pose.
