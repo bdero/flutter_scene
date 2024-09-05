@@ -15,3 +15,9 @@ updates:
     directory: "/importer/"
     schedule:
       interval: "daily"
+  - package-ecosystem: "pub"
+    versioning-strategy: "increase-if-necessary"
+    directory: "/examples/flutter_app/"
+    schedule:
+      interval: "daily"
+    
