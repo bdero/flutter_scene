@@ -20,7 +20,7 @@ dependencies:
   flutter_gpu:
     sdk: flutter
   logging: ^1.2.0
-  native_assets_cli: ^0.7.2
+  native_assets_cli: ^0.8.0
   vector_math: ^2.1.4
 
 dev_dependencies:
