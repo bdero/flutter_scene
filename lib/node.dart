@@ -36,13 +36,14 @@ base class Node implements SceneGraph {
   Skin? _skin;
 
   set globalTransform(Matrix4 transform) {
-    if (_parent == null) {
+    final parent = _parent;
+    if (parent == null) {
       localTransform = transform;
     } else {
       Matrix4 g = Matrix4.identity();
-      _parent!.globalTransform.copyInverse(g);
+      parent.globalTransform.copyInverse(g);
 
-      localTransform = transform * _parent!.globalTransform.invert();
+      localTransform = transform * parent.globalTransform.invert();
     }
   }
 
@@ -50,10 +51,11 @@ base class Node implements SceneGraph {
   ///
   /// If the node does not have a parent, `globalTransform` and [localTransform] share the same transformation matrix instance.
   Matrix4 get globalTransform {
-    if (_parent == null) {
+    final parent = _parent;
+    if (parent == null) {
       return localTransform;
     }
-    return localTransform * _parent!.globalTransform;
+    return localTransform * parent.globalTransform;
   }
 
   Node? _parent;
@@ -446,8 +448,9 @@ base class Node implements SceneGraph {
     if (_isSceneRoot) {
       throw Exception('Root node cannot be detached');
     }
-    if (_parent != null) {
-      _parent!.remove(this);
+    final parent = _parent;
+    if (parent != null) {
+      parent.remove(this);
     }
   }
 
