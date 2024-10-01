@@ -1,0 +1,33 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - run: dart --version
+      - run: flutter --version
+      - run: flutter pub get
+      - name: enable asset building
+        run: flutter config --enable-native-assets
+      - name: Force building of assets directories
+        run: flutter build macos
+      - name: Lint analysis
+        run: dart analyze
+      - name: Dart format
+        run: dart format --output none --set-exit-if-changed .
+      - name: dart fix
+        run: dart fix --dry-run
+      - name: Run tests
+        run: flutter test --enable-impeller
