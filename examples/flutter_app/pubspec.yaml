@@ -1,4 +1,4 @@
-name: shapes
+name: example_app
 description: "flutter_scene example project."
 publish_to: 'none'
 
@@ -14,7 +14,7 @@ dependencies:
     path: ../../
   flutter_scene_importer:
     path: ../../importer
-  native_assets_cli: ^0.7.2
+  native_assets_cli: '>=0.7.3'
   vector_math: ^2.1.4
 
 dev_dependencies:
