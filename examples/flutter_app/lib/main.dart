@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:shapes/example_animation.dart';
+import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_logo.dart';
