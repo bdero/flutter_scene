@@ -36,36 +36,36 @@ struct Matrix {
     Vector4 vec[4];
   };
 
-  constexpr Matrix() {
+  Matrix() {
     vec[0] = {1.0, 0.0, 0.0, 0.0};
     vec[1] = {0.0, 1.0, 0.0, 0.0};
     vec[2] = {0.0, 0.0, 1.0, 0.0};
     vec[3] = {0.0, 0.0, 0.0, 1.0};
   };
 
-  constexpr Matrix(Scalar m0,
-                   Scalar m1,
-                   Scalar m2,
-                   Scalar m3,
-                   Scalar m4,
-                   Scalar m5,
-                   Scalar m6,
-                   Scalar m7,
-                   Scalar m8,
-                   Scalar m9,
-                   Scalar m10,
-                   Scalar m11,
-                   Scalar m12,
-                   Scalar m13,
-                   Scalar m14,
-                   Scalar m15) {
+  Matrix(Scalar m0,
+         Scalar m1,
+         Scalar m2,
+         Scalar m3,
+         Scalar m4,
+         Scalar m5,
+         Scalar m6,
+         Scalar m7,
+         Scalar m8,
+         Scalar m9,
+         Scalar m10,
+         Scalar m11,
+         Scalar m12,
+         Scalar m13,
+         Scalar m14,
+         Scalar m15) {
     vec[0] = {m0, m1, m2, m3};
     vec[1] = {m4, m5, m6, m7};
     vec[2] = {m8, m9, m10, m11};
     vec[3] = {m12, m13, m14, m15};
   }
 
-  static constexpr Matrix MakeTranslation(const Vector3& t) {
+  static Matrix MakeTranslation(const Vector3& t) {
     // clang-format off
     return Matrix{1.0f, 0.0f, 0.0f, 0.0f,
                   0.0f, 1.0f, 0.0f, 0.0f,
@@ -74,7 +74,7 @@ struct Matrix {
     // clang-format on
   }
 
-  static constexpr Matrix MakeScale(const Vector3& s) {
+  static Matrix MakeScale(const Vector3& s) {
     // clang-format off
     return Matrix{s.x, 0.0f, 0.0f, 0.0f,
                   0.0f, s.y, 0.0f, 0.0f,
@@ -139,7 +139,7 @@ struct Matrix {
     // clang-format on
   }
 
-  constexpr bool IsIdentity() const {
+  bool IsIdentity() const {
     return (
         // clang-format off
         m[0]  == 1.0f && m[1]  == 0.0f && m[2]  == 0.0f && m[3]  == 0.0f &&
@@ -150,7 +150,7 @@ struct Matrix {
     );
   }
 
-  constexpr Matrix Multiply(const Matrix& o) const {
+  Matrix Multiply(const Matrix& o) const {
     // clang-format off
     return Matrix{
         m[0] * o.m[0]  + m[4] * o.m[1]  + m[8]  * o.m[2]  + m[12] * o.m[3],

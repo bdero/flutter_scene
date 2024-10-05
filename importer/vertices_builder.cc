@@ -38,9 +38,9 @@ static Scalar ToScalar(const void* source, size_t index, bool normalized) {
   const SourceType* s = reinterpret_cast<const SourceType*>(source) + index;
   Scalar result = static_cast<Scalar>(*s);
   if (normalized) {
-    constexpr SourceType divisor = std::is_integral_v<SourceType>
-                                       ? std::numeric_limits<SourceType>::max()
-                                       : 1;
+    SourceType divisor = std::is_integral_v<SourceType>
+                             ? std::numeric_limits<SourceType>::max()
+                             : 1;
     result = static_cast<Scalar>(*s) / static_cast<Scalar>(divisor);
   }
   return result;
