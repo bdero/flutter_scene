@@ -141,6 +141,12 @@ base class Node implements SceneGraph {
     // Unpack textures.
     List<gpu.Texture> textures = [];
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
+      if (fbTexture.embeddedImage == null) {
+        debugPrint(
+            'Texture ${textures.length} has no embedded image. A white placeholder will be used instead.');
+        textures.add(Material.getWhitePlaceholderTexture());
+        continue;
+      }
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture? texture = gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible, image.width, image.height);
