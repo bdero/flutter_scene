@@ -84,12 +84,17 @@ void importGltf(String inputGltfFilePath, String outputModelFilePath,
   final packageRoot = findImporterPackageRoot();
   final importer = findBuiltExecutable('importer', packageRoot);
 
+  // Parse the paths via Uri.file/Uri.directory and use resolveUri to resolve
+  // the paths relative to the working directory. Using raw strings doesn't
+  // bode well with Windows paths.
+  final inputGltfFilePathUri = Uri.file(inputGltfFilePath);
+  final outputModelFilePathUri = Uri.file(outputModelFilePath);
   final workingDirectoryUri =
-      Uri.parse(workingDirectory ?? packageRoot.toFilePath());
+      Uri.directory(workingDirectory ?? packageRoot.toFilePath());
   inputGltfFilePath =
-      workingDirectoryUri.resolve(inputGltfFilePath).toFilePath();
+      workingDirectoryUri.resolveUri(inputGltfFilePathUri).toFilePath();
   outputModelFilePath =
-      workingDirectoryUri.resolve(outputModelFilePath).toFilePath();
+      workingDirectoryUri.resolveUri(outputModelFilePathUri).toFilePath();
   //throw Exception('root $packageRoot input $inputGltfFilePath output $outputModelFilePath');
 
   final importerResult = Process.runSync(

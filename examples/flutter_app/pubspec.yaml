@@ -24,8 +24,5 @@ flutter:
   uses-material-design: true
 
   assets:
-    # Environment maps, etc.
-    - assets/
-
     # Imported models.
     - build/models/
