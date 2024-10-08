@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/animation.dart';
+import 'package:flutter_scene/asset_helpers.dart';
 import 'package:flutter_scene/geometry/geometry.dart';
 import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/material/unlit_material.dart';
@@ -131,7 +132,7 @@ base class Node implements SceneGraph {
   ///
   /// If you're using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer),
   /// consider using [fromAsset] to load the model directly from the asset bundle instead.
-  static Node fromFlatbuffer(ByteData byteData) {
+  static Future<Node> fromFlatbuffer(ByteData byteData) async {
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
 
@@ -142,10 +143,22 @@ base class Node implements SceneGraph {
     List<gpu.Texture> textures = [];
     for (fb.Texture fbTexture in fbScene.textures ?? []) {
       if (fbTexture.embeddedImage == null) {
-        debugPrint(
-            'Texture ${textures.length} has no embedded image. A white placeholder will be used instead.');
-        textures.add(Material.getWhitePlaceholderTexture());
-        continue;
+        if (fbTexture.uri == null) {
+          debugPrint(
+              'Texture ${textures.length} has no embedded image or URI. A white placeholder will be used instead.');
+          textures.add(Material.getWhitePlaceholderTexture());
+          continue;
+        }
+        try {
+          // If the texture has a URI, try to load it from the asset bundle.
+          textures.add(await gpuTextureFromAsset(fbTexture.uri!));
+          continue;
+        } catch (e) {
+          debugPrint('Failed to load texture from asset URI: ${fbTexture.uri}. '
+              'A white placeholder will be used instead. (Error: $e)');
+          textures.add(Material.getWhitePlaceholderTexture());
+          continue;
+        }
       }
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture? texture = gpu.gpuContext.createTexture(

@@ -303,33 +303,37 @@ static void ProcessTexture(const tinygltf::Model& gltf,
   }
   auto& image = gltf.images[in_texture.source];
 
-  auto embedded = std::make_unique<fb::EmbeddedImageT>();
-  embedded->bytes = image.image;
-  size_t bytes_per_component = 0;
-  switch (image.pixel_type) {
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-      embedded->component_type = fb::ComponentType::k8Bit;
-      bytes_per_component = 1;
-      break;
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-      embedded->component_type = fb::ComponentType::k16Bit;
-      bytes_per_component = 2;
-      break;
-    default:
-      std::cerr << "Texture component type " << image.pixel_type
-                << " not supported." << std::endl;
+  // When pixel_type is -1, the image is not embedded. It may have a URI
+  // referencing an external image.
+  if (image.pixel_type != -1) {
+    auto embedded = std::make_unique<fb::EmbeddedImageT>();
+    embedded->bytes = image.image;
+    size_t bytes_per_component = 0;
+    switch (image.pixel_type) {
+      case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+        embedded->component_type = fb::ComponentType::k8Bit;
+        bytes_per_component = 1;
+        break;
+      case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+        embedded->component_type = fb::ComponentType::k16Bit;
+        bytes_per_component = 2;
+        break;
+      default:
+        std::cerr << "Texture component type " << image.pixel_type
+                  << " not supported." << std::endl;
+        return;
+    }
+    if (image.image.size() !=
+        bytes_per_component * image.component * image.width * image.height) {
+      std::cerr << "Decompressed texture had unexpected buffer size. Skipping."
+                << std::endl;
       return;
+    }
+    embedded->component_count = image.component;
+    embedded->width = image.width;
+    embedded->height = image.height;
+    out_texture.embedded_image = std::move(embedded);
   }
-  if (image.image.size() !=
-      bytes_per_component * image.component * image.width * image.height) {
-    std::cerr << "Decompressed texture had unexpected buffer size. Skipping."
-              << std::endl;
-    return;
-  }
-  embedded->component_count = image.component;
-  embedded->width = image.width;
-  embedded->height = image.height;
-  out_texture.embedded_image = std::move(embedded);
   out_texture.uri = image.uri;
 }
 
