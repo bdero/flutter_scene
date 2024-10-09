@@ -29,6 +29,9 @@ base class Node implements SceneGraph {
   /// The name of this node, used for identification.
   String name;
 
+  /// Whether this node is visible in the scene. If false, the node and its children will not be rendered.
+  bool visible = true;
+
   /// The transformation matrix representing the node's position, rotation, and scale relative to the parent node.
   ///
   /// If the node does not have a parent, `localTransform` and [globalTransform] share the same transformation matrix instance.
@@ -477,6 +480,10 @@ base class Node implements SceneGraph {
   ///
   /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
   void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
+    if (!visible) {
+      return;
+    }
+
     if (_animationPlayer != null) {
       _animationPlayer!.update();
     }
