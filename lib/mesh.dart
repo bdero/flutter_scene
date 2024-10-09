@@ -18,8 +18,8 @@ import 'package:vector_math/vector_math.dart';
 base class MeshPrimitive {
   MeshPrimitive(this.geometry, this.material);
 
-  final Geometry geometry;
-  final Material material;
+  Geometry geometry;
+  Material material;
 }
 
 /// Defines the shape and appearance of a 3D model in the scene.
