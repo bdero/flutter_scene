@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/material/environment.dart';
@@ -7,6 +5,7 @@ import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/shaders.dart';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:vector_math/vector_math.dart';
 
 class PhysicallyBasedMaterial extends Material {
   static PhysicallyBasedMaterial fromFlatbuffer(
@@ -20,11 +19,11 @@ class PhysicallyBasedMaterial extends Material {
     // Base color.
 
     if (fbMaterial.baseColorFactor != null) {
-      material.baseColorFactor = ui.Color.fromARGB(
-          (fbMaterial.baseColorFactor!.a * 255).toInt(),
-          (fbMaterial.baseColorFactor!.r * 255).toInt(),
-          (fbMaterial.baseColorFactor!.g * 255).toInt(),
-          (fbMaterial.baseColorFactor!.b * 255).toInt());
+      material.baseColorFactor = Vector4(
+          fbMaterial.baseColorFactor!.r,
+          fbMaterial.baseColorFactor!.g,
+          fbMaterial.baseColorFactor!.b,
+          fbMaterial.baseColorFactor!.a);
     }
 
     if (fbMaterial.baseColorTexture >= 0 &&
@@ -56,11 +55,8 @@ class PhysicallyBasedMaterial extends Material {
     // Emissive.
 
     if (fbMaterial.emissiveFactor != null) {
-      material.emissiveFactor = ui.Color.fromARGB(
-          255,
-          (fbMaterial.emissiveFactor!.x * 255).toInt(),
-          (fbMaterial.emissiveFactor!.y * 255).toInt(),
-          (fbMaterial.emissiveFactor!.z * 255).toInt());
+      material.emissiveFactor = Vector4(fbMaterial.emissiveFactor!.x,
+          fbMaterial.emissiveFactor!.y, fbMaterial.emissiveFactor!.z, 1);
     }
 
     if (fbMaterial.emissiveTexture >= 0 &&
@@ -91,7 +87,7 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   gpu.Texture? baseColorTexture;
-  ui.Color baseColorFactor = const ui.Color(0xFFFFFFFF);
+  Vector4 baseColorFactor = Colors.white;
   double vertexColorWeight = 1.0;
 
   gpu.Texture? metallicRoughnessTexture;
@@ -102,7 +98,7 @@ class PhysicallyBasedMaterial extends Material {
   double normalScale = 1.0;
 
   gpu.Texture? emissiveTexture;
-  ui.Color emissiveFactor = const ui.Color(0x00000000);
+  Vector4 emissiveFactor = Vector4.zero();
 
   gpu.Texture? occlusionTexture;
   double occlusionStrength = 1.0;
@@ -117,11 +113,11 @@ class PhysicallyBasedMaterial extends Material {
     Environment env = this.environment ?? environment;
 
     var fragInfo = Float32List.fromList([
-      baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
-      baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
-      emissiveFactor.red / 256.0, emissiveFactor.green / 256.0,
-      emissiveFactor.blue / 256.0,
-      emissiveFactor.alpha / 256.0, // emissive_factor
+      baseColorFactor.r, baseColorFactor.g,
+      baseColorFactor.b, baseColorFactor.a, // color
+      emissiveFactor.r, emissiveFactor.g,
+      emissiveFactor.b,
+      emissiveFactor.a, // emissive_factor
       vertexColorWeight, // vertex_color_weight
       environment.exposure, // exposure
       metallicFactor, // metallic
@@ -184,6 +180,6 @@ class PhysicallyBasedMaterial extends Material {
 
   @override
   bool isOpaque() {
-    return baseColorFactor.alpha == 255;
+    return baseColorFactor.a == 1;
   }
 }

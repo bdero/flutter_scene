@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/material/environment.dart';
@@ -7,6 +6,7 @@ import 'package:flutter_scene/material/material.dart';
 import 'package:flutter_scene/shaders.dart';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:vector_math/vector_math.dart';
 
 class UnlitMaterial extends Material {
   static UnlitMaterial fromFlatbuffer(
@@ -18,11 +18,11 @@ class UnlitMaterial extends Material {
     UnlitMaterial material = UnlitMaterial();
 
     if (fbMaterial.baseColorFactor != null) {
-      material.baseColorFactor = ui.Color.fromARGB(
-          (fbMaterial.baseColorFactor!.a * 255).toInt(),
-          (fbMaterial.baseColorFactor!.r * 255).toInt(),
-          (fbMaterial.baseColorFactor!.g * 255).toInt(),
-          (fbMaterial.baseColorFactor!.b * 255).toInt());
+      material.baseColorFactor = Vector4(
+          fbMaterial.baseColorFactor!.r,
+          fbMaterial.baseColorFactor!.g,
+          fbMaterial.baseColorFactor!.b,
+          fbMaterial.baseColorFactor!.a);
     }
 
     if (fbMaterial.baseColorTexture >= 0 &&
@@ -39,7 +39,7 @@ class UnlitMaterial extends Material {
   }
 
   late gpu.Texture baseColorTexture;
-  ui.Color baseColorFactor = const ui.Color(0xFFFFFFFF);
+  Vector4 baseColorFactor = Colors.white;
   double vertexColorWeight = 1.0;
 
   @override
@@ -48,8 +48,8 @@ class UnlitMaterial extends Material {
     super.bind(pass, transientsBuffer, environment);
 
     var fragInfo = Float32List.fromList([
-      baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
-      baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color
+      baseColorFactor.r, baseColorFactor.g,
+      baseColorFactor.b, baseColorFactor.a, // color
       vertexColorWeight, // vertex_color_weight
     ]);
     pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
