@@ -24,3 +24,9 @@
 ## 0.1.2-3
 
 * Fix erroneous inverse in the flatbuffer->Dart Matrix4 conversion.
+
+## 0.2.0-0
+
+* Remove constexpr qualifiers from matrix for better portability.
+* Support non-embedded/URI-only image embeds.
+* Fix path interpretation issues on Windows.

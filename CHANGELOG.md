@@ -38,3 +38,7 @@
 
 * Support node cloning for skins.
 * Fix default/animation-less pose.
+
+## 0.5.0-0
+
+* Support non-embedded/URI-only image embeds.

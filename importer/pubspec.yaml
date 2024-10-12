@@ -1,6 +1,6 @@
 name: flutter_scene_importer
 description: "An offline 3D model importer for Flutter. Converts glTF files into the Flutter Scene model format."
-version: 0.1.2-3
+version: 0.2.0-0
 homepage: https://github.com/bdero/flutter_scene
 platforms:
   linux:
