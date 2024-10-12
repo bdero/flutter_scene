@@ -45,6 +45,8 @@ class UnlitMaterial extends Material {
   @override
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment) {
+    super.bind(pass, transientsBuffer, environment);
+
     var fragInfo = Float32List.fromList([
       baseColorFactor.red / 256.0, baseColorFactor.green / 256.0,
       baseColorFactor.blue / 256.0, baseColorFactor.alpha / 256.0, // color

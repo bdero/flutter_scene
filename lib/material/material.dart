@@ -113,7 +113,10 @@ abstract class Material {
   }
 
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
-      Environment environment);
+      Environment environment) {
+    pass.setCullMode(gpu.CullMode.backFace);
+    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+  }
 
   bool isOpaque() {
     return true;

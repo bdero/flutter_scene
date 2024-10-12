@@ -112,6 +112,8 @@ class PhysicallyBasedMaterial extends Material {
   @override
   void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
       Environment environment) {
+    super.bind(pass, transientsBuffer, environment);
+
     Environment env = this.environment ?? environment;
 
     var fragInfo = Float32List.fromList([
