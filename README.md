@@ -24,7 +24,7 @@ https://github.com/bdero/flutter_scene/assets/919017/b44fba62-ec48-4ab4-80cc-644
 
 ## FAQ
 
-### What platforms does this package support?
+### **Q:** What platforms does this package support?
 
 `flutter_scene` supports all platforms that [Impeller](https://docs.flutter.dev/perf/impeller#availability) currently supports.
 
@@ -42,12 +42,12 @@ On MacOS, Windows, and Linux, Impeller is able to run, but is not on by default 
 |              Web | 🔴 Not Supported |
 | Custom embedders | 🟢 Supported     |
 
-### When will web be supported?
+### **Q:** When will web be supported?
 
 Although there has been some very promising experimentation with porting Impeller to web, there is currently no ETA on web platform support.
 
 Web is an important platform, and both `flutter_gpu` and `flutter_scene` will eventually support Flutter web.
 
-### I'm seeing errors when running the importer: `ProcessException: No such file or directory`. How do I fix it?
+### **Q:** I'm seeing errors when running the importer: `ProcessException: No such file or directory`. How do I fix it?
 
 Install [CMake](https://cmake.org/download/).
