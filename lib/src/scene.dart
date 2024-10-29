@@ -33,6 +33,11 @@ mixin SceneGraph {
   void removeAll();
 }
 
+enum AntiAliasingMode {
+  none,
+  msaa,
+}
+
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
 ///
 /// `Scene` manages the scene graph and handles rendering operations.
@@ -42,10 +47,32 @@ base class Scene implements SceneGraph {
   Scene() {
     initializeStaticResources();
     root.registerAsRoot(this);
+    antiAliasingMode = AntiAliasingMode.msaa;
   }
 
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
+
+  AntiAliasingMode _antiAliasingMode = AntiAliasingMode.none;
+
+  set antiAliasingMode(AntiAliasingMode value) {
+    switch (value) {
+      case AntiAliasingMode.none:
+        break;
+      case AntiAliasingMode.msaa:
+        if (!gpu.gpuContext.doesSupportOffscreenMSAA) {
+          debugPrint("MSAA is not currently supported on this backend.");
+          return;
+        }
+        break;
+    }
+
+    _antiAliasingMode = value;
+  }
+
+  AntiAliasingMode get antiAliasingMode {
+    return _antiAliasingMode;
+  }
 
   /// Prepares the rendering resources, such as textures and shaders,
   /// that are used to display models in this [Scene].
@@ -127,8 +154,9 @@ base class Scene implements SceneGraph {
     if (drawArea.isEmpty) {
       return;
     }
+    final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
     final gpu.RenderTarget renderTarget =
-        surface.getNextRenderTarget(drawArea.size);
+        surface.getNextRenderTarget(drawArea.size, enableMsaa);
 
     final env = environment.environmentMap.isEmpty()
         ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
@@ -138,7 +166,10 @@ base class Scene implements SceneGraph {
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
-    final image = renderTarget.colorAttachments[0].texture.asImage();
+    final gpu.Texture texture = enableMsaa
+        ? renderTarget.colorAttachments[0].resolveTexture!
+        : renderTarget.colorAttachments[0].texture;
+    final image = texture.asImage();
     canvas.drawImage(image, drawArea.topLeft, ui.Paint());
   }
 }

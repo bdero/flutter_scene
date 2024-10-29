@@ -13,7 +13,7 @@ class Surface {
   int _cursor = 0;
   Size _previousSize = const Size(0, 0);
 
-  gpu.RenderTarget getNextRenderTarget(Size size) {
+  gpu.RenderTarget getNextRenderTarget(Size size, bool enableMsaa) {
     if (size != _previousSize) {
       _cursor = 0;
       _renderTargets.clear();
@@ -21,27 +21,47 @@ class Surface {
     }
     if (_cursor == _renderTargets.length) {
       final gpu.Texture? colorTexture = gpu.gpuContext.createTexture(
-          gpu.StorageMode.devicePrivate,
-          size.width.toInt(),
-          size.height.toInt(),
-          enableRenderTargetUsage: true,
-          enableShaderReadUsage: true,
-          coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture);
+        gpu.StorageMode.devicePrivate,
+        size.width.toInt(),
+        size.height.toInt(),
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: true,
+        coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
+      );
       if (colorTexture == null) {
         throw Exception("Failed to create Surface color texture!");
       }
-      final gpu.Texture? depthTexture = gpu.gpuContext.createTexture(
+      final colorAttachment = gpu.ColorAttachment(texture: colorTexture);
+      if (enableMsaa) {
+        final gpu.Texture? msaaColorTexture = gpu.gpuContext.createTexture(
           gpu.StorageMode.deviceTransient,
           size.width.toInt(),
           size.height.toInt(),
-          format: gpu.gpuContext.defaultDepthStencilFormat,
+          sampleCount: 4,
           enableRenderTargetUsage: true,
-          coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture);
+          coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
+        );
+        if (msaaColorTexture == null) {
+          throw Exception("Failed to create Surface color texture!");
+        }
+        colorAttachment.resolveTexture = colorAttachment.texture;
+        colorAttachment.texture = msaaColorTexture;
+        colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
+      }
+      final gpu.Texture? depthTexture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.deviceTransient,
+        size.width.toInt(),
+        size.height.toInt(),
+        sampleCount: enableMsaa ? 4 : 1,
+        format: gpu.gpuContext.defaultDepthStencilFormat,
+        enableRenderTargetUsage: true,
+        coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
+      );
       if (depthTexture == null) {
         throw Exception("Failed to create Surface depth texture!");
       }
       final renderTarget = gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(texture: colorTexture),
+        colorAttachment,
         depthStencilAttachment: gpu.DepthStencilAttachment(
             texture: depthTexture, depthClearValue: 1.0),
       );
