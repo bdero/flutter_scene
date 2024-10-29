@@ -24,23 +24,23 @@ The primary goal of this project is to make performant cross platform 3D easy in
 ---
 
 <p align="center">
-  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/dashgameported2.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/dashgameported2.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/hexagons3.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/hexagons3.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/DamagedHelmet.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/DamagedHelmet.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/car_example.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/car_example.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/cloning.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/cloning.gif">
 </p>
 
 ## Early preview! ⚠️
