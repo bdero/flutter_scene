@@ -24,7 +24,7 @@ jobs:
       - name: Lint analysis
         run: dart analyze
       - name: Dart format
-        run: dart format --output none --set-exit-if-changed .
+        run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*')
       - name: dart fix
         run: dart fix --dry-run
 #      - name: Run tests
