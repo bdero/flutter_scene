@@ -1,5 +1,3 @@
-library importer;
-
 // ignore: depend_on_referenced_packages
 import 'dart:typed_data';
 

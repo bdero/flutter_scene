@@ -1,5 +1,3 @@
-library importer;
-
 // position: 3, normal: 3, textureCoords: 2, color: 4 :: 12 floats :: 48 bytes
 const int kUnskinnedPerVertexSize = 48;
 
