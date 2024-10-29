@@ -32,11 +32,11 @@ abstract class Geometry {
         isSkinned ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
 
     switch (fbPrimitive.vertices!.runtimeType) {
-      case fb.UnskinnedVertexBuffer _:
+      case const (fb.UnskinnedVertexBuffer):
         fb.UnskinnedVertexBuffer unskinned =
             (fbPrimitive.vertices as fb.UnskinnedVertexBuffer?)!;
         vertices = unskinned.vertices! as Uint8List;
-      case fb.SkinnedVertexBuffer _:
+      case const (fb.SkinnedVertexBuffer):
         fb.SkinnedVertexBuffer skinned =
             (fbPrimitive.vertices as fb.SkinnedVertexBuffer?)!;
         vertices = skinned.vertices! as Uint8List;
@@ -58,9 +58,9 @@ abstract class Geometry {
 
     Geometry geometry;
     switch (fbPrimitive.vertices!.runtimeType) {
-      case fb.UnskinnedVertexBuffer _:
+      case const (fb.UnskinnedVertexBuffer):
         geometry = UnskinnedGeometry();
-      case fb.SkinnedVertexBuffer _:
+      case const (fb.SkinnedVertexBuffer):
         geometry = SkinnedGeometry();
       default:
         throw Exception('Unknown vertex buffer type');
