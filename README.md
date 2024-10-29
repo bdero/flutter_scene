@@ -12,7 +12,7 @@ Scene: 3D library for Flutter
 
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
-  <!--<a title="Test" href="https://github.com/bdero/flutter_scene/actions?query=workflow%3Acicd+branch%3Amaster"><img src="https://github.com/bdero/flutter_scene/workflows/cicd/badge.svg?branch=master&event=push"/></a>-->
+  <a title="Test" href="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml?query=event%3Apush+branch%3Amaster"><img src="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml/badge.svg?branch=master&event=push"/></a>
 </p>
 
 Scene is a general purpose realtime 3D rendering library for Flutter. It started life as a C++ component of the Impeller rendering backend in Flutter Engine, and is currently being actively developed as a pure Dart package powered by the Flutter GPU API.
