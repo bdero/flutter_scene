@@ -7,6 +7,7 @@ void main(List<String> args) {
       '../assets_src/two_triangles.glb',
       '../assets_src/flutter_logo_baked.glb',
       '../assets_src/dash.glb',
+      '../assets_src/fcar.glb'
     ]);
   });
 }

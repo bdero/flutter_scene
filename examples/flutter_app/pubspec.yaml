@@ -12,6 +12,7 @@ dependencies:
     sdk: flutter
   flutter_scene:
     path: ../../
+  #flutter_scene_importer: ^0.2.0-0
   flutter_scene_importer:
     path: ../../importer
   native_assets_cli: '>=0.7.3'
@@ -24,5 +25,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/little_paris_eiffel_tower.png
+    - assets/little_paris_eiffel_tower_irradiance.png
     # Imported models.
     - build/models/

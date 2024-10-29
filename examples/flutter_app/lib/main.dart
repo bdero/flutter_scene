@@ -1,3 +1,4 @@
+import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:example_app/example_animation.dart';
@@ -32,6 +33,7 @@ class _MyAppState extends State<MyApp> {
     ticker.start();
 
     examples = {
+      'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
       'Animation': (context) =>
           ExampleAnimation(elapsedSeconds: elapsedSeconds),
       'Imported Model': (context) =>

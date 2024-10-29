@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_scene/animation.dart';
 
 import 'package:flutter_scene/camera.dart';
 import 'package:flutter_scene/node.dart';
@@ -19,6 +20,9 @@ class ExampleAnimation extends StatefulWidget {
 class ExampleAnimationState extends State<ExampleAnimation> {
   Scene scene = Scene();
   bool loaded = false;
+  AnimationClip? idleClip;
+  AnimationClip? runClip;
+  AnimationClip? walkClip;
 
   @override
   void initState() {
@@ -28,41 +32,22 @@ class ExampleAnimationState extends State<ExampleAnimation> {
         debugPrint('Animation: ${animation.name}');
       }
 
-      const List<String> animationNames = [
-        "Run",
-        "Walk",
-        "Idle",
-      ];
+      scene.add(modelNode);
 
-      const int dimension = 6;
-      const double start = -(dimension - 1) / 2;
-      const double end = start + dimension - 1;
-      for (double x = start; x <= end; x++) {
-        for (double y = start; y <= end; y++) {
-          for (double z = start; z <= end; z++) {
-            // Clone the model and randomize the rotation.
-            final clone = modelNode.clone();
-            clone.localTransform =
-                vm.Matrix4.translation(vm.Vector3(x, y, z) * 4);
-            clone.localTransform
-                .rotate(vm.Vector3(0, 1, 0), Random().nextDouble() * 2 * pi);
-            scene.add(clone);
-
-            // Instantiate an animation with a bunch of random stuff.
-            final animationName =
-                animationNames[Random().nextInt(animationNames.length)];
-            final animation = clone.findAnimationByName(animationName)!;
-            final clip = clone.createAnimationClip(animation);
-            clip.loop = true;
-            clip.play();
-            clip.playbackTimeScale = 0.5 + Random().nextDouble() * 1.5;
-            if (Random().nextBool()) {
-              clip.playbackTimeScale *= -1;
-            }
-            clip.weight = 0.5 + Random().nextDouble() * 0.5;
-          }
-        }
-      }
+      idleClip =
+          modelNode.createAnimationClip(modelNode.findAnimationByName('Idle')!)
+            ..loop = true
+            ..play();
+      walkClip =
+          modelNode.createAnimationClip(modelNode.findAnimationByName('Walk')!)
+            ..loop = true
+            ..weight = 0
+            ..play();
+      runClip =
+          modelNode.createAnimationClip(modelNode.findAnimationByName('Run')!)
+            ..loop = true
+            ..weight = 0
+            ..play();
     });
 
     Future.wait([dashModel]).then((_) {
@@ -88,9 +73,48 @@ class ExampleAnimationState extends State<ExampleAnimation> {
     if (!loaded) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    return CustomPaint(
-      painter: _ScenePainter(scene, widget.elapsedSeconds),
+    return Stack(
+      children: [
+        SizedBox.expand(
+          child: CustomPaint(
+            painter: _ScenePainter(scene, widget.elapsedSeconds),
+          ),
+        ),
+        // Door open slider
+        if (idleClip != null)
+          Column(
+            children: [
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (final clip in [idleClip, walkClip, runClip])
+                    Slider(
+                      value: clip!.weight,
+                      onChanged: (value) {
+                        clip.weight = value;
+                      },
+                    ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Slider(
+                    min: -2,
+                    max: 2,
+                    value: walkClip!.playbackTimeScale,
+                    onChanged: (value) {
+                      idleClip!.playbackTimeScale = value;
+                      walkClip!.playbackTimeScale = value;
+                      runClip!.playbackTimeScale = value;
+                    },
+                  ),
+                ],
+              )
+            ],
+          ),
+      ],
     );
   }
 }
@@ -102,10 +126,11 @@ class _ScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const double distance = 30;
+    double rotationAmount = elapsedTime * 0.5;
+    const double distance = 6;
     final camera = PerspectiveCamera(
       position: vm.Vector3(
-          sin(elapsedTime) * distance, 2, cos(elapsedTime) * distance),
+          sin(rotationAmount) * distance, 2, cos(rotationAmount) * distance),
       target: vm.Vector3(0, 1.5, 0),
     );
 
