@@ -82,5 +82,6 @@ base class SceneEncoder {
     }
     _translucentRecords.clear();
     _commandBuffer.submit();
+    _transientsBuffer.reset();
   }
 }
