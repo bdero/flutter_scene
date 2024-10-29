@@ -1,4 +1,4 @@
-part of animation;
+part of '../animation.dart';
 
 class _ChannelBinding {
   AnimationChannel channel;

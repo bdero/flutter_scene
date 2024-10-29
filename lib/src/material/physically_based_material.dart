@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/material/environment.dart';
-import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/shaders.dart';
+import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';

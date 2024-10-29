@@ -1,12 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-
-import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/material/environment.dart';
-import 'package:flutter_scene/node.dart';
 import 'package:flutter_scene/scene.dart';
-
 import 'package:vector_math/vector_math.dart' as vm;
 
 class ExampleCar extends StatefulWidget {

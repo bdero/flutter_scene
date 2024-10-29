@@ -1,8 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/asset_helpers.dart';
-import 'package:flutter_scene/material/material.dart';
+import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/material/material.dart';
 
 base class EnvironmentMap {
   EnvironmentMap._(this._radianceTexture, this._irradianceTexture);

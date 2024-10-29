@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
 
-import 'package:flutter_scene/shaders.dart';
+import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene_importer/constants.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 

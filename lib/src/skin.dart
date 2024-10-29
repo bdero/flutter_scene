@@ -2,7 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_scene/node.dart';
+import 'package:flutter_scene/src/node.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_gpu/gpu.dart' as gpu;

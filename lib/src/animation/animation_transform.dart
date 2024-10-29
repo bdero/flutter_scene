@@ -1,4 +1,4 @@
-part of animation;
+part of '../animation.dart';
 
 /// A decomposed animation transform consisting of a translation, rotation, and scale.
 class DecomposedTransform {

@@ -1,4 +1,4 @@
-part of animation;
+part of '../animation.dart';
 
 abstract class PropertyResolver {
   /// Returns the end time of the property in seconds.

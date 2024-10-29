@@ -1,13 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-
-import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/unlit_material.dart';
-import 'package:flutter_scene/mesh.dart';
 import 'package:flutter_scene/scene.dart';
-
 import 'package:vector_math/vector_math.dart' as vm;
 
 class ExampleCuboid extends StatefulWidget {

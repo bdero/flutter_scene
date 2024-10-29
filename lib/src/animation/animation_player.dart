@@ -1,4 +1,4 @@
-part of animation;
+part of '../animation.dart';
 
 class AnimationPlayer {
   final Map<Node, AnimationTransforms> _targetTransforms = {};

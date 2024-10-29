@@ -3,10 +3,10 @@ import 'dart:ui' as ui;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/camera.dart';
-import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/environment.dart';
-import 'package:flutter_scene/material/material.dart';
+import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/material.dart';
 
 base class _TranslucentRecord {
   _TranslucentRecord(this.worldTransform, this.geometry, this.material);

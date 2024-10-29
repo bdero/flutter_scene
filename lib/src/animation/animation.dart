@@ -1,4 +1,4 @@
-part of animation;
+part of '../animation.dart';
 
 enum AnimationProperty {
   translation,

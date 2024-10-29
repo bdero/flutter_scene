@@ -1,7 +1,7 @@
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/geometry/geometry.dart';
-import 'package:flutter_scene/material/material.dart';
-import 'package:flutter_scene/scene_encoder.dart';
+import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
