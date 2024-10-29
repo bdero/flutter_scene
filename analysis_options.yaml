@@ -1,4 +1,4 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  exclude: [build/**, lib/**.g.dart, importer/build/**]
+  exclude: [build/**, lib/**.g.dart, importer/build/**, examples/**]
