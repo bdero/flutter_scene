@@ -2,3 +2,6 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude: [build/**, lib/**.g.dart, importer/build/**, examples/**]
+  errors:
+    asset_does_not_exist: ignore
+    invalid_dependency: ignore
