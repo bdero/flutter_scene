@@ -21,8 +21,6 @@ jobs:
       - run: flutter pub get
       - name: enable asset building
         run: flutter config --enable-native-assets
-      - name: Force building of assets directories
-        run: flutter build macos
       - name: Lint analysis
         run: dart analyze
       - name: Dart format
