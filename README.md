@@ -1,26 +1,62 @@
-# Flutter Scene
+<p align="center">
+  <a href="https://github.com/bdero/flutter_scene">
+    <img alt="Flutter Scene" width="200px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/086f1b421981733da1182656668b940080c54456/DashColorTransparent.svg">
+  </a>
+</p>
 
-3D library for Flutter.
+<h3>
+<p align="center">
+Scene: 3D library for Flutter
+</p>
+</h3>
 
-![Failed to load Screenshot](./screenshots/flutter_scene_logo.png)
+<p align="center">
+  <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
+  <!--<a title="Test" href="https://github.com/bdero/flutter_scene/actions?query=workflow%3Acicd+branch%3Amaster"><img src="https://github.com/bdero/flutter_scene/workflows/cicd/badge.svg?branch=master&event=push"/></a>-->
+</p>
 
-## ⚠️ Early preview ⚠️
+Scene is a general purpose realtime 3D rendering library for Flutter. It started life as a C++ component of the Impeller rendering backend in Flutter Engine, and is currently being actively developed as a pure Dart package powered by the Flutter GPU API.
+
+The primary goal of this project is to make performant cross platform 3D easy in Flutter.
+
+<p align="center"><a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> — <a href="https://github.com/bdero/flutter-scene-example">Example Game</a> — <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> — <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
+
+---
+
+<p align="center">
+  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/dashgameported2.gif">
+</p>
+
+<p align="center">
+  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/hexagons3.gif">
+</p>
+
+<p align="center">
+  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/DamagedHelmet.gif">
+</p>
+
+<p align="center">
+  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/car_example.gif">
+</p>
+
+<p align="center">
+  <img alt="Flutter Scene" width="500px" src="https://gist.github.com/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/cloning.gif">
+</p>
+
+## Early preview! ⚠️
 
 - This package is in an early preview state. Things may break!
-- Relies on [Flutter GPU](https://github.com/flutter/engine/blob/main/docs/impeller/Flutter-GPU.md) for rendering, which is also in an early preview state.
+- Relies on [Flutter GPU](https://github.com/flutter/engine/blob/main/docs/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
 - This package currently only works when [Impeller is enabled](https://docs.flutter.dev/perf/impeller#availability).
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
 - Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
-
-Think you can handle it.....? Then welcome aboard!
 
 ## Features
 
 * glTF (.glb) asset import.
 * PBR materials.
+* Environment maps/image-based lighting.
 * Blended animation system.
-
-https://github.com/bdero/flutter_scene/assets/919017/b44fba62-ec48-4ab4-80cc-6449cef21292
 
 ## FAQ
 
