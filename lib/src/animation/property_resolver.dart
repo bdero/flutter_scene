@@ -110,9 +110,8 @@ class RotationTimelineResolver extends TimelineResolver {
       value = _values[key.index - 1].slerp(value, key.lerp);
     }
 
-    target.animatedPose.rotation = target.animatedPose.rotation *
-        Quaternion.identity()
-            .slerp(target.bindPose.rotation.inverted() * value, weight);
+    target.animatedPose.rotation =
+        target.animatedPose.rotation.slerp(value, weight);
   }
 }
 

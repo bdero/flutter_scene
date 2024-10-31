@@ -21,6 +21,13 @@ class DecomposedTransform {
   /// Constructs a new instance of [DecomposedTransform] from a [Matrix4].
   DecomposedTransform.fromMatrix(Matrix4 matrix) {
     matrix.decompose(translation, rotation, scale);
+
+    // TODO(bdero): Why do some of the bind pose quaternions end up being more
+    //              than 180 degrees?
+    double angle = 2 * acos(rotation.w);
+    if (angle >= pi) {
+      rotation.setAxisAngle(-rotation.axis, 2 * pi - angle);
+    }
   }
 
   /// Converts this [DecomposedTransform] to a [Matrix4].
