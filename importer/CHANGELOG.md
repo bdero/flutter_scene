@@ -30,3 +30,9 @@
 * Remove constexpr qualifiers from matrix for better portability.
 * Support non-embedded/URI-only image embeds.
 * Fix path interpretation issues on Windows.
+
+## 0.6.0-0
+
+* Pin native_assets_cli to <0.9.0
+  (https://github.com/bdero/flutter_gpu_shaders/issues/3)
+* Place package version in lockstep with flutter_scene.
