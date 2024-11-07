@@ -16,14 +16,15 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/google/flatbuffers.git
     GIT_TAG        129ef422e8a4e89d87a7216a865602673a6d0bf3
 )
-FetchContent_MakeAvailable(flatbuffers)
+#FetchContent_MakeAvailable(flatbuffers)
 
 FetchContent_Declare(
     tinygltf
     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
     GIT_TAG        4fea26f6c8652f545560807bccc934cf0cdd86dd
 )
-FetchContent_MakeAvailable(tinygltf)
+FetchContent_MakeAvailable(flatbuffers tinygltf)
+
 
 # flatbuffers_schema(
 #    TARGET dependent
