@@ -42,3 +42,14 @@
 ## 0.5.0-0
 
 * Support non-embedded/URI-only image embeds.
+
+## 0.6.0-0
+
+* Fix memory leak in transients buffer.
+* Optional MSAA support on iOS and Android (enabled by default).
+* Cull backfaces by default.
+* Fix animation blending bugs.
+* Pin native_assets_cli to <0.9.0
+  (https://github.com/bdero/flutter_gpu_shaders/issues/3)
+* Add car model and animation blending examples.
+* Fancy readme and FAQ.
