@@ -53,3 +53,8 @@
   (https://github.com/bdero/flutter_gpu_shaders/issues/3)
 * Add car model and animation blending examples.
 * Fancy readme and FAQ.
+
+## 0.7.0-0
+
+* Update to native_assets_cli 0.9.0.
+* Update to flutter_gpu_shaders 0.2.0.
