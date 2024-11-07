@@ -36,3 +36,8 @@
 * Pin native_assets_cli to <0.9.0
   (https://github.com/bdero/flutter_gpu_shaders/issues/3)
 * Place package version in lockstep with flutter_scene.
+
+## 0.7.0-0
+
+* Update to native_assets_cli 0.9.0.
+  Breaking: `BuildOutput` is now `BuildOutputBuilder`
