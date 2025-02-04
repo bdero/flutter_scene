@@ -61,12 +61,9 @@ base class Skin {
     int dimensionSize =
         max(2, _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()));
 
-    gpu.Texture? texture = gpu.gpuContext.createTexture(
+    gpu.Texture texture = gpu.gpuContext.createTexture(
         gpu.StorageMode.hostVisible, dimensionSize, dimensionSize,
         format: gpu.PixelFormat.r32g32b32a32Float);
-    if (texture == null) {
-      throw Exception('Failed to create joints texture.');
-    }
     // 64 bytes per matrix. 4 bytes per pixel.
     Float32List jointMatrixFloats =
         Float32List(dimensionSize * dimensionSize * 4);
@@ -109,9 +106,7 @@ base class Skin {
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }
 
-    if (!texture.overwrite(jointMatrixFloats.buffer.asByteData())) {
-      throw Exception('Failed to overwrite joints texture data.');
-    }
+    texture.overwrite(jointMatrixFloats.buffer.asByteData());
     return texture;
   }
 

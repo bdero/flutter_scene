@@ -90,15 +90,11 @@ abstract class Geometry {
 
   void uploadVertexData(ByteData vertices, int vertexCount, ByteData? indices,
       {gpu.IndexType indexType = gpu.IndexType.int16}) {
-    gpu.DeviceBuffer? deviceBuffer = gpu.gpuContext.createDeviceBuffer(
+    gpu.DeviceBuffer deviceBuffer = gpu.gpuContext.createDeviceBuffer(
         gpu.StorageMode.hostVisible,
         indices == null
             ? vertices.lengthInBytes
             : vertices.lengthInBytes + indices.lengthInBytes);
-
-    if (deviceBuffer == null) {
-      throw Exception('Failed to allocate geometry buffer');
-    }
 
     deviceBuffer.overwrite(vertices, destinationOffsetInBytes: 0);
     setVertices(

@@ -58,3 +58,7 @@
 
 * Update to native_assets_cli 0.9.0.
 * Update to flutter_gpu_shaders 0.2.0.
+
+## 0.8.0-0
+
+* Update to Flutter 3.29.0-1.0.pre.242.

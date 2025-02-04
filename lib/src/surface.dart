@@ -20,7 +20,7 @@ class Surface {
       _previousSize = size;
     }
     if (_cursor == _renderTargets.length) {
-      final gpu.Texture? colorTexture = gpu.gpuContext.createTexture(
+      final gpu.Texture colorTexture = gpu.gpuContext.createTexture(
         gpu.StorageMode.devicePrivate,
         size.width.toInt(),
         size.height.toInt(),
@@ -28,12 +28,9 @@ class Surface {
         enableShaderReadUsage: true,
         coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
       );
-      if (colorTexture == null) {
-        throw Exception("Failed to create Surface color texture!");
-      }
       final colorAttachment = gpu.ColorAttachment(texture: colorTexture);
       if (enableMsaa) {
-        final gpu.Texture? msaaColorTexture = gpu.gpuContext.createTexture(
+        final gpu.Texture msaaColorTexture = gpu.gpuContext.createTexture(
           gpu.StorageMode.deviceTransient,
           size.width.toInt(),
           size.height.toInt(),
@@ -41,14 +38,11 @@ class Surface {
           enableRenderTargetUsage: true,
           coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
         );
-        if (msaaColorTexture == null) {
-          throw Exception("Failed to create Surface color texture!");
-        }
         colorAttachment.resolveTexture = colorAttachment.texture;
         colorAttachment.texture = msaaColorTexture;
         colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
       }
-      final gpu.Texture? depthTexture = gpu.gpuContext.createTexture(
+      final gpu.Texture depthTexture = gpu.gpuContext.createTexture(
         gpu.StorageMode.deviceTransient,
         size.width.toInt(),
         size.height.toInt(),
@@ -57,9 +51,6 @@ class Surface {
         enableRenderTargetUsage: true,
         coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
       );
-      if (depthTexture == null) {
-        throw Exception("Failed to create Surface depth texture!");
-      }
       final renderTarget = gpu.RenderTarget.singleColor(
         colorAttachment,
         depthStencilAttachment: gpu.DepthStencilAttachment(

@@ -164,15 +164,10 @@ base class Node implements SceneGraph {
         }
       }
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
-      gpu.Texture? texture = gpu.gpuContext.createTexture(
+      gpu.Texture texture = gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible, image.width, image.height);
-      if (texture == null) {
-        throw Exception('Failed to allocate texture');
-      }
       Uint8List textureData = image.bytes! as Uint8List;
-      if (!texture.overwrite(ByteData.sublistView(textureData))) {
-        throw Exception('Failed to overwrite texture data');
-      }
+      texture.overwrite(ByteData.sublistView(textureData));
       textures.add(texture);
     }
 

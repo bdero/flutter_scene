@@ -73,17 +73,12 @@ extension TextureHelpers on fb.Texture {
     if (embeddedImage == null || embeddedImage!.bytes == null) {
       throw Exception('Texture has no embedded image');
     }
-    gpu.Texture? texture = gpu.gpuContext.createTexture(
+    gpu.Texture texture = gpu.gpuContext.createTexture(
         gpu.StorageMode.hostVisible,
         embeddedImage!.width,
         embeddedImage!.height);
-    if (texture == null) {
-      throw Exception('Failed to allocate texture');
-    }
     Uint8List textureData = embeddedImage!.bytes! as Uint8List;
-    if (!texture.overwrite(ByteData.sublistView(textureData))) {
-      throw Exception('Failed to overwrite texture data');
-    }
+    texture.overwrite(ByteData.sublistView(textureData));
 
     return texture;
   }
