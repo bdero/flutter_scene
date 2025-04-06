@@ -24,7 +24,7 @@ import 'package:vector_math/vector_math.dart';
 /// between different elements, allowing for transformations to propagate down the hierarchy.
 base class Node implements SceneGraph {
   Node({this.name = '', Matrix4? localTransform, this.mesh})
-      : localTransform = localTransform ?? Matrix4.identity();
+    : localTransform = localTransform ?? Matrix4.identity();
 
   /// The name of this node, used for identification.
   String name;
@@ -59,7 +59,7 @@ base class Node implements SceneGraph {
     if (parent == null) {
       return localTransform;
     }
-    return localTransform * parent.globalTransform;
+    return parent.globalTransform * localTransform;
   }
 
   Node? _parent;
@@ -139,8 +139,10 @@ base class Node implements SceneGraph {
     ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
     fb.Scene fbScene = importedScene.flatbuffer;
 
-    debugPrint('Unpacking Scene (nodes: ${fbScene.nodes?.length}, '
-        'textures: ${fbScene.textures?.length})');
+    debugPrint(
+      'Unpacking Scene (nodes: ${fbScene.nodes?.length}, '
+      'textures: ${fbScene.textures?.length})',
+    );
 
     // Unpack textures.
     List<gpu.Texture> textures = [];
@@ -148,7 +150,8 @@ base class Node implements SceneGraph {
       if (fbTexture.embeddedImage == null) {
         if (fbTexture.uri == null) {
           debugPrint(
-              'Texture ${textures.length} has no embedded image or URI. A white placeholder will be used instead.');
+            'Texture ${textures.length} has no embedded image or URI. A white placeholder will be used instead.',
+          );
           textures.add(Material.getWhitePlaceholderTexture());
           continue;
         }
@@ -157,23 +160,29 @@ base class Node implements SceneGraph {
           textures.add(await gpuTextureFromAsset(fbTexture.uri!));
           continue;
         } catch (e) {
-          debugPrint('Failed to load texture from asset URI: ${fbTexture.uri}. '
-              'A white placeholder will be used instead. (Error: $e)');
+          debugPrint(
+            'Failed to load texture from asset URI: ${fbTexture.uri}. '
+            'A white placeholder will be used instead. (Error: $e)',
+          );
           textures.add(Material.getWhitePlaceholderTexture());
           continue;
         }
       }
       fb.EmbeddedImage image = fbTexture.embeddedImage!;
       gpu.Texture texture = gpu.gpuContext.createTexture(
-          gpu.StorageMode.hostVisible, image.width, image.height);
+        gpu.StorageMode.hostVisible,
+        image.width,
+        image.height,
+      );
       Uint8List textureData = image.bytes! as Uint8List;
       texture.overwrite(ByteData.sublistView(textureData));
       textures.add(texture);
     }
 
     Node result = Node(
-        name: 'root',
-        localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity());
+      name: 'root',
+      localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity(),
+    );
 
     if (fbScene.nodes == null || fbScene.children == null) {
       return result; // The scene is empty. ¯\_(ツ)_/¯
@@ -196,14 +205,18 @@ base class Node implements SceneGraph {
     // Unpack each node.
     for (int nodeIndex = 0; nodeIndex < sceneNodes.length; nodeIndex++) {
       sceneNodes[nodeIndex]._unpackFromFlatbuffer(
-          fbScene.nodes![nodeIndex], sceneNodes, textures);
+        fbScene.nodes![nodeIndex],
+        sceneNodes,
+        textures,
+      );
     }
 
     // Unpack animations.
     if (fbScene.animations != null) {
       for (fb.Animation fbAnimation in fbScene.animations!) {
-        result._animations
-            .add(Animation.fromFlatbuffer(fbAnimation, sceneNodes));
+        result._animations.add(
+          Animation.fromFlatbuffer(fbAnimation, sceneNodes),
+        );
       }
     }
 
@@ -211,7 +224,10 @@ base class Node implements SceneGraph {
   }
 
   void _unpackFromFlatbuffer(
-      fb.Node fbNode, List<Node> sceneNodes, List<gpu.Texture> textures) {
+    fb.Node fbNode,
+    List<Node> sceneNodes,
+    List<gpu.Texture> textures,
+  ) {
     name = fbNode.name ?? '';
     localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
@@ -220,9 +236,10 @@ base class Node implements SceneGraph {
       List<MeshPrimitive> meshPrimitives = [];
       for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
         Geometry geometry = Geometry.fromFlatbuffer(fbPrimitive);
-        Material material = fbPrimitive.material != null
-            ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
-            : UnlitMaterial();
+        Material material =
+            fbPrimitive.material != null
+                ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
+                : UnlitMaterial();
         meshPrimitives.add(MeshPrimitive(geometry, material));
       }
       mesh = Mesh.primitives(primitives: meshPrimitives);
@@ -311,7 +328,8 @@ base class Node implements SceneGraph {
     }
 
     debugPrint(
-        'Name path formation failed because the given ancestor was not an ancestor of the given child.');
+      'Name path formation failed because the given ancestor was not an ancestor of the given child.',
+    );
     return null;
   }
 
@@ -331,7 +349,8 @@ base class Node implements SceneGraph {
     }
 
     debugPrint(
-        'Index path formation failed because the given ancestor was not an ancestor of the given child.');
+      'Index path formation failed because the given ancestor was not an ancestor of the given child.',
+    );
     return null;
   }
 
@@ -401,9 +420,11 @@ base class Node implements SceneGraph {
 
     // Each of the clonedSkins currently have joint references in the old tree.
     for (var clonedSkin in clonedSkins) {
-      for (int jointIndex = 0;
-          jointIndex < clonedSkin.joints.length;
-          jointIndex++) {
+      for (
+        int jointIndex = 0;
+        jointIndex < clonedSkin.joints.length;
+        jointIndex++
+      ) {
         Node? joint = clonedSkin.joints[jointIndex];
         if (joint == null) {
           clonedSkin.joints[jointIndex] = null;
@@ -485,8 +506,12 @@ base class Node implements SceneGraph {
 
     final worldTransform = parentWorldTransform * localTransform;
     if (mesh != null) {
-      mesh!.render(encoder, worldTransform, _skin?.getJointsTexture(),
-          _skin?.getTextureWidth() ?? 0);
+      mesh!.render(
+        encoder,
+        worldTransform,
+        _skin?.getJointsTexture(),
+        _skin?.getTextureWidth() ?? 0,
+      );
     }
     for (var child in children) {
       child.render(encoder, worldTransform);
