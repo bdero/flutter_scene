@@ -12,17 +12,23 @@ abstract class PropertyResolver {
   void apply(AnimationTransforms target, double timeInSeconds, double weight);
 
   static PropertyResolver makeTranslationTimeline(
-      List<double> times, List<Vector3> values) {
+    List<double> times,
+    List<Vector3> values,
+  ) {
     return TranslationTimelineResolver._(times, values);
   }
 
   static PropertyResolver makeRotationTimeline(
-      List<double> times, List<Quaternion> values) {
+    List<double> times,
+    List<Quaternion> values,
+  ) {
     return RotationTimelineResolver._(times, values);
   }
 
   static PropertyResolver makeScaleTimeline(
-      List<double> times, List<Vector3> values) {
+    List<double> times,
+    List<Vector3> values,
+  ) {
     return ScaleTimelineResolver._(times, values);
   }
 }
@@ -69,7 +75,7 @@ class TranslationTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
 
   TranslationTimelineResolver._(List<double> times, this._values)
-      : super._(times) {
+    : super._(times) {
     assert(times.length == _values.length);
   }
 
@@ -94,7 +100,7 @@ class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
 
   RotationTimelineResolver._(List<double> times, this._values)
-      : super._(times) {
+    : super._(times) {
     assert(times.length == _values.length);
   }
 
@@ -110,8 +116,10 @@ class RotationTimelineResolver extends TimelineResolver {
       value = _values[key.index - 1].slerp(value, key.lerp);
     }
 
-    target.animatedPose.rotation =
-        target.animatedPose.rotation.slerp(value, weight);
+    target.animatedPose.rotation = target.animatedPose.rotation.slerp(
+      value,
+      weight,
+    );
   }
 }
 
@@ -134,12 +142,16 @@ class ScaleTimelineResolver extends TimelineResolver {
       value = _values[key.index - 1].lerp(value, key.lerp);
     }
 
-    Vector3 scale =
-        Vector3(1, 1, 1).lerp(value.divided(target.bindPose.scale), weight);
+    Vector3 scale = Vector3(
+      1,
+      1,
+      1,
+    ).lerp(value.divided(target.bindPose.scale), weight);
 
     target.animatedPose.scale = Vector3(
-        target.animatedPose.scale.x * scale.x,
-        target.animatedPose.scale.y * scale.y,
-        target.animatedPose.scale.z * scale.z);
+      target.animatedPose.scale.x * scale.x,
+      target.animatedPose.scale.y * scale.y,
+      target.animatedPose.scale.z * scale.z,
+    );
   }
 }

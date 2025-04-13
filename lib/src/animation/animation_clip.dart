@@ -69,10 +69,10 @@ class AnimationClip {
       // reverse) and pause.
       pause();
       _playbackTime = clampDouble(_playbackTime, 0, _animation.endTime);
-    } else if (/* loop && */ _playbackTime > _animation.endTime) {
+    } else if ( /* loop && */ _playbackTime > _animation.endTime) {
       // If looping is enabled and we ran off the end, loop to the beginning.
       _playbackTime = _playbackTime.abs() % _animation.endTime;
-    } else if (/* loop && */ _playbackTime < 0) {
+    } else if ( /* loop && */ _playbackTime < 0) {
       // If looping is enabled and we ran off the beginning, loop to the end.
       _playbackTime =
           _animation.endTime - (_playbackTime.abs() % _animation.endTime);
@@ -97,15 +97,20 @@ class AnimationClip {
     }
   }
 
-  void applyToBindings(Map<Node, AnimationTransforms> transformDecomps,
-      double weightMultiplier) {
+  void applyToBindings(
+    Map<Node, AnimationTransforms> transformDecomps,
+    double weightMultiplier,
+  ) {
     for (var binding in _bindings) {
       final transforms = transformDecomps[binding.node];
       if (transforms == null) {
         continue;
       }
-      binding.channel.resolver
-          .apply(transforms, _playbackTime, _weight * weightMultiplier);
+      binding.channel.resolver.apply(
+        transforms,
+        _playbackTime,
+        _weight * weightMultiplier,
+      );
     }
   }
 }

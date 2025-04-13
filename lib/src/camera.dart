@@ -14,15 +14,31 @@ Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
   up = forward.cross(right).normalized();
 
   return Matrix4(
-    right.x, up.x, forward.x, 0.0, //
-    right.y, up.y, forward.y, 0.0, //
-    right.z, up.z, forward.z, 0.0, //
-    -right.dot(position), -up.dot(position), -forward.dot(position), 1.0, //
+    right.x,
+    up.x,
+    forward.x,
+    0.0, //
+    right.y,
+    up.y,
+    forward.y,
+    0.0, //
+    right.z,
+    up.z,
+    forward.z,
+    0.0, //
+    -right.dot(position),
+    -up.dot(position),
+    -forward.dot(position),
+    1.0, //
   );
 }
 
 Matrix4 _matrix4Perspective(
-    double fovRadiansY, double aspectRatio, double zNear, double zFar) {
+  double fovRadiansY,
+  double aspectRatio,
+  double zNear,
+  double zFar,
+) {
   double height = tan(fovRadiansY * 0.5);
   double width = height * aspectRatio;
 
@@ -47,16 +63,16 @@ Matrix4 _matrix4Perspective(
 }
 
 class PerspectiveCamera extends Camera {
-  PerspectiveCamera(
-      {this.fovRadiansY = 45 * degrees2Radians,
-      Vector3? position,
-      Vector3? target,
-      Vector3? up,
-      this.fovNear = 0.1,
-      this.fovFar = 1000.0})
-      : position = position ?? Vector3(0, 0, -5),
-        target = target ?? Vector3(0, 0, 0),
-        up = up ?? Vector3(0, 1, 0);
+  PerspectiveCamera({
+    this.fovRadiansY = 45 * degrees2Radians,
+    Vector3? position,
+    Vector3? target,
+    Vector3? up,
+    this.fovNear = 0.1,
+    this.fovFar = 1000.0,
+  }) : position = position ?? Vector3(0, 0, -5),
+       target = target ?? Vector3(0, 0, 0),
+       up = up ?? Vector3(0, 1, 0);
 
   double fovRadiansY;
   @override
@@ -68,8 +84,12 @@ class PerspectiveCamera extends Camera {
 
   @override
   Matrix4 getViewTransform(ui.Size dimensions) {
-    return _matrix4Perspective(fovRadiansY,
-            dimensions.width / dimensions.height, fovNear, fovFar) *
+    return _matrix4Perspective(
+          fovRadiansY,
+          dimensions.width / dimensions.height,
+          fovNear,
+          fovFar,
+        ) *
         _matrix4LookAt(position, target, up);
   }
 }

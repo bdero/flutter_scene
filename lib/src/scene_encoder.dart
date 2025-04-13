@@ -16,8 +16,12 @@ base class _TranslucentRecord {
 }
 
 base class SceneEncoder {
-  SceneEncoder(gpu.RenderTarget renderTarget, this._camera, ui.Size dimensions,
-      this._environment) {
+  SceneEncoder(
+    gpu.RenderTarget renderTarget,
+    this._camera,
+    ui.Size dimensions,
+    this._environment,
+  ) {
     _cameraTransform = _camera.getViewTransform(dimensions);
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
@@ -42,41 +46,54 @@ base class SceneEncoder {
       _encode(worldTransform, geometry, material);
       return;
     }
-    _translucentRecords
-        .add(_TranslucentRecord(worldTransform, geometry, material));
+    _translucentRecords.add(
+      _TranslucentRecord(worldTransform, geometry, material),
+    );
   }
 
   void _encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     _renderPass.clearBindings();
-    var pipeline = gpu.gpuContext
-        .createRenderPipeline(geometry.vertexShader, material.fragmentShader);
+    var pipeline = gpu.gpuContext.createRenderPipeline(
+      geometry.vertexShader,
+      material.fragmentShader,
+    );
     _renderPass.bindPipeline(pipeline);
 
-    geometry.bind(_renderPass, _transientsBuffer, worldTransform,
-        _cameraTransform, _camera.position);
+    geometry.bind(
+      _renderPass,
+      _transientsBuffer,
+      worldTransform,
+      _cameraTransform,
+      _camera.position,
+    );
     material.bind(_renderPass, _transientsBuffer, _environment);
     _renderPass.draw();
   }
 
   void finish() {
     _translucentRecords.sort((a, b) {
-      var aDistance =
-          a.worldTransform.getTranslation().distanceTo(_camera.position);
-      var bDistance =
-          b.worldTransform.getTranslation().distanceTo(_camera.position);
+      var aDistance = a.worldTransform.getTranslation().distanceTo(
+        _camera.position,
+      );
+      var bDistance = b.worldTransform.getTranslation().distanceTo(
+        _camera.position,
+      );
       return bDistance.compareTo(aDistance);
     });
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
     // Additive source-over blending.
     // Note: Expects premultiplied alpha output from the fragment stage!
-    _renderPass.setColorBlendEquation(gpu.ColorBlendEquation(
+    _renderPass.setColorBlendEquation(
+      gpu.ColorBlendEquation(
         colorBlendOperation: gpu.BlendOperation.add,
         sourceColorBlendFactor: gpu.BlendFactor.one,
         destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
         alphaBlendOperation: gpu.BlendOperation.add,
         sourceAlphaBlendFactor: gpu.BlendFactor.one,
-        destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha));
+        destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+      ),
+    );
     for (var record in _translucentRecords) {
       _encode(record.worldTransform, record.geometry, record.material);
     }

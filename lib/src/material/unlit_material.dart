@@ -10,7 +10,9 @@ import 'package:vector_math/vector_math.dart';
 
 class UnlitMaterial extends Material {
   static UnlitMaterial fromFlatbuffer(
-      fb.Material fbMaterial, List<gpu.Texture> textures) {
+    fb.Material fbMaterial,
+    List<gpu.Texture> textures,
+  ) {
     if (fbMaterial.type != fb.MaterialType.kUnlit) {
       throw Exception('Cannot unpack unlit material from non-unlit material');
     }
@@ -19,10 +21,11 @@ class UnlitMaterial extends Material {
 
     if (fbMaterial.baseColorFactor != null) {
       material.baseColorFactor = Vector4(
-          fbMaterial.baseColorFactor!.r,
-          fbMaterial.baseColorFactor!.g,
-          fbMaterial.baseColorFactor!.b,
-          fbMaterial.baseColorFactor!.a);
+        fbMaterial.baseColorFactor!.r,
+        fbMaterial.baseColorFactor!.g,
+        fbMaterial.baseColorFactor!.b,
+        fbMaterial.baseColorFactor!.a,
+      );
     }
 
     if (fbMaterial.baseColorTexture >= 0 &&
@@ -43,8 +46,11 @@ class UnlitMaterial extends Material {
   double vertexColorWeight = 1.0;
 
   @override
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
-      Environment environment) {
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    Environment environment,
+  ) {
     super.bind(pass, transientsBuffer, environment);
 
     var fragInfo = Float32List.fromList([
@@ -52,12 +58,17 @@ class UnlitMaterial extends Material {
       baseColorFactor.b, baseColorFactor.a, // color
       vertexColorWeight, // vertex_color_weight
     ]);
-    pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
-        transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
+    pass.bindUniform(
+      fragmentShader.getUniformSlot("FragInfo"),
+      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+    );
     pass.bindTexture(
-        fragmentShader.getUniformSlot('base_color_texture'), baseColorTexture,
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
+      fragmentShader.getUniformSlot('base_color_texture'),
+      baseColorTexture,
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
   }
 }

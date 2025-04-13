@@ -9,7 +9,9 @@ import 'package:vector_math/vector_math.dart';
 
 class PhysicallyBasedMaterial extends Material {
   static PhysicallyBasedMaterial fromFlatbuffer(
-      fb.Material fbMaterial, List<gpu.Texture> textures) {
+    fb.Material fbMaterial,
+    List<gpu.Texture> textures,
+  ) {
     if (fbMaterial.type != fb.MaterialType.kPhysicallyBased) {
       throw Exception('Cannot unpack PBR material from non-PBR material');
     }
@@ -20,10 +22,11 @@ class PhysicallyBasedMaterial extends Material {
 
     if (fbMaterial.baseColorFactor != null) {
       material.baseColorFactor = Vector4(
-          fbMaterial.baseColorFactor!.r,
-          fbMaterial.baseColorFactor!.g,
-          fbMaterial.baseColorFactor!.b,
-          fbMaterial.baseColorFactor!.a);
+        fbMaterial.baseColorFactor!.r,
+        fbMaterial.baseColorFactor!.g,
+        fbMaterial.baseColorFactor!.b,
+        fbMaterial.baseColorFactor!.a,
+      );
     }
 
     if (fbMaterial.baseColorTexture >= 0 &&
@@ -55,8 +58,12 @@ class PhysicallyBasedMaterial extends Material {
     // Emissive.
 
     if (fbMaterial.emissiveFactor != null) {
-      material.emissiveFactor = Vector4(fbMaterial.emissiveFactor!.x,
-          fbMaterial.emissiveFactor!.y, fbMaterial.emissiveFactor!.z, 1);
+      material.emissiveFactor = Vector4(
+        fbMaterial.emissiveFactor!.x,
+        fbMaterial.emissiveFactor!.y,
+        fbMaterial.emissiveFactor!.z,
+        1,
+      );
     }
 
     if (fbMaterial.emissiveTexture >= 0 &&
@@ -76,13 +83,14 @@ class PhysicallyBasedMaterial extends Material {
     return material;
   }
 
-  PhysicallyBasedMaterial(
-      {this.baseColorTexture,
-      this.metallicRoughnessTexture,
-      this.normalTexture,
-      this.emissiveTexture,
-      this.occlusionTexture,
-      this.environment}) {
+  PhysicallyBasedMaterial({
+    this.baseColorTexture,
+    this.metallicRoughnessTexture,
+    this.normalTexture,
+    this.emissiveTexture,
+    this.occlusionTexture,
+    this.environment,
+  }) {
     setFragmentShader(baseShaderLibrary['StandardFragment']!);
   }
 
@@ -106,8 +114,11 @@ class PhysicallyBasedMaterial extends Material {
   Environment? environment;
 
   @override
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
-      Environment environment) {
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    Environment environment,
+  ) {
     super.bind(pass, transientsBuffer, environment);
 
     Environment env = this.environment ?? environment;
@@ -127,55 +138,80 @@ class PhysicallyBasedMaterial extends Material {
       occlusionStrength, // occlusion_strength
       environment.intensity, // environment_intensity
     ]);
-    pass.bindUniform(fragmentShader.getUniformSlot("FragInfo"),
-        transientsBuffer.emplace(ByteData.sublistView(fragInfo)));
-    pass.bindTexture(fragmentShader.getUniformSlot('base_color_texture'),
-        Material.whitePlaceholder(baseColorTexture),
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(fragmentShader.getUniformSlot('emissive_texture'),
-        Material.whitePlaceholder(emissiveTexture),
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
+    pass.bindUniform(
+      fragmentShader.getUniformSlot("FragInfo"),
+      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+    );
     pass.bindTexture(
-        fragmentShader.getUniformSlot('metallic_roughness_texture'),
-        Material.whitePlaceholder(metallicRoughnessTexture),
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(fragmentShader.getUniformSlot('normal_texture'),
-        Material.normalPlaceholder(normalTexture),
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(fragmentShader.getUniformSlot('occlusion_texture'),
-        Material.whitePlaceholder(occlusionTexture),
-        sampler: gpu.SamplerOptions(
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat));
-    pass.bindTexture(fragmentShader.getUniformSlot('radiance_texture'),
-        env.environmentMap.radianceTexture,
-        sampler: gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.linear,
-            magFilter: gpu.MinMagFilter.linear,
-            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
-    pass.bindTexture(fragmentShader.getUniformSlot('irradiance_texture'),
-        env.environmentMap.irradianceTexture,
-        sampler: gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.linear,
-            magFilter: gpu.MinMagFilter.linear,
-            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+      fragmentShader.getUniformSlot('base_color_texture'),
+      Material.whitePlaceholder(baseColorTexture),
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
     pass.bindTexture(
-        fragmentShader.getUniformSlot('brdf_lut'), Material.getBrdfLutTexture(),
-        sampler: gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.linear,
-            magFilter: gpu.MinMagFilter.linear,
-            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+      fragmentShader.getUniformSlot('emissive_texture'),
+      Material.whitePlaceholder(emissiveTexture),
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('metallic_roughness_texture'),
+      Material.whitePlaceholder(metallicRoughnessTexture),
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('normal_texture'),
+      Material.normalPlaceholder(normalTexture),
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('occlusion_texture'),
+      Material.whitePlaceholder(occlusionTexture),
+      sampler: gpu.SamplerOptions(
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.repeat,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('radiance_texture'),
+      env.environmentMap.radianceTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('irradiance_texture'),
+      env.environmentMap.irradianceTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('brdf_lut'),
+      Material.getBrdfLutTexture(),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
   }
 
   @override

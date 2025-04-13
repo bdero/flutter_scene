@@ -10,8 +10,11 @@ Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
   }
 
   // Upload the RGBA image to a Flutter GPU texture.
-  final texture = gpu.gpuContext
-      .createTexture(gpu.StorageMode.hostVisible, image.width, image.height);
+  final texture = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    image.width,
+    image.height,
+  );
   texture.overwrite(byteData);
 
   return texture;

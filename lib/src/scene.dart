@@ -33,10 +33,7 @@ mixin SceneGraph {
   void removeAll();
 }
 
-enum AntiAliasingMode {
-  none,
-  msaa,
-}
+enum AntiAliasingMode { none, msaa }
 
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
 ///
@@ -86,14 +83,18 @@ base class Scene implements SceneGraph {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
-    _initializeStaticResources =
-        Material.initializeStaticResources().onError((e, stacktrace) {
-      log('Failed to initialize static Flutter Scene resources',
-          error: e, stackTrace: stacktrace);
-      _initializeStaticResources = null;
-    }).then((_) {
-      _readyToRender = true;
-    });
+    _initializeStaticResources = Material.initializeStaticResources()
+        .onError((e, stacktrace) {
+          log(
+            'Failed to initialize static Flutter Scene resources',
+            error: e,
+            stackTrace: stacktrace,
+          );
+          _initializeStaticResources = null;
+        })
+        .then((_) {
+          _readyToRender = true;
+        });
     return _initializeStaticResources!;
   }
 
@@ -146,7 +147,8 @@ base class Scene implements SceneGraph {
     if (!_readyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
       debugPrint(
-          'You may wait on the Future returned by Scene.initializeStaticResources() before rendering.');
+        'You may wait on the Future returned by Scene.initializeStaticResources() before rendering.',
+      );
       return;
     }
 
@@ -155,20 +157,26 @@ base class Scene implements SceneGraph {
       return;
     }
     final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
-    final gpu.RenderTarget renderTarget =
-        surface.getNextRenderTarget(drawArea.size, enableMsaa);
+    final gpu.RenderTarget renderTarget = surface.getNextRenderTarget(
+      drawArea.size,
+      enableMsaa,
+    );
 
-    final env = environment.environmentMap.isEmpty()
-        ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
-        : environment;
+    final env =
+        environment.environmentMap.isEmpty()
+            ? environment.withNewEnvironmentMap(
+              Material.getDefaultEnvironmentMap(),
+            )
+            : environment;
 
     final encoder = SceneEncoder(renderTarget, camera, drawArea.size, env);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
-    final gpu.Texture texture = enableMsaa
-        ? renderTarget.colorAttachments[0].resolveTexture!
-        : renderTarget.colorAttachments[0].texture;
+    final gpu.Texture texture =
+        enableMsaa
+            ? renderTarget.colorAttachments[0].resolveTexture!
+            : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
     canvas.drawImage(image, drawArea.topLeft, ui.Paint());
   }

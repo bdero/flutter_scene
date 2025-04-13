@@ -15,13 +15,17 @@ abstract class Material {
     if (_whitePlaceholderTexture != null) {
       return _whitePlaceholderTexture!;
     }
-    _whitePlaceholderTexture =
-        gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
+    _whitePlaceholderTexture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      1,
+      1,
+    );
     if (_whitePlaceholderTexture == null) {
       throw Exception('Failed to create white placeholder texture.');
     }
-    _whitePlaceholderTexture!
-        .overwrite(Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData());
+    _whitePlaceholderTexture!.overwrite(
+      Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
+    );
     return _whitePlaceholderTexture!;
   }
 
@@ -35,13 +39,17 @@ abstract class Material {
     if (_normalPlaceholderTexture != null) {
       return _normalPlaceholderTexture!;
     }
-    _normalPlaceholderTexture =
-        gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
+    _normalPlaceholderTexture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      1,
+      1,
+    );
     if (_normalPlaceholderTexture == null) {
       throw Exception('Failed to create normal placeholder texture.');
     }
-    _normalPlaceholderTexture!
-        .overwrite(Uint32List.fromList(<int>[0xFFFF7574]).buffer.asByteData());
+    _normalPlaceholderTexture!.overwrite(
+      Uint32List.fromList(<int>[0xFFFF7574]).buffer.asByteData(),
+    );
     return _normalPlaceholderTexture!;
   }
 
@@ -65,23 +73,26 @@ abstract class Material {
       throw Exception('Default environment map has not been initialized.');
     }
     return EnvironmentMap.fromGpuTextures(
-        radianceTexture: _defaultRadianceTexture!,
-        irradianceTexture: _defaultIrradianceTexture!);
+      radianceTexture: _defaultRadianceTexture!,
+      irradianceTexture: _defaultIrradianceTexture!,
+    );
   }
 
   static Future<void> initializeStaticResources() {
     List<Future<void>> futures = [
-      gpuTextureFromAsset('packages/flutter_scene/assets/ibl_brdf_lut.png')
-          .then((gpu.Texture value) {
+      gpuTextureFromAsset(
+        'packages/flutter_scene/assets/ibl_brdf_lut.png',
+      ).then((gpu.Texture value) {
         _brdfLutTexture = value;
       }),
-      gpuTextureFromAsset('packages/flutter_scene/assets/royal_esplanade.png')
-          .then((gpu.Texture value) {
+      gpuTextureFromAsset(
+        'packages/flutter_scene/assets/royal_esplanade.png',
+      ).then((gpu.Texture value) {
         _defaultRadianceTexture = value;
       }),
       gpuTextureFromAsset(
-              'packages/flutter_scene/assets/royal_esplanade_irradiance.png')
-          .then((gpu.Texture value) {
+        'packages/flutter_scene/assets/royal_esplanade_irradiance.png',
+      ).then((gpu.Texture value) {
         _defaultIrradianceTexture = value;
       }),
     ];
@@ -89,7 +100,9 @@ abstract class Material {
   }
 
   static Material fromFlatbuffer(
-      fb.Material fbMaterial, List<gpu.Texture> textures) {
+    fb.Material fbMaterial,
+    List<gpu.Texture> textures,
+  ) {
     switch (fbMaterial.type) {
       case fb.MaterialType.kUnlit:
         return UnlitMaterial.fromFlatbuffer(fbMaterial, textures);
@@ -112,8 +125,11 @@ abstract class Material {
     _fragmentShader = shader;
   }
 
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer,
-      Environment environment) {
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    Environment environment,
+  ) {
     pass.setCullMode(gpu.CullMode.backFace);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }

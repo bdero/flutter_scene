@@ -14,5 +14,6 @@ gpu.ShaderLibrary get baseShaderLibrary {
   }
 
   throw Exception(
-      "Failed to load base shader bundle! ($_kBaseShaderBundlePath)");
+    "Failed to load base shader bundle! ($_kBaseShaderBundlePath)",
+  );
 }

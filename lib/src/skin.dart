@@ -43,9 +43,11 @@ base class Skin {
       result.joints.add(sceneNodes[jointIndex]);
     }
 
-    for (int matrixIndex = 0;
-        matrixIndex < skin.inverseBindMatrices!.length;
-        matrixIndex++) {
+    for (
+      int matrixIndex = 0;
+      matrixIndex < skin.inverseBindMatrices!.length;
+      matrixIndex++
+    ) {
       final matrix = skin.inverseBindMatrices![matrixIndex].toMatrix4();
 
       result.inverseBindMatrices.add(matrix);
@@ -58,15 +60,21 @@ base class Skin {
     // Each joint has a matrix. 1 matrix = 16 floats. 1 pixel = 4 floats.
     // Therefore, each joint needs 4 pixels.
     int requiredPixels = joints.length * 4;
-    int dimensionSize =
-        max(2, _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()));
+    int dimensionSize = max(
+      2,
+      _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()),
+    );
 
     gpu.Texture texture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.hostVisible, dimensionSize, dimensionSize,
-        format: gpu.PixelFormat.r32g32b32a32Float);
+      gpu.StorageMode.hostVisible,
+      dimensionSize,
+      dimensionSize,
+      format: gpu.PixelFormat.r32g32b32a32Float,
+    );
     // 64 bytes per matrix. 4 bytes per pixel.
-    Float32List jointMatrixFloats =
-        Float32List(dimensionSize * dimensionSize * 4);
+    Float32List jointMatrixFloats = Float32List(
+      dimensionSize * dimensionSize * 4,
+    );
     // Initialize with identity matrices.
     for (int i = 0; i < jointMatrixFloats.length; i += 16) {
       jointMatrixFloats[i] = 1.0;
@@ -82,12 +90,17 @@ base class Skin {
       // skeleton root.
       final floatOffset = jointIndex * 16;
       while (joint != null && joint.isJoint) {
-        final Matrix4 matrix = joint.localTransform *
+        final Matrix4 matrix =
+            joint.localTransform *
             Matrix4.fromFloat32List(
-                jointMatrixFloats.sublist(floatOffset, floatOffset + 16));
+              jointMatrixFloats.sublist(floatOffset, floatOffset + 16),
+            );
 
         jointMatrixFloats.setRange(
-            floatOffset, floatOffset + 16, matrix.storage);
+          floatOffset,
+          floatOffset + 16,
+          matrix.storage,
+        );
 
         joint = joint.parent;
       }
@@ -99,8 +112,10 @@ base class Skin {
       // the joint's default pose and the joint's current pose in the scene. This
       // is necessary because the skinned model's vertex positions (which _define_
       // the default pose) are all in model space.
-      final Matrix4 matrix = Matrix4.fromFloat32List(
-              jointMatrixFloats.sublist(floatOffset, floatOffset + 16)) *
+      final Matrix4 matrix =
+          Matrix4.fromFloat32List(
+            jointMatrixFloats.sublist(floatOffset, floatOffset + 16),
+          ) *
           inverseBindMatrices[jointIndex];
 
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);

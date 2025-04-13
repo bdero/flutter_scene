@@ -52,7 +52,5 @@ class AnimationTransforms {
     scale: Vector3.all(1.0),
   );
 
-  AnimationTransforms({
-    required this.bindPose,
-  });
+  AnimationTransforms({required this.bindPose});
 }

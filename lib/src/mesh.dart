@@ -30,7 +30,7 @@ base class MeshPrimitive {
 base class Mesh {
   /// Creates a `Mesh` consisting of a single [MeshPrimitive] with the given [Geometry] and [Material].
   Mesh(Geometry geometry, Material material)
-      : primitives = [MeshPrimitive(geometry, material)];
+    : primitives = [MeshPrimitive(geometry, material)];
 
   Mesh.primitives({required this.primitives});
 
@@ -42,8 +42,12 @@ base class Mesh {
   /// This method prepares the [Mesh] for rendering by passing its data to a [SceneEncoder].
   /// For skinned meshes, which are typically used in animations,
   /// the joint [gpu.Texture] data is also included to ensure proper rendering of animated features.
-  void render(SceneEncoder encoder, Matrix4 worldTransform,
-      gpu.Texture? jointsTexture, int jointTextureWidth) {
+  void render(
+    SceneEncoder encoder,
+    Matrix4 worldTransform,
+    gpu.Texture? jointsTexture,
+    int jointTextureWidth,
+  ) {
     for (var primitive in primitives) {
       primitive.geometry.setJointsTexture(jointsTexture, jointTextureWidth);
       encoder.encode(worldTransform, primitive.geometry, primitive.material);

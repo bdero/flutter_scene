@@ -54,7 +54,9 @@ class Surface {
       final renderTarget = gpu.RenderTarget.singleColor(
         colorAttachment,
         depthStencilAttachment: gpu.DepthStencilAttachment(
-            texture: depthTexture, depthClearValue: 1.0),
+          texture: depthTexture,
+          depthClearValue: 1.0,
+        ),
       );
       _renderTargets.add(renderTarget);
     }

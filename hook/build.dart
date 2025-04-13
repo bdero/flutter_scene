@@ -8,8 +8,9 @@ void main(List<String> args) async {
     generateImporterFlatbufferDart();
 
     await buildShaderBundleJson(
-        buildInput: config,
-        buildOutput: output,
-        manifestFileName: 'shaders/base.shaderbundle.json');
+      buildInput: config,
+      buildOutput: output,
+      manifestFileName: 'shaders/base.shaderbundle.json',
+    );
   });
 }

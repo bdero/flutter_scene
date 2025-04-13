@@ -1,17 +1,15 @@
 part of '../animation.dart';
 
-enum AnimationProperty {
-  translation,
-  rotation,
-  scale,
-}
+enum AnimationProperty { translation, rotation, scale }
 
 class BindKey implements Comparable<BindKey> {
   final String nodeName;
   final AnimationProperty property;
 
-  BindKey(
-      {required this.nodeName, this.property = AnimationProperty.translation});
+  BindKey({
+    required this.nodeName,
+    this.property = AnimationProperty.translation,
+  });
 
   @override
   int compareTo(BindKey other) {
@@ -35,15 +33,20 @@ class Animation {
   final double _endTime;
 
   Animation({this.name = '', List<AnimationChannel>? channels})
-      : channels = channels ?? [],
-        _endTime = channels?.fold<double>(0.0,
-                (double previousValue, AnimationChannel element) {
-              return max(element.resolver.getEndTime(), previousValue);
-            }) ??
-            0.0;
+    : channels = channels ?? [],
+      _endTime =
+          channels?.fold<double>(0.0, (
+            double previousValue,
+            AnimationChannel element,
+          ) {
+            return max(element.resolver.getEndTime(), previousValue);
+          }) ??
+          0.0;
 
   factory Animation.fromFlatbuffer(
-      fb.Animation animation, List<Node> sceneNodes) {
+    fb.Animation animation,
+    List<Node> sceneNodes,
+  ) {
     List<AnimationChannel> channels = [];
     for (fb.Channel fbChannel in animation.channels!) {
       if (fbChannel.node < 0 ||
@@ -71,8 +74,10 @@ class Animation {
           for (int i = 0; i < keyframes!.values!.length; i++) {
             outValues.add(keyframes.values![i].toVector3());
           }
-          resolver =
-              PropertyResolver.makeTranslationTimeline(outTimes, outValues);
+          resolver = PropertyResolver.makeTranslationTimeline(
+            outTimes,
+            outValues,
+          );
           break;
         case fb.KeyframesTypeId.RotationKeyframes:
           outProperty = AnimationProperty.rotation;
@@ -105,7 +110,9 @@ class Animation {
       }
 
       final bindKey = BindKey(
-          nodeName: sceneNodes[fbChannel.node].name, property: outProperty);
+        nodeName: sceneNodes[fbChannel.node].name,
+        property: outProperty,
+      );
       channels.add(AnimationChannel(bindTarget: bindKey, resolver: resolver));
     }
 

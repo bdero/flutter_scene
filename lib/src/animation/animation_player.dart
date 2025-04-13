@@ -12,8 +12,8 @@ class AnimationPlayer {
     // will mutate.
     for (final binding in clip._bindings) {
       _targetTransforms[binding.node] = AnimationTransforms(
-          bindPose:
-              DecomposedTransform.fromMatrix(binding.node.localTransform));
+        bindPose: DecomposedTransform.fromMatrix(binding.node.localTransform),
+      );
     }
 
     _clips[animation.name] = clip;

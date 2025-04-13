@@ -11,13 +11,17 @@ base class EnvironmentMap {
     return EnvironmentMap._(null, null);
   }
 
-  factory EnvironmentMap.fromGpuTextures(
-      {required gpu.Texture radianceTexture, gpu.Texture? irradianceTexture}) {
+  factory EnvironmentMap.fromGpuTextures({
+    required gpu.Texture radianceTexture,
+    gpu.Texture? irradianceTexture,
+  }) {
     return EnvironmentMap._(radianceTexture, irradianceTexture);
   }
 
-  static Future<EnvironmentMap> fromUIImages(
-      {required ui.Image radianceImage, ui.Image? irradianceImage}) async {
+  static Future<EnvironmentMap> fromUIImages({
+    required ui.Image radianceImage,
+    ui.Image? irradianceImage,
+  }) async {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
     gpu.Texture? irradianceTexture;
 
@@ -26,11 +30,15 @@ base class EnvironmentMap {
     }
 
     return EnvironmentMap.fromGpuTextures(
-        radianceTexture: radianceTexture, irradianceTexture: irradianceTexture);
+      radianceTexture: radianceTexture,
+      irradianceTexture: irradianceTexture,
+    );
   }
 
-  static Future<EnvironmentMap> fromAssets(
-      {required String radianceImagePath, String? irradianceImagePath}) async {
+  static Future<EnvironmentMap> fromAssets({
+    required String radianceImagePath,
+    String? irradianceImagePath,
+  }) async {
     final radianceTexture = await gpuTextureFromAsset(radianceImagePath);
     gpu.Texture? irradianceTexture;
 
@@ -39,7 +47,9 @@ base class EnvironmentMap {
     }
 
     return EnvironmentMap.fromGpuTextures(
-        radianceTexture: radianceTexture, irradianceTexture: irradianceTexture);
+      radianceTexture: radianceTexture,
+      irradianceTexture: irradianceTexture,
+    );
   }
 
   bool isEmpty() => _radianceTexture == null;
@@ -69,17 +79,18 @@ base class EnvironmentMap {
 /// applied to all materials. Individual [Material]s may optionally override the
 /// default environment.
 base class Environment {
-  Environment(
-      {EnvironmentMap? environmentMap,
-      this.intensity = 1.0,
-      this.exposure = 2.0})
-      : environmentMap = environmentMap ?? EnvironmentMap.empty();
+  Environment({
+    EnvironmentMap? environmentMap,
+    this.intensity = 1.0,
+    this.exposure = 2.0,
+  }) : environmentMap = environmentMap ?? EnvironmentMap.empty();
 
   Environment withNewEnvironmentMap(EnvironmentMap environmentMap) {
     return Environment(
-        environmentMap: environmentMap,
-        intensity: intensity,
-        exposure: exposure);
+      environmentMap: environmentMap,
+      intensity: intensity,
+      exposure: exposure,
+    );
   }
 
   /// The environment map to use for image-based-lighting.

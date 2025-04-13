@@ -12,11 +12,7 @@ extension Vector3Lerp on Vector3 {
   }
 
   Vector3 divided(Vector3 other) {
-    return Vector3(
-      x / other.x,
-      y / other.y,
-      z / other.z,
-    );
+    return Vector3(x / other.x, y / other.y, z / other.z);
   }
 }
 
@@ -27,7 +23,7 @@ extension QuaternionSlerp on Quaternion {
 
   Quaternion slerp(Quaternion to, double weight) {
     double cosine = dot(to);
-    if (cosine.abs() < 1.0 - 1e-3 /* epsilon */) {
+    if (cosine.abs() < 1.0 - 1e-3 /* epsilon */ ) {
       // Spherical interpolation.
       double sine = sqrt(1.0 - cosine * cosine);
       double angle = atan2(sine, cosine);

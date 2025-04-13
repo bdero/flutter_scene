@@ -45,11 +45,13 @@ abstract class Geometry {
     }
 
     if (vertices.length % perVertexBytes != 0) {
-      debugPrint('OH NO: Encountered an vertex buffer of size '
-          '${vertices.lengthInBytes} bytes, which doesn\'t match the '
-          'expected multiple of $perVertexBytes bytes. Possible data corruption! '
-          'Attempting to use a vertex count of ${vertices.length ~/ perVertexBytes}. '
-          'The last ${vertices.length % perVertexBytes} bytes will be ignored.');
+      debugPrint(
+        'OH NO: Encountered an vertex buffer of size '
+        '${vertices.lengthInBytes} bytes, which doesn\'t match the '
+        'expected multiple of $perVertexBytes bytes. Possible data corruption! '
+        'Attempting to use a vertex count of ${vertices.length ~/ perVertexBytes}. '
+        'The last ${vertices.length % perVertexBytes} bytes will be ignored.',
+      );
     }
     int vertexCount = vertices.length ~/ perVertexBytes;
 
@@ -66,9 +68,12 @@ abstract class Geometry {
         throw Exception('Unknown vertex buffer type');
     }
 
-    geometry.uploadVertexData(ByteData.sublistView(vertices), vertexCount,
-        ByteData.sublistView(indices),
-        indexType: indexType);
+    geometry.uploadVertexData(
+      ByteData.sublistView(vertices),
+      vertexCount,
+      ByteData.sublistView(indices),
+      indexType: indexType,
+    );
     return geometry;
   }
 
@@ -88,28 +93,42 @@ abstract class Geometry {
     }
   }
 
-  void uploadVertexData(ByteData vertices, int vertexCount, ByteData? indices,
-      {gpu.IndexType indexType = gpu.IndexType.int16}) {
+  void uploadVertexData(
+    ByteData vertices,
+    int vertexCount,
+    ByteData? indices, {
+    gpu.IndexType indexType = gpu.IndexType.int16,
+  }) {
     gpu.DeviceBuffer deviceBuffer = gpu.gpuContext.createDeviceBuffer(
-        gpu.StorageMode.hostVisible,
-        indices == null
-            ? vertices.lengthInBytes
-            : vertices.lengthInBytes + indices.lengthInBytes);
+      gpu.StorageMode.hostVisible,
+      indices == null
+          ? vertices.lengthInBytes
+          : vertices.lengthInBytes + indices.lengthInBytes,
+    );
 
     deviceBuffer.overwrite(vertices, destinationOffsetInBytes: 0);
     setVertices(
-        gpu.BufferView(deviceBuffer,
-            offsetInBytes: 0, lengthInBytes: vertices.lengthInBytes),
-        vertexCount);
+      gpu.BufferView(
+        deviceBuffer,
+        offsetInBytes: 0,
+        lengthInBytes: vertices.lengthInBytes,
+      ),
+      vertexCount,
+    );
 
     if (indices != null) {
-      deviceBuffer.overwrite(indices,
-          destinationOffsetInBytes: vertices.lengthInBytes);
+      deviceBuffer.overwrite(
+        indices,
+        destinationOffsetInBytes: vertices.lengthInBytes,
+      );
       setIndices(
-          gpu.BufferView(deviceBuffer,
-              offsetInBytes: vertices.lengthInBytes,
-              lengthInBytes: indices.lengthInBytes),
-          indexType);
+        gpu.BufferView(
+          deviceBuffer,
+          offsetInBytes: vertices.lengthInBytes,
+          lengthInBytes: indices.lengthInBytes,
+        ),
+        indexType,
+      );
     }
   }
 
@@ -120,11 +139,12 @@ abstract class Geometry {
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
   void bind(
-      gpu.RenderPass pass,
-      gpu.HostBuffer transientsBuffer,
-      vm.Matrix4 modelTransform,
-      vm.Matrix4 cameraTransform,
-      vm.Vector3 cameraPosition);
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition,
+  );
 }
 
 class UnskinnedGeometry extends Geometry {
@@ -134,14 +154,16 @@ class UnskinnedGeometry extends Geometry {
 
   @override
   void bind(
-      gpu.RenderPass pass,
-      gpu.HostBuffer transientsBuffer,
-      vm.Matrix4 modelTransform,
-      vm.Matrix4 cameraTransform,
-      vm.Vector3 cameraPosition) {
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition,
+  ) {
     if (_vertices == null) {
       throw Exception(
-          'SetVertices must be called before GetBufferView for Geometry.');
+        'SetVertices must be called before GetBufferView for Geometry.',
+      );
     }
 
     pass.bindVertexBuffer(_vertices!, _vertexCount);
@@ -188,8 +210,9 @@ class UnskinnedGeometry extends Geometry {
       cameraPosition.y,
       cameraPosition.z,
     ]);
-    final frameInfoView =
-        transientsBuffer.emplace(frameInfoFloats.buffer.asByteData());
+    final frameInfoView = transientsBuffer.emplace(
+      frameInfoFloats.buffer.asByteData(),
+    );
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
@@ -210,27 +233,32 @@ class SkinnedGeometry extends Geometry {
 
   @override
   void bind(
-      gpu.RenderPass pass,
-      gpu.HostBuffer transientsBuffer,
-      vm.Matrix4 modelTransform,
-      vm.Matrix4 cameraTransform,
-      vm.Vector3 cameraPosition) {
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition,
+  ) {
     if (_jointsTexture == null) {
       throw Exception('Joints texture must be set for skinned geometry.');
     }
 
     pass.bindTexture(
-        vertexShader.getUniformSlot('joints_texture'), _jointsTexture!,
-        sampler: gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.nearest,
-            magFilter: gpu.MinMagFilter.nearest,
-            mipFilter: gpu.MipFilter.nearest,
-            widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-            heightAddressMode: gpu.SamplerAddressMode.clampToEdge));
+      vertexShader.getUniformSlot('joints_texture'),
+      _jointsTexture!,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
+        mipFilter: gpu.MipFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
 
     if (_vertices == null) {
       throw Exception(
-          'SetVertices must be called before GetBufferView for Geometry.');
+        'SetVertices must be called before GetBufferView for Geometry.',
+      );
     }
 
     pass.bindVertexBuffer(_vertices!, _vertexCount);
@@ -279,8 +307,9 @@ class SkinnedGeometry extends Geometry {
       _jointsTexture != null ? 1 : 0,
       _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
     ]);
-    final frameInfoView =
-        transientsBuffer.emplace(frameInfoFloats.buffer.asByteData());
+    final frameInfoView = transientsBuffer.emplace(
+      frameInfoFloats.buffer.asByteData(),
+    );
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
@@ -310,7 +339,10 @@ class CuboidGeometry extends UnskinnedGeometry {
     ]);
 
     uploadVertexData(
-        ByteData.sublistView(vertices), 8, ByteData.sublistView(indices),
-        indexType: gpu.IndexType.int16);
+      ByteData.sublistView(vertices),
+      8,
+      ByteData.sublistView(indices),
+      indexType: gpu.IndexType.int16,
+    );
   }
 }
