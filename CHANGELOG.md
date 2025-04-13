@@ -71,3 +71,7 @@
 ## 0.9.1-0
 
 * Fix invalid usage of textureLod on desktop platforms.
+
+## 0.9.2-0
+
+* Fix globalTransform calculation.

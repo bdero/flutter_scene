@@ -59,7 +59,7 @@ base class Node implements SceneGraph {
     if (parent == null) {
       return localTransform;
     }
-    return localTransform * parent.globalTransform;
+    return parent.globalTransform * localTransform;
   }
 
   Node? _parent;
