@@ -34,10 +34,10 @@ class _MyAppState extends State<MyApp> {
 
     examples = {
       'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
-      'Animation': (context) =>
-          ExampleAnimation(elapsedSeconds: elapsedSeconds),
-      'Imported Model': (context) =>
-          ExampleLogo(elapsedSeconds: elapsedSeconds),
+      'Animation':
+          (context) => ExampleAnimation(elapsedSeconds: elapsedSeconds),
+      'Imported Model':
+          (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
     };
     selectedExample = examples.keys.first;
@@ -68,14 +68,15 @@ class _MyAppState extends State<MyApp> {
                 padding: const EdgeInsets.all(8.0),
                 child: DropdownButton<String>(
                   value: selectedExample,
-                  items: examples.keys.map<DropdownMenuItem<String>>((
-                    String value,
-                  ) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
+                  items:
+                      examples.keys.map<DropdownMenuItem<String>>((
+                        String value,
+                      ) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
                   onChanged: (String? newValue) {
                     setState(() {
                       ticker.stop();
