@@ -19,5 +19,9 @@ vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
 
 vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
   vec2 uv = SphericalToEquirectangular(direction);
-  return textureLod(tex, uv, lod).rgb;
+  // textureLod is not supported in GLSL ES 1.0. But it doesn't matter anyway,
+  // since this function will eventually use `textureCubeLod` once environment
+  // maps are fixed.
+  //return textureLod(tex, uv, lod).rgb;
+  return texture(tex, uv).rgb;
 }

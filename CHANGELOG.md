@@ -67,3 +67,7 @@
 
 * Update to native_assets_cli 0.13.0.
 * Update to flutter_gpu_shaders 0.3.0.
+
+## 0.9.1-0
+
+* Fix invalid usage of textureLod on desktop platforms.

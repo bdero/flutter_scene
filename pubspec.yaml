@@ -1,6 +1,6 @@
 name: flutter_scene
 description: 3D rendering library for Flutter. Currently only supported when Impeller is enabled.
-version: 0.9.0-0
+version: 0.9.1-0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
 platforms:
