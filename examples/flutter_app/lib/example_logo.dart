@@ -18,8 +18,9 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    final loadModel =
-        Node.fromAsset('build/models/flutter_logo_baked.model').then((value) {
+    final loadModel = Node.fromAsset(
+      'build/models/flutter_logo_baked.model',
+    ).then((value) {
       value.name = 'FlutterLogo';
       scene.add(value);
       debugPrint('Model loaded: ${value.name}');
@@ -49,9 +50,7 @@ class ExampleLogoState extends State<ExampleLogo> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return CustomPaint(
-      painter: _ScenePainter(scene, widget.elapsedSeconds),
-    );
+    return CustomPaint(painter: _ScenePainter(scene, widget.elapsedSeconds));
   }
 }
 

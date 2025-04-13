@@ -25,9 +25,7 @@ class ExampleCuboidState extends State<ExampleCuboid> {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _ScenePainter(scene, widget.elapsedSeconds),
-    );
+    return CustomPaint(painter: _ScenePainter(scene, widget.elapsedSeconds));
   }
 }
 

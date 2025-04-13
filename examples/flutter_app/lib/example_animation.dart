@@ -21,8 +21,9 @@ class ExampleAnimationState extends State<ExampleAnimation> {
 
   @override
   void initState() {
-    final dashModel =
-        Node.fromAsset('build/models/dash.model').then((modelNode) {
+    final dashModel = Node.fromAsset('build/models/dash.model').then((
+      modelNode,
+    ) {
       for (final animation in modelNode.parsedAnimations) {
         debugPrint('Animation: ${animation.name}');
       }
@@ -106,7 +107,7 @@ class ExampleAnimationState extends State<ExampleAnimation> {
                     },
                   ),
                 ],
-              )
+              ),
             ],
           ),
       ],
@@ -125,7 +126,10 @@ class _ScenePainter extends CustomPainter {
     const double distance = 6;
     final camera = PerspectiveCamera(
       position: vm.Vector3(
-          sin(rotationAmount) * distance, 2, cos(rotationAmount) * distance),
+        sin(rotationAmount) * distance,
+        2,
+        cos(rotationAmount) * distance,
+      ),
       target: vm.Vector3(0, 1.5, 0),
     );
 

@@ -53,10 +53,9 @@ class ExampleCarState extends State<ExampleCar> {
     });
 
     EnvironmentMap.fromAssets(
-            radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-            irradianceImagePath:
-                'assets/little_paris_eiffel_tower_irradiance.png')
-        .then((environment) {
+      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+      irradianceImagePath: 'assets/little_paris_eiffel_tower_irradiance.png',
+    ).then((environment) {
       scene.environment.environmentMap = environment;
       scene.environment.exposure = 2.0;
       scene.environment.intensity = 2.0;
@@ -90,10 +89,7 @@ class ExampleCarState extends State<ExampleCar> {
     final wheelSpeed = nodes['WheelBack.L']!.amount;
     wheelRotation += wheelSpeed / 10;
 
-    for (final wheelName in [
-      'WheelBack.L',
-      'WheelBack.R',
-    ]) {
+    for (final wheelName in ['WheelBack.L', 'WheelBack.R']) {
       final wheel = nodes[wheelName]!;
       wheel.node.localTransform = wheel.startTransform.clone()
         ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
@@ -101,10 +97,7 @@ class ExampleCarState extends State<ExampleCar> {
 
     final wheelTurn = nodes['WheelFront.L']!.amount;
 
-    for (final wheelName in [
-      'WheelFront.L',
-      'WheelFront.R',
-    ]) {
+    for (final wheelName in ['WheelFront.L', 'WheelFront.R']) {
       final wheel = nodes[wheelName]!;
       wheel.node.localTransform = wheel.startTransform.clone() *
           vm.Matrix4.rotationY(-wheelTurn / 2) *
@@ -129,7 +122,7 @@ class ExampleCarState extends State<ExampleCar> {
                   'DoorFront.L',
                   'DoorFront.R',
                   'DoorBack.L',
-                  'DoorBack.R'
+                  'DoorBack.R',
                 ])
                   Slider(
                     value: nodes[doorName]!.amount,
@@ -178,7 +171,7 @@ class ExampleCarState extends State<ExampleCar> {
                   },
                 ),
               ],
-            )
+            ),
           ],
         ),
       ],

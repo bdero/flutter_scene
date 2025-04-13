@@ -60,9 +60,7 @@ class _MyAppState extends State<MyApp> {
         ),
         body: Stack(
           children: [
-            SizedBox.expand(
-              child: examples[selectedExample]!(context),
-            ),
+            SizedBox.expand(child: examples[selectedExample]!(context)),
             // Dropdown menu
             Align(
               alignment: Alignment.topLeft,
@@ -70,8 +68,9 @@ class _MyAppState extends State<MyApp> {
                 padding: const EdgeInsets.all(8.0),
                 child: DropdownButton<String>(
                   value: selectedExample,
-                  items: examples.keys
-                      .map<DropdownMenuItem<String>>((String value) {
+                  items: examples.keys.map<DropdownMenuItem<String>>((
+                    String value,
+                  ) {
                     return DropdownMenuItem<String>(
                       value: value,
                       child: Text(value),
