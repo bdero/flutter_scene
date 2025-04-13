@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:native_assets_cli/native_assets_cli.dart';
 
 void buildModels({
-  required BuildConfig buildConfig,
+  required BuildInput buildInput,
   required List<String> inputFilePaths,
   String outputDirectory = 'build/models/',
 }) {
   final outDir =
-      Directory.fromUri(buildConfig.packageRoot.resolve(outputDirectory));
+      Directory.fromUri(buildInput.packageRoot.resolve(outputDirectory));
   outDir.createSync(recursive: true);
 
   final Uri dartExec = Uri.file(Platform.resolvedExecutable);
@@ -39,7 +39,7 @@ void buildModels({
         '--output',
         outDir.uri.resolve(outputFileName).toFilePath(),
         '--working-directory',
-        buildConfig.packageRoot.toFilePath(),
+        buildInput.packageRoot.toFilePath(),
       ],
     );
     if (importerResult.exitCode != 0) {

@@ -45,3 +45,8 @@
 ## 0.8.0-0
 
 * Update to Flutter 3.29.0-1.0.pre.242.
+
+## 0.9.0-0
+
+* Update to native_assets_cli 0.13.0.
+  Breaking: `BuildConfig` is now `BuildInput`
