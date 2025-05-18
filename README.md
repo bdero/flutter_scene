@@ -46,7 +46,7 @@ The primary goal of this project is to make performant cross platform 3D easy in
 ## Early preview! ⚠️
 
 - This package is in an early preview state. Things may break!
-- Relies on [Flutter GPU](https://github.com/flutter/engine/blob/main/docs/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
+- Relies on [Flutter GPU](https://github.com/flutter/flutter/blob/main/engine/src/flutter/docs/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
 - This package currently only works when [Impeller is enabled](https://docs.flutter.dev/perf/impeller#availability).
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
 - Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
