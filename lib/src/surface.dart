@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:vector_math/vector_math.dart' as vm;
 
 class Surface {
   // TODO(bdero): There should be a method on the Flutter GPU context to pull
@@ -28,7 +29,10 @@ class Surface {
         enableShaderReadUsage: true,
         coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
       );
-      final colorAttachment = gpu.ColorAttachment(texture: colorTexture);
+      final colorAttachment = gpu.ColorAttachment(
+        texture: colorTexture,
+        clearValue: vm.Colors.transparent,
+      );
       if (enableMsaa) {
         final gpu.Texture msaaColorTexture = gpu.gpuContext.createTexture(
           gpu.StorageMode.deviceTransient,
@@ -36,6 +40,7 @@ class Surface {
           size.height.toInt(),
           sampleCount: 4,
           enableRenderTargetUsage: true,
+          enableShaderReadUsage: false,
           coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
         );
         colorAttachment.resolveTexture = colorAttachment.texture;
@@ -49,12 +54,15 @@ class Surface {
         sampleCount: enableMsaa ? 4 : 1,
         format: gpu.gpuContext.defaultDepthStencilFormat,
         enableRenderTargetUsage: true,
+        enableShaderReadUsage: false,
         coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
       );
       final renderTarget = gpu.RenderTarget.singleColor(
         colorAttachment,
         depthStencilAttachment: gpu.DepthStencilAttachment(
-            texture: depthTexture, depthClearValue: 1.0),
+          texture: depthTexture,
+          depthClearValue: 1.0,
+        ),
       );
       _renderTargets.add(renderTarget);
     }

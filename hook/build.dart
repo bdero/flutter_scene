@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_scene_importer/offline_import.dart';
 import 'package:native_assets_cli/native_assets_cli.dart';
 
@@ -8,8 +10,9 @@ void main(List<String> args) async {
     generateImporterFlatbufferDart();
 
     await buildShaderBundleJson(
-        buildConfig: config,
-        buildOutput: output,
-        manifestFileName: 'shaders/base.shaderbundle.json');
+      buildConfig: config,
+      buildOutput: output,
+      manifestFileName: 'shaders/base.shaderbundle.json',
+    );
   });
 }

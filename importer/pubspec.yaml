@@ -18,9 +18,10 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu:
-    sdk: flutter
+    #sdk: flutter
+    path: /Users/bdero/projects/flutter/flutter/engine/src/flutter/lib/gpu
   logging: ^1.2.0
-  native_assets_cli: '>=0.9.0 <0.10.0'
+  native_assets_cli: '>=0.12.0 <0.13.0'
   vector_math: ^2.1.4
 
 dev_dependencies:

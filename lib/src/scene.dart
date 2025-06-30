@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'dart:ui' as ui;
+import 'package:vector_math/vector_math_64.dart' as vm;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
@@ -142,7 +143,11 @@ base class Scene implements SceneGraph {
   ///
   /// Optionally, a [ui.Rect] can be provided to define a viewport, limiting the rendering area on the canvas.
   /// If no [ui.Rect] is specified, the entire canvas will be rendered.
-  void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {
+  void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport, double dpiScale = 1}) {
+    if (dpiScale <= 0) {
+      throw ArgumentError("dpiScale must be a positive number.");
+    }
+
     if (!_readyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
       debugPrint(
@@ -156,7 +161,7 @@ base class Scene implements SceneGraph {
     }
     final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
     final gpu.RenderTarget renderTarget =
-        surface.getNextRenderTarget(drawArea.size, enableMsaa);
+        surface.getNextRenderTarget(drawArea.size * dpiScale, enableMsaa);
 
     final env = environment.environmentMap.isEmpty()
         ? environment.withNewEnvironmentMap(Material.getDefaultEnvironmentMap())
@@ -170,6 +175,8 @@ base class Scene implements SceneGraph {
         ? renderTarget.colorAttachments[0].resolveTexture!
         : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
+
+    canvas.scale(1.0 / dpiScale);
     canvas.drawImage(image, drawArea.topLeft, ui.Paint());
   }
 }

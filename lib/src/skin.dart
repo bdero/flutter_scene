@@ -105,7 +105,6 @@ base class Skin {
 
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }
-
     texture.overwrite(jointMatrixFloats.buffer.asByteData());
     return texture;
   }
