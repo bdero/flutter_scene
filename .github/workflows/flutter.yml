@@ -19,8 +19,6 @@ jobs:
       - run: dart --version
       - run: flutter --version
       - run: flutter pub get
-      - name: enable asset building
-        run: flutter config --enable-native-assets
       - name: Lint analysis
         run: dart analyze
       - name: Dart format

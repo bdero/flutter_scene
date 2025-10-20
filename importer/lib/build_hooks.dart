@@ -1,6 +1,6 @@
 import 'dart:io';
+import 'package:hooks/hooks.dart';
 
-import 'package:native_assets_cli/native_assets_cli.dart';
 
 void buildModels({
   required BuildInput buildInput,
@@ -26,12 +26,11 @@ void buildModels({
     outputFileName =
         '${outputFileName.substring(0, outputFileName.lastIndexOf('.'))}.model';
 
-    /// dart --enable-experiment=native-assets run flutter_scene_importer:import \
+    /// run flutter_scene_importer:import \
     ///      --input <input> --output <output> --working-directory <working-directory>
     final importerResult = Process.runSync(
       dartExec.toFilePath(),
       [
-        '--enable-experiment=native-assets',
         'run',
         'flutter_scene_importer:import',
         '--input',

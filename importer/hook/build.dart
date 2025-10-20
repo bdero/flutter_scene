@@ -1,7 +1,6 @@
 import 'dart:io';
-
 import 'package:logging/logging.dart';
-import 'package:native_assets_cli/native_assets_cli.dart';
+import 'package:hooks/hooks.dart';
 
 void main(List<String> args) async {
   await build(args, (config, output) async {
