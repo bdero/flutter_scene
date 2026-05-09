@@ -4,10 +4,11 @@ import 'package:args/args.dart';
 import 'package:flutter_scene_importer/offline_import.dart';
 
 void main(List<String> args) {
-  final parser = ArgParser()
-    ..addOption('input', abbr: 'i', help: 'Input glTF file path')
-    ..addOption('output', abbr: 'o', help: 'Output model file path')
-    ..addOption('working-directory', abbr: 'w', help: 'Working directory');
+  final parser =
+      ArgParser()
+        ..addOption('input', abbr: 'i', help: 'Input glTF file path')
+        ..addOption('output', abbr: 'o', help: 'Output model file path')
+        ..addOption('working-directory', abbr: 'w', help: 'Working directory');
 
   final results = parser.parse(args);
 
@@ -18,7 +19,8 @@ void main(List<String> args) {
   if (input == null || output == null) {
     // ignore: avoid_print
     print(
-        'Usage: importer --input <input> --output <output> [--working-directory <working-directory>]');
+      'Usage: importer --input <input> --output <output> [--working-directory <working-directory>]',
+    );
     exit(1);
   }
 

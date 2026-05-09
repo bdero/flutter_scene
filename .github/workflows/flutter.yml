@@ -25,7 +25,7 @@ jobs:
       - name: Lint analysis
         run: dart analyze packages examples
       - name: Dart format
-        run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*')
+        run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*' -not -path '*/third_party/*')
       - name: Run flutter_scene tests
         working-directory: packages/flutter_scene
         run: flutter test --enable-impeller

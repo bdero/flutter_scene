@@ -14,7 +14,7 @@ extension MatrixHelpers on fb.Matrix {
       m0, m1, m2, m3, //
       m4, m5, m6, m7, //
       m8, m9, m10, m11, //
-      m12, m13, m14, m15 //
+      m12, m13, m14, m15, //
     ]);
   }
 }
@@ -74,9 +74,10 @@ extension TextureHelpers on fb.Texture {
       throw Exception('Texture has no embedded image');
     }
     gpu.Texture texture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.hostVisible,
-        embeddedImage!.width,
-        embeddedImage!.height);
+      gpu.StorageMode.hostVisible,
+      embeddedImage!.width,
+      embeddedImage!.height,
+    );
     Uint8List textureData = embeddedImage!.bytes! as Uint8List;
     texture.overwrite(ByteData.sublistView(textureData));
 

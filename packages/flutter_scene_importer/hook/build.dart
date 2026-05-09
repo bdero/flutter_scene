@@ -5,10 +5,11 @@ import 'package:logging/logging.dart';
 
 void main(List<String> args) async {
   await build(args, (config, output) async {
-    final logger = Logger('')
-      ..level = Level.ALL
-      // ignore: avoid_print
-      ..onRecord.listen((record) => print(record.message));
+    final logger =
+        Logger('')
+          ..level = Level.ALL
+          // ignore: avoid_print
+          ..onRecord.listen((record) => print(record.message));
 
     //-------------------------------------------------------------------------
     /// Ensure the "build/" directory exists.
@@ -23,13 +24,10 @@ void main(List<String> args) async {
     /// `cmake -Bbuild -DCMAKE_BUILD_TYPE=Debug`
     ///
     logger.info('Running cmake gen step...');
-    final cmakeGenResult = Process.runSync(
-        'cmake',
-        [
-          '-Bbuild',
-          '-DCMAKE_BUILD_TYPE=Debug',
-        ],
-        workingDirectory: config.packageRoot.toFilePath());
+    final cmakeGenResult = Process.runSync('cmake', [
+      '-Bbuild',
+      '-DCMAKE_BUILD_TYPE=Debug',
+    ], workingDirectory: config.packageRoot.toFilePath());
     if (cmakeGenResult.exitCode != 0) {
       String error =
           'CMake generate step failed (exit code ${cmakeGenResult.exitCode}):\nSTDERR: ${cmakeGenResult.stderr}\nSTDOUT: ${cmakeGenResult.stdout}';
@@ -42,16 +40,13 @@ void main(List<String> args) async {
     /// `cmake --build build --target=importer -j 4`
     ///
     logger.info('Running cmake build step...');
-    final cmakeBuildResult = Process.runSync(
-        'cmake',
-        [
-          '--build',
-          'build',
-          '--target=importer',
-          '-j',
-          '4',
-        ],
-        workingDirectory: config.packageRoot.toFilePath());
+    final cmakeBuildResult = Process.runSync('cmake', [
+      '--build',
+      'build',
+      '--target=importer',
+      '-j',
+      '4',
+    ], workingDirectory: config.packageRoot.toFilePath());
     if (cmakeBuildResult.exitCode != 0) {
       String error =
           'CMake build step failed (exit code ${cmakeBuildResult.exitCode}):\nSTDERR: ${cmakeBuildResult.stderr}\nSTDOUT: ${cmakeBuildResult.stdout}';
