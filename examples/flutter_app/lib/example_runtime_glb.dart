@@ -12,11 +12,15 @@ class ExampleRuntimeGlb extends StatefulWidget {
     this.elapsedSeconds = 0,
     required this.assetPath,
     this.cameraDistance = 5.0,
+    this.cameraTargetY = 0.0,
+    this.autoPlayFirstAnimation = false,
   });
 
   final double elapsedSeconds;
   final String assetPath;
   final double cameraDistance;
+  final double cameraTargetY;
+  final bool autoPlayFirstAnimation;
 
   @override
   ExampleRuntimeGlbState createState() => ExampleRuntimeGlbState();
@@ -33,7 +37,15 @@ class ExampleRuntimeGlbState extends State<ExampleRuntimeGlb> {
     Node.fromGlbAsset(widget.assetPath).then((node) {
       node.name = 'GLB';
       scene.add(node);
-      debugPrint('Runtime-loaded GLB: ${widget.assetPath}');
+      debugPrint(
+        'Runtime-loaded GLB ${widget.assetPath} '
+        '(animations: ${node.parsedAnimations.length})',
+      );
+      if (widget.autoPlayFirstAnimation && node.parsedAnimations.isNotEmpty) {
+        node.createAnimationClip(node.parsedAnimations.first)
+          ..loop = true
+          ..play();
+      }
       setState(() => loaded = true);
     }).catchError((Object e, StackTrace st) {
       debugPrint('Failed to runtime-load ${widget.assetPath}: $e\n$st');
@@ -72,16 +84,22 @@ class ExampleRuntimeGlbState extends State<ExampleRuntimeGlb> {
     }
     if (!loaded) return const Center(child: CircularProgressIndicator());
     return CustomPaint(
-      painter: _ScenePainter(scene, widget.elapsedSeconds, widget.cameraDistance),
+      painter: _ScenePainter(
+        scene,
+        widget.elapsedSeconds,
+        widget.cameraDistance,
+        widget.cameraTargetY,
+      ),
     );
   }
 }
 
 class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime, this.distance);
+  _ScenePainter(this.scene, this.elapsedTime, this.distance, this.targetY);
   final Scene scene;
   final double elapsedTime;
   final double distance;
+  final double targetY;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -91,7 +109,7 @@ class _ScenePainter extends CustomPainter {
         distance * 0.4,
         cos(elapsedTime) * distance,
       ),
-      target: vm.Vector3(0, 0, 0),
+      target: vm.Vector3(0, targetY, 0),
     );
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }

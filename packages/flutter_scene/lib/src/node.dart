@@ -38,7 +38,9 @@ base class Node implements SceneGraph {
   /// If the node does not have a parent, `localTransform` and [globalTransform] share the same transformation matrix instance.
   Matrix4 localTransform = Matrix4.identity();
 
-  Skin? _skin;
+  /// The skin attached to this node, used for skeletal animation. Set by
+  /// importers (both the offline .model path and the runtime glTF/GLB loader).
+  Skin? skin;
 
   set globalTransform(Matrix4 transform) {
     final parent = _parent;
@@ -78,6 +80,12 @@ base class Node implements SceneGraph {
   bool isJoint = false;
 
   final List<Animation> _animations = [];
+
+  /// Append to the parsed animation list. Used by importers (including the
+  /// runtime glTF/GLB loader).
+  void addParsedAnimation(Animation animation) {
+    _animations.add(animation);
+  }
 
   /// The list of animations parsed when this node was deserialized.
   ///
@@ -277,7 +285,7 @@ base class Node implements SceneGraph {
 
     // Skin.
     if (fbNode.skin != null) {
-      _skin = Skin.fromFlatbuffer(fbNode.skin!, sceneNodes);
+      skin = Skin.fromFlatbuffer(fbNode.skin!, sceneNodes);
     }
   }
 
@@ -482,15 +490,15 @@ base class Node implements SceneGraph {
       }
     }
 
-    if (_skin != null) {
-      result._skin = Skin();
-      for (Matrix4 inverseBindMatrix in _skin!.inverseBindMatrices) {
-        result._skin!.inverseBindMatrices.add(Matrix4.copy(inverseBindMatrix));
+    if (skin != null) {
+      result.skin = Skin();
+      for (Matrix4 inverseBindMatrix in skin!.inverseBindMatrices) {
+        result.skin!.inverseBindMatrices.add(Matrix4.copy(inverseBindMatrix));
       }
       // Initially copy all the original joints. All of these will be replaced
       // with the cloned joints in Node.clone().
-      result._skin!.joints.addAll(_skin!.joints);
-      clonedSkins.add(result._skin!);
+      result.skin!.joints.addAll(skin!.joints);
+      clonedSkins.add(result.skin!);
     }
 
     return result;
@@ -531,8 +539,8 @@ base class Node implements SceneGraph {
       mesh!.render(
         encoder,
         worldTransform,
-        _skin?.getJointsTexture(),
-        _skin?.getTextureWidth() ?? 0,
+        skin?.getJointsTexture(),
+        skin?.getTextureWidth() ?? 0,
       );
     }
     for (var child in children) {

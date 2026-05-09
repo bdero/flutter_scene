@@ -5,11 +5,14 @@ import 'package:vector_math/vector_math.dart';
 import '../material/unlit_material.dart';
 import '../mesh.dart';
 import '../node.dart';
+import '../skin.dart';
+import 'animation_builder.dart';
 import 'geometry_builder.dart';
 import 'glb.dart';
 import 'gltf_parser.dart';
 import 'gltf_types.dart';
 import 'material_builder.dart';
+import 'skin_builder.dart';
 import 'texture_builder.dart';
 
 /// Parse a GLB byte stream into a [Node] tree.
@@ -42,6 +45,25 @@ Future<Node> importGlb(Uint8List bytes) async {
     );
   }
 
+  // Build skins (after nodes are wired so isJoint flags propagate correctly)
+  // and attach them to nodes that reference them.
+  final List<Skin> skins = [
+    for (final s in doc.skins)
+      buildSkin(
+        gltfSkin: s,
+        accessors: doc.accessors,
+        bufferViews: doc.bufferViews,
+        bufferData: bufferData,
+        engineNodes: engineNodes,
+      ),
+  ];
+  for (int i = 0; i < doc.nodes.length; i++) {
+    final skinIdx = doc.nodes[i].skin;
+    if (skinIdx != null && skinIdx >= 0 && skinIdx < skins.length) {
+      engineNodes[i].skin = skins[skinIdx];
+    }
+  }
+
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
   // Apply a Z-axis flip on the scene root to convert from glTF's right-handed
@@ -60,10 +82,24 @@ Future<Node> importGlb(Uint8List bytes) async {
     }
   }
 
+  // Build animations and attach them to the synthesized root, mirroring how
+  // the offline (.model) path attaches them in Node.fromFlatbuffer.
+  for (final ga in doc.animations) {
+    root.addParsedAnimation(buildAnimation(
+      gltfAnimation: ga,
+      accessors: doc.accessors,
+      bufferViews: doc.bufferViews,
+      bufferData: bufferData,
+      engineNodes: engineNodes,
+    ));
+  }
+
   debugPrint(
     'Unpacking glTF (nodes: ${doc.nodes.length}, '
     'meshes: ${doc.meshes.length}, '
-    'materials: ${doc.materials.length})',
+    'materials: ${doc.materials.length}, '
+    'skins: ${doc.skins.length}, '
+    'animations: ${doc.animations.length})',
   );
 
   return root;
