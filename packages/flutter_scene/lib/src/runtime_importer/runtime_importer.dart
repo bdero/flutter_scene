@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../material/unlit_material.dart';
 import '../mesh.dart';
@@ -8,9 +9,6 @@ import '../node.dart';
 import '../skin.dart';
 import 'animation_builder.dart';
 import 'geometry_builder.dart';
-import 'glb.dart';
-import 'gltf_parser.dart';
-import 'gltf_types.dart';
 import 'material_builder.dart';
 import 'skin_builder.dart';
 import 'texture_builder.dart';

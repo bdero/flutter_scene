@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../animation.dart';
 import '../node.dart';
-import 'accessor.dart';
-import 'gltf_types.dart';
 
 /// Builds an engine [Animation] from a glTF animation. Each glTF channel
 /// becomes an engine [AnimationChannel] keyed by the target node's name and

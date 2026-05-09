@@ -1,6 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
-import 'gltf_types.dart';
+import 'types.dart';
 
 GltfDocument parseGltfJson(Map<String, Object?> json) {
   return GltfDocument(

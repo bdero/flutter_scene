@@ -4,11 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/runtime_importer/geometry_builder.dart';
-import 'package:flutter_scene/src/runtime_importer/glb.dart';
-import 'package:flutter_scene/src/runtime_importer/gltf_parser.dart';
-import 'package:flutter_scene/src/runtime_importer/gltf_types.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene_importer/importer.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 import 'package:test/test.dart';
 
 /// Side-by-side byte comparison: my Dart-only runtime parser vs the existing

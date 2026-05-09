@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'gltf_types.dart';
+import 'types.dart';
 
 /// Resolves a glTF accessor into a flat [Float32List] of its raw component
 /// values. The accessor's component type is normalized to float32 for callers,

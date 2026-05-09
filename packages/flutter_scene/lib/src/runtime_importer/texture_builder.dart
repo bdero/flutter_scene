@@ -3,9 +3,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../asset_helpers.dart';
-import 'gltf_types.dart';
 
 /// Decode each glTF texture into a [gpu.Texture]. Each entry in the returned
 /// list corresponds 1:1 to `doc.textures` so material indexes resolve directly.
