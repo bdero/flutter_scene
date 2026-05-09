@@ -48,9 +48,9 @@ Skin buildSkin({
       // Matrix4.fromFloat32List expects a 16-float column-major buffer; glTF
       // stores matrices in column-major order, so this is a direct copy.
       skin.inverseBindMatrices.add(
-        Matrix4.fromFloat32List(Float32List.fromList(
-          floats.sublist(i * 16, i * 16 + 16),
-        )),
+        Matrix4.fromFloat32List(
+          Float32List.fromList(floats.sublist(i * 16, i * 16 + 16)),
+        ),
       );
     }
   } else {

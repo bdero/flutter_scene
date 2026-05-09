@@ -105,7 +105,10 @@ enum GltfComponentType {
   final bool signed;
 
   static GltfComponentType fromGlValue(int v) {
-    return values.firstWhere((e) => e.glValue == v, orElse: () => throw FormatException('Unknown glTF componentType: $v'));
+    return values.firstWhere(
+      (e) => e.glValue == v,
+      orElse: () => throw FormatException('Unknown glTF componentType: $v'),
+    );
   }
 }
 
@@ -124,7 +127,10 @@ enum GltfAccessorType {
   final int componentCount;
 
   static GltfAccessorType fromName(String s) {
-    return values.firstWhere((e) => e.name_ == s, orElse: () => throw FormatException('Unknown glTF accessor type: $s'));
+    return values.firstWhere(
+      (e) => e.name_ == s,
+      orElse: () => throw FormatException('Unknown glTF accessor type: $s'),
+    );
   }
 }
 
@@ -209,7 +215,12 @@ class GltfPbrMetallicRoughness {
 }
 
 class GltfTextureInfo {
-  GltfTextureInfo({required this.index, this.texCoord = 0, this.scale, this.strength});
+  GltfTextureInfo({
+    required this.index,
+    this.texCoord = 0,
+    this.scale,
+    this.strength,
+  });
   final int index;
   final int texCoord;
 
@@ -234,7 +245,12 @@ class GltfImage {
 }
 
 class GltfSampler {
-  GltfSampler({this.magFilter, this.minFilter, this.wrapS = 10497, this.wrapT = 10497});
+  GltfSampler({
+    this.magFilter,
+    this.minFilter,
+    this.wrapS = 10497,
+    this.wrapT = 10497,
+  });
   final int? magFilter;
   final int? minFilter;
   final int wrapS;
@@ -255,14 +271,22 @@ class GltfSkin {
 }
 
 class GltfAnimation {
-  GltfAnimation({this.name, this.channels = const [], this.samplers = const []});
+  GltfAnimation({
+    this.name,
+    this.channels = const [],
+    this.samplers = const [],
+  });
   final String? name;
   final List<GltfAnimationChannel> channels;
   final List<GltfAnimationSampler> samplers;
 }
 
 class GltfAnimationChannel {
-  GltfAnimationChannel({required this.sampler, required this.targetNode, required this.targetPath});
+  GltfAnimationChannel({
+    required this.sampler,
+    required this.targetNode,
+    required this.targetPath,
+  });
   final int sampler;
   final int? targetNode;
 

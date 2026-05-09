@@ -24,9 +24,18 @@ void main() {
     test('rejects non-glTF magic', () {
       // 12 bytes that don't start with 'glTF'.
       final bytes = _bytes([
-        0x00, 0x00, 0x00, 0x00,
-        0x02, 0x00, 0x00, 0x00,
-        0x0c, 0x00, 0x00, 0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x0c,
+        0x00,
+        0x00,
+        0x00,
       ]);
       expect(() => parseGlb(bytes), throwsA(isA<FormatException>()));
     });
@@ -59,32 +68,51 @@ void main() {
       expect(mesh.primitives.first.attributes.containsKey('POSITION'), isTrue);
     });
 
-    test('POSITION accessor reads as Float32List with the right cardinality', () {
-      final primitive = doc.meshes.first.primitives.first;
-      final accessor = doc.accessors[primitive.attributes['POSITION']!];
-      final view = doc.bufferViews[accessor.bufferView!];
-      final positions = readAccessorAsFloat32(accessor, view, container.binaryChunk);
-      expect(accessor.type, GltfAccessorType.vec3);
-      expect(positions.length, accessor.count * 3);
-      // No NaN or infinity in well-formed data.
-      for (final v in positions) {
-        expect(v.isFinite, isTrue);
-      }
-    });
+    test(
+      'POSITION accessor reads as Float32List with the right cardinality',
+      () {
+        final primitive = doc.meshes.first.primitives.first;
+        final accessor = doc.accessors[primitive.attributes['POSITION']!];
+        final view = doc.bufferViews[accessor.bufferView!];
+        final positions = readAccessorAsFloat32(
+          accessor,
+          view,
+          container.binaryChunk,
+        );
+        expect(accessor.type, GltfAccessorType.vec3);
+        expect(positions.length, accessor.count * 3);
+        // No NaN or infinity in well-formed data.
+        for (final v in positions) {
+          expect(v.isFinite, isTrue);
+        }
+      },
+    );
 
-    test('indices accessor (if present) reads as Uint32List with cardinality count', () {
-      final primitive = doc.meshes.first.primitives.first;
-      if (primitive.indices == null) return;
-      final accessor = doc.accessors[primitive.indices!];
-      final view = doc.bufferViews[accessor.bufferView!];
-      final indices = readAccessorAsUint32(accessor, view, container.binaryChunk);
-      expect(accessor.type, GltfAccessorType.scalar);
-      expect(indices.length, accessor.count);
-    });
+    test(
+      'indices accessor (if present) reads as Uint32List with cardinality count',
+      () {
+        final primitive = doc.meshes.first.primitives.first;
+        if (primitive.indices == null) return;
+        final accessor = doc.accessors[primitive.indices!];
+        final view = doc.bufferViews[accessor.bufferView!];
+        final indices = readAccessorAsUint32(
+          accessor,
+          view,
+          container.binaryChunk,
+        );
+        expect(accessor.type, GltfAccessorType.scalar);
+        expect(indices.length, accessor.count);
+      },
+    );
   });
 
   group('all bundled .glb files parse without errors', () {
-    for (final fileName in ['two_triangles.glb', 'flutter_logo_baked.glb', 'fcar.glb', 'dash.glb']) {
+    for (final fileName in [
+      'two_triangles.glb',
+      'flutter_logo_baked.glb',
+      'fcar.glb',
+      'dash.glb',
+    ]) {
       test(fileName, () {
         final path = '${_assetsDir()}/$fileName';
         if (!File(path).existsSync()) return; // skip if not present

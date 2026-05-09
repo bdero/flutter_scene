@@ -38,7 +38,10 @@ GltfNode _parseNode(Map<String, Object?> j) {
   Quaternion? rotation;
   Vector3? scale;
   if (j['matrix'] is List) {
-    final m = (j['matrix'] as List).cast<num>().map((e) => e.toDouble()).toList(growable: false);
+    final m = (j['matrix'] as List)
+        .cast<num>()
+        .map((e) => e.toDouble())
+        .toList(growable: false);
     matrix = Matrix4.fromList(m);
   }
   if (j['translation'] is List) {
@@ -47,7 +50,12 @@ GltfNode _parseNode(Map<String, Object?> j) {
   }
   if (j['rotation'] is List) {
     final r = (j['rotation'] as List).cast<num>();
-    rotation = Quaternion(r[0].toDouble(), r[1].toDouble(), r[2].toDouble(), r[3].toDouble());
+    rotation = Quaternion(
+      r[0].toDouble(),
+      r[1].toDouble(),
+      r[2].toDouble(),
+      r[3].toDouble(),
+    );
   }
   if (j['scale'] is List) {
     final s = (j['scale'] as List).cast<num>();
@@ -66,16 +74,20 @@ GltfNode _parseNode(Map<String, Object?> j) {
 }
 
 GltfMesh _parseMesh(Map<String, Object?> j) {
-  final primitives = ((j['primitives'] as List?) ?? const []).map((p) {
-    final pj = p as Map<String, Object?>;
-    final attrs = (pj['attributes'] as Map?)?.cast<String, int>() ?? const <String, int>{};
-    return GltfMeshPrimitive(
-      attributes: attrs,
-      indices: pj['indices'] as int?,
-      material: pj['material'] as int?,
-      mode: (pj['mode'] as int?) ?? 4,
-    );
-  }).toList(growable: false);
+  final primitives = ((j['primitives'] as List?) ?? const [])
+      .map((p) {
+        final pj = p as Map<String, Object?>;
+        final attrs =
+            (pj['attributes'] as Map?)?.cast<String, int>() ??
+            const <String, int>{};
+        return GltfMeshPrimitive(
+          attributes: attrs,
+          indices: pj['indices'] as int?,
+          material: pj['material'] as int?,
+          mode: (pj['mode'] as int?) ?? 4,
+        );
+      })
+      .toList(growable: false);
   return GltfMesh(name: j['name'] as String?, primitives: primitives);
 }
 
@@ -100,7 +112,10 @@ GltfBufferView _parseBufferView(Map<String, Object?> j) {
 }
 
 GltfBuffer _parseBuffer(Map<String, Object?> j) {
-  return GltfBuffer(byteLength: j['byteLength'] as int, uri: j['uri'] as String?);
+  return GltfBuffer(
+    byteLength: j['byteLength'] as int,
+    uri: j['uri'] as String?,
+  );
 }
 
 GltfMaterial _parseMaterial(Map<String, Object?> j) {
@@ -108,13 +123,19 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
   if (j['pbrMetallicRoughness'] is Map) {
     final p = j['pbrMetallicRoughness'] as Map<String, Object?>;
     pbr = GltfPbrMetallicRoughness(
-      baseColorFactor: p['baseColorFactor'] is List
-          ? (p['baseColorFactor'] as List).cast<num>().map((e) => e.toDouble()).toList(growable: false)
-          : const [1.0, 1.0, 1.0, 1.0],
+      baseColorFactor:
+          p['baseColorFactor'] is List
+              ? (p['baseColorFactor'] as List)
+                  .cast<num>()
+                  .map((e) => e.toDouble())
+                  .toList(growable: false)
+              : const [1.0, 1.0, 1.0, 1.0],
       baseColorTexture: _parseTextureInfo(p['baseColorTexture']),
       metallicFactor: ((p['metallicFactor'] as num?) ?? 1.0).toDouble(),
       roughnessFactor: ((p['roughnessFactor'] as num?) ?? 1.0).toDouble(),
-      metallicRoughnessTexture: _parseTextureInfo(p['metallicRoughnessTexture']),
+      metallicRoughnessTexture: _parseTextureInfo(
+        p['metallicRoughnessTexture'],
+      ),
     );
   }
   final emissive = j['emissiveFactor'];
@@ -125,9 +146,13 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
     normalTexture: _parseTextureInfo(j['normalTexture']),
     occlusionTexture: _parseTextureInfo(j['occlusionTexture']),
     emissiveTexture: _parseTextureInfo(j['emissiveTexture']),
-    emissiveFactor: emissive is List
-        ? emissive.cast<num>().map((e) => e.toDouble()).toList(growable: false)
-        : const [0.0, 0.0, 0.0],
+    emissiveFactor:
+        emissive is List
+            ? emissive
+                .cast<num>()
+                .map((e) => e.toDouble())
+                .toList(growable: false)
+            : const [0.0, 0.0, 0.0],
     alphaMode: (j['alphaMode'] as String?) ?? 'OPAQUE',
     alphaCutoff: ((j['alphaCutoff'] as num?) ?? 0.5).toDouble(),
     doubleSided: (j['doubleSided'] as bool?) ?? false,
@@ -147,7 +172,10 @@ GltfTextureInfo? _parseTextureInfo(Object? j) {
 }
 
 GltfTexture _parseTexture(Map<String, Object?> j) {
-  return GltfTexture(source: j['source'] as int?, sampler: j['sampler'] as int?);
+  return GltfTexture(
+    source: j['source'] as int?,
+    sampler: j['sampler'] as int?,
+  );
 }
 
 GltfImage _parseImage(Map<String, Object?> j) {
@@ -177,22 +205,30 @@ GltfSkin _parseSkin(Map<String, Object?> j) {
 }
 
 GltfAnimation _parseAnimation(Map<String, Object?> j) {
-  final channels = ((j['channels'] as List?) ?? const []).map((c) {
-    final cj = c as Map<String, Object?>;
-    final target = cj['target'] as Map<String, Object?>;
-    return GltfAnimationChannel(
-      sampler: cj['sampler'] as int,
-      targetNode: target['node'] as int?,
-      targetPath: target['path'] as String,
-    );
-  }).toList(growable: false);
-  final samplers = ((j['samplers'] as List?) ?? const []).map((s) {
-    final sj = s as Map<String, Object?>;
-    return GltfAnimationSampler(
-      input: sj['input'] as int,
-      output: sj['output'] as int,
-      interpolation: (sj['interpolation'] as String?) ?? 'LINEAR',
-    );
-  }).toList(growable: false);
-  return GltfAnimation(name: j['name'] as String?, channels: channels, samplers: samplers);
+  final channels = ((j['channels'] as List?) ?? const [])
+      .map((c) {
+        final cj = c as Map<String, Object?>;
+        final target = cj['target'] as Map<String, Object?>;
+        return GltfAnimationChannel(
+          sampler: cj['sampler'] as int,
+          targetNode: target['node'] as int?,
+          targetPath: target['path'] as String,
+        );
+      })
+      .toList(growable: false);
+  final samplers = ((j['samplers'] as List?) ?? const [])
+      .map((s) {
+        final sj = s as Map<String, Object?>;
+        return GltfAnimationSampler(
+          input: sj['input'] as int,
+          output: sj['output'] as int,
+          interpolation: (sj['interpolation'] as String?) ?? 'LINEAR',
+        );
+      })
+      .toList(growable: false);
+  return GltfAnimation(
+    name: j['name'] as String?,
+    channels: channels,
+    samplers: samplers,
+  );
 }

@@ -27,7 +27,8 @@ Animation buildAnimation({
         targetNodeIdx >= engineNodes.length) {
       continue;
     }
-    if (channel.sampler < 0 || channel.sampler >= gltfAnimation.samplers.length) {
+    if (channel.sampler < 0 ||
+        channel.sampler >= gltfAnimation.samplers.length) {
       continue;
     }
     final sampler = gltfAnimation.samplers[channel.sampler];
@@ -36,7 +37,11 @@ Animation buildAnimation({
     final inputView = bufferViews[inputAccessor.bufferView!];
     final outputView = bufferViews[outputAccessor.bufferView!];
     final times = readAccessorAsFloat32(inputAccessor, inputView, bufferData);
-    final values = readAccessorAsFloat32(outputAccessor, outputView, bufferData);
+    final values = readAccessorAsFloat32(
+      outputAccessor,
+      outputView,
+      bufferData,
+    );
 
     AnimationProperty property;
     PropertyResolver resolver;
@@ -66,7 +71,9 @@ Animation buildAnimation({
         debugPrint('Skipping morph-target animation channel (weights).');
         continue;
       default:
-        debugPrint('Skipping unknown animation target path: ${channel.targetPath}');
+        debugPrint(
+          'Skipping unknown animation target path: ${channel.targetPath}',
+        );
         continue;
     }
 
@@ -86,11 +93,13 @@ List<Vector3> _readVec3List(Float32List values, bool isCubic) {
   final valueOffset = isCubic ? 3 : 0;
   final out = <Vector3>[];
   for (int i = 0; i + stride <= values.length; i += stride) {
-    out.add(Vector3(
-      values[i + valueOffset],
-      values[i + valueOffset + 1],
-      values[i + valueOffset + 2],
-    ));
+    out.add(
+      Vector3(
+        values[i + valueOffset],
+        values[i + valueOffset + 1],
+        values[i + valueOffset + 2],
+      ),
+    );
   }
   return out;
 }
@@ -101,12 +110,14 @@ List<Quaternion> _readQuatList(Float32List values, bool isCubic) {
   final valueOffset = isCubic ? 4 : 0;
   final out = <Quaternion>[];
   for (int i = 0; i + stride <= values.length; i += stride) {
-    out.add(Quaternion(
-      values[i + valueOffset],
-      values[i + valueOffset + 1],
-      values[i + valueOffset + 2],
-      values[i + valueOffset + 3],
-    ));
+    out.add(
+      Quaternion(
+        values[i + valueOffset],
+        values[i + valueOffset + 1],
+        values[i + valueOffset + 2],
+        values[i + valueOffset + 3],
+      ),
+    );
   }
   return out;
 }

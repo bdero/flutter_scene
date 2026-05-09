@@ -42,24 +42,24 @@ class _MyAppState extends State<MyApp> {
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
       'Runtime GLB: fcar':
           (context) => ExampleRuntimeGlb(
-                elapsedSeconds: elapsedSeconds,
-                assetPath: 'assets_src/fcar.glb',
-                cameraDistance: 10.0,
-              ),
+            elapsedSeconds: elapsedSeconds,
+            assetPath: 'assets_src/fcar.glb',
+            cameraDistance: 10.0,
+          ),
       'Runtime GLB: flutter_logo':
           (context) => ExampleRuntimeGlb(
-                elapsedSeconds: elapsedSeconds,
-                assetPath: 'assets_src/flutter_logo_baked.glb',
-                cameraDistance: 5.0,
-              ),
+            elapsedSeconds: elapsedSeconds,
+            assetPath: 'assets_src/flutter_logo_baked.glb',
+            cameraDistance: 5.0,
+          ),
       'Runtime GLB: dash (animated)':
           (context) => ExampleRuntimeGlb(
-                elapsedSeconds: elapsedSeconds,
-                assetPath: 'assets_src/dash.glb',
-                cameraDistance: 6.0,
-                cameraTargetY: 1.5,
-                autoPlayFirstAnimation: true,
-              ),
+            elapsedSeconds: elapsedSeconds,
+            assetPath: 'assets_src/dash.glb',
+            cameraDistance: 6.0,
+            cameraTargetY: 1.5,
+            autoPlayFirstAnimation: true,
+          ),
     };
     selectedExample = examples.keys.first;
 

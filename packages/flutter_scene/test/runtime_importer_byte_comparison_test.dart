@@ -40,7 +40,9 @@ void main() {
 
     // Path B: offline .model.
     final modelBytes = File(modelPath).readAsBytesSync();
-    final imported = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes));
+    final imported = ImportedScene.fromFlatbuffer(
+      ByteData.sublistView(modelBytes),
+    );
     final fbScene = imported.flatbuffer;
     // Find the equivalent CarBody primitive in the .model.
     fb.MeshPrimitive? theirPrimitive;
@@ -52,42 +54,68 @@ void main() {
       }
       if (theirPrimitive != null) break;
     }
-    expect(theirPrimitive, isNotNull, reason: 'CarBody primitive missing in .model');
-    final theirVertexBuffer = theirPrimitive!.vertices as fb.UnskinnedVertexBuffer?;
-    expect(theirVertexBuffer, isNotNull, reason: 'CarBody is expected to be unskinned');
+    expect(
+      theirPrimitive,
+      isNotNull,
+      reason: 'CarBody primitive missing in .model',
+    );
+    final theirVertexBuffer =
+        theirPrimitive!.vertices as fb.UnskinnedVertexBuffer?;
+    expect(
+      theirVertexBuffer,
+      isNotNull,
+      reason: 'CarBody is expected to be unskinned',
+    );
     final theirVertexBytes = Uint8List.fromList(theirVertexBuffer!.vertices!);
     final theirIndices = theirPrimitive.indices!;
     final theirIndexBytes = Uint8List.fromList(theirIndices.data!);
 
     print('--- Vertex bytes ---');
-    print('  mine.length=${mine.vertexBytes.length} bytes (${mine.vertexCount} verts)');
+    print(
+      '  mine.length=${mine.vertexBytes.length} bytes (${mine.vertexCount} verts)',
+    );
     print('  theirs.length=${theirVertexBytes.length} bytes');
     print('  mine.isSkinned=${mine.isSkinned}');
 
     print('--- Index bytes ---');
-    print('  mine.length=${mine.indexBytes.length} bytes, type=${mine.indexType}');
-    print('  theirs.length=${theirIndexBytes.length} bytes, type=${theirIndices.type}');
+    print(
+      '  mine.length=${mine.indexBytes.length} bytes, type=${mine.indexType}',
+    );
+    print(
+      '  theirs.length=${theirIndexBytes.length} bytes, type=${theirIndices.type}',
+    );
 
     print('  mine.vertexCount=${mine.vertexCount}');
     print('  theirs.vertexCount=${theirVertexBuffer.vertexCount}');
 
     // First vertex (48 bytes) interpreted as 12 floats (pos×3, normal×3, tex×2, color×4).
-    final mineFloats = mine.vertexBytes.buffer.asFloat32List(mine.vertexBytes.offsetInBytes, 12);
-    final theirFloats = theirVertexBytes.buffer.asFloat32List(theirVertexBytes.offsetInBytes, 12);
+    final mineFloats = mine.vertexBytes.buffer.asFloat32List(
+      mine.vertexBytes.offsetInBytes,
+      12,
+    );
+    final theirFloats = theirVertexBytes.buffer.asFloat32List(
+      theirVertexBytes.offsetInBytes,
+      12,
+    );
     print('--- First vertex (floats) ---');
-    print('  mine:   pos=${mineFloats.sublist(0, 3)} '
-        'norm=${mineFloats.sublist(3, 6)} '
-        'tex=${mineFloats.sublist(6, 8)} '
-        'color=${mineFloats.sublist(8, 12)}');
-    print('  theirs: pos=${theirFloats.sublist(0, 3)} '
-        'norm=${theirFloats.sublist(3, 6)} '
-        'tex=${theirFloats.sublist(6, 8)} '
-        'color=${theirFloats.sublist(8, 12)}');
+    print(
+      '  mine:   pos=${mineFloats.sublist(0, 3)} '
+      'norm=${mineFloats.sublist(3, 6)} '
+      'tex=${mineFloats.sublist(6, 8)} '
+      'color=${mineFloats.sublist(8, 12)}',
+    );
+    print(
+      '  theirs: pos=${theirFloats.sublist(0, 3)} '
+      'norm=${theirFloats.sublist(3, 6)} '
+      'tex=${theirFloats.sublist(6, 8)} '
+      'color=${theirFloats.sublist(8, 12)}',
+    );
 
     // Find the index-of-first-difference in the vertex buffer (just for diagnostics).
-    final cmpLen = mine.vertexBytes.length < theirVertexBytes.length
-        ? mine.vertexBytes.length
-        : theirVertexBytes.length;
+    final cmpLen =
+        mine.vertexBytes.length < theirVertexBytes.length
+            ? mine.vertexBytes.length
+            : theirVertexBytes.length;
     int firstDiff = -1;
     for (int i = 0; i < cmpLen; i++) {
       if (mine.vertexBytes[i] != theirVertexBytes[i]) {
@@ -95,17 +123,29 @@ void main() {
         break;
       }
     }
-    print('--- First differing vertex byte: ${firstDiff == -1 ? "(none)" : "@$firstDiff"} ---');
+    print(
+      '--- First differing vertex byte: ${firstDiff == -1 ? "(none)" : "@$firstDiff"} ---',
+    );
     if (firstDiff != -1) {
       final start = (firstDiff ~/ 4) * 4;
-      print('  mine[${start}..${start + 4}]=${mine.vertexBytes.sublist(start, start + 4)}');
-      print('  theirs[${start}..${start + 4}]=${theirVertexBytes.sublist(start, start + 4)}');
+      print(
+        '  mine[${start}..${start + 4}]=${mine.vertexBytes.sublist(start, start + 4)}',
+      );
+      print(
+        '  theirs[${start}..${start + 4}]=${theirVertexBytes.sublist(start, start + 4)}',
+      );
     }
 
     // First index comparison (uint16).
     if (mine.indexBytes.length >= 6 && theirIndexBytes.length >= 6) {
-      final myIndices = mine.indexBytes.buffer.asUint16List(mine.indexBytes.offsetInBytes, 3);
-      final theirIndicesArr = theirIndexBytes.buffer.asUint16List(theirIndexBytes.offsetInBytes, 3);
+      final myIndices = mine.indexBytes.buffer.asUint16List(
+        mine.indexBytes.offsetInBytes,
+        3,
+      );
+      final theirIndicesArr = theirIndexBytes.buffer.asUint16List(
+        theirIndexBytes.offsetInBytes,
+        3,
+      );
       print('--- First triangle indices ---');
       print('  mine:   ${myIndices.toList()}');
       print('  theirs: ${theirIndicesArr.toList()}');
@@ -114,7 +154,9 @@ void main() {
 
   test('two_triangles (skinned): vertex+index bytes match the .model', () {
     final glbPath = _resolve('examples/assets_src/two_triangles.glb');
-    final modelPath = _resolve('examples/flutter_app/build/models/two_triangles.model');
+    final modelPath = _resolve(
+      'examples/flutter_app/build/models/two_triangles.model',
+    );
     if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
       print('Test data missing — skipping.');
       return;
@@ -122,19 +164,26 @@ void main() {
     _comparePrimitiveBytes(glbPath, modelPath, expectSkinned: true);
   });
 
-  test('dash (skinned): first-primitive vertex+index bytes match the .model', () {
-    final glbPath = _resolve('examples/assets_src/dash.glb');
-    final modelPath = _resolve('examples/flutter_app/build/models/dash.model');
-    if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
-      print('Test data missing — skipping.');
-      return;
-    }
-    _comparePrimitiveBytes(glbPath, modelPath, expectSkinned: true);
-  });
+  test(
+    'dash (skinned): first-primitive vertex+index bytes match the .model',
+    () {
+      final glbPath = _resolve('examples/assets_src/dash.glb');
+      final modelPath = _resolve(
+        'examples/flutter_app/build/models/dash.model',
+      );
+      if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
+        print('Test data missing — skipping.');
+        return;
+      }
+      _comparePrimitiveBytes(glbPath, modelPath, expectSkinned: true);
+    },
+  );
 
   test('flutter_logo_baked: vertex+index bytes match the .model', () {
     final glbPath = _resolve('examples/assets_src/flutter_logo_baked.glb');
-    final modelPath = _resolve('examples/flutter_app/build/models/flutter_logo_baked.model');
+    final modelPath = _resolve(
+      'examples/flutter_app/build/models/flutter_logo_baked.model',
+    );
     if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
       print('Test data missing — skipping.');
       return;
@@ -149,7 +198,10 @@ void main() {
       bufferData: container.binaryChunk,
     );
     final modelBytes = File(modelPath).readAsBytesSync();
-    final fbScene = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
+    final fbScene =
+        ImportedScene.fromFlatbuffer(
+          ByteData.sublistView(modelBytes),
+        ).flatbuffer;
     fb.MeshPrimitive? theirPrim;
     for (final node in fbScene.nodes ?? <fb.Node>[]) {
       final prims = node.meshPrimitives;
@@ -162,12 +214,20 @@ void main() {
     final theirVB = theirPrim!.vertices as fb.UnskinnedVertexBuffer;
     final theirVertexBytes = Uint8List.fromList(theirVB.vertices!);
     final theirIndexBytes = Uint8List.fromList(theirPrim.indices!.data!);
-    print('flutter_logo: mine.vertexBytes=${mine.vertexBytes.length} '
-        'theirs=${theirVertexBytes.length}');
-    expect(_bytesEqual(mine.vertexBytes, theirVertexBytes), isTrue,
-        reason: 'flutter_logo vertex bytes differ');
-    expect(_bytesEqual(mine.indexBytes, theirIndexBytes), isTrue,
-        reason: 'flutter_logo index bytes differ');
+    print(
+      'flutter_logo: mine.vertexBytes=${mine.vertexBytes.length} '
+      'theirs=${theirVertexBytes.length}',
+    );
+    expect(
+      _bytesEqual(mine.vertexBytes, theirVertexBytes),
+      isTrue,
+      reason: 'flutter_logo vertex bytes differ',
+    );
+    expect(
+      _bytesEqual(mine.indexBytes, theirIndexBytes),
+      isTrue,
+      reason: 'flutter_logo index bytes differ',
+    );
   });
 
   test('fcar: all unskinned primitives match byte-for-byte', () {
@@ -182,7 +242,9 @@ void main() {
     final container = parseGlb(glbBytes);
     final doc = parseGltfJson(container.json);
     final modelBytes = File(modelPath).readAsBytesSync();
-    final imported = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes));
+    final imported = ImportedScene.fromFlatbuffer(
+      ByteData.sublistView(modelBytes),
+    );
     final fbScene = imported.flatbuffer;
 
     // Build a name → primitive bag from the .model.
@@ -269,7 +331,8 @@ void _comparePrimitiveBytes(
   );
 
   final modelBytes = File(modelPath).readAsBytesSync();
-  final fbScene = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
+  final fbScene =
+      ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
   fb.MeshPrimitive? theirPrim;
   for (final node in fbScene.nodes ?? <fb.Node>[]) {
     final prims = node.meshPrimitives;
@@ -292,12 +355,20 @@ void _comparePrimitiveBytes(
   }
   final theirIndexBytes = Uint8List.fromList(theirPrim.indices!.data!);
 
-  print('  mine.vertexBytes=${mine.vertexBytes.length} '
-      'theirs=${theirVertexBytes.length} (skinned=${mine.isSkinned})');
-  expect(_bytesEqual(mine.vertexBytes, theirVertexBytes), isTrue,
-      reason: 'vertex bytes differ');
-  expect(_bytesEqual(mine.indexBytes, theirIndexBytes), isTrue,
-      reason: 'index bytes differ');
+  print(
+    '  mine.vertexBytes=${mine.vertexBytes.length} '
+    'theirs=${theirVertexBytes.length} (skinned=${mine.isSkinned})',
+  );
+  expect(
+    _bytesEqual(mine.vertexBytes, theirVertexBytes),
+    isTrue,
+    reason: 'vertex bytes differ',
+  );
+  expect(
+    _bytesEqual(mine.indexBytes, theirIndexBytes),
+    isTrue,
+    reason: 'index bytes differ',
+  );
 }
 
 bool _bytesEqual(Uint8List a, Uint8List b) {
