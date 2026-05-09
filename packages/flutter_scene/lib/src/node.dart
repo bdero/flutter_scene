@@ -24,6 +24,10 @@ import 'package:vector_math/vector_math.dart';
 /// and child nodes. Nodes are used to build complex scenes by establishing relationships
 /// between different elements, allowing for transformations to propagate down the hierarchy.
 base class Node implements SceneGraph {
+  /// Creates a node with an optional [name], [localTransform], and [mesh].
+  ///
+  /// When omitted, [localTransform] defaults to the identity matrix and the
+  /// node has no associated geometry.
   Node({this.name = '', Matrix4? localTransform, this.mesh})
     : localTransform = localTransform ?? Matrix4.identity();
 
@@ -42,6 +46,12 @@ base class Node implements SceneGraph {
   /// importers (both the offline .model path and the runtime glTF/GLB loader).
   Skin? skin;
 
+  /// Assigns the world-space transform of this node, automatically computing
+  /// the [localTransform] needed to place the node at [transform] given the
+  /// current parent transform.
+  ///
+  /// If the node has no parent, this is equivalent to assigning
+  /// [localTransform] directly.
   set globalTransform(Matrix4 transform) {
     final parent = _parent;
     if (parent == null) {
@@ -95,6 +105,15 @@ base class Node implements SceneGraph {
 
   AnimationPlayer? _animationPlayer;
 
+  /// Searches this node's descendants for the first child whose [Node.name]
+  /// matches [name].
+  ///
+  /// Performs a depth-first search of the subtree rooted at this node and
+  /// returns the first match, or `null` if no descendant has the given name.
+  ///
+  /// When [excludeAnimationPlayers] is `true`, descendants that already
+  /// have an animation player attached are skipped — primarily used
+  /// internally to avoid recursing into clip-attached subtrees.
   Node? getChildByName(String name, {bool excludeAnimationPlayers = false}) {
     for (var child in children) {
       if (excludeAnimationPlayers && child._animationPlayer != null) {
@@ -121,6 +140,14 @@ base class Node implements SceneGraph {
     return _animations.firstWhereOrNull((element) => element.name == name);
   }
 
+  /// Instantiates [animation] as an [AnimationClip] bound to this node.
+  ///
+  /// The returned clip starts paused at time 0; call [AnimationClip.play] to
+  /// begin playback. Multiple clips may be created on the same node and are
+  /// blended together by an internal [AnimationPlayer] each frame.
+  ///
+  /// To enumerate animations parsed from a model, use [parsedAnimations] or
+  /// [findAnimationByName].
   AnimationClip createAnimationClip(Animation animation) {
     _animationPlayer ??= AnimationPlayer();
     return _animationPlayer!.createAnimationClip(animation, this);
@@ -350,7 +377,14 @@ base class Node implements SceneGraph {
     }
   }
 
-  /// Returns the name lookup path from the ancestor node to the child node.
+  /// Returns the sequence of [Node.name] values that walks from [ancestor]
+  /// down to [child] through the scene graph.
+  ///
+  /// Useful for serializing a stable reference to a descendant node that
+  /// can later be resolved with [getChildByNamePath].
+  ///
+  /// Returns `null` (and prints a debug warning) if [ancestor] is not an
+  /// actual ancestor of [child].
   static Iterable<String>? getNamePath(Node ancestor, Node child) {
     List<String> result = [];
     Node? current = child;
@@ -368,7 +402,15 @@ base class Node implements SceneGraph {
     return null;
   }
 
-  /// Returns the index lookup path from the ancestor node to the child node.
+  /// Returns the sequence of child indices that walks from [ancestor] down
+  /// to [child] through the scene graph.
+  ///
+  /// Each entry is the index into the corresponding parent's [children] at
+  /// that level. Useful for re-resolving a node reference on a cloned
+  /// subtree (see [clone]).
+  ///
+  /// Returns `null` (and prints a debug warning) if [ancestor] is not an
+  /// actual ancestor of [child].
   static Iterable<int>? getIndexPath(Node ancestor, Node child) {
     List<int> result = [];
     Node? current = child;
@@ -389,7 +431,8 @@ base class Node implements SceneGraph {
     return null;
   }
 
-  /// Returns the child node at the specified name path.
+  /// Resolves a [namePath] (as produced by [getNamePath]) to a descendant
+  /// node, or `null` if any segment does not match.
   Node? getChildByNamePath(Iterable<String> namePath) {
     Node? current = this;
     for (var name in namePath) {
@@ -401,7 +444,8 @@ base class Node implements SceneGraph {
     return current;
   }
 
-  /// Returns the child node at the specified index path.
+  /// Resolves an [indexPath] (as produced by [getIndexPath]) to a descendant
+  /// node, or `null` if any segment is out of range.
   Node? getChildByIndexPath(Iterable<int> indexPath) {
     Node? current = this;
     for (var index in indexPath) {
