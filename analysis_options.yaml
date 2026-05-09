@@ -1,13 +1,11 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  exclude: [
-    build/**,
-    lib/**.g.dart,
-    packages/flutter_scene_importer/build/**,
-    packages/flutter_scene_importer/lib/generated/**,
-    examples/**,
-  ]
+  exclude:
+    - packages/*/build/**
+    - packages/*/lib/**.g.dart
+    - packages/flutter_scene_importer/lib/generated/**
+    - packages/flutter_scene_importer/lib/third_party/**
   errors:
     asset_does_not_exist: ignore
     invalid_dependency: ignore
