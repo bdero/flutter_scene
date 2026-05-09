@@ -30,8 +30,10 @@ Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
     m.metallicFactor = pbr.metallicFactor;
     m.roughnessFactor = pbr.roughnessFactor;
     m.baseColorTexture = _resolveTexture(pbr.baseColorTexture, textures);
-    m.metallicRoughnessTexture =
-        _resolveTexture(pbr.metallicRoughnessTexture, textures);
+    m.metallicRoughnessTexture = _resolveTexture(
+      pbr.metallicRoughnessTexture,
+      textures,
+    );
   }
   m.normalTexture = _resolveTexture(gm.normalTexture, textures);
   if (gm.normalTexture?.scale != null) {
@@ -51,7 +53,10 @@ Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
   return m;
 }
 
-gpu.Texture? _resolveTexture(GltfTextureInfo? info, List<gpu.Texture> textures) {
+gpu.Texture? _resolveTexture(
+  GltfTextureInfo? info,
+  List<gpu.Texture> textures,
+) {
   if (info == null) return null;
   if (info.index < 0 || info.index >= textures.length) return null;
   return textures[info.index];

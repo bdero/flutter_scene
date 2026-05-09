@@ -158,7 +158,12 @@ base class Node implements SceneGraph {
   /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.
   static Future<Node> fromGlbAsset(String assetPath) async {
     final byteData = await rootBundle.load(assetPath);
-    return importGlb(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+    return importGlb(
+      byteData.buffer.asUint8List(
+        byteData.offsetInBytes,
+        byteData.lengthInBytes,
+      ),
+    );
   }
 
   /// Deserialize a model from Flutter Scene's compact model format.

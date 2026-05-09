@@ -34,23 +34,26 @@ class ExampleRuntimeGlbState extends State<ExampleRuntimeGlb> {
   @override
   void initState() {
     super.initState();
-    Node.fromGlbAsset(widget.assetPath).then((node) {
-      node.name = 'GLB';
-      scene.add(node);
-      debugPrint(
-        'Runtime-loaded GLB ${widget.assetPath} '
-        '(animations: ${node.parsedAnimations.length})',
-      );
-      if (widget.autoPlayFirstAnimation && node.parsedAnimations.isNotEmpty) {
-        node.createAnimationClip(node.parsedAnimations.first)
-          ..loop = true
-          ..play();
-      }
-      setState(() => loaded = true);
-    }).catchError((Object e, StackTrace st) {
-      debugPrint('Failed to runtime-load ${widget.assetPath}: $e\n$st');
-      setState(() => error = '$e');
-    });
+    Node.fromGlbAsset(widget.assetPath)
+        .then((node) {
+          node.name = 'GLB';
+          scene.add(node);
+          debugPrint(
+            'Runtime-loaded GLB ${widget.assetPath} '
+            '(animations: ${node.parsedAnimations.length})',
+          );
+          if (widget.autoPlayFirstAnimation &&
+              node.parsedAnimations.isNotEmpty) {
+            node.createAnimationClip(node.parsedAnimations.first)
+              ..loop = true
+              ..play();
+          }
+          setState(() => loaded = true);
+        })
+        .catchError((Object e, StackTrace st) {
+          debugPrint('Failed to runtime-load ${widget.assetPath}: $e\n$st');
+          setState(() => error = '$e');
+        });
 
     // Match the environment setup the existing 'Car' example uses, so visual
     // comparisons against the offline-imported `.model` render are apples to

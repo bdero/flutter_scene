@@ -85,13 +85,15 @@ Future<Node> importGlb(Uint8List bytes) async {
   // Build animations and attach them to the synthesized root, mirroring how
   // the offline (.model) path attaches them in Node.fromFlatbuffer.
   for (final ga in doc.animations) {
-    root.addParsedAnimation(buildAnimation(
-      gltfAnimation: ga,
-      accessors: doc.accessors,
-      bufferViews: doc.bufferViews,
-      bufferData: bufferData,
-      engineNodes: engineNodes,
-    ));
+    root.addParsedAnimation(
+      buildAnimation(
+        gltfAnimation: ga,
+        accessors: doc.accessors,
+        bufferViews: doc.bufferViews,
+        bufferData: bufferData,
+        engineNodes: engineNodes,
+      ),
+    );
   }
 
   debugPrint(
@@ -134,9 +136,10 @@ void _populateNode({
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
       );
-      final material = p.material != null
-          ? buildMaterial(doc.materials[p.material!], textures)
-          : UnlitMaterial();
+      final material =
+          p.material != null
+              ? buildMaterial(doc.materials[p.material!], textures)
+              : UnlitMaterial();
       primitives.add(MeshPrimitive(built.geometry, material));
     }
     if (primitives.isNotEmpty) {
@@ -183,4 +186,3 @@ Uint8List _resolveBufferData(GltfDocument doc, Uint8List glbBinaryChunk) {
     'yet supported by the runtime importer.',
   );
 }
-

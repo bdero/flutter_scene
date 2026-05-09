@@ -16,7 +16,8 @@ Float32List readAccessorAsFloat32(
   final totalComponents = accessor.count * componentCount;
   final out = Float32List(totalComponents);
 
-  final stride = bufferView.byteStride ?? (componentCount * accessor.componentType.bytes);
+  final stride =
+      bufferView.byteStride ?? (componentCount * accessor.componentType.bytes);
   final start = bufferView.byteOffset + accessor.byteOffset;
   final view = ByteData.sublistView(bufferData);
 
@@ -60,7 +61,8 @@ Uint32List readAccessorAsUint32(
   final totalComponents = accessor.count * componentCount;
   final out = Uint32List(totalComponents);
 
-  final stride = bufferView.byteStride ?? (componentCount * accessor.componentType.bytes);
+  final stride =
+      bufferView.byteStride ?? (componentCount * accessor.componentType.bytes);
   final start = bufferView.byteOffset + accessor.byteOffset;
   final view = ByteData.sublistView(bufferData);
 

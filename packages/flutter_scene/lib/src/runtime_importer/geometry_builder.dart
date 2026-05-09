@@ -51,7 +51,8 @@ BuiltGeometry buildGeometry({
     bufferViews: bufferViews,
     bufferData: bufferData,
   );
-  final Geometry geometry = packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
+  final Geometry geometry =
+      packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
   geometry.uploadVertexData(
     ByteData.sublistView(packed.vertexBytes),
     packed.vertexCount,
@@ -74,11 +75,33 @@ PackedPrimitiveData packPrimitive({
   final positions = _readVec3(positionIdx, accessors, bufferViews, bufferData);
   final vertexCount = positions.length ~/ 3;
 
-  final normals = _readOptionalVec3('NORMAL', primitive, accessors, bufferViews, bufferData, vertexCount);
-  final texCoords = _readOptionalVec2('TEXCOORD_0', primitive, accessors, bufferViews, bufferData, vertexCount);
-  final colors = _readOptionalColor('COLOR_0', primitive, accessors, bufferViews, bufferData, vertexCount);
+  final normals = _readOptionalVec3(
+    'NORMAL',
+    primitive,
+    accessors,
+    bufferViews,
+    bufferData,
+    vertexCount,
+  );
+  final texCoords = _readOptionalVec2(
+    'TEXCOORD_0',
+    primitive,
+    accessors,
+    bufferViews,
+    bufferData,
+    vertexCount,
+  );
+  final colors = _readOptionalColor(
+    'COLOR_0',
+    primitive,
+    accessors,
+    bufferViews,
+    bufferData,
+    vertexCount,
+  );
 
-  final hasJoints = primitive.attributes.containsKey('JOINTS_0') &&
+  final hasJoints =
+      primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
 
   final perVertex = hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
@@ -102,8 +125,18 @@ PackedPrimitiveData packPrimitive({
   }
 
   if (hasJoints) {
-    final joints = _readVec4(primitive.attributes['JOINTS_0']!, accessors, bufferViews, bufferData);
-    final weights = _readVec4(primitive.attributes['WEIGHTS_0']!, accessors, bufferViews, bufferData);
+    final joints = _readVec4(
+      primitive.attributes['JOINTS_0']!,
+      accessors,
+      bufferViews,
+      bufferData,
+    );
+    final weights = _readVec4(
+      primitive.attributes['WEIGHTS_0']!,
+      accessors,
+      bufferViews,
+      bufferData,
+    );
     for (int i = 0; i < vertexCount; i++) {
       final o = i * stride + 12;
       out[o + 0] = joints[i * 4 + 0];
@@ -126,14 +159,20 @@ PackedPrimitiveData packPrimitive({
     final bufferView = bufferViews[accessor.bufferView!];
     final list = readAccessorAsUint32(accessor, bufferView, bufferData);
     if (accessor.componentType == GltfComponentType.unsignedInt) {
-      indexBytes = list.buffer.asUint8List(list.offsetInBytes, list.lengthInBytes);
+      indexBytes = list.buffer.asUint8List(
+        list.offsetInBytes,
+        list.lengthInBytes,
+      );
       indexType = gpu.IndexType.int32;
     } else {
       final widened = Uint16List(list.length);
       for (int i = 0; i < list.length; i++) {
         widened[i] = list[i];
       }
-      indexBytes = widened.buffer.asUint8List(widened.offsetInBytes, widened.lengthInBytes);
+      indexBytes = widened.buffer.asUint8List(
+        widened.offsetInBytes,
+        widened.lengthInBytes,
+      );
       indexType = gpu.IndexType.int16;
     }
   } else {
@@ -142,7 +181,10 @@ PackedPrimitiveData packPrimitive({
     for (int i = 0; i < vertexCount; i++) {
       widened[i] = i;
     }
-    indexBytes = widened.buffer.asUint8List(widened.offsetInBytes, widened.lengthInBytes);
+    indexBytes = widened.buffer.asUint8List(
+      widened.offsetInBytes,
+      widened.lengthInBytes,
+    );
     indexType = gpu.IndexType.int16;
   }
 
@@ -155,14 +197,32 @@ PackedPrimitiveData packPrimitive({
   );
 }
 
-Float32List _readVec3(int idx, List<GltfAccessor> accessors, List<GltfBufferView> bufferViews, Uint8List bufferData) {
+Float32List _readVec3(
+  int idx,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData,
+) {
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(accessor, bufferViews[accessor.bufferView!], bufferData);
+  return readAccessorAsFloat32(
+    accessor,
+    bufferViews[accessor.bufferView!],
+    bufferData,
+  );
 }
 
-Float32List _readVec4(int idx, List<GltfAccessor> accessors, List<GltfBufferView> bufferViews, Uint8List bufferData) {
+Float32List _readVec4(
+  int idx,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData,
+) {
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(accessor, bufferViews[accessor.bufferView!], bufferData);
+  return readAccessorAsFloat32(
+    accessor,
+    bufferViews[accessor.bufferView!],
+    bufferData,
+  );
 }
 
 Float32List _readOptionalVec3(
@@ -189,7 +249,11 @@ Float32List _readOptionalVec2(
   final idx = primitive.attributes[name];
   if (idx == null) return Float32List(vertexCount * 2);
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(accessor, bufferViews[accessor.bufferView!], bufferData);
+  return readAccessorAsFloat32(
+    accessor,
+    bufferViews[accessor.bufferView!],
+    bufferData,
+  );
 }
 
 Float32List _readOptionalColor(
@@ -213,7 +277,11 @@ Float32List _readOptionalColor(
     return out;
   }
   final accessor = accessors[idx];
-  final raw = readAccessorAsFloat32(accessor, bufferViews[accessor.bufferView!], bufferData);
+  final raw = readAccessorAsFloat32(
+    accessor,
+    bufferViews[accessor.bufferView!],
+    bufferData,
+  );
   if (accessor.type == GltfAccessorType.vec4) return raw;
   // Promote vec3 colors to vec4 with alpha=1.
   final out = Float32List(vertexCount * 4);

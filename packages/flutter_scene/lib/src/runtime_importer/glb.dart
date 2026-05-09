@@ -29,7 +29,9 @@ GlbContents parseGlb(Uint8List bytes) {
   }
   final version = header.getUint32(4, Endian.little);
   if (version != 2) {
-    throw FormatException('Unsupported GLB version: $version (only 2 is supported)');
+    throw FormatException(
+      'Unsupported GLB version: $version (only 2 is supported)',
+    );
   }
   final totalLength = header.getUint32(8, Endian.little);
   if (totalLength > bytes.length) {
@@ -68,7 +70,11 @@ GlbContents parseGlb(Uint8List bytes) {
         if (binaryChunk != null) {
           throw const FormatException('GLB contains multiple BIN chunks');
         }
-        binaryChunk = Uint8List.sublistView(bytes, chunkDataStart, chunkDataEnd);
+        binaryChunk = Uint8List.sublistView(
+          bytes,
+          chunkDataStart,
+          chunkDataEnd,
+        );
       default:
         // Per spec, unknown chunks should be ignored.
         break;
