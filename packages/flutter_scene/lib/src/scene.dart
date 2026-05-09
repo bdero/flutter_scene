@@ -33,7 +33,20 @@ mixin SceneGraph {
   void removeAll();
 }
 
-enum AntiAliasingMode { none, msaa }
+/// Anti-aliasing strategy used when rendering a [Scene].
+///
+/// Set on a [Scene] via [Scene.antiAliasingMode]. The default is [msaa]
+/// when the GPU backend supports offscreen MSAA, otherwise [none].
+enum AntiAliasingMode {
+  /// No anti-aliasing. Geometry edges are rendered at the render target's
+  /// native resolution.
+  none,
+
+  /// 4x multi-sample anti-aliasing. Requires offscreen MSAA support on
+  /// the active Flutter GPU backend; setting this mode is silently
+  /// ignored (with a debug warning) when MSAA is unavailable.
+  msaa,
+}
 
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
 ///
@@ -52,6 +65,13 @@ base class Scene implements SceneGraph {
 
   AntiAliasingMode _antiAliasingMode = AntiAliasingMode.none;
 
+  /// The anti-aliasing strategy used when rendering this [Scene].
+  ///
+  /// Defaults to [AntiAliasingMode.msaa] (set in the constructor) and falls
+  /// back to [AntiAliasingMode.none] when the active Flutter GPU backend
+  /// does not support offscreen MSAA. Assigning [AntiAliasingMode.msaa]
+  /// on an unsupported backend is silently ignored, leaving the previous
+  /// value in place.
   set antiAliasingMode(AntiAliasingMode value) {
     switch (value) {
       case AntiAliasingMode.none:
