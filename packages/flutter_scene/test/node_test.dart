@@ -23,8 +23,8 @@ void main() {
       final childNode = Node();
       parentNode.add(childNode);
 
-      parentNode.localTransform.scale(2.0);
-      childNode.localTransform.translate(1.0, 2.0, 3.0);
+      parentNode.localTransform.scaleByDouble(2.0, 2.0, 2.0, 1.0);
+      childNode.localTransform.translateByDouble(1.0, 2.0, 3.0, 1.0);
 
       // In addition to the basis vectors being scaled up, the, the child's
       // translation (last column) is magnified by the parent's scale.
