@@ -1,6 +1,13 @@
 import 'dart:io';
 import 'dart:isolate';
 
+/// Searches for a built native executable named [executableName] under
+/// `<packageRoot>/<dir>`, checking the conventional CMake layouts
+/// (`Release/`, `Debug/`, and the bare directory) on both POSIX and
+/// Windows.
+///
+/// Returns the first matching [Uri], or throws with the list of paths it
+/// tried.
 Uri findBuiltExecutable(
   String executableName,
   Uri packageRoot, {
@@ -34,6 +41,12 @@ Uri findBuiltExecutable(
   return found;
 }
 
+/// Returns the file-system root of the resolved
+/// `flutter_scene_importer` package.
+///
+/// Used when running build tooling that needs to locate the bundled
+/// importer binary or its `.fbs` schema regardless of where the package
+/// was resolved from (workspace, pub-cache, or path dependency).
 Uri findImporterPackageRoot() {
   Uri importerPackageUri =
       Isolate.resolvePackageUriSync(
@@ -42,6 +55,15 @@ Uri findImporterPackageRoot() {
   return importerPackageUri.resolve('../');
 }
 
+/// Regenerates the Dart bindings for the flatbuffer schema bundled with
+/// this package by invoking `flatc`.
+///
+/// Used by the importer's own build to (re)generate
+/// `lib/generated/scene_impeller.fb_flatbuffers.dart`. Consumer apps do
+/// not need to call this — the bindings are committed to the package.
+///
+/// After generation, the import line is rewritten to point at the
+/// vendored `flat_buffers` copy under `third_party/`.
 void generateImporterFlatbufferDart({
   String generatedOutputDirectory = "lib/generated/",
 }) {
@@ -91,7 +113,16 @@ void generateImporterFlatbufferDart({
   generatedFile.writeAsStringSync(lines.join('\n'));
 }
 
-/// Takes an input model (glTF file) and
+/// Converts a single glTF binary at [inputGltfFilePath] to a Flutter
+/// Scene `.model` file at [outputModelFilePath], invoking the bundled
+/// native importer as a subprocess.
+///
+/// Both paths can be relative; they are resolved against
+/// [workingDirectory] (defaulting to the caller's current working
+/// directory). The `dart run flutter_scene_importer:import` CLI is a
+/// thin wrapper around this function.
+///
+/// Throws if the importer process exits with a non-zero status.
 void importGltf(
   String inputGltfFilePath,
   String outputModelFilePath, {
