@@ -26,9 +26,23 @@ jobs:
         run: dart analyze packages examples
       - name: Dart format
         run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*' -not -path '*/third_party/*')
-      - name: Run flutter_scene tests
-        working-directory: packages/flutter_scene
-        run: flutter test --enable-impeller
-      - name: Run flutter_scene_importer tests
-        working-directory: packages/flutter_scene_importer
-        run: flutter test --enable-impeller
+      - name: Run all workspace tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ran_any=false
+          for pkg in packages/flutter_scene packages/flutter_scene_importer examples/flutter_app; do
+            tests=("$pkg"/test/*_test.dart)
+            if (( ${#tests[@]} == 0 )); then
+              echo "::notice::Skipping $pkg (no *_test.dart files)"
+              continue
+            fi
+            echo "::group::Tests for $pkg"
+            (cd "$pkg" && flutter test --enable-impeller)
+            echo "::endgroup::"
+            ran_any=true
+          done
+          if [ "$ran_any" = false ]; then
+            echo "::error::No workspace tests were discovered"
+            exit 1
+          fi
