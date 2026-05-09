@@ -7,8 +7,8 @@ on:
     branches: [ "master" ]
 
 jobs:
-  lint-and-test:
-    name: Lint and Test
+  lint:
+    name: Lint
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +26,26 @@ jobs:
         run: dart analyze packages examples
       - name: Dart format
         run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*' -not -path '*/third_party/*')
-      - name: Run flutter_scene tests
-        working-directory: packages/flutter_scene
-        run: flutter test --enable-impeller
-      - name: Run flutter_scene_importer tests
-        working-directory: packages/flutter_scene_importer
+
+  test:
+    name: Test ${{ matrix.package }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/flutter_scene
+          - packages/flutter_scene_importer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Enable asset building
+        run: flutter config --enable-native-assets
+      - name: Run tests
+        working-directory: ${{ matrix.package }}
         run: flutter test --enable-impeller
