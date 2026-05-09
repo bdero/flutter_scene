@@ -1,5 +1,12 @@
 part of '../animation.dart';
 
+/// Computes a per-property animated value from a timeline of keyframes.
+///
+/// Subclasses cover the three [AnimationProperty] flavors with the
+/// correct interpolator: linear interpolation for translation and scale,
+/// spherical linear interpolation for rotation. Use the [PropertyResolver]
+/// factories to construct one rather than instantiating subclasses
+/// directly.
 abstract class PropertyResolver {
   /// Returns the end time of the property in seconds.
   double getEndTime();
@@ -11,6 +18,11 @@ abstract class PropertyResolver {
   /// applying several AnimationClips.
   void apply(AnimationTransforms target, double timeInSeconds, double weight);
 
+  /// Creates a translation resolver that linearly interpolates between
+  /// the keyframe positions in [values] at the corresponding [times].
+  ///
+  /// `times` and `values` must have the same length and `times` must be
+  /// monotonically non-decreasing.
   static PropertyResolver makeTranslationTimeline(
     List<double> times,
     List<Vector3> values,
@@ -18,6 +30,11 @@ abstract class PropertyResolver {
     return TranslationTimelineResolver._(times, values);
   }
 
+  /// Creates a rotation resolver that spherically interpolates between
+  /// the keyframe quaternions in [values] at the corresponding [times].
+  ///
+  /// `times` and `values` must have the same length and `times` must be
+  /// monotonically non-decreasing.
   static PropertyResolver makeRotationTimeline(
     List<double> times,
     List<Quaternion> values,
@@ -25,6 +42,11 @@ abstract class PropertyResolver {
     return RotationTimelineResolver._(times, values);
   }
 
+  /// Creates a scale resolver that linearly interpolates between the
+  /// keyframe scales in [values] at the corresponding [times].
+  ///
+  /// `times` and `values` must have the same length and `times` must be
+  /// monotonically non-decreasing.
   static PropertyResolver makeScaleTimeline(
     List<double> times,
     List<Vector3> values,
@@ -44,6 +66,11 @@ class _TimelineKey {
   _TimelineKey(this.index, this.lerp);
 }
 
+/// Shared keyframe lookup for the per-property timeline resolvers.
+///
+/// Implementations supply the value-array storage and per-frame
+/// interpolation; this base class handles binary-style search through
+/// the time axis to compute a `(index, lerp)` pair.
 abstract class TimelineResolver implements PropertyResolver {
   final List<double> _times;
 
@@ -71,6 +98,9 @@ abstract class TimelineResolver implements PropertyResolver {
   }
 }
 
+/// Resolves a translation timeline with per-component linear
+/// interpolation, blended into [AnimationTransforms.animatedPose] as an
+/// offset from the bind pose.
 class TranslationTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
 
@@ -96,6 +126,9 @@ class TranslationTimelineResolver extends TimelineResolver {
   }
 }
 
+/// Resolves a rotation timeline with spherical linear interpolation,
+/// slerping the current animated rotation toward the keyframed rotation
+/// by the supplied weight.
 class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
 
@@ -123,6 +156,11 @@ class RotationTimelineResolver extends TimelineResolver {
   }
 }
 
+/// Resolves a scale timeline with per-component linear interpolation.
+///
+/// The blended scale is normalized against the bind pose so weighted
+/// blends behave multiplicatively (a weight of `1` reaches the keyframe
+/// scale exactly).
 class ScaleTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
 
