@@ -18,14 +18,17 @@ jobs:
           channel: master
       - run: dart --version
       - run: flutter --version
-      - run: flutter pub get
-      - name: enable asset building
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Enable asset building
         run: flutter config --enable-native-assets
       - name: Lint analysis
-        run: dart analyze
+        run: dart analyze packages examples
       - name: Dart format
         run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -name '*_flatbuffers.dart' -not -path '*/build/*')
-      - name: dart fix
-        run: dart fix --dry-run
-      - name: Run tests
+      - name: Run flutter_scene tests
+        working-directory: packages/flutter_scene
+        run: flutter test --enable-impeller
+      - name: Run flutter_scene_importer tests
+        working-directory: packages/flutter_scene_importer
         run: flutter test --enable-impeller
