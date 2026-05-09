@@ -22,9 +22,11 @@ dependencies:
     sdk: flutter
   flutter_gpu:
     sdk: flutter
-  flutter_gpu_shaders: ^0.3.0
+  # TODO: switch to a published version (^0.4.0) once flutter_gpu_shaders 0.4.0 ships.
+  flutter_gpu_shaders:
+    path: ../../../flutter_gpu_shaders
   flutter_scene_importer: ^0.9.0-0
-  native_assets_cli: '>=0.13.0 <0.14.0'
+  hooks: ^1.0.0
   vector_math: ^2.1.4
 
 dev_dependencies:
