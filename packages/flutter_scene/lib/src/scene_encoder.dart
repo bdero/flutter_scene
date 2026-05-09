@@ -15,7 +15,32 @@ base class _TranslucentRecord {
   final Material material;
 }
 
+/// Records draw calls for one frame of a [Scene].
+///
+/// `SceneEncoder` is the bridge between the scene graph and Flutter GPU.
+/// [Scene.render] constructs an encoder for each frame, walks the scene
+/// graph with [Node.render] (which forwards to [encode]), then calls
+/// [finish] to submit the recorded command buffer.
+///
+/// The encoder splits draws into two passes:
+///
+/// 1. **Opaque pass**, with depth writes enabled and color blending
+///    disabled, executed in submission order as [encode] is called.
+/// 2. **Translucent pass**, automatically deferred and depth-sorted back
+///    to front from the camera, drawn with premultiplied source-over
+///    blending.
+///
+/// Applications typically do not construct `SceneEncoder` directly;
+/// custom [Geometry] or [Material] subclasses interact with it through
+/// the `bind` callback.
 base class SceneEncoder {
+  /// Creates an encoder targeting [renderTarget] from the perspective of
+  /// the supplied camera.
+  ///
+  /// `dimensions` is the viewport size used to compute the camera's view
+  /// transform; the supplied environment is the default IBL environment
+  /// applied to materials that don't override it. The opaque render pass
+  /// is opened immediately.
   SceneEncoder(
     gpu.RenderTarget renderTarget,
     this._camera,
@@ -41,6 +66,12 @@ base class SceneEncoder {
   late final gpu.RenderPass _renderPass;
   final List<_TranslucentRecord> _translucentRecords = [];
 
+  /// Records a draw call for [geometry] with [material] at
+  /// [worldTransform].
+  ///
+  /// Opaque draws are encoded immediately into the active render pass.
+  /// Translucent draws (where [Material.isOpaque] returns `false`) are
+  /// queued and re-emitted in [finish] after a back-to-front depth sort.
   void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     if (material.isOpaque()) {
       _encode(worldTransform, geometry, material);
@@ -70,6 +101,13 @@ base class SceneEncoder {
     _renderPass.draw();
   }
 
+  /// Flushes the deferred translucent pass and submits the command
+  /// buffer.
+  ///
+  /// Translucent records are sorted back-to-front by translation distance
+  /// to the camera, then drawn with premultiplied source-over blending
+  /// and depth writes disabled. After this call the encoder's command
+  /// buffer is no longer usable.
   void finish() {
     _translucentRecords.sort((a, b) {
       var aDistance = a.worldTransform.getTranslation().distanceTo(
