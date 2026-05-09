@@ -101,12 +101,14 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
   Uint8List bufferData,
 ) {
   final out = fb.MeshPrimitiveT();
-  final hasJoints = p.attributes.containsKey('JOINTS_0') &&
+  final hasJoints =
+      p.attributes.containsKey('JOINTS_0') &&
       p.attributes.containsKey('WEIGHTS_0');
 
   // Pack vertex bytes using the same layout as flutter_scene's vertex shaders.
   final vertexBytes = _packVertices(p, doc, bufferData, hasJoints: hasJoints);
-  final vertexCount = vertexBytes.length ~/
+  final vertexCount =
+      vertexBytes.length ~/
       (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize);
   if (hasJoints) {
     out.verticesType = fb.VertexBufferTypeId.SkinnedVertexBuffer;
@@ -144,7 +146,8 @@ Uint8List _packVertices(
   final tex = _readOptionalVec2('TEXCOORD_0', p, doc, bufferData, vertexCount);
   final colors = _readOptionalColor('COLOR_0', p, doc, bufferData, vertexCount);
 
-  final stride = (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize) ~/ 4;
+  final stride =
+      (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize) ~/ 4;
   final out = Float32List(vertexCount * stride);
   for (int i = 0; i < vertexCount; i++) {
     final o = i * stride;
@@ -189,7 +192,10 @@ fb.IndicesT _buildIndices(
     for (int i = 0; i < count; i++) {
       widened[i] = i;
     }
-    out.data = widened.buffer.asUint8List(widened.offsetInBytes, widened.lengthInBytes);
+    out.data = widened.buffer.asUint8List(
+      widened.offsetInBytes,
+      widened.lengthInBytes,
+    );
     out.count = count;
     out.type = fb.IndexType.k16Bit;
     return out;
@@ -206,7 +212,10 @@ fb.IndicesT _buildIndices(
     for (int i = 0; i < list.length; i++) {
       widened[i] = list[i];
     }
-    out.data = widened.buffer.asUint8List(widened.offsetInBytes, widened.lengthInBytes);
+    out.data = widened.buffer.asUint8List(
+      widened.offsetInBytes,
+      widened.lengthInBytes,
+    );
     out.count = accessor.count;
     out.type = fb.IndexType.k16Bit;
   }
@@ -217,7 +226,8 @@ fb.IndicesT _buildIndices(
 
 fb.MaterialT _buildMaterial(GltfMaterial m) {
   final out = fb.MaterialT();
-  out.type = m.unlit ? fb.MaterialType.kUnlit : fb.MaterialType.kPhysicallyBased;
+  out.type =
+      m.unlit ? fb.MaterialType.kUnlit : fb.MaterialType.kPhysicallyBased;
   out.baseColorTexture = m.pbrMetallicRoughness?.baseColorTexture?.index ?? -1;
   out.metallicRoughnessTexture =
       m.pbrMetallicRoughness?.metallicRoughnessTexture?.index ?? -1;
@@ -295,14 +305,14 @@ fb.SkinT _buildSkin(GltfSkin s, GltfDocument doc, Uint8List bufferData) {
     final accessor = doc.accessors[s.inverseBindMatrices!];
     final view = doc.bufferViews[accessor.bufferView!];
     final floats = readAccessorAsFloat32(accessor, view, bufferData);
-    out.inverseBindMatrices = [
-      for (int i = 0; i < s.joints.length; i++)
-        _matrixFromFloats(floats, i * 16),
-    ].reversed.toList();
+    out.inverseBindMatrices =
+        [
+          for (int i = 0; i < s.joints.length; i++)
+            _matrixFromFloats(floats, i * 16),
+        ].reversed.toList();
   } else {
     out.inverseBindMatrices = [
-      for (int i = 0; i < s.joints.length; i++)
-        _matrixT(Matrix4.identity()),
+      for (int i = 0; i < s.joints.length; i++) _matrixT(Matrix4.identity()),
     ];
   }
   // The generated XT.pack walks struct vectors forward, but the flatbuffer
@@ -370,7 +380,11 @@ List<fb.Vec3T> _vec3List(Float32List values, bool isCubic) {
   final off = isCubic ? 3 : 0;
   return [
     for (int i = 0; i + stride <= values.length; i += stride)
-      fb.Vec3T(x: values[i + off], y: values[i + off + 1], z: values[i + off + 2]),
+      fb.Vec3T(
+        x: values[i + off],
+        y: values[i + off + 1],
+        z: values[i + off + 2],
+      ),
   ].reversed.toList();
 }
 
@@ -393,23 +407,43 @@ List<fb.Vec4T> _vec4List(Float32List values, bool isCubic) {
 fb.MatrixT _matrixT(Matrix4 m) {
   final s = m.storage;
   return fb.MatrixT(
-    m0: s[0], m1: s[1], m2: s[2], m3: s[3],
-    m4: s[4], m5: s[5], m6: s[6], m7: s[7],
-    m8: s[8], m9: s[9], m10: s[10], m11: s[11],
-    m12: s[12], m13: s[13], m14: s[14], m15: s[15],
+    m0: s[0],
+    m1: s[1],
+    m2: s[2],
+    m3: s[3],
+    m4: s[4],
+    m5: s[5],
+    m6: s[6],
+    m7: s[7],
+    m8: s[8],
+    m9: s[9],
+    m10: s[10],
+    m11: s[11],
+    m12: s[12],
+    m13: s[13],
+    m14: s[14],
+    m15: s[15],
   );
 }
 
 fb.MatrixT _matrixFromFloats(Float32List floats, int offset) {
   return fb.MatrixT(
-    m0: floats[offset + 0], m1: floats[offset + 1],
-    m2: floats[offset + 2], m3: floats[offset + 3],
-    m4: floats[offset + 4], m5: floats[offset + 5],
-    m6: floats[offset + 6], m7: floats[offset + 7],
-    m8: floats[offset + 8], m9: floats[offset + 9],
-    m10: floats[offset + 10], m11: floats[offset + 11],
-    m12: floats[offset + 12], m13: floats[offset + 13],
-    m14: floats[offset + 14], m15: floats[offset + 15],
+    m0: floats[offset + 0],
+    m1: floats[offset + 1],
+    m2: floats[offset + 2],
+    m3: floats[offset + 3],
+    m4: floats[offset + 4],
+    m5: floats[offset + 5],
+    m6: floats[offset + 6],
+    m7: floats[offset + 7],
+    m8: floats[offset + 8],
+    m9: floats[offset + 9],
+    m10: floats[offset + 10],
+    m11: floats[offset + 11],
+    m12: floats[offset + 12],
+    m13: floats[offset + 13],
+    m14: floats[offset + 14],
+    m15: floats[offset + 15],
   );
 }
 
@@ -467,7 +501,11 @@ Float32List _readOptionalColor(
     return out;
   }
   final a = doc.accessors[i];
-  final raw = readAccessorAsFloat32(a, doc.bufferViews[a.bufferView!], bufferData);
+  final raw = readAccessorAsFloat32(
+    a,
+    doc.bufferViews[a.bufferView!],
+    bufferData,
+  );
   if (a.type == GltfAccessorType.vec4) return raw;
   // Promote vec3 to vec4 with alpha=1.
   final out = Float32List(vertexCount * 4);

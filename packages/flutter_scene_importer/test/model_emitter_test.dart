@@ -28,7 +28,9 @@ void main() {
     final skinned = asset.$2;
     test('emitModel($name.glb) ≡ $name.model', () {
       final glbPath = _resolve('examples/assets_src/$name.glb');
-      final modelPath = _resolve('examples/flutter_app/build/models/$name.model');
+      final modelPath = _resolve(
+        'examples/flutter_app/build/models/$name.model',
+      );
       if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
         print('Test data missing — skipping.');
         return;
@@ -50,20 +52,32 @@ void _compareSceneBytes(
   final myModelBytes = emitModel(doc, container.binaryChunk);
 
   // Decode both via the existing fb reader.
-  final mine = ImportedScene.fromFlatbuffer(
-    ByteData.sublistView(myModelBytes),
-  ).flatbuffer;
-  final theirs = ImportedScene.fromFlatbuffer(
-    ByteData.sublistView(File(modelPath).readAsBytesSync()),
-  ).flatbuffer;
+  final mine =
+      ImportedScene.fromFlatbuffer(
+        ByteData.sublistView(myModelBytes),
+      ).flatbuffer;
+  final theirs =
+      ImportedScene.fromFlatbuffer(
+        ByteData.sublistView(File(modelPath).readAsBytesSync()),
+      ).flatbuffer;
 
   // Top-level structure.
-  expect(mine.children?.length, theirs.children?.length, reason: 'children count');
+  expect(
+    mine.children?.length,
+    theirs.children?.length,
+    reason: 'children count',
+  );
   expect(mine.nodes?.length, theirs.nodes?.length, reason: 'nodes count');
-  expect(mine.textures?.length ?? 0, theirs.textures?.length ?? 0,
-      reason: 'textures count');
-  expect(mine.animations?.length ?? 0, theirs.animations?.length ?? 0,
-      reason: 'animations count');
+  expect(
+    mine.textures?.length ?? 0,
+    theirs.textures?.length ?? 0,
+    reason: 'textures count',
+  );
+  expect(
+    mine.animations?.length ?? 0,
+    theirs.animations?.length ?? 0,
+    reason: 'animations count',
+  );
 
   // Scene-level Z-flip.
   expect(mine.transform?.m10, -1.0);
@@ -83,13 +97,19 @@ void _compareSceneBytes(
     final theirPrims = theirNode.meshPrimitives ?? <fb.MeshPrimitive>[];
     if (myPrims.length != theirPrims.length) {
       mismatched++;
-      print('  ${myNode.name}: prim count ${myPrims.length}/${theirPrims.length}');
+      print(
+        '  ${myNode.name}: prim count ${myPrims.length}/${theirPrims.length}',
+      );
       continue;
     }
     bool ok = true;
     for (int i = 0; i < myPrims.length; i++) {
-      if (!_primitivesEquivalent(myPrims[i], theirPrims[i],
-          where: '${myNode.name}[$i]', skinned: skinned)) {
+      if (!_primitivesEquivalent(
+        myPrims[i],
+        theirPrims[i],
+        where: '${myNode.name}[$i]',
+        skinned: skinned,
+      )) {
         ok = false;
         break;
       }
@@ -116,10 +136,16 @@ void _compareSceneBytes(
     final theirIbm = theirNode!.skin!.inverseBindMatrices;
     if (myIbm == null || theirIbm == null || myIbm.isEmpty) continue;
     expect(myIbm.length, theirIbm.length, reason: '${myNode.name} ibm count');
-    expect(myIbm[0].m0, closeTo(theirIbm[0].m0, 1e-6),
-        reason: '${myNode.name} ibm[0].m0 (vector reversal regression?)');
-    expect(myIbm[0].m12, closeTo(theirIbm[0].m12, 1e-6),
-        reason: '${myNode.name} ibm[0].m12');
+    expect(
+      myIbm[0].m0,
+      closeTo(theirIbm[0].m0, 1e-6),
+      reason: '${myNode.name} ibm[0].m0 (vector reversal regression?)',
+    );
+    expect(
+      myIbm[0].m12,
+      closeTo(theirIbm[0].m12, 1e-6),
+      reason: '${myNode.name} ibm[0].m12',
+    );
   }
 
   // Per-animation equivalence — first channel of first animation, first
@@ -136,8 +162,11 @@ void _compareSceneBytes(
       final mv = myK.values;
       final tv = theirK.values;
       if (mv != null && tv != null && mv.isNotEmpty) {
-        expect(mv[0].x, closeTo(tv[0].x, 1e-6),
-            reason: 'anim[$i] channel[0] keyframes[0].x');
+        expect(
+          mv[0].x,
+          closeTo(tv[0].x, 1e-6),
+          reason: 'anim[$i] channel[0] keyframes[0].x',
+        );
       }
     }
   }
@@ -157,8 +186,11 @@ void _compareSceneBytes(
     }
     expect(myEmb.width, theirEmb.width, reason: 'tex[$i] width');
     expect(myEmb.height, theirEmb.height, reason: 'tex[$i] height');
-    expect(myEmb.componentCount, theirEmb.componentCount,
-        reason: 'tex[$i] componentCount');
+    expect(
+      myEmb.componentCount,
+      theirEmb.componentCount,
+      reason: 'tex[$i] componentCount',
+    );
     final myBytes = Uint8List.fromList(myEmb.bytes!);
     final theirBytes = Uint8List.fromList(theirEmb.bytes!);
     expect(myBytes.length, theirBytes.length, reason: 'tex[$i] byte length');
@@ -182,8 +214,10 @@ bool _primitivesEquivalent(
     return false;
   }
   if (!_bytesEqual(myVB, theirVB)) {
-    print('  $where: vertex bytes differ '
-        '(mine=${myVB.length}, theirs=${theirVB.length})');
+    print(
+      '  $where: vertex bytes differ '
+      '(mine=${myVB.length}, theirs=${theirVB.length})',
+    );
     return false;
   }
   final myIB = Uint8List.fromList(my.indices!.data!);
