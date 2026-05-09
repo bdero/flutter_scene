@@ -48,7 +48,7 @@ abstract class Material {
       throw Exception('Failed to create normal placeholder texture.');
     }
     _normalPlaceholderTexture!.overwrite(
-      Uint32List.fromList(<int>[0xFFFF7574]).buffer.asByteData(),
+      Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
     );
     return _normalPlaceholderTexture!;
   }
