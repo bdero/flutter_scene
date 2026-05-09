@@ -6,6 +6,7 @@
 /// semantically equal bytes — so this checks per-primitive vertex/index
 /// bytes and material fields, not raw `Uint8List` equality of the whole
 /// file.
+library;
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -102,6 +103,44 @@ void _compareSceneBytes(
   print('  per-node match: $matched matched, $mismatched mismatched');
   expect(mismatched, 0);
   expect(matched, greaterThan(0));
+
+  // Per-skin equivalence — would have caught the vector-of-struct reversal
+  // bug fixed in this same commit. Compares the FIRST inverse-bind matrix
+  // value, which is enough to detect the symptom (with reversal, mine[0]
+  // would equal theirs[last]).
+  for (final myNode in mine.nodes ?? <fb.Node>[]) {
+    if (myNode.skin == null || myNode.name == null) continue;
+    final theirNode = theirByName[myNode.name];
+    if (theirNode?.skin == null) continue;
+    final myIbm = myNode.skin!.inverseBindMatrices;
+    final theirIbm = theirNode!.skin!.inverseBindMatrices;
+    if (myIbm == null || theirIbm == null || myIbm.isEmpty) continue;
+    expect(myIbm.length, theirIbm.length, reason: '${myNode.name} ibm count');
+    expect(myIbm[0].m0, closeTo(theirIbm[0].m0, 1e-6),
+        reason: '${myNode.name} ibm[0].m0 (vector reversal regression?)');
+    expect(myIbm[0].m12, closeTo(theirIbm[0].m12, 1e-6),
+        reason: '${myNode.name} ibm[0].m12');
+  }
+
+  // Per-animation equivalence — first channel of first animation, first
+  // keyframe value. Same reversal-detection role for keyframe vectors.
+  final myAnims = mine.animations ?? <fb.Animation>[];
+  final theirAnims = theirs.animations ?? <fb.Animation>[];
+  for (int i = 0; i < myAnims.length && i < theirAnims.length; i++) {
+    final mc = myAnims[i].channels;
+    final tc = theirAnims[i].channels;
+    if (mc == null || tc == null || mc.isEmpty || tc.isEmpty) continue;
+    final myK = mc[0].keyframes;
+    final theirK = tc[0].keyframes;
+    if (myK is fb.TranslationKeyframes && theirK is fb.TranslationKeyframes) {
+      final mv = myK.values;
+      final tv = theirK.values;
+      if (mv != null && tv != null && mv.isNotEmpty) {
+        expect(mv[0].x, closeTo(tv[0].x, 1e-6),
+            reason: 'anim[$i] channel[0] keyframes[0].x');
+      }
+    }
+  }
 
   // Per-texture equivalence.
   final myTextures = mine.textures ?? <fb.Texture>[];

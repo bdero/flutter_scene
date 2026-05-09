@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:isolate';
 
+import 'gltf.dart';
+import 'src/fb_emitter/model_emitter.dart';
+
 /// Searches for a built native executable named [executableName] under
 /// `<packageRoot>/<dir>`, checking the conventional CMake layouts
 /// (`Release/`, `Debug/`, and the bare directory) on both POSIX and
@@ -114,32 +117,30 @@ void generateImporterFlatbufferDart({
 }
 
 /// Converts a single glTF binary at [inputGltfFilePath] to a Flutter
-/// Scene `.model` file at [outputModelFilePath], invoking the bundled
-/// native importer as a subprocess.
+/// Scene `.model` file at [outputModelFilePath].
 ///
 /// Both paths can be relative; they are resolved against
 /// [workingDirectory] (defaulting to the caller's current working
 /// directory). The `dart run flutter_scene_importer:import` CLI is a
 /// thin wrapper around this function.
 ///
-/// Throws if the importer process exits with a non-zero status.
+/// Pure Dart — does not depend on the C++ importer binary. Output is
+/// structurally equivalent to what `importer_gltf.cc` produces (same
+/// `fb.SceneT` shape, same packed vertex/index bytes, same texture
+/// dimensions). Image bytes may differ at the pixel level if the glTF
+/// embeds lossy PNGs that decode slightly differently between
+/// `package:image` and the prior `stb_image`-via-tinygltf decoder.
 void importGltf(
   String inputGltfFilePath,
   String outputModelFilePath, {
   String? workingDirectory,
 }) {
-  final packageRoot = findImporterPackageRoot();
-  final importer = findBuiltExecutable('importer', packageRoot);
-
-  // Parse the paths via Uri.file/Uri.directory and use resolveUri to resolve
-  // the paths relative to the working directory. Using raw strings doesn't
-  // bode well with Windows paths.
+  // Parse paths via Uri so Windows-style paths round-trip correctly.
   final inputGltfFilePathUri = Uri.file(inputGltfFilePath);
   final outputModelFilePathUri = Uri.file(outputModelFilePath);
   // Default to the caller's CWD when no working directory is supplied, so
   // command-line invocations like `dart run flutter_scene_importer:import`
-  // resolve input/output paths relative to where the user ran the command
-  // (not relative to the importer package's root in pub-cache).
+  // resolve input/output paths relative to where the user ran the command.
   final workingDirectoryUri = Uri.directory(
     workingDirectory ?? Directory.current.path,
   );
@@ -147,15 +148,12 @@ void importGltf(
       workingDirectoryUri.resolveUri(inputGltfFilePathUri).toFilePath();
   outputModelFilePath =
       workingDirectoryUri.resolveUri(outputModelFilePathUri).toFilePath();
-  //throw Exception('root $packageRoot input $inputGltfFilePath output $outputModelFilePath');
 
-  final importerResult = Process.runSync(importer.toFilePath(), [
-    inputGltfFilePath,
-    outputModelFilePath,
-  ], workingDirectory: workingDirectory);
-  if (importerResult.exitCode != 0) {
-    throw Exception(
-      'Failed to run importer: ${importerResult.stderr}\n${importerResult.stdout}',
-    );
-  }
+  final inputBytes = File(inputGltfFilePath).readAsBytesSync();
+  final container = parseGlb(inputBytes);
+  final doc = parseGltfJson(container.json);
+  final outputBytes = emitModel(doc, container.binaryChunk);
+  final outputFile = File(outputModelFilePath);
+  outputFile.parent.createSync(recursive: true);
+  outputFile.writeAsBytesSync(outputBytes);
 }

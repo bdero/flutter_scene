@@ -12,7 +12,10 @@ import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math.dart';
 
 import '../../constants.dart';
-import '../../flatbuffer.dart' as fb;
+// Import the generated flatbuffer types directly rather than going through
+// flatbuffer.dart, which transitively pulls in `flutter_gpu/gpu.dart` and
+// `dart:ui` — both unavailable in the build-hook isolate.
+import '../../generated/scene_impeller.fb_flatbuffers.dart' as fb;
 import '../../gltf.dart';
 import '../../third_party/flat_buffers.dart' as fbb;
 
@@ -295,13 +298,16 @@ fb.SkinT _buildSkin(GltfSkin s, GltfDocument doc, Uint8List bufferData) {
     out.inverseBindMatrices = [
       for (int i = 0; i < s.joints.length; i++)
         _matrixFromFloats(floats, i * 16),
-    ];
+    ].reversed.toList();
   } else {
     out.inverseBindMatrices = [
       for (int i = 0; i < s.joints.length; i++)
         _matrixT(Matrix4.identity()),
     ];
   }
+  // The generated XT.pack walks struct vectors forward, but the flatbuffer
+  // builder grows backward, so the on-disk order ends up reversed. We
+  // pre-reverse to compensate. (Empty/identity-only lists don't need it.)
   return out;
 }
 
@@ -357,13 +363,15 @@ fb.AnimationT _buildAnimation(
   return out;
 }
 
+// Reversed to compensate for the generated XT.pack vector-of-struct
+// reversal — see the comment in _buildSkin.
 List<fb.Vec3T> _vec3List(Float32List values, bool isCubic) {
   final stride = isCubic ? 9 : 3;
   final off = isCubic ? 3 : 0;
   return [
     for (int i = 0; i + stride <= values.length; i += stride)
       fb.Vec3T(x: values[i + off], y: values[i + off + 1], z: values[i + off + 2]),
-  ];
+  ].reversed.toList();
 }
 
 List<fb.Vec4T> _vec4List(Float32List values, bool isCubic) {
@@ -377,7 +385,7 @@ List<fb.Vec4T> _vec4List(Float32List values, bool isCubic) {
         z: values[i + off + 2],
         w: values[i + off + 3],
       ),
-  ];
+  ].reversed.toList();
 }
 
 // ───── Helpers ─────
