@@ -2,6 +2,17 @@ import 'dart:io';
 
 import 'package:hooks/hooks.dart';
 
+/// Converts each `.glb` file in [inputFilePaths] to the Flutter Scene
+/// `.model` format and writes the result into [outputDirectory] (resolved
+/// relative to [BuildInput.packageRoot]).
+///
+/// Intended to be called from a `build_hooks.dart` entry point in the
+/// consuming package. The [outputDirectory] is created if it doesn't
+/// already exist; the importer is invoked per file via
+/// `dart run flutter_scene_importer:import`.
+///
+/// Throws if any input file does not have a `.glb` extension or if the
+/// underlying importer process fails.
 void buildModels({
   required BuildInput buildInput,
   required List<String> inputFilePaths,

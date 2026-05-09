@@ -1,5 +1,11 @@
-// position: 3, normal: 3, textureCoords: 2, color: 4 :: 12 floats :: 48 bytes
+/// Bytes per vertex in the unskinned vertex layout: position (`vec3`),
+/// normal (`vec3`), tex coords (`vec2`), color (`vec4`) — 12 floats.
+///
+/// Match this layout exactly when emitting unskinned vertex buffers.
 const int kUnskinnedPerVertexSize = 48;
 
-// vertex: 12, joints: 4, weights: 4 :: 20 floats :: 80 bytes
+/// Bytes per vertex in the skinned vertex layout: the unskinned 12
+/// floats plus 4 joint indices and 4 joint weights — 20 floats.
+///
+/// Match this layout exactly when emitting skinned vertex buffers.
 const int kSkinnedPerVertexSize = 80;
