@@ -84,10 +84,6 @@ Although there has been some very promising experimentation with porting Impelle
 
 Web is an important platform, and both `flutter_gpu` and `flutter_scene` will eventually support Flutter web.
 
-### **Q:** I'm seeing errors when running the importer: `ProcessException: No such file or directory`. How do I fix it?
-
-Install [CMake](https://cmake.org/download/).
-
 ## Repository
 
 This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) containing all of the related packages and the example app:
