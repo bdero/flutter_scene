@@ -8,6 +8,22 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene_importer/constants.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 
+/// Vertex (and optional index) data along with the vertex shader used to
+/// transform it.
+///
+/// `Geometry` is the geometry half of a [MeshPrimitive] — the shading half
+/// is supplied by a [Material]. Built-in subclasses cover the two
+/// supported vertex layouts:
+///
+///  * [UnskinnedGeometry] — 48-byte vertices: position, normal, UV, color.
+///  * [SkinnedGeometry] — 80-byte vertices: unskinned + 4 joint indices +
+///    4 joint weights. Used in conjunction with a [Skin].
+///
+/// Construct an instance directly and call [uploadVertexData] (or
+/// [setVertices]/[setIndices] with already-uploaded buffer views) to
+/// supply mesh data, or use [Geometry.fromFlatbuffer] when deserializing
+/// a `.model` payload. [CuboidGeometry] is provided as a built-in
+/// example.
 abstract class Geometry {
   gpu.BufferView? _vertices;
   int _vertexCount = 0;
@@ -17,6 +33,11 @@ abstract class Geometry {
   int _indexCount = 0;
 
   gpu.Shader? _vertexShader;
+
+  /// The vertex shader used when rendering this geometry.
+  ///
+  /// Set by subclasses (or via [setVertexShader]) before the first frame.
+  /// Throws if accessed before a shader has been assigned.
   gpu.Shader get vertexShader {
     if (_vertexShader == null) {
       throw Exception('Vertex shader has not been set');
@@ -24,6 +45,13 @@ abstract class Geometry {
     return _vertexShader!;
   }
 
+  /// Constructs a [Geometry] from a deserialized flatbuffer mesh
+  /// primitive, choosing [UnskinnedGeometry] or [SkinnedGeometry] based
+  /// on the embedded vertex buffer type.
+  ///
+  /// The vertex buffer must be a multiple of the layout size (48 bytes
+  /// unskinned, 80 bytes skinned); a partial trailing vertex is dropped
+  /// with a debug warning.
   static Geometry fromFlatbuffer(fb.MeshPrimitive fbPrimitive) {
     Uint8List vertices;
     bool isSkinned =
@@ -77,11 +105,23 @@ abstract class Geometry {
     return geometry;
   }
 
+  /// Binds an already-uploaded vertex buffer view as this geometry's
+  /// vertex source.
+  ///
+  /// Use this when the caller manages its own [gpu.DeviceBuffer] (for
+  /// example, when packing many meshes into a single buffer). For a
+  /// turn-key path that allocates and uploads in one step, see
+  /// [uploadVertexData].
   void setVertices(gpu.BufferView vertices, int vertexCount) {
     _vertices = vertices;
     _vertexCount = vertexCount;
   }
 
+  /// Binds an already-uploaded index buffer view, with element width
+  /// determined by [indexType].
+  ///
+  /// The element count is computed automatically from the buffer view's
+  /// byte length.
   void setIndices(gpu.BufferView indices, gpu.IndexType indexType) {
     _indices = indices;
     _indexType = indexType;
@@ -93,6 +133,13 @@ abstract class Geometry {
     }
   }
 
+  /// Allocates a [gpu.DeviceBuffer] and uploads [vertices] (and optional
+  /// [indices]) into it in one step.
+  ///
+  /// The vertices must match this geometry subclass's expected layout
+  /// (48 bytes per vertex for [UnskinnedGeometry], 80 bytes for
+  /// [SkinnedGeometry]). When [indices] is supplied, the buffer is sized
+  /// to hold both ranges back-to-back and bound via [setIndices].
   void uploadVertexData(
     ByteData vertices,
     int vertexCount,
@@ -132,12 +179,29 @@ abstract class Geometry {
     }
   }
 
+  /// Assigns the vertex [shader] used when this geometry is drawn.
+  ///
+  /// The built-in subclasses set this in their constructor. Custom
+  /// subclasses may override it with their own shader, typically pulled
+  /// from [baseShaderLibrary] or another shader bundle.
   void setVertexShader(gpu.Shader shader) {
     _vertexShader = shader;
   }
 
+  /// Hook for skinned geometries to receive the joints texture computed
+  /// by [Skin.getJointsTexture].
+  ///
+  /// The default implementation does nothing; [SkinnedGeometry] overrides
+  /// it to bind the texture in [bind].
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
+  /// Binds vertex/index buffers and per-frame uniforms onto [pass] in
+  /// preparation for a draw call.
+  ///
+  /// Implementations write the model and camera transforms (and any
+  /// subclass-specific values, like the joints texture for skinned
+  /// geometry) into the supplied transient buffer and bind the resulting
+  /// uniform views.
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
@@ -147,7 +211,14 @@ abstract class Geometry {
   );
 }
 
+/// Geometry whose vertices use the unskinned 48-byte layout: position
+/// (`vec3`), normal (`vec3`), tex coords (`vec2`), color (`vec4`).
+///
+/// This is the default vertex format for static (non-animated) meshes
+/// imported from `.model` or glTF.
 class UnskinnedGeometry extends Geometry {
+  /// Creates an [UnskinnedGeometry] preconfigured with the
+  /// `UnskinnedVertex` shader from [baseShaderLibrary].
   UnskinnedGeometry() {
     setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
   }
@@ -217,10 +288,18 @@ class UnskinnedGeometry extends Geometry {
   }
 }
 
+/// Geometry whose vertices use the skinned 80-byte layout: the
+/// unskinned attributes followed by 4 joint indices and 4 joint weights.
+///
+/// Used for meshes attached to a [Skin] for skeletal animation. The
+/// joints texture supplied by the skin must be assigned before each draw
+/// via [setJointsTexture].
 class SkinnedGeometry extends Geometry {
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;
 
+  /// Creates a [SkinnedGeometry] preconfigured with the `SkinnedVertex`
+  /// shader from [baseShaderLibrary].
   SkinnedGeometry() {
     setVertexShader(baseShaderLibrary['SkinnedVertex']!);
   }
@@ -314,7 +393,13 @@ class SkinnedGeometry extends Geometry {
   }
 }
 
+/// A unit-cube geometry sized to the supplied extents.
+///
+/// Useful as a quick placeholder or for debugging — pair with any
+/// [Material] to render an axis-aligned box. Each face has unique
+/// vertex colors, which can be visualized with [UnlitMaterial].
 class CuboidGeometry extends UnskinnedGeometry {
+  /// Builds a cuboid spanning `-extents/2` to `+extents/2` on each axis.
   CuboidGeometry(vm.Vector3 extents) {
     final e = extents / 2;
     // Layout: Position, normal, uv, color
