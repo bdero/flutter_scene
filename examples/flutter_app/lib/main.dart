@@ -46,6 +46,12 @@ class _MyAppState extends State<MyApp> {
                 assetPath: 'assets_src/fcar.glb',
                 cameraDistance: 10.0,
               ),
+      'Runtime GLB: flutter_logo':
+          (context) => ExampleRuntimeGlb(
+                elapsedSeconds: elapsedSeconds,
+                assetPath: 'assets_src/flutter_logo_baked.glb',
+                cameraDistance: 5.0,
+              ),
     };
     selectedExample = examples.keys.first;
 

@@ -111,6 +111,44 @@ void main() {
     }
   });
 
+  test('flutter_logo_baked: vertex+index bytes match the .model', () {
+    final glbPath = _resolve('examples/assets_src/flutter_logo_baked.glb');
+    final modelPath = _resolve('examples/flutter_app/build/models/flutter_logo_baked.model');
+    if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
+      print('Test data missing — skipping.');
+      return;
+    }
+    final glbBytes = File(glbPath).readAsBytesSync();
+    final container = parseGlb(glbBytes);
+    final doc = parseGltfJson(container.json);
+    final mine = packPrimitive(
+      primitive: doc.meshes.first.primitives.first,
+      accessors: doc.accessors,
+      bufferViews: doc.bufferViews,
+      bufferData: container.binaryChunk,
+    );
+    final modelBytes = File(modelPath).readAsBytesSync();
+    final fbScene = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
+    fb.MeshPrimitive? theirPrim;
+    for (final node in fbScene.nodes ?? <fb.Node>[]) {
+      final prims = node.meshPrimitives;
+      if (prims != null && prims.isNotEmpty) {
+        theirPrim = prims.first;
+        break;
+      }
+    }
+    expect(theirPrim, isNotNull);
+    final theirVB = theirPrim!.vertices as fb.UnskinnedVertexBuffer;
+    final theirVertexBytes = Uint8List.fromList(theirVB.vertices!);
+    final theirIndexBytes = Uint8List.fromList(theirPrim.indices!.data!);
+    print('flutter_logo: mine.vertexBytes=${mine.vertexBytes.length} '
+        'theirs=${theirVertexBytes.length}');
+    expect(_bytesEqual(mine.vertexBytes, theirVertexBytes), isTrue,
+        reason: 'flutter_logo vertex bytes differ');
+    expect(_bytesEqual(mine.indexBytes, theirIndexBytes), isTrue,
+        reason: 'flutter_logo index bytes differ');
+  });
+
   test('fcar: all unskinned primitives match byte-for-byte', () {
     final glbPath = _resolve('examples/assets_src/fcar.glb');
     final modelPath = _resolve('examples/flutter_app/build/models/fcar.model');
