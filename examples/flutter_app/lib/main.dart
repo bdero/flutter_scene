@@ -52,6 +52,14 @@ class _MyAppState extends State<MyApp> {
                 assetPath: 'assets_src/flutter_logo_baked.glb',
                 cameraDistance: 5.0,
               ),
+      'Runtime GLB: dash (animated)':
+          (context) => ExampleRuntimeGlb(
+                elapsedSeconds: elapsedSeconds,
+                assetPath: 'assets_src/dash.glb',
+                cameraDistance: 6.0,
+                cameraTargetY: 1.5,
+                autoPlayFirstAnimation: true,
+              ),
     };
     selectedExample = examples.keys.first;
 

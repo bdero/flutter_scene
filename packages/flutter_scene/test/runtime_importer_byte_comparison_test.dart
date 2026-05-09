@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/runtime_importer/geometry_builder.dart';
 import 'package:flutter_scene/src/runtime_importer/glb.dart';
 import 'package:flutter_scene/src/runtime_importer/gltf_parser.dart';
+import 'package:flutter_scene/src/runtime_importer/gltf_types.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:test/test.dart';
@@ -109,6 +110,26 @@ void main() {
       print('  mine:   ${myIndices.toList()}');
       print('  theirs: ${theirIndicesArr.toList()}');
     }
+  });
+
+  test('two_triangles (skinned): vertex+index bytes match the .model', () {
+    final glbPath = _resolve('examples/assets_src/two_triangles.glb');
+    final modelPath = _resolve('examples/flutter_app/build/models/two_triangles.model');
+    if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
+      print('Test data missing — skipping.');
+      return;
+    }
+    _comparePrimitiveBytes(glbPath, modelPath, expectSkinned: true);
+  });
+
+  test('dash (skinned): first-primitive vertex+index bytes match the .model', () {
+    final glbPath = _resolve('examples/assets_src/dash.glb');
+    final modelPath = _resolve('examples/flutter_app/build/models/dash.model');
+    if (!File(glbPath).existsSync() || !File(modelPath).existsSync()) {
+      print('Test data missing — skipping.');
+      return;
+    }
+    _comparePrimitiveBytes(glbPath, modelPath, expectSkinned: true);
   });
 
   test('flutter_logo_baked: vertex+index bytes match the .model', () {
@@ -216,6 +237,67 @@ void main() {
       print('  $d');
     }
   });
+}
+
+/// Compares the first primitive's packed vertex/index bytes between the
+/// runtime importer and the offline .model. Throws if they differ.
+void _comparePrimitiveBytes(
+  String glbPath,
+  String modelPath, {
+  required bool expectSkinned,
+}) {
+  final glbBytes = File(glbPath).readAsBytesSync();
+  final container = parseGlb(glbBytes);
+  final doc = parseGltfJson(container.json);
+  // Find the first node with a mesh (some files have empty placeholder nodes).
+  GltfMeshPrimitive? myPrim;
+  for (final node in doc.nodes) {
+    if (node.mesh != null) {
+      final prims = doc.meshes[node.mesh!].primitives;
+      if (prims.isNotEmpty) {
+        myPrim = prims.first;
+        break;
+      }
+    }
+  }
+  expect(myPrim, isNotNull);
+  final mine = packPrimitive(
+    primitive: myPrim!,
+    accessors: doc.accessors,
+    bufferViews: doc.bufferViews,
+    bufferData: container.binaryChunk,
+  );
+
+  final modelBytes = File(modelPath).readAsBytesSync();
+  final fbScene = ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
+  fb.MeshPrimitive? theirPrim;
+  for (final node in fbScene.nodes ?? <fb.Node>[]) {
+    final prims = node.meshPrimitives;
+    if (prims != null && prims.isNotEmpty) {
+      theirPrim = prims.first;
+      break;
+    }
+  }
+  expect(theirPrim, isNotNull);
+
+  Uint8List theirVertexBytes;
+  if (expectSkinned) {
+    final vb = theirPrim!.vertices as fb.SkinnedVertexBuffer;
+    theirVertexBytes = Uint8List.fromList(vb.vertices!);
+    expect(mine.isSkinned, isTrue);
+  } else {
+    final vb = theirPrim!.vertices as fb.UnskinnedVertexBuffer;
+    theirVertexBytes = Uint8List.fromList(vb.vertices!);
+    expect(mine.isSkinned, isFalse);
+  }
+  final theirIndexBytes = Uint8List.fromList(theirPrim.indices!.data!);
+
+  print('  mine.vertexBytes=${mine.vertexBytes.length} '
+      'theirs=${theirVertexBytes.length} (skinned=${mine.isSkinned})');
+  expect(_bytesEqual(mine.vertexBytes, theirVertexBytes), isTrue,
+      reason: 'vertex bytes differ');
+  expect(_bytesEqual(mine.indexBytes, theirIndexBytes), isTrue,
+      reason: 'index bytes differ');
 }
 
 bool _bytesEqual(Uint8List a, Uint8List b) {
