@@ -14,7 +14,8 @@ class ImportedScene {
 
   static ImportedScene fromFlatbuffer(ByteData data) {
     final fb.Scene scene = fb.Scene(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
 
     return ImportedScene._(scene);
   }
