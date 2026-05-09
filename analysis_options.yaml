@@ -8,4 +8,5 @@ analyzer:
     - packages/flutter_scene_importer/lib/third_party/**
   errors:
     asset_does_not_exist: ignore
+    asset_directory_does_not_exist: ignore
     invalid_dependency: ignore
