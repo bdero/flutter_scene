@@ -57,10 +57,12 @@ base class Node implements SceneGraph {
     if (parent == null) {
       localTransform = transform;
     } else {
-      Matrix4 g = Matrix4.identity();
-      parent.globalTransform.copyInverse(g);
-
-      localTransform = transform * parent.globalTransform.invert();
+      // Solve `transform == parent.globalTransform * localTransform` for
+      // localTransform. (`Matrix4.invert` returns the determinant and mutates
+      // the receiver — `copyInverse` is the non-destructive version.)
+      final parentInverse = Matrix4.identity();
+      parent.globalTransform.copyInverse(parentInverse);
+      localTransform = parentInverse * transform;
     }
   }
 
