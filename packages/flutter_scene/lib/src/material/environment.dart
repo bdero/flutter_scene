@@ -4,13 +4,32 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/material.dart';
 
+/// A pair of textures used for image-based lighting.
+///
+/// The radiance texture supplies high-frequency reflections (used for
+/// specular sampling), while the optional irradiance texture supplies
+/// low-frequency ambient lighting (used for diffuse). Both textures are
+/// currently expected to be equirectangular maps; cubemap support will
+/// land once Flutter GPU exposes cubemaps.
+///
+/// Use [EnvironmentMap.fromAssets] or [EnvironmentMap.fromUIImages] to
+/// construct one from images, [EnvironmentMap.fromGpuTextures] when you
+/// already hold GPU textures, or [EnvironmentMap.empty] for a no-op
+/// placeholder.
 base class EnvironmentMap {
   EnvironmentMap._(this._radianceTexture, this._irradianceTexture);
 
+  /// Creates an empty environment map. Both [radianceTexture] and
+  /// [irradianceTexture] return a white placeholder, contributing no
+  /// directional lighting.
   factory EnvironmentMap.empty() {
     return EnvironmentMap._(null, null);
   }
 
+  /// Wraps already-uploaded GPU textures.
+  ///
+  /// [irradianceTexture] is optional; when omitted, irradiance sampling
+  /// falls back to a white placeholder.
   factory EnvironmentMap.fromGpuTextures({
     required gpu.Texture radianceTexture,
     gpu.Texture? irradianceTexture,
@@ -18,6 +37,8 @@ base class EnvironmentMap {
     return EnvironmentMap._(radianceTexture, irradianceTexture);
   }
 
+  /// Builds an [EnvironmentMap] from already-decoded `dart:ui` images,
+  /// uploading them to GPU textures.
   static Future<EnvironmentMap> fromUIImages({
     required ui.Image radianceImage,
     ui.Image? irradianceImage,
@@ -35,6 +56,10 @@ base class EnvironmentMap {
     );
   }
 
+  /// Loads an [EnvironmentMap] from the asset bundle.
+  ///
+  /// [radianceImagePath] is required; [irradianceImagePath] is optional
+  /// and falls back to a white placeholder when omitted.
   static Future<EnvironmentMap> fromAssets({
     required String radianceImagePath,
     String? irradianceImagePath,
@@ -52,6 +77,10 @@ base class EnvironmentMap {
     );
   }
 
+  /// Whether this environment map has no radiance texture.
+  ///
+  /// An empty environment contributes no IBL; the [Scene] swaps it for
+  /// the package's bundled default at draw time.
   bool isEmpty() => _radianceTexture == null;
 
   gpu.Texture? _radianceTexture;
@@ -79,12 +108,19 @@ base class EnvironmentMap {
 /// applied to all materials. Individual [Material]s may optionally override the
 /// default environment.
 base class Environment {
+  /// Creates an [Environment] with the given image-based-lighting map
+  /// and shared tone-mapping parameters.
+  ///
+  /// All parameters are optional; the defaults pair an empty
+  /// [EnvironmentMap] with `intensity = 1.0` and `exposure = 2.0`.
   Environment({
     EnvironmentMap? environmentMap,
     this.intensity = 1.0,
     this.exposure = 2.0,
   }) : environmentMap = environmentMap ?? EnvironmentMap.empty();
 
+  /// Returns a copy of this environment with a different
+  /// [environmentMap], preserving [intensity] and [exposure].
   Environment withNewEnvironmentMap(EnvironmentMap environmentMap) {
     return Environment(
       environmentMap: environmentMap,

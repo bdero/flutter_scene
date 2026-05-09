@@ -8,7 +8,19 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
+/// A material that draws geometry with a flat color or texture, ignoring
+/// scene lighting.
+///
+/// Useful for UI overlays, debug visualization, or stylized rendering.
+/// The final color is `baseColorFactor * baseColorTexture`, optionally
+/// blended with the per-vertex color via [vertexColorWeight].
+///
+/// Wraps the `UnlitFragment` shader from [baseShaderLibrary].
 class UnlitMaterial extends Material {
+  /// Builds an [UnlitMaterial] from a flatbuffer material description,
+  /// resolving texture indices against [textures].
+  ///
+  /// Throws if [fbMaterial] is not an unlit material.
   static UnlitMaterial fromFlatbuffer(
     fb.Material fbMaterial,
     List<gpu.Texture> textures,
@@ -36,13 +48,27 @@ class UnlitMaterial extends Material {
     return material;
   }
 
+  /// Creates an [UnlitMaterial], optionally textured.
+  ///
+  /// When [colorTexture] is null a 1×1 white placeholder is used so the
+  /// final color reduces to [baseColorFactor].
   UnlitMaterial({gpu.Texture? colorTexture}) {
     setFragmentShader(baseShaderLibrary['UnlitFragment']!);
     baseColorTexture = Material.whitePlaceholder(colorTexture);
   }
 
+  /// The base color texture, sampled and multiplied by [baseColorFactor].
+  ///
+  /// Always non-null after construction; pass `null` to the constructor
+  /// to fall back to a 1×1 white placeholder.
   late gpu.Texture baseColorTexture;
+
+  /// Linear RGBA tint multiplied with [baseColorTexture].
   Vector4 baseColorFactor = Colors.white;
+
+  /// How strongly per-vertex colors influence the final color. `0`
+  /// disables vertex color contribution; `1` (the default) fully
+  /// applies it.
   double vertexColorWeight = 1.0;
 
   @override
