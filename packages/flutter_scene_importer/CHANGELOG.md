@@ -50,3 +50,13 @@
 
 * Update to native_assets_cli 0.13.0.
   Breaking: `BuildConfig` is now `BuildInput`
+
+## 0.10.0
+
+* Migrate from `native_assets_cli` (discontinued) to `hooks` 1.0.
+  Breaking: build hook authors must now `import 'package:hooks/hooks.dart'`
+  instead of `package:native_assets_cli/native_assets_cli.dart`. (#82)
+* Drop the `--enable-experiment=native-assets` flag from the
+  `flutter_scene_importer:import` process invocation. (#82)
+* Reorganize the repository as a pub workspace. Package contents
+  are unchanged. (#36)
