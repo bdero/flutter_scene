@@ -105,8 +105,12 @@ void importGltf(
   // bode well with Windows paths.
   final inputGltfFilePathUri = Uri.file(inputGltfFilePath);
   final outputModelFilePathUri = Uri.file(outputModelFilePath);
+  // Default to the caller's CWD when no working directory is supplied, so
+  // command-line invocations like `dart run flutter_scene_importer:import`
+  // resolve input/output paths relative to where the user ran the command
+  // (not relative to the importer package's root in pub-cache).
   final workingDirectoryUri = Uri.directory(
-    workingDirectory ?? packageRoot.toFilePath(),
+    workingDirectory ?? Directory.current.path,
   );
   inputGltfFilePath =
       workingDirectoryUri.resolveUri(inputGltfFilePathUri).toFilePath();
