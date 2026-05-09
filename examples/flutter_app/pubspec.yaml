@@ -28,3 +28,5 @@ flutter:
     - assets/little_paris_eiffel_tower_irradiance.png
     # Imported models.
     - build/models/
+    # Source .glb files for the runtime importer demo.
+    - assets_src/
