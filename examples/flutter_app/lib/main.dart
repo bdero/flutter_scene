@@ -1,4 +1,5 @@
 import 'package:example_app/example_car.dart';
+import 'package:example_app/example_runtime_glb.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:example_app/example_animation.dart';
@@ -39,6 +40,12 @@ class _MyAppState extends State<MyApp> {
       'Imported Model':
           (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
+      'Runtime GLB: fcar':
+          (context) => ExampleRuntimeGlb(
+                elapsedSeconds: elapsedSeconds,
+                assetPath: 'assets_src/fcar.glb',
+                cameraDistance: 10.0,
+              ),
     };
     selectedExample = examples.keys.first;
 

@@ -37,7 +37,14 @@ Future<Node> importGlb(Uint8List bytes) async {
 
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
-  final root = Node(name: 'root');
+  // Apply a Z-axis flip on the scene root to convert from glTF's right-handed
+  // coordinate system to flutter_scene's expected convention. This matches
+  // what the offline C++ importer writes as the .model's scene-level
+  // transform (importer_gltf.cc: `MakeScale({1, 1, -1})`).
+  final root = Node(
+    name: 'root',
+    localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
+  );
   if (sceneIndex != null && sceneIndex < doc.scenes.length) {
     for (final rootNodeIdx in doc.scenes[sceneIndex].nodes) {
       if (rootNodeIdx >= 0 && rootNodeIdx < engineNodes.length) {

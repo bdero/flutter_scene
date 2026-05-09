@@ -21,7 +21,47 @@ class BuiltGeometry {
   final int vertexCount;
 }
 
+/// Pure-data result of packing a primitive into the engine's vertex layout,
+/// without uploading to the GPU. Useful for unit testing and byte-level
+/// comparisons against the offline `.model` import path.
+class PackedPrimitiveData {
+  PackedPrimitiveData({
+    required this.vertexBytes,
+    required this.vertexCount,
+    required this.indexBytes,
+    required this.indexType,
+    required this.isSkinned,
+  });
+  final Uint8List vertexBytes;
+  final int vertexCount;
+  final Uint8List indexBytes;
+  final gpu.IndexType indexType;
+  final bool isSkinned;
+}
+
 BuiltGeometry buildGeometry({
+  required GltfMeshPrimitive primitive,
+  required List<GltfAccessor> accessors,
+  required List<GltfBufferView> bufferViews,
+  required Uint8List bufferData,
+}) {
+  final packed = packPrimitive(
+    primitive: primitive,
+    accessors: accessors,
+    bufferViews: bufferViews,
+    bufferData: bufferData,
+  );
+  final Geometry geometry = packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
+  geometry.uploadVertexData(
+    ByteData.sublistView(packed.vertexBytes),
+    packed.vertexCount,
+    ByteData.sublistView(packed.indexBytes),
+    indexType: packed.indexType,
+  );
+  return BuiltGeometry(geometry: geometry, vertexCount: packed.vertexCount);
+}
+
+PackedPrimitiveData packPrimitive({
   required GltfMeshPrimitive primitive,
   required List<GltfAccessor> accessors,
   required List<GltfBufferView> bufferViews,
@@ -84,13 +124,11 @@ BuiltGeometry buildGeometry({
   if (primitive.indices != null) {
     final accessor = accessors[primitive.indices!];
     final bufferView = bufferViews[accessor.bufferView!];
+    final list = readAccessorAsUint32(accessor, bufferView, bufferData);
     if (accessor.componentType == GltfComponentType.unsignedInt) {
-      final list = readAccessorAsUint32(accessor, bufferView, bufferData);
       indexBytes = list.buffer.asUint8List(list.offsetInBytes, list.lengthInBytes);
       indexType = gpu.IndexType.int32;
     } else {
-      // Treat byte and short as 16-bit.
-      final list = readAccessorAsUint32(accessor, bufferView, bufferData);
       final widened = Uint16List(list.length);
       for (int i = 0; i < list.length; i++) {
         widened[i] = list[i];
@@ -108,14 +146,13 @@ BuiltGeometry buildGeometry({
     indexType = gpu.IndexType.int16;
   }
 
-  final Geometry geometry = hasJoints ? SkinnedGeometry() : UnskinnedGeometry();
-  geometry.uploadVertexData(
-    ByteData.sublistView(out.buffer.asUint8List(out.offsetInBytes, out.lengthInBytes)),
-    vertexCount,
-    ByteData.sublistView(indexBytes),
+  return PackedPrimitiveData(
+    vertexBytes: out.buffer.asUint8List(out.offsetInBytes, out.lengthInBytes),
+    vertexCount: vertexCount,
+    indexBytes: indexBytes,
     indexType: indexType,
+    isSkinned: hasJoints,
   );
-  return BuiltGeometry(geometry: geometry, vertexCount: vertexCount);
 }
 
 Float32List _readVec3(int idx, List<GltfAccessor> accessors, List<GltfBufferView> bufferViews, Uint8List bufferData) {
