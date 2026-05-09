@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
 import 'package:flutter_scene/src/asset_helpers.dart';
@@ -129,6 +130,27 @@ base class Node implements SceneGraph {
   static Future<Node> fromAsset(String assetPath) async {
     final buffer = await rootBundle.load(assetPath);
     return fromFlatbuffer(buffer);
+  }
+
+  /// Load a glTF binary (GLB) model directly from raw bytes.
+  ///
+  /// Unlike [fromAsset], no offline conversion to `.model` is required —
+  /// useful for runtime use cases such as user-uploaded models, network-loaded
+  /// assets, or model editors.
+  ///
+  /// Example:
+  /// ```dart
+  /// final bytes = await rootBundle.load('assets/dash.glb');
+  /// final node = await Node.fromGlbBytes(bytes.buffer.asUint8List());
+  /// ```
+  static Future<Node> fromGlbBytes(Uint8List bytes) {
+    return importGlb(bytes);
+  }
+
+  /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.
+  static Future<Node> fromGlbAsset(String assetPath) async {
+    final byteData = await rootBundle.load(assetPath);
+    return importGlb(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
   }
 
   /// Deserialize a model from Flutter Scene's compact model format.
