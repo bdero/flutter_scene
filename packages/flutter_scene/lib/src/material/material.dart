@@ -24,7 +24,7 @@ abstract class Material {
       throw Exception('Failed to create white placeholder texture.');
     }
     _whitePlaceholderTexture!.overwrite(
-      Uint32List.fromList(<int>[0xFFFF7F7F]).buffer.asByteData(),
+      Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData(),
     );
     return _whitePlaceholderTexture!;
   }
