@@ -1,11 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../node.dart';
 import '../skin.dart';
-import 'accessor.dart';
-import 'gltf_types.dart';
 
 /// Builds an engine [Skin] from a glTF skin definition. Joints are resolved
 /// against the engine's full node list, and inverse-bind matrices are read

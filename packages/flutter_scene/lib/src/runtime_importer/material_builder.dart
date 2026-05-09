@@ -1,10 +1,10 @@
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../material/material.dart';
 import '../material/physically_based_material.dart';
 import '../material/unlit_material.dart';
-import 'gltf_types.dart';
 
 /// Builds an engine [Material] from a glTF material. Tier 2 wires up the
 /// texture slots from a pre-decoded list of [gpu.Texture]s indexed

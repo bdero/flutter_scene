@@ -2,10 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_importer/constants.dart';
+import 'package:flutter_scene_importer/gltf.dart';
 
 import '../geometry/geometry.dart';
-import 'accessor.dart';
-import 'gltf_types.dart';
 
 /// Builds an engine [Geometry] from a glTF mesh primitive.
 ///
