@@ -75,3 +75,16 @@
 ## 0.9.2-0
 
 * Fix globalTransform calculation.
+
+## 0.10.0
+
+* Migrate from `native_assets_cli` (discontinued) to `hooks` 1.0.
+  Breaking: build hook authors must now `import 'package:hooks/hooks.dart'`
+  instead of `package:native_assets_cli/native_assets_cli.dart`. (#82)
+* Drop the `--enable-experiment=native-assets` flag from the importer
+  process invocation. The flag was rejected by Dart 3.10+ and was the
+  literal cause of build failures for users on recent Dart channels. (#82)
+* Reorganize the repository as a pub workspace with separate `flutter_scene`
+  and `flutter_scene_importer` packages and an `examples/` sibling. No
+  user-facing surface changes from this; consumers see a cleaner package. (#36)
+* Update `flutter_gpu_shaders` to `^0.4.0` (also migrated to `hooks`).
