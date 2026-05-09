@@ -163,7 +163,19 @@ base class Scene implements SceneGraph {
   ///
   /// Optionally, a [ui.Rect] can be provided to define a viewport, limiting the rendering area on the canvas.
   /// If no [ui.Rect] is specified, the entire canvas will be rendered.
-  void render(Camera camera, ui.Canvas canvas, {ui.Rect? viewport}) {
+  ///
+  /// [pixelRatio] is the multiplier from logical to physical pixels used
+  /// when allocating the offscreen render target. Defaults to the
+  /// implicit view's `devicePixelRatio` (or `1.0` if no view is attached),
+  /// so the scene is rasterized at the same density Flutter is
+  /// compositing the surrounding UI at. Pass a smaller value to trade
+  /// fidelity for performance, or a larger one for supersampling.
+  void render(
+    Camera camera,
+    ui.Canvas canvas, {
+    ui.Rect? viewport,
+    double? pixelRatio,
+  }) {
     if (!_readyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
       debugPrint(
@@ -176,9 +188,24 @@ base class Scene implements SceneGraph {
     if (drawArea.isEmpty) {
       return;
     }
+
+    // Allocate the offscreen render target at physical-pixel resolution so
+    // the rasterized 3D content matches Flutter's framebuffer density.
+    // Without this, the texture is sized in logical pixels and the
+    // framebuffer compositor upscales it (visible as pixelation on
+    // high-DPI devices). See: https://github.com/bdero/flutter_scene/issues/60
+    final dpr =
+        pixelRatio ??
+        ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ??
+        1.0;
+    final pixelSize = ui.Size(
+      (drawArea.width * dpr).ceilToDouble(),
+      (drawArea.height * dpr).ceilToDouble(),
+    );
+
     final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
     final gpu.RenderTarget renderTarget = surface.getNextRenderTarget(
-      drawArea.size,
+      pixelSize,
       enableMsaa,
     );
 
@@ -189,7 +216,7 @@ base class Scene implements SceneGraph {
             )
             : environment;
 
-    final encoder = SceneEncoder(renderTarget, camera, drawArea.size, env);
+    final encoder = SceneEncoder(renderTarget, camera, pixelSize, env);
     root.render(encoder, Matrix4.identity());
     encoder.finish();
 
@@ -198,6 +225,11 @@ base class Scene implements SceneGraph {
             ? renderTarget.colorAttachments[0].resolveTexture!
             : renderTarget.colorAttachments[0].texture;
     final image = texture.asImage();
-    canvas.drawImage(image, drawArea.topLeft, ui.Paint());
+    canvas.drawImageRect(
+      image,
+      ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height),
+      drawArea,
+      ui.Paint()..filterQuality = ui.FilterQuality.medium,
+    );
   }
 }
