@@ -9,6 +9,8 @@ platforms:
   ios:
   android:
 
+resolution: workspace
+
 environment:
   sdk: '>=3.6.0-0 <4.0.0'
   flutter: ">=3.29.0-1.0.pre.242"
