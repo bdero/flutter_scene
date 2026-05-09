@@ -76,6 +76,17 @@
 
 * Fix globalTransform calculation.
 
+## 0.11.1
+
+* Fix `Node.globalTransform` setter. The previous implementation
+  computed `transform * parent.globalTransform.invert()`, but
+  `Matrix4.invert()` returns the determinant (a `double`) and mutates
+  the receiver, so this was scalar-multiplying `transform` by the
+  parent's determinant rather than composing with the parent's inverse.
+  Coincidentally produced correct results when the parent had `det=1`,
+  but produced garbage for any negative-determinant or non-uniformly-
+  scaled parent.
+
 ## 0.11.0
 
 * Add a runtime GLB importer. `Node.fromGlbBytes(Uint8List)` and
