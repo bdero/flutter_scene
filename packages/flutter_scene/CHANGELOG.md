@@ -76,6 +76,15 @@
 
 * Fix globalTransform calculation.
 
+## 0.11.0
+
+* Add a runtime GLB importer. `Node.fromGlbBytes(Uint8List)` and
+  `Node.fromGlbAsset(String)` decode a glTF binary directly at runtime —
+  no offline `.model` conversion, no build-hook step. Useful for
+  user-uploaded models, network-loaded assets, and model editors. (#12)
+* Bump `flutter_scene_importer` to `^0.11.0` (pure-Dart `.glb` → `.model`
+  build hook; CMake is no longer required).
+
 ## 0.10.0
 
 * Migrate from `native_assets_cli` (discontinued) to `hooks` 1.0.

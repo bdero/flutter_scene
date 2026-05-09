@@ -51,6 +51,19 @@
 * Update to native_assets_cli 0.13.0.
   Breaking: `BuildConfig` is now `BuildInput`
 
+## 0.11.0
+
+* Replace the C++ build-time importer with a pure-Dart pipeline. `.glb` →
+  `.model` conversion now runs in-process during `buildModels`; CMake and
+  the bundled native binary are no longer required to consume the package.
+  Output is byte-equivalent to the previous C++ output for vertex/index
+  data; lossy-PNG textures may decode slightly differently between
+  `package:image` and the prior `stb_image`-via-tinygltf decoder. (#12)
+* Remove the `findBuiltExecutable`, `findImporterPackageRoot`, and
+  `generateImporterFlatbufferDart` helpers from `offline_import.dart`.
+  These existed only to drive the cmake build; they have no replacement
+  because the build hook no longer needs them.
+
 ## 0.10.0
 
 * Migrate from `native_assets_cli` (discontinued) to `hooks` 1.0.
