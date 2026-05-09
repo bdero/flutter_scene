@@ -12,7 +12,7 @@ updates:
       interval: "daily"
   - package-ecosystem: "pub"
     versioning-strategy: "increase-if-necessary"
-    directory: "/importer/"
+    directory: "/packages/flutter_scene_importer/"
     schedule:
       interval: "daily"
   - package-ecosystem: "pub"
