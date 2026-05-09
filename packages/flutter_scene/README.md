@@ -87,3 +87,24 @@ Web is an important platform, and both `flutter_gpu` and `flutter_scene` will ev
 ### **Q:** I'm seeing errors when running the importer: `ProcessException: No such file or directory`. How do I fix it?
 
 Install [CMake](https://cmake.org/download/).
+
+## Repository
+
+This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) containing all of the related packages and the example app:
+
+| Path | Description |
+| --- | --- |
+| [`packages/flutter_scene`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene) | The core 3D rendering library. Published to pub.dev as [`flutter_scene`](https://pub.dev/packages/flutter_scene). |
+| [`packages/flutter_scene_importer`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_importer) | Offline glTF → Flutter Scene model importer (build hook). Published to pub.dev as [`flutter_scene_importer`](https://pub.dev/packages/flutter_scene_importer). |
+| [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app) | Runnable example app exercising the library. |
+
+To run the example app from a fresh clone:
+
+```sh
+flutter pub get                                             # resolves the workspace
+flutter config --enable-native-assets                       # one-time setup
+
+cd examples/flutter_app
+flutter create . --platforms=macos,ios,android,linux,windows  # generate gitignored platform stubs
+flutter run --enable-flutter-gpu --enable-impeller            # add `-d <device>` if needed
+```
