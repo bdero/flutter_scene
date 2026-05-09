@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import '../material/unlit_material.dart';
@@ -9,6 +10,7 @@ import 'glb.dart';
 import 'gltf_parser.dart';
 import 'gltf_types.dart';
 import 'material_builder.dart';
+import 'texture_builder.dart';
 
 /// Parse a GLB byte stream into a [Node] tree.
 ///
@@ -21,6 +23,10 @@ Future<Node> importGlb(Uint8List bytes) async {
 
   final bufferData = _resolveBufferData(doc, container.binaryChunk);
 
+  // Decode all textures up front so material construction can reference
+  // them by index without per-material async work.
+  final List<gpu.Texture> textures = await buildTextures(doc, bufferData);
+
   // Pre-allocate engine Node placeholders 1:1 with glTF nodes so children
   // can refer to them by index regardless of the order we visit them in.
   final List<Node> engineNodes = List.generate(doc.nodes.length, (_) => Node());
@@ -32,6 +38,7 @@ Future<Node> importGlb(Uint8List bytes) async {
       doc: doc,
       bufferData: bufferData,
       engineNodes: engineNodes,
+      textures: textures,
     );
   }
 
@@ -68,6 +75,7 @@ void _populateNode({
   required GltfDocument doc,
   required Uint8List bufferData,
   required List<Node> engineNodes,
+  required List<gpu.Texture> textures,
 }) {
   engineNode.name = gltfNode.name ?? '';
   engineNode.localTransform = _localTransformFor(gltfNode);
@@ -91,7 +99,7 @@ void _populateNode({
         bufferData: bufferData,
       );
       final material = p.material != null
-          ? buildMaterial(doc.materials[p.material!])
+          ? buildMaterial(doc.materials[p.material!], textures)
           : UnlitMaterial();
       primitives.add(MeshPrimitive(built.geometry, material));
     }
