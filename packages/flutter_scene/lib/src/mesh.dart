@@ -16,9 +16,13 @@ import 'package:vector_math/vector_math.dart';
 /// Each of these parts of the car has its own [Geometry] and [Material], and together
 /// they form the complete model.
 base class MeshPrimitive {
+  /// Pairs [geometry] with the [material] used to shade it.
   MeshPrimitive(this.geometry, this.material);
 
+  /// The vertex/index data drawn by this primitive.
   Geometry geometry;
+
+  /// The shader and per-material parameters used to render [geometry].
   Material material;
 }
 
@@ -32,6 +36,10 @@ base class Mesh {
   Mesh(Geometry geometry, Material material)
     : primitives = [MeshPrimitive(geometry, material)];
 
+  /// Creates a `Mesh` composed of the supplied [MeshPrimitive] list.
+  ///
+  /// Use this constructor for multi-material models, where each
+  /// [MeshPrimitive] pairs a separate [Geometry] with its own [Material].
   Mesh.primitives({required this.primitives});
 
   /// The list of [MeshPrimitive] objects that make up the [Geometry] and [Material] of the 3D model.

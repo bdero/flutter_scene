@@ -23,10 +23,36 @@ int _getNextPowerOfTwoSize(int x) {
   return x + 1;
 }
 
+/// A skeletal binding used by skinned meshes for animation.
+///
+/// A `Skin` pairs an ordered list of [joints] (scene-graph [Node]s acting as
+/// bones) with the [inverseBindMatrices] that transform a mesh from model
+/// space into each joint's rest-pose local space. The vertex shader
+/// combines these with the joints' current transforms to deform the mesh.
+///
+/// `Skin` instances are usually populated by an importer rather than
+/// constructed directly. They are attached to the mesh-bearing [Node] via
+/// [Node.skin].
 base class Skin {
+  /// The bone nodes referenced by this skin, in shader-binding order.
+  ///
+  /// Entries may be `null` when [Node.clone] is unable to relocate a joint
+  /// in the cloned subtree; the renderer treats null joints as identity
+  /// transforms.
   final List<Node?> joints = [];
+
+  /// The inverse bind matrix for each joint, transforming a vertex from
+  /// model space into the joint's rest-pose local space.
+  ///
+  /// Parallel to [joints]: `inverseBindMatrices[i]` corresponds to
+  /// `joints[i]`.
   final List<Matrix4> inverseBindMatrices = [];
 
+  /// Creates a [Skin] from a deserialized flatbuffer skin description,
+  /// resolving each joint reference against the supplied [sceneNodes].
+  ///
+  /// Throws if joints and inverse bind matrices are absent or have mismatched
+  /// lengths, or if a joint index falls outside [sceneNodes].
   static Skin fromFlatbuffer(fb.Skin skin, List<Node> sceneNodes) {
     if (skin.joints == null ||
         skin.inverseBindMatrices == null ||
@@ -56,6 +82,15 @@ base class Skin {
     return result;
   }
 
+  /// Computes the joint matrices for the current frame and uploads them as
+  /// a square `RGBA32F` GPU texture.
+  ///
+  /// Each joint occupies four texels (one matrix). The texture's edge
+  /// length is rounded up to the next power of two to satisfy GPU sampling
+  /// requirements; unused slots are initialized to identity.
+  ///
+  /// The companion [getTextureWidth] returns the same edge length so the
+  /// vertex shader can index into the texture.
   gpu.Texture getJointsTexture() {
     // Each joint has a matrix. 1 matrix = 16 floats. 1 pixel = 4 floats.
     // Therefore, each joint needs 4 pixels.
@@ -125,6 +160,8 @@ base class Skin {
     return texture;
   }
 
+  /// The edge length, in texels, of the joints texture produced by
+  /// [getJointsTexture].
   int getTextureWidth() {
     return _getNextPowerOfTwoSize(sqrt(joints.length * 4).ceil());
   }
