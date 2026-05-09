@@ -14,7 +14,7 @@ dependencies:
     path: ../../
   #flutter_scene_importer: ^0.9.2-0
   flutter_scene_importer:
-    path: ../../importer
+    path: ../../packages/flutter_scene_importer
   native_assets_cli: '>=0.13.0 <0.14.0'
   vector_math: ^2.1.4
 

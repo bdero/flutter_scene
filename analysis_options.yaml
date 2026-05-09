@@ -4,8 +4,8 @@ analyzer:
   exclude: [
     build/**,
     lib/**.g.dart,
-    importer/build/**,
-    importer/lib/generated/**,
+    packages/flutter_scene_importer/build/**,
+    packages/flutter_scene_importer/lib/generated/**,
     examples/**,
   ]
   errors:
