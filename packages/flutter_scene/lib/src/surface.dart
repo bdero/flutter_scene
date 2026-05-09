@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
+/// Manages a small ring of [gpu.RenderTarget]s used to draw a [Scene].
+///
+/// Each [Scene] owns one `Surface`. On every frame the renderer asks the
+/// surface for a render target via [getNextRenderTarget]; the surface
+/// either reuses an existing target from its ring or creates a new one
+/// (along with an MSAA resolve attachment if requested). The ring resets
+/// whenever the requested size changes.
+///
+/// Applications typically don't interact with `Surface` directly — it is
+/// driven internally by [Scene.render].
 class Surface {
   // TODO(bdero): There should be a method on the Flutter GPU context to pull
   //              this information.
@@ -13,6 +23,12 @@ class Surface {
   int _cursor = 0;
   Size _previousSize = const Size(0, 0);
 
+  /// Returns the next [gpu.RenderTarget] in the rotating ring.
+  ///
+  /// Allocates a fresh target (color + depth attachments, plus a 4x MSAA
+  /// resolve attachment when [enableMsaa] is `true`) when the ring is not
+  /// yet full. The ring is dropped and rebuilt whenever [size] changes
+  /// from the previous call.
   gpu.RenderTarget getNextRenderTarget(Size size, bool enableMsaa) {
     if (size != _previousSize) {
       _cursor = 0;
