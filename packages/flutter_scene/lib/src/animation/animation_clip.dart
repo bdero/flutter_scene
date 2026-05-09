@@ -82,6 +82,26 @@ class AnimationClip {
     seek(0);
   }
 
+  /// Seeks back to the beginning and starts playing.
+  ///
+  /// Useful for non-looping clips that were left paused at their end
+  /// after a previous play, where the natural game-loop pattern of
+  /// `clip.playing = someCondition` doesn't trigger a fresh play.
+  /// Equivalent to `seek(0); play();`.
+  void replay() {
+    seek(0);
+    playing = true;
+  }
+
+  /// Seeks to [time] (clamped to `[0, Animation.endTime]`) and starts
+  /// playing.
+  ///
+  /// Equivalent to `seek(time); play();`.
+  void gotoAndPlay(double time) {
+    seek(time);
+    playing = true;
+  }
+
   /// Sets [playbackTime] to [time] (clamped to `[0, Animation.endTime]`).
   void seek(double time) {
     _playbackTime = clampDouble(time, 0, _animation.endTime);
