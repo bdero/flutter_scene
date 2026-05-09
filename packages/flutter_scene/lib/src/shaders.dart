@@ -4,6 +4,16 @@ const String _kBaseShaderBundlePath =
     'packages/flutter_scene/build/shaderbundles/base.shaderbundle';
 
 gpu.ShaderLibrary? _baseShaderLibrary;
+
+/// The shader bundle shipped with `flutter_scene`, lazily loaded on first
+/// access.
+///
+/// Contains the vertex and fragment shaders used by the built-in
+/// geometries (`UnskinnedVertex`, `SkinnedVertex`) and materials
+/// (`StandardFragment`, `UnlitFragment`). Custom [Geometry] or [Material]
+/// subclasses can pull additional shaders from this library.
+///
+/// Throws if the bundled shader asset cannot be loaded.
 gpu.ShaderLibrary get baseShaderLibrary {
   if (_baseShaderLibrary != null) {
     return _baseShaderLibrary!;
