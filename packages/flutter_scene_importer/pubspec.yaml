@@ -22,6 +22,7 @@ dependencies:
   flutter_gpu:
     sdk: flutter
   hooks: ^1.0.0
+  image: ^4.5.0
   logging: ^1.2.0
   vector_math: ^2.1.4
 
