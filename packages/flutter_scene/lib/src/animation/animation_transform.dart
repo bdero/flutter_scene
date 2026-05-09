@@ -35,6 +35,7 @@ class DecomposedTransform {
     return Matrix4.compose(translation, rotation, scale);
   }
 
+  /// Returns a deep copy of this transform.
   DecomposedTransform clone() {
     return DecomposedTransform(
       translation: translation.clone(),
@@ -44,13 +45,25 @@ class DecomposedTransform {
   }
 }
 
+/// Per-node animation state held by an [AnimationPlayer].
+///
+/// Pairs the node's static [bindPose] (its rest transform) with a
+/// scratch [animatedPose] that the player resets each frame and that
+/// active [AnimationClip]s additively blend into.
 class AnimationTransforms {
+  /// The node's rest-pose transform, captured when the node is first
+  /// registered with an [AnimationPlayer].
   DecomposedTransform bindPose;
+
+  /// Scratch transform mutated by clips during [AnimationPlayer.update].
+  ///
+  /// Reset to a copy of [bindPose] at the start of each frame.
   DecomposedTransform animatedPose = DecomposedTransform(
     translation: Vector3.zero(),
     rotation: Quaternion.identity(),
     scale: Vector3.all(1.0),
   );
 
+  /// Creates an [AnimationTransforms] anchored at the supplied bind pose.
   AnimationTransforms({required this.bindPose});
 }

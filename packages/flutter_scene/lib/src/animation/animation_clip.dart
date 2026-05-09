@@ -8,49 +8,91 @@ class _ChannelBinding {
 }
 
 /// An instance of an [Animation] that has been bound to a specific [Node].
+///
+/// Create one with [Node.createAnimationClip]. Each clip carries its own
+/// [playing], [playbackTime], [playbackTimeScale], [weight], and [loop]
+/// state, so the same [Animation] can be played at different speeds and
+/// blends across multiple subtrees.
+///
+/// Multiple clips on the same node are blended by an internal
+/// [AnimationPlayer] that normalizes their weights when the sum exceeds
+/// `1`.
 class AnimationClip {
   final Animation _animation;
   final List<_ChannelBinding> _bindings = [];
 
   double _playbackTime = 0;
+
+  /// The current playback position in seconds, in `[0, Animation.endTime]`.
+  ///
+  /// Assigning is equivalent to calling [seek].
   double get playbackTime => _playbackTime;
   set playbackTime(double timeInSeconds) {
     seek(timeInSeconds);
   }
 
+  /// Speed multiplier applied to delta times when [advance] is called.
+  ///
+  /// `1` is real-time; `2` plays the clip at double speed; negative
+  /// values play in reverse.
   double playbackTimeScale = 1;
 
   double _weight = 1;
+
+  /// Blend weight in `[0, 1]`, used by [AnimationPlayer] to mix this
+  /// clip with other concurrently playing clips on the same node.
+  ///
+  /// Assignments are clamped to the valid range.
   double get weight => _weight;
   set weight(double value) {
     _weight = clampDouble(value, 0, 1);
   }
 
+  /// Whether [advance] should integrate elapsed time into [playbackTime].
+  ///
+  /// Toggle indirectly with [play], [pause], or [stop].
   bool playing = false;
 
+  /// Whether the clip should wrap around at the end of the animation
+  /// (or the beginning, when playing in reverse) instead of pausing.
   bool loop = false;
 
+  /// Binds [_animation] to the node subtree rooted at [bindTarget].
+  ///
+  /// Only channels whose [BindKey.nodeName] is found in the subtree are
+  /// retained; missing nodes are silently ignored.
   AnimationClip(this._animation, Node bindTarget) {
     _bindToTarget(bindTarget);
   }
 
+  /// Starts (or resumes) playback. Equivalent to setting [playing] to
+  /// `true`.
   void play() {
     playing = true;
   }
 
+  /// Pauses playback at the current [playbackTime].
   void pause() {
     playing = false;
   }
 
+  /// Pauses playback and seeks back to the beginning.
   void stop() {
     playing = false;
     seek(0);
   }
 
+  /// Sets [playbackTime] to [time] (clamped to `[0, Animation.endTime]`).
   void seek(double time) {
     _playbackTime = clampDouble(time, 0, _animation.endTime);
   }
 
+  /// Advances [playbackTime] by [deltaTime] seconds (scaled by
+  /// [playbackTimeScale]).
+  ///
+  /// No-op when the clip is not [playing] or `deltaTime <= 0`. Handles
+  /// looping behavior: if [loop] is `false`, playback clamps and pauses
+  /// at the boundaries; if `true`, it wraps around.
   void advance(double deltaTime) {
     if (!playing || deltaTime <= 0) {
       return;
@@ -97,6 +139,12 @@ class AnimationClip {
     }
   }
 
+  /// Evaluates each bound channel at [playbackTime] and accumulates the
+  /// result into [transformDecomps].
+  ///
+  /// Called once per frame by [AnimationPlayer.update]. [weightMultiplier]
+  /// is the player-wide normalization applied when concurrent clips'
+  /// weights sum to more than `1`.
   void applyToBindings(
     Map<Node, AnimationTransforms> transformDecomps,
     double weightMultiplier,
