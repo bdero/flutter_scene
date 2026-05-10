@@ -1,3 +1,19 @@
+## 0.12.0
+
+* `.model` flatbuffer now carries `MeshPrimitive.bounds_aabb`,
+  `MeshPrimitive.bounds_sphere`, and `Node.combined_local_aabb` so
+  the runtime can cull subtrees without re-scanning vertex
+  positions on every load. Older `.model` files (without these
+  fields) continue to load.
+* New `MeshPrimitive.skinned_pose_union_aabb` baked offline by
+  sampling every animation that drives any joint of the bound
+  skin, building the joint palette per keyframe, and unioning
+  per-joint vertex influence AABBs transformed by the palette.
+  Lets the runtime cull skinned content soundly instead of
+  treating it as always visible.
+* Read POSITION accessor `min` / `max` from glTF when present so
+  the bake can skip the vertex scan for unskinned primitives.
+
 ## 0.1.0
 
 * Implementation for the offline model importer.

@@ -1,3 +1,24 @@
+## 0.12.0
+
+* Add bounding-volume and frustum-culling infrastructure. The scene
+  encoder now builds a `Frustum` once per render from the camera's
+  view-projection matrix and skips entire subtrees whose combined
+  local-space AABB lies outside it.
+* Skinned subtrees are culled against an offline-baked pose-union
+  AABB that covers every animated pose. The runtime falls through
+  to the always-visible path for skinned content imported via the
+  runtime GLB importer (`Node.fromGlbBytes` / `Node.fromGlbAsset`)
+  since the pose-union analysis runs only in the offline importer.
+* New public API:
+  - `Geometry.localBounds`, `Geometry.localBoundingSphere`,
+    `Geometry.setLocalBounds(aabb, sphere)`.
+  - `Mesh.localBounds` (cached union of primitive bounds) and
+    `Mesh.markLocalBoundsDirty()`.
+  - `Node.combinedLocalBounds` (cached union including transformed
+    descendants), `Node.frustumCulled` (default `true`),
+    `Node.markBoundsDirty()`, `Node.isVisibleTo(camera, dimensions)`.
+  - `Camera.getFrustum(dimensions)`.
+
 ## 0.0.1-dev.1
 
 * Initial render box.
