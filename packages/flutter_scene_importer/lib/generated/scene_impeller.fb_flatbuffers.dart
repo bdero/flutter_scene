@@ -2079,9 +2079,22 @@ class MeshPrimitive {
   Sphere? get boundsSphere =>
       Sphere.reader.vTableGetNullable(_bc, _bcOffset, 14);
 
+  ///  For skinned primitives only: union of vertex positions across every
+  ///  pose the primitive can take under the file's animations, computed
+  ///  offline by sampling each animation's keyframes and applying the
+  ///  resulting joint palette.
+  ///
+  ///  In the same local space as `bounds_aabb` (the mesh's vertex-position
+  ///  space). Lets the runtime cull skinned content soundly instead of
+  ///  treating it as always-visible. Absent on unskinned primitives, and
+  ///  on skinned primitives when offline pose-union analysis isn't
+  ///  available (e.g. older importer output).
+  Aabb3? get skinnedPoseUnionAabb =>
+      Aabb3.reader.vTableGetNullable(_bc, _bcOffset, 16);
+
   @override
   String toString() {
-    return 'MeshPrimitive{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}}';
+    return 'MeshPrimitive{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}, skinnedPoseUnionAabb: ${skinnedPoseUnionAabb}}';
   }
 
   MeshPrimitiveT unpack() => MeshPrimitiveT(
@@ -2091,6 +2104,7 @@ class MeshPrimitive {
     material: material?.unpack(),
     boundsAabb: boundsAabb?.unpack(),
     boundsSphere: boundsSphere?.unpack(),
+    skinnedPoseUnionAabb: skinnedPoseUnionAabb?.unpack(),
   );
 
   static int pack(fb.Builder fbBuilder, MeshPrimitiveT? object) {
@@ -2113,6 +2127,18 @@ class MeshPrimitiveT implements fb.Packable {
   Aabb3T? boundsAabb;
   SphereT? boundsSphere;
 
+  ///  For skinned primitives only: union of vertex positions across every
+  ///  pose the primitive can take under the file's animations, computed
+  ///  offline by sampling each animation's keyframes and applying the
+  ///  resulting joint palette.
+  ///
+  ///  In the same local space as `bounds_aabb` (the mesh's vertex-position
+  ///  space). Lets the runtime cull skinned content soundly instead of
+  ///  treating it as always-visible. Absent on unskinned primitives, and
+  ///  on skinned primitives when offline pose-union analysis isn't
+  ///  available (e.g. older importer output).
+  Aabb3T? skinnedPoseUnionAabb;
+
   MeshPrimitiveT({
     this.verticesType,
     this.vertices,
@@ -2120,6 +2146,7 @@ class MeshPrimitiveT implements fb.Packable {
     this.material,
     this.boundsAabb,
     this.boundsSphere,
+    this.skinnedPoseUnionAabb,
   });
 
   @override
@@ -2127,7 +2154,7 @@ class MeshPrimitiveT implements fb.Packable {
     final int? verticesOffset = vertices?.pack(fbBuilder);
     final int? indicesOffset = indices?.pack(fbBuilder);
     final int? materialOffset = material?.pack(fbBuilder);
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(7);
     fbBuilder.addUint8(0, verticesType?.value);
     fbBuilder.addOffset(1, verticesOffset);
     fbBuilder.addOffset(2, indicesOffset);
@@ -2138,12 +2165,15 @@ class MeshPrimitiveT implements fb.Packable {
     if (boundsSphere != null) {
       fbBuilder.addStruct(5, boundsSphere!.pack(fbBuilder));
     }
+    if (skinnedPoseUnionAabb != null) {
+      fbBuilder.addStruct(6, skinnedPoseUnionAabb!.pack(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
   @override
   String toString() {
-    return 'MeshPrimitiveT{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}}';
+    return 'MeshPrimitiveT{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}, skinnedPoseUnionAabb: ${skinnedPoseUnionAabb}}';
   }
 }
 
@@ -2161,7 +2191,7 @@ class MeshPrimitiveBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(7);
   }
 
   int addVerticesType(VertexBufferTypeId? verticesType) {
@@ -2194,6 +2224,11 @@ class MeshPrimitiveBuilder {
     return fbBuilder.offset;
   }
 
+  int addSkinnedPoseUnionAabb(int offset) {
+    fbBuilder.addStruct(6, offset);
+    return fbBuilder.offset;
+  }
+
   int finish() {
     return fbBuilder.endTable();
   }
@@ -2206,6 +2241,7 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
   final MaterialObjectBuilder? _material;
   final Aabb3ObjectBuilder? _boundsAabb;
   final SphereObjectBuilder? _boundsSphere;
+  final Aabb3ObjectBuilder? _skinnedPoseUnionAabb;
 
   MeshPrimitiveObjectBuilder({
     VertexBufferTypeId? verticesType,
@@ -2214,12 +2250,14 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
     MaterialObjectBuilder? material,
     Aabb3ObjectBuilder? boundsAabb,
     SphereObjectBuilder? boundsSphere,
+    Aabb3ObjectBuilder? skinnedPoseUnionAabb,
   }) : _verticesType = verticesType,
        _vertices = vertices,
        _indices = indices,
        _material = material,
        _boundsAabb = boundsAabb,
-       _boundsSphere = boundsSphere;
+       _boundsSphere = boundsSphere,
+       _skinnedPoseUnionAabb = skinnedPoseUnionAabb;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -2227,7 +2265,7 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
     final int? verticesOffset = _vertices?.getOrCreateOffset(fbBuilder);
     final int? indicesOffset = _indices?.getOrCreateOffset(fbBuilder);
     final int? materialOffset = _material?.getOrCreateOffset(fbBuilder);
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(7);
     fbBuilder.addUint8(0, _verticesType?.value);
     fbBuilder.addOffset(1, verticesOffset);
     fbBuilder.addOffset(2, indicesOffset);
@@ -2237,6 +2275,9 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
     }
     if (_boundsSphere != null) {
       fbBuilder.addStruct(5, _boundsSphere!.finish(fbBuilder));
+    }
+    if (_skinnedPoseUnionAabb != null) {
+      fbBuilder.addStruct(6, _skinnedPoseUnionAabb!.finish(fbBuilder));
     }
     return fbBuilder.endTable();
   }

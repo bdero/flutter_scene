@@ -257,24 +257,35 @@ void main() {
       expect(root.combinedLocalBounds!.max, Vector3(5, 5, 5));
     });
 
-    test(
-      'returns null for skinned subtrees regardless of primitive bounds',
-      () {
-        // Skinned bind-pose extents are misleading: animated joints can
-        // place geometry far outside them. The bounds API treats any
-        // skinned node as "always visible" until PR 3 bakes a pose-union
-        // AABB.
-        final node = Node(
-          mesh: Mesh.primitives(
-            primitives: [
-              _primWithBounds(_aabb(Vector3(-1, -1, -1), Vector3(1, 1, 1))),
-            ],
-          ),
-        );
-        node.skin = Skin();
-        expect(node.combinedLocalBounds, isNull);
-      },
-    );
+    test('skinned node uses the geometry localBounds (which the importer '
+        'pre-populates with the pose-union AABB)', () {
+      // Stub geometry stands in for an importer-baked geometry whose
+      // localBounds was set from skinnedPoseUnionAabb.
+      final node = Node(
+        mesh: Mesh.primitives(
+          primitives: [
+            _primWithBounds(_aabb(Vector3(-2, -2, -2), Vector3(2, 2, 2))),
+          ],
+        ),
+      );
+      node.skin = Skin();
+      // The bound the test injects via setLocalBounds is treated as
+      // already representing the pose-union extent, so the runtime
+      // uses it for cull.
+      expect(node.combinedLocalBounds!.min, Vector3(-2, -2, -2));
+      expect(node.combinedLocalBounds!.max, Vector3(2, 2, 2));
+    });
+
+    test('skinned node with no geometry bounds is treated as unbounded', () {
+      // Falls through the bake (no animations to derive a pose-union
+      // from, or analysis was skipped). Runtime conservatively
+      // treats the subtree as always visible.
+      final node = Node(
+        mesh: Mesh.primitives(primitives: [_primWithBounds(null)]),
+      );
+      node.skin = Skin();
+      expect(node.combinedLocalBounds, isNull);
+    });
 
     test('mesh setter invalidates the cache', () {
       final node = Node(

@@ -33,6 +33,19 @@ class _StubGeometry extends Geometry {
   }
 }
 
+class _StubGeometryNoBounds extends Geometry {
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    Matrix4 modelTransform,
+    Matrix4 cameraTransform,
+    Vector3 cameraPosition,
+  ) {
+    throw UnsupportedError('Stub geometry is not renderable');
+  }
+}
+
 class _StubMaterial extends Material {
   @override
   void bind(
@@ -111,8 +124,27 @@ void main() {
       expect(node.isVisibleTo(_cameraLookingAtOrigin(), _viewport), isTrue);
     });
 
-    test('unbounded subtree (skinned) is treated as always visible', () {
-      final node = _unitCubeNodeAt(Vector3(1000, 0, 0));
+    test(
+      'skinned node uses geometry bounds when present (pose-union path)',
+      () {
+        // Skinned but with bounds (importer populated localBounds from
+        // skinnedPoseUnionAabb). Treated like any other bounded
+        // subtree.
+        final node = _unitCubeNodeAt(Vector3(1000, 0, 0));
+        node.skin = Skin();
+        expect(node.isVisibleTo(_cameraLookingAtOrigin(), _viewport), isFalse);
+      },
+    );
+
+    test('skinned node without bounds is treated as always visible', () {
+      // No pose-union baked (e.g. no animations in the source).
+      // Runtime conservatively skips cull.
+      final node = Node(
+        localTransform: Matrix4.translation(Vector3(1000, 0, 0)),
+        mesh: Mesh.primitives(
+          primitives: [MeshPrimitive(_StubGeometryNoBounds(), _StubMaterial())],
+        ),
+      );
       node.skin = Skin();
       expect(node.isVisibleTo(_cameraLookingAtOrigin(), _viewport), isTrue);
     });
