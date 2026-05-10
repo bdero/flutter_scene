@@ -120,31 +120,39 @@ abstract class Geometry {
     }
 
     // Pre-populate bounds from the flatbuffer when present so
-    // uploadVertexData can skip the position scan. Geometry written by
-    // older importers (without bounds) falls back to a scan.
+    // uploadVertexData can skip the position scan.
     //
-    // For skinned primitives, prefer the offline-baked
-    // `skinned_pose_union_aabb` since it covers every animated pose
-    // extent. The static-pose `bounds_aabb` is only useful for
-    // editor-style queries on bind-pose extents and would produce
-    // wrong cull decisions when joints animate beyond it.
+    // For skinned primitives, only the offline-baked
+    // `skinned_pose_union_aabb` is sound for cull. The static-pose
+    // `bounds_aabb` is useful for editor-style queries on bind-pose
+    // extents but would under-cover the mesh once joints animate.
+    // When the importer didn't bake a pose-union (older `.model`
+    // files), bounds remain `null` and `Geometry.uploadVertexData`
+    // skips the auto-scan for skinned geometries — the runtime
+    // conservatively treats the subtree as always visible.
+    //
+    // Unskinned primitives use the (sound) static AABB and sphere
+    // from the flatbuffer, falling back to a position scan in
+    // `uploadVertexData` when the importer didn't bake bounds.
     final fbAabb =
-        isSkinned
-            ? (fbPrimitive.skinnedPoseUnionAabb ?? fbPrimitive.boundsAabb)
-            : fbPrimitive.boundsAabb;
+        isSkinned ? fbPrimitive.skinnedPoseUnionAabb : fbPrimitive.boundsAabb;
     if (fbAabb != null) {
       geometry._localBounds = vm.Aabb3.minMax(
         vm.Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
         vm.Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
       );
     }
-    if (isSkinned && fbPrimitive.skinnedPoseUnionAabb != null) {
-      // Derive the sphere from the pose-union AABB so it covers the
-      // same animated extent. The baked `bounds_sphere` is fit to the
-      // static bind-pose mesh and would be too small.
-      geometry._localBoundingSphere = _circumscribedSphere(
-        geometry._localBounds!,
-      );
+    if (isSkinned) {
+      if (geometry._localBounds != null) {
+        // Derive the sphere from the pose-union AABB so it covers the
+        // same animated extent. The baked `bounds_sphere` is fit to
+        // the static bind-pose mesh and would be too small.
+        geometry._localBoundingSphere = _circumscribedSphere(
+          geometry._localBounds!,
+        );
+      }
+      // No pose-union: leave both bounds null so the runtime treats
+      // the subtree as always visible.
     } else {
       final fbSphere = fbPrimitive.boundsSphere;
       if (fbSphere != null) {
@@ -237,10 +245,20 @@ abstract class Geometry {
       );
     }
 
-    if (_localBounds == null && vertexCount > 0) {
+    if (_localBounds == null && vertexCount > 0 && _autoScanBoundsOnUpload) {
       _scanLocalBoundsFromVertices(vertices, vertexCount);
     }
   }
+
+  /// Whether [uploadVertexData] should auto-populate [localBounds] from
+  /// the vertex positions when no bound has been set yet. True by
+  /// default; [SkinnedGeometry] overrides it to `false` since the
+  /// position scan would yield bind-pose extents, which under-cover
+  /// the skinned mesh once joints animate. Skinned geometries get
+  /// their bounds from the offline-baked `skinned_pose_union_aabb`
+  /// instead, or fall back to the always-visible cull path when the
+  /// importer didn't bake one (notably the runtime GLB importer).
+  bool get _autoScanBoundsOnUpload => true;
 
   /// Scan the position attribute (the first 12 bytes of each vertex,
   /// shared across the unskinned 48-byte and skinned 80-byte layouts)
@@ -406,6 +424,9 @@ class SkinnedGeometry extends Geometry {
   SkinnedGeometry() {
     setVertexShader(baseShaderLibrary['SkinnedVertex']!);
   }
+
+  @override
+  bool get _autoScanBoundsOnUpload => false;
 
   @override
   void setJointsTexture(gpu.Texture? texture, int width) {
