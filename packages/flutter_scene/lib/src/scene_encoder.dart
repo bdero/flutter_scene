@@ -48,6 +48,7 @@ base class SceneEncoder {
     this._environment,
   ) {
     _cameraTransform = _camera.getViewTransform(dimensions);
+    frustum = Frustum.matrix(_cameraTransform);
     _commandBuffer = gpu.gpuContext.createCommandBuffer();
     _transientsBuffer = gpu.gpuContext.createHostBuffer();
 
@@ -65,6 +66,16 @@ base class SceneEncoder {
   late final gpu.HostBuffer _transientsBuffer;
   late final gpu.RenderPass _renderPass;
   final List<_TranslucentRecord> _translucentRecords = [];
+
+  /// View frustum derived from the camera's view-projection matrix at
+  /// the start of this frame. Used by [Node.render] for subtree-level
+  /// culling.
+  late final Frustum frustum;
+
+  /// Reusable AABB owned by this encoder so the per-node cull check can
+  /// transform a local AABB into world space without allocating a new
+  /// [Aabb3] every frame, every node.
+  final Aabb3 cullScratchAabb = Aabb3();
 
   /// Records a draw call for [geometry] with [material] at
   /// [worldTransform].

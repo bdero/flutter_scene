@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -38,6 +39,18 @@ base class Node implements SceneGraph {
 
   /// Whether this node is visible in the scene. If false, the node and its children will not be rendered.
   bool visible = true;
+
+  /// Whether this node and its descendants should be tested against the
+  /// camera frustum each frame. When `true` (the default), subtrees
+  /// whose [combinedLocalBounds] don't intersect the frustum are
+  /// skipped entirely. Set to `false` for procedural geometry, large
+  /// terrain pieces, or anything else where the cached bound is
+  /// known-stale or known-misleading.
+  ///
+  /// Subtrees that report no bound (skinned content, geometry without
+  /// computable bounds) are treated as always visible regardless of
+  /// this flag.
+  bool frustumCulled = true;
 
   /// The transformation matrix representing the node's position, rotation, and scale relative to the parent node.
   ///
@@ -165,6 +178,27 @@ base class Node implements SceneGraph {
 
     _combinedBoundsCache = subtreeBounded ? result : null;
     _combinedBoundsCached = true;
+  }
+
+  /// Whether this node's subtree would survive frustum culling against
+  /// [camera] for a render target of the given [dimensions].
+  ///
+  /// Returns `true` when the node is configured to opt out of culling
+  /// ([frustumCulled] is `false`), when the subtree is unbounded
+  /// (skinned content, or geometry without computable bounds, both of
+  /// which the renderer conservatively treats as always visible), or
+  /// when the world-space AABB intersects the camera frustum. Returns
+  /// `false` only when there is a sound bound and it lies entirely
+  /// outside the frustum.
+  ///
+  /// Uses [globalTransform] to place the subtree's local-space AABB
+  /// into world space.
+  bool isVisibleTo(Camera camera, Size dimensions) {
+    if (!frustumCulled) return true;
+    final bounds = combinedLocalBounds;
+    if (bounds == null) return true;
+    final worldAabb = vm.Aabb3.copy(bounds)..transform(globalTransform);
+    return camera.getFrustum(dimensions).intersectsWithAabb3(worldAabb);
   }
 
   /// Mark this node's [combinedLocalBounds] cache (and every ancestor's)
@@ -699,6 +733,22 @@ base class Node implements SceneGraph {
     }
 
     final worldTransform = parentWorldTransform * localTransform;
+
+    // Subtree-level frustum cull. Skipped when the user opted out
+    // (frustumCulled = false) or when the subtree reports no bound
+    // (skinned content, or geometry without computable bounds — both
+    // of which conservatively pass through to the render path).
+    if (frustumCulled) {
+      final localBounds = combinedLocalBounds;
+      if (localBounds != null) {
+        encoder.cullScratchAabb.copyFrom(localBounds);
+        encoder.cullScratchAabb.transform(worldTransform);
+        if (!encoder.frustum.intersectsWithAabb3(encoder.cullScratchAabb)) {
+          return;
+        }
+      }
+    }
+
     if (mesh != null) {
       mesh!.render(
         encoder,

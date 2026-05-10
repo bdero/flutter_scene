@@ -22,6 +22,15 @@ abstract class Camera {
   /// [dimensions] (typically to compute aspect ratio) and any subclass
   /// configuration to build the matrix.
   Matrix4 getViewTransform(ui.Size dimensions);
+
+  /// Returns the view frustum (six normalized clip planes) for a render
+  /// target of the given [dimensions].
+  ///
+  /// Built from [getViewTransform] using the standard Gribb-Hartmann
+  /// extraction. Useful for [Node.isVisibleTo] queries and any other
+  /// caller-driven culling.
+  Frustum getFrustum(ui.Size dimensions) =>
+      Frustum.matrix(getViewTransform(dimensions));
 }
 
 Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
