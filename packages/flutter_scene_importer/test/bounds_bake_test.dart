@@ -87,45 +87,103 @@ void main() {
     },
   );
 
-  test('dash.glb: skinned subtree opts out of combined AABB', () {
-    final scene = _emitAndDecode('examples/assets_src/dash.glb');
-    if (scene == null) {
-      print('dash.glb missing — skipping.');
-      return;
-    }
+  test(
+    'dash.glb: skinned primitives get a pose-union AABB and combined AABBs',
+    () {
+      final scene = _emitAndDecode('examples/assets_src/dash.glb');
+      if (scene == null) {
+        print('dash.glb missing — skipping.');
+        return;
+      }
 
-    // Dash has a skin; the importer must omit combined_local_aabb on
-    // every ancestor of any skinned node, all the way to root.
-    bool foundSkinnedNode = false;
-    for (final node in scene.nodes ?? const <fb.Node>[]) {
-      if (node.skin != null) {
+      // Dash has skinned primitives. Each skinned primitive should now
+      // carry a pose-union AABB, AND the static-pose AABB the runtime
+      // would have rendered before any animation.
+      bool foundSkinnedNode = false;
+      int skinnedPrimCount = 0;
+      for (final node in scene.nodes ?? const <fb.Node>[]) {
+        if (node.skin == null) continue;
         foundSkinnedNode = true;
+        for (final p in node.meshPrimitives ?? const <fb.MeshPrimitive>[]) {
+          skinnedPrimCount++;
+          expect(p.boundsAabb, isNotNull);
+          expect(
+            p.skinnedPoseUnionAabb,
+            isNotNull,
+            reason:
+                'skinned primitive on ${node.name} should have a pose-union AABB',
+          );
+          // The pose-union AABB must contain the static-pose AABB,
+          // since t=0 (bind pose) is always one of the sample times.
+          final pose = p.skinnedPoseUnionAabb!;
+          final stat = p.boundsAabb!;
+          expect(pose.min.x, lessThanOrEqualTo(stat.min.x + 1e-3));
+          expect(pose.min.y, lessThanOrEqualTo(stat.min.y + 1e-3));
+          expect(pose.min.z, lessThanOrEqualTo(stat.min.z + 1e-3));
+          expect(pose.max.x, greaterThanOrEqualTo(stat.max.x - 1e-3));
+          expect(pose.max.y, greaterThanOrEqualTo(stat.max.y - 1e-3));
+          expect(pose.max.z, greaterThanOrEqualTo(stat.max.z - 1e-3));
+        }
+        // Skinned subtrees now get a baked combined AABB derived from
+        // their pose-union extents. The previous behaviour (always-null
+        // for skinned subtrees) was a v1 conservative hack.
         expect(
           node.combinedLocalAabb,
-          isNull,
-          reason: 'skinned node ${node.name} should not have a combined AABB',
+          isNotNull,
+          reason: 'skinned node ${node.name} should now have a combined AABB',
         );
       }
-    }
-    expect(
-      foundSkinnedNode,
-      isTrue,
-      reason: 'dash should contain a skinned node',
-    );
+      expect(
+        foundSkinnedNode,
+        isTrue,
+        reason: 'dash should contain a skinned node',
+      );
+      expect(skinnedPrimCount, greaterThan(0));
+    },
+  );
 
-    // Primitive-level bounds are still baked even for skinned vertex
-    // buffers (they describe bind-pose extents, which are useful for
-    // editor/UI work even if not for cull).
-    int primCount = 0;
-    for (final node in scene.nodes ?? const <fb.Node>[]) {
-      for (final p in node.meshPrimitives ?? const <fb.MeshPrimitive>[]) {
-        primCount++;
-        expect(p.boundsAabb, isNotNull);
-        expect(p.boundsSphere, isNotNull);
+  test(
+    'two_triangles.glb: pose-union extends beyond static bind-pose AABB',
+    () {
+      // two_triangles is a tiny skinned animated test asset. Verify the
+      // pose-union AABB is a strict superset of the static AABB on at
+      // least one axis (otherwise the bake would be a no-op).
+      final scene = _emitAndDecode('examples/assets_src/two_triangles.glb');
+      if (scene == null) {
+        print('two_triangles.glb missing — skipping.');
+        return;
       }
-    }
-    expect(primCount, greaterThan(0));
-  });
+      fb.MeshPrimitive? skinnedPrim;
+      for (final node in scene.nodes ?? const <fb.Node>[]) {
+        if (node.skin == null) continue;
+        for (final p in node.meshPrimitives ?? const <fb.MeshPrimitive>[]) {
+          skinnedPrim = p;
+          break;
+        }
+        if (skinnedPrim != null) break;
+      }
+      expect(skinnedPrim, isNotNull);
+      final pose = skinnedPrim!.skinnedPoseUnionAabb;
+      final stat = skinnedPrim.boundsAabb;
+      expect(pose, isNotNull);
+      expect(stat, isNotNull);
+      final poseExtent =
+          (pose!.max.x - pose.min.x) +
+          (pose.max.y - pose.min.y) +
+          (pose.max.z - pose.min.z);
+      final staticExtent =
+          (stat!.max.x - stat.min.x) +
+          (stat.max.y - stat.min.y) +
+          (stat.max.z - stat.min.z);
+      expect(
+        poseExtent,
+        greaterThan(staticExtent),
+        reason:
+            'pose-union AABB should be larger than the static bind-pose AABB '
+            'when the file has animations that drive the skin',
+      );
+    },
+  );
 
   test('AABB matches glTF accessor min/max when present', () {
     // fcar's CarBody primitive has POSITION accessor min/max set in the

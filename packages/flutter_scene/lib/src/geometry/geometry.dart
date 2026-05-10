@@ -122,19 +122,37 @@ abstract class Geometry {
     // Pre-populate bounds from the flatbuffer when present so
     // uploadVertexData can skip the position scan. Geometry written by
     // older importers (without bounds) falls back to a scan.
-    final fbAabb = fbPrimitive.boundsAabb;
+    //
+    // For skinned primitives, prefer the offline-baked
+    // `skinned_pose_union_aabb` since it covers every animated pose
+    // extent. The static-pose `bounds_aabb` is only useful for
+    // editor-style queries on bind-pose extents and would produce
+    // wrong cull decisions when joints animate beyond it.
+    final fbAabb =
+        isSkinned
+            ? (fbPrimitive.skinnedPoseUnionAabb ?? fbPrimitive.boundsAabb)
+            : fbPrimitive.boundsAabb;
     if (fbAabb != null) {
       geometry._localBounds = vm.Aabb3.minMax(
         vm.Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
         vm.Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
       );
     }
-    final fbSphere = fbPrimitive.boundsSphere;
-    if (fbSphere != null) {
-      geometry._localBoundingSphere = vm.Sphere.centerRadius(
-        vm.Vector3(fbSphere.center.x, fbSphere.center.y, fbSphere.center.z),
-        fbSphere.radius,
+    if (isSkinned && fbPrimitive.skinnedPoseUnionAabb != null) {
+      // Derive the sphere from the pose-union AABB so it covers the
+      // same animated extent. The baked `bounds_sphere` is fit to the
+      // static bind-pose mesh and would be too small.
+      geometry._localBoundingSphere = _circumscribedSphere(
+        geometry._localBounds!,
       );
+    } else {
+      final fbSphere = fbPrimitive.boundsSphere;
+      if (fbSphere != null) {
+        geometry._localBoundingSphere = vm.Sphere.centerRadius(
+          vm.Vector3(fbSphere.center.x, fbSphere.center.y, fbSphere.center.z),
+          fbSphere.radius,
+        );
+      }
     }
 
     geometry.uploadVertexData(

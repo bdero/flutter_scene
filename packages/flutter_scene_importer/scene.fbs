@@ -169,6 +169,18 @@ table MeshPrimitive {
   /// still load correctly.
   bounds_aabb: Aabb3;
   bounds_sphere: Sphere;
+
+  /// For skinned primitives only: union of vertex positions across every
+  /// pose the primitive can take under the file's animations, computed
+  /// offline by sampling each animation's keyframes and applying the
+  /// resulting joint palette.
+  ///
+  /// In the same local space as `bounds_aabb` (the mesh's vertex-position
+  /// space). Lets the runtime cull skinned content soundly instead of
+  /// treating it as always-visible. Absent on unskinned primitives, and
+  /// on skinned primitives when offline pose-union analysis isn't
+  /// available (e.g. older importer output).
+  skinned_pose_union_aabb: Aabb3;
 }
 
 //-----------------------------------------------------------------------------

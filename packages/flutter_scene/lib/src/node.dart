@@ -136,16 +136,6 @@ base class Node implements SceneGraph {
   }
 
   void _computeAndCacheCombinedLocalBounds() {
-    // A node with a skin can't be soundly bounded by its bind-pose
-    // mesh extents; the rendered pose can extend arbitrarily far when
-    // joints animate. PR 3 will replace this branch with a baked
-    // pose-union AABB.
-    if (skin != null) {
-      _combinedBoundsCache = null;
-      _combinedBoundsCached = true;
-      return;
-    }
-
     vm.Aabb3? result;
     bool subtreeBounded = true;
 
@@ -156,7 +146,8 @@ base class Node implements SceneGraph {
         result = vm.Aabb3.copy(mb);
       } else if (m.primitives.isNotEmpty) {
         // Mesh with primitives but no localBounds (caller-managed
-        // buffers without an override) acts as unbounded.
+        // buffers without an override, or skinned mesh imported from a
+        // file with no animation data) acts as unbounded.
         subtreeBounded = false;
       }
     }
