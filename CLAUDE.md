@@ -82,6 +82,79 @@ The example app symlinks `assets_src/` for runtime loading. The corresponding `.
 
 When a runtime render produces visually-wrong output and the bug is in the import pipeline, **don't hypothesize**. Dump bytes at each stage and compare byte-for-byte against the working `.model` path. The runtime importer's correctness was verified this way (`runtime_importer_byte_comparison_test.dart`) and it caught two unrelated bugs the screenshots had been masking.
 
+## Iterating against a locally built engine
+
+For testing engine changes (e.g. an in-flight `flutter/flutter` PR) before they ship to the SDK cache. Captures the traps we hit so you don't re-derive them.
+
+### Setup
+
+Engine source on this machine: `~/projects/flutter/flutter/engine/src/flutter/`. Build configs go in `out/<name>/`. Use the bundled `et` script:
+
+```sh
+cd ~/projects/flutter/flutter/engine/src/flutter
+bin/et build -c host_debug_unopt_arm64    # required for impellerc + tessellator
+bin/et build -c android_debug_unopt_arm64 # the runtime engine for Pixel/arm64 Android
+bin/et build -c ios_debug_sim_unopt_arm64 # iOS simulator, etc.
+```
+
+First Android build is ~30 min; incremental rebuilds are 1–5 min.
+
+Run with both flags:
+
+```sh
+flutter run -d <device> --enable-flutter-gpu --enable-impeller \
+  --local-engine=android_debug_unopt_arm64 \
+  --local-engine-host=host_debug_unopt_arm64
+```
+
+### Trap #1: out/ doesn't track engine source branch
+
+Switching the engine source to a different branch (e.g. for an upstream PR) **does not** rebuild `out/`. The native binaries on disk still have the old ABI; the Dart-side `flutter_gpu` bindings from the framework cache use the new one. Symptom we hit: `Texture creation failed`, with `mip_count = 121167729` (uninitialized memory at the position of an arg that doesn't exist on this branch). Always rebuild after switching engine branches.
+
+### Trap #2: cached impellerc lags the local engine
+
+Build hooks (e.g. `flutter_gpu_shaders`) historically walked up from the dart binary to find `impellerc` in `bin/cache/artifacts/engine/<host>/`. That binary doesn't follow `--local-engine`, so a freshly built engine can produce shader bundles in a format the cached `impellerc` doesn't speak. Symptom: `Unsupported shader bundle format version: 1, expected: 2`.
+
+Fix landed (or landing) in two parts:
+- `flutter/flutter#186300`: flutter_tools sets `IMPELLERC` env var on hook subprocesses, resolved through `Artifacts.getHostArtifact(...)` (which honors `--local-engine`).
+- `flutter_gpu_shaders 0.4.2`: `findImpellerC()` honors the runtime env var.
+
+Once both are in your tree, the workflow Just Works. If you hit the mismatch on an older combo, the manual workaround is overwriting the cached binary:
+
+```sh
+cp ~/projects/flutter/flutter/engine/src/out/host_debug_unopt_arm64/impellerc \
+   ~/projects/flutter/flutter/bin/cache/artifacts/engine/darwin-x64/impellerc
+```
+
+(yes, `darwin-x64` even on arm64 — that's the SDK cache layout). Restore from a `.bak` when done.
+
+### Trap #3: build hooks "skip" when outputs are missing
+
+`flutter clean` cleans `examples/flutter_app/build/` but the hook input-hash cache in `.dart_tool/flutter_build/<hash>/native_assets.json` can still claim outputs are fresh, so the next `flutter run` skips the `build_hooks` target with no warning. Symptom: `Error: unable to find directory entry in pubspec.yaml: .../build/models/`. Recipe to fully reset:
+
+```sh
+rm -rf .dart_tool packages/*/.dart_tool examples/flutter_app/.dart_tool \
+       packages/flutter_scene/build examples/flutter_app/build
+flutter pub get
+```
+
+(Reported upstream as a bug; for now, this is the workaround.)
+
+### Trap #4: Android manifest opt-in
+
+Until `flutter/flutter#186298` lands, `--enable-flutter-gpu` is silently ignored on Android — only the `<meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />` entry in the consumer's `AndroidManifest.xml` enables Flutter GPU. The CLI flag works on iOS and macOS without any plist entry.
+
+### Platform scaffolding
+
+`examples/flutter_app/` only commits the macOS scaffolding. For iOS or Android testing, generate the missing platform stubs (gitignored):
+
+```sh
+cd examples/flutter_app
+flutter create . --platforms=ios,android --org dev.bdero
+```
+
+iOS additionally needs a one-time team-and-bundle-id setup in Xcode (`open ios/Runner.xcworkspace` → Runner target → Signing & Capabilities → pick Team).
+
 ## Issue tracker conventions
 
 Labels we use beyond GitHub defaults:
