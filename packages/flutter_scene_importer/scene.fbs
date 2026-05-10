@@ -91,6 +91,19 @@ struct Vec4 {
   w: float;
 }
 
+/// Axis-aligned bounding box in some local space (typically the space of
+/// the vertex positions on a primitive, or the local space of a node).
+struct Aabb3 {
+  min: Vec3;
+  max: Vec3;
+}
+
+/// Bounding sphere in the same space as an associated `Aabb3`.
+struct Sphere {
+  center: Vec3;
+  radius: float;
+}
+
 // This attribute layout is expected to be identical to that within
 // `shaders/flutter_scene_unskinned.vert`.
 //
@@ -148,6 +161,14 @@ table MeshPrimitive {
   vertices: VertexBuffer;
   indices: Indices;
   material: Material;
+
+  /// Local-space (vertex-position-space) bounds of this primitive.
+  ///
+  /// Optional. When absent, the runtime falls back to scanning the vertex
+  /// positions on first access, so older `.model` files without bounds
+  /// still load correctly.
+  bounds_aabb: Aabb3;
+  bounds_sphere: Sphere;
 }
 
 //-----------------------------------------------------------------------------
@@ -216,6 +237,15 @@ table Node {
   transform: Matrix;
   mesh_primitives: [MeshPrimitive];
   skin: Skin;
+
+  /// Union of this node's mesh primitive AABBs together with each
+  /// descendant node's `combined_local_aabb` transformed by the
+  /// descendant's local transform. Expressed in this node's local space.
+  ///
+  /// Lets the runtime cull entire subtrees with a single AABB-vs-frustum
+  /// test instead of recomputing the union every frame. Optional for
+  /// backwards compatibility.
+  combined_local_aabb: Aabb3;
 }
 
 table Scene {

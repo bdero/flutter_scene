@@ -34,6 +34,29 @@ abstract class Geometry {
 
   gpu.Shader? _vertexShader;
 
+  vm.Aabb3? _localBounds;
+  vm.Sphere? _localBoundingSphere;
+
+  /// Local-space axis-aligned bounding box of this geometry's vertex
+  /// positions, or `null` if bounds are unknown. Computed by
+  /// [uploadVertexData] for procedural geometry, populated from the
+  /// `.model` flatbuffer for imported geometry, and (for the advanced
+  /// [setVertices] path where the caller manages its own GPU buffer)
+  /// left `null` unless the caller assigns it via [setLocalBounds].
+  vm.Aabb3? get localBounds => _localBounds;
+
+  /// Local-space bounding sphere paired with [localBounds]. Same
+  /// nullability semantics.
+  vm.Sphere? get localBoundingSphere => _localBoundingSphere;
+
+  /// Override the bounds. Useful for callers driving [setVertices] from
+  /// a caller-managed [gpu.DeviceBuffer] who want to participate in
+  /// bounds-driven scene queries (e.g. frustum culling).
+  void setLocalBounds(vm.Aabb3? aabb, vm.Sphere? sphere) {
+    _localBounds = aabb;
+    _localBoundingSphere = sphere;
+  }
+
   /// The vertex shader used when rendering this geometry.
   ///
   /// Set by subclasses (or via [setVertexShader]) before the first frame.
@@ -94,6 +117,24 @@ abstract class Geometry {
         geometry = SkinnedGeometry();
       default:
         throw Exception('Unknown vertex buffer type');
+    }
+
+    // Pre-populate bounds from the flatbuffer when present so
+    // uploadVertexData can skip the position scan. Geometry written by
+    // older importers (without bounds) falls back to a scan.
+    final fbAabb = fbPrimitive.boundsAabb;
+    if (fbAabb != null) {
+      geometry._localBounds = vm.Aabb3.minMax(
+        vm.Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
+        vm.Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
+      );
+    }
+    final fbSphere = fbPrimitive.boundsSphere;
+    if (fbSphere != null) {
+      geometry._localBoundingSphere = vm.Sphere.centerRadius(
+        vm.Vector3(fbSphere.center.x, fbSphere.center.y, fbSphere.center.z),
+        fbSphere.radius,
+      );
     }
 
     geometry.uploadVertexData(
@@ -177,6 +218,50 @@ abstract class Geometry {
         indexType,
       );
     }
+
+    if (_localBounds == null && vertexCount > 0) {
+      _scanLocalBoundsFromVertices(vertices, vertexCount);
+    }
+  }
+
+  /// Scan the position attribute (the first 12 bytes of each vertex,
+  /// shared across the unskinned 48-byte and skinned 80-byte layouts)
+  /// to populate [_localBounds] and [_localBoundingSphere].
+  void _scanLocalBoundsFromVertices(ByteData vertices, int vertexCount) {
+    final stride = vertices.lengthInBytes ~/ vertexCount;
+    if (stride < 12) {
+      return;
+    }
+    double minX = double.infinity,
+        minY = double.infinity,
+        minZ = double.infinity;
+    double maxX = double.negativeInfinity,
+        maxY = double.negativeInfinity,
+        maxZ = double.negativeInfinity;
+    for (int i = 0; i < vertexCount; i++) {
+      final off = i * stride;
+      final x = vertices.getFloat32(off, Endian.little);
+      final y = vertices.getFloat32(off + 4, Endian.little);
+      final z = vertices.getFloat32(off + 8, Endian.little);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    final aabb = vm.Aabb3.minMax(
+      vm.Vector3(minX, minY, minZ),
+      vm.Vector3(maxX, maxY, maxZ),
+    );
+    _localBounds = aabb;
+    _localBoundingSphere ??= _circumscribedSphere(aabb);
+  }
+
+  static vm.Sphere _circumscribedSphere(vm.Aabb3 aabb) {
+    final center = (aabb.min + aabb.max) * 0.5;
+    final extents = (aabb.max - aabb.min) * 0.5;
+    return vm.Sphere.centerRadius(center, extents.length);
   }
 
   /// Assigns the vertex [shader] used when this geometry is drawn.

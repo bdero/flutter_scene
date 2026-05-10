@@ -6,6 +6,7 @@
 /// for byte-level parity coverage against the C++ output.
 library;
 
+import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -55,12 +56,143 @@ fb.SceneT _buildScene(GltfDocument doc, Uint8List bufferData) {
       _buildNode(doc.nodes[i], doc, bufferData),
   ];
 
+  // Post-pass: bake each node's combined local-space AABB so the
+  // runtime can cull entire subtrees with a single AABB-vs-frustum
+  // test. Skinned subtrees opt out of this (see _bakeCombinedAabbs).
+  _bakeCombinedAabbs(scene.nodes!, doc);
+
   // Animations.
   scene.animations = [
     for (final a in doc.animations) _buildAnimation(a, doc, bufferData),
   ];
 
   return scene;
+}
+
+/// Walks the node forest in post-order and assigns
+/// `combined_local_aabb` to each node where it can be computed
+/// soundly. Subtrees that contain any skinned primitive are left
+/// without a baked AABB; the runtime treats absent bounds as
+/// "always visible" so animated meshes don't disappear when posed
+/// outside their bind-pose extent.
+void _bakeCombinedAabbs(List<fb.NodeT> nodes, GltfDocument doc) {
+  // Memoize: null when the subtree is unbounded (skinned), an
+  // `_AabbBox` otherwise. `_AabbBox.empty` represents a soundly
+  // computed but empty subtree (no geometry at all), which still
+  // serializes as a degenerate AABB so we can tell it apart from
+  // "unbounded" at runtime.
+  final memo = List<_AabbBox?>.filled(nodes.length, null);
+  final computed = List<bool>.filled(nodes.length, false);
+
+  _AabbBox? walk(int idx) {
+    if (computed[idx]) return memo[idx];
+    computed[idx] = true;
+
+    final node = nodes[idx];
+    final glNode = doc.nodes[idx];
+
+    // Skinned content makes the static AABB meaningless.
+    if (glNode.skin != null) {
+      memo[idx] = null;
+      return null;
+    }
+
+    final box = _AabbBox.empty();
+    for (final prim in node.meshPrimitives ?? const <fb.MeshPrimitiveT>[]) {
+      final aabb = prim.boundsAabb;
+      if (aabb != null) box.expandToAabb(aabb);
+    }
+
+    bool subtreeBounded = true;
+    for (final childIdx in node.children ?? const <int>[]) {
+      if (childIdx < 0 || childIdx >= nodes.length) continue;
+      final childBox = walk(childIdx);
+      if (childBox == null) {
+        subtreeBounded = false;
+        continue;
+      }
+      if (childBox.isEmpty) continue;
+      // Transform the child's combined AABB into this node's local
+      // space using the child's local transform.
+      final childLocal = _localTransformFor(doc.nodes[childIdx]);
+      box.expandToTransformedBox(childBox, childLocal);
+    }
+
+    if (!subtreeBounded) {
+      memo[idx] = null;
+      return null;
+    }
+
+    memo[idx] = box;
+    if (!box.isEmpty) {
+      node.combinedLocalAabb = fb.Aabb3T(
+        min: fb.Vec3T(x: box.minX, y: box.minY, z: box.minZ),
+        max: fb.Vec3T(x: box.maxX, y: box.maxY, z: box.maxZ),
+      );
+    }
+    return box;
+  }
+
+  for (int i = 0; i < nodes.length; i++) {
+    walk(i);
+  }
+}
+
+/// Mutable AABB used during the bake post-pass. Tracks emptiness
+/// explicitly so a node with no geometry stays distinguishable from
+/// a node whose AABB happens to include the origin.
+class _AabbBox {
+  _AabbBox(
+    this.minX,
+    this.minY,
+    this.minZ,
+    this.maxX,
+    this.maxY,
+    this.maxZ,
+    this.isEmpty,
+  );
+
+  factory _AabbBox.empty() => _AabbBox(0, 0, 0, 0, 0, 0, true);
+
+  double minX, minY, minZ, maxX, maxY, maxZ;
+  bool isEmpty;
+
+  void _includePoint(double x, double y, double z) {
+    if (isEmpty) {
+      minX = maxX = x;
+      minY = maxY = y;
+      minZ = maxZ = z;
+      isEmpty = false;
+      return;
+    }
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+
+  void expandToAabb(fb.Aabb3T a) {
+    final mn = a.min, mx = a.max;
+    _includePoint(mn.x, mn.y, mn.z);
+    _includePoint(mx.x, mx.y, mx.z);
+  }
+
+  /// Transform every corner of [other] by [transform] and union the
+  /// result into this box. Eight-corner expansion is used (rather
+  /// than the cheaper centre-plus-extents trick) because this runs
+  /// offline and tightness matters more than throughput.
+  void expandToTransformedBox(_AabbBox other, Matrix4 transform) {
+    if (other.isEmpty) return;
+    for (int i = 0; i < 8; i++) {
+      final x = (i & 1) == 0 ? other.minX : other.maxX;
+      final y = (i & 2) == 0 ? other.minY : other.maxY;
+      final z = (i & 4) == 0 ? other.minZ : other.maxZ;
+      final p = transform.transformed3(Vector3(x, y, z));
+      _includePoint(p.x, p.y, p.z);
+    }
+  }
 }
 
 // ───── Nodes ─────
@@ -105,8 +237,20 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
       p.attributes.containsKey('JOINTS_0') &&
       p.attributes.containsKey('WEIGHTS_0');
 
+  // Position attribute is mandatory in glTF and (separately) required by
+  // flutter_scene. Read it once and reuse for both vertex packing and
+  // bounds.
+  final positionAccessor = doc.accessors[p.attributes['POSITION']!];
+  final positions = _readVec3(p.attributes['POSITION']!, doc, bufferData);
+
   // Pack vertex bytes using the same layout as flutter_scene's vertex shaders.
-  final vertexBytes = _packVertices(p, doc, bufferData, hasJoints: hasJoints);
+  final vertexBytes = _packVertices(
+    p,
+    doc,
+    bufferData,
+    positions: positions,
+    hasJoints: hasJoints,
+  );
   final vertexCount =
       vertexBytes.length ~/
       (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize);
@@ -131,6 +275,15 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
   if (p.material != null && p.material! < doc.materials.length) {
     out.material = _buildMaterial(doc.materials[p.material!]);
   }
+
+  // Bounds. Prefer the accessor's spec-provided min/max for the AABB so
+  // we don't redo work the asset already encodes; the sphere always
+  // requires a vertex pass.
+  if (vertexCount > 0) {
+    final aabb = _aabbFromAccessorOrPositions(positionAccessor, positions);
+    out.boundsAabb = aabb;
+    out.boundsSphere = _sphereFromPositions(positions);
+  }
   return out;
 }
 
@@ -138,9 +291,9 @@ Uint8List _packVertices(
   GltfMeshPrimitive p,
   GltfDocument doc,
   Uint8List bufferData, {
+  required Float32List positions,
   required bool hasJoints,
 }) {
-  final positions = _readVec3(p.attributes['POSITION']!, doc, bufferData);
   final vertexCount = positions.length ~/ 3;
   final normals = _readOptionalVec3('NORMAL', p, doc, bufferData, vertexCount);
   final tex = _readOptionalVec2('TEXCOORD_0', p, doc, bufferData, vertexCount);
@@ -400,6 +553,117 @@ List<fb.Vec4T> _vec4List(Float32List values, bool isCubic) {
         w: values[i + off + 3],
       ),
   ].reversed.toList();
+}
+
+// ───── Bounds ─────
+
+/// Build a local-space AABB for a primitive. Uses the accessor's
+/// spec-provided `min`/`max` when present (the glTF spec requires them
+/// on POSITION accessors but consumers occasionally omit them); falls
+/// back to a vertex scan otherwise.
+fb.Aabb3T _aabbFromAccessorOrPositions(
+  GltfAccessor accessor,
+  Float32List positions,
+) {
+  final min = accessor.min;
+  final max = accessor.max;
+  if (min != null && min.length >= 3 && max != null && max.length >= 3) {
+    return fb.Aabb3T(
+      min: fb.Vec3T(x: min[0], y: min[1], z: min[2]),
+      max: fb.Vec3T(x: max[0], y: max[1], z: max[2]),
+    );
+  }
+  return _aabbFromPositions(positions);
+}
+
+fb.Aabb3T _aabbFromPositions(Float32List positions) {
+  double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+  double maxX = double.negativeInfinity,
+      maxY = double.negativeInfinity,
+      maxZ = double.negativeInfinity;
+  for (int i = 0; i + 2 < positions.length; i += 3) {
+    final x = positions[i];
+    final y = positions[i + 1];
+    final z = positions[i + 2];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+  return fb.Aabb3T(
+    min: fb.Vec3T(x: minX, y: minY, z: minZ),
+    max: fb.Vec3T(x: maxX, y: maxY, z: maxZ),
+  );
+}
+
+/// Bounding sphere via Ritter's two-pass approximation: pick the most
+/// distant pair along an arbitrary first vertex, seed with their
+/// midpoint, then expand to cover any remaining outliers. Tighter than
+/// the AABB-circumscribed sphere for elongated meshes while still being
+/// O(n).
+fb.SphereT _sphereFromPositions(Float32List positions) {
+  final vertexCount = positions.length ~/ 3;
+  if (vertexCount == 0) {
+    return fb.SphereT(center: fb.Vec3T(x: 0, y: 0, z: 0), radius: 0);
+  }
+  if (vertexCount == 1) {
+    return fb.SphereT(
+      center: fb.Vec3T(x: positions[0], y: positions[1], z: positions[2]),
+      radius: 0,
+    );
+  }
+
+  // Pass 1: pick vertex farthest from positions[0], then farthest from
+  // that. The pair seeds the initial diameter.
+  Vector3 readAt(int i) =>
+      Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+
+  final p0 = readAt(0);
+  int bestA = 0;
+  double bestDist = 0;
+  for (int i = 1; i < vertexCount; i++) {
+    final d = readAt(i).distanceToSquared(p0);
+    if (d > bestDist) {
+      bestDist = d;
+      bestA = i;
+    }
+  }
+  final a = readAt(bestA);
+  int bestB = bestA;
+  bestDist = 0;
+  for (int i = 0; i < vertexCount; i++) {
+    final d = readAt(i).distanceToSquared(a);
+    if (d > bestDist) {
+      bestDist = d;
+      bestB = i;
+    }
+  }
+  final b = readAt(bestB);
+
+  Vector3 center = (a + b) * 0.5;
+  double radius = a.distanceTo(b) * 0.5;
+  double radiusSq = radius * radius;
+
+  // Pass 2: expand to cover any vertex outside the seed sphere.
+  for (int i = 0; i < vertexCount; i++) {
+    final v = readAt(i);
+    final dSq = v.distanceToSquared(center);
+    if (dSq > radiusSq) {
+      final d = sqrt(dSq);
+      final newRadius = (radius + d) * 0.5;
+      final shift = (newRadius - radius) / d;
+      center = center + (v - center) * shift;
+      radius = newRadius;
+      radiusSq = radius * radius;
+    }
+  }
+
+  return fb.SphereT(
+    center: fb.Vec3T(x: center.x, y: center.y, z: center.z),
+    radius: radius,
+  );
 }
 
 // ───── Helpers ─────
