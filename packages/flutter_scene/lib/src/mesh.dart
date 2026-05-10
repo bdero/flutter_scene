@@ -2,7 +2,7 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
-import 'package:vector_math/vector_math.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 /// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
 ///
@@ -45,6 +45,38 @@ base class Mesh {
   /// The list of [MeshPrimitive] objects that make up the [Geometry] and [Material] of the 3D model.
   final List<MeshPrimitive> primitives;
 
+  vm.Aabb3? _localBoundsCache;
+  bool _localBoundsCached = false;
+
+  /// Local-space union of every primitive's [Geometry.localBounds], or
+  /// `null` when no primitive has computable bounds. Cached; call
+  /// [markLocalBoundsDirty] after replacing a primitive's geometry or
+  /// mutating geometry that participates in the union.
+  vm.Aabb3? get localBounds {
+    if (_localBoundsCached) return _localBoundsCache;
+    vm.Aabb3? result;
+    for (final p in primitives) {
+      final b = p.geometry.localBounds;
+      if (b == null) continue;
+      if (result == null) {
+        result = vm.Aabb3.copy(b);
+      } else {
+        result.hull(b);
+      }
+    }
+    _localBoundsCache = result;
+    _localBoundsCached = true;
+    return result;
+  }
+
+  /// Invalidate the cached [localBounds]. Call this after replacing a
+  /// primitive's geometry or mutating geometry that participates in the
+  /// union.
+  void markLocalBoundsDirty() {
+    _localBoundsCache = null;
+    _localBoundsCached = false;
+  }
+
   /// Draws the [Geometry] and [Material] data of each [MeshPrimitive] onto the screen.
   ///
   /// This method prepares the [Mesh] for rendering by passing its data to a [SceneEncoder].
@@ -52,7 +84,7 @@ base class Mesh {
   /// the joint [gpu.Texture] data is also included to ensure proper rendering of animated features.
   void render(
     SceneEncoder encoder,
-    Matrix4 worldTransform,
+    vm.Matrix4 worldTransform,
     gpu.Texture? jointsTexture,
     int jointTextureWidth,
   ) {

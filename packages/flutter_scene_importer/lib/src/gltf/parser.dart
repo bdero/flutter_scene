@@ -99,7 +99,14 @@ GltfAccessor _parseAccessor(Map<String, Object?> j) {
     bufferView: j['bufferView'] as int?,
     byteOffset: (j['byteOffset'] as int?) ?? 0,
     normalized: (j['normalized'] as bool?) ?? false,
+    min: _numList(j['min']),
+    max: _numList(j['max']),
   );
+}
+
+List<double>? _numList(Object? raw) {
+  if (raw is! List) return null;
+  return [for (final v in raw) (v as num).toDouble()];
 }
 
 GltfBufferView _parseBufferView(Map<String, Object?> j) {

@@ -98,7 +98,8 @@ class VertexBufferTypeId {
     final result = values[value];
     if (result == null) {
       throw StateError(
-          'Invalid value $value for bit flag enum VertexBufferTypeId');
+        'Invalid value $value for bit flag enum VertexBufferTypeId',
+      );
     }
     return result;
   }
@@ -111,13 +112,14 @@ class VertexBufferTypeId {
   static bool containsValue(int value) => values.containsKey(value);
 
   static const VertexBufferTypeId NONE = VertexBufferTypeId._(0);
-  static const VertexBufferTypeId UnskinnedVertexBuffer =
-      VertexBufferTypeId._(1);
+  static const VertexBufferTypeId UnskinnedVertexBuffer = VertexBufferTypeId._(
+    1,
+  );
   static const VertexBufferTypeId SkinnedVertexBuffer = VertexBufferTypeId._(2);
   static const Map<int, VertexBufferTypeId> values = {
     0: NONE,
     1: UnskinnedVertexBuffer,
-    2: SkinnedVertexBuffer
+    2: SkinnedVertexBuffer,
   };
 
   static const fb.Reader<VertexBufferTypeId> reader =
@@ -190,7 +192,8 @@ class KeyframesTypeId {
     final result = values[value];
     if (result == null) {
       throw StateError(
-          'Invalid value $value for bit flag enum KeyframesTypeId');
+        'Invalid value $value for bit flag enum KeyframesTypeId',
+      );
     }
     return result;
   }
@@ -210,7 +213,7 @@ class KeyframesTypeId {
     0: NONE,
     1: TranslationKeyframes,
     2: RotationKeyframes,
-    3: ScaleKeyframes
+    3: ScaleKeyframes,
   };
 
   static const fb.Reader<KeyframesTypeId> reader = _KeyframesTypeIdReader();
@@ -320,10 +323,10 @@ class ColorObjectBuilder extends fb.ObjectBuilder {
     required double g,
     required double b,
     required double a,
-  })  : _r = r,
-        _g = g,
-        _b = b,
-        _a = a;
+  }) : _r = r,
+       _g = g,
+       _b = b,
+       _a = a;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -361,7 +364,8 @@ class EmbeddedImage {
   int get componentCount =>
       const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 6, 0);
   ComponentType get componentType => ComponentType.fromValue(
-      const fb.Int8Reader().vTableGet(_bc, _bcOffset, 8, 0));
+    const fb.Int8Reader().vTableGet(_bc, _bcOffset, 8, 0),
+  );
   int get width => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 10, 0);
   int get height => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 12, 0);
 
@@ -371,12 +375,14 @@ class EmbeddedImage {
   }
 
   EmbeddedImageT unpack() => EmbeddedImageT(
-      bytes: const fb.Uint8ListReader(lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      componentCount: componentCount,
-      componentType: componentType,
-      width: width,
-      height: height);
+    bytes: const fb.Uint8ListReader(
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    componentCount: componentCount,
+    componentType: componentType,
+    width: width,
+    height: height,
+  );
 
   static int pack(fb.Builder fbBuilder, EmbeddedImageT? object) {
     if (object == null) return 0;
@@ -391,17 +397,19 @@ class EmbeddedImageT implements fb.Packable {
   int width;
   int height;
 
-  EmbeddedImageT(
-      {this.bytes,
-      this.componentCount = 0,
-      this.componentType = ComponentType.k8Bit,
-      this.width = 0,
-      this.height = 0});
+  EmbeddedImageT({
+    this.bytes,
+    this.componentCount = 0,
+    this.componentType = ComponentType.k8Bit,
+    this.width = 0,
+    this.height = 0,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? bytesOffset =
-        bytes == null ? null : fbBuilder.writeListUint8(bytes!);
+    final int? bytesOffset = bytes == null
+        ? null
+        : fbBuilder.writeListUint8(bytes!);
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, bytesOffset);
     fbBuilder.addUint8(1, componentCount);
@@ -477,17 +485,18 @@ class EmbeddedImageObjectBuilder extends fb.ObjectBuilder {
     ComponentType? componentType,
     int? width,
     int? height,
-  })  : _bytes = bytes,
-        _componentCount = componentCount,
-        _componentType = componentType,
-        _width = width,
-        _height = height;
+  }) : _bytes = bytes,
+       _componentCount = componentCount,
+       _componentType = componentType,
+       _width = width,
+       _height = height;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? bytesOffset =
-        _bytes == null ? null : fbBuilder.writeListUint8(_bytes!);
+    final int? bytesOffset = _bytes == null
+        ? null
+        : fbBuilder.writeListUint8(_bytes!);
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, bytesOffset);
     fbBuilder.addUint8(1, _componentCount);
@@ -609,18 +618,17 @@ class TextureObjectBuilder extends fb.ObjectBuilder {
   final String? _uri;
   final EmbeddedImageObjectBuilder? _embeddedImage;
 
-  TextureObjectBuilder({
-    String? uri,
-    EmbeddedImageObjectBuilder? embeddedImage,
-  })  : _uri = uri,
-        _embeddedImage = embeddedImage;
+  TextureObjectBuilder({String? uri, EmbeddedImageObjectBuilder? embeddedImage})
+    : _uri = uri,
+      _embeddedImage = embeddedImage;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
     final int? uriOffset = _uri == null ? null : fbBuilder.writeString(_uri!);
-    final int? embeddedImageOffset =
-        _embeddedImage?.getOrCreateOffset(fbBuilder);
+    final int? embeddedImageOffset = _embeddedImage?.getOrCreateOffset(
+      fbBuilder,
+    );
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, uriOffset);
     fbBuilder.addOffset(1, embeddedImageOffset);
@@ -653,7 +661,8 @@ class Material {
   final int _bcOffset;
 
   MaterialType get type => MaterialType.fromValue(
-      const fb.Int8Reader().vTableGet(_bc, _bcOffset, 4, 0));
+    const fb.Int8Reader().vTableGet(_bc, _bcOffset, 4, 0),
+  );
   Color? get baseColorFactor =>
       Color.reader.vTableGetNullable(_bc, _bcOffset, 6);
   int get baseColorTexture =>
@@ -682,18 +691,19 @@ class Material {
   }
 
   MaterialT unpack() => MaterialT(
-      type: type,
-      baseColorFactor: baseColorFactor?.unpack(),
-      baseColorTexture: baseColorTexture,
-      metallicFactor: metallicFactor,
-      roughnessFactor: roughnessFactor,
-      metallicRoughnessTexture: metallicRoughnessTexture,
-      normalScale: normalScale,
-      normalTexture: normalTexture,
-      emissiveFactor: emissiveFactor?.unpack(),
-      emissiveTexture: emissiveTexture,
-      occlusionStrength: occlusionStrength,
-      occlusionTexture: occlusionTexture);
+    type: type,
+    baseColorFactor: baseColorFactor?.unpack(),
+    baseColorTexture: baseColorTexture,
+    metallicFactor: metallicFactor,
+    roughnessFactor: roughnessFactor,
+    metallicRoughnessTexture: metallicRoughnessTexture,
+    normalScale: normalScale,
+    normalTexture: normalTexture,
+    emissiveFactor: emissiveFactor?.unpack(),
+    emissiveTexture: emissiveTexture,
+    occlusionStrength: occlusionStrength,
+    occlusionTexture: occlusionTexture,
+  );
 
   static int pack(fb.Builder fbBuilder, MaterialT? object) {
     if (object == null) return 0;
@@ -719,19 +729,20 @@ class MaterialT implements fb.Packable {
   double occlusionStrength;
   int occlusionTexture;
 
-  MaterialT(
-      {this.type = MaterialType.kUnlit,
-      this.baseColorFactor,
-      this.baseColorTexture = -1,
-      this.metallicFactor = 0.0,
-      this.roughnessFactor = 0.5,
-      this.metallicRoughnessTexture = -1,
-      this.normalScale = 1.0,
-      this.normalTexture = -1,
-      this.emissiveFactor,
-      this.emissiveTexture = -1,
-      this.occlusionStrength = 1.0,
-      this.occlusionTexture = -1});
+  MaterialT({
+    this.type = MaterialType.kUnlit,
+    this.baseColorFactor,
+    this.baseColorTexture = -1,
+    this.metallicFactor = 0.0,
+    this.roughnessFactor = 0.5,
+    this.metallicRoughnessTexture = -1,
+    this.normalScale = 1.0,
+    this.normalTexture = -1,
+    this.emissiveFactor,
+    this.emissiveTexture = -1,
+    this.occlusionStrength = 1.0,
+    this.occlusionTexture = -1,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
@@ -870,18 +881,18 @@ class MaterialObjectBuilder extends fb.ObjectBuilder {
     int? emissiveTexture,
     double? occlusionStrength,
     int? occlusionTexture,
-  })  : _type = type,
-        _baseColorFactor = baseColorFactor,
-        _baseColorTexture = baseColorTexture,
-        _metallicFactor = metallicFactor,
-        _roughnessFactor = roughnessFactor,
-        _metallicRoughnessTexture = metallicRoughnessTexture,
-        _normalScale = normalScale,
-        _normalTexture = normalTexture,
-        _emissiveFactor = emissiveFactor,
-        _emissiveTexture = emissiveTexture,
-        _occlusionStrength = occlusionStrength,
-        _occlusionTexture = occlusionTexture;
+  }) : _type = type,
+       _baseColorFactor = baseColorFactor,
+       _baseColorTexture = baseColorTexture,
+       _metallicFactor = metallicFactor,
+       _roughnessFactor = roughnessFactor,
+       _metallicRoughnessTexture = metallicRoughnessTexture,
+       _normalScale = normalScale,
+       _normalTexture = normalTexture,
+       _emissiveFactor = emissiveFactor,
+       _emissiveTexture = emissiveTexture,
+       _occlusionStrength = occlusionStrength,
+       _occlusionTexture = occlusionTexture;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -988,11 +999,7 @@ class Vec2ObjectBuilder extends fb.ObjectBuilder {
   final double _x;
   final double _y;
 
-  Vec2ObjectBuilder({
-    required double x,
-    required double y,
-  })  : _x = x,
-        _y = y;
+  Vec2ObjectBuilder({required double x, required double y}) : _x = x, _y = y;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1085,13 +1092,10 @@ class Vec3ObjectBuilder extends fb.ObjectBuilder {
   final double _y;
   final double _z;
 
-  Vec3ObjectBuilder({
-    required double x,
-    required double y,
-    required double z,
-  })  : _x = x,
-        _y = y,
-        _z = z;
+  Vec3ObjectBuilder({required double x, required double y, required double z})
+    : _x = x,
+      _y = y,
+      _z = z;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1195,10 +1199,10 @@ class Vec4ObjectBuilder extends fb.ObjectBuilder {
     required double y,
     required double z,
     required double w,
-  })  : _x = x,
-        _y = y,
-        _z = z,
-        _w = w;
+  }) : _x = x,
+       _y = y,
+       _z = z,
+       _w = w;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1207,6 +1211,196 @@ class Vec4ObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.putFloat32(_z);
     fbBuilder.putFloat32(_y);
     fbBuilder.putFloat32(_x);
+    return fbBuilder.offset;
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
+
+///  Axis-aligned bounding box in some local space (typically the space of
+///  the vertex positions on a primitive, or the local space of a node).
+class Aabb3 {
+  Aabb3._(this._bc, this._bcOffset);
+
+  static const fb.Reader<Aabb3> reader = _Aabb3Reader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  Vec3 get min => Vec3.reader.read(_bc, _bcOffset + 0);
+  Vec3 get max => Vec3.reader.read(_bc, _bcOffset + 12);
+
+  @override
+  String toString() {
+    return 'Aabb3{min: ${min}, max: ${max}}';
+  }
+
+  Aabb3T unpack() => Aabb3T(min: min.unpack(), max: max.unpack());
+
+  static int pack(fb.Builder fbBuilder, Aabb3T? object) {
+    if (object == null) return 0;
+    return object.pack(fbBuilder);
+  }
+}
+
+///  Axis-aligned bounding box in some local space (typically the space of
+///  the vertex positions on a primitive, or the local space of a node).
+class Aabb3T implements fb.Packable {
+  Vec3T min;
+  Vec3T max;
+
+  Aabb3T({required this.min, required this.max});
+
+  @override
+  int pack(fb.Builder fbBuilder) {
+    max.pack(fbBuilder);
+    min.pack(fbBuilder);
+    return fbBuilder.offset;
+  }
+
+  @override
+  String toString() {
+    return 'Aabb3T{min: ${min}, max: ${max}}';
+  }
+}
+
+class _Aabb3Reader extends fb.StructReader<Aabb3> {
+  const _Aabb3Reader();
+
+  @override
+  int get size => 24;
+
+  @override
+  Aabb3 createObject(fb.BufferContext bc, int offset) => Aabb3._(bc, offset);
+}
+
+class Aabb3Builder {
+  Aabb3Builder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  int finish(fb.StructBuilder min, fb.StructBuilder max) {
+    max();
+    min();
+    return fbBuilder.offset;
+  }
+}
+
+class Aabb3ObjectBuilder extends fb.ObjectBuilder {
+  final Vec3ObjectBuilder _min;
+  final Vec3ObjectBuilder _max;
+
+  Aabb3ObjectBuilder({
+    required Vec3ObjectBuilder min,
+    required Vec3ObjectBuilder max,
+  }) : _min = min,
+       _max = max;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    _max.finish(fbBuilder);
+    _min.finish(fbBuilder);
+    return fbBuilder.offset;
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
+
+///  Bounding sphere in the same space as an associated `Aabb3`.
+class Sphere {
+  Sphere._(this._bc, this._bcOffset);
+
+  static const fb.Reader<Sphere> reader = _SphereReader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  Vec3 get center => Vec3.reader.read(_bc, _bcOffset + 0);
+  double get radius => const fb.Float32Reader().read(_bc, _bcOffset + 12);
+
+  @override
+  String toString() {
+    return 'Sphere{center: ${center}, radius: ${radius}}';
+  }
+
+  SphereT unpack() => SphereT(center: center.unpack(), radius: radius);
+
+  static int pack(fb.Builder fbBuilder, SphereT? object) {
+    if (object == null) return 0;
+    return object.pack(fbBuilder);
+  }
+}
+
+///  Bounding sphere in the same space as an associated `Aabb3`.
+class SphereT implements fb.Packable {
+  Vec3T center;
+  double radius;
+
+  SphereT({required this.center, required this.radius});
+
+  @override
+  int pack(fb.Builder fbBuilder) {
+    fbBuilder.putFloat32(radius);
+    center.pack(fbBuilder);
+    return fbBuilder.offset;
+  }
+
+  @override
+  String toString() {
+    return 'SphereT{center: ${center}, radius: ${radius}}';
+  }
+}
+
+class _SphereReader extends fb.StructReader<Sphere> {
+  const _SphereReader();
+
+  @override
+  int get size => 16;
+
+  @override
+  Sphere createObject(fb.BufferContext bc, int offset) => Sphere._(bc, offset);
+}
+
+class SphereBuilder {
+  SphereBuilder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  int finish(fb.StructBuilder center, double radius) {
+    fbBuilder.putFloat32(radius);
+    center();
+    return fbBuilder.offset;
+  }
+}
+
+class SphereObjectBuilder extends fb.ObjectBuilder {
+  final Vec3ObjectBuilder _center;
+  final double _radius;
+
+  SphereObjectBuilder({
+    required Vec3ObjectBuilder center,
+    required double radius,
+  }) : _center = center,
+       _radius = radius;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    fbBuilder.putFloat32(_radius);
+    _center.finish(fbBuilder);
     return fbBuilder.offset;
   }
 
@@ -1238,10 +1432,11 @@ class Vertex {
   }
 
   VertexT unpack() => VertexT(
-      position: position.unpack(),
-      normal: normal.unpack(),
-      textureCoords: textureCoords.unpack(),
-      color: color.unpack());
+    position: position.unpack(),
+    normal: normal.unpack(),
+    textureCoords: textureCoords.unpack(),
+    color: color.unpack(),
+  );
 
   static int pack(fb.Builder fbBuilder, VertexT? object) {
     if (object == null) return 0;
@@ -1255,11 +1450,12 @@ class VertexT implements fb.Packable {
   Vec2T textureCoords;
   ColorT color;
 
-  VertexT(
-      {required this.position,
-      required this.normal,
-      required this.textureCoords,
-      required this.color});
+  VertexT({
+    required this.position,
+    required this.normal,
+    required this.textureCoords,
+    required this.color,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
@@ -1291,8 +1487,12 @@ class VertexBuilder {
 
   final fb.Builder fbBuilder;
 
-  int finish(fb.StructBuilder position, fb.StructBuilder normal,
-      fb.StructBuilder textureCoords, fb.StructBuilder color) {
+  int finish(
+    fb.StructBuilder position,
+    fb.StructBuilder normal,
+    fb.StructBuilder textureCoords,
+    fb.StructBuilder color,
+  ) {
     color();
     textureCoords();
     normal();
@@ -1312,10 +1512,10 @@ class VertexObjectBuilder extends fb.ObjectBuilder {
     required Vec3ObjectBuilder normal,
     required Vec2ObjectBuilder textureCoords,
     required ColorObjectBuilder color,
-  })  : _position = position,
-        _normal = normal,
-        _textureCoords = textureCoords,
-        _color = color;
+  }) : _position = position,
+       _normal = normal,
+       _textureCoords = textureCoords,
+       _color = color;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1360,9 +1560,11 @@ class UnskinnedVertexBuffer {
   }
 
   UnskinnedVertexBufferT unpack() => UnskinnedVertexBufferT(
-      vertices: const fb.Uint8ListReader(lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      vertexCount: vertexCount);
+    vertices: const fb.Uint8ListReader(
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    vertexCount: vertexCount,
+  );
 
   static int pack(fb.Builder fbBuilder, UnskinnedVertexBufferT? object) {
     if (object == null) return 0;
@@ -1378,8 +1580,9 @@ class UnskinnedVertexBufferT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        vertices == null ? null : fbBuilder.writeListUint8(vertices!);
+    final int? verticesOffset = vertices == null
+        ? null
+        : fbBuilder.writeListUint8(vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, vertexCount);
@@ -1429,17 +1632,16 @@ class UnskinnedVertexBufferObjectBuilder extends fb.ObjectBuilder {
   final List<int>? _vertices;
   final int? _vertexCount;
 
-  UnskinnedVertexBufferObjectBuilder({
-    List<int>? vertices,
-    int? vertexCount,
-  })  : _vertices = vertices,
-        _vertexCount = vertexCount;
+  UnskinnedVertexBufferObjectBuilder({List<int>? vertices, int? vertexCount})
+    : _vertices = vertices,
+      _vertexCount = vertexCount;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        _vertices == null ? null : fbBuilder.writeListUint8(_vertices!);
+    final int? verticesOffset = _vertices == null
+        ? null
+        : fbBuilder.writeListUint8(_vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, _vertexCount);
@@ -1480,9 +1682,10 @@ class SkinnedVertex {
   }
 
   SkinnedVertexT unpack() => SkinnedVertexT(
-      vertex: vertex.unpack(),
-      joints: joints.unpack(),
-      weights: weights.unpack());
+    vertex: vertex.unpack(),
+    joints: joints.unpack(),
+    weights: weights.unpack(),
+  );
 
   static int pack(fb.Builder fbBuilder, SkinnedVertexT? object) {
     if (object == null) return 0;
@@ -1502,8 +1705,11 @@ class SkinnedVertexT implements fb.Packable {
   ///  joints.
   Vec4T weights;
 
-  SkinnedVertexT(
-      {required this.vertex, required this.joints, required this.weights});
+  SkinnedVertexT({
+    required this.vertex,
+    required this.joints,
+    required this.weights,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
@@ -1535,8 +1741,11 @@ class SkinnedVertexBuilder {
 
   final fb.Builder fbBuilder;
 
-  int finish(fb.StructBuilder vertex, fb.StructBuilder joints,
-      fb.StructBuilder weights) {
+  int finish(
+    fb.StructBuilder vertex,
+    fb.StructBuilder joints,
+    fb.StructBuilder weights,
+  ) {
     weights();
     joints();
     vertex();
@@ -1553,9 +1762,9 @@ class SkinnedVertexObjectBuilder extends fb.ObjectBuilder {
     required VertexObjectBuilder vertex,
     required Vec4ObjectBuilder joints,
     required Vec4ObjectBuilder weights,
-  })  : _vertex = vertex,
-        _joints = joints,
-        _weights = weights;
+  }) : _vertex = vertex,
+       _joints = joints,
+       _weights = weights;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1599,9 +1808,11 @@ class SkinnedVertexBuffer {
   }
 
   SkinnedVertexBufferT unpack() => SkinnedVertexBufferT(
-      vertices: const fb.Uint8ListReader(lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      vertexCount: vertexCount);
+    vertices: const fb.Uint8ListReader(
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    vertexCount: vertexCount,
+  );
 
   static int pack(fb.Builder fbBuilder, SkinnedVertexBufferT? object) {
     if (object == null) return 0;
@@ -1617,8 +1828,9 @@ class SkinnedVertexBufferT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        vertices == null ? null : fbBuilder.writeListUint8(vertices!);
+    final int? verticesOffset = vertices == null
+        ? null
+        : fbBuilder.writeListUint8(vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, vertexCount);
@@ -1667,17 +1879,16 @@ class SkinnedVertexBufferObjectBuilder extends fb.ObjectBuilder {
   final List<int>? _vertices;
   final int? _vertexCount;
 
-  SkinnedVertexBufferObjectBuilder({
-    List<int>? vertices,
-    int? vertexCount,
-  })  : _vertices = vertices,
-        _vertexCount = vertexCount;
+  SkinnedVertexBufferObjectBuilder({List<int>? vertices, int? vertexCount})
+    : _vertices = vertices,
+      _vertexCount = vertexCount;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        _vertices == null ? null : fbBuilder.writeListUint8(_vertices!);
+    final int? verticesOffset = _vertices == null
+        ? null
+        : fbBuilder.writeListUint8(_vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, _vertexCount);
@@ -1709,7 +1920,8 @@ class Indices {
       const fb.Uint8ListReader().vTableGetNullable(_bc, _bcOffset, 4);
   int get count => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 6, 0);
   IndexType get type => IndexType.fromValue(
-      const fb.Int8Reader().vTableGet(_bc, _bcOffset, 8, 0));
+    const fb.Int8Reader().vTableGet(_bc, _bcOffset, 8, 0),
+  );
 
   @override
   String toString() {
@@ -1717,10 +1929,12 @@ class Indices {
   }
 
   IndicesT unpack() => IndicesT(
-      data: const fb.Uint8ListReader(lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      count: count,
-      type: type);
+    data: const fb.Uint8ListReader(
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    count: count,
+    type: type,
+  );
 
   static int pack(fb.Builder fbBuilder, IndicesT? object) {
     if (object == null) return 0;
@@ -1737,8 +1951,9 @@ class IndicesT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? dataOffset =
-        data == null ? null : fbBuilder.writeListUint8(data!);
+    final int? dataOffset = data == null
+        ? null
+        : fbBuilder.writeListUint8(data!);
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, dataOffset);
     fbBuilder.addUint32(1, count);
@@ -1794,19 +2009,17 @@ class IndicesObjectBuilder extends fb.ObjectBuilder {
   final int? _count;
   final IndexType? _type;
 
-  IndicesObjectBuilder({
-    List<int>? data,
-    int? count,
-    IndexType? type,
-  })  : _data = data,
-        _count = count,
-        _type = type;
+  IndicesObjectBuilder({List<int>? data, int? count, IndexType? type})
+    : _data = data,
+      _count = count,
+      _type = type;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? dataOffset =
-        _data == null ? null : fbBuilder.writeListUint8(_data!);
+    final int? dataOffset = _data == null
+        ? null
+        : fbBuilder.writeListUint8(_data!);
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, dataOffset);
     fbBuilder.addUint32(1, _count);
@@ -1836,12 +2049,16 @@ class MeshPrimitive {
   final int _bcOffset;
 
   VertexBufferTypeId? get verticesType => VertexBufferTypeId._createOrNull(
-      const fb.Uint8Reader().vTableGetNullable(_bc, _bcOffset, 4));
+    const fb.Uint8Reader().vTableGetNullable(_bc, _bcOffset, 4),
+  );
   dynamic get vertices {
     switch (verticesType?.value) {
       case 1:
-        return UnskinnedVertexBuffer.reader
-            .vTableGetNullable(_bc, _bcOffset, 6);
+        return UnskinnedVertexBuffer.reader.vTableGetNullable(
+          _bc,
+          _bcOffset,
+          6,
+        );
       case 2:
         return SkinnedVertexBuffer.reader.vTableGetNullable(_bc, _bcOffset, 6);
       default:
@@ -1853,16 +2070,28 @@ class MeshPrimitive {
   Material? get material =>
       Material.reader.vTableGetNullable(_bc, _bcOffset, 10);
 
+  ///  Local-space (vertex-position-space) bounds of this primitive.
+  ///
+  ///  Optional. When absent, the runtime falls back to scanning the vertex
+  ///  positions on first access, so older `.model` files without bounds
+  ///  still load correctly.
+  Aabb3? get boundsAabb => Aabb3.reader.vTableGetNullable(_bc, _bcOffset, 12);
+  Sphere? get boundsSphere =>
+      Sphere.reader.vTableGetNullable(_bc, _bcOffset, 14);
+
   @override
   String toString() {
-    return 'MeshPrimitive{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}}';
+    return 'MeshPrimitive{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}}';
   }
 
   MeshPrimitiveT unpack() => MeshPrimitiveT(
-      verticesType: verticesType,
-      vertices: vertices,
-      indices: indices?.unpack(),
-      material: material?.unpack());
+    verticesType: verticesType,
+    vertices: vertices,
+    indices: indices?.unpack(),
+    material: material?.unpack(),
+    boundsAabb: boundsAabb?.unpack(),
+    boundsSphere: boundsSphere?.unpack(),
+  );
 
   static int pack(fb.Builder fbBuilder, MeshPrimitiveT? object) {
     if (object == null) return 0;
@@ -1876,25 +2105,45 @@ class MeshPrimitiveT implements fb.Packable {
   IndicesT? indices;
   MaterialT? material;
 
-  MeshPrimitiveT(
-      {this.verticesType, this.vertices, this.indices, this.material});
+  ///  Local-space (vertex-position-space) bounds of this primitive.
+  ///
+  ///  Optional. When absent, the runtime falls back to scanning the vertex
+  ///  positions on first access, so older `.model` files without bounds
+  ///  still load correctly.
+  Aabb3T? boundsAabb;
+  SphereT? boundsSphere;
+
+  MeshPrimitiveT({
+    this.verticesType,
+    this.vertices,
+    this.indices,
+    this.material,
+    this.boundsAabb,
+    this.boundsSphere,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
     final int? verticesOffset = vertices?.pack(fbBuilder);
     final int? indicesOffset = indices?.pack(fbBuilder);
     final int? materialOffset = material?.pack(fbBuilder);
-    fbBuilder.startTable(4);
+    fbBuilder.startTable(6);
     fbBuilder.addUint8(0, verticesType?.value);
     fbBuilder.addOffset(1, verticesOffset);
     fbBuilder.addOffset(2, indicesOffset);
     fbBuilder.addOffset(3, materialOffset);
+    if (boundsAabb != null) {
+      fbBuilder.addStruct(4, boundsAabb!.pack(fbBuilder));
+    }
+    if (boundsSphere != null) {
+      fbBuilder.addStruct(5, boundsSphere!.pack(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
   @override
   String toString() {
-    return 'MeshPrimitiveT{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}}';
+    return 'MeshPrimitiveT{verticesType: ${verticesType}, vertices: ${vertices}, indices: ${indices}, material: ${material}, boundsAabb: ${boundsAabb}, boundsSphere: ${boundsSphere}}';
   }
 }
 
@@ -1912,7 +2161,7 @@ class MeshPrimitiveBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(4);
+    fbBuilder.startTable(6);
   }
 
   int addVerticesType(VertexBufferTypeId? verticesType) {
@@ -1935,6 +2184,16 @@ class MeshPrimitiveBuilder {
     return fbBuilder.offset;
   }
 
+  int addBoundsAabb(int offset) {
+    fbBuilder.addStruct(4, offset);
+    return fbBuilder.offset;
+  }
+
+  int addBoundsSphere(int offset) {
+    fbBuilder.addStruct(5, offset);
+    return fbBuilder.offset;
+  }
+
   int finish() {
     return fbBuilder.endTable();
   }
@@ -1945,16 +2204,22 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
   final dynamic _vertices;
   final IndicesObjectBuilder? _indices;
   final MaterialObjectBuilder? _material;
+  final Aabb3ObjectBuilder? _boundsAabb;
+  final SphereObjectBuilder? _boundsSphere;
 
   MeshPrimitiveObjectBuilder({
     VertexBufferTypeId? verticesType,
     dynamic vertices,
     IndicesObjectBuilder? indices,
     MaterialObjectBuilder? material,
-  })  : _verticesType = verticesType,
-        _vertices = vertices,
-        _indices = indices,
-        _material = material;
+    Aabb3ObjectBuilder? boundsAabb,
+    SphereObjectBuilder? boundsSphere,
+  }) : _verticesType = verticesType,
+       _vertices = vertices,
+       _indices = indices,
+       _material = material,
+       _boundsAabb = boundsAabb,
+       _boundsSphere = boundsSphere;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -1962,11 +2227,17 @@ class MeshPrimitiveObjectBuilder extends fb.ObjectBuilder {
     final int? verticesOffset = _vertices?.getOrCreateOffset(fbBuilder);
     final int? indicesOffset = _indices?.getOrCreateOffset(fbBuilder);
     final int? materialOffset = _material?.getOrCreateOffset(fbBuilder);
-    fbBuilder.startTable(4);
+    fbBuilder.startTable(6);
     fbBuilder.addUint8(0, _verticesType?.value);
     fbBuilder.addOffset(1, verticesOffset);
     fbBuilder.addOffset(2, indicesOffset);
     fbBuilder.addOffset(3, materialOffset);
+    if (_boundsAabb != null) {
+      fbBuilder.addStruct(4, _boundsAabb!.finish(fbBuilder));
+    }
+    if (_boundsSphere != null) {
+      fbBuilder.addStruct(5, _boundsSphere!.finish(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
@@ -1994,8 +2265,9 @@ class TranslationKeyframes {
   final fb.BufferContext _bc;
   final int _bcOffset;
 
-  List<Vec3>? get values => const fb.ListReader<Vec3>(Vec3.reader)
-      .vTableGetNullable(_bc, _bcOffset, 4);
+  List<Vec3>? get values => const fb.ListReader<Vec3>(
+    Vec3.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 4);
 
   @override
   String toString() {
@@ -2068,15 +2340,15 @@ class TranslationKeyframesBuilder {
 class TranslationKeyframesObjectBuilder extends fb.ObjectBuilder {
   final List<Vec3ObjectBuilder>? _values;
 
-  TranslationKeyframesObjectBuilder({
-    List<Vec3ObjectBuilder>? values,
-  }) : _values = values;
+  TranslationKeyframesObjectBuilder({List<Vec3ObjectBuilder>? values})
+    : _values = values;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2103,8 +2375,9 @@ class RotationKeyframes {
   final fb.BufferContext _bc;
   final int _bcOffset;
 
-  List<Vec4>? get values => const fb.ListReader<Vec4>(Vec4.reader)
-      .vTableGetNullable(_bc, _bcOffset, 4);
+  List<Vec4>? get values => const fb.ListReader<Vec4>(
+    Vec4.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 4);
 
   @override
   String toString() {
@@ -2175,15 +2448,15 @@ class RotationKeyframesBuilder {
 class RotationKeyframesObjectBuilder extends fb.ObjectBuilder {
   final List<Vec4ObjectBuilder>? _values;
 
-  RotationKeyframesObjectBuilder({
-    List<Vec4ObjectBuilder>? values,
-  }) : _values = values;
+  RotationKeyframesObjectBuilder({List<Vec4ObjectBuilder>? values})
+    : _values = values;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2210,8 +2483,9 @@ class ScaleKeyframes {
   final fb.BufferContext _bc;
   final int _bcOffset;
 
-  List<Vec3>? get values => const fb.ListReader<Vec3>(Vec3.reader)
-      .vTableGetNullable(_bc, _bcOffset, 4);
+  List<Vec3>? get values => const fb.ListReader<Vec3>(
+    Vec3.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 4);
 
   @override
   String toString() {
@@ -2282,15 +2556,15 @@ class ScaleKeyframesBuilder {
 class ScaleKeyframesObjectBuilder extends fb.ObjectBuilder {
   final List<Vec3ObjectBuilder>? _values;
 
-  ScaleKeyframesObjectBuilder({
-    List<Vec3ObjectBuilder>? values,
-  }) : _values = values;
+  ScaleKeyframesObjectBuilder({List<Vec3ObjectBuilder>? values})
+    : _values = values;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2318,15 +2592,20 @@ class Channel {
   final int _bcOffset;
 
   int get node => const fb.Int32Reader().vTableGet(_bc, _bcOffset, 4, 0);
-  List<double>? get timeline => const fb.ListReader<double>(fb.Float32Reader())
-      .vTableGetNullable(_bc, _bcOffset, 6);
+  List<double>? get timeline => const fb.ListReader<double>(
+    fb.Float32Reader(),
+  ).vTableGetNullable(_bc, _bcOffset, 6);
   KeyframesTypeId? get keyframesType => KeyframesTypeId._createOrNull(
-      const fb.Uint8Reader().vTableGetNullable(_bc, _bcOffset, 8));
+    const fb.Uint8Reader().vTableGetNullable(_bc, _bcOffset, 8),
+  );
   dynamic get keyframes {
     switch (keyframesType?.value) {
       case 1:
-        return TranslationKeyframes.reader
-            .vTableGetNullable(_bc, _bcOffset, 10);
+        return TranslationKeyframes.reader.vTableGetNullable(
+          _bc,
+          _bcOffset,
+          10,
+        );
       case 2:
         return RotationKeyframes.reader.vTableGetNullable(_bc, _bcOffset, 10);
       case 3:
@@ -2342,11 +2621,14 @@ class Channel {
   }
 
   ChannelT unpack() => ChannelT(
-      node: node,
-      timeline: const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 6),
-      keyframesType: keyframesType,
-      keyframes: keyframes);
+    node: node,
+    timeline: const fb.ListReader<double>(
+      fb.Float32Reader(),
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 6),
+    keyframesType: keyframesType,
+    keyframes: keyframes,
+  );
 
   static int pack(fb.Builder fbBuilder, ChannelT? object) {
     if (object == null) return 0;
@@ -2364,8 +2646,9 @@ class ChannelT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? timelineOffset =
-        timeline == null ? null : fbBuilder.writeListFloat32(timeline!);
+    final int? timelineOffset = timeline == null
+        ? null
+        : fbBuilder.writeListFloat32(timeline!);
     final int? keyframesOffset = keyframes?.pack(fbBuilder);
     fbBuilder.startTable(4);
     fbBuilder.addInt32(0, node);
@@ -2434,16 +2717,17 @@ class ChannelObjectBuilder extends fb.ObjectBuilder {
     List<double>? timeline,
     KeyframesTypeId? keyframesType,
     dynamic keyframes,
-  })  : _node = node,
-        _timeline = timeline,
-        _keyframesType = keyframesType,
-        _keyframes = keyframes;
+  }) : _node = node,
+       _timeline = timeline,
+       _keyframesType = keyframesType,
+       _keyframes = keyframes;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? timelineOffset =
-        _timeline == null ? null : fbBuilder.writeListFloat32(_timeline!);
+    final int? timelineOffset = _timeline == null
+        ? null
+        : fbBuilder.writeListFloat32(_timeline!);
     final int? keyframesOffset = _keyframes?.getOrCreateOffset(fbBuilder);
     fbBuilder.startTable(4);
     fbBuilder.addInt32(0, _node);
@@ -2476,8 +2760,9 @@ class Animation {
 
   String? get name =>
       const fb.StringReader().vTableGetNullable(_bc, _bcOffset, 4);
-  List<Channel>? get channels => const fb.ListReader<Channel>(Channel.reader)
-      .vTableGetNullable(_bc, _bcOffset, 6);
+  List<Channel>? get channels => const fb.ListReader<Channel>(
+    Channel.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 6);
 
   @override
   String toString() {
@@ -2485,7 +2770,9 @@ class Animation {
   }
 
   AnimationT unpack() => AnimationT(
-      name: name, channels: channels?.map((e) => e.unpack()).toList());
+    name: name,
+    channels: channels?.map((e) => e.unpack()).toList(),
+  );
 
   static int pack(fb.Builder fbBuilder, AnimationT? object) {
     if (object == null) return 0;
@@ -2553,21 +2840,21 @@ class AnimationObjectBuilder extends fb.ObjectBuilder {
   final String? _name;
   final List<ChannelObjectBuilder>? _channels;
 
-  AnimationObjectBuilder({
-    String? name,
-    List<ChannelObjectBuilder>? channels,
-  })  : _name = name,
-        _channels = channels;
+  AnimationObjectBuilder({String? name, List<ChannelObjectBuilder>? channels})
+    : _name = name,
+      _channels = channels;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset =
-        _name == null ? null : fbBuilder.writeString(_name!);
+    final int? nameOffset = _name == null
+        ? null
+        : fbBuilder.writeString(_name!);
     final int? channelsOffset = _channels == null
         ? null
         : fbBuilder.writeList(
-            _channels!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
+            _channels!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addOffset(1, channelsOffset);
@@ -2595,11 +2882,12 @@ class Skin {
   final fb.BufferContext _bc;
   final int _bcOffset;
 
-  List<int>? get joints => const fb.ListReader<int>(fb.Int32Reader())
-      .vTableGetNullable(_bc, _bcOffset, 4);
-  List<Matrix>? get inverseBindMatrices =>
-      const fb.ListReader<Matrix>(Matrix.reader)
-          .vTableGetNullable(_bc, _bcOffset, 6);
+  List<int>? get joints => const fb.ListReader<int>(
+    fb.Int32Reader(),
+  ).vTableGetNullable(_bc, _bcOffset, 4);
+  List<Matrix>? get inverseBindMatrices => const fb.ListReader<Matrix>(
+    Matrix.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 6);
 
   ///  The root joint of the skeleton.
   int get skeleton => const fb.Int32Reader().vTableGet(_bc, _bcOffset, 8, 0);
@@ -2610,10 +2898,13 @@ class Skin {
   }
 
   SkinT unpack() => SkinT(
-      joints: const fb.ListReader<int>(fb.Int32Reader(), lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      inverseBindMatrices: inverseBindMatrices?.map((e) => e.unpack()).toList(),
-      skeleton: skeleton);
+    joints: const fb.ListReader<int>(
+      fb.Int32Reader(),
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    inverseBindMatrices: inverseBindMatrices?.map((e) => e.unpack()).toList(),
+    skeleton: skeleton,
+  );
 
   static int pack(fb.Builder fbBuilder, SkinT? object) {
     if (object == null) return 0;
@@ -2632,15 +2923,17 @@ class SkinT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? jointsOffset =
-        joints == null ? null : fbBuilder.writeListInt32(joints!);
+    final int? jointsOffset = joints == null
+        ? null
+        : fbBuilder.writeListInt32(joints!);
     int? inverseBindMatricesOffset;
     if (inverseBindMatrices != null) {
       for (var e in inverseBindMatrices!) {
         e.pack(fbBuilder);
       }
-      inverseBindMatricesOffset =
-          fbBuilder.endStructVector(inverseBindMatrices!.length);
+      inverseBindMatricesOffset = fbBuilder.endStructVector(
+        inverseBindMatrices!.length,
+      );
     }
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, jointsOffset);
@@ -2700,15 +2993,16 @@ class SkinObjectBuilder extends fb.ObjectBuilder {
     List<int>? joints,
     List<MatrixObjectBuilder>? inverseBindMatrices,
     int? skeleton,
-  })  : _joints = joints,
-        _inverseBindMatrices = inverseBindMatrices,
-        _skeleton = skeleton;
+  }) : _joints = joints,
+       _inverseBindMatrices = inverseBindMatrices,
+       _skeleton = skeleton;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? jointsOffset =
-        _joints == null ? null : fbBuilder.writeListInt32(_joints!);
+    final int? jointsOffset = _joints == null
+        ? null
+        : fbBuilder.writeListInt32(_joints!);
     final int? inverseBindMatricesOffset = _inverseBindMatrices == null
         ? null
         : fbBuilder.writeListOfStructs(_inverseBindMatrices!);
@@ -2761,22 +3055,23 @@ class Matrix {
   }
 
   MatrixT unpack() => MatrixT(
-      m0: m0,
-      m1: m1,
-      m2: m2,
-      m3: m3,
-      m4: m4,
-      m5: m5,
-      m6: m6,
-      m7: m7,
-      m8: m8,
-      m9: m9,
-      m10: m10,
-      m11: m11,
-      m12: m12,
-      m13: m13,
-      m14: m14,
-      m15: m15);
+    m0: m0,
+    m1: m1,
+    m2: m2,
+    m3: m3,
+    m4: m4,
+    m5: m5,
+    m6: m6,
+    m7: m7,
+    m8: m8,
+    m9: m9,
+    m10: m10,
+    m11: m11,
+    m12: m12,
+    m13: m13,
+    m14: m14,
+    m15: m15,
+  );
 
   static int pack(fb.Builder fbBuilder, MatrixT? object) {
     if (object == null) return 0;
@@ -2804,23 +3099,24 @@ class MatrixT implements fb.Packable {
   double m14;
   double m15;
 
-  MatrixT(
-      {required this.m0,
-      required this.m1,
-      required this.m2,
-      required this.m3,
-      required this.m4,
-      required this.m5,
-      required this.m6,
-      required this.m7,
-      required this.m8,
-      required this.m9,
-      required this.m10,
-      required this.m11,
-      required this.m12,
-      required this.m13,
-      required this.m14,
-      required this.m15});
+  MatrixT({
+    required this.m0,
+    required this.m1,
+    required this.m2,
+    required this.m3,
+    required this.m4,
+    required this.m5,
+    required this.m6,
+    required this.m7,
+    required this.m8,
+    required this.m9,
+    required this.m10,
+    required this.m11,
+    required this.m12,
+    required this.m13,
+    required this.m14,
+    required this.m15,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
@@ -2865,22 +3161,23 @@ class MatrixBuilder {
   final fb.Builder fbBuilder;
 
   int finish(
-      double m0,
-      double m1,
-      double m2,
-      double m3,
-      double m4,
-      double m5,
-      double m6,
-      double m7,
-      double m8,
-      double m9,
-      double m10,
-      double m11,
-      double m12,
-      double m13,
-      double m14,
-      double m15) {
+    double m0,
+    double m1,
+    double m2,
+    double m3,
+    double m4,
+    double m5,
+    double m6,
+    double m7,
+    double m8,
+    double m9,
+    double m10,
+    double m11,
+    double m12,
+    double m13,
+    double m14,
+    double m15,
+  ) {
     fbBuilder.putFloat32(m15);
     fbBuilder.putFloat32(m14);
     fbBuilder.putFloat32(m13);
@@ -2936,22 +3233,22 @@ class MatrixObjectBuilder extends fb.ObjectBuilder {
     required double m13,
     required double m14,
     required double m15,
-  })  : _m0 = m0,
-        _m1 = m1,
-        _m2 = m2,
-        _m3 = m3,
-        _m4 = m4,
-        _m5 = m5,
-        _m6 = m6,
-        _m7 = m7,
-        _m8 = m8,
-        _m9 = m9,
-        _m10 = m10,
-        _m11 = m11,
-        _m12 = m12,
-        _m13 = m13,
-        _m14 = m14,
-        _m15 = m15;
+  }) : _m0 = m0,
+       _m1 = m1,
+       _m2 = m2,
+       _m3 = m3,
+       _m4 = m4,
+       _m5 = m5,
+       _m6 = m6,
+       _m7 = m7,
+       _m8 = m8,
+       _m9 = m9,
+       _m10 = m10,
+       _m11 = m11,
+       _m12 = m12,
+       _m13 = m13,
+       _m14 = m14,
+       _m15 = m15;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -2998,26 +3295,41 @@ class Node {
 
   String? get name =>
       const fb.StringReader().vTableGetNullable(_bc, _bcOffset, 4);
-  List<int>? get children => const fb.ListReader<int>(fb.Int32Reader())
-      .vTableGetNullable(_bc, _bcOffset, 6);
+  List<int>? get children => const fb.ListReader<int>(
+    fb.Int32Reader(),
+  ).vTableGetNullable(_bc, _bcOffset, 6);
   Matrix? get transform => Matrix.reader.vTableGetNullable(_bc, _bcOffset, 8);
-  List<MeshPrimitive>? get meshPrimitives =>
-      const fb.ListReader<MeshPrimitive>(MeshPrimitive.reader)
-          .vTableGetNullable(_bc, _bcOffset, 10);
+  List<MeshPrimitive>? get meshPrimitives => const fb.ListReader<MeshPrimitive>(
+    MeshPrimitive.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 10);
   Skin? get skin => Skin.reader.vTableGetNullable(_bc, _bcOffset, 12);
+
+  ///  Union of this node's mesh primitive AABBs together with each
+  ///  descendant node's `combined_local_aabb` transformed by the
+  ///  descendant's local transform. Expressed in this node's local space.
+  ///
+  ///  Lets the runtime cull entire subtrees with a single AABB-vs-frustum
+  ///  test instead of recomputing the union every frame. Optional for
+  ///  backwards compatibility.
+  Aabb3? get combinedLocalAabb =>
+      Aabb3.reader.vTableGetNullable(_bc, _bcOffset, 14);
 
   @override
   String toString() {
-    return 'Node{name: ${name}, children: ${children}, transform: ${transform}, meshPrimitives: ${meshPrimitives}, skin: ${skin}}';
+    return 'Node{name: ${name}, children: ${children}, transform: ${transform}, meshPrimitives: ${meshPrimitives}, skin: ${skin}, combinedLocalAabb: ${combinedLocalAabb}}';
   }
 
   NodeT unpack() => NodeT(
-      name: name,
-      children: const fb.ListReader<int>(fb.Int32Reader(), lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 6),
-      transform: transform?.unpack(),
-      meshPrimitives: meshPrimitives?.map((e) => e.unpack()).toList(),
-      skin: skin?.unpack());
+    name: name,
+    children: const fb.ListReader<int>(
+      fb.Int32Reader(),
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 6),
+    transform: transform?.unpack(),
+    meshPrimitives: meshPrimitives?.map((e) => e.unpack()).toList(),
+    skin: skin?.unpack(),
+    combinedLocalAabb: combinedLocalAabb?.unpack(),
+  );
 
   static int pack(fb.Builder fbBuilder, NodeT? object) {
     if (object == null) return 0;
@@ -3032,24 +3344,37 @@ class NodeT implements fb.Packable {
   List<MeshPrimitiveT>? meshPrimitives;
   SkinT? skin;
 
-  NodeT(
-      {this.name,
-      this.children,
-      this.transform,
-      this.meshPrimitives,
-      this.skin});
+  ///  Union of this node's mesh primitive AABBs together with each
+  ///  descendant node's `combined_local_aabb` transformed by the
+  ///  descendant's local transform. Expressed in this node's local space.
+  ///
+  ///  Lets the runtime cull entire subtrees with a single AABB-vs-frustum
+  ///  test instead of recomputing the union every frame. Optional for
+  ///  backwards compatibility.
+  Aabb3T? combinedLocalAabb;
+
+  NodeT({
+    this.name,
+    this.children,
+    this.transform,
+    this.meshPrimitives,
+    this.skin,
+    this.combinedLocalAabb,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
     final int? nameOffset = name == null ? null : fbBuilder.writeString(name!);
-    final int? childrenOffset =
-        children == null ? null : fbBuilder.writeListInt32(children!);
+    final int? childrenOffset = children == null
+        ? null
+        : fbBuilder.writeListInt32(children!);
     final int? meshPrimitivesOffset = meshPrimitives == null
         ? null
-        : fbBuilder
-            .writeList(meshPrimitives!.map((b) => b.pack(fbBuilder)).toList());
+        : fbBuilder.writeList(
+            meshPrimitives!.map((b) => b.pack(fbBuilder)).toList(),
+          );
     final int? skinOffset = skin?.pack(fbBuilder);
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(6);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addOffset(1, childrenOffset);
     if (transform != null) {
@@ -3057,12 +3382,15 @@ class NodeT implements fb.Packable {
     }
     fbBuilder.addOffset(3, meshPrimitivesOffset);
     fbBuilder.addOffset(4, skinOffset);
+    if (combinedLocalAabb != null) {
+      fbBuilder.addStruct(5, combinedLocalAabb!.pack(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
   @override
   String toString() {
-    return 'NodeT{name: ${name}, children: ${children}, transform: ${transform}, meshPrimitives: ${meshPrimitives}, skin: ${skin}}';
+    return 'NodeT{name: ${name}, children: ${children}, transform: ${transform}, meshPrimitives: ${meshPrimitives}, skin: ${skin}, combinedLocalAabb: ${combinedLocalAabb}}';
   }
 }
 
@@ -3079,7 +3407,7 @@ class NodeBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(6);
   }
 
   int addNameOffset(int? offset) {
@@ -3107,6 +3435,11 @@ class NodeBuilder {
     return fbBuilder.offset;
   }
 
+  int addCombinedLocalAabb(int offset) {
+    fbBuilder.addStruct(5, offset);
+    return fbBuilder.offset;
+  }
+
   int finish() {
     return fbBuilder.endTable();
   }
@@ -3118,6 +3451,7 @@ class NodeObjectBuilder extends fb.ObjectBuilder {
   final MatrixObjectBuilder? _transform;
   final List<MeshPrimitiveObjectBuilder>? _meshPrimitives;
   final SkinObjectBuilder? _skin;
+  final Aabb3ObjectBuilder? _combinedLocalAabb;
 
   NodeObjectBuilder({
     String? name,
@@ -3125,26 +3459,32 @@ class NodeObjectBuilder extends fb.ObjectBuilder {
     MatrixObjectBuilder? transform,
     List<MeshPrimitiveObjectBuilder>? meshPrimitives,
     SkinObjectBuilder? skin,
-  })  : _name = name,
-        _children = children,
-        _transform = transform,
-        _meshPrimitives = meshPrimitives,
-        _skin = skin;
+    Aabb3ObjectBuilder? combinedLocalAabb,
+  }) : _name = name,
+       _children = children,
+       _transform = transform,
+       _meshPrimitives = meshPrimitives,
+       _skin = skin,
+       _combinedLocalAabb = combinedLocalAabb;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset =
-        _name == null ? null : fbBuilder.writeString(_name!);
-    final int? childrenOffset =
-        _children == null ? null : fbBuilder.writeListInt32(_children!);
+    final int? nameOffset = _name == null
+        ? null
+        : fbBuilder.writeString(_name!);
+    final int? childrenOffset = _children == null
+        ? null
+        : fbBuilder.writeListInt32(_children!);
     final int? meshPrimitivesOffset = _meshPrimitives == null
         ? null
-        : fbBuilder.writeList(_meshPrimitives!
-            .map((b) => b.getOrCreateOffset(fbBuilder))
-            .toList());
+        : fbBuilder.writeList(
+            _meshPrimitives!
+                .map((b) => b.getOrCreateOffset(fbBuilder))
+                .toList(),
+          );
     final int? skinOffset = _skin?.getOrCreateOffset(fbBuilder);
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(6);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addOffset(1, childrenOffset);
     if (_transform != null) {
@@ -3152,6 +3492,9 @@ class NodeObjectBuilder extends fb.ObjectBuilder {
     }
     fbBuilder.addOffset(3, meshPrimitivesOffset);
     fbBuilder.addOffset(4, skinOffset);
+    if (_combinedLocalAabb != null) {
+      fbBuilder.addStruct(5, _combinedLocalAabb!.finish(fbBuilder));
+    }
     return fbBuilder.endTable();
   }
 
@@ -3176,16 +3519,19 @@ class Scene {
   final fb.BufferContext _bc;
   final int _bcOffset;
 
-  List<int>? get children => const fb.ListReader<int>(fb.Int32Reader())
-      .vTableGetNullable(_bc, _bcOffset, 4);
+  List<int>? get children => const fb.ListReader<int>(
+    fb.Int32Reader(),
+  ).vTableGetNullable(_bc, _bcOffset, 4);
   Matrix? get transform => Matrix.reader.vTableGetNullable(_bc, _bcOffset, 6);
-  List<Node>? get nodes => const fb.ListReader<Node>(Node.reader)
-      .vTableGetNullable(_bc, _bcOffset, 8);
-  List<Texture>? get textures => const fb.ListReader<Texture>(Texture.reader)
-      .vTableGetNullable(_bc, _bcOffset, 10);
-  List<Animation>? get animations =>
-      const fb.ListReader<Animation>(Animation.reader)
-          .vTableGetNullable(_bc, _bcOffset, 12);
+  List<Node>? get nodes => const fb.ListReader<Node>(
+    Node.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 8);
+  List<Texture>? get textures => const fb.ListReader<Texture>(
+    Texture.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 10);
+  List<Animation>? get animations => const fb.ListReader<Animation>(
+    Animation.reader,
+  ).vTableGetNullable(_bc, _bcOffset, 12);
 
   @override
   String toString() {
@@ -3193,12 +3539,15 @@ class Scene {
   }
 
   SceneT unpack() => SceneT(
-      children: const fb.ListReader<int>(fb.Int32Reader(), lazy: false)
-          .vTableGetNullable(_bc, _bcOffset, 4),
-      transform: transform?.unpack(),
-      nodes: nodes?.map((e) => e.unpack()).toList(),
-      textures: textures?.map((e) => e.unpack()).toList(),
-      animations: animations?.map((e) => e.unpack()).toList());
+    children: const fb.ListReader<int>(
+      fb.Int32Reader(),
+      lazy: false,
+    ).vTableGetNullable(_bc, _bcOffset, 4),
+    transform: transform?.unpack(),
+    nodes: nodes?.map((e) => e.unpack()).toList(),
+    textures: textures?.map((e) => e.unpack()).toList(),
+    animations: animations?.map((e) => e.unpack()).toList(),
+  );
 
   static int pack(fb.Builder fbBuilder, SceneT? object) {
     if (object == null) return 0;
@@ -3213,17 +3562,19 @@ class SceneT implements fb.Packable {
   List<TextureT>? textures;
   List<AnimationT>? animations;
 
-  SceneT(
-      {this.children,
-      this.transform,
-      this.nodes,
-      this.textures,
-      this.animations});
+  SceneT({
+    this.children,
+    this.transform,
+    this.nodes,
+    this.textures,
+    this.animations,
+  });
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? childrenOffset =
-        children == null ? null : fbBuilder.writeListInt32(children!);
+    final int? childrenOffset = children == null
+        ? null
+        : fbBuilder.writeListInt32(children!);
     final int? nodesOffset = nodes == null
         ? null
         : fbBuilder.writeList(nodes!.map((b) => b.pack(fbBuilder)).toList());
@@ -3232,8 +3583,9 @@ class SceneT implements fb.Packable {
         : fbBuilder.writeList(textures!.map((b) => b.pack(fbBuilder)).toList());
     final int? animationsOffset = animations == null
         ? null
-        : fbBuilder
-            .writeList(animations!.map((b) => b.pack(fbBuilder)).toList());
+        : fbBuilder.writeList(
+            animations!.map((b) => b.pack(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, childrenOffset);
     if (transform != null) {
@@ -3310,29 +3662,33 @@ class SceneObjectBuilder extends fb.ObjectBuilder {
     List<NodeObjectBuilder>? nodes,
     List<TextureObjectBuilder>? textures,
     List<AnimationObjectBuilder>? animations,
-  })  : _children = children,
-        _transform = transform,
-        _nodes = nodes,
-        _textures = textures,
-        _animations = animations;
+  }) : _children = children,
+       _transform = transform,
+       _nodes = nodes,
+       _textures = textures,
+       _animations = animations;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? childrenOffset =
-        _children == null ? null : fbBuilder.writeListInt32(_children!);
+    final int? childrenOffset = _children == null
+        ? null
+        : fbBuilder.writeListInt32(_children!);
     final int? nodesOffset = _nodes == null
         ? null
         : fbBuilder.writeList(
-            _nodes!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
+            _nodes!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     final int? texturesOffset = _textures == null
         ? null
         : fbBuilder.writeList(
-            _textures!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
+            _textures!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     final int? animationsOffset = _animations == null
         ? null
         : fbBuilder.writeList(
-            _animations!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
+            _animations!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, childrenOffset);
     if (_transform != null) {

@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 /// A `Node` represents a single element in a 3D scene graph.
 ///
@@ -28,8 +29,9 @@ base class Node implements SceneGraph {
   ///
   /// When omitted, [localTransform] defaults to the identity matrix and the
   /// node has no associated geometry.
-  Node({this.name = '', Matrix4? localTransform, this.mesh})
-    : localTransform = localTransform ?? Matrix4.identity();
+  Node({this.name = '', Matrix4? localTransform, Mesh? mesh})
+    : localTransform = localTransform ?? Matrix4.identity(),
+      _mesh = mesh;
 
   /// The name of this node, used for identification.
   String name;
@@ -83,10 +85,99 @@ base class Node implements SceneGraph {
   Node? get parent => _parent;
   bool _isSceneRoot = false;
 
+  Mesh? _mesh;
+
   /// The collection of [MeshPrimitive] objects that represent the 3D geometry and material properties of this node.
   ///
   /// This property is `null` if this node does not have any associated geometry or material.
-  Mesh? mesh;
+  Mesh? get mesh => _mesh;
+  set mesh(Mesh? value) {
+    if (identical(_mesh, value)) return;
+    _mesh = value;
+    markBoundsDirty();
+  }
+
+  // Combined local-space AABB cache. Three states:
+  //   * _combinedBoundsCached == false: not yet computed (fall through
+  //     to the lazy compute path on first access).
+  //   * _combinedBoundsCached == true, _combinedBoundsCache == null:
+  //     subtree is unbounded (skinned content, or geometry without
+  //     computable bounds); treat as always visible.
+  //   * _combinedBoundsCached == true, _combinedBoundsCache != null:
+  //     valid cached AABB.
+  vm.Aabb3? _combinedBoundsCache;
+  bool _combinedBoundsCached = false;
+
+  /// Local-space AABB covering this node's mesh and every descendant's
+  /// (transformed) bounds. Returns `null` when the subtree contains
+  /// skinned content or geometry without computable bounds, signalling
+  /// "treat as always visible." Cached; invalidated by [markBoundsDirty].
+  ///
+  /// Mutating a `localTransform` matrix in place (rather than
+  /// reassigning it) does not automatically invalidate the cache. Call
+  /// [markBoundsDirty] after any in-place transform mutation.
+  vm.Aabb3? get combinedLocalBounds {
+    if (_combinedBoundsCached) return _combinedBoundsCache;
+    _computeAndCacheCombinedLocalBounds();
+    return _combinedBoundsCache;
+  }
+
+  void _computeAndCacheCombinedLocalBounds() {
+    // A node with a skin can't be soundly bounded by its bind-pose
+    // mesh extents; the rendered pose can extend arbitrarily far when
+    // joints animate. PR 3 will replace this branch with a baked
+    // pose-union AABB.
+    if (skin != null) {
+      _combinedBoundsCache = null;
+      _combinedBoundsCached = true;
+      return;
+    }
+
+    vm.Aabb3? result;
+    bool subtreeBounded = true;
+
+    final m = _mesh;
+    if (m != null) {
+      final mb = m.localBounds;
+      if (mb != null) {
+        result = vm.Aabb3.copy(mb);
+      } else if (m.primitives.isNotEmpty) {
+        // Mesh with primitives but no localBounds (caller-managed
+        // buffers without an override) acts as unbounded.
+        subtreeBounded = false;
+      }
+    }
+
+    for (final child in children) {
+      final childBounds = child.combinedLocalBounds;
+      if (childBounds == null) {
+        subtreeBounded = false;
+        continue;
+      }
+      final transformed = vm.Aabb3.copy(childBounds)
+        ..transform(child.localTransform);
+      if (result == null) {
+        result = transformed;
+      } else {
+        result.hull(transformed);
+      }
+    }
+
+    _combinedBoundsCache = subtreeBounded ? result : null;
+    _combinedBoundsCached = true;
+  }
+
+  /// Mark this node's [combinedLocalBounds] cache (and every ancestor's)
+  /// stale. Call after replacing a mesh, mutating a child's local
+  /// transform in place, or any other change that affects the bound.
+  void markBoundsDirty() {
+    Node? current = this;
+    while (current != null && current._combinedBoundsCached) {
+      current._combinedBoundsCache = null;
+      current._combinedBoundsCached = false;
+      current = current._parent;
+    }
+  }
 
   /// Whether this node is a joint in a skeleton for animation.
   bool isJoint = false;
@@ -295,7 +386,8 @@ base class Node implements SceneGraph {
     name = fbNode.name ?? '';
     localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
-    // Unpack mesh.
+    // Unpack mesh. Assign through the private field so we don't trip
+    // markBoundsDirty before we install the baked combined AABB below.
     if (fbNode.meshPrimitives != null) {
       List<MeshPrimitive> meshPrimitives = [];
       for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
@@ -306,20 +398,39 @@ base class Node implements SceneGraph {
                 : UnlitMaterial();
         meshPrimitives.add(MeshPrimitive(geometry, material));
       }
-      mesh = Mesh.primitives(primitives: meshPrimitives);
+      _mesh = Mesh.primitives(primitives: meshPrimitives);
     }
 
-    // Connect children.
+    // Connect children. Same private-field assignment to avoid
+    // ancestor-chain invalidation churn while building the graph.
     for (int childIndex in fbNode.children ?? []) {
       if (childIndex < 0 || childIndex >= sceneNodes.length) {
         throw Exception('Node child index out of range.');
       }
-      add(sceneNodes[childIndex]);
+      final child = sceneNodes[childIndex];
+      if (child._parent != null) {
+        throw Exception('Child already has a parent');
+      }
+      children.add(child);
+      child._parent = this;
     }
 
     // Skin.
     if (fbNode.skin != null) {
       skin = Skin.fromFlatbuffer(fbNode.skin!, sceneNodes);
+    }
+
+    // Adopt the baked combined-local AABB when present so we don't
+    // recompute it at runtime. When omitted (older files, or the bake
+    // determined the subtree was unbounded), fall through to the lazy
+    // compute path on first access.
+    final fbAabb = fbNode.combinedLocalAabb;
+    if (fbAabb != null) {
+      _combinedBoundsCache = vm.Aabb3.minMax(
+        Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
+        Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
+      );
+      _combinedBoundsCached = true;
     }
   }
 
@@ -348,6 +459,7 @@ base class Node implements SceneGraph {
     }
     children.add(child);
     child._parent = this;
+    markBoundsDirty();
   }
 
   @override
@@ -370,6 +482,7 @@ base class Node implements SceneGraph {
     }
     children.remove(child);
     child._parent = null;
+    markBoundsDirty();
   }
 
   @override

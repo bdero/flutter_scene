@@ -142,6 +142,8 @@ class GltfAccessor {
     this.bufferView,
     this.byteOffset = 0,
     this.normalized = false,
+    this.min,
+    this.max,
   });
 
   final GltfComponentType componentType;
@@ -150,6 +152,12 @@ class GltfAccessor {
   final int? bufferView;
   final int byteOffset;
   final bool normalized;
+
+  /// Componentwise min/max bounds, when supplied by the glTF asset. The
+  /// spec requires these on POSITION accessors, so consumers can use them
+  /// to skip a vertex scan when computing bounding volumes.
+  final List<double>? min;
+  final List<double>? max;
 }
 
 class GltfBufferView {
