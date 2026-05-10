@@ -60,7 +60,10 @@ void main() {
       );
       expect(g.localBounds!.min, Vector3(-1, -2, -3));
       expect(g.localBounds!.max, Vector3(1, 2, 3));
-      expect(g.localBoundingSphere!.radius, closeTo(Vector3(1, 2, 3).length, 1e-6));
+      expect(
+        g.localBoundingSphere!.radius,
+        closeTo(Vector3(1, 2, 3).length, 1e-6),
+      );
     });
 
     test('null bounds when not set', () {
@@ -254,21 +257,24 @@ void main() {
       expect(root.combinedLocalBounds!.max, Vector3(5, 5, 5));
     });
 
-    test('returns null for skinned subtrees regardless of primitive bounds', () {
-      // Skinned bind-pose extents are misleading: animated joints can
-      // place geometry far outside them. The bounds API treats any
-      // skinned node as "always visible" until PR 3 bakes a pose-union
-      // AABB.
-      final node = Node(
-        mesh: Mesh.primitives(
-          primitives: [
-            _primWithBounds(_aabb(Vector3(-1, -1, -1), Vector3(1, 1, 1))),
-          ],
-        ),
-      );
-      node.skin = Skin();
-      expect(node.combinedLocalBounds, isNull);
-    });
+    test(
+      'returns null for skinned subtrees regardless of primitive bounds',
+      () {
+        // Skinned bind-pose extents are misleading: animated joints can
+        // place geometry far outside them. The bounds API treats any
+        // skinned node as "always visible" until PR 3 bakes a pose-union
+        // AABB.
+        final node = Node(
+          mesh: Mesh.primitives(
+            primitives: [
+              _primWithBounds(_aabb(Vector3(-1, -1, -1), Vector3(1, 1, 1))),
+            ],
+          ),
+        );
+        node.skin = Skin();
+        expect(node.combinedLocalBounds, isNull);
+      },
+    );
 
     test('mesh setter invalidates the cache', () {
       final node = Node(
