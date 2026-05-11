@@ -1,4 +1,5 @@
 import 'package:hooks/hooks.dart';
+import 'package:flutter_gpu_shaders/build.dart';
 import 'package:flutter_scene_importer/build_hooks.dart';
 
 void main(List<String> args) {
@@ -11,6 +12,11 @@ void main(List<String> args) {
         '../assets_src/dash.glb',
         '../assets_src/fcar.glb',
       ],
+    );
+    await buildShaderBundleJson(
+      buildInput: config,
+      buildOutput: output,
+      manifestFileName: 'shaders/example.shaderbundle.json',
     );
   });
 }

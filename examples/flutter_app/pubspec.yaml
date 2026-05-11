@@ -12,6 +12,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_gpu:
+    sdk: flutter
+  flutter_gpu_shaders: ^0.4.0
   flutter_scene: ^0.12.0
   flutter_scene_importer: ^0.12.0
   hooks: ^1.0.0
@@ -30,3 +33,5 @@ flutter:
     - build/models/
     # Source .glb files for the runtime importer demo.
     - assets_src/
+    # Custom shader bundle for the toon example.
+    - build/shaderbundles/example.shaderbundle
