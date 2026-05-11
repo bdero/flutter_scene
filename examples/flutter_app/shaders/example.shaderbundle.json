@@ -1,0 +1,6 @@
+{
+    "ToonFragment": {
+        "type": "fragment",
+        "file": "shaders/example_toon.frag"
+    }
+}
