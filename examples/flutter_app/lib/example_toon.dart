@@ -1,7 +1,7 @@
 // Toon-shader example: loads a glTF model and renders it through a
 // caller-authored fragment shader bound by name.
 //
-// Demonstrates the v1 ShaderMaterial workflow end-to-end:
+// Demonstrates the ShaderMaterial workflow end-to-end:
 //   1. Author a fragment shader (shaders/example_toon.frag) that
 //      consumes the engine's standard vertex outputs.
 //   2. Compile it offline through `flutter_gpu_shaders` build hook
@@ -81,8 +81,7 @@ class _ExampleToonState extends State<ExampleToon> {
       // Start the Walk animation looping. Dash walks in place, so the
       // root transform doesn't drift; we drive the visible rotation
       // via `_dashGroup.localTransform` in build() instead.
-      dash
-          .createAnimationClip(dash.findAnimationByName('Walk')!)
+      dash.createAnimationClip(dash.findAnimationByName('Walk')!)
         ..loop = true
         ..play();
 

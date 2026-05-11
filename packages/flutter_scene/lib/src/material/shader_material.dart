@@ -54,8 +54,7 @@ import 'package:flutter_scene/src/material/material.dart';
 /// Flutter GPU resolves uniform blocks by name (via
 /// [gpu.Shader.getUniformSlot]) but the block's contents are a flat
 /// byte buffer that your code packs and the GPU interprets according
-/// to the shader's std140 layout. flutter_scene v0.12 leaves this
-/// packing to you. Common rules:
+/// to the shader's std140 layout. Common rules:
 ///
 /// * `float`, `int`, `bool` occupy 4 bytes.
 /// * `vec2` occupies 8 bytes aligned to 8.
@@ -66,8 +65,11 @@ import 'package:flutter_scene/src/material/material.dart';
 ///
 /// Put a `Float32List` together that matches the block's declared
 /// member order (including padding) and pass it via
-/// [setUniformBlock]. The v2 preprocessor described in issue #22 will
-/// generate this packing code at build time.
+/// [setUniformBlock].
+///
+/// TODO(https://github.com/bdero/flutter_scene/issues/22): generate
+/// this packing code at build time from a declarative material
+/// source so callers don't write it by hand.
 class ShaderMaterial extends Material {
   /// Creates a [ShaderMaterial] wrapping [fragmentShader].
   ///

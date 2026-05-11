@@ -1,13 +1,13 @@
 # Custom materials in flutter_scene
 
 This doc walks through writing a custom material for flutter_scene by
-authoring a fragment shader. The 0.12 release ships the foundation
-for this workflow as `ShaderMaterial`; a more ergonomic declarative
-material format is planned and tracked in [issue #22][issue22].
+authoring a fragment shader. The current surface is `ShaderMaterial`;
+a more ergonomic declarative material format is planned and tracked
+in [issue #22][issue22].
 
 If you've worked with Three.js's `ShaderMaterial`, Bevy's `Material`
 trait, or Filament's `.mat` files, the underlying mental model will
-be familiar. flutter_scene's v1 surface is the most permissive of the
+be familiar. flutter_scene's surface is the most permissive of the
 three: you write a complete GLSL fragment shader, declare the uniform
 blocks and samplers you want, and bind them by name from Dart.
 
@@ -178,7 +178,7 @@ couldn't be found.
 
 ## Uniform block packing
 
-This is the largest footgun in v1. Flutter GPU resolves a uniform
+This is the largest footgun today. Flutter GPU resolves a uniform
 *block* by name and gives you a single byte buffer to fill. The
 contents of that buffer follow the GLSL std140 layout rules, which
 your packing code on the Dart side has to match exactly. The most
@@ -240,10 +240,10 @@ material.setUniformBlock(
 );
 ```
 
-The v2 preprocessor planned in issue #22 will generate this packing
-code from the `.mat` source so you never write it by hand. Until
-then, follow the std140 rules and document your block layouts in a
-comment near the GLSL declaration.
+TODO ([#22][issue22]): the planned preprocessor will generate this
+packing code from a declarative material source so you never write
+it by hand. Until then, follow the std140 rules and document your
+block layouts in a comment near the GLSL declaration.
 
 ## Render-state knobs
 
@@ -262,33 +262,35 @@ configure in the constructor or mutate later:
 
 Set `cullingMode: gpu.CullMode.none` to render double-sided. Set
 `isOpaqueOverride: false` to render translucent materials with
-alpha blending. There are no other render-state knobs in v1;
-authoring the full PSO is on the v2 roadmap.
+alpha blending. There are no other render-state knobs today.
 
-## What's not in v1
+TODO ([#22][issue22]): expose the full pipeline-state surface
+declaratively (blend modes, depth modes, polygon mode) once the
+preprocessor lands.
+
+## Known limitations
+
+Each of these is tracked in [issue #22][issue22], which has the full
+design discussion for where the custom-materials surface is going.
 
 - **No shader hot reload.** Editing a `.frag` requires a full
-  restart (hot reload doesn't touch the `flutter_gpu_shaders` build
-  hook). This is the single largest authoring-friction gap and is
-  the top item on the v3 roadmap.
+  restart; hot reload doesn't touch the `flutter_gpu_shaders` build
+  hook. This is the single largest authoring-friction gap today.
 - **No engine PBR helpers exposed to your shaders.** If you want
   PBR-style shading with image-based lighting, you have to either
   inline the math in your fragment shader or extend
   `PhysicallyBasedMaterial`. The internal GLSL chunks
   (`pbr.glsl`, `normals.glsl`, etc.) are not packaged for external
-  consumption yet; v2 will solve cross-package `#include`
-  distribution.
-- **No declarative material format.** You write GLSL plus a
-  `MaterialT` subclass; v2 will introduce a `.mat`-style format
-  that drives both shader source and Dart bindings from one file.
-- **No inspector / hint annotations.** v2 will parse Godot-style
-  uniform hints (`hint_range`, `source_color`) and surface them
-  for tooling.
+  `#include` consumption yet.
+- **No declarative material format.** You write GLSL plus call
+  into `ShaderMaterial` from Dart. A planned `.mat`-style format
+  will drive both shader source and Dart bindings from one file.
+- **No inspector / hint annotations.** A planned preprocessor pass
+  will parse Godot-style uniform hints (`hint_range`,
+  `source_color`) and surface them for tooling.
 - **No vertex-shader customization.** Use `UnskinnedVertex` or
   `SkinnedVertex` from `baseShaderLibrary` (or whichever the
-  geometry was built with). Custom vertex shaders are a v2 item.
-
-See issue #22 for the full v2 design discussion.
+  geometry was built with).
 
 ## Troubleshooting
 
@@ -318,10 +320,10 @@ Unbound samplers can read garbage on some backends.
 
 ## See also
 
-- [Issue #22][issue22]: the v2 declarative material format and
-  preprocessor design.
+- [Issue #22][issue22]: the declarative material format and
+  preprocessor design discussion.
 - `examples/flutter_app/lib/example_toon.dart`: the worked toon
-  shader the v1 ships with.
+  shader that ships with the example app.
 - `packages/flutter_scene/shaders/flutter_scene_standard.frag`: the
   engine's PBR fragment shader, useful as a reference for what a
   full custom material can do.
