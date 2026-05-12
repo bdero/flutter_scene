@@ -95,12 +95,11 @@ abstract class Material {
     return _brdfLutTexture!;
   }
 
-  /// Returns the package's bundled "Royal Esplanade" image-based
-  /// lighting environment as an [EnvironmentMap] (with diffuse spherical
-  /// harmonics and a prefiltered-radiance atlas computed at load time).
+  /// Returns the package's built-in procedural "studio" image-based
+  /// lighting environment (see [EnvironmentMap.studio]).
   ///
   /// Used as the [Scene]-wide default when no environment is configured.
-  /// Loaded by [initializeStaticResources]; throws if accessed before
+  /// Built by [initializeStaticResources]; throws if accessed before
   /// initialization completes.
   static EnvironmentMap getDefaultEnvironmentMap() {
     if (_defaultEnvironmentMap == null) {
@@ -110,28 +109,18 @@ abstract class Material {
   }
 
   /// Loads the bundled BRDF lookup texture and builds the default
-  /// "Royal Esplanade" environment (radiance texture + diffuse SH +
-  /// prefiltered-radiance atlas).
+  /// procedural "studio" environment ([EnvironmentMap.studio]).
   ///
   /// Called by the [Scene] constructor; rendering is gated on the
   /// returned [Future] completing. The same future is reused on
   /// subsequent calls.
   static Future<void> initializeStaticResources() {
-    List<Future<void>> futures = [
-      gpuTextureFromAsset(
-        'packages/flutter_scene/assets/ibl_brdf_lut.png',
-      ).then((gpu.Texture value) {
-        _brdfLutTexture = value;
-      }),
-      imageFromAsset('packages/flutter_scene/assets/royal_esplanade.png').then((
-        radianceImage,
-      ) async {
-        _defaultEnvironmentMap = await EnvironmentMap.fromUIImages(
-          radianceImage: radianceImage,
-        );
-      }),
-    ];
-    return Future.wait(futures);
+    _defaultEnvironmentMap = EnvironmentMap.studio();
+    return gpuTextureFromAsset(
+      'packages/flutter_scene/assets/ibl_brdf_lut.png',
+    ).then((gpu.Texture value) {
+      _brdfLutTexture = value;
+    });
   }
 
   /// Constructs the appropriate concrete [Material] subclass for the
