@@ -25,14 +25,16 @@ class ScenePass extends RenderGraphPass {
     required Camera camera,
     required Node root,
     required ui.Size dimensions,
-    required Environment environment,
+    required EnvironmentMap environmentMap,
+    required double environmentIntensity,
     required bool enableMsaa,
     DirectionalLight? directionalLight,
     Matrix4? lightSpaceMatrix,
   }) : _camera = camera,
        _root = root,
        _dimensions = dimensions,
-       _environment = environment,
+       _environmentMap = environmentMap,
+       _environmentIntensity = environmentIntensity,
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
        _lightSpaceMatrix = lightSpaceMatrix;
@@ -40,7 +42,8 @@ class ScenePass extends RenderGraphPass {
   final Camera _camera;
   final Node _root;
   final ui.Size _dimensions;
-  final Environment _environment;
+  final EnvironmentMap _environmentMap;
+  final double _environmentIntensity;
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final Matrix4? _lightSpaceMatrix;
@@ -101,7 +104,8 @@ class ScenePass extends RenderGraphPass {
       kShadowMapBlackboardKey,
     );
     final lighting = Lighting(
-      environment: _environment,
+      environmentMap: _environmentMap,
+      environmentIntensity: _environmentIntensity,
       directionalLight: _directionalLight,
       shadowMap: shadowMap,
       lightSpaceMatrix: shadowMap == null ? null : _lightSpaceMatrix,

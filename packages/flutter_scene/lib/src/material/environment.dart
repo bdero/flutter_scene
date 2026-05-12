@@ -8,139 +8,89 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/env_prefilter.dart';
 import 'package:vector_math/vector_math.dart';
 
-/// Tone mapping operator applied to the physically based lighting result.
-///
-/// The integer values are wire-compatible with the `tone_mapping_mode`
-/// uniform in the standard fragment shader; don't reorder.
-enum ToneMappingMode {
-  /// Khronos PBR Neutral. Preserves base-color hue/saturation and only
-  /// rolls off highlights. Good default for product/configurator
-  /// rendering. This is the [Environment] default.
-  pbrNeutral,
-
-  /// ACES filmic (Stephen Hill fit). The classic games-y look; tends to
-  /// desaturate and shift hue in the highlights.
-  aces,
-
-  /// Reinhard (`c / (1 + c)`). Cheap; flattens highlights.
-  reinhard,
-
-  /// No tone curve; the lighting result is just exposed and clamped to
-  /// `[0, 1]`.
-  linear,
-}
-
 /// Number of L2 spherical-harmonic coefficients used for diffuse
 /// irradiance (bands 0..2).
 const int kDiffuseShCoefficientCount = 9;
 
-/// Sources of image-based lighting for a material.
+/// A source of image-based lighting: diffuse irradiance plus prefiltered
+/// specular radiance, both derived from an equirectangular environment.
 ///
-/// Holds a radiance texture for specular reflections, plus the diffuse
-/// (ambient) term, which is supplied either as 9 spherical-harmonic
-/// coefficients (cheap, no texture fetch, no seams, the preferred form)
-/// or, for backward compatibility, as a pre-convolved irradiance texture.
-/// The radiance texture is currently expected to be an equirectangular
-/// map; cubemap support will land once Flutter GPU exposes cubemaps.
+/// Diffuse is stored as 9 L2 spherical-harmonic RGB coefficients (cheap,
+/// no texture fetch, seam-free); specular is a GPU-prefiltered "PMREM"
+/// roughness-band atlas (see [prefilterEquirectRadiance]). Both are
+/// computed up front, so constructing an environment from images does GPU
+/// work and is best done once.
 ///
-/// Use [EnvironmentMap.fromAssets] or [EnvironmentMap.fromUIImages] to
-/// construct one from images (which compute the diffuse SH from the
-/// radiance image when no irradiance image is supplied),
-/// [EnvironmentMap.fromGpuTextures] when you already hold GPU textures,
-/// or [EnvironmentMap.empty] for a no-op placeholder.
+/// Construct one with [EnvironmentMap.fromAssets] / [EnvironmentMap.fromUIImages]
+/// (which compute the SH and prefilter the radiance for you),
+/// [EnvironmentMap.studio] (the built-in procedural default),
+/// [EnvironmentMap.fromGpuTextures] when you already hold a prefiltered
+/// atlas, or [EnvironmentMap.empty] for a no-op black environment.
+///
+/// Set one on a [Scene] via `Scene.environment` (it defaults to
+/// [EnvironmentMap.studio]); an individual [PhysicallyBasedMaterial] can
+/// override it via `PhysicallyBasedMaterial.environment`.
 base class EnvironmentMap {
   EnvironmentMap._(
-    this._radianceTexture,
-    this._irradianceTexture,
-    this._diffuseSphericalHarmonics,
     this._prefilteredRadianceTexture,
-  ) : assert(
-        _diffuseSphericalHarmonics == null ||
-            _diffuseSphericalHarmonics.length == kDiffuseShCoefficientCount,
-      );
+    this._diffuseSphericalHarmonics,
+  ) : assert(_diffuseSphericalHarmonics.length == kDiffuseShCoefficientCount);
 
-  /// Creates an empty environment map. [radianceTexture] returns a white
-  /// placeholder and the diffuse term is absent, contributing no
-  /// directional lighting.
+  /// A black environment that contributes no image-based lighting.
+  ///
+  /// Specular reflections are black and the diffuse term is zero, so
+  /// objects are lit only by analytic lights (if any).
   factory EnvironmentMap.empty() {
-    return EnvironmentMap._(null, null, null, null);
-  }
-
-  /// Wraps already-uploaded GPU textures.
-  ///
-  /// Provide either [diffuseSphericalHarmonics] (9 RGB coefficients;
-  /// preferred) or [irradianceTexture] for the diffuse term. When both
-  /// are omitted, diffuse falls back to a white placeholder.
-  ///
-  /// [prefilteredRadianceTexture] is an optional precomputed prefiltered-
-  /// radiance atlas (see [prefilterEquirectRadiance]); when omitted, the
-  /// specular term samples [radianceTexture] directly without roughness
-  /// prefiltering.
-  factory EnvironmentMap.fromGpuTextures({
-    required gpu.Texture radianceTexture,
-    gpu.Texture? irradianceTexture,
-    List<Vector3>? diffuseSphericalHarmonics,
-    gpu.Texture? prefilteredRadianceTexture,
-  }) {
     return EnvironmentMap._(
-      radianceTexture,
-      irradianceTexture,
-      diffuseSphericalHarmonics,
-      prefilteredRadianceTexture,
+      Material.getBlackPlaceholderTexture(),
+      _zeroSphericalHarmonics(),
     );
   }
 
-  /// Builds an [EnvironmentMap] from already-decoded `dart:ui` images,
-  /// uploading them to GPU textures and GPU-prefiltering the radiance map
-  /// for roughness-aware specular lighting.
+  /// Wraps an already-built prefiltered-radiance atlas.
   ///
-  /// When [irradianceImage] is omitted (the common case), the diffuse
-  /// term is computed as spherical harmonics from [radianceImage]; pass
-  /// [diffuseSphericalHarmonics] to supply your own instead.
+  /// [prefilteredRadiance] must be a roughness-band atlas as produced by
+  /// [prefilterEquirectRadiance]. [diffuseSphericalHarmonics], if given,
+  /// must be [kDiffuseShCoefficientCount] RGB coefficients (with the
+  /// Lambertian convolution and `1/pi` already folded in, as
+  /// [computeDiffuseSphericalHarmonics] returns); when omitted the diffuse
+  /// term is zero.
+  factory EnvironmentMap.fromGpuTextures({
+    required gpu.Texture prefilteredRadiance,
+    List<Vector3>? diffuseSphericalHarmonics,
+  }) {
+    return EnvironmentMap._(
+      prefilteredRadiance,
+      diffuseSphericalHarmonics ?? _zeroSphericalHarmonics(),
+    );
+  }
+
+  /// Builds an [EnvironmentMap] from an already-decoded equirectangular
+  /// `dart:ui` radiance image: uploads it, GPU-prefilters it for
+  /// roughness-aware specular, and projects it onto diffuse SH.
+  ///
+  /// The image is interpreted as sRGB-encoded. Pass [diffuseSphericalHarmonics]
+  /// to supply your own diffuse term instead of projecting it.
   static Future<EnvironmentMap> fromUIImages({
     required ui.Image radianceImage,
-    ui.Image? irradianceImage,
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
-    final prefilteredRadianceTexture = prefilterEquirectRadiance(
-      radianceTexture,
-    );
-    gpu.Texture? irradianceTexture;
-    var sh = diffuseSphericalHarmonics;
-
-    if (irradianceImage != null) {
-      irradianceTexture = await gpuTextureFromImage(irradianceImage);
-    } else {
-      sh ??= await computeDiffuseSphericalHarmonics(radianceImage);
-    }
-
-    return EnvironmentMap._(
-      radianceTexture,
-      irradianceTexture,
-      sh,
-      prefilteredRadianceTexture,
-    );
+    final prefilteredRadiance = prefilterEquirectRadiance(radianceTexture);
+    final sh =
+        diffuseSphericalHarmonics ??
+        await computeDiffuseSphericalHarmonics(radianceImage);
+    return EnvironmentMap._(prefilteredRadiance, sh);
   }
 
-  /// Loads an [EnvironmentMap] from the asset bundle.
-  ///
-  /// [radianceImagePath] is required; [irradianceImagePath] is optional.
-  /// When it is omitted, the diffuse term is computed as spherical
-  /// harmonics from the radiance image.
+  /// Loads an [EnvironmentMap] from an equirectangular sRGB radiance image
+  /// in the asset bundle (see [fromUIImages]).
   static Future<EnvironmentMap> fromAssets({
     required String radianceImagePath,
-    String? irradianceImagePath,
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
-    final radianceImage = await imageFromAsset(radianceImagePath);
-    final irradianceImage =
-        irradianceImagePath == null
-            ? null
-            : await imageFromAsset(irradianceImagePath);
     return fromUIImages(
-      radianceImage: radianceImage,
-      irradianceImage: irradianceImage,
+      radianceImage: await imageFromAsset(radianceImagePath),
       diffuseSphericalHarmonics: diffuseSphericalHarmonics,
     );
   }
@@ -151,9 +101,8 @@ base class EnvironmentMap {
   /// HDR): a cool soft "ceiling" fading through a neutral horizon to a dim
   /// warm "floor bounce", with a broad top fill and a couple of soft
   /// key/fill light lobes that read as defined specular highlights on
-  /// glossy surfaces. Diffuse is SH-9 and specular is the prefiltered
-  /// radiance atlas, both derived from the generated equirect. This is the
-  /// zero-config default a [Scene] uses when no environment is configured.
+  /// glossy surfaces. This is the zero-config default a [Scene] uses when
+  /// no environment is configured.
   static EnvironmentMap studio() {
     final pixels = _generateStudioEquirectPixels(
       _studioEnvWidth,
@@ -164,19 +113,13 @@ base class EnvironmentMap {
       _studioEnvWidth,
       _studioEnvHeight,
     )..overwrite(ByteData.sublistView(pixels));
-    final prefilteredRadianceTexture = prefilterEquirectRadiance(
-      radianceTexture,
-    );
-    final sh = _projectEquirectToSphericalHarmonics(
-      pixels,
-      _studioEnvWidth,
-      _studioEnvHeight,
-    );
     return EnvironmentMap._(
-      radianceTexture,
-      null,
-      sh,
-      prefilteredRadianceTexture,
+      prefilterEquirectRadiance(radianceTexture),
+      _projectEquirectToSphericalHarmonics(
+        pixels,
+        _studioEnvWidth,
+        _studioEnvHeight,
+      ),
     );
   }
 
@@ -269,6 +212,9 @@ base class EnvironmentMap {
 
   static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
+  static List<Vector3> _zeroSphericalHarmonics() =>
+      List<Vector3>.generate(kDiffuseShCoefficientCount, (_) => Vector3.zero());
+
   /// Projects an equirectangular radiance image onto 9 L2 spherical-
   /// harmonic coefficients suitable for diffuse irradiance.
   ///
@@ -306,10 +252,7 @@ base class EnvironmentMap {
     // keeps the L2 projection accurate while staying fast on the CPU.
     const numPhi = 192;
     const numTheta = 96;
-    final coefficients = List<Vector3>.generate(
-      kDiffuseShCoefficientCount,
-      (_) => Vector3.zero(),
-    );
+    final coefficients = _zeroSphericalHarmonics();
 
     const twoPi = 2.0 * math.pi;
     final cellSolidAngle = twoPi * math.pi / (numPhi * numTheta);
@@ -384,113 +327,24 @@ base class EnvironmentMap {
 
   static double _srgbToLinear(double c) => math.pow(c, 2.2).toDouble();
 
-  /// Whether this environment map has no radiance texture.
+  final gpu.Texture _prefilteredRadianceTexture;
+  final List<Vector3> _diffuseSphericalHarmonics;
+
+  // TODO(bdero): Once mipmapped cubemaps land in Flutter GPU, replace this
+  // equirectangular atlas with a real prefiltered cubemap.
+  // (https://github.com/flutter/flutter/issues/145027)
+  /// The prefiltered-radiance atlas sampled for specular IBL.
   ///
-  /// An empty environment contributes no IBL; the [Scene] swaps it for
-  /// the package's bundled default at draw time.
-  bool isEmpty() => _radianceTexture == null;
+  /// A vertical atlas of equirectangular roughness bands (see
+  /// [prefilterEquirectRadiance]); the standard fragment shader samples it
+  /// via `SamplePrefilteredRadiance`.
+  gpu.Texture get prefilteredRadianceTexture => _prefilteredRadianceTexture;
 
-  gpu.Texture? _radianceTexture;
-  gpu.Texture? _irradianceTexture;
-  final List<Vector3>? _diffuseSphericalHarmonics;
-  final gpu.Texture? _prefilteredRadianceTexture;
-
-  // TODO(bdero): Once cubemaps are supported, change this to be an environment cubemap. (Cubemaps are missing from Flutter GPU at the time of writing: https://github.com/flutter/flutter/issues/145027)
-  /// Represents the light being emitted by the environment from any direction.
+  /// The [kDiffuseShCoefficientCount] RGB L2 spherical-harmonic
+  /// coefficients describing the diffuse (Lambertian) irradiance.
   ///
-  /// Currently expected to be an equirectangular map.
-  gpu.Texture get radianceTexture =>
-      Material.whitePlaceholder(_radianceTexture);
-
-  // TODO(bdero): Once cubemaps are supported, change this to be an environment cubemap. (Cubemaps are missing from Flutter GPU at the time of writing: https://github.com/flutter/flutter/issues/145027)
-  // TODO(bdero): Generate Gaussian blurred mipmaps for this texture for accurate roughness sampling.
-  /// The integral of all light being received by a given surface at any direction.
-  ///
-  /// Currently expected to be an equirectangular map. Used only when
-  /// [diffuseSphericalHarmonics] is null.
-  gpu.Texture get irradianceTexture =>
-      Material.whitePlaceholder(_irradianceTexture);
-
-  /// The 9 RGB L2 spherical-harmonic coefficients for diffuse irradiance,
-  /// or null if the diffuse term comes from [irradianceTexture] instead.
-  List<Vector3>? get diffuseSphericalHarmonics => _diffuseSphericalHarmonics;
-
-  /// The prefiltered-radiance atlas used for roughness-aware specular IBL
-  /// (see [prefilterEquirectRadiance]), or null when the specular term
-  /// falls back to sampling [radianceTexture] directly.
-  ///
-  /// A vertical atlas of equirectangular roughness bands; sampled in the
-  /// standard fragment shader via `SamplePrefilteredRadiance`.
-  gpu.Texture? get prefilteredRadianceTexture => _prefilteredRadianceTexture;
-}
-
-/// Shared material rendering properties.
-///
-/// A default environment can be set on the [Scene], which is automatically
-/// applied to all materials. Individual [Material]s may optionally override the
-/// default environment.
-base class Environment {
-  /// Creates an [Environment] with the given image-based-lighting map
-  /// and shared tone-mapping parameters.
-  ///
-  /// All parameters are optional; the defaults pair an empty
-  /// [EnvironmentMap] with `intensity = 1.0`, `exposure = 2.0`, and
-  /// [ToneMappingMode.pbrNeutral].
-  Environment({
-    EnvironmentMap? environmentMap,
-    this.intensity = 1.0,
-    this.exposure = 2.0,
-    this.toneMappingMode = ToneMappingMode.pbrNeutral,
-  }) : environmentMap = environmentMap ?? EnvironmentMap.empty();
-
-  /// Computes the exposure multiplier for a physical pinhole camera, the
-  /// way real photographers reason about it: aperture (f-stops),
-  /// [shutterSpeed] (seconds), and sensor [iso].
-  ///
-  /// Returns `1 / (1.2 * 2^EV100)` with
-  /// `EV100 = log2(aperture^2 / shutterSpeed * 100 / iso)`, matching
-  /// Filament's exposure model. Assign the result to [exposure].
-  ///
-  /// Reference values (sunlit exterior): `aperture: 16, shutterSpeed:
-  /// 1/125, iso: 100`. Lower the aperture or ISO, or lengthen the
-  /// shutter, to brighten.
-  static double exposureFromPhysicalCamera({
-    required double aperture,
-    required double shutterSpeed,
-    required double iso,
-  }) {
-    final ev100 = _log2(aperture * aperture / shutterSpeed * 100.0 / iso);
-    return 1.0 / (1.2 * math.pow(2.0, ev100));
-  }
-
-  static double _log2(double x) => math.log(x) / math.ln2;
-
-  /// Returns a copy of this environment with a different
-  /// [environmentMap], preserving [intensity], [exposure], and
-  /// [toneMappingMode].
-  Environment withNewEnvironmentMap(EnvironmentMap environmentMap) {
-    return Environment(
-      environmentMap: environmentMap,
-      intensity: intensity,
-      exposure: exposure,
-      toneMappingMode: toneMappingMode,
-    );
-  }
-
-  /// The environment map to use for image-based-lighting.
-  ///
-  /// This must be an equirectangular map.
-  EnvironmentMap environmentMap;
-
-  /// The intensity of the environment map.
-  double intensity;
-
-  /// Linear exposure multiplier applied before tone mapping.
-  ///
-  /// `1.0` is neutral. Use [exposureFromPhysicalCamera] to derive a value
-  /// from photographic camera settings.
-  double exposure;
-
-  /// Tone mapping operator applied to the lighting result.
-  ToneMappingMode toneMappingMode;
+  /// The Lambertian cosine convolution and the `1/pi` BRDF term are
+  /// already folded in, so the shader just evaluates the polynomial and
+  /// multiplies by the diffuse albedo. All zero for [EnvironmentMap.empty].
+  List<Vector3> get diffuseSphericalHarmonics => _diffuseSphericalHarmonics;
 }

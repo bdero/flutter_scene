@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/tonemap_pass.dart';
 import 'surface.dart';
+import 'tone_mapping.dart';
 
 /// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
 ///
@@ -61,10 +63,32 @@ base class Scene implements SceneGraph {
     initializeStaticResources();
     root.registerAsRoot(this);
     antiAliasingMode = AntiAliasingMode.msaa;
+    environment = Material.getDefaultEnvironmentMap();
   }
 
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
+
+  /// Computes the linear exposure multiplier for a physical pinhole
+  /// camera, the way photographers reason about it: [aperture] (f-stops),
+  /// [shutterSpeed] (seconds), and sensor [iso].
+  ///
+  /// Returns `1 / (1.2 * 2^EV100)` with
+  /// `EV100 = log2(aperture^2 / shutterSpeed * 100 / iso)`, matching
+  /// Filament's exposure model. Assign the result to [exposure].
+  ///
+  /// Reference values (sunlit exterior): `aperture: 16, shutterSpeed:
+  /// 1/125, iso: 100`. Lower the aperture or ISO, or lengthen the
+  /// shutter, to brighten.
+  static double physicalCameraExposure({
+    required double aperture,
+    required double shutterSpeed,
+    required double iso,
+  }) {
+    final ev100 =
+        math.log(aperture * aperture / shutterSpeed * 100.0 / iso) / math.ln2;
+    return 1.0 / (1.2 * math.pow(2.0, ev100));
+  }
 
   AntiAliasingMode _antiAliasingMode = AntiAliasingMode.none;
 
@@ -130,12 +154,29 @@ base class Scene implements SceneGraph {
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
-  /// Manages the image-based lighting for this [Scene].
-  final Environment environment = Environment();
+  /// The image-based-lighting environment.
+  ///
+  /// Defaults to [EnvironmentMap.studio] (the built-in procedural studio
+  /// environment), assigned in the constructor; assign your own to change
+  /// it. A [PhysicallyBasedMaterial] can override this per material.
+  late EnvironmentMap environment;
+
+  /// Scalar multiplier applied to [environment]'s contribution. `1.0`
+  /// (the default) is neutral.
+  double environmentIntensity = 1.0;
 
   /// Optional analytic directional light (e.g. a sun) layered on top of
   /// the image-based lighting. Null (the default) means IBL only.
   DirectionalLight? directionalLight;
+
+  /// Linear exposure multiplier applied to the HDR scene color before
+  /// tone mapping. `1.0` (the default) is neutral; see
+  /// [physicalCameraExposure] to derive a value from camera settings.
+  double exposure = 1.0;
+
+  /// Tone mapping operator used when resolving the HDR scene color to the
+  /// display image. Defaults to [ToneMappingMode.pbrNeutral].
+  ToneMappingMode toneMapping = ToneMappingMode.pbrNeutral;
 
   @override
   void add(Node child) {
@@ -218,13 +259,6 @@ base class Scene implements SceneGraph {
       gpu.ColorAttachment(texture: swapchainColor),
     );
 
-    final env =
-        environment.environmentMap.isEmpty()
-            ? environment.withNewEnvironmentMap(
-              Material.getDefaultEnvironmentMap(),
-            )
-            : environment;
-
     final transientsBuffer = gpu.gpuContext.createHostBuffer();
 
     final light = directionalLight;
@@ -247,7 +281,8 @@ base class Scene implements SceneGraph {
         camera: camera,
         root: root,
         dimensions: pixelSize,
-        environment: env,
+        environmentMap: environment,
+        environmentIntensity: environmentIntensity,
         enableMsaa: enableMsaa,
         directionalLight: light,
         lightSpaceMatrix: lightSpaceMatrix,
@@ -256,8 +291,8 @@ base class Scene implements SceneGraph {
     graph.addPass(
       TonemapPass(
         target: swapchainTarget,
-        exposure: env.exposure,
-        toneMappingMode: env.toneMappingMode,
+        exposure: exposure,
+        toneMappingMode: toneMapping,
       ),
     );
     graph.execute(

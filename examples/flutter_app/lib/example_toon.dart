@@ -87,7 +87,7 @@ class _ExampleToonState extends State<ExampleToon> {
 
       _dashGroup.add(dash);
       scene.add(_dashGroup);
-      scene.environment.exposure = 1.5;
+      scene.exposure = 1.5;
       setState(() {
         loaded = true;
       });

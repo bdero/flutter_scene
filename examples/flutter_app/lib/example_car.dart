@@ -55,9 +55,8 @@ class ExampleCarState extends State<ExampleCar> {
     EnvironmentMap.fromAssets(
       radianceImagePath: 'assets/little_paris_eiffel_tower.png',
     ).then((environment) {
-      scene.environment.environmentMap = environment;
-      scene.environment.exposure = 2.0;
-      scene.environment.intensity = 2.0;
+      scene.environment = environment;
+      scene.exposure = 2.5;
     });
 
     Future.wait([loadModel]).then((_) {

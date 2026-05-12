@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/light.dart';
-import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 
 /// A [Material] backed by a caller-supplied fragment shader.
@@ -43,12 +42,14 @@ import 'package:flutter_scene/src/material/material.dart';
 /// in vec4 v_color;           // per-vertex color, white when absent
 /// ```
 ///
-/// Setting [useEnvironment] to `true` makes the engine bind the
-/// active [Environment]'s IBL textures by their standard names when
-/// your fragment shader declares them: `radiance_texture`,
-/// `irradiance_texture`, and `brdf_lut` (all as `sampler2D`). Useful
-/// when your custom shader still wants the engine's image-based
-/// lighting.
+/// Setting [useEnvironment] to `true` makes the engine bind the active
+/// environment's IBL textures by their standard names when your fragment
+/// shader declares them: `prefiltered_radiance` (the PMREM-style
+/// roughness-band atlas; sample it with `SamplePrefilteredRadiance` from
+/// `texture.glsl`) and `brdf_lut` (both as `sampler2D`). The diffuse
+/// irradiance SH coefficients are not bound generically; declare them in
+/// your own uniform block if you need them. Useful when a custom shader
+/// still wants the engine's image-based lighting.
 ///
 /// ## Uniform block packing
 ///
@@ -92,9 +93,9 @@ class ShaderMaterial extends Material {
     }
   }
 
-  /// Whether the engine should bind the active [Environment]'s IBL
-  /// textures (`radiance_texture`, `irradiance_texture`, `brdf_lut`)
-  /// when the fragment shader declares them. Defaults to `false`.
+  /// Whether the engine should bind the active environment's IBL textures
+  /// (`prefiltered_radiance`, `brdf_lut`) when the fragment shader
+  /// declares them. Defaults to `false`.
   bool useEnvironment;
 
   /// Backface culling mode applied before drawing. Defaults to
@@ -193,31 +194,30 @@ class ShaderMaterial extends Material {
     }
 
     if (useEnvironment) {
-      _bindEnvironmentTextures(pass, lighting.environment);
+      _bindEnvironmentTextures(pass, lighting);
     }
   }
 
-  void _bindEnvironmentTextures(gpu.RenderPass pass, Environment environment) {
-    final samplerOptions = gpu.SamplerOptions(
-      minFilter: gpu.MinMagFilter.linear,
-      magFilter: gpu.MinMagFilter.linear,
-      widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-    );
+  void _bindEnvironmentTextures(gpu.RenderPass pass, Lighting lighting) {
     pass.bindTexture(
-      fragmentShader.getUniformSlot('radiance_texture'),
-      environment.environmentMap.radianceTexture,
-      sampler: samplerOptions,
-    );
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('irradiance_texture'),
-      environment.environmentMap.irradianceTexture,
-      sampler: samplerOptions,
+      fragmentShader.getUniformSlot('prefiltered_radiance'),
+      lighting.environmentMap.prefilteredRadianceTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
-      sampler: samplerOptions,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
     );
   }
 }
