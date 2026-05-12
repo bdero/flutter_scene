@@ -79,11 +79,11 @@ base class Mesh {
 
   /// Draws the [Geometry] and [Material] data of each [MeshPrimitive] onto the screen.
   ///
-  /// This method prepares the [Mesh] for rendering by passing its data to a [SceneEncoder].
+  /// This method prepares the [Mesh] for rendering by passing its data to a [SceneDrawList].
   /// For skinned meshes, which are typically used in animations,
   /// the joint [gpu.Texture] data is also included to ensure proper rendering of animated features.
   void render(
-    SceneEncoder encoder,
+    SceneDrawList encoder,
     vm.Matrix4 worldTransform,
     gpu.Texture? jointsTexture,
     int jointTextureWidth,

@@ -714,7 +714,7 @@ base class Node implements SceneGraph {
   /// Recursively records [Mesh] draw operations for this node and all its children.
   ///
   /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
-  void render(SceneEncoder encoder, Matrix4 parentWorldTransform) {
+  void render(SceneDrawList encoder, Matrix4 parentWorldTransform) {
     if (!visible) {
       return;
     }

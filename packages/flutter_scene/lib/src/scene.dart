@@ -11,6 +11,7 @@ import 'mesh.dart';
 import 'node.dart';
 import 'render/render_graph.dart';
 import 'render/scene_pass.dart';
+import 'render/shadow_pass.dart';
 import 'surface.dart';
 
 /// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
@@ -221,30 +222,38 @@ base class Scene implements SceneGraph {
             )
             : environment;
 
-    final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final transientsBuffer = gpu.gpuContext.createHostBuffer();
 
-    final lighting = Lighting(
-      environment: env,
-      directionalLight: directionalLight,
-    );
+    final light = directionalLight;
+    final castsShadow = light != null && light.castsShadow;
+    final lightSpaceMatrix =
+        castsShadow ? light.computeLightSpaceMatrix() : null;
 
     final graph = RenderGraph();
+    if (castsShadow) {
+      graph.addPass(
+        ShadowPass(
+          root: root,
+          lightSpaceMatrix: lightSpaceMatrix!,
+          resolution: light.shadowMapResolution,
+        ),
+      );
+    }
     graph.addPass(
       ScenePass(
         target: renderTarget,
         camera: camera,
         root: root,
         dimensions: pixelSize,
-        lighting: lighting,
+        environment: env,
+        directionalLight: light,
+        lightSpaceMatrix: lightSpaceMatrix,
       ),
     );
     graph.execute(
-      commandBuffer: commandBuffer,
       transientsBuffer: transientsBuffer,
       texturePool: surface.transientTexturePool,
     );
-    commandBuffer.submit();
 
     final gpu.Texture texture =
         enableMsaa

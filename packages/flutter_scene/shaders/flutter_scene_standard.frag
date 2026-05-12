@@ -20,6 +20,9 @@ uniform FragInfo {
   // Active only when has_directional_light > 0.5.
   vec4 directional_light_direction;
   vec4 directional_light_color;
+  // World -> light-clip-space matrix for sampling shadow_map. Used only
+  // when casts_shadow > 0.5.
+  mat4 light_space_matrix;
   float vertex_color_weight;
   float exposure;
   float metallic_factor;
@@ -33,6 +36,10 @@ uniform FragInfo {
   float tone_mapping_mode;
   float use_diffuse_sh;
   float has_directional_light;
+  float casts_shadow;
+  float shadow_bias;
+  float shadow_normal_bias;
+  float shadow_texel_size; // 1 / shadow map resolution
 }
 frag_info;
 
@@ -46,6 +53,7 @@ uniform sampler2D radiance_texture;
 uniform sampler2D irradiance_texture;
 
 uniform sampler2D brdf_lut;
+uniform sampler2D shadow_map;
 
 in vec3 v_position;
 in vec3 v_normal;
@@ -74,6 +82,35 @@ vec3 EvaluateDiffuseSH(vec3 n) {
          frag_info.diffuse_sh6.xyz * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
          frag_info.diffuse_sh7.xyz * (1.092548 * n.x * n.z) +
          frag_info.diffuse_sh8.xyz * (0.546274 * (n.x * n.x - n.y * n.y));
+}
+
+// 3x3 PCF shadow lookup. Returns 1.0 (lit) .. 0.0 (fully shadowed).
+// `world_pos` and `n` are world-space; `n` is the (perturbed) shading
+// normal, used for normal-offset bias to fight grazing-angle acne.
+float SampleShadow(vec3 world_pos, vec3 n) {
+  vec3 biased_pos = world_pos + n * frag_info.shadow_normal_bias;
+  vec4 light_clip = frag_info.light_space_matrix * vec4(biased_pos, 1.0);
+  vec3 proj = light_clip.xyz / light_clip.w;
+  vec2 uv = proj.xy * 0.5 + 0.5;
+  // The shadow map is a render-to-texture target; its origin is at the
+  // top, so flip V to match the standard texture sampling convention.
+  uv.y = 1.0 - uv.y;
+  // Outside the orthographic shadow frustum: treat as lit.
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
+      proj.z > 1.0) {
+    return 1.0;
+  }
+  float receiver_depth = proj.z - frag_info.shadow_bias;
+  float texel = frag_info.shadow_texel_size;
+  float lit = 0.0;
+  for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -1; dy <= 1; dy++) {
+      vec2 sample_uv = uv + vec2(float(dx), float(dy)) * texel;
+      float caster_depth = texture(shadow_map, sample_uv).r;
+      lit += receiver_depth <= caster_depth ? 1.0 : 0.0;
+    }
+  }
+  return lit / 9.0;
 }
 
 void main() {
@@ -180,8 +217,10 @@ void main() {
       vec3 specular = distribution * visibility * specular_fresnel;
       vec3 diffuse = (vec3(1.0) - specular_fresnel) * (1.0 - metallic) *
                      albedo * (1.0 / kPi);
+      float shadow =
+          frag_info.casts_shadow > 0.5 ? SampleShadow(v_position, normal) : 1.0;
       direct = (diffuse + specular) * frag_info.directional_light_color.rgb *
-               n_dot_l;
+               n_dot_l * shadow;
     }
   }
 

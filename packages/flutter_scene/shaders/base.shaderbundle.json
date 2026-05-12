@@ -14,5 +14,9 @@
     "StandardFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_standard.frag"
+    },
+    "DepthOnlyFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_depth_only.frag"
     }
 }

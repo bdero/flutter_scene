@@ -186,26 +186,34 @@ class PhysicallyBasedMaterial extends Material {
 
     final Environment env = environment ?? lighting.environment;
     final DirectionalLight? light = lighting.directionalLight;
+    final shadowMatrix = lighting.shadowMap == null
+        ? null
+        : lighting.lightSpaceMatrix;
 
-    // FragInfo std140 layout (256 bytes / 64 floats):
+    // FragInfo std140 layout (336 bytes / 84 floats):
     //   [0..3]   vec4  color
     //   [4..7]   vec4  emissive_factor
     //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
     //   [44..47] vec4  directional_light_direction (xyz used)
     //   [48..51] vec4  directional_light_color (rgb = color * intensity)
-    //   [52]     float vertex_color_weight
-    //   [53]     float exposure
-    //   [54]     float metallic_factor
-    //   [55]     float roughness_factor
-    //   [56]     float has_normal_map
-    //   [57]     float normal_scale
-    //   [58]     float occlusion_strength
-    //   [59]     float environment_intensity
-    //   [60]     float tone_mapping_mode
-    //   [61]     float use_diffuse_sh
-    //   [62]     float has_directional_light
-    //   [63]     trailing pad to a 16-byte multiple
-    final fragInfo = Float32List(64);
+    //   [52..67] mat4  light_space_matrix (column-major)
+    //   [68]     float vertex_color_weight
+    //   [69]     float exposure
+    //   [70]     float metallic_factor
+    //   [71]     float roughness_factor
+    //   [72]     float has_normal_map
+    //   [73]     float normal_scale
+    //   [74]     float occlusion_strength
+    //   [75]     float environment_intensity
+    //   [76]     float tone_mapping_mode
+    //   [77]     float use_diffuse_sh
+    //   [78]     float has_directional_light
+    //   [79]     float casts_shadow
+    //   [80]     float shadow_bias
+    //   [81]     float shadow_normal_bias
+    //   [82]     float shadow_texel_size
+    //   [83]     trailing pad to a 16-byte multiple
+    final fragInfo = Float32List(84);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -230,17 +238,24 @@ class PhysicallyBasedMaterial extends Material {
       fragInfo[49] = light.color.y * light.intensity;
       fragInfo[50] = light.color.z * light.intensity;
     }
-    fragInfo[52] = vertexColorWeight;
-    fragInfo[53] = env.exposure;
-    fragInfo[54] = metallicFactor;
-    fragInfo[55] = roughnessFactor;
-    fragInfo[56] = normalTexture != null ? 1.0 : 0.0;
-    fragInfo[57] = normalScale;
-    fragInfo[58] = occlusionStrength;
-    fragInfo[59] = env.intensity;
-    fragInfo[60] = env.toneMappingMode.index.toDouble();
-    fragInfo[61] = shCoefficients != null ? 1.0 : 0.0;
-    fragInfo[62] = light != null ? 1.0 : 0.0;
+    if (shadowMatrix != null) {
+      fragInfo.setRange(52, 68, shadowMatrix.storage);
+    }
+    fragInfo[68] = vertexColorWeight;
+    fragInfo[69] = env.exposure;
+    fragInfo[70] = metallicFactor;
+    fragInfo[71] = roughnessFactor;
+    fragInfo[72] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[73] = normalScale;
+    fragInfo[74] = occlusionStrength;
+    fragInfo[75] = env.intensity;
+    fragInfo[76] = env.toneMappingMode.index.toDouble();
+    fragInfo[77] = shCoefficients != null ? 1.0 : 0.0;
+    fragInfo[78] = light != null ? 1.0 : 0.0;
+    fragInfo[79] = shadowMatrix != null ? 1.0 : 0.0;
+    fragInfo[80] = light?.shadowDepthBias ?? 0.0;
+    fragInfo[81] = light?.shadowNormalBias ?? 0.0;
+    fragInfo[82] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -315,6 +330,16 @@ class PhysicallyBasedMaterial extends Material {
         widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
+    );
+    // Nearest + clamp (the SamplerOptions defaults): the shader does a
+    // manual PCF comparison, so we don't want linear-filtered depths, and
+    // out-of-bounds PCF taps should clamp rather than wrap. When there's
+    // no shadow this frame, the white placeholder reads as depth 1.0
+    // (always lit) and casts_shadow is 0 anyway.
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('shadow_map'),
+      Material.whitePlaceholder(lighting.shadowMap),
+      sampler: gpu.SamplerOptions(),
     );
   }
 
