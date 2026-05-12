@@ -26,5 +26,9 @@
     "TonemapFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_tonemap.frag"
+    },
+    "PrefilterEnvFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_prefilter_env.frag"
     }
 }

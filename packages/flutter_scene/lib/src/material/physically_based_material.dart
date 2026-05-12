@@ -186,9 +186,8 @@ class PhysicallyBasedMaterial extends Material {
 
     final Environment env = environment ?? lighting.environment;
     final DirectionalLight? light = lighting.directionalLight;
-    final shadowMatrix = lighting.shadowMap == null
-        ? null
-        : lighting.lightSpaceMatrix;
+    final shadowMatrix =
+        lighting.shadowMap == null ? null : lighting.lightSpaceMatrix;
 
     // FragInfo std140 layout (336 bytes / 84 floats):
     //   [0..3]   vec4  color
@@ -212,7 +211,7 @@ class PhysicallyBasedMaterial extends Material {
     //   [80]     float shadow_bias
     //   [81]     float shadow_normal_bias
     //   [82]     float shadow_texel_size
-    //   [83]     trailing pad to a 16-byte multiple
+    //   [83]     float use_prefiltered_radiance
     final fragInfo = Float32List(84);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
@@ -256,6 +255,8 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[80] = light?.shadowDepthBias ?? 0.0;
     fragInfo[81] = light?.shadowNormalBias ?? 0.0;
     fragInfo[82] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
+    final prefilteredRadiance = env.environmentMap.prefilteredRadianceTexture;
+    fragInfo[83] = prefilteredRadiance != null ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -308,6 +309,18 @@ class PhysicallyBasedMaterial extends Material {
         minFilter: gpu.MinMagFilter.linear,
         magFilter: gpu.MinMagFilter.linear,
         widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    // Horizontal repeat (the panorama wraps in longitude), vertical clamp
+    // (the atlas is a stack of bands; wrapping V would bleed between them).
+    pass.bindTexture(
+      fragmentShader.getUniformSlot('prefiltered_radiance'),
+      Material.whitePlaceholder(prefilteredRadiance),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );

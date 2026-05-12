@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/env_prefilter.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Tone mapping operator applied to the physically based lighting result.
@@ -51,6 +52,7 @@ base class EnvironmentMap {
     this._radianceTexture,
     this._irradianceTexture,
     this._diffuseSphericalHarmonics,
+    this._prefilteredRadianceTexture,
   ) : assert(
         _diffuseSphericalHarmonics == null ||
             _diffuseSphericalHarmonics.length == kDiffuseShCoefficientCount,
@@ -60,7 +62,7 @@ base class EnvironmentMap {
   /// placeholder and the diffuse term is absent, contributing no
   /// directional lighting.
   factory EnvironmentMap.empty() {
-    return EnvironmentMap._(null, null, null);
+    return EnvironmentMap._(null, null, null, null);
   }
 
   /// Wraps already-uploaded GPU textures.
@@ -68,20 +70,28 @@ base class EnvironmentMap {
   /// Provide either [diffuseSphericalHarmonics] (9 RGB coefficients;
   /// preferred) or [irradianceTexture] for the diffuse term. When both
   /// are omitted, diffuse falls back to a white placeholder.
+  ///
+  /// [prefilteredRadianceTexture] is an optional precomputed prefiltered-
+  /// radiance atlas (see [prefilterEquirectRadiance]); when omitted, the
+  /// specular term samples [radianceTexture] directly without roughness
+  /// prefiltering.
   factory EnvironmentMap.fromGpuTextures({
     required gpu.Texture radianceTexture,
     gpu.Texture? irradianceTexture,
     List<Vector3>? diffuseSphericalHarmonics,
+    gpu.Texture? prefilteredRadianceTexture,
   }) {
     return EnvironmentMap._(
       radianceTexture,
       irradianceTexture,
       diffuseSphericalHarmonics,
+      prefilteredRadianceTexture,
     );
   }
 
   /// Builds an [EnvironmentMap] from already-decoded `dart:ui` images,
-  /// uploading them to GPU textures.
+  /// uploading them to GPU textures and GPU-prefiltering the radiance map
+  /// for roughness-aware specular lighting.
   ///
   /// When [irradianceImage] is omitted (the common case), the diffuse
   /// term is computed as spherical harmonics from [radianceImage]; pass
@@ -92,6 +102,9 @@ base class EnvironmentMap {
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
+    final prefilteredRadianceTexture = prefilterEquirectRadiance(
+      radianceTexture,
+    );
     gpu.Texture? irradianceTexture;
     var sh = diffuseSphericalHarmonics;
 
@@ -101,7 +114,12 @@ base class EnvironmentMap {
       sh ??= await computeDiffuseSphericalHarmonics(radianceImage);
     }
 
-    return EnvironmentMap._(radianceTexture, irradianceTexture, sh);
+    return EnvironmentMap._(
+      radianceTexture,
+      irradianceTexture,
+      sh,
+      prefilteredRadianceTexture,
+    );
   }
 
   /// Loads an [EnvironmentMap] from the asset bundle.
@@ -163,7 +181,8 @@ base class EnvironmentMap {
 
     for (var j = 0; j < numTheta; j++) {
       final v = (j + 0.5) / numTheta;
-      final latitude = (v - 0.5) * math.pi; // asin(direction.y), in [-pi/2, pi/2]
+      final latitude =
+          (v - 0.5) * math.pi; // asin(direction.y), in [-pi/2, pi/2]
       final cosLat = math.cos(latitude);
       final dirY = math.sin(latitude);
       final weightRow = cosLat * cellSolidAngle;
@@ -239,6 +258,7 @@ base class EnvironmentMap {
   gpu.Texture? _radianceTexture;
   gpu.Texture? _irradianceTexture;
   final List<Vector3>? _diffuseSphericalHarmonics;
+  final gpu.Texture? _prefilteredRadianceTexture;
 
   // TODO(bdero): Once cubemaps are supported, change this to be an environment cubemap. (Cubemaps are missing from Flutter GPU at the time of writing: https://github.com/flutter/flutter/issues/145027)
   /// Represents the light being emitted by the environment from any direction.
@@ -259,6 +279,14 @@ base class EnvironmentMap {
   /// The 9 RGB L2 spherical-harmonic coefficients for diffuse irradiance,
   /// or null if the diffuse term comes from [irradianceTexture] instead.
   List<Vector3>? get diffuseSphericalHarmonics => _diffuseSphericalHarmonics;
+
+  /// The prefiltered-radiance atlas used for roughness-aware specular IBL
+  /// (see [prefilterEquirectRadiance]), or null when the specular term
+  /// falls back to sampling [radianceTexture] directly.
+  ///
+  /// A vertical atlas of equirectangular roughness bands; sampled in the
+  /// standard fragment shader via `SamplePrefilteredRadiance`.
+  gpu.Texture? get prefilteredRadianceTexture => _prefilteredRadianceTexture;
 }
 
 /// Shared material rendering properties.

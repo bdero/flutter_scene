@@ -54,7 +54,6 @@ class ExampleCarState extends State<ExampleCar> {
 
     EnvironmentMap.fromAssets(
       radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-      irradianceImagePath: 'assets/little_paris_eiffel_tower_irradiance.png',
     ).then((environment) {
       scene.environment.environmentMap = environment;
       scene.environment.exposure = 2.0;
