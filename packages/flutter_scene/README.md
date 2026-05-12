@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/bdero/flutter_scene">
-    <img alt="Flutter Scene" width="200px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/086f1b421981733da1182656668b940080c54456/DashColorTransparent.svg">
+    <img alt="Flutter Scene" width="200px" src="https://bdero.me/flutter_scene_media/DashColorTransparent.svg">
   </a>
 </p>
 
@@ -24,23 +24,23 @@ The primary goal of this project is to make performant cross platform 3D easy in
 ---
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/dashgameported2.gif">
+  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/dashgameported2.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/hexagons3.gif">
+  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/hexagons3.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/DamagedHelmet.gif">
+  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/DamagedHelmet.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/8156b23a0fb446865554d4fda029f28bc659ef07/car_example.gif">
+  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/car_example.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/gist/bdero/4f34a4dfe78a4a83d54788bc4f5bcf07/raw/ff137e3fdd0b1bb8808d5ff08f5c1c94e8a30665/cloning.gif">
+  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/cloning.gif">
 </p>
 
 ## Early preview! ⚠️
