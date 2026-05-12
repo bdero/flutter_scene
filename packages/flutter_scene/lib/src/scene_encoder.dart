@@ -15,6 +15,23 @@ base class _TranslucentRecord {
   final Material material;
 }
 
+/// The sink that [Node.render] and [Mesh.render] write draw calls into.
+///
+/// Implemented by [SceneEncoder] (the main color pass) and by the
+/// shadow-map pass's depth-only encoder, so the scene-graph walk and its
+/// culling are shared between them.
+abstract interface class SceneDrawList {
+  /// Culling frustum for subtree-level visibility checks.
+  Frustum get frustum;
+
+  /// Scratch [Aabb3] reused by the per-node cull check so it can transform
+  /// a local AABB into world space without allocating per node, per frame.
+  Aabb3 get cullScratchAabb;
+
+  /// Records a draw of [geometry] with [material] at [worldTransform].
+  void encode(Matrix4 worldTransform, Geometry geometry, Material material);
+}
+
 /// Records scene-graph draw calls into a single `gpu.RenderPass` for one
 /// frame.
 ///
@@ -35,7 +52,7 @@ base class _TranslucentRecord {
 /// custom [Geometry] or [Material] subclasses interact with it through
 /// their `bind` callbacks, which receive the `gpu.RenderPass` and
 /// `gpu.HostBuffer` directly.
-base class SceneEncoder {
+base class SceneEncoder implements SceneDrawList {
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
   ///
@@ -70,11 +87,13 @@ base class SceneEncoder {
   /// View frustum derived from the camera's view-projection matrix at
   /// the start of this frame. Used by [Node.render] for subtree-level
   /// culling.
+  @override
   late final Frustum frustum;
 
   /// Reusable AABB owned by this encoder so the per-node cull check can
   /// transform a local AABB into world space without allocating a new
   /// [Aabb3] every frame, every node.
+  @override
   final Aabb3 cullScratchAabb = Aabb3();
 
   /// Records a draw call for [geometry] with [material] at
@@ -84,6 +103,7 @@ base class SceneEncoder {
   /// Translucent draws (where [Material.isOpaque] returns `false`) are
   /// queued and re-emitted in [flushTranslucent] after a back-to-front
   /// depth sort.
+  @override
   void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     if (material.isOpaque()) {
       _encode(worldTransform, geometry, material);

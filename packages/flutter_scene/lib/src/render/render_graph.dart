@@ -176,22 +176,24 @@ class TransientTexturePool {
   void clear() => _rings.clear();
 }
 
-/// Per-frame state handed to every [RenderPass] when the graph executes.
+/// Per-frame state handed to every [RenderGraphPass] when the graph
+/// executes.
 ///
-/// Carries the frame's command buffer and transient-uniform allocator
-/// (shared by all passes), the [TransientTexturePool], and the
-/// [Blackboard]. Scene-specific inputs (camera, scene root, lights, the
-/// final swapchain target) are supplied to individual passes through
-/// their constructors rather than this generic context.
+/// Carries the frame's transient-uniform allocator (shared by all
+/// passes), the [TransientTexturePool], and the [Blackboard]. Each pass
+/// creates and submits its own `gpu.CommandBuffer` — Flutter GPU's
+/// `RenderPass` holds a live command encoder, so a command buffer can
+/// host only one render pass at a time. Scene-specific inputs (camera,
+/// scene root, lights, the final swapchain target) are supplied to
+/// individual passes through their constructors rather than this generic
+/// context.
 class RenderGraphContext {
   RenderGraphContext({
-    required this.commandBuffer,
     required this.transientsBuffer,
     required this.texturePool,
     required this.blackboard,
   });
 
-  final gpu.CommandBuffer commandBuffer;
   final gpu.HostBuffer transientsBuffer;
   final TransientTexturePool texturePool;
   final Blackboard blackboard;
@@ -199,9 +201,9 @@ class RenderGraphContext {
 
 /// A single unit of rendering work in a [RenderGraph].
 ///
-/// Implementations record draws into [RenderGraphContext.commandBuffer]
-/// (typically by creating a `gpu.RenderPass` against some render target),
-/// reading their inputs from and publishing their outputs to
+/// Implementations create and submit a `gpu.CommandBuffer` (typically
+/// hosting one `gpu.RenderPass` against some render target), reading
+/// their inputs from and publishing their outputs to
 /// [RenderGraphContext.blackboard]. Passes run in the order they were
 /// added to the graph; there is no automatic reordering or culling, so
 /// the code building the graph decides which passes to add.
@@ -212,12 +214,12 @@ abstract class RenderGraphPass {
   /// A short human-readable name, used for debugging and logging.
   String get name;
 
-  /// Records this pass's work into [context].
+  /// Records and submits this pass's work, using [context] for transient
+  /// uniforms / attachments and to read/publish cross-pass handles.
   void execute(RenderGraphContext context);
 }
 
-/// An ordered list of [RenderGraphPass]es executed once per frame against
-/// a shared command buffer.
+/// An ordered list of [RenderGraphPass]es executed once per frame.
 ///
 /// This is the deliberately-minimal "render graph": passes are run in
 /// insertion order, transient render targets come from a shared
@@ -232,21 +234,16 @@ class RenderGraph {
   /// Appends [pass] to the end of the execution order.
   void addPass(RenderGraphPass pass) => _passes.add(pass);
 
-  /// Runs every pass in order against [commandBuffer], using
-  /// [transientsBuffer] for transient uniforms and [texturePool] for
-  /// transient attachments.
-  ///
-  /// Does not submit [commandBuffer]; the caller submits after this
-  /// returns. Clears the blackboard before running so state never leaks
-  /// between frames.
+  /// Runs every pass in order, using [transientsBuffer] for transient
+  /// uniforms and [texturePool] for transient attachments. Each pass
+  /// creates and submits its own command buffer. Clears the blackboard
+  /// first so state never leaks between frames.
   void execute({
-    required gpu.CommandBuffer commandBuffer,
     required gpu.HostBuffer transientsBuffer,
     required TransientTexturePool texturePool,
   }) {
     _blackboard._clear();
     final context = RenderGraphContext(
-      commandBuffer: commandBuffer,
       transientsBuffer: transientsBuffer,
       texturePool: texturePool,
       blackboard: _blackboard,

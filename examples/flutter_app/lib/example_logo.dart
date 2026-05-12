@@ -18,12 +18,27 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    // A warm key light on top of the default IBL environment.
+    // A warm key light (with shadows) on top of the default IBL environment.
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(0.4, -1.0, 0.3),
       color: vm.Vector3(1.0, 0.97, 0.9),
       intensity: 3.0,
+      castsShadow: true,
+      shadowFrustumSize: 8.0,
     );
+
+    // A simple ground plane to catch the logo's shadow.
+    final ground = Node(
+      mesh: Mesh(
+        CuboidGeometry(vm.Vector3(8.0, 0.1, 8.0)),
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.8, 1.0)
+          ..metallicFactor = 0.0
+          ..roughnessFactor = 0.9,
+      ),
+    );
+    ground.localTransform = vm.Matrix4.translation(vm.Vector3(0.0, -1.0, 0.0));
+    scene.add(ground);
 
     final loadModel = Node.fromAsset(
       'build/models/flutter_logo_baked.model',
