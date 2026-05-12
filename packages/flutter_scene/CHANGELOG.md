@@ -1,3 +1,57 @@
+## 0.14.0
+
+Renderer overhaul. The lighting/material/scene API changed in a few
+breaking ways (small consumer base, worth getting right) — see below.
+
+* **Render graph.** Rendering is now structured as an ordered list of
+  passes (`RenderGraph` / `RenderGraphPass` / `RenderGraphContext` /
+  `Blackboard` / `TransientTexturePool` in `lib/src/render/`), with a
+  transient-texture pool and a per-frame blackboard. The frame is
+  `ShadowPass?` → `ScenePass` → `TonemapPass`.
+* **HDR pipeline.** The scene renders into a floating-point
+  (`r16g16b16a16Float`) color target, MSAA-resolved in linear; a
+  full-screen `TonemapPass` then applies exposure, the tone-mapping
+  operator, and the display EOTF and writes the 8-bit swapchain.
+  Material shaders output linear HDR premultiplied by alpha and no
+  longer tone-map or gamma-encode (breaking for custom `ShaderMaterial`
+  shaders — see `MATERIALS.md`).
+* **Tone mapping & exposure moved onto `Scene`.** `Scene.exposure`
+  (default `1.0`) and `Scene.toneMapping` (`ToneMappingMode`, default
+  Khronos PBR Neutral; ACES / Reinhard / linear also selectable).
+  `Scene.physicalCameraExposure({aperture, shutterSpeed, iso})` derives
+  an exposure multiplier the photographic way. (Replaces `Environment`'s
+  `exposure` / `toneMappingMode` / `exposureFromPhysicalCamera`.)
+* **Directional light + shadows.** `DirectionalLight` (direction, color,
+  intensity, shadow knobs), assignable as `Scene.directionalLight`,
+  layered on top of the image-based lighting with a Cook-Torrance term.
+  When `castsShadow` is set, a shadow-map pass renders depth from an
+  orthographic light frustum; the PBR shader samples it with 3×3 PCF +
+  normal-offset bias.
+* **Image-based lighting rework.** Diffuse irradiance is SH-9 (computed
+  from the radiance image), specular is a GPU-prefiltered "PMREM-style"
+  roughness-band atlas built once at `EnvironmentMap` construction
+  (`prefilterEquirectRadiance`, exported). The PBR shader picked up
+  fp16-safe GGX, sqrt-free Smith visibility, a roughness floor, and
+  Fdez-Agüera multiscatter energy compensation. The old brightness
+  fudges (`kEnvironmentMultiplier`, the rough-surface blend) are gone.
+* **`Environment` class removed.** Image-based lighting is now
+  `Scene.environment` (an `EnvironmentMap`, defaulting to the new
+  procedural `EnvironmentMap.studio()`) plus `Scene.environmentIntensity`
+  (a scalar). `PhysicallyBasedMaterial.environment` (the per-material
+  override) is now an `EnvironmentMap?`.
+* **`EnvironmentMap` changes (breaking).** Always carries a prefiltered
+  atlas + SH-9 (no nullable getters). New: `EnvironmentMap.studio()` (the
+  built-in procedural studio environment, used as the zero-config
+  default). `fromAssets` / `fromUIImages` dropped their `irradianceImage`
+  params; `fromGpuTextures` now takes a prefiltered atlas (+ optional
+  SH); `empty()` is a black atlas + zero SH. The bundled
+  `royal_esplanade.png` is still available via `fromAssets` but is no
+  longer the default; the unused `royal_esplanade_irradiance.png` asset
+  was removed.
+* **`ShaderMaterial.useEnvironment`** now binds `prefiltered_radiance` +
+  `brdf_lut` (not the former `radiance_texture` / `irradiance_texture` /
+  `brdf_lut`).
+
 ## 0.13.0
 
 * Add `ShaderMaterial`, the foundation for custom materials. Supply

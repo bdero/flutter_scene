@@ -45,23 +45,41 @@ in vec4 v_color;           // per-vertex color, white when the model has none
 You must write to `out vec4 frag_color;` (the location-0 fragment
 output is fixed by the engine). Everything else is up to you.
 
+**Write linear color premultiplied by alpha.** flutter_scene renders
+into a floating-point HDR scene-color target and then runs a single
+full-screen resolve pass that applies exposure (`Scene.exposure`), the
+tone-mapping operator (`Scene.toneMapping` — Khronos PBR Neutral by
+default), and the display EOTF. So your fragment shader should output
+*linear* radiance — do **not** tone-map or gamma-encode in your shader
+— and should premultiply RGB by alpha (e.g.
+`frag_color = vec4(linear_rgb, 1.0) * alpha;`). Values above 1.0 are
+fine and desirable; they're what the tone curve rolls off. If you
+sample an sRGB-encoded texture (like a base-color map), linearize it
+first (`pow(c, vec3(2.2))`).
+
 The engine binds a vertex uniform block named `FrameInfo` containing
 the model, camera, and camera-position matrices. You do not see this
 in your fragment shader directly; the vertex outputs above are
 already in world space.
 
 When you set `ShaderMaterial.useEnvironment = true`, the engine also
-binds the active `Scene`'s IBL textures to these standard sampler
-names if your fragment shader declares them:
+binds the active `Scene`'s image-based-lighting textures to these
+standard sampler names if your fragment shader declares them:
 
 ```glsl
-uniform sampler2D radiance_texture;
-uniform sampler2D irradiance_texture;
-uniform sampler2D brdf_lut;
+uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
+uniform sampler2D brdf_lut;             // split-sum DFG lookup
 ```
 
-Use them if you want image-based lighting from a custom material.
-Leave them undeclared if you don't.
+`prefiltered_radiance` is a vertical atlas of equirectangular
+roughness bands (band `i` = perceptual roughness `i/(N-1)`, mirror at
+the top); sample it the way `flutter_scene_standard.frag`'s
+`SamplePrefilteredRadiance` does (interpolate between the two nearest
+bands, and flip V because it's a render-to-texture target). The diffuse
+irradiance spherical-harmonic coefficients are *not* bound generically
+— for the full PBR ambient term, declare your own uniform block for
+them or extend `PhysicallyBasedMaterial`. Leave these samplers
+undeclared if you don't want image-based lighting.
 
 ## Writing the fragment shader
 
@@ -128,7 +146,7 @@ dependencies:
   flutter_gpu:
     sdk: flutter
   flutter_gpu_shaders: ^0.4.0
-  flutter_scene: ^0.12.0
+  flutter_scene: ^0.14.0
 
 flutter:
   assets:

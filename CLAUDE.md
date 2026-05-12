@@ -59,11 +59,17 @@ glTF is right-handed (Y-up, +Z out of screen). flutter_scene's pipeline expects 
 
 If you write another importer, apply the same scene-root flip — *not* a per-triangle winding swap. Hand-rolled winding flips fix geometry orientation but leave normals and IBL sampling wrong.
 
-## Static resources & default environment
+## Lighting / environment / tone mapping
 
-`Scene.initializeStaticResources()` loads the BRDF LUT and a default `royal_esplanade` IBL environment (radiance + irradiance). It's called from the `Scene()` constructor and must complete before rendering — the engine prints `"Flutter Scene is not ready to render. Skipping frame."` and skips rendering until it does.
+A `Scene` has: `environment` (an `EnvironmentMap` — defaults to the procedural `EnvironmentMap.studio()`, built/memoized lazily in the constructor), `environmentIntensity` (scalar, default 1.0), `directionalLight` (a `DirectionalLight?`, default null — adds a `ShadowPass` when `castsShadow`), `exposure` (default 1.0 — the old 2.0 was a hack for a buggier renderer; don't reintroduce it), and `toneMapping` (`ToneMappingMode`, default `pbrNeutral`). There is no `Environment` wrapper class anymore. `Scene.physicalCameraExposure({aperture, shutterSpeed, iso})` derives an exposure multiplier.
 
-The `Car` example overrides this with `little_paris_eiffel_tower` at `exposure=2.0, intensity=2.0`. Other examples use the default. **A/B comparisons between examples can be misleading** if they don't share env setup.
+`EnvironmentMap` always carries a prefiltered-radiance atlas (a GGX-prefiltered "PMREM-style" 8-band equirect atlas, built once at construction by `prefilterEquirectRadiance`) plus SH-9 diffuse coefficients. There is no separate radiance/irradiance texture path and no `kEnvironmentMultiplier` fudge. Construct via `fromAssets` / `fromUIImages` (auto SH + prefilter), `studio()`, `fromGpuTextures` (you supply the atlas), or `empty()`.
+
+`Scene.initializeStaticResources()` (called from the `Scene()` constructor) only loads the BRDF LUT now. Rendering is gated on it — the engine prints `"Flutter Scene is not ready to render. Skipping frame."` until it completes.
+
+The `Car` example loads `little_paris_eiffel_tower.png` via `EnvironmentMap.fromAssets` and bumps `scene.exposure = 2.5` (outdoor pano, no key light). The `Toon` example sets `scene.exposure = 1.5`. Other examples use the defaults. **A/B comparisons between examples can be misleading** if they don't share env/exposure setup.
+
+Material fragment shaders output **linear HDR premultiplied by alpha**; exposure + the tone-mapping operator + the display EOTF are applied later by the full-screen `TonemapPass`. Custom `ShaderMaterial` shaders must follow the same contract (see `MATERIALS.md`).
 
 ## Test corpus
 

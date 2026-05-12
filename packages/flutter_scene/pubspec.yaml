@@ -1,6 +1,6 @@
 name: flutter_scene
 description: 3D rendering library for Flutter. Currently only supported when Impeller is enabled.
-version: 0.13.0
+version: 0.14.0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
 platforms:
@@ -36,8 +36,8 @@ dev_dependencies:
 flutter:
   assets:
     - build/shaderbundles/base.shaderbundle
+    # Split-sum DFG lookup for specular IBL.
     - assets/ibl_brdf_lut.png
-
-    # Default environment map.
+    # A bundled sample environment, loadable via EnvironmentMap.fromAssets.
+    # (The zero-config default is the procedural EnvironmentMap.studio().)
     - assets/royal_esplanade.png
-    - assets/royal_esplanade_irradiance.png

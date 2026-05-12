@@ -148,47 +148,48 @@ base class EnvironmentMap {
         final dirX = cosLat * math.cos(longitude);
         final dirZ = cosLat * math.sin(longitude);
 
-        // Vertical studio gradient (linear): cool bright above, neutral at
-        // the horizon, dim warm below.
+        // Vertical studio gradient (linear): a near-neutral grey, faintly
+        // cool above the horizon and faintly warm below. Kept low-
+        // saturation so glancing reflections on glossy floors stay clean.
         double r, g, b;
         if (dirY >= 0.0) {
           final t = _smoothstep01(dirY);
-          r = _lerp(0.50, 0.78, t);
-          g = _lerp(0.51, 0.80, t);
-          b = _lerp(0.53, 0.86, t);
+          r = _lerp(0.50, 0.76, t);
+          g = _lerp(0.51, 0.78, t);
+          b = _lerp(0.52, 0.82, t);
         } else {
           final t = _smoothstep01(-dirY);
           r = _lerp(0.50, 0.20, t);
-          g = _lerp(0.51, 0.18, t);
-          b = _lerp(0.53, 0.16, t);
+          g = _lerp(0.51, 0.19, t);
+          b = _lerp(0.52, 0.17, t);
         }
 
-        // Broad top fill (the "ceiling softbox").
+        // Broad (near-neutral) top fill, the "ceiling softbox".
         final top = math.max(dirY, 0.0);
         final topL = top * top; // pow(., 2)
         r += 0.85 * topL;
         g += 0.86 * topL;
         b += 0.88 * topL;
 
-        // Tight warm key highlight.
+        // Tight, faintly warm key highlight.
         final keyC = math.max(
           dirX * keyDir.x + dirY * keyDir.y + dirZ * keyDir.z,
           0.0,
         );
         final keyL = math.pow(keyC, 26.0).toDouble();
-        r += 1.20 * keyL;
-        g += 1.10 * keyL;
-        b += 0.95 * keyL;
+        r += 1.10 * keyL;
+        g += 1.06 * keyL;
+        b += 1.00 * keyL;
 
-        // Softer cool fill from behind.
+        // Softer, faintly cool fill from behind.
         final fillC = math.max(
           dirX * fillDir.x + dirY * fillDir.y + dirZ * fillDir.z,
           0.0,
         );
         final fillL = math.pow(fillC, 16.0).toDouble();
-        r += 0.40 * fillL;
-        g += 0.48 * fillL;
-        b += 0.60 * fillL;
+        r += 0.46 * fillL;
+        g += 0.50 * fillL;
+        b += 0.56 * fillL;
 
         final o = (py * width + px) * 4;
         pixels[o] = _encodeSrgb(r);
