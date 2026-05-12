@@ -18,6 +18,13 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
+    // A warm key light on top of the default IBL environment.
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(0.4, -1.0, 0.3),
+      color: vm.Vector3(1.0, 0.97, 0.9),
+      intensity: 3.0,
+    );
+
     final loadModel = Node.fromAsset(
       'build/models/flutter_logo_baked.model',
     ).then((value) {

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'camera.dart';
+import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
@@ -127,8 +128,12 @@ base class Scene implements SceneGraph {
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
-  /// Manages the lighting for this [Scene].
+  /// Manages the image-based lighting for this [Scene].
   final Environment environment = Environment();
+
+  /// Optional analytic directional light (e.g. a sun) layered on top of
+  /// the image-based lighting. Null (the default) means IBL only.
+  DirectionalLight? directionalLight;
 
   @override
   void add(Node child) {
@@ -219,6 +224,11 @@ base class Scene implements SceneGraph {
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final transientsBuffer = gpu.gpuContext.createHostBuffer();
 
+    final lighting = Lighting(
+      environment: env,
+      directionalLight: directionalLight,
+    );
+
     final graph = RenderGraph();
     graph.addPass(
       ScenePass(
@@ -226,7 +236,7 @@ base class Scene implements SceneGraph {
         camera: camera,
         root: root,
         dimensions: pixelSize,
-        environment: env,
+        lighting: lighting,
       ),
     );
     graph.execute(
