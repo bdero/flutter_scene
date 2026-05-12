@@ -185,30 +185,53 @@ class PhysicallyBasedMaterial extends Material {
 
     Environment env = this.environment ?? environment;
 
-    // 17 used floats; the buffer is sized to 20 (80 bytes) so it matches
-    // the std140-padded `FragInfo` block. The trailing entries are unused
-    // padding and stay zero.
-    final fragInfo = Float32List(20);
-    fragInfo.setAll(0, <double>[
-      baseColorFactor.r, baseColorFactor.g,
-      baseColorFactor.b, baseColorFactor.a, // color
-      emissiveFactor.r, emissiveFactor.g,
-      emissiveFactor.b,
-      emissiveFactor.a, // emissive_factor
-      vertexColorWeight, // vertex_color_weight
-      env.exposure, // exposure
-      metallicFactor, // metallic
-      roughnessFactor, // roughness
-      normalTexture != null ? 1.0 : 0.0, // has_normal_map
-      normalScale, // normal_scale
-      occlusionStrength, // occlusion_strength
-      env.intensity, // environment_intensity
-      env.toneMappingMode.index.toDouble(), // tone_mapping_mode
-    ]);
+    // FragInfo std140 layout (224 bytes / 56 floats):
+    //   [0..3]   vec4  color
+    //   [4..7]   vec4  emissive_factor
+    //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
+    //   [44]     float vertex_color_weight
+    //   [45]     float exposure
+    //   [46]     float metallic_factor
+    //   [47]     float roughness_factor
+    //   [48]     float has_normal_map
+    //   [49]     float normal_scale
+    //   [50]     float occlusion_strength
+    //   [51]     float environment_intensity
+    //   [52]     float tone_mapping_mode
+    //   [53]     float use_diffuse_sh
+    //   [54..55] trailing pad to a 16-byte multiple
+    final fragInfo = Float32List(56);
+    fragInfo[0] = baseColorFactor.r;
+    fragInfo[1] = baseColorFactor.g;
+    fragInfo[2] = baseColorFactor.b;
+    fragInfo[3] = baseColorFactor.a;
+    fragInfo[4] = emissiveFactor.r;
+    fragInfo[5] = emissiveFactor.g;
+    fragInfo[6] = emissiveFactor.b;
+    fragInfo[7] = emissiveFactor.a;
+    final shCoefficients = env.environmentMap.diffuseSphericalHarmonics;
+    if (shCoefficients != null) {
+      for (var i = 0; i < shCoefficients.length; i++) {
+        fragInfo[8 + i * 4] = shCoefficients[i].x;
+        fragInfo[9 + i * 4] = shCoefficients[i].y;
+        fragInfo[10 + i * 4] = shCoefficients[i].z;
+      }
+    }
+    fragInfo[44] = vertexColorWeight;
+    fragInfo[45] = env.exposure;
+    fragInfo[46] = metallicFactor;
+    fragInfo[47] = roughnessFactor;
+    fragInfo[48] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[49] = normalScale;
+    fragInfo[50] = occlusionStrength;
+    fragInfo[51] = env.intensity;
+    fragInfo[52] = env.toneMappingMode.index.toDouble();
+    fragInfo[53] = shCoefficients != null ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
     );
+
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),
       Material.whitePlaceholder(baseColorTexture),

@@ -29,13 +29,11 @@ Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
   return texture;
 }
 
-/// Loads an image from the asset bundle at [assetPath] and uploads it as
-/// a Flutter GPU texture.
+/// Loads and decodes an image from the asset bundle at [assetPath].
 ///
-/// The asset is decoded with `dart:ui`'s built-in image codecs (PNG, JPEG,
-/// etc.) and then uploaded via [gpuTextureFromImage]. Throws if the asset
-/// is not present in the bundle or cannot be decoded.
-Future<gpu.Texture> gpuTextureFromAsset(String assetPath) async {
+/// Uses `dart:ui`'s built-in image codecs (PNG, JPEG, etc.). Throws if
+/// the asset is not present in the bundle or cannot be decoded.
+Future<ui.Image> imageFromAsset(String assetPath) async {
   // Load resource from the asset bundle. Throws exception if the asset couldn't
   // be found in the bundle.
   final buffer = await rootBundle.loadBuffer(assetPath);
@@ -43,7 +41,15 @@ Future<gpu.Texture> gpuTextureFromAsset(String assetPath) async {
   // Decode the image.
   final codec = await ui.instantiateImageCodecFromBuffer(buffer);
   final frame = await codec.getNextFrame();
-  final image = frame.image;
+  return frame.image;
+}
 
-  return await gpuTextureFromImage(image);
+/// Loads an image from the asset bundle at [assetPath] and uploads it as
+/// a Flutter GPU texture.
+///
+/// The asset is decoded with [imageFromAsset] and then uploaded via
+/// [gpuTextureFromImage]. Throws if the asset is not present in the
+/// bundle or cannot be decoded.
+Future<gpu.Texture> gpuTextureFromAsset(String assetPath) async {
+  return await gpuTextureFromImage(await imageFromAsset(assetPath));
 }
