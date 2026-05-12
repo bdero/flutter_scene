@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/bdero/flutter_scene">
-    <img alt="Flutter Scene" width="200px" src="https://bdero.me/flutter_scene_media/DashColorTransparent.svg">
+    <img alt="Flutter Scene" width="200px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DashColorTransparent.svg">
   </a>
 </p>
 
@@ -24,23 +24,23 @@ The primary goal of this project is to make performant cross platform 3D easy in
 ---
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/dashgameported2.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashgameported2.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/hexagons3.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/hexagons3.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/DamagedHelmet.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DamagedHelmet.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/car_example.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/car_example.gif">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://bdero.me/flutter_scene_media/cloning.gif">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/cloning.gif">
 </p>
 
 ## Early preview! ⚠️
