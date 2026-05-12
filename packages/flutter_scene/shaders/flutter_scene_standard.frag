@@ -1,6 +1,20 @@
 uniform FragInfo {
   vec4 color;
   vec4 emissive_factor;
+  // Diffuse irradiance L2 spherical-harmonic coefficients (xyz = RGB,
+  // w unused). The cosine convolution (A_l band factors) and the 1/pi
+  // Lambertian term are already folded in, so evaluating the polynomial
+  // yields E(n)/pi, ready to multiply by the diffuse albedo. When
+  // use_diffuse_sh <= 0.5, irradiance_texture is sampled instead.
+  vec4 diffuse_sh0;
+  vec4 diffuse_sh1;
+  vec4 diffuse_sh2;
+  vec4 diffuse_sh3;
+  vec4 diffuse_sh4;
+  vec4 diffuse_sh5;
+  vec4 diffuse_sh6;
+  vec4 diffuse_sh7;
+  vec4 diffuse_sh8;
   float vertex_color_weight;
   float exposure;
   float metallic_factor;
@@ -12,6 +26,7 @@ uniform FragInfo {
   // Tone mapping operator: 0 = Khronos PBR Neutral, 1 = ACES filmic,
   // 2 = Reinhard, anything else = linear (clamp). See ToneMappingMode.
   float tone_mapping_mode;
+  float use_diffuse_sh;
 }
 frag_info;
 
@@ -38,6 +53,22 @@ out vec4 frag_color;
 #include <pbr.glsl>
 #include <texture.glsl>
 #include <tone_mapping.glsl>
+
+// Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
+// The coefficients already include the cosine convolution and 1/pi, so
+// the result is E(n)/pi. Must use the same real-SH basis the CPU-side
+// projection in EnvironmentMap.computeDiffuseSphericalHarmonics uses.
+vec3 EvaluateDiffuseSH(vec3 n) {
+  return frag_info.diffuse_sh0.xyz * 0.282095 +
+         frag_info.diffuse_sh1.xyz * (0.488603 * n.y) +
+         frag_info.diffuse_sh2.xyz * (0.488603 * n.z) +
+         frag_info.diffuse_sh3.xyz * (0.488603 * n.x) +
+         frag_info.diffuse_sh4.xyz * (1.092548 * n.x * n.y) +
+         frag_info.diffuse_sh5.xyz * (1.092548 * n.y * n.z) +
+         frag_info.diffuse_sh6.xyz * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
+         frag_info.diffuse_sh7.xyz * (1.092548 * n.x * n.z) +
+         frag_info.diffuse_sh8.xyz * (0.546274 * (n.x * n.x - n.y * n.y));
+}
 
 void main() {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
@@ -77,13 +108,21 @@ void main() {
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
   vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
 
-  // TODO(bdero): This multiplier is here because the environment looks too
-  //              dim. Should be resolved once HDR env maps + a real
-  //              prefiltered cubemap land (roadmap Phase A item 4 / Phase B).
+  // TODO(bdero): This multiplier is here because the texture-based
+  //              environment looks too dim. Should be resolved once HDR
+  //              env maps + a real prefiltered cubemap land (roadmap
+  //              Phase A item 4 / Phase B). The SH path is a correct
+  //              irradiance integral and needs no fudge.
   const float kEnvironmentMultiplier = 2.0;
-  vec3 irradiance =
-      SRGBToLinear(SampleEnvironmentTexture(irradiance_texture, normal)) *
-      frag_info.environment_intensity * kEnvironmentMultiplier;
+  vec3 irradiance;
+  if (frag_info.use_diffuse_sh > 0.5) {
+    irradiance = max(EvaluateDiffuseSH(normal), vec3(0.0)) *
+                 frag_info.environment_intensity;
+  } else {
+    irradiance =
+        SRGBToLinear(SampleEnvironmentTexture(irradiance_texture, normal)) *
+        frag_info.environment_intensity * kEnvironmentMultiplier;
+  }
 
   const float kMaxReflectionLod = 4.0;
   vec3 prefiltered_color =
