@@ -15,45 +15,46 @@ base class _TranslucentRecord {
   final Material material;
 }
 
-/// Records draw calls for one frame of a [Scene].
+/// Records scene-graph draw calls into a single `gpu.RenderPass` for one
+/// frame.
 ///
 /// `SceneEncoder` is the bridge between the scene graph and Flutter GPU.
-/// [Scene.render] constructs an encoder for each frame, walks the scene
-/// graph with [Node.render] (which forwards to [encode]), then calls
-/// [finish] to submit the recorded command buffer.
+/// A render-graph pass (see `ScenePass`) creates a `gpu.RenderPass`,
+/// constructs an encoder against it, walks the scene graph with
+/// [Node.render] (which forwards to [encode]), then calls
+/// [flushTranslucent] to emit the deferred translucent draws.
 ///
-/// The encoder splits draws into two passes:
+/// The encoder splits draws into two phases within the one render pass:
 ///
-/// 1. **Opaque pass**, with depth writes enabled and color blending
-///    disabled, executed in submission order as [encode] is called.
-/// 2. **Translucent pass**, automatically deferred and depth-sorted back
-///    to front from the camera, drawn with premultiplied source-over
-///    blending.
+/// 1. **Opaque**, with depth writes enabled and color blending disabled,
+///    drawn in submission order as [encode] is called.
+/// 2. **Translucent**, deferred and depth-sorted back to front from the
+///    camera, drawn with premultiplied source-over blending.
 ///
 /// Applications typically do not construct `SceneEncoder` directly;
 /// custom [Geometry] or [Material] subclasses interact with it through
-/// the `bind` callback.
+/// their `bind` callbacks, which receive the `gpu.RenderPass` and
+/// `gpu.HostBuffer` directly.
 base class SceneEncoder {
-  /// Creates an encoder targeting [renderTarget] from the perspective of
-  /// the supplied camera.
+  /// Creates an encoder that records into [renderPass], allocating
+  /// transient uniforms from [transientsBuffer].
   ///
-  /// `dimensions` is the viewport size used to compute the camera's view
-  /// transform; the supplied environment is the default IBL environment
-  /// applied to materials that don't override it. The opaque render pass
-  /// is opened immediately.
+  /// `dimensions` is the viewport size used to derive the camera's view
+  /// transform; [environment] is the default IBL environment applied to
+  /// materials that don't override it. The render pass is configured for
+  /// the opaque phase (depth writes on, blending off).
   SceneEncoder(
-    gpu.RenderTarget renderTarget,
+    gpu.RenderPass renderPass,
+    gpu.HostBuffer transientsBuffer,
     this._camera,
     ui.Size dimensions,
     this._environment,
-  ) {
+  ) : _renderPass = renderPass,
+      _transientsBuffer = transientsBuffer {
     _cameraTransform = _camera.getViewTransform(dimensions);
     frustum = Frustum.matrix(_cameraTransform);
-    _commandBuffer = gpu.gpuContext.createCommandBuffer();
-    _transientsBuffer = gpu.gpuContext.createHostBuffer();
 
-    // Begin the opaque render pass.
-    _renderPass = _commandBuffer.createRenderPass(renderTarget);
+    // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
@@ -61,10 +62,9 @@ base class SceneEncoder {
 
   final Camera _camera;
   final Environment _environment;
+  final gpu.RenderPass _renderPass;
+  final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
-  late final gpu.CommandBuffer _commandBuffer;
-  late final gpu.HostBuffer _transientsBuffer;
-  late final gpu.RenderPass _renderPass;
   final List<_TranslucentRecord> _translucentRecords = [];
 
   /// View frustum derived from the camera's view-projection matrix at
@@ -82,7 +82,8 @@ base class SceneEncoder {
   ///
   /// Opaque draws are encoded immediately into the active render pass.
   /// Translucent draws (where [Material.isOpaque] returns `false`) are
-  /// queued and re-emitted in [finish] after a back-to-front depth sort.
+  /// queued and re-emitted in [flushTranslucent] after a back-to-front
+  /// depth sort.
   void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     if (material.isOpaque()) {
       _encode(worldTransform, geometry, material);
@@ -112,14 +113,14 @@ base class SceneEncoder {
     _renderPass.draw();
   }
 
-  /// Flushes the deferred translucent pass and submits the command
-  /// buffer.
+  /// Emits the deferred translucent draws and finishes recording.
   ///
   /// Translucent records are sorted back-to-front by translation distance
   /// to the camera, then drawn with premultiplied source-over blending
-  /// and depth writes disabled. After this call the encoder's command
-  /// buffer is no longer usable.
-  void finish() {
+  /// and depth writes disabled. After this returns the encoder has
+  /// finished recording into its render pass; the caller is responsible
+  /// for submitting the owning command buffer.
+  void flushTranslucent() {
     _translucentRecords.sort((a, b) {
       var aDistance = a.worldTransform.getTranslation().distanceTo(
         _camera.position,
@@ -131,8 +132,8 @@ base class SceneEncoder {
     });
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
-    // Additive source-over blending.
-    // Note: Expects premultiplied alpha output from the fragment stage!
+    // Premultiplied source-over blending.
+    // Note: expects premultiplied-alpha output from the fragment stage.
     _renderPass.setColorBlendEquation(
       gpu.ColorBlendEquation(
         colorBlendOperation: gpu.BlendOperation.add,
@@ -147,7 +148,5 @@ base class SceneEncoder {
       _encode(record.worldTransform, record.geometry, record.material);
     }
     _translucentRecords.clear();
-    _commandBuffer.submit();
-    _transientsBuffer.reset();
   }
 }

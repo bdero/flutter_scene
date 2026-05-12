@@ -2,20 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
-/// Manages a small ring of [gpu.RenderTarget]s used to draw a [Scene].
+import 'package:flutter_scene/src/render/render_graph.dart';
+
+/// Manages a small ring of [gpu.RenderTarget]s used to draw a [Scene],
+/// plus the pool of transient render-graph attachments.
 ///
 /// Each [Scene] owns one `Surface`. On every frame the renderer asks the
 /// surface for a render target via [getNextRenderTarget]; the surface
 /// either reuses an existing target from its ring or creates a new one
 /// (along with an MSAA resolve attachment if requested). The ring resets
-/// whenever the requested size changes.
+/// whenever the requested size changes, which also drops the transient
+/// texture pool so stale-sized attachments aren't kept alive.
 ///
-/// Applications typically don't interact with `Surface` directly — it is
+/// Applications typically don't interact with `Surface` directly; it is
 /// driven internally by [Scene.render].
 class Surface {
   // TODO(bdero): There should be a method on the Flutter GPU context to pull
   //              this information.
-  final int _maxFramesInFlight = 2;
+  static const int _maxFramesInFlight = 2;
+
+  /// Pool of transient textures used as intermediate render targets by
+  /// the render graph (shadow maps, HDR scene color, post-process
+  /// buffers, ...). Empty until a pass that needs one acquires it.
+  final TransientTexturePool transientTexturePool = TransientTexturePool(
+    framesInFlight: _maxFramesInFlight,
+  );
   // TODO(bdero): There's no need to track whole RenderTargets in a rotating
   //              list. Only the color texture needs to be swapped out for
   //              properly synchronizing with the canvas.
@@ -30,9 +41,11 @@ class Surface {
   /// yet full. The ring is dropped and rebuilt whenever [size] changes
   /// from the previous call.
   gpu.RenderTarget getNextRenderTarget(Size size, bool enableMsaa) {
+    transientTexturePool.beginFrame();
     if (size != _previousSize) {
       _cursor = 0;
       _renderTargets.clear();
+      transientTexturePool.clear();
       _previousSize = size;
     }
     if (_cursor == _renderTargets.length) {

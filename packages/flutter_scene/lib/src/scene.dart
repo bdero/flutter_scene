@@ -8,9 +8,9 @@ import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
-import 'scene_encoder.dart';
+import 'render/render_graph.dart';
+import 'render/scene_pass.dart';
 import 'surface.dart';
-import 'package:vector_math/vector_math.dart';
 
 /// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
 ///
@@ -216,9 +216,25 @@ base class Scene implements SceneGraph {
             )
             : environment;
 
-    final encoder = SceneEncoder(renderTarget, camera, pixelSize, env);
-    root.render(encoder, Matrix4.identity());
-    encoder.finish();
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final transientsBuffer = gpu.gpuContext.createHostBuffer();
+
+    final graph = RenderGraph();
+    graph.addPass(
+      ScenePass(
+        target: renderTarget,
+        camera: camera,
+        root: root,
+        dimensions: pixelSize,
+        environment: env,
+      ),
+    );
+    graph.execute(
+      commandBuffer: commandBuffer,
+      transientsBuffer: transientsBuffer,
+      texturePool: surface.transientTexturePool,
+    );
+    commandBuffer.submit();
 
     final gpu.Texture texture =
         enableMsaa
