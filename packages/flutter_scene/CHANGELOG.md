@@ -1,3 +1,22 @@
+## 0.13.0
+
+* Add `ShaderMaterial`, the foundation for custom materials. Supply
+  a fragment shader (compiled offline through `flutter_gpu_shaders` /
+  `impellerc` into a `.shaderbundle`), then bind uniform blocks and
+  textures by name with `setUniformBlock` / `setUniformBlockFromFloats`
+  / `setTexture`. Render-state knobs (`cullingMode`, `windingOrder`,
+  `isOpaqueOverride`) are exposed on the material. The opt-in
+  `useEnvironment` flag binds the scene's IBL textures
+  (`radiance_texture`, `irradiance_texture`, `brdf_lut`) when the
+  fragment shader declares them.
+* Add `MATERIALS.md`: an end-to-end guide to the engine uniform /
+  varying contract for custom fragment shaders, std140 uniform-block
+  packing, the `flutter_gpu_shaders` build-hook setup, and the
+  limitations of the current surface (see issue #22 for the planned
+  declarative material format).
+* The example app gains a worked toon-shader demo
+  (`examples/flutter_app/lib/example_toon.dart`).
+
 ## 0.12.0
 
 * Add bounding-volume and frustum-culling infrastructure. The scene
