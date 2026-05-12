@@ -12,6 +12,7 @@ import 'node.dart';
 import 'render/render_graph.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
+import 'render/tonemap_pass.dart';
 import 'surface.dart';
 
 /// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
@@ -210,9 +211,11 @@ base class Scene implements SceneGraph {
     );
 
     final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
-    final gpu.RenderTarget renderTarget = surface.getNextRenderTarget(
+    final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
-      enableMsaa,
+    );
+    final swapchainTarget = gpu.RenderTarget.singleColor(
+      gpu.ColorAttachment(texture: swapchainColor),
     );
 
     final env =
@@ -241,13 +244,20 @@ base class Scene implements SceneGraph {
     }
     graph.addPass(
       ScenePass(
-        target: renderTarget,
         camera: camera,
         root: root,
         dimensions: pixelSize,
         environment: env,
+        enableMsaa: enableMsaa,
         directionalLight: light,
         lightSpaceMatrix: lightSpaceMatrix,
+      ),
+    );
+    graph.addPass(
+      TonemapPass(
+        target: swapchainTarget,
+        exposure: env.exposure,
+        toneMappingMode: env.toneMappingMode,
       ),
     );
     graph.execute(
@@ -255,11 +265,7 @@ base class Scene implements SceneGraph {
       texturePool: surface.transientTexturePool,
     );
 
-    final gpu.Texture texture =
-        enableMsaa
-            ? renderTarget.colorAttachments[0].resolveTexture!
-            : renderTarget.colorAttachments[0].texture;
-    final image = texture.asImage();
+    final image = swapchainColor.asImage();
     canvas.drawImageRect(
       image,
       ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height),
