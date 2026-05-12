@@ -18,5 +18,13 @@
     "DepthOnlyFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_depth_only.frag"
+    },
+    "FullscreenVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_fullscreen.vert"
+    },
+    "TonemapFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_tonemap.frag"
     }
 }

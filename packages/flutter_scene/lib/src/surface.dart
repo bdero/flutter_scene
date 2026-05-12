@@ -4,15 +4,17 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/render/render_graph.dart';
 
-/// Manages a small ring of [gpu.RenderTarget]s used to draw a [Scene],
-/// plus the pool of transient render-graph attachments.
+/// Manages the swapchain color textures a [Scene] composites onto the
+/// Flutter canvas, plus the pool of transient render-graph attachments.
 ///
-/// Each [Scene] owns one `Surface`. On every frame the renderer asks the
-/// surface for a render target via [getNextRenderTarget]; the surface
-/// either reuses an existing target from its ring or creates a new one
-/// (along with an MSAA resolve attachment if requested). The ring resets
-/// whenever the requested size changes, which also drops the transient
-/// texture pool so stale-sized attachments aren't kept alive.
+/// Each [Scene] owns one `Surface`. Every frame the renderer asks the
+/// surface for the next swapchain color texture via
+/// [getNextSwapchainColorTexture]; the surface rotates through a small
+/// ring of textures so the GPU isn't asked to overwrite one the
+/// compositor is still reading. The tone-mapping pass renders the final
+/// image into this texture, which is then drawn to the canvas via
+/// `Texture.asImage`. The ring (and the transient texture pool) are
+/// dropped and rebuilt whenever the requested size changes.
 ///
 /// Applications typically don't interact with `Surface` directly; it is
 /// driven internally by [Scene.render].
@@ -22,74 +24,41 @@ class Surface {
   static const int _maxFramesInFlight = 2;
 
   /// Pool of transient textures used as intermediate render targets by
-  /// the render graph (shadow maps, HDR scene color, post-process
-  /// buffers, ...). Empty until a pass that needs one acquires it.
+  /// the render graph (the HDR scene color, MSAA color, depth, shadow
+  /// maps, post-process buffers, ...). Empty until a pass acquires one.
   final TransientTexturePool transientTexturePool = TransientTexturePool(
     framesInFlight: _maxFramesInFlight,
   );
-  // TODO(bdero): There's no need to track whole RenderTargets in a rotating
-  //              list. Only the color texture needs to be swapped out for
-  //              properly synchronizing with the canvas.
-  final List<gpu.RenderTarget> _renderTargets = [];
+
+  final List<gpu.Texture> _swapchainColors = [];
   int _cursor = 0;
   Size _previousSize = const Size(0, 0);
 
-  /// Returns the next [gpu.RenderTarget] in the rotating ring.
-  ///
-  /// Allocates a fresh target (color + depth attachments, plus a 4x MSAA
-  /// resolve attachment when [enableMsaa] is `true`) when the ring is not
-  /// yet full. The ring is dropped and rebuilt whenever [size] changes
-  /// from the previous call.
-  gpu.RenderTarget getNextRenderTarget(Size size, bool enableMsaa) {
+  /// Returns the next 8-bit color texture in the rotating swapchain ring,
+  /// allocating one when the ring isn't yet full. The ring (and the
+  /// transient texture pool) are dropped and rebuilt whenever [size]
+  /// changes from the previous call.
+  gpu.Texture getNextSwapchainColorTexture(Size size) {
     transientTexturePool.beginFrame();
     if (size != _previousSize) {
       _cursor = 0;
-      _renderTargets.clear();
+      _swapchainColors.clear();
       transientTexturePool.clear();
       _previousSize = size;
     }
-    if (_cursor == _renderTargets.length) {
-      final gpu.Texture colorTexture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.devicePrivate,
-        size.width.toInt(),
-        size.height.toInt(),
-        enableRenderTargetUsage: true,
-        enableShaderReadUsage: true,
-        coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
-      );
-      final colorAttachment = gpu.ColorAttachment(texture: colorTexture);
-      if (enableMsaa) {
-        final gpu.Texture msaaColorTexture = gpu.gpuContext.createTexture(
-          gpu.StorageMode.deviceTransient,
+    if (_cursor == _swapchainColors.length) {
+      _swapchainColors.add(
+        gpu.gpuContext.createTexture(
+          gpu.StorageMode.devicePrivate,
           size.width.toInt(),
           size.height.toInt(),
-          sampleCount: 4,
           enableRenderTargetUsage: true,
+          enableShaderReadUsage: true,
           coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
-        );
-        colorAttachment.resolveTexture = colorAttachment.texture;
-        colorAttachment.texture = msaaColorTexture;
-        colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
-      }
-      final gpu.Texture depthTexture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.deviceTransient,
-        size.width.toInt(),
-        size.height.toInt(),
-        sampleCount: enableMsaa ? 4 : 1,
-        format: gpu.gpuContext.defaultDepthStencilFormat,
-        enableRenderTargetUsage: true,
-        coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
-      );
-      final renderTarget = gpu.RenderTarget.singleColor(
-        colorAttachment,
-        depthStencilAttachment: gpu.DepthStencilAttachment(
-          texture: depthTexture,
-          depthClearValue: 1.0,
         ),
       );
-      _renderTargets.add(renderTarget);
     }
-    gpu.RenderTarget result = _renderTargets[_cursor];
+    final result = _swapchainColors[_cursor];
     _cursor = (_cursor + 1) % _maxFramesInFlight;
     return result;
   }
