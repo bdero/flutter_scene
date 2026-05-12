@@ -81,8 +81,7 @@ abstract class Material {
   }
 
   static gpu.Texture? _brdfLutTexture;
-  static gpu.Texture? _defaultRadianceTexture;
-  static gpu.Texture? _defaultIrradianceTexture;
+  static EnvironmentMap? _defaultEnvironmentMap;
 
   /// Returns the precomputed BRDF lookup texture used by the PBR
   /// fragment shader for environment-map specular sampling.
@@ -97,23 +96,22 @@ abstract class Material {
   }
 
   /// Returns the package's bundled "Royal Esplanade" image-based
-  /// lighting environment as an [EnvironmentMap].
+  /// lighting environment as an [EnvironmentMap] (with diffuse spherical
+  /// harmonics and a prefiltered-radiance atlas computed at load time).
   ///
   /// Used as the [Scene]-wide default when no environment is configured.
   /// Loaded by [initializeStaticResources]; throws if accessed before
   /// initialization completes.
   static EnvironmentMap getDefaultEnvironmentMap() {
-    if (_defaultRadianceTexture == null || _defaultIrradianceTexture == null) {
+    if (_defaultEnvironmentMap == null) {
       throw Exception('Default environment map has not been initialized.');
     }
-    return EnvironmentMap.fromGpuTextures(
-      radianceTexture: _defaultRadianceTexture!,
-      irradianceTexture: _defaultIrradianceTexture!,
-    );
+    return _defaultEnvironmentMap!;
   }
 
-  /// Loads the bundled BRDF lookup texture and the default
-  /// "Royal Esplanade" radiance/irradiance environment maps.
+  /// Loads the bundled BRDF lookup texture and builds the default
+  /// "Royal Esplanade" environment (radiance texture + diffuse SH +
+  /// prefiltered-radiance atlas).
   ///
   /// Called by the [Scene] constructor; rendering is gated on the
   /// returned [Future] completing. The same future is reused on
@@ -125,15 +123,12 @@ abstract class Material {
       ).then((gpu.Texture value) {
         _brdfLutTexture = value;
       }),
-      gpuTextureFromAsset(
-        'packages/flutter_scene/assets/royal_esplanade.png',
-      ).then((gpu.Texture value) {
-        _defaultRadianceTexture = value;
-      }),
-      gpuTextureFromAsset(
-        'packages/flutter_scene/assets/royal_esplanade_irradiance.png',
-      ).then((gpu.Texture value) {
-        _defaultIrradianceTexture = value;
+      imageFromAsset('packages/flutter_scene/assets/royal_esplanade.png').then((
+        radianceImage,
+      ) async {
+        _defaultEnvironmentMap = await EnvironmentMap.fromUIImages(
+          radianceImage: radianceImage,
+        );
       }),
     ];
     return Future.wait(futures);
