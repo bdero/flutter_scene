@@ -83,14 +83,16 @@ This is "Bevy's render graph minus the parts they regret." It makes "add a custo
 
 Target: dramatically better default look + the structural foundation for everything after.
 
-1. **Minimal render-graph refactor.** Replace the hardcoded opaque/translucent encoder split with a pass list + transient target pool + blackboard. Port the existing two passes onto it first (no behavior change), then everything below is "add a pass."
-2. **SH-9 diffuse irradiance.** Bake 9 RGB coefficients in `flutter_scene_importer` (replace the irradiance PNG); evaluate the polynomial in `flutter_scene_standard.frag`. Kills the `2.0` hack, frees a sampler. *Do this even before mipmapped cubemaps land.*
+Status (branch `bdero/renderer`): items 1, 5, 6, 7, 8 are implemented and committed; 2, 3, 4, 9 remain. Everything done so far is compile-verified and smoke-run on macOS + Impeller; visual correctness still wants an on-device pass.
+
+1. **Minimal render-graph refactor.** ✅ Done. `RenderGraph` + `RenderGraphPass` + `RenderGraphContext` + `Blackboard` + `TransientTexturePool` in `lib/src/render/`; existing rendering ported onto it as `ScenePass`; `SceneEncoder` no longer owns the command buffer. Transient pool/blackboard are wired but unused until items 3/4.
+2. **SH-9 diffuse irradiance.** Compute 9 RGB spherical-harmonic coefficients from the radiance equirect at env-load time (runtime, like three.js; not via the glTF importer) and evaluate the SH polynomial in `flutter_scene_standard.frag`; keep the irradiance-texture path as a fallback so `EnvironmentMap.fromGpuTextures` callers don't break. Kills the `2.0` hack, frees a sampler. *Do this even before mipmapped cubemaps land.*
 3. **Directional light + single shadow map.** A `DirectionalLight` (direction, color, intensity). `ShadowPass` renders scene depth to an offscreen target; standard fragment shader samples it with manual PCF (normal-offset bias since Flutter GPU has no depth bias). This is the biggest perceived-quality gap vs RealityKit.
-4. **HDR offscreen pipeline.** Render the scene into an `r16g16b16a16Float` target; a final full-screen `TonemapPass` does tone mapping to the swapchain. Unlocks emissive > 1.0, correct tone mapping, and is the prerequisite for bloom.
-5. **Khronos PBR Neutral as the default tone mapper** (keep ACES + others selectable).
-6. **Physical exposure model.** Aperture/shutter/ISO → `EV100` → exposure multiply (CPU-side, one uniform). Retires the Car example's magic `exposure=2.0`.
-7. **fp16 mobile hardening** in the PBR shader: roughness clamp ≥ 0.089 on mobile, fp16-safe GGX, sqrt-free Smith visibility.
-8. **Multiscatter energy compensation** for rough metals.
+4. **HDR offscreen pipeline.** Render the scene into an `r16g16b16a16Float` target; a final full-screen `TonemapPass` does tone mapping to the swapchain. Unlocks emissive > 1.0, correct tone mapping, and is the prerequisite for bloom. (Tone-mapping operator selection + exposure model already exist from items 5/6; this just moves them into a dedicated pass.)
+5. **Khronos PBR Neutral as the default tone mapper** (keep ACES + others selectable). ✅ Done. `ToneMappingMode` enum on `Environment` (default `pbrNeutral`); operator picked via the `tone_mapping_mode` uniform in the standard fragment shader. ACES retains its internal `1/0.6` so existing ACES-tuned scenes are unchanged when they opt back in.
+6. **Physical exposure model.** ✅ Done (helper, not yet wired into examples). `Environment.exposureFromPhysicalCamera({aperture, shutterSpeed, iso})` computes the standard `1/(1.2·2^EV100)` multiplier; `exposure` is applied uniformly before the operator. The Car/Toon examples still hardcode `exposure = 2.0 / 1.5` and weren't migrated.
+7. **fp16 mobile hardening** in the PBR shader. ✅ Done. `kMinRoughness` floor (0.045); fp16-safe `DistributionGGX` (`1 - NoH²` via `cross(n,h)`); added sqrt-free `VisibilitySmithGGXCorrelated` for the future analytic-light path.
+8. **Multiscatter energy compensation** for rough metals. ✅ Done. Standard fragment shader's indirect lighting now uses the Fdez-Agüera (2019) single + multiple scattering model.
 9. **Runtime PMREM-style prefilter path** (three.js approach, 2D-atlas variant, fragment passes only) for user-supplied `.hdr`, plus a **procedural default studio environment** so zero-config looks good.
 
 ### Phase B: as mipmap/cubemap upload lands upstream
