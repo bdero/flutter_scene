@@ -4,7 +4,7 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
-import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
@@ -22,18 +22,18 @@ class ScenePass extends RenderGraphPass {
     required Camera camera,
     required Node root,
     required ui.Size dimensions,
-    required Environment environment,
+    required Lighting lighting,
   }) : _target = target,
        _camera = camera,
        _root = root,
        _dimensions = dimensions,
-       _environment = environment;
+       _lighting = lighting;
 
   final gpu.RenderTarget _target;
   final Camera _camera;
   final Node _root;
   final ui.Size _dimensions;
-  final Environment _environment;
+  final Lighting _lighting;
 
   @override
   String get name => 'ScenePass';
@@ -46,7 +46,7 @@ class ScenePass extends RenderGraphPass {
       context.transientsBuffer,
       _camera,
       _dimensions,
-      _environment,
+      _lighting,
     );
     _root.render(encoder, Matrix4.identity());
     encoder.flushTranslucent();

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
@@ -75,9 +75,9 @@ class UnlitMaterial extends Material {
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
-    Environment environment,
+    Lighting lighting,
   ) {
-    super.bind(pass, transientsBuffer, environment);
+    super.bind(pass, transientsBuffer, lighting);
 
     var fragInfo = Float32List.fromList([
       baseColorFactor.r, baseColorFactor.g,

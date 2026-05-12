@@ -51,7 +51,7 @@ class _StubMaterial extends Material {
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
-    Environment environment,
+    Lighting lighting,
   ) {
     throw UnsupportedError('Stub material is not renderable');
   }

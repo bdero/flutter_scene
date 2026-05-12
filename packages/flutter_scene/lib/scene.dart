@@ -32,6 +32,7 @@ export 'src/material/unlit_material.dart';
 
 export 'src/asset_helpers.dart';
 export 'src/camera.dart';
+export 'src/light.dart';
 export 'src/math_extensions.dart';
 export 'src/mesh.dart';
 export 'src/node.dart';

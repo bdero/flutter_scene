@@ -5,7 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
-import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 
 base class _TranslucentRecord {
@@ -40,15 +40,15 @@ base class SceneEncoder {
   /// transient uniforms from [transientsBuffer].
   ///
   /// `dimensions` is the viewport size used to derive the camera's view
-  /// transform; [environment] is the default IBL environment applied to
-  /// materials that don't override it. The render pass is configured for
-  /// the opaque phase (depth writes on, blending off).
+  /// transform; [lighting] is the scene's IBL environment and analytic
+  /// lights, passed to each material's `bind`. The render pass is
+  /// configured for the opaque phase (depth writes on, blending off).
   SceneEncoder(
     gpu.RenderPass renderPass,
     gpu.HostBuffer transientsBuffer,
     this._camera,
     ui.Size dimensions,
-    this._environment,
+    this._lighting,
   ) : _renderPass = renderPass,
       _transientsBuffer = transientsBuffer {
     _cameraTransform = _camera.getViewTransform(dimensions);
@@ -61,7 +61,7 @@ base class SceneEncoder {
   }
 
   final Camera _camera;
-  final Environment _environment;
+  final Lighting _lighting;
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
@@ -109,7 +109,7 @@ base class SceneEncoder {
       _cameraTransform,
       _camera.position,
     );
-    material.bind(_renderPass, _transientsBuffer, _environment);
+    material.bind(_renderPass, _transientsBuffer, _lighting);
     _renderPass.draw();
   }
 

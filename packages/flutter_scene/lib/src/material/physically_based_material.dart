@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
@@ -179,28 +180,32 @@ class PhysicallyBasedMaterial extends Material {
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
-    Environment environment,
+    Lighting lighting,
   ) {
-    super.bind(pass, transientsBuffer, environment);
+    super.bind(pass, transientsBuffer, lighting);
 
-    Environment env = this.environment ?? environment;
+    final Environment env = environment ?? lighting.environment;
+    final DirectionalLight? light = lighting.directionalLight;
 
-    // FragInfo std140 layout (224 bytes / 56 floats):
+    // FragInfo std140 layout (256 bytes / 64 floats):
     //   [0..3]   vec4  color
     //   [4..7]   vec4  emissive_factor
     //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
-    //   [44]     float vertex_color_weight
-    //   [45]     float exposure
-    //   [46]     float metallic_factor
-    //   [47]     float roughness_factor
-    //   [48]     float has_normal_map
-    //   [49]     float normal_scale
-    //   [50]     float occlusion_strength
-    //   [51]     float environment_intensity
-    //   [52]     float tone_mapping_mode
-    //   [53]     float use_diffuse_sh
-    //   [54..55] trailing pad to a 16-byte multiple
-    final fragInfo = Float32List(56);
+    //   [44..47] vec4  directional_light_direction (xyz used)
+    //   [48..51] vec4  directional_light_color (rgb = color * intensity)
+    //   [52]     float vertex_color_weight
+    //   [53]     float exposure
+    //   [54]     float metallic_factor
+    //   [55]     float roughness_factor
+    //   [56]     float has_normal_map
+    //   [57]     float normal_scale
+    //   [58]     float occlusion_strength
+    //   [59]     float environment_intensity
+    //   [60]     float tone_mapping_mode
+    //   [61]     float use_diffuse_sh
+    //   [62]     float has_directional_light
+    //   [63]     trailing pad to a 16-byte multiple
+    final fragInfo = Float32List(64);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -217,16 +222,25 @@ class PhysicallyBasedMaterial extends Material {
         fragInfo[10 + i * 4] = shCoefficients[i].z;
       }
     }
-    fragInfo[44] = vertexColorWeight;
-    fragInfo[45] = env.exposure;
-    fragInfo[46] = metallicFactor;
-    fragInfo[47] = roughnessFactor;
-    fragInfo[48] = normalTexture != null ? 1.0 : 0.0;
-    fragInfo[49] = normalScale;
-    fragInfo[50] = occlusionStrength;
-    fragInfo[51] = env.intensity;
-    fragInfo[52] = env.toneMappingMode.index.toDouble();
-    fragInfo[53] = shCoefficients != null ? 1.0 : 0.0;
+    if (light != null) {
+      fragInfo[44] = light.direction.x;
+      fragInfo[45] = light.direction.y;
+      fragInfo[46] = light.direction.z;
+      fragInfo[48] = light.color.x * light.intensity;
+      fragInfo[49] = light.color.y * light.intensity;
+      fragInfo[50] = light.color.z * light.intensity;
+    }
+    fragInfo[52] = vertexColorWeight;
+    fragInfo[53] = env.exposure;
+    fragInfo[54] = metallicFactor;
+    fragInfo[55] = roughnessFactor;
+    fragInfo[56] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[57] = normalScale;
+    fragInfo[58] = occlusionStrength;
+    fragInfo[59] = env.intensity;
+    fragInfo[60] = env.toneMappingMode.index.toDouble();
+    fragInfo[61] = shCoefficients != null ? 1.0 : 0.0;
+    fragInfo[62] = light != null ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),

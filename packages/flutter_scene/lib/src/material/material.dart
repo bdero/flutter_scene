@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/light.dart';
 
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
@@ -179,13 +180,13 @@ abstract class Material {
   /// The base implementation enables back-face culling with
   /// counter-clockwise winding (matching the glTF convention). Subclasses
   /// must call `super.bind` and then bind any per-material uniforms and
-  /// textures expected by their fragment shader. [environment] supplies
-  /// the [Scene]-level IBL environment that materials default to when
-  /// they have no per-material override.
+  /// textures expected by their fragment shader. [lighting] carries the
+  /// [Scene]-level IBL [Environment] and analytic lights that materials
+  /// shade against.
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
-    Environment environment,
+    Lighting lighting,
   ) {
     pass.setCullMode(gpu.CullMode.backFace);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);

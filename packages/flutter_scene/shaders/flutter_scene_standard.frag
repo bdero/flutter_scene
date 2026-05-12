@@ -15,6 +15,11 @@ uniform FragInfo {
   vec4 diffuse_sh6;
   vec4 diffuse_sh7;
   vec4 diffuse_sh8;
+  // Directional light: xyz = direction the light travels (toward the
+  // scene); rgb of the second vector = color premultiplied by intensity.
+  // Active only when has_directional_light > 0.5.
+  vec4 directional_light_direction;
+  vec4 directional_light_color;
   float vertex_color_weight;
   float exposure;
   float metallic_factor;
@@ -27,6 +32,7 @@ uniform FragInfo {
   // 2 = Reinhard, anything else = linear (clamp). See ToneMappingMode.
   float tone_mapping_mode;
   float use_diffuse_sh;
+  float has_directional_light;
 }
 frag_info;
 
@@ -155,11 +161,35 @@ void main() {
   vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
   vec3 ambient = (indirect_diffuse + indirect_specular) * occlusion;
 
+  // Analytic directional light (Cook-Torrance, layered on top of the IBL
+  // ambient term).
+  vec3 direct = vec3(0.0);
+  if (frag_info.has_directional_light > 0.5) {
+    // surface -> light.
+    vec3 light_vector = -normalize(frag_info.directional_light_direction.xyz);
+    float n_dot_l = max(dot(normal, light_vector), 0.0);
+    if (n_dot_l > 0.0) {
+      vec3 half_vector = normalize(light_vector + camera_normal);
+      float n_dot_v_safe = max(n_dot_v, 1e-4);
+      float distribution = DistributionGGX(normal, half_vector, roughness);
+      float visibility =
+          VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+      vec3 specular_fresnel =
+          FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+      // `visibility` already folds in 1 / (4 * NoL * NoV).
+      vec3 specular = distribution * visibility * specular_fresnel;
+      vec3 diffuse = (vec3(1.0) - specular_fresnel) * (1.0 - metallic) *
+                     albedo * (1.0 / kPi);
+      direct = (diffuse + specular) * frag_info.directional_light_color.rgb *
+               n_dot_l;
+    }
+  }
+
   vec3 emissive =
       SRGBToLinear(texture(emissive_texture, v_texture_coords).rgb) *
       frag_info.emissive_factor.rgb;
 
-  vec3 out_color = ambient + emissive;
+  vec3 out_color = ambient + direct + emissive;
 
   // Tone mapping. ACES applies `exposure` internally (with its 1/0.6
   // reference-white scale); the others take a plain pre-exposed color.
