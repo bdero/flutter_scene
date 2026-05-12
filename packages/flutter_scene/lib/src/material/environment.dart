@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
@@ -144,6 +145,130 @@ base class EnvironmentMap {
     );
   }
 
+  /// Builds the package's built-in procedural "studio" environment.
+  ///
+  /// A neutral image-based-lighting setup generated on the fly (no bundled
+  /// HDR): a cool soft "ceiling" fading through a neutral horizon to a dim
+  /// warm "floor bounce", with a broad top fill and a couple of soft
+  /// key/fill light lobes that read as defined specular highlights on
+  /// glossy surfaces. Diffuse is SH-9 and specular is the prefiltered
+  /// radiance atlas, both derived from the generated equirect. This is the
+  /// zero-config default a [Scene] uses when no environment is configured.
+  static EnvironmentMap studio() {
+    final pixels = _generateStudioEquirectPixels(
+      _studioEnvWidth,
+      _studioEnvHeight,
+    );
+    final radianceTexture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      _studioEnvWidth,
+      _studioEnvHeight,
+    )..overwrite(ByteData.sublistView(pixels));
+    final prefilteredRadianceTexture = prefilterEquirectRadiance(
+      radianceTexture,
+    );
+    final sh = _projectEquirectToSphericalHarmonics(
+      pixels,
+      _studioEnvWidth,
+      _studioEnvHeight,
+    );
+    return EnvironmentMap._(
+      radianceTexture,
+      null,
+      sh,
+      prefilteredRadianceTexture,
+    );
+  }
+
+  static const int _studioEnvWidth = 256;
+  static const int _studioEnvHeight = 128;
+
+  // Generates the procedural studio equirect as sRGB-encoded RGBA8 pixels.
+  // The scan order matches _projectEquirectToSphericalHarmonics / the
+  // shader's SphericalToEquirectangular: row 0 is the "down" pole, the last
+  // row is the "up" pole.
+  static Uint8List _generateStudioEquirectPixels(int width, int height) {
+    final pixels = Uint8List(width * height * 4);
+
+    final keyDir = Vector3(0.45, 0.55, 0.70)..normalize();
+    final fillDir = Vector3(-0.70, 0.22, -0.35)..normalize();
+
+    const twoPi = 2.0 * math.pi;
+    for (var py = 0; py < height; py++) {
+      final v = (py + 0.5) / height;
+      final latitude = (v - 0.5) * math.pi; // asin(dirY)
+      final cosLat = math.cos(latitude);
+      final dirY = math.sin(latitude);
+      for (var px = 0; px < width; px++) {
+        final u = (px + 0.5) / width;
+        final longitude = (u - 0.5) * twoPi; // atan2(dirZ, dirX)
+        final dirX = cosLat * math.cos(longitude);
+        final dirZ = cosLat * math.sin(longitude);
+
+        // Vertical studio gradient (linear): cool bright above, neutral at
+        // the horizon, dim warm below.
+        double r, g, b;
+        if (dirY >= 0.0) {
+          final t = _smoothstep01(dirY);
+          r = _lerp(0.50, 0.78, t);
+          g = _lerp(0.51, 0.80, t);
+          b = _lerp(0.53, 0.86, t);
+        } else {
+          final t = _smoothstep01(-dirY);
+          r = _lerp(0.50, 0.20, t);
+          g = _lerp(0.51, 0.18, t);
+          b = _lerp(0.53, 0.16, t);
+        }
+
+        // Broad top fill (the "ceiling softbox").
+        final top = math.max(dirY, 0.0);
+        final topL = top * top; // pow(., 2)
+        r += 0.85 * topL;
+        g += 0.86 * topL;
+        b += 0.88 * topL;
+
+        // Tight warm key highlight.
+        final keyC = math.max(
+          dirX * keyDir.x + dirY * keyDir.y + dirZ * keyDir.z,
+          0.0,
+        );
+        final keyL = math.pow(keyC, 26.0).toDouble();
+        r += 1.20 * keyL;
+        g += 1.10 * keyL;
+        b += 0.95 * keyL;
+
+        // Softer cool fill from behind.
+        final fillC = math.max(
+          dirX * fillDir.x + dirY * fillDir.y + dirZ * fillDir.z,
+          0.0,
+        );
+        final fillL = math.pow(fillC, 16.0).toDouble();
+        r += 0.40 * fillL;
+        g += 0.48 * fillL;
+        b += 0.60 * fillL;
+
+        final o = (py * width + px) * 4;
+        pixels[o] = _encodeSrgb(r);
+        pixels[o + 1] = _encodeSrgb(g);
+        pixels[o + 2] = _encodeSrgb(b);
+        pixels[o + 3] = 255;
+      }
+    }
+    return pixels;
+  }
+
+  static int _encodeSrgb(double linear) {
+    final c = linear.clamp(0.0, 1.0);
+    return (math.pow(c, 1.0 / 2.2) * 255.0).round().clamp(0, 255).toInt();
+  }
+
+  static double _smoothstep01(double x) {
+    final t = x.clamp(0.0, 1.0).toDouble();
+    return t * t * (3.0 - 2.0 * t);
+  }
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+
   /// Projects an equirectangular radiance image onto 9 L2 spherical-
   /// harmonic coefficients suitable for diffuse irradiance.
   ///
@@ -162,10 +287,20 @@ base class EnvironmentMap {
     if (byteData == null) {
       throw Exception('Failed to read RGBA data from environment image.');
     }
-    final width = equirectangular.width;
-    final height = equirectangular.height;
-    final bytes = byteData.buffer.asUint8List();
+    return _projectEquirectToSphericalHarmonics(
+      byteData.buffer.asUint8List(),
+      equirectangular.width,
+      equirectangular.height,
+    );
+  }
 
+  /// Core SH-9 projection over RGBA8 equirectangular [bytes] of the given
+  /// dimensions. Shared by [computeDiffuseSphericalHarmonics] and [studio].
+  static List<Vector3> _projectEquirectToSphericalHarmonics(
+    Uint8List bytes,
+    int width,
+    int height,
+  ) {
     // Quadrature over a regular grid in equirectangular UV space. The grid
     // resolution is independent of the source image; sampling 192x96 cells
     // keeps the L2 projection accurate while staying fast on the CPU.
