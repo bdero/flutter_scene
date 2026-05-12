@@ -52,8 +52,11 @@ void main() {
 
   vec4 metallic_roughness =
       texture(metallic_roughness_texture, v_texture_coords);
-  float metallic = metallic_roughness.b * frag_info.metallic_factor;
-  float roughness = metallic_roughness.g * frag_info.roughness_factor;
+  float metallic = clamp(metallic_roughness.b * frag_info.metallic_factor, 0.0,
+                         1.0);
+  float roughness =
+      clamp(metallic_roughness.g * frag_info.roughness_factor, kMinRoughness,
+            1.0);
 
   float occlusion = texture(occlusion_texture, v_texture_coords).r;
   occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
@@ -68,17 +71,16 @@ void main() {
 
   vec3 reflection_normal = reflect(camera_normal, normal);
 
-  vec3 fresnel = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
-  vec3 indirect_diffuse_factor = 1.0 - fresnel;
-  indirect_diffuse_factor *= 1.0 - metallic;
+  // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
+  vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
 
-  // TODO(bdero): This multiplier is here because the environment look too dim.
-  //              But this might be resolved once we actually support HDRs.
+  // TODO(bdero): This multiplier is here because the environment looks too
+  //              dim. Should be resolved once HDR env maps + a real
+  //              prefiltered cubemap land (roadmap Phase A item 4 / Phase B).
   const float kEnvironmentMultiplier = 2.0;
   vec3 irradiance =
       SRGBToLinear(SampleEnvironmentTexture(irradiance_texture, normal)) *
       frag_info.environment_intensity * kEnvironmentMultiplier;
-  vec3 indirect_diffuse = irradiance * albedo * indirect_diffuse_factor;
 
   const float kMaxReflectionLod = 4.0;
   vec3 prefiltered_color =
@@ -87,21 +89,28 @@ void main() {
                                                roughness * kMaxReflectionLod)
                        .rgb) *
       frag_info.environment_intensity * kEnvironmentMultiplier;
-
-  // Hack to replace rough surfaces with irradiance because roughness LoDs are
-  // not being generated yet.
-  // TODO(bdero): Remove this hack once roughness LoDs are generated.
-  // float roughness_map = 1 / (1 + exp(-52.3 * (roughness - 0.786)));
-  // prefiltered_color = mix(prefiltered_color, irradiance, roughness_map);
+  // Hack: blend toward irradiance for rough surfaces because prefiltered
+  // roughness LoDs aren't generated yet.
+  // TODO(bdero): Remove once roughness LoDs are generated (roadmap Phase B).
   prefiltered_color =
-      mix(irradiance, prefiltered_color, pow(1.02 - roughness, 12));
+      mix(irradiance, prefiltered_color, pow(1.02 - roughness, 12.0));
 
-  float brdf_x = mix(0.0, 0.99, n_dot_v);
-  float brdf_y = mix(0.0, 0.99, roughness);
-  vec2 environment_brdf = texture(brdf_lut, vec2(brdf_x, brdf_y)).rg;
-  vec3 indirect_specular =
-      prefiltered_color * (fresnel * environment_brdf.x + environment_brdf.y);
+  // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
+  // [0, 1] to avoid edge-tap artifacts.
+  vec2 f_ab = texture(brdf_lut, clamp(vec2(n_dot_v, roughness), 0.0, 0.99)).rg;
 
+  // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
+  // see https://bruop.github.io/ibl/). Without the multiscatter term, rough
+  // metals lose noticeable energy.
+  vec3 FssEss = k_S * f_ab.x + f_ab.y;
+  float Ems = 1.0 - (f_ab.x + f_ab.y);
+  vec3 F_avg = reflectance + (1.0 - reflectance) / 21.0;
+  vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
+  vec3 diffuse_color = albedo * (1.0 - metallic);
+  vec3 k_D = diffuse_color * (1.0 - FssEss + FmsEms);
+
+  vec3 indirect_specular = FssEss * prefiltered_color;
+  vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
   vec3 ambient = (indirect_diffuse + indirect_specular) * occlusion;
 
   vec3 emissive =
