@@ -173,8 +173,8 @@ class PhysicallyBasedMaterial extends Material {
   double occlusionStrength = 1.0;
 
   /// Per-material image-based-lighting environment, overriding the
-  /// [Scene]-wide environment when set.
-  Environment? environment;
+  /// scene-wide `Scene.environment` when set.
+  EnvironmentMap? environment;
 
   @override
   void bind(
@@ -184,12 +184,12 @@ class PhysicallyBasedMaterial extends Material {
   ) {
     super.bind(pass, transientsBuffer, lighting);
 
-    final Environment env = environment ?? lighting.environment;
+    final EnvironmentMap env = environment ?? lighting.environmentMap;
     final DirectionalLight? light = lighting.directionalLight;
     final shadowMatrix =
         lighting.shadowMap == null ? null : lighting.lightSpaceMatrix;
 
-    // FragInfo std140 layout (336 bytes / 84 floats):
+    // FragInfo std140 layout (320 bytes / 80 floats):
     //   [0..3]   vec4  color
     //   [4..7]   vec4  emissive_factor
     //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
@@ -197,22 +197,18 @@ class PhysicallyBasedMaterial extends Material {
     //   [48..51] vec4  directional_light_color (rgb = color * intensity)
     //   [52..67] mat4  light_space_matrix (column-major)
     //   [68]     float vertex_color_weight
-    //   [69]     float exposure
-    //   [70]     float metallic_factor
-    //   [71]     float roughness_factor
-    //   [72]     float has_normal_map
-    //   [73]     float normal_scale
-    //   [74]     float occlusion_strength
-    //   [75]     float environment_intensity
-    //   [76]     float tone_mapping_mode
-    //   [77]     float use_diffuse_sh
-    //   [78]     float has_directional_light
-    //   [79]     float casts_shadow
-    //   [80]     float shadow_bias
-    //   [81]     float shadow_normal_bias
-    //   [82]     float shadow_texel_size
-    //   [83]     float use_prefiltered_radiance
-    final fragInfo = Float32List(84);
+    //   [69]     float metallic_factor
+    //   [70]     float roughness_factor
+    //   [71]     float has_normal_map
+    //   [72]     float normal_scale
+    //   [73]     float occlusion_strength
+    //   [74]     float environment_intensity
+    //   [75]     float has_directional_light
+    //   [76]     float casts_shadow
+    //   [77]     float shadow_bias
+    //   [78]     float shadow_normal_bias
+    //   [79]     float shadow_texel_size
+    final fragInfo = Float32List(80);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -221,13 +217,11 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[5] = emissiveFactor.g;
     fragInfo[6] = emissiveFactor.b;
     fragInfo[7] = emissiveFactor.a;
-    final shCoefficients = env.environmentMap.diffuseSphericalHarmonics;
-    if (shCoefficients != null) {
-      for (var i = 0; i < shCoefficients.length; i++) {
-        fragInfo[8 + i * 4] = shCoefficients[i].x;
-        fragInfo[9 + i * 4] = shCoefficients[i].y;
-        fragInfo[10 + i * 4] = shCoefficients[i].z;
-      }
+    final shCoefficients = env.diffuseSphericalHarmonics;
+    for (var i = 0; i < shCoefficients.length; i++) {
+      fragInfo[8 + i * 4] = shCoefficients[i].x;
+      fragInfo[9 + i * 4] = shCoefficients[i].y;
+      fragInfo[10 + i * 4] = shCoefficients[i].z;
     }
     if (light != null) {
       fragInfo[44] = light.direction.x;
@@ -241,22 +235,17 @@ class PhysicallyBasedMaterial extends Material {
       fragInfo.setRange(52, 68, shadowMatrix.storage);
     }
     fragInfo[68] = vertexColorWeight;
-    fragInfo[69] = env.exposure;
-    fragInfo[70] = metallicFactor;
-    fragInfo[71] = roughnessFactor;
-    fragInfo[72] = normalTexture != null ? 1.0 : 0.0;
-    fragInfo[73] = normalScale;
-    fragInfo[74] = occlusionStrength;
-    fragInfo[75] = env.intensity;
-    fragInfo[76] = env.toneMappingMode.index.toDouble();
-    fragInfo[77] = shCoefficients != null ? 1.0 : 0.0;
-    fragInfo[78] = light != null ? 1.0 : 0.0;
-    fragInfo[79] = shadowMatrix != null ? 1.0 : 0.0;
-    fragInfo[80] = light?.shadowDepthBias ?? 0.0;
-    fragInfo[81] = light?.shadowNormalBias ?? 0.0;
-    fragInfo[82] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
-    final prefilteredRadiance = env.environmentMap.prefilteredRadianceTexture;
-    fragInfo[83] = prefilteredRadiance != null ? 1.0 : 0.0;
+    fragInfo[69] = metallicFactor;
+    fragInfo[70] = roughnessFactor;
+    fragInfo[71] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[72] = normalScale;
+    fragInfo[73] = occlusionStrength;
+    fragInfo[74] = lighting.environmentIntensity;
+    fragInfo[75] = light != null ? 1.0 : 0.0;
+    fragInfo[76] = shadowMatrix != null ? 1.0 : 0.0;
+    fragInfo[77] = light?.shadowDepthBias ?? 0.0;
+    fragInfo[78] = light?.shadowNormalBias ?? 0.0;
+    fragInfo[79] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -302,35 +291,16 @@ class PhysicallyBasedMaterial extends Material {
         heightAddressMode: gpu.SamplerAddressMode.repeat,
       ),
     );
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('radiance_texture'),
-      env.environmentMap.radianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
-    // Horizontal repeat (the panorama wraps in longitude), vertical clamp
-    // (the atlas is a stack of bands; wrapping V would bleed between them).
+    // Specular IBL atlas: horizontal repeat (the panorama wraps in
+    // longitude), vertical clamp (it's a stack of roughness bands;
+    // wrapping V would bleed between them).
     pass.bindTexture(
       fragmentShader.getUniformSlot('prefiltered_radiance'),
-      Material.whitePlaceholder(prefilteredRadiance),
+      env.prefilteredRadianceTexture,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
         magFilter: gpu.MinMagFilter.linear,
         widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('irradiance_texture'),
-      env.environmentMap.irradianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );

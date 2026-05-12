@@ -80,6 +80,30 @@ abstract class Material {
     return texture ?? getNormalPlaceholderTexture();
   }
 
+  static gpu.Texture? _blackPlaceholderTexture;
+
+  /// Returns a 1×1 opaque-black texture, lazily created on first use.
+  ///
+  /// Used as the specular source for [EnvironmentMap.empty] so the shader
+  /// can sample an "atlas" that contributes no reflection.
+  static gpu.Texture getBlackPlaceholderTexture() {
+    if (_blackPlaceholderTexture != null) {
+      return _blackPlaceholderTexture!;
+    }
+    _blackPlaceholderTexture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      1,
+      1,
+    );
+    if (_blackPlaceholderTexture == null) {
+      throw Exception('Failed to create black placeholder texture.');
+    }
+    _blackPlaceholderTexture!.overwrite(
+      Uint32List.fromList(<int>[0xFF000000]).buffer.asByteData(),
+    );
+    return _blackPlaceholderTexture!;
+  }
+
   static gpu.Texture? _brdfLutTexture;
   static EnvironmentMap? _defaultEnvironmentMap;
 
@@ -96,26 +120,21 @@ abstract class Material {
   }
 
   /// Returns the package's built-in procedural "studio" image-based
-  /// lighting environment (see [EnvironmentMap.studio]).
+  /// lighting environment (see [EnvironmentMap.studio]), built once and
+  /// memoized.
   ///
   /// Used as the [Scene]-wide default when no environment is configured.
-  /// Built by [initializeStaticResources]; throws if accessed before
-  /// initialization completes.
   static EnvironmentMap getDefaultEnvironmentMap() {
-    if (_defaultEnvironmentMap == null) {
-      throw Exception('Default environment map has not been initialized.');
-    }
-    return _defaultEnvironmentMap!;
+    return _defaultEnvironmentMap ??= EnvironmentMap.studio();
   }
 
-  /// Loads the bundled BRDF lookup texture and builds the default
-  /// procedural "studio" environment ([EnvironmentMap.studio]).
+  /// Loads the bundled BRDF lookup texture used by the PBR fragment
+  /// shader's split-sum specular IBL.
   ///
   /// Called by the [Scene] constructor; rendering is gated on the
   /// returned [Future] completing. The same future is reused on
   /// subsequent calls.
   static Future<void> initializeStaticResources() {
-    _defaultEnvironmentMap = EnvironmentMap.studio();
     return gpuTextureFromAsset(
       'packages/flutter_scene/assets/ibl_brdf_lut.png',
     ).then((gpu.Texture value) {
@@ -165,8 +184,8 @@ abstract class Material {
   /// counter-clockwise winding (matching the glTF convention). Subclasses
   /// must call `super.bind` and then bind any per-material uniforms and
   /// textures expected by their fragment shader. [lighting] carries the
-  /// [Scene]-level IBL [Environment] and analytic lights that materials
-  /// shade against.
+  /// IBL [EnvironmentMap] (and its intensity) plus the analytic lights and
+  /// shadow resources that materials shade against.
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,

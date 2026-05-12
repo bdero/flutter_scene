@@ -81,9 +81,8 @@ class DirectionalLight {
   Matrix4 computeLightSpaceMatrix() {
     final length = direction.length;
     final dir =
-        length == 0.0
-            ? Vector3(0.0, -1.0, 0.0)
-            : Vector3.copy(direction)..scale(1.0 / length);
+        length == 0.0 ? Vector3(0.0, -1.0, 0.0) : Vector3.copy(direction)
+          ..scale(1.0 / length);
     final up =
         dir.y.abs() > 0.99 ? Vector3(0.0, 0.0, 1.0) : Vector3(0.0, 1.0, 0.0);
 
@@ -96,10 +95,22 @@ class DirectionalLight {
     // Symmetric orthographic projection, column-major, mapping z in
     // [near, far] to [0, 1] (matching the perspective projection).
     final ortho = Matrix4(
-      2.0 / s, 0.0, 0.0, 0.0, //
-      0.0, 2.0 / s, 0.0, 0.0, //
-      0.0, 0.0, 1.0 / (far - near), 0.0, //
-      0.0, 0.0, -near / (far - near), 1.0, //
+      2.0 / s,
+      0.0,
+      0.0,
+      0.0, //
+      0.0,
+      2.0 / s,
+      0.0,
+      0.0, //
+      0.0,
+      0.0,
+      1.0 / (far - near),
+      0.0, //
+      0.0,
+      0.0,
+      -near / (far - near),
+      1.0, //
     );
     return ortho * view;
   }
@@ -109,10 +120,21 @@ class DirectionalLight {
     final right = up.cross(forward).normalized();
     final newUp = forward.cross(right).normalized();
     return Matrix4(
-      right.x, newUp.x, forward.x, 0.0, //
-      right.y, newUp.y, forward.y, 0.0, //
-      right.z, newUp.z, forward.z, 0.0, //
-      -right.dot(position), -newUp.dot(position), -forward.dot(position),
+      right.x,
+      newUp.x,
+      forward.x,
+      0.0, //
+      right.y,
+      newUp.y,
+      forward.y,
+      0.0, //
+      right.z,
+      newUp.z,
+      forward.z,
+      0.0, //
+      -right.dot(position),
+      -newUp.dot(position),
+      -forward.dot(position),
       1.0, //
     );
   }
@@ -120,19 +142,24 @@ class DirectionalLight {
 
 /// The lighting state handed to a [Material] when it binds for a draw.
 ///
-/// Bundles the image-based-lighting [Environment] with the scene's
-/// analytic lights and shadow resources, so material code has everything
-/// it needs in one place.
+/// Bundles the image-based-lighting [EnvironmentMap] (and the scene's
+/// `environmentIntensity` multiplier) with the analytic lights and shadow
+/// resources, so material code has everything it needs in one place.
 class Lighting {
   Lighting({
-    required this.environment,
+    required this.environmentMap,
+    this.environmentIntensity = 1.0,
     this.directionalLight,
     this.shadowMap,
     this.lightSpaceMatrix,
   });
 
   /// The image-based-lighting environment in effect for this draw.
-  final Environment environment;
+  final EnvironmentMap environmentMap;
+
+  /// Scalar multiplier applied to [environmentMap]'s contribution
+  /// (the scene's `environmentIntensity`).
+  final double environmentIntensity;
 
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;

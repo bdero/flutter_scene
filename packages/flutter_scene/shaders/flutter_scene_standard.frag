@@ -4,8 +4,7 @@ uniform FragInfo {
   // Diffuse irradiance L2 spherical-harmonic coefficients (xyz = RGB,
   // w unused). The cosine convolution (A_l band factors) and the 1/pi
   // Lambertian term are already folded in, so evaluating the polynomial
-  // yields E(n)/pi, ready to multiply by the diffuse albedo. When
-  // use_diffuse_sh <= 0.5, irradiance_texture is sampled instead.
+  // yields E(n)/pi, ready to multiply by the diffuse albedo.
   vec4 diffuse_sh0;
   vec4 diffuse_sh1;
   vec4 diffuse_sh2;
@@ -24,26 +23,17 @@ uniform FragInfo {
   // when casts_shadow > 0.5.
   mat4 light_space_matrix;
   float vertex_color_weight;
-  float exposure;
   float metallic_factor;
   float roughness_factor;
   float has_normal_map;
   float normal_scale;
   float occlusion_strength;
   float environment_intensity;
-  // Tone mapping operator: 0 = Khronos PBR Neutral, 1 = ACES filmic,
-  // 2 = Reinhard, anything else = linear (clamp). See ToneMappingMode.
-  float tone_mapping_mode;
-  float use_diffuse_sh;
   float has_directional_light;
   float casts_shadow;
   float shadow_bias;
   float shadow_normal_bias;
   float shadow_texel_size; // 1 / shadow map resolution
-  // When > 0.5, specular IBL samples the prefiltered_radiance atlas;
-  // otherwise it samples radiance_texture directly (no roughness
-  // prefiltering).
-  float use_prefiltered_radiance;
 }
 frag_info;
 
@@ -53,10 +43,7 @@ uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
 uniform sampler2D occlusion_texture;
 
-uniform sampler2D radiance_texture;
 uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
-uniform sampler2D irradiance_texture;
-
 uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
 
@@ -71,7 +58,6 @@ out vec4 frag_color;
 #include <normals.glsl>
 #include <pbr.glsl>
 #include <texture.glsl>
-#include <tone_mapping.glsl>
 
 // Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
 // The coefficients already include the cosine convolution and 1/pi, so
@@ -156,34 +142,12 @@ void main() {
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
   vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
 
-  vec3 irradiance;
-  if (frag_info.use_diffuse_sh > 0.5) {
-    irradiance = max(EvaluateDiffuseSH(normal), vec3(0.0)) *
-                 frag_info.environment_intensity;
-  } else {
-    // Legacy pre-convolved irradiance texture. The 2x factor compensates
-    // for the historically-dim texture path; the SH path above (the
-    // default) is a correct irradiance integral and needs no fudge.
-    irradiance =
-        SRGBToLinear(SampleEnvironmentTexture(irradiance_texture, normal)) *
-        frag_info.environment_intensity * 2.0;
-  }
-
-  vec3 prefiltered_color;
-  if (frag_info.use_prefiltered_radiance > 0.5) {
-    prefiltered_color =
-        SamplePrefilteredRadiance(prefiltered_radiance, reflection_normal,
-                                  roughness) *
-        frag_info.environment_intensity;
-  } else {
-    // No prefiltered atlas: sample the raw radiance map directly. Roughness
-    // is ignored (glossy surfaces look mirror-like); only reached for
-    // environments built without prefiltering, e.g. EnvironmentMap.empty().
-    prefiltered_color =
-        SRGBToLinear(SampleEnvironmentTexture(radiance_texture,
-                                              reflection_normal)) *
-        frag_info.environment_intensity;
-  }
+  vec3 irradiance = max(EvaluateDiffuseSH(normal), vec3(0.0)) *
+                    frag_info.environment_intensity;
+  vec3 prefiltered_color =
+      SamplePrefilteredRadiance(prefiltered_radiance, reflection_normal,
+                                roughness) *
+      frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
   // [0, 1] to avoid edge-tap artifacts.
@@ -236,8 +200,7 @@ void main() {
   // Linear HDR, premultiplied by alpha. Exposure, the tone-mapping
   // operator, and the display EOTF are applied later by the tone-mapping
   // resolve pass (see flutter_scene_tonemap.frag), so this writes into a
-  // floating-point scene-color target. `frag_info.exposure` /
-  // `frag_info.tone_mapping_mode` are unused here for the same reason.
+  // floating-point scene-color target.
   vec3 out_color = ambient + direct + emissive;
   frag_color = vec4(out_color, 1.0) * alpha;
 }

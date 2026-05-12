@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 
-import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/tone_mapping.dart';
 
 /// Resolves the linear HDR scene color (a floating-point render target
 /// produced by [ScenePass], read from the blackboard) into the
@@ -30,8 +30,8 @@ class TonemapPass extends RenderGraphPass {
       baseShaderLibrary['TonemapFragment']!;
 
   // Two triangles of NDC positions covering the screen (6 vec2s).
-  static final gpu.DeviceBuffer _quadBuffer =
-      gpu.gpuContext.createDeviceBufferWithCopy(
+  static final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext
+      .createDeviceBufferWithCopy(
         ByteData.sublistView(
           Float32List.fromList(<double>[
             -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, //
