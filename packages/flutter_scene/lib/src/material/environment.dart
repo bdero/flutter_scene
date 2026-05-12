@@ -1,8 +1,31 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/material.dart';
+
+/// Tone mapping operator applied to the physically based lighting result.
+///
+/// The integer values are wire-compatible with the `tone_mapping_mode`
+/// uniform in the standard fragment shader; don't reorder.
+enum ToneMappingMode {
+  /// Khronos PBR Neutral. Preserves base-color hue/saturation and only
+  /// rolls off highlights. Good default for product/configurator
+  /// rendering. This is the [Environment] default.
+  pbrNeutral,
+
+  /// ACES filmic (Stephen Hill fit). The classic games-y look; tends to
+  /// desaturate and shift hue in the highlights.
+  aces,
+
+  /// Reinhard (`c / (1 + c)`). Cheap; flattens highlights.
+  reinhard,
+
+  /// No tone curve; the lighting result is just exposed and clamped to
+  /// `[0, 1]`.
+  linear,
+}
 
 /// A pair of textures used for image-based lighting.
 ///
@@ -112,20 +135,46 @@ base class Environment {
   /// and shared tone-mapping parameters.
   ///
   /// All parameters are optional; the defaults pair an empty
-  /// [EnvironmentMap] with `intensity = 1.0` and `exposure = 2.0`.
+  /// [EnvironmentMap] with `intensity = 1.0`, `exposure = 2.0`, and
+  /// [ToneMappingMode.pbrNeutral].
   Environment({
     EnvironmentMap? environmentMap,
     this.intensity = 1.0,
     this.exposure = 2.0,
+    this.toneMappingMode = ToneMappingMode.pbrNeutral,
   }) : environmentMap = environmentMap ?? EnvironmentMap.empty();
 
+  /// Computes the exposure multiplier for a physical pinhole camera, the
+  /// way real photographers reason about it: aperture (f-stops),
+  /// [shutterSpeed] (seconds), and sensor [iso].
+  ///
+  /// Returns `1 / (1.2 * 2^EV100)` with
+  /// `EV100 = log2(aperture^2 / shutterSpeed * 100 / iso)`, matching
+  /// Filament's exposure model. Assign the result to [exposure].
+  ///
+  /// Reference values (sunlit exterior): `aperture: 16, shutterSpeed:
+  /// 1/125, iso: 100`. Lower the aperture or ISO, or lengthen the
+  /// shutter, to brighten.
+  static double exposureFromPhysicalCamera({
+    required double aperture,
+    required double shutterSpeed,
+    required double iso,
+  }) {
+    final ev100 = _log2(aperture * aperture / shutterSpeed * 100.0 / iso);
+    return 1.0 / (1.2 * math.pow(2.0, ev100));
+  }
+
+  static double _log2(double x) => math.log(x) / math.ln2;
+
   /// Returns a copy of this environment with a different
-  /// [environmentMap], preserving [intensity] and [exposure].
+  /// [environmentMap], preserving [intensity], [exposure], and
+  /// [toneMappingMode].
   Environment withNewEnvironmentMap(EnvironmentMap environmentMap) {
     return Environment(
       environmentMap: environmentMap,
       intensity: intensity,
       exposure: exposure,
+      toneMappingMode: toneMappingMode,
     );
   }
 
@@ -137,6 +186,12 @@ base class Environment {
   /// The intensity of the environment map.
   double intensity;
 
-  /// The exposure level used for tone mapping.
+  /// Linear exposure multiplier applied before tone mapping.
+  ///
+  /// `1.0` is neutral. Use [exposureFromPhysicalCamera] to derive a value
+  /// from photographic camera settings.
   double exposure;
+
+  /// Tone mapping operator applied to the lighting result.
+  ToneMappingMode toneMappingMode;
 }

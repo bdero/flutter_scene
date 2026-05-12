@@ -185,20 +185,25 @@ class PhysicallyBasedMaterial extends Material {
 
     Environment env = this.environment ?? environment;
 
-    var fragInfo = Float32List.fromList([
+    // 17 used floats; the buffer is sized to 20 (80 bytes) so it matches
+    // the std140-padded `FragInfo` block. The trailing entries are unused
+    // padding and stay zero.
+    final fragInfo = Float32List(20);
+    fragInfo.setAll(0, <double>[
       baseColorFactor.r, baseColorFactor.g,
       baseColorFactor.b, baseColorFactor.a, // color
       emissiveFactor.r, emissiveFactor.g,
       emissiveFactor.b,
       emissiveFactor.a, // emissive_factor
       vertexColorWeight, // vertex_color_weight
-      environment.exposure, // exposure
+      env.exposure, // exposure
       metallicFactor, // metallic
       roughnessFactor, // roughness
       normalTexture != null ? 1.0 : 0.0, // has_normal_map
       normalScale, // normal_scale
       occlusionStrength, // occlusion_strength
-      environment.intensity, // environment_intensity
+      env.intensity, // environment_intensity
+      env.toneMappingMode.index.toDouble(), // tone_mapping_mode
     ]);
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),

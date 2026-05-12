@@ -9,6 +9,9 @@ uniform FragInfo {
   float normal_scale;
   float occlusion_strength;
   float environment_intensity;
+  // Tone mapping operator: 0 = Khronos PBR Neutral, 1 = ACES filmic,
+  // 2 = Reinhard, anything else = linear (clamp). See ToneMappingMode.
+  float tone_mapping_mode;
 }
 frag_info;
 
@@ -119,9 +122,17 @@ void main() {
 
   vec3 out_color = ambient + emissive;
 
-  // Tone mapping.
-  // frag_color = vec4(frag_info.exposure, 0, 0, 0);
-  out_color = ACESFilmicToneMapping(out_color, frag_info.exposure);
+  // Tone mapping. ACES applies `exposure` internally (with its 1/0.6
+  // reference-white scale); the others take a plain pre-exposed color.
+  if (frag_info.tone_mapping_mode < 0.5) {
+    out_color = PBRNeutralToneMapping(out_color * frag_info.exposure);
+  } else if (frag_info.tone_mapping_mode < 1.5) {
+    out_color = ACESFilmicToneMapping(out_color, frag_info.exposure);
+  } else if (frag_info.tone_mapping_mode < 2.5) {
+    out_color = ReinhardToneMapping(out_color * frag_info.exposure);
+  } else {
+    out_color = clamp(out_color * frag_info.exposure, 0.0, 1.0);
+  }
 
 #ifndef IMPELLER_TARGET_METAL
   out_color = pow(out_color, vec3(1.0 / kGamma));
