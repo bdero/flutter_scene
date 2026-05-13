@@ -5,8 +5,13 @@ uniform TonemapInfo {
   float exposure;
   // 0 = Khronos PBR Neutral, 1 = ACES filmic, 2 = Reinhard, else linear.
   float tone_mapping_mode;
+  // 1.0 -> flip V when sampling hdr_color. The HDR scene target is a
+  // render-to-texture target, and its sampled Y orientation differs by
+  // backend (the OpenGL ES backend's FBO is bottom-up); the Dart side
+  // sets this so the resolved image is upright everywhere. Flutter GPU
+  // exposes no way to do this in the shader (no backend macro).
+  float flip_y;
   float _pad0;
-  float _pad1;
 }
 tonemap_info;
 
@@ -21,7 +26,9 @@ out vec4 frag_color;
 const float kGamma = 2.2;
 
 void main() {
-  vec4 hdr = texture(hdr_color, v_uv);
+  vec2 uv =
+      tonemap_info.flip_y > 0.5 ? vec2(v_uv.x, 1.0 - v_uv.y) : v_uv;
+  vec4 hdr = texture(hdr_color, uv);
   // Un-premultiply so the tone curve sees the actual surface color, then
   // re-premultiply for compositing onto the Flutter canvas.
   vec3 color = hdr.a > 0.0 ? hdr.rgb / hdr.a : vec3(0.0);

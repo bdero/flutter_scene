@@ -34,6 +34,11 @@ uniform FragInfo {
   float shadow_bias;
   float shadow_normal_bias;
   float shadow_texel_size; // 1 / shadow map resolution
+  // 1.0 on backends whose render-to-texture targets sample top-down
+  // (Metal/Vulkan), 0.0 where they sample bottom-up (OpenGL ES). Applied
+  // when sampling the shadow map and the prefiltered-radiance atlas; the
+  // Dart side fills it (Flutter GPU has no backend macro).
+  float render_target_flip_y;
 }
 frag_info;
 
@@ -83,9 +88,12 @@ float SampleShadow(vec3 world_pos, vec3 n) {
   vec4 light_clip = frag_info.light_space_matrix * vec4(biased_pos, 1.0);
   vec3 proj = light_clip.xyz / light_clip.w;
   vec2 uv = proj.xy * 0.5 + 0.5;
-  // The shadow map is a render-to-texture target; its origin is at the
-  // top, so flip V to match the standard texture sampling convention.
-  uv.y = 1.0 - uv.y;
+  // The shadow map is a render-to-texture target; flip V to match its
+  // sampled Y orientation (top-down on Metal/Vulkan, bottom-up on OpenGL
+  // ES -- see render_target_flip_y).
+  if (frag_info.render_target_flip_y > 0.5) {
+    uv.y = 1.0 - uv.y;
+  }
   // Outside the orthographic shadow frustum: treat as lit.
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
       proj.z > 1.0) {
@@ -146,7 +154,7 @@ void main() {
                     frag_info.environment_intensity;
   vec3 prefiltered_color =
       SamplePrefilteredRadiance(prefiltered_radiance, reflection_normal,
-                                roughness) *
+                                roughness, frag_info.render_target_flip_y) *
       frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside

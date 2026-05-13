@@ -189,7 +189,8 @@ class PhysicallyBasedMaterial extends Material {
     final shadowMatrix =
         lighting.shadowMap == null ? null : lighting.lightSpaceMatrix;
 
-    // FragInfo std140 layout (320 bytes / 80 floats):
+    // FragInfo std140 layout (336 bytes / 84 floats; the trailing run of
+    // scalars pads the block up to a 16-byte multiple):
     //   [0..3]   vec4  color
     //   [4..7]   vec4  emissive_factor
     //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
@@ -208,7 +209,9 @@ class PhysicallyBasedMaterial extends Material {
     //   [77]     float shadow_bias
     //   [78]     float shadow_normal_bias
     //   [79]     float shadow_texel_size
-    final fragInfo = Float32List(80);
+    //   [80]     float render_target_flip_y
+    //   [81..83] padding to a 16-byte multiple
+    final fragInfo = Float32List(84);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -246,6 +249,11 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[77] = light?.shadowDepthBias ?? 0.0;
     fragInfo[78] = light?.shadowNormalBias ?? 0.0;
     fragInfo[79] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
+    // Render-to-texture targets (the shadow map, the prefiltered-radiance
+    // atlas) sample top-down on Metal/Vulkan and bottom-up on OpenGL ES.
+    // Flutter GPU has no backend query; offscreen-MSAA support is a proxy
+    // (true on Metal/Vulkan, false on OpenGL ES).
+    fragInfo[80] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),

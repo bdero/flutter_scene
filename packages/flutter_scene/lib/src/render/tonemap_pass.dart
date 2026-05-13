@@ -63,11 +63,16 @@ class TonemapPass extends RenderGraphPass {
     renderPass.bindPipeline(pipeline);
     renderPass.bindVertexBuffer(_quadView, 6);
 
-    // TonemapInfo std140: { float exposure; float tone_mapping_mode; }
-    // padded to 16 bytes.
+    // TonemapInfo std140: { float exposure; float tone_mapping_mode;
+    // float flip_y; float pad; }. flip_y compensates for the render-to-
+    // texture Y orientation of the HDR target, which differs by backend
+    // (the OpenGL ES FBO is bottom-up). Flutter GPU has no backend query;
+    // we use offscreen-MSAA support as a proxy (true on Metal/Vulkan,
+    // false on OpenGL ES).
     final info = Float32List(4);
     info[0] = _exposure;
     info[1] = _toneMappingMode.index.toDouble();
+    info[2] = gpu.gpuContext.doesSupportOffscreenMSAA ? 0.0 : 1.0;
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('TonemapInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
