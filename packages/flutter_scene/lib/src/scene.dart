@@ -63,7 +63,6 @@ base class Scene implements SceneGraph {
     initializeStaticResources();
     root.registerAsRoot(this);
     antiAliasingMode = AntiAliasingMode.msaa;
-    environment = Material.getDefaultEnvironmentMap();
   }
 
   static Future<void>? _initializeStaticResources;
@@ -154,12 +153,13 @@ base class Scene implements SceneGraph {
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
-  /// The image-based-lighting environment.
+  /// The image-based-lighting environment, or null to use the engine's
+  /// default (the built-in procedural [EnvironmentMap.studio], built
+  /// lazily on first render).
   ///
-  /// Defaults to [EnvironmentMap.studio] (the built-in procedural studio
-  /// environment), assigned in the constructor; assign your own to change
-  /// it. A [PhysicallyBasedMaterial] can override this per material.
-  late EnvironmentMap environment;
+  /// Assign an [EnvironmentMap] to override it. A [PhysicallyBasedMaterial]
+  /// can override this per material.
+  EnvironmentMap? environment;
 
   /// Scalar multiplier applied to [environment]'s contribution. `1.0`
   /// (the default) is neutral.
@@ -259,6 +259,14 @@ base class Scene implements SceneGraph {
       gpu.ColorAttachment(texture: swapchainColor),
     );
 
+    // Resolve the IBL environment up front (before building the render
+    // graph): the default is built lazily here on first use, which submits
+    // a one-time prefilter pass that must not be nested inside the frame's
+    // render passes. Doing this in the constructor instead would break the
+    // OpenGL ES backend, which sets up its context lazily on the raster
+    // thread only after the first frame.
+    final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
+
     final transientsBuffer = gpu.gpuContext.createHostBuffer();
 
     final light = directionalLight;
@@ -281,7 +289,7 @@ base class Scene implements SceneGraph {
         camera: camera,
         root: root,
         dimensions: pixelSize,
-        environmentMap: environment,
+        environmentMap: environmentMap,
         environmentIntensity: environmentIntensity,
         enableMsaa: enableMsaa,
         directionalLight: light,
