@@ -59,40 +59,72 @@ class _MyAppState extends State<MyApp> {
         useMaterial3: true,
       ),
       home: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: Text('Example: $selectedExample'),
-        ),
         body: Stack(
           children: [
             SizedBox.expand(child: examples[selectedExample]!(context)),
-            // Dropdown menu
-            Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: DropdownButton<String>(
-                  value: selectedExample,
-                  items:
-                      examples.keys.map<DropdownMenuItem<String>>((
-                        String value,
-                      ) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      ticker.stop();
-                      ticker.start();
-                      selectedExample = newValue!;
-                    });
-                  },
-                ),
+            // Example picker (top-left, overlaid on the scene).
+            Positioned(
+              top: 8,
+              left: 8,
+              child: _ExamplePicker(
+                examples: examples.keys.toList(growable: false),
+                selected: selectedExample,
+                onSelected: (next) {
+                  setState(() {
+                    ticker.stop();
+                    ticker.start();
+                    selectedExample = next;
+                  });
+                },
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Top-left example selector. Uses [PopupMenuButton] so the menu opens
+/// as an overlay above any of the example screens — a plain
+/// [DropdownButton] tries to draw in-line and ended up clipped behind
+/// list content on the stress-tests screen.
+class _ExamplePicker extends StatelessWidget {
+  const _ExamplePicker({
+    required this.examples,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> examples;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(8),
+      elevation: 2,
+      child: PopupMenuButton<String>(
+        initialValue: selected,
+        onSelected: onSelected,
+        tooltip: 'Switch example',
+        itemBuilder:
+            (context) => [
+              for (final name in examples)
+                PopupMenuItem<String>(value: name, child: Text(name)),
+            ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(selected, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
         ),
       ),
     );

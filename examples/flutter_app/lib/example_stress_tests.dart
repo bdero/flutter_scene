@@ -305,24 +305,27 @@ class _StressSceneState extends State<_StressScene> {
 
       final node = await Node.fromGlbBytes(bytes);
       node.name = widget.test.id;
+      _debugDumpScene(node);
 
-      // Frame the camera around the model's AABB. Skinned scenes may
-      // return null bounds (combinedLocalBounds bails on skinning); fall
-      // back to a sensible default in that case.
+      // Frame the camera around the model. combinedLocalBounds returns
+      // null when the subtree contains skinned content (bind-pose AABB
+      // under-covers once joints animate, so the engine conservatively
+      // refuses to commit to a number). When that happens fall back to
+      // a translation hull of every node in the subtree — a rough but
+      // robust scale estimate that gets Fox/BrainStem/RecursiveSkeletons
+      // into frame instead of "model is way bigger than the camera
+      // expected" territory.
       vm.Vector3 lookAt = vm.Vector3.zero();
-      double distance = 5;
-      double height = 2;
       double radius = 1;
-      final bounds = node.combinedLocalBounds;
+      final bounds = node.combinedLocalBounds ?? _nodeTranslationHull(node);
       if (bounds != null) {
-        final center = bounds.center;
+        lookAt = vm.Vector3.copy(bounds.center);
         final extent = bounds.max - bounds.min;
         radius = max(extent.length * 0.5, 0.1);
-        lookAt = vm.Vector3.copy(center);
-        // ~2.4× the bounding radius fills a 60-deg FOV without clipping.
-        distance = max(radius * 2.4, 0.5);
-        height = center.y + radius * 0.4;
       }
+      // ~2.4× the bounding radius fills a 60-deg FOV without clipping.
+      final double distance = max(radius * 2.4, 0.5);
+      final double height = lookAt.y + radius * 0.4;
       // Initial camera: behind the +Z side of the model, looking back at
       // it. Yaw=0 / pitch tilted down so the model is centered.
       _camPos = vm.Vector3(lookAt.x, height, lookAt.z + distance);
@@ -373,6 +376,70 @@ class _StressSceneState extends State<_StressScene> {
       list.addAll(_collectAnimations(child));
     }
     return list;
+  }
+
+  // One-shot diagnostic dump for stress-test loads: combinedLocalBounds
+  // status, animation list, mesh count, and per-mesh material/texture
+  // bindings. Helps sanity-check what the runtime importer produced
+  // versus what the source glTF claims.
+  void _debugDumpScene(Node root) {
+    final bounds = root.combinedLocalBounds;
+    final hull = _nodeTranslationHull(root);
+    final anims = _collectAnimations(root);
+    debugPrint(
+      '[stress] ${widget.test.id}: '
+      'combinedLocalBounds=${bounds == null ? "null" : "${bounds.min} .. ${bounds.max}"}, '
+      'translationHull=${hull == null ? "null" : "${hull.min} .. ${hull.max}"}, '
+      'animations.length=${anims.length} '
+      '${anims.map((a) => "\"${a.name}\"").join(", ")}',
+    );
+    var meshIdx = 0;
+    void visit(Node n) {
+      final mesh = n.mesh;
+      if (mesh != null) {
+        for (final p in mesh.primitives) {
+          final m = p.material;
+          var summary = m.runtimeType.toString();
+          if (m is PhysicallyBasedMaterial) {
+            summary +=
+                ' base=${m.baseColorFactor.storage.map((v) => v.toStringAsFixed(2)).toList()}'
+                ' tex=${m.baseColorTexture == null ? "<missing>" : "<bound>"}'
+                ' metRoughTex=${m.metallicRoughnessTexture == null ? "<missing>" : "<bound>"}'
+                ' emissive=${m.emissiveFactor.storage.map((v) => v.toStringAsFixed(2)).toList()}';
+          }
+          debugPrint('[stress]   mesh#${meshIdx++} node="${n.name}": $summary');
+        }
+      }
+      for (final c in n.children) {
+        visit(c);
+      }
+    }
+
+    visit(root);
+  }
+
+  // Best-effort scale estimator for subtrees with skinned content (where
+  // `combinedLocalBounds` bails). Walks every descendant and unions
+  // their global translation. Doesn't account for mesh extent at each
+  // node, so the radius can under-cover the actual geometry — but
+  // padding the framing distance compensates. Returns null only when
+  // the subtree is empty.
+  vm.Aabb3? _nodeTranslationHull(Node root) {
+    vm.Aabb3? hull;
+    void visit(Node n) {
+      final pos = n.globalTransform.getTranslation();
+      if (hull == null) {
+        hull = vm.Aabb3.minMax(vm.Vector3.copy(pos), vm.Vector3.copy(pos));
+      } else {
+        hull!.hullPoint(pos);
+      }
+      for (final c in n.children) {
+        visit(c);
+      }
+    }
+
+    visit(root);
+    return hull;
   }
 
   @override
