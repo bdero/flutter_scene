@@ -14,6 +14,12 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+// Toggle these on to inspect scenes as they load. Both are off by
+// default; flip them locally when debugging a renderer regression in
+// a specific stress test.
+const bool _kDebugDumpScene = false;
+const bool _kDebugTintMaterials = false;
+
 class _StressTest {
   const _StressTest({
     required this.id,
@@ -305,7 +311,13 @@ class _StressSceneState extends State<_StressScene> {
 
       final node = await Node.fromGlbBytes(bytes);
       node.name = widget.test.id;
-      _debugDumpScene(node);
+
+      if (_kDebugDumpScene) {
+        _debugDumpScene(node);
+      }
+      if (_kDebugTintMaterials) {
+        _debugTintMaterials(node);
+      }
 
       // Frame the camera around the model. combinedLocalBounds returns
       // null when the subtree contains skinned content (bind-pose AABB
@@ -408,6 +420,28 @@ class _StressSceneState extends State<_StressScene> {
                 ' emissive=${m.emissiveFactor.storage.map((v) => v.toStringAsFixed(2)).toList()}';
           }
           debugPrint('[stress]   mesh#${meshIdx++} node="${n.name}": $summary');
+        }
+      }
+      for (final c in n.children) {
+        visit(c);
+      }
+    }
+
+    visit(root);
+  }
+
+  // DEBUG: walk the subtree and set every PhysicallyBasedMaterial's
+  // baseColorFactor to bright red. Diagnostic only; remove once we
+  // know whether color flows.
+  void _debugTintMaterials(Node root) {
+    void visit(Node n) {
+      final mesh = n.mesh;
+      if (mesh != null) {
+        for (final p in mesh.primitives) {
+          final m = p.material;
+          if (m is PhysicallyBasedMaterial) {
+            m.baseColorFactor = vm.Vector4(1.0, 0.0, 0.0, 1.0);
+          }
         }
       }
       for (final c in n.children) {
