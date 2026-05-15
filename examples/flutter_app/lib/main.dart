@@ -5,6 +5,7 @@ import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_logo.dart';
+import 'example_stress_tests.dart';
 import 'example_toon.dart';
 
 void main() {
@@ -41,6 +42,8 @@ class _MyAppState extends State<MyApp> {
           (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
+      'Stress Tests':
+          (context) => ExampleStressTests(elapsedSeconds: elapsedSeconds),
     };
     selectedExample = examples.keys.first;
 
