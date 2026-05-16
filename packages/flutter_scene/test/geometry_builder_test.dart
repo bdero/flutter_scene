@@ -66,6 +66,65 @@ void main() {
     }
   });
 
+  test('de-indexes a shared-vertex mesh for flat normals', () {
+    // Two triangles sharing edge v0-v1 but in different planes:
+    //   A = (v0, v1, v2): face normal +Z
+    //   B = (v0, v1, v3): face normal -Y
+    // De-indexing must expand the 4 shared vertices to 6, each
+    // carrying its own triangle's face normal (no averaging).
+    final buffer = Uint8List(48 + 12);
+    final bd = ByteData.sublistView(buffer);
+    const positions = <double>[
+      0, 0, 0, // v0
+      1, 0, 0, // v1
+      1, 1, 0, // v2
+      1, 0, 1, // v3
+    ];
+    for (var i = 0; i < positions.length; i++) {
+      bd.setFloat32(i * 4, positions[i], Endian.little);
+    }
+    const indices = <int>[0, 1, 2, 0, 1, 3];
+    for (var i = 0; i < indices.length; i++) {
+      bd.setUint16(48 + i * 2, indices[i], Endian.little);
+    }
+
+    final packed = packPrimitive(
+      primitive: GltfMeshPrimitive(attributes: {'POSITION': 0}, indices: 1),
+      accessors: [
+        GltfAccessor(
+          componentType: GltfComponentType.float,
+          count: 4,
+          type: GltfAccessorType.vec3,
+          bufferView: 0,
+        ),
+        GltfAccessor(
+          componentType: GltfComponentType.unsignedShort,
+          count: 6,
+          type: GltfAccessorType.scalar,
+          bufferView: 1,
+        ),
+      ],
+      bufferViews: [
+        GltfBufferView(buffer: 0, byteLength: 48, byteOffset: 0),
+        GltfBufferView(buffer: 0, byteLength: 12, byteOffset: 48),
+      ],
+      bufferData: buffer,
+    );
+
+    // 2 triangles -> 6 unique vertices after de-indexing.
+    expect(packed.vertexCount, 6);
+    for (var v = 0; v < 3; v++) {
+      expect(_normalOf(packed, v)[0], closeTo(0.0, 1e-6));
+      expect(_normalOf(packed, v)[1], closeTo(0.0, 1e-6));
+      expect(_normalOf(packed, v)[2], closeTo(1.0, 1e-6));
+    }
+    for (var v = 3; v < 6; v++) {
+      expect(_normalOf(packed, v)[0], closeTo(0.0, 1e-6));
+      expect(_normalOf(packed, v)[1], closeTo(-1.0, 1e-6));
+      expect(_normalOf(packed, v)[2], closeTo(0.0, 1e-6));
+    }
+  });
+
   test('passes authored normals through unchanged', () {
     // positions (36 bytes) + normals (36 bytes) + indices (6 bytes).
     final buffer = Uint8List(36 + 36 + 6);
