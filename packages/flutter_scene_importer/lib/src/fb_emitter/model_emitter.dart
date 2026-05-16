@@ -12,7 +12,6 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math.dart';
 
-import '../../constants.dart';
 // Import the generated flatbuffer types directly rather than going through
 // flatbuffer.dart, which transitively pulls in `flutter_gpu/gpu.dart` and
 // `dart:ui` — both unavailable in the build-hook isolate.
@@ -291,43 +290,36 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
   Uint8List bufferData,
 ) {
   final out = fb.MeshPrimitiveT();
-  final hasJoints =
-      p.attributes.containsKey('JOINTS_0') &&
-      p.attributes.containsKey('WEIGHTS_0');
 
-  // Position attribute is mandatory in glTF and (separately) required by
-  // flutter_scene. Read it once and reuse for both vertex packing and
-  // bounds.
-  final positionAccessor = doc.accessors[p.attributes['POSITION']!];
-  final positions = _readVec3(p.attributes['POSITION']!, doc, bufferData);
-
-  // Pack vertex bytes using the same layout as flutter_scene's vertex shaders.
-  final vertexBytes = _packVertices(
-    p,
-    doc,
-    bufferData,
-    positions: positions,
-    hasJoints: hasJoints,
+  // Pack vertices and indices with the shared packer (vertex layout,
+  // index handling, normal generation, de-indexing). The runtime GLB
+  // importer uses the same code, so the offline .model output matches
+  // it byte-for-byte.
+  final packed = packGltfPrimitive(
+    primitive: p,
+    accessors: doc.accessors,
+    bufferViews: doc.bufferViews,
+    bufferData: bufferData,
   );
-  final vertexCount =
-      vertexBytes.length ~/
-      (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize);
-  if (hasJoints) {
+  if (packed.isSkinned) {
     out.verticesType = fb.VertexBufferTypeId.SkinnedVertexBuffer;
     out.vertices = fb.SkinnedVertexBufferT(
-      vertices: vertexBytes,
-      vertexCount: vertexCount,
+      vertices: packed.vertexBytes,
+      vertexCount: packed.vertexCount,
     );
   } else {
     out.verticesType = fb.VertexBufferTypeId.UnskinnedVertexBuffer;
     out.vertices = fb.UnskinnedVertexBufferT(
-      vertices: vertexBytes,
-      vertexCount: vertexCount,
+      vertices: packed.vertexBytes,
+      vertexCount: packed.vertexCount,
     );
   }
-
-  // Indices (preserve glTF order — no winding flip).
-  out.indices = _buildIndices(p, doc, bufferData);
+  out.indices =
+      fb.IndicesT()
+        ..data = packed.indexBytes
+        ..count = packed.indexCount
+        ..type =
+            packed.indices32Bit ? fb.IndexType.k32Bit : fb.IndexType.k16Bit;
 
   // Material.
   if (p.material != null && p.material! < doc.materials.length) {
@@ -336,99 +328,13 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
 
   // Bounds. Prefer the accessor's spec-provided min/max for the AABB so
   // we don't redo work the asset already encodes; the sphere always
-  // requires a vertex pass.
-  if (vertexCount > 0) {
-    final aabb = _aabbFromAccessorOrPositions(positionAccessor, positions);
-    out.boundsAabb = aabb;
+  // requires a vertex pass. De-indexing duplicates points without
+  // adding new ones, so the original positions cover the same extent.
+  final positionAccessor = doc.accessors[p.attributes['POSITION']!];
+  final positions = _readVec3(p.attributes['POSITION']!, doc, bufferData);
+  if (positions.isNotEmpty) {
+    out.boundsAabb = _aabbFromAccessorOrPositions(positionAccessor, positions);
     out.boundsSphere = _sphereFromPositions(positions);
-  }
-  return out;
-}
-
-Uint8List _packVertices(
-  GltfMeshPrimitive p,
-  GltfDocument doc,
-  Uint8List bufferData, {
-  required Float32List positions,
-  required bool hasJoints,
-}) {
-  final vertexCount = positions.length ~/ 3;
-  final normals = _readOptionalVec3('NORMAL', p, doc, bufferData, vertexCount);
-  final tex = _readOptionalVec2('TEXCOORD_0', p, doc, bufferData, vertexCount);
-  final colors = _readOptionalColor('COLOR_0', p, doc, bufferData, vertexCount);
-
-  final stride =
-      (hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize) ~/ 4;
-  final out = Float32List(vertexCount * stride);
-  for (int i = 0; i < vertexCount; i++) {
-    final o = i * stride;
-    out[o + 0] = positions[i * 3 + 0];
-    out[o + 1] = positions[i * 3 + 1];
-    out[o + 2] = positions[i * 3 + 2];
-    out[o + 3] = normals[i * 3 + 0];
-    out[o + 4] = normals[i * 3 + 1];
-    out[o + 5] = normals[i * 3 + 2];
-    out[o + 6] = tex[i * 2 + 0];
-    out[o + 7] = tex[i * 2 + 1];
-    out[o + 8] = colors[i * 4 + 0];
-    out[o + 9] = colors[i * 4 + 1];
-    out[o + 10] = colors[i * 4 + 2];
-    out[o + 11] = colors[i * 4 + 3];
-  }
-  if (hasJoints) {
-    final joints = _readVec4(p.attributes['JOINTS_0']!, doc, bufferData);
-    final weights = _readVec4(p.attributes['WEIGHTS_0']!, doc, bufferData);
-    for (int i = 0; i < vertexCount; i++) {
-      final o = i * stride + 12;
-      for (int c = 0; c < 4; c++) {
-        out[o + c] = joints[i * 4 + c];
-        out[o + 4 + c] = weights[i * 4 + c];
-      }
-    }
-  }
-  return out.buffer.asUint8List(out.offsetInBytes, out.lengthInBytes);
-}
-
-fb.IndicesT _buildIndices(
-  GltfMeshPrimitive p,
-  GltfDocument doc,
-  Uint8List bufferData,
-) {
-  final out = fb.IndicesT();
-  if (p.indices == null) {
-    // Synthesize a sequential 16-bit index list.
-    final positionAccessor = doc.accessors[p.attributes['POSITION']!];
-    final count = positionAccessor.count;
-    final widened = Uint16List(count);
-    for (int i = 0; i < count; i++) {
-      widened[i] = i;
-    }
-    out.data = widened.buffer.asUint8List(
-      widened.offsetInBytes,
-      widened.lengthInBytes,
-    );
-    out.count = count;
-    out.type = fb.IndexType.k16Bit;
-    return out;
-  }
-  final accessor = doc.accessors[p.indices!];
-  final view = doc.bufferViews[accessor.bufferView!];
-  final list = readAccessorAsUint32(accessor, view, bufferData);
-  if (accessor.componentType == GltfComponentType.unsignedInt) {
-    out.data = list.buffer.asUint8List(list.offsetInBytes, list.lengthInBytes);
-    out.count = accessor.count;
-    out.type = fb.IndexType.k32Bit;
-  } else {
-    final widened = Uint16List(list.length);
-    for (int i = 0; i < list.length; i++) {
-      widened[i] = list[i];
-    }
-    out.data = widened.buffer.asUint8List(
-      widened.offsetInBytes,
-      widened.lengthInBytes,
-    );
-    out.count = accessor.count;
-    out.type = fb.IndexType.k16Bit;
   }
   return out;
 }
@@ -1285,65 +1191,4 @@ Float32List _readVec3(int idx, GltfDocument doc, Uint8List bufferData) {
 Float32List _readVec4(int idx, GltfDocument doc, Uint8List bufferData) {
   final a = doc.accessors[idx];
   return readAccessorAsFloat32(a, doc.bufferViews[a.bufferView!], bufferData);
-}
-
-Float32List _readOptionalVec3(
-  String name,
-  GltfMeshPrimitive p,
-  GltfDocument doc,
-  Uint8List bufferData,
-  int vertexCount,
-) {
-  final i = p.attributes[name];
-  if (i == null) return Float32List(vertexCount * 3);
-  return _readVec3(i, doc, bufferData);
-}
-
-Float32List _readOptionalVec2(
-  String name,
-  GltfMeshPrimitive p,
-  GltfDocument doc,
-  Uint8List bufferData,
-  int vertexCount,
-) {
-  final i = p.attributes[name];
-  if (i == null) return Float32List(vertexCount * 2);
-  final a = doc.accessors[i];
-  return readAccessorAsFloat32(a, doc.bufferViews[a.bufferView!], bufferData);
-}
-
-Float32List _readOptionalColor(
-  String name,
-  GltfMeshPrimitive p,
-  GltfDocument doc,
-  Uint8List bufferData,
-  int vertexCount,
-) {
-  final i = p.attributes[name];
-  if (i == null) {
-    final out = Float32List(vertexCount * 4);
-    for (int v = 0; v < vertexCount; v++) {
-      out[v * 4 + 0] = 1.0;
-      out[v * 4 + 1] = 1.0;
-      out[v * 4 + 2] = 1.0;
-      out[v * 4 + 3] = 1.0;
-    }
-    return out;
-  }
-  final a = doc.accessors[i];
-  final raw = readAccessorAsFloat32(
-    a,
-    doc.bufferViews[a.bufferView!],
-    bufferData,
-  );
-  if (a.type == GltfAccessorType.vec4) return raw;
-  // Promote vec3 to vec4 with alpha=1.
-  final out = Float32List(vertexCount * 4);
-  for (int v = 0; v < vertexCount; v++) {
-    out[v * 4 + 0] = raw[v * 3 + 0];
-    out[v * 4 + 1] = raw[v * 3 + 1];
-    out[v * 4 + 2] = raw[v * 3 + 2];
-    out[v * 4 + 3] = 1.0;
-  }
-  return out;
 }
