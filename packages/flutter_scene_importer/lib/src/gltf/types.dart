@@ -66,6 +66,24 @@ class GltfNode {
   final Vector3? scale;
 }
 
+/// The engine-side name for the glTF node at [index].
+///
+/// glTF lets nodes omit their name, and many real exports leave most
+/// nodes unnamed. Animation channels resolve their target nodes by
+/// name, so every unnamed node sharing the empty string would make all
+/// channels collide on the same node. Synthesizing a unique,
+/// index-derived name keeps channel binding correct. Both the offline
+/// `.model` emitter and the runtime GLB importer must call this so a
+/// model animates identically whichever path imported it.
+///
+/// Named nodes are returned unchanged. The synthetic `node_<index>`
+/// form could in theory collide with an authored name; resolving that
+/// fully would mean index- or path-based channel binding.
+String resolveGltfNodeName(String? gltfName, int index) {
+  if (gltfName != null && gltfName.isNotEmpty) return gltfName;
+  return 'node_$index';
+}
+
 class GltfMesh {
   GltfMesh({this.name, this.primitives = const []});
   final String? name;
