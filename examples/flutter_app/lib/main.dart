@@ -38,8 +38,7 @@ class _MyAppState extends State<MyApp> {
       'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
       'Animation':
           (context) => ExampleAnimation(elapsedSeconds: elapsedSeconds),
-      'Imported Model':
-          (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
+      'Flutter Logo': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
       'Stress Tests':
