@@ -1,18 +1,17 @@
-/// Covers packPrimitive's handling of the NORMAL attribute: authored
-/// normals are passed through, and absent normals are generated from
-/// the triangle geometry (glTF requires the client to do this; the
-/// Khronos Fox sample ships no normals).
+/// Covers packGltfPrimitive's handling of the NORMAL attribute:
+/// authored normals are passed through, and absent normals are
+/// generated from the triangle geometry (glTF requires the client to
+/// do this; the Khronos Fox sample ships no normals).
 library;
 
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/runtime_importer/geometry_builder.dart';
 import 'package:flutter_scene_importer/gltf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Reads vertex `v`'s normal (floats 3..5 of the 12-float unskinned
 /// vertex layout) out of packed vertex bytes.
-List<double> _normalOf(PackedPrimitiveData packed, int v) {
+List<double> _normalOf(PackedPrimitive packed, int v) {
   final floats = Float32List.sublistView(packed.vertexBytes);
   const stride = 12;
   return [
@@ -35,7 +34,7 @@ void main() {
       bd.setUint16(36 + i * 2, i, Endian.little);
     }
 
-    final packed = packPrimitive(
+    final packed = packGltfPrimitive(
       primitive: GltfMeshPrimitive(attributes: {'POSITION': 0}, indices: 1),
       accessors: [
         GltfAccessor(
@@ -88,7 +87,7 @@ void main() {
       bd.setUint16(48 + i * 2, indices[i], Endian.little);
     }
 
-    final packed = packPrimitive(
+    final packed = packGltfPrimitive(
       primitive: GltfMeshPrimitive(attributes: {'POSITION': 0}, indices: 1),
       accessors: [
         GltfAccessor(
@@ -144,7 +143,7 @@ void main() {
       bd.setUint16(72 + i * 2, i, Endian.little);
     }
 
-    final packed = packPrimitive(
+    final packed = packGltfPrimitive(
       primitive: GltfMeshPrimitive(
         attributes: {'POSITION': 0, 'NORMAL': 1},
         indices: 2,

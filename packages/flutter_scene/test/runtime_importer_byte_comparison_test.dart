@@ -3,7 +3,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/runtime_importer/geometry_builder.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene_importer/importer.dart';
 import 'package:flutter_scene_importer/gltf.dart';
@@ -29,7 +28,7 @@ void main() {
     // Use mesh index 1, primitive 0 (CarBody) — the first primitive that
     // exercises the full unskinned vertex layout in this file.
     final myPrimitive = doc.meshes[1].primitives[0];
-    final mine = packPrimitive(
+    final mine = packGltfPrimitive(
       primitive: myPrimitive,
       accessors: doc.accessors,
       bufferViews: doc.bufferViews,
@@ -77,7 +76,7 @@ void main() {
 
     print('--- Index bytes ---');
     print(
-      '  mine.length=${mine.indexBytes.length} bytes, type=${mine.indexType}',
+      '  mine.length=${mine.indexBytes.length} bytes, indices32Bit=${mine.indices32Bit}',
     );
     print(
       '  theirs.length=${theirIndexBytes.length} bytes, type=${theirIndices.type}',
@@ -189,7 +188,7 @@ void main() {
     final glbBytes = File(glbPath).readAsBytesSync();
     final container = parseGlb(glbBytes);
     final doc = parseGltfJson(container.json);
-    final mine = packPrimitive(
+    final mine = packGltfPrimitive(
       primitive: doc.meshes.first.primitives.first,
       accessors: doc.accessors,
       bufferViews: doc.bufferViews,
@@ -266,7 +265,7 @@ void main() {
       if (theirPrim == null) continue;
       final myPrims = doc.meshes[gn.mesh!].primitives;
       if (myPrims.isEmpty) continue;
-      final mine = packPrimitive(
+      final mine = packGltfPrimitive(
         primitive: myPrims.first,
         accessors: doc.accessors,
         bufferViews: doc.bufferViews,
@@ -321,7 +320,7 @@ void _comparePrimitiveBytes(
     }
   }
   expect(myPrim, isNotNull);
-  final mine = packPrimitive(
+  final mine = packGltfPrimitive(
     primitive: myPrim!,
     accessors: doc.accessors,
     bufferViews: doc.bufferViews,
