@@ -37,6 +37,7 @@ export 'src/math_extensions.dart';
 export 'src/mesh.dart';
 export 'src/node.dart';
 export 'src/render/env_prefilter.dart';
+export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
 export 'src/scene_encoder.dart';
 export 'src/scene.dart';
 export 'src/shaders.dart';

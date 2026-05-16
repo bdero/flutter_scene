@@ -6,20 +6,22 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_importer/gltf.dart';
 
 import '../asset_helpers.dart';
+import 'gltf_resources.dart';
 
 /// Decode each glTF texture into a [gpu.Texture]. Each entry in the returned
 /// list corresponds 1:1 to `doc.textures` so material indexes resolve directly.
 ///
-/// Tier 2 supports:
-/// - Images embedded in the GLB binary chunk (referenced via `bufferView`).
-///
-/// Not yet supported:
-/// - Images referenced by URI (data URIs or external files). These will be
-///   handled when text glTF (.gltf) loading is added.
+/// Image data is sourced from the GLB binary chunk (images referenced
+/// via `bufferView`), from a `data:` URI (decoded inline), or from an
+/// external file URI fetched through [resolveUri] when one is given
+/// (multi-file glTF). An image that can't be sourced or decoded falls
+/// back to a 1x1 white placeholder so material binding never sees a
+/// null texture.
 Future<List<gpu.Texture>> buildTextures(
   GltfDocument doc,
-  Uint8List bufferData,
-) async {
+  Uint8List bufferData, {
+  GltfResourceResolver? resolveUri,
+}) async {
   final results = <gpu.Texture>[];
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
@@ -39,14 +41,28 @@ Future<List<gpu.Texture>> buildTextures(
         bv.byteOffset + bv.byteLength,
       );
     } else if (image.uri != null) {
-      // Tier 2 only handles GLB (single embedded buffer). External image URIs
-      // come with text-glTF support later.
-      debugPrint(
-        'glTF image $imageIdx references external URI "${image.uri}" — '
-        'not supported by the runtime importer yet. Using placeholder.',
-      );
-      results.add(_placeholder());
-      continue;
+      final uri = image.uri!;
+      if (uri.startsWith('data:')) {
+        imageBytes = decodeGltfDataUri(uri);
+      } else if (resolveUri != null) {
+        try {
+          imageBytes = await resolveUri(uri);
+        } catch (e) {
+          debugPrint(
+            'Failed to resolve glTF image $imageIdx URI "$uri": $e. '
+            'Using placeholder.',
+          );
+          results.add(_placeholder());
+          continue;
+        }
+      } else {
+        debugPrint(
+          'glTF image $imageIdx references external URI "$uri" but no '
+          'resource resolver was provided. Using placeholder.',
+        );
+        results.add(_placeholder());
+        continue;
+      }
     } else {
       results.add(_placeholder());
       continue;
