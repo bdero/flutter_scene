@@ -97,21 +97,7 @@ PackedPrimitiveData packPrimitive({
     indices32Bit = false;
   }
 
-  // glTF requires the client to generate normals when a primitive
-  // omits them. The Khronos Fox sample, for one, ships no NORMAL
-  // attribute; without this it would render with zero normals and lose
-  // all shading.
-  final Float32List normals;
-  if (primitive.attributes.containsKey('NORMAL')) {
-    normals = _readVec3(
-      primitive.attributes['NORMAL']!,
-      accessors,
-      bufferViews,
-      bufferData,
-    );
-  } else {
-    normals = _computeNormals(positions, indexList, vertexCount);
-  }
+  // Source attribute arrays, indexed by original glTF vertex index.
   final texCoords = _readOptionalVec2(
     'TEXCOORD_0',
     primitive,
@@ -128,54 +114,132 @@ PackedPrimitiveData packPrimitive({
     bufferData,
     vertexCount,
   );
-
   final hasJoints =
       primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
+  final joints =
+      hasJoints
+          ? _readVec4(
+            primitive.attributes['JOINTS_0']!,
+            accessors,
+            bufferViews,
+            bufferData,
+          )
+          : null;
+  final weights =
+      hasJoints
+          ? _readVec4(
+            primitive.attributes['WEIGHTS_0']!,
+            accessors,
+            bufferViews,
+            bufferData,
+          )
+          : null;
 
-  final perVertex = hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
-  final stride = perVertex ~/ 4; // floats per vertex
-  final out = Float32List(vertexCount * stride);
+  // Determine the output vertex set.
+  //
+  // When the primitive authors normals, the mesh is kept as-is:
+  // `srcOf` is the identity and the glTF index buffer is reused.
+  //
+  // When normals are absent, glTF requires the client to generate
+  // flat normals -- each triangle gets its own face normal. Shared
+  // vertices can't carry per-triangle normals, so the mesh is
+  // de-indexed: every triangle is expanded to three unique vertices
+  // and a sequential index buffer is emitted. The Khronos Fox and
+  // RecursiveSkeletons samples both ship without normals.
+  final List<int> srcOf; // output vertex index -> source vertex index
+  final Float32List normals; // output-vertex normals (3 per vertex)
+  final Uint32List outIndexList;
+  final bool outIndices32Bit;
 
-  for (int i = 0; i < vertexCount; i++) {
-    final o = i * stride;
-    out[o + 0] = positions[i * 3 + 0];
-    out[o + 1] = positions[i * 3 + 1];
-    out[o + 2] = positions[i * 3 + 2];
-    out[o + 3] = normals[i * 3 + 0];
-    out[o + 4] = normals[i * 3 + 1];
-    out[o + 5] = normals[i * 3 + 2];
-    out[o + 6] = texCoords[i * 2 + 0];
-    out[o + 7] = texCoords[i * 2 + 1];
-    out[o + 8] = colors[i * 4 + 0];
-    out[o + 9] = colors[i * 4 + 1];
-    out[o + 10] = colors[i * 4 + 2];
-    out[o + 11] = colors[i * 4 + 3];
+  if (primitive.attributes.containsKey('NORMAL')) {
+    normals = _readVec3(
+      primitive.attributes['NORMAL']!,
+      accessors,
+      bufferViews,
+      bufferData,
+    );
+    srcOf = List<int>.generate(vertexCount, (i) => i);
+    outIndexList = indexList;
+    outIndices32Bit = indices32Bit;
+  } else {
+    final triCount = indexList.length ~/ 3;
+    final outCount = triCount * 3;
+    srcOf = List<int>.filled(outCount, 0);
+    normals = Float32List(outCount * 3);
+    for (int t = 0; t < triCount; t++) {
+      final i0 = indexList[t * 3];
+      final i1 = indexList[t * 3 + 1];
+      final i2 = indexList[t * 3 + 2];
+      final ax = positions[i0 * 3];
+      final ay = positions[i0 * 3 + 1];
+      final az = positions[i0 * 3 + 2];
+      final e1x = positions[i1 * 3] - ax;
+      final e1y = positions[i1 * 3 + 1] - ay;
+      final e1z = positions[i1 * 3 + 2] - az;
+      final e2x = positions[i2 * 3] - ax;
+      final e2y = positions[i2 * 3 + 1] - ay;
+      final e2z = positions[i2 * 3 + 2] - az;
+      var nx = e1y * e2z - e1z * e2y;
+      var ny = e1z * e2x - e1x * e2z;
+      var nz = e1x * e2y - e1y * e2x;
+      final len = sqrt(nx * nx + ny * ny + nz * nz);
+      if (len > 1e-12) {
+        nx /= len;
+        ny /= len;
+        nz /= len;
+      } else {
+        // Degenerate (zero-area) triangle: pick an arbitrary normal.
+        nx = 0;
+        ny = 1;
+        nz = 0;
+      }
+      for (int c = 0; c < 3; c++) {
+        final k = t * 3 + c;
+        srcOf[k] = indexList[t * 3 + c];
+        normals[k * 3] = nx;
+        normals[k * 3 + 1] = ny;
+        normals[k * 3 + 2] = nz;
+      }
+    }
+    outIndexList = Uint32List(outCount);
+    for (int k = 0; k < outCount; k++) {
+      outIndexList[k] = k;
+    }
+    // 16-bit indices address 0..65535.
+    outIndices32Bit = outCount > 0x10000;
   }
 
-  if (hasJoints) {
-    final joints = _readVec4(
-      primitive.attributes['JOINTS_0']!,
-      accessors,
-      bufferViews,
-      bufferData,
-    );
-    final weights = _readVec4(
-      primitive.attributes['WEIGHTS_0']!,
-      accessors,
-      bufferViews,
-      bufferData,
-    );
-    for (int i = 0; i < vertexCount; i++) {
-      final o = i * stride + 12;
-      out[o + 0] = joints[i * 4 + 0];
-      out[o + 1] = joints[i * 4 + 1];
-      out[o + 2] = joints[i * 4 + 2];
-      out[o + 3] = joints[i * 4 + 3];
-      out[o + 4] = weights[i * 4 + 0];
-      out[o + 5] = weights[i * 4 + 1];
-      out[o + 6] = weights[i * 4 + 2];
-      out[o + 7] = weights[i * 4 + 3];
+  final outVertexCount = srcOf.length;
+  final perVertex = hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
+  final stride = perVertex ~/ 4; // floats per vertex
+  final out = Float32List(outVertexCount * stride);
+
+  for (int k = 0; k < outVertexCount; k++) {
+    final o = k * stride;
+    final s = srcOf[k];
+    out[o + 0] = positions[s * 3 + 0];
+    out[o + 1] = positions[s * 3 + 1];
+    out[o + 2] = positions[s * 3 + 2];
+    out[o + 3] = normals[k * 3 + 0];
+    out[o + 4] = normals[k * 3 + 1];
+    out[o + 5] = normals[k * 3 + 2];
+    out[o + 6] = texCoords[s * 2 + 0];
+    out[o + 7] = texCoords[s * 2 + 1];
+    out[o + 8] = colors[s * 4 + 0];
+    out[o + 9] = colors[s * 4 + 1];
+    out[o + 10] = colors[s * 4 + 2];
+    out[o + 11] = colors[s * 4 + 3];
+    if (hasJoints) {
+      final j = o + 12;
+      out[j + 0] = joints![s * 4 + 0];
+      out[j + 1] = joints[s * 4 + 1];
+      out[j + 2] = joints[s * 4 + 2];
+      out[j + 3] = joints[s * 4 + 3];
+      out[j + 4] = weights![s * 4 + 0];
+      out[j + 5] = weights[s * 4 + 1];
+      out[j + 6] = weights[s * 4 + 2];
+      out[j + 7] = weights[s * 4 + 3];
     }
   }
 
@@ -183,16 +247,16 @@ PackedPrimitiveData packPrimitive({
   // narrow everything else to 16-bit.
   final Uint8List indexBytes;
   final gpu.IndexType indexType;
-  if (indices32Bit) {
-    indexBytes = indexList.buffer.asUint8List(
-      indexList.offsetInBytes,
-      indexList.lengthInBytes,
+  if (outIndices32Bit) {
+    indexBytes = outIndexList.buffer.asUint8List(
+      outIndexList.offsetInBytes,
+      outIndexList.lengthInBytes,
     );
     indexType = gpu.IndexType.int32;
   } else {
-    final widened = Uint16List(indexList.length);
-    for (int i = 0; i < indexList.length; i++) {
-      widened[i] = indexList[i];
+    final widened = Uint16List(outIndexList.length);
+    for (int i = 0; i < outIndexList.length; i++) {
+      widened[i] = outIndexList[i];
     }
     indexBytes = widened.buffer.asUint8List(
       widened.offsetInBytes,
@@ -203,7 +267,7 @@ PackedPrimitiveData packPrimitive({
 
   return PackedPrimitiveData(
     vertexBytes: out.buffer.asUint8List(out.offsetInBytes, out.lengthInBytes),
-    vertexCount: vertexCount,
+    vertexCount: outVertexCount,
     indexBytes: indexBytes,
     indexType: indexType,
     isSkinned: hasJoints,
@@ -236,61 +300,6 @@ Float32List _readVec4(
     bufferViews[accessor.bufferView!],
     bufferData,
   );
-}
-
-/// Generates per-vertex normals from a triangle list, used when a glTF
-/// primitive omits the NORMAL attribute (the spec requires the client
-/// to generate them).
-///
-/// Each triangle's face normal (the unnormalized cross product, so
-/// larger triangles contribute proportionally) is added to its three
-/// vertices, then every vertex normal is normalized. This produces
-/// smoothed normals, which is what common glTF loaders do and which
-/// the engine's bind-pose / skinning paths handle uniformly with
-/// authored normals.
-Float32List _computeNormals(
-  Float32List positions,
-  Uint32List indices,
-  int vertexCount,
-) {
-  final normals = Float32List(vertexCount * 3);
-  for (int t = 0; t + 2 < indices.length; t += 3) {
-    final i0 = indices[t];
-    final i1 = indices[t + 1];
-    final i2 = indices[t + 2];
-    final ax = positions[i0 * 3];
-    final ay = positions[i0 * 3 + 1];
-    final az = positions[i0 * 3 + 2];
-    final e1x = positions[i1 * 3] - ax;
-    final e1y = positions[i1 * 3 + 1] - ay;
-    final e1z = positions[i1 * 3 + 2] - az;
-    final e2x = positions[i2 * 3] - ax;
-    final e2y = positions[i2 * 3 + 1] - ay;
-    final e2z = positions[i2 * 3 + 2] - az;
-    final nx = e1y * e2z - e1z * e2y;
-    final ny = e1z * e2x - e1x * e2z;
-    final nz = e1x * e2y - e1y * e2x;
-    for (final i in [i0, i1, i2]) {
-      normals[i * 3] += nx;
-      normals[i * 3 + 1] += ny;
-      normals[i * 3 + 2] += nz;
-    }
-  }
-  for (int i = 0; i < vertexCount; i++) {
-    final x = normals[i * 3];
-    final y = normals[i * 3 + 1];
-    final z = normals[i * 3 + 2];
-    final len = sqrt(x * x + y * y + z * z);
-    if (len > 1e-12) {
-      normals[i * 3] = x / len;
-      normals[i * 3 + 1] = y / len;
-      normals[i * 3 + 2] = z / len;
-    } else {
-      // Degenerate vertex (only touched by zero-area triangles).
-      normals[i * 3 + 1] = 1.0;
-    }
-  }
-  return normals;
 }
 
 Float32List _readOptionalVec2(
