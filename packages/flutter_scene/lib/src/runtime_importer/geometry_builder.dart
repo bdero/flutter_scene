@@ -1,3 +1,4 @@
+import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
@@ -74,14 +75,43 @@ PackedPrimitiveData packPrimitive({
   final positions = _readVec3(positionIdx, accessors, bufferViews, bufferData);
   final vertexCount = positions.length ~/ 3;
 
-  final normals = _readOptionalVec3(
-    'NORMAL',
-    primitive,
-    accessors,
-    bufferViews,
-    bufferData,
-    vertexCount,
-  );
+  // Read (or synthesize) the triangle index list up front: it's needed
+  // both to build the index buffer and to compute normals when the
+  // glTF primitive omits them.
+  final Uint32List indexList;
+  final bool indices32Bit;
+  if (primitive.indices != null) {
+    final accessor = accessors[primitive.indices!];
+    indexList = readAccessorAsUint32(
+      accessor,
+      bufferViews[accessor.bufferView!],
+      bufferData,
+    );
+    indices32Bit = accessor.componentType == GltfComponentType.unsignedInt;
+  } else {
+    // No indices: a sequential triangle list.
+    indexList = Uint32List(vertexCount);
+    for (int i = 0; i < vertexCount; i++) {
+      indexList[i] = i;
+    }
+    indices32Bit = false;
+  }
+
+  // glTF requires the client to generate normals when a primitive
+  // omits them. The Khronos Fox sample, for one, ships no NORMAL
+  // attribute; without this it would render with zero normals and lose
+  // all shading.
+  final Float32List normals;
+  if (primitive.attributes.containsKey('NORMAL')) {
+    normals = _readVec3(
+      primitive.attributes['NORMAL']!,
+      accessors,
+      bufferViews,
+      bufferData,
+    );
+  } else {
+    normals = _computeNormals(positions, indexList, vertexCount);
+  }
   final texCoords = _readOptionalVec2(
     'TEXCOORD_0',
     primitive,
@@ -149,36 +179,20 @@ PackedPrimitiveData packPrimitive({
     }
   }
 
-  // Indices: glTF uses optional unsigned 8/16/32 bit. flutter_gpu wants 16 or
-  // 32. Widen byte indices to 16, otherwise pass through.
+  // flutter_gpu wants 16- or 32-bit indices. Pass 32-bit through;
+  // narrow everything else to 16-bit.
   final Uint8List indexBytes;
   final gpu.IndexType indexType;
-  if (primitive.indices != null) {
-    final accessor = accessors[primitive.indices!];
-    final bufferView = bufferViews[accessor.bufferView!];
-    final list = readAccessorAsUint32(accessor, bufferView, bufferData);
-    if (accessor.componentType == GltfComponentType.unsignedInt) {
-      indexBytes = list.buffer.asUint8List(
-        list.offsetInBytes,
-        list.lengthInBytes,
-      );
-      indexType = gpu.IndexType.int32;
-    } else {
-      final widened = Uint16List(list.length);
-      for (int i = 0; i < list.length; i++) {
-        widened[i] = list[i];
-      }
-      indexBytes = widened.buffer.asUint8List(
-        widened.offsetInBytes,
-        widened.lengthInBytes,
-      );
-      indexType = gpu.IndexType.int16;
-    }
+  if (indices32Bit) {
+    indexBytes = indexList.buffer.asUint8List(
+      indexList.offsetInBytes,
+      indexList.lengthInBytes,
+    );
+    indexType = gpu.IndexType.int32;
   } else {
-    // No indices: synthesize a sequential 16-bit index buffer.
-    final widened = Uint16List(vertexCount);
-    for (int i = 0; i < vertexCount; i++) {
-      widened[i] = i;
+    final widened = Uint16List(indexList.length);
+    for (int i = 0; i < indexList.length; i++) {
+      widened[i] = indexList[i];
     }
     indexBytes = widened.buffer.asUint8List(
       widened.offsetInBytes,
@@ -224,17 +238,59 @@ Float32List _readVec4(
   );
 }
 
-Float32List _readOptionalVec3(
-  String name,
-  GltfMeshPrimitive primitive,
-  List<GltfAccessor> accessors,
-  List<GltfBufferView> bufferViews,
-  Uint8List bufferData,
+/// Generates per-vertex normals from a triangle list, used when a glTF
+/// primitive omits the NORMAL attribute (the spec requires the client
+/// to generate them).
+///
+/// Each triangle's face normal (the unnormalized cross product, so
+/// larger triangles contribute proportionally) is added to its three
+/// vertices, then every vertex normal is normalized. This produces
+/// smoothed normals, which is what common glTF loaders do and which
+/// the engine's bind-pose / skinning paths handle uniformly with
+/// authored normals.
+Float32List _computeNormals(
+  Float32List positions,
+  Uint32List indices,
   int vertexCount,
 ) {
-  final idx = primitive.attributes[name];
-  if (idx == null) return Float32List(vertexCount * 3); // zero-initialized
-  return _readVec3(idx, accessors, bufferViews, bufferData);
+  final normals = Float32List(vertexCount * 3);
+  for (int t = 0; t + 2 < indices.length; t += 3) {
+    final i0 = indices[t];
+    final i1 = indices[t + 1];
+    final i2 = indices[t + 2];
+    final ax = positions[i0 * 3];
+    final ay = positions[i0 * 3 + 1];
+    final az = positions[i0 * 3 + 2];
+    final e1x = positions[i1 * 3] - ax;
+    final e1y = positions[i1 * 3 + 1] - ay;
+    final e1z = positions[i1 * 3 + 2] - az;
+    final e2x = positions[i2 * 3] - ax;
+    final e2y = positions[i2 * 3 + 1] - ay;
+    final e2z = positions[i2 * 3 + 2] - az;
+    final nx = e1y * e2z - e1z * e2y;
+    final ny = e1z * e2x - e1x * e2z;
+    final nz = e1x * e2y - e1y * e2x;
+    for (final i in [i0, i1, i2]) {
+      normals[i * 3] += nx;
+      normals[i * 3 + 1] += ny;
+      normals[i * 3 + 2] += nz;
+    }
+  }
+  for (int i = 0; i < vertexCount; i++) {
+    final x = normals[i * 3];
+    final y = normals[i * 3 + 1];
+    final z = normals[i * 3 + 2];
+    final len = sqrt(x * x + y * y + z * z);
+    if (len > 1e-12) {
+      normals[i * 3] = x / len;
+      normals[i * 3 + 1] = y / len;
+      normals[i * 3 + 2] = z / len;
+    } else {
+      // Degenerate vertex (only touched by zero-area triangles).
+      normals[i * 3 + 1] = 1.0;
+    }
+  }
+  return normals;
 }
 
 Float32List _readOptionalVec2(
