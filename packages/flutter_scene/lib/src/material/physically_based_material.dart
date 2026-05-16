@@ -8,6 +8,22 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
+/// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
+/// matching glTF's `alphaMode`.
+enum AlphaMode {
+  /// Alpha is ignored; the material renders fully opaque.
+  opaque,
+
+  /// Alpha-tested: a fragment whose alpha is below
+  /// [PhysicallyBasedMaterial.alphaCutoff] is discarded and the rest
+  /// render fully opaque. Used for cut-out foliage and similar.
+  mask,
+
+  /// Alpha-blended: drawn in the depth-sorted translucent pass with
+  /// source-over blending.
+  blend,
+}
+
 /// A glTF-style metallic-roughness physically based material with
 /// image-based lighting.
 ///
@@ -103,6 +119,11 @@ class PhysicallyBasedMaterial extends Material {
       material.occlusionTexture = textures[fbMaterial.occlusionTexture];
     }
 
+    // Alpha mode.
+
+    material.alphaMode = _alphaModeFromIndex(fbMaterial.alphaMode);
+    material.alphaCutoff = fbMaterial.alphaCutoff;
+
     return material;
   }
 
@@ -176,6 +197,16 @@ class PhysicallyBasedMaterial extends Material {
   /// scene-wide `Scene.environment` when set.
   EnvironmentMap? environment;
 
+  /// How the material's alpha is interpreted; see [AlphaMode].
+  ///
+  /// [AlphaMode.blend] always routes the material through the
+  /// translucent pass regardless of [baseColorFactor]'s alpha.
+  AlphaMode alphaMode = AlphaMode.opaque;
+
+  /// Alpha-test threshold used when [alphaMode] is [AlphaMode.mask]:
+  /// fragments whose alpha falls below this are discarded.
+  double alphaCutoff = 0.5;
+
   @override
   void bind(
     gpu.RenderPass pass,
@@ -210,7 +241,9 @@ class PhysicallyBasedMaterial extends Material {
     //   [78]     float shadow_normal_bias
     //   [79]     float shadow_texel_size
     //   [80]     float render_target_flip_y
-    //   [81..83] padding to a 16-byte multiple
+    //   [81]     float alpha_mode (0 opaque, 1 mask, 2 blend)
+    //   [82]     float alpha_cutoff
+    //   [83]     padding to a 16-byte multiple
     final fragInfo = Float32List(84);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
@@ -254,6 +287,8 @@ class PhysicallyBasedMaterial extends Material {
     // Flutter GPU has no backend query; offscreen-MSAA support is a proxy
     // (true on Metal/Vulkan, false on OpenGL ES).
     fragInfo[80] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
+    fragInfo[81] = alphaMode.index.toDouble();
+    fragInfo[82] = alphaCutoff;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -336,6 +371,24 @@ class PhysicallyBasedMaterial extends Material {
 
   @override
   bool isOpaque() {
-    return baseColorFactor.a == 1;
+    // BLEND always goes through the translucent pass. OPAQUE and MASK
+    // are drawn in the opaque pass (MASK relies on the shader's
+    // alpha-test discard); a sub-1 baseColorFactor alpha still forces
+    // the translucent pass so directly-constructed translucent
+    // materials keep working without an explicit alpha mode.
+    if (alphaMode == AlphaMode.blend) return false;
+    return baseColorFactor.a >= 1.0;
+  }
+}
+
+/// Maps a flatbuffer `alpha_mode` index (0/1/2) to an [AlphaMode].
+AlphaMode _alphaModeFromIndex(int index) {
+  switch (index) {
+    case 1:
+      return AlphaMode.mask;
+    case 2:
+      return AlphaMode.blend;
+    default:
+      return AlphaMode.opaque;
   }
 }

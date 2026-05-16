@@ -367,6 +367,13 @@ fb.MaterialT _buildMaterial(GltfMaterial m) {
     y: _at(m.emissiveFactor, 1, 0.0),
     z: _at(m.emissiveFactor, 2, 0.0),
   );
+  // glTF alpha mode: 0 = OPAQUE, 1 = MASK, 2 = BLEND.
+  out.alphaMode = switch (m.alphaMode) {
+    'MASK' => 1,
+    'BLEND' => 2,
+    _ => 0,
+  };
+  out.alphaCutoff = m.alphaCutoff;
   return out;
 }
 

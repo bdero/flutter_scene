@@ -50,7 +50,21 @@ Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
     gm.emissiveFactor.length > 2 ? gm.emissiveFactor[2] : 0.0,
     1.0,
   );
+  m.alphaMode = _alphaMode(gm.alphaMode);
+  m.alphaCutoff = gm.alphaCutoff;
   return m;
+}
+
+/// Maps a glTF `alphaMode` string to the engine [AlphaMode].
+AlphaMode _alphaMode(String mode) {
+  switch (mode) {
+    case 'MASK':
+      return AlphaMode.mask;
+    case 'BLEND':
+      return AlphaMode.blend;
+    default:
+      return AlphaMode.opaque;
+  }
 }
 
 gpu.Texture? _resolveTexture(

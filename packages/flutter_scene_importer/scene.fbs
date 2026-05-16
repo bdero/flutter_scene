@@ -67,6 +67,11 @@ table Material {
 
   occlusion_strength: float = 1.0;
   occlusion_texture: int = -1;
+
+  // glTF alpha mode: 0 = OPAQUE, 1 = MASK, 2 = BLEND.
+  alpha_mode: byte = 0;
+  // Alpha cutoff threshold; used only when alpha_mode is MASK.
+  alpha_cutoff: float = 0.5;
 }
 
 //-----------------------------------------------------------------------------
