@@ -39,6 +39,11 @@ uniform FragInfo {
   // when sampling the shadow map and the prefiltered-radiance atlas; the
   // Dart side fills it (Flutter GPU has no backend macro).
   float render_target_flip_y;
+  // glTF alpha mode: 0 opaque, 1 mask, 2 blend. In mask mode a fragment
+  // whose alpha is below alpha_cutoff is discarded and the rest are
+  // forced fully opaque.
+  float alpha_mode;
+  float alpha_cutoff;
 }
 frag_info;
 
@@ -118,6 +123,14 @@ void main() {
   vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
                 frag_info.color.rgb;
   float alpha = base_color_srgb.a * vertex_color.a * frag_info.color.a;
+  // MASK alpha mode: discard fragments below the cutoff, render the
+  // rest fully opaque (glTF treats MASK output as binary).
+  if (frag_info.alpha_mode == 1.0) {
+    if (alpha < frag_info.alpha_cutoff) {
+      discard;
+    }
+    alpha = 1.0;
+  }
   // Note: PerturbNormal needs the non-normalized view vector
   //       (camera_position - vertex_position).
   vec3 normal = normalize(v_normal);

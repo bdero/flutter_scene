@@ -684,10 +684,13 @@ class Material {
       const fb.Float32Reader().vTableGet(_bc, _bcOffset, 24, 1.0);
   int get occlusionTexture =>
       const fb.Int32Reader().vTableGet(_bc, _bcOffset, 26, -1);
+  int get alphaMode => const fb.Int8Reader().vTableGet(_bc, _bcOffset, 28, 0);
+  double get alphaCutoff =>
+      const fb.Float32Reader().vTableGet(_bc, _bcOffset, 30, 0.5);
 
   @override
   String toString() {
-    return 'Material{type: ${type}, baseColorFactor: ${baseColorFactor}, baseColorTexture: ${baseColorTexture}, metallicFactor: ${metallicFactor}, roughnessFactor: ${roughnessFactor}, metallicRoughnessTexture: ${metallicRoughnessTexture}, normalScale: ${normalScale}, normalTexture: ${normalTexture}, emissiveFactor: ${emissiveFactor}, emissiveTexture: ${emissiveTexture}, occlusionStrength: ${occlusionStrength}, occlusionTexture: ${occlusionTexture}}';
+    return 'Material{type: ${type}, baseColorFactor: ${baseColorFactor}, baseColorTexture: ${baseColorTexture}, metallicFactor: ${metallicFactor}, roughnessFactor: ${roughnessFactor}, metallicRoughnessTexture: ${metallicRoughnessTexture}, normalScale: ${normalScale}, normalTexture: ${normalTexture}, emissiveFactor: ${emissiveFactor}, emissiveTexture: ${emissiveTexture}, occlusionStrength: ${occlusionStrength}, occlusionTexture: ${occlusionTexture}, alphaMode: ${alphaMode}, alphaCutoff: ${alphaCutoff}}';
   }
 
   MaterialT unpack() => MaterialT(
@@ -703,6 +706,8 @@ class Material {
     emissiveTexture: emissiveTexture,
     occlusionStrength: occlusionStrength,
     occlusionTexture: occlusionTexture,
+    alphaMode: alphaMode,
+    alphaCutoff: alphaCutoff,
   );
 
   static int pack(fb.Builder fbBuilder, MaterialT? object) {
@@ -728,6 +733,8 @@ class MaterialT implements fb.Packable {
   int emissiveTexture;
   double occlusionStrength;
   int occlusionTexture;
+  int alphaMode;
+  double alphaCutoff;
 
   MaterialT({
     this.type = MaterialType.kUnlit,
@@ -742,11 +749,13 @@ class MaterialT implements fb.Packable {
     this.emissiveTexture = -1,
     this.occlusionStrength = 1.0,
     this.occlusionTexture = -1,
+    this.alphaMode = 0,
+    this.alphaCutoff = 0.5,
   });
 
   @override
   int pack(fb.Builder fbBuilder) {
-    fbBuilder.startTable(12);
+    fbBuilder.startTable(14);
     fbBuilder.addInt8(0, type.value);
     if (baseColorFactor != null) {
       fbBuilder.addStruct(1, baseColorFactor!.pack(fbBuilder));
@@ -763,12 +772,14 @@ class MaterialT implements fb.Packable {
     fbBuilder.addInt32(9, emissiveTexture);
     fbBuilder.addFloat32(10, occlusionStrength);
     fbBuilder.addInt32(11, occlusionTexture);
+    fbBuilder.addInt8(12, alphaMode);
+    fbBuilder.addFloat32(13, alphaCutoff);
     return fbBuilder.endTable();
   }
 
   @override
   String toString() {
-    return 'MaterialT{type: ${type}, baseColorFactor: ${baseColorFactor}, baseColorTexture: ${baseColorTexture}, metallicFactor: ${metallicFactor}, roughnessFactor: ${roughnessFactor}, metallicRoughnessTexture: ${metallicRoughnessTexture}, normalScale: ${normalScale}, normalTexture: ${normalTexture}, emissiveFactor: ${emissiveFactor}, emissiveTexture: ${emissiveTexture}, occlusionStrength: ${occlusionStrength}, occlusionTexture: ${occlusionTexture}}';
+    return 'MaterialT{type: ${type}, baseColorFactor: ${baseColorFactor}, baseColorTexture: ${baseColorTexture}, metallicFactor: ${metallicFactor}, roughnessFactor: ${roughnessFactor}, metallicRoughnessTexture: ${metallicRoughnessTexture}, normalScale: ${normalScale}, normalTexture: ${normalTexture}, emissiveFactor: ${emissiveFactor}, emissiveTexture: ${emissiveTexture}, occlusionStrength: ${occlusionStrength}, occlusionTexture: ${occlusionTexture}, alphaMode: ${alphaMode}, alphaCutoff: ${alphaCutoff}}';
   }
 }
 
@@ -786,7 +797,7 @@ class MaterialBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(12);
+    fbBuilder.startTable(14);
   }
 
   int addType(MaterialType? type) {
@@ -849,6 +860,16 @@ class MaterialBuilder {
     return fbBuilder.offset;
   }
 
+  int addAlphaMode(int? alphaMode) {
+    fbBuilder.addInt8(12, alphaMode);
+    return fbBuilder.offset;
+  }
+
+  int addAlphaCutoff(double? alphaCutoff) {
+    fbBuilder.addFloat32(13, alphaCutoff);
+    return fbBuilder.offset;
+  }
+
   int finish() {
     return fbBuilder.endTable();
   }
@@ -867,6 +888,8 @@ class MaterialObjectBuilder extends fb.ObjectBuilder {
   final int? _emissiveTexture;
   final double? _occlusionStrength;
   final int? _occlusionTexture;
+  final int? _alphaMode;
+  final double? _alphaCutoff;
 
   MaterialObjectBuilder({
     MaterialType? type,
@@ -881,6 +904,8 @@ class MaterialObjectBuilder extends fb.ObjectBuilder {
     int? emissiveTexture,
     double? occlusionStrength,
     int? occlusionTexture,
+    int? alphaMode,
+    double? alphaCutoff,
   }) : _type = type,
        _baseColorFactor = baseColorFactor,
        _baseColorTexture = baseColorTexture,
@@ -892,12 +917,14 @@ class MaterialObjectBuilder extends fb.ObjectBuilder {
        _emissiveFactor = emissiveFactor,
        _emissiveTexture = emissiveTexture,
        _occlusionStrength = occlusionStrength,
-       _occlusionTexture = occlusionTexture;
+       _occlusionTexture = occlusionTexture,
+       _alphaMode = alphaMode,
+       _alphaCutoff = alphaCutoff;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    fbBuilder.startTable(12);
+    fbBuilder.startTable(14);
     fbBuilder.addInt8(0, _type?.value);
     if (_baseColorFactor != null) {
       fbBuilder.addStruct(1, _baseColorFactor!.finish(fbBuilder));
@@ -914,6 +941,8 @@ class MaterialObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.addInt32(9, _emissiveTexture);
     fbBuilder.addFloat32(10, _occlusionStrength);
     fbBuilder.addInt32(11, _occlusionTexture);
+    fbBuilder.addInt8(12, _alphaMode);
+    fbBuilder.addFloat32(13, _alphaCutoff);
     return fbBuilder.endTable();
   }
 
