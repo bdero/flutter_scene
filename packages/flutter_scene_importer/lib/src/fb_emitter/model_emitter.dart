@@ -53,7 +53,7 @@ fb.SceneT _buildScene(GltfDocument doc, Uint8List bufferData) {
   // Nodes (flat list).
   scene.nodes = [
     for (int i = 0; i < doc.nodes.length; i++)
-      _buildNode(doc.nodes[i], doc, bufferData),
+      _buildNode(doc.nodes[i], i, doc, bufferData),
   ];
 
   // Post-pass: bake skinned primitives' pose-union AABBs by sampling
@@ -250,9 +250,14 @@ class _AabbBox {
 
 // ───── Nodes ─────
 
-fb.NodeT _buildNode(GltfNode n, GltfDocument doc, Uint8List bufferData) {
+fb.NodeT _buildNode(
+  GltfNode n,
+  int index,
+  GltfDocument doc,
+  Uint8List bufferData,
+) {
   final out = fb.NodeT();
-  out.name = n.name ?? '';
+  out.name = resolveGltfNodeName(n.name, index);
   out.children = n.children.toList();
   out.transform = _matrixT(_localTransformFor(n));
 

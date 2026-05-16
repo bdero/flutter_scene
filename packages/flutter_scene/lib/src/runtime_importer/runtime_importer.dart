@@ -34,6 +34,7 @@ Future<Node> importGlb(Uint8List bytes) async {
 
   for (int i = 0; i < doc.nodes.length; i++) {
     _populateNode(
+      index: i,
       engineNode: engineNodes[i],
       gltfNode: doc.nodes[i],
       doc: doc,
@@ -106,6 +107,7 @@ Future<Node> importGlb(Uint8List bytes) async {
 }
 
 void _populateNode({
+  required int index,
   required Node engineNode,
   required GltfNode gltfNode,
   required GltfDocument doc,
@@ -113,7 +115,7 @@ void _populateNode({
   required List<Node> engineNodes,
   required List<gpu.Texture> textures,
 }) {
-  engineNode.name = gltfNode.name ?? '';
+  engineNode.name = resolveGltfNodeName(gltfNode.name, index);
   engineNode.localTransform = _localTransformFor(gltfNode);
 
   if (gltfNode.mesh != null) {

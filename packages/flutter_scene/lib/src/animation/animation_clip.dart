@@ -142,19 +142,14 @@ class AnimationClip {
   }
 
   void _bindToTarget(Node target) {
-    final channels = _animation.channels;
     _bindings.clear();
-    for (var channel in channels) {
-      Node channelTarget;
-      if (channel.bindTarget.nodeName == target.name) {
-        channelTarget = target;
-      }
-      Node? result = target.getChildByName(channel.bindTarget.nodeName);
-      if (result != null) {
-        channelTarget = result;
-      } else {
-        continue;
-      }
+    for (final channel in _animation.channels) {
+      final nodeName = channel.bindTarget.nodeName;
+      // A channel may target the bind root itself or one of its
+      // descendants. Resolving descendants first would miss the root.
+      final channelTarget =
+          nodeName == target.name ? target : target.getChildByName(nodeName);
+      if (channelTarget == null) continue;
       _bindings.add(_ChannelBinding(channel, channelTarget));
     }
   }
