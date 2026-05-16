@@ -37,6 +37,10 @@ class _StressTest {
   final int sizeBytes;
   // If set, the first matching animation is played on a loop after load.
   final String? animationName;
+
+  /// True when [url] points at a multi-file glTF (a `.gltf` JSON with
+  /// external `.bin` and image files) rather than a single-file `.glb`.
+  bool get isMultiFile => url.endsWith('.gltf');
 }
 
 const _catalog = <_StressTest>[
@@ -61,6 +65,40 @@ const _catalog = <_StressTest>[
         'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
         'main/Models/AntiqueCamera/glTF-Binary/AntiqueCamera.glb',
     sizeBytes: 17540348,
+  ),
+  _StressTest(
+    id: 'SciFiHelmet',
+    title: 'Sci-Fi Helmet',
+    description:
+        'High-detail PBR helmet shipped as multi-file glTF: a .gltf plus '
+        'a .bin buffer and four large textures. Exercises external '
+        'resource resolution.',
+    url:
+        'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
+        'main/Models/SciFiHelmet/glTF/SciFiHelmet.gltf',
+    sizeBytes: 30286979,
+  ),
+  _StressTest(
+    id: 'FlightHelmet',
+    title: 'Flight Helmet',
+    description:
+        'The Khronos high-fidelity reference: many separate meshes and '
+        'textures. Multi-file glTF.',
+    url:
+        'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
+        'main/Models/FlightHelmet/glTF/FlightHelmet.gltf',
+    sizeBytes: 48392569,
+  ),
+  _StressTest(
+    id: 'Sponza',
+    title: 'Sponza',
+    description:
+        'The classic architectural scene: large, many materials and '
+        'textures, lots of draw calls. Multi-file glTF (71 files).',
+    url:
+        'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
+        'main/Models/Sponza/glTF/Sponza.gltf',
+    sizeBytes: 52686624,
   ),
   _StressTest(
     id: 'MetalRoughSpheres',
@@ -296,20 +334,19 @@ class _StressSceneState extends State<_StressScene> {
     unawaited(_load());
   }
 
+  // Accumulates downloaded bytes (across every file of a multi-file
+  // model) into the progress display.
+  void _reportChunk(int bytes) {
+    if (!mounted) return;
+    setState(() {
+      _downloaded += bytes;
+      _total = widget.test.sizeBytes;
+    });
+  }
+
   Future<void> _load() async {
     try {
-      final bytes = await _fetchCachedGlb(
-        widget.test,
-        onProgress: (received, total) {
-          if (!mounted) return;
-          setState(() {
-            _downloaded = received;
-            _total = total ?? widget.test.sizeBytes;
-          });
-        },
-      );
-
-      final node = await Node.fromGlbBytes(bytes);
+      final node = await _importTest(widget.test, _reportChunk);
       node.name = widget.test.id;
 
       if (_kDebugDumpScene) {
@@ -697,49 +734,100 @@ class _ScenePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
-// Fetches `test.url`, streaming through to a cache file in the app's
-// support directory so the second open is instant. Re-downloads on
-// short reads in case a previous run was interrupted.
-Future<Uint8List> _fetchCachedGlb(
-  _StressTest test, {
-  required void Function(int received, int? total) onProgress,
-}) async {
-  final dir = await getApplicationSupportDirectory();
-  final cacheDir = Directory('${dir.path}/stress_tests');
-  if (!await cacheDir.exists()) {
-    await cacheDir.create(recursive: true);
+// Downloads (and caches) the model for `test` and imports it.
+//
+// Single-file `.glb` models go through Node.fromGlbBytes. Multi-file
+// `.gltf` models download the `.gltf` and resolve its `.bin` / image
+// siblings on demand through Node.fromGltfBytes; every sibling is
+// fetched relative to the `.gltf`'s own URL and cached beside it.
+Future<Node> _importTest(_StressTest test, void Function(int) onChunk) async {
+  final supportDir = await getApplicationSupportDirectory();
+  final cacheRoot = Directory('${supportDir.path}/stress_tests');
+
+  if (!test.isMultiFile) {
+    if (!await cacheRoot.exists()) {
+      await cacheRoot.create(recursive: true);
+    }
+    final bytes = await _fetchCached(
+      test.url,
+      File('${cacheRoot.path}/${test.id}.glb'),
+      onChunk: onChunk,
+      expectedSize: test.sizeBytes,
+    );
+    return Node.fromGlbBytes(bytes);
   }
-  final cached = File('${cacheDir.path}/${test.id}.glb');
-  if (await cached.exists()) {
-    final bytes = await cached.readAsBytes();
-    if (bytes.lengthInBytes >= test.sizeBytes * 0.95) {
-      onProgress(bytes.lengthInBytes, bytes.lengthInBytes);
+
+  // Multi-file glTF: the `.gltf` and its siblings share a per-test dir.
+  final dir = Directory('${cacheRoot.path}/${test.id}');
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+  }
+  final baseUri = Uri.parse(test.url);
+  final gltfBytes = await _fetchCached(
+    test.url,
+    File('${dir.path}/${_uriBasename(test.url)}'),
+    onChunk: onChunk,
+  );
+  return Node.fromGltfBytes(
+    gltfBytes,
+    resolveUri:
+        (uri) => _fetchCached(
+          baseUri.resolve(uri).toString(),
+          File('${dir.path}/${_uriBasename(uri)}'),
+          onChunk: onChunk,
+        ),
+  );
+}
+
+/// The last path segment of a (possibly percent-encoded) URI, used as
+/// the cache filename for a downloaded resource.
+String _uriBasename(String uri) {
+  final decoded = Uri.decodeComponent(uri);
+  final slash = decoded.lastIndexOf('/');
+  return slash < 0 ? decoded : decoded.substring(slash + 1);
+}
+
+// Downloads `url` into `cacheFile`, skipping the download when a usable
+// cache file is already present, and returns the bytes. `onChunk` is
+// fed each chunk's length while streaming -- and the whole file's
+// length on a cache hit -- so callers can show cumulative progress.
+Future<Uint8List> _fetchCached(
+  String url,
+  File cacheFile, {
+  required void Function(int bytes) onChunk,
+  int? expectedSize,
+}) async {
+  if (await cacheFile.exists()) {
+    final bytes = await cacheFile.readAsBytes();
+    // With a known size, reject a suspiciously short (interrupted)
+    // cache file; otherwise just require it to be non-empty.
+    final usable =
+        expectedSize == null
+            ? bytes.isNotEmpty
+            : bytes.lengthInBytes >= expectedSize * 0.95;
+    if (usable) {
+      onChunk(bytes.lengthInBytes);
       return bytes;
     }
-    // Suspiciously short → re-download.
-    await cached.delete();
+    await cacheFile.delete();
   }
 
   final client = http.Client();
   try {
-    final request = http.Request('GET', Uri.parse(test.url));
-    final response = await client.send(request);
+    final response = await client.send(http.Request('GET', Uri.parse(url)));
     if (response.statusCode != 200) {
-      throw HttpException('GET ${test.url} returned ${response.statusCode}');
+      throw HttpException('GET $url returned ${response.statusCode}');
     }
-    final total = response.contentLength;
-    final sink = cached.openWrite();
-    var received = 0;
+    final sink = cacheFile.openWrite();
     try {
       await for (final chunk in response.stream) {
         sink.add(chunk);
-        received += chunk.length;
-        onProgress(received, total);
+        onChunk(chunk.length);
       }
     } finally {
       await sink.close();
     }
-    return cached.readAsBytes();
+    return cacheFile.readAsBytes();
   } finally {
     client.close();
   }

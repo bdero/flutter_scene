@@ -311,6 +311,31 @@ base class Node implements SceneGraph {
     );
   }
 
+  /// Load a multi-file glTF model from the raw bytes of its `.gltf`
+  /// (JSON) file.
+  ///
+  /// Multi-file glTF keeps its geometry buffer and images in separate
+  /// files referenced by relative URI. [resolveUri] fetches each of
+  /// those resources by URI — for example downloading them relative to
+  /// the `.gltf`'s own URL, or reading sibling files from disk.
+  /// `data:` URIs are decoded internally and never reach [resolveUri].
+  ///
+  /// For single-file `.glb` models use [fromGlbBytes] instead.
+  ///
+  /// Example:
+  /// ```dart
+  /// final node = await Node.fromGltfBytes(
+  ///   gltfJsonBytes,
+  ///   resolveUri: (uri) => fetchBytes('$baseUrl/$uri'),
+  /// );
+  /// ```
+  static Future<Node> fromGltfBytes(
+    Uint8List gltfJson, {
+    required GltfResourceResolver resolveUri,
+  }) {
+    return importGltf(gltfJson, resolveUri: resolveUri);
+  }
+
   /// Deserialize a model from Flutter Scene's compact model format.
   ///
   /// If you're using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer),

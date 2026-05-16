@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
@@ -9,9 +11,12 @@ import '../node.dart';
 import '../skin.dart';
 import 'animation_builder.dart';
 import 'geometry_builder.dart';
+import 'gltf_resources.dart';
 import 'material_builder.dart';
 import 'skin_builder.dart';
 import 'texture_builder.dart';
+
+export 'gltf_resources.dart' show GltfResourceResolver;
 
 /// Parse a GLB byte stream into a [Node] tree.
 ///
@@ -21,12 +26,48 @@ import 'texture_builder.dart';
 Future<Node> importGlb(Uint8List bytes) async {
   final container = parseGlb(bytes);
   final doc = parseGltfJson(container.json);
+  final bufferData = await _resolveBufferData(
+    doc,
+    glbBinaryChunk: container.binaryChunk,
+    resolveUri: null,
+  );
+  return _buildScene(doc, bufferData, null);
+}
 
-  final bufferData = _resolveBufferData(doc, container.binaryChunk);
+/// Parse a multi-file glTF document into a [Node] tree.
+///
+/// [gltfJson] is the raw bytes of the `.gltf` file. [resolveUri] fetches
+/// each external resource (the `.bin` buffer and image files) the
+/// document references by relative URI; `data:` URIs are decoded
+/// internally and never reach the resolver.
+Future<Node> importGltf(
+  Uint8List gltfJson, {
+  required GltfResourceResolver resolveUri,
+}) async {
+  final json = jsonDecode(utf8.decode(gltfJson)) as Map<String, Object?>;
+  final doc = parseGltfJson(json);
+  final bufferData = await _resolveBufferData(
+    doc,
+    glbBinaryChunk: Uint8List(0),
+    resolveUri: resolveUri,
+  );
+  return _buildScene(doc, bufferData, resolveUri);
+}
 
+/// Builds the [Node] tree from a parsed document and its resolved
+/// buffer. Shared by the GLB and multi-file glTF entry points.
+Future<Node> _buildScene(
+  GltfDocument doc,
+  Uint8List bufferData,
+  GltfResourceResolver? resolveUri,
+) async {
   // Decode all textures up front so material construction can reference
   // them by index without per-material async work.
-  final List<gpu.Texture> textures = await buildTextures(doc, bufferData);
+  final List<gpu.Texture> textures = await buildTextures(
+    doc,
+    bufferData,
+    resolveUri: resolveUri,
+  );
 
   // Pre-allocate engine Node placeholders 1:1 with glTF nodes so children
   // can refer to them by index regardless of the order we visit them in.
@@ -167,22 +208,33 @@ Matrix4 _localTransformFor(GltfNode n) {
 
 /// Returns the binary buffer that backs the document's bufferViews.
 ///
-/// For GLB, the implicit "buffer 0" is the embedded BIN chunk. External buffer
-/// references (data URIs or relative URIs) are not yet supported — they're
-/// part of the .gltf (text) loader path planned as a follow-up.
-Uint8List _resolveBufferData(GltfDocument doc, Uint8List glbBinaryChunk) {
+/// For GLB the implicit "buffer 0" is the embedded BIN chunk. For
+/// multi-file glTF the single buffer is resolved from its URI: a
+/// `data:` URI is decoded inline, an external URI goes through
+/// [resolveUri]. glTF documents with more than one buffer are not yet
+/// supported (none of the engine's target assets need it).
+Future<Uint8List> _resolveBufferData(
+  GltfDocument doc, {
+  required Uint8List glbBinaryChunk,
+  required GltfResourceResolver? resolveUri,
+}) async {
   if (doc.buffers.isEmpty) {
     return glbBinaryChunk;
   }
   if (doc.buffers.length > 1) {
     throw const FormatException(
-      'GLB with multiple buffers is not yet supported by the runtime importer',
+      'glTF with multiple buffers is not yet supported by the runtime '
+      'importer',
     );
   }
-  final b = doc.buffers.first;
-  if (b.uri == null) return glbBinaryChunk; // GLB embedded buffer
-  throw FormatException(
-    'GLB references external buffer URI "${b.uri}". External buffers are not '
-    'yet supported by the runtime importer.',
-  );
+  final uri = doc.buffers.first.uri;
+  if (uri == null) return glbBinaryChunk; // GLB embedded buffer.
+  if (uri.startsWith('data:')) return decodeGltfDataUri(uri);
+  if (resolveUri == null) {
+    throw FormatException(
+      'glTF references external buffer "$uri" but no resource resolver was '
+      'provided. Use importGltf / Node.fromGltfBytes for multi-file glTF.',
+    );
+  }
+  return resolveUri(uri);
 }
