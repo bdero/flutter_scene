@@ -119,40 +119,26 @@ base class Skin {
     }
 
     for (int jointIndex = 0; jointIndex < joints.length; jointIndex++) {
-      Node? joint = joints[jointIndex];
+      final Node? joint = joints[jointIndex];
+      // A null joint (Node.clone couldn't relocate it) keeps the
+      // pre-initialized identity slot.
+      if (joint == null) continue;
 
-      // Compute a model space matrix for the joint by walking up the bones to the
-      // skeleton root.
-      final floatOffset = jointIndex * 16;
-      while (joint != null && joint.isJoint) {
-        final Matrix4 matrix =
-            joint.localTransform *
-            Matrix4.fromFloat32List(
-              jointMatrixFloats.sublist(floatOffset, floatOffset + 16),
-            );
-
-        jointMatrixFloats.setRange(
-          floatOffset,
-          floatOffset + 16,
-          matrix.storage,
-        );
-
-        joint = joint.parent;
-      }
-
-      // Get the joint transform relative to the default pose of the bone by
-      // incorporating the joint's inverse bind matrix. The inverse bind matrix
-      // transforms from model space to the default pose space of the joint. The
-      // result is a model space matrix that only captures the difference between
-      // the joint's default pose and the joint's current pose in the scene. This
-      // is necessary because the skinned model's vertex positions (which _define_
-      // the default pose) are all in model space.
+      // glTF skinning: the joint matrix is the joint's full global
+      // transform times its inverse bind matrix. globalTransform walks
+      // every ancestor, so transforms on non-joint nodes between the
+      // joints and the scene root (e.g. a skeleton root carrying the
+      // model's Z-up-to-Y-up correction) are included, as is the
+      // scene-root flip. The inverse bind matrix takes a vertex from
+      // model space into the joint's rest-pose space; the global
+      // transform then places it by the joint's current pose.
+      //
+      // The shader applies this matrix directly, so the mesh node's own
+      // transform must not be applied again -- SkinnedGeometry.bind
+      // passes an identity model transform.
       final Matrix4 matrix =
-          Matrix4.fromFloat32List(
-            jointMatrixFloats.sublist(floatOffset, floatOffset + 16),
-          ) *
-          inverseBindMatrices[jointIndex];
-
+          joint.globalTransform * inverseBindMatrices[jointIndex];
+      final floatOffset = jointIndex * 16;
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }
 

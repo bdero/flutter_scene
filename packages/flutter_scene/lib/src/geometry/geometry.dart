@@ -469,25 +469,32 @@ class SkinnedGeometry extends Geometry {
       pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
     }
 
-    // Skinned vertex UBO.
+    // Skinned vertex UBO. The model transform is identity on purpose:
+    // the joint matrices from Skin.getJointsTexture are already full
+    // global transforms (including the scene-root flip), so the shader
+    // applies them directly. Passing the mesh node's own transform here
+    // would double-apply it (and glTF requires a skinned mesh node's
+    // transform to be ignored). `modelTransform` is unused for skinned
+    // geometry as a result.
+    final identityTransform = vm.Matrix4.identity();
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([
-      modelTransform.storage[0],
-      modelTransform.storage[1],
-      modelTransform.storage[2],
-      modelTransform.storage[3],
-      modelTransform.storage[4],
-      modelTransform.storage[5],
-      modelTransform.storage[6],
-      modelTransform.storage[7],
-      modelTransform.storage[8],
-      modelTransform.storage[9],
-      modelTransform.storage[10],
-      modelTransform.storage[11],
-      modelTransform.storage[12],
-      modelTransform.storage[13],
-      modelTransform.storage[14],
-      modelTransform.storage[15],
+      identityTransform.storage[0],
+      identityTransform.storage[1],
+      identityTransform.storage[2],
+      identityTransform.storage[3],
+      identityTransform.storage[4],
+      identityTransform.storage[5],
+      identityTransform.storage[6],
+      identityTransform.storage[7],
+      identityTransform.storage[8],
+      identityTransform.storage[9],
+      identityTransform.storage[10],
+      identityTransform.storage[11],
+      identityTransform.storage[12],
+      identityTransform.storage[13],
+      identityTransform.storage[14],
+      identityTransform.storage[15],
       cameraTransform.storage[0],
       cameraTransform.storage[1],
       cameraTransform.storage[2],
