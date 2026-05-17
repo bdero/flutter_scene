@@ -105,40 +105,59 @@ class RenderScene {
 
   Bvh _bvh = Bvh.build([]);
   final List<RenderItem> _alwaysVisible = [];
-  bool _bvhDirty = true;
+
+  // The BVH needs a full rebuild: an item was added or removed, or an
+  // item's BVH membership changed.
+  bool _structureDirty = true;
+
+  // A bounded item moved; the BVH can refit instead of rebuilding.
+  bool _boundsDirty = false;
 
   void add(RenderItem item) {
     items.add(item);
-    _bvhDirty = true;
+    _structureDirty = true;
   }
 
   void remove(RenderItem item) {
     items.remove(item);
-    _bvhDirty = true;
+    _structureDirty = true;
   }
 
-  /// Flags the spatial structure stale. Called by the components when an
-  /// item's world bounds or cull opt-in changed during the pre-pass.
-  void markBvhDirty() {
-    _bvhDirty = true;
+  /// Flags the BVH for a full rebuild. Called when an item's BVH
+  /// membership changed (its `frustumCulled` flag toggled, or it became
+  /// bounded or unbounded).
+  void markBvhStructureDirty() {
+    _structureDirty = true;
   }
 
-  /// Rebuilds the spatial structure when anything changed since the last
-  /// build. Call once per frame, after the pre-pass and before the
-  /// render passes.
+  /// Flags the BVH for a refit. Called when a bounded item moved but the
+  /// item set and membership are unchanged.
+  void markBvhBoundsDirty() {
+    _boundsDirty = true;
+  }
+
+  /// Brings the spatial structure up to date with the current items.
+  /// Call once per frame, after the pre-pass and before the render
+  /// passes. Rebuilds on a structural change, otherwise refits when an
+  /// item moved, otherwise does nothing.
   void rebuildIfDirty() {
-    if (!_bvhDirty) return;
-    _bvhDirty = false;
-    _alwaysVisible.clear();
-    final bounded = <RenderItem>[];
-    for (final item in items) {
-      if (item.frustumCulled && item.worldBounds != null) {
-        bounded.add(item);
-      } else {
-        _alwaysVisible.add(item);
+    if (_structureDirty) {
+      _structureDirty = false;
+      _boundsDirty = false;
+      _alwaysVisible.clear();
+      final bounded = <RenderItem>[];
+      for (final item in items) {
+        if (item.frustumCulled && item.worldBounds != null) {
+          bounded.add(item);
+        } else {
+          _alwaysVisible.add(item);
+        }
       }
+      _bvh = Bvh.build(bounded);
+    } else if (_boundsDirty) {
+      _boundsDirty = false;
+      _bvh.refit();
     }
-    _bvh = Bvh.build(bounded);
   }
 
   /// Visits every item potentially visible to [frustum]: the bounded

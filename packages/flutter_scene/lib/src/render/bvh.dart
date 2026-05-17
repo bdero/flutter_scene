@@ -44,6 +44,31 @@ class Bvh {
     _query(node.right, frustum, visit);
   }
 
+  /// Recomputes every node's AABB from the leaves' current
+  /// [RenderItem.worldBounds] without changing the tree topology.
+  ///
+  /// Valid only while the item set and each leaf's item are unchanged
+  /// since the build; a moved item is fine, an added or removed one
+  /// needs a rebuild. Cheaper than a rebuild (O(n), no sort), but tree
+  /// quality degrades as items drift from their build-time grouping.
+  void refit() {
+    _refit(_root);
+  }
+
+  static void _refit(_BvhNode? node) {
+    if (node == null) return;
+    final item = node.item;
+    if (item != null) {
+      node.bounds.copyFrom(item.worldBounds!);
+      return;
+    }
+    _refit(node.left);
+    _refit(node.right);
+    node.bounds
+      ..copyFrom(node.left!.bounds)
+      ..hull(node.right!.bounds);
+  }
+
   static _BvhNode _buildNode(List<_Entry> entries) {
     // Node bounds: the hull of every item in the set.
     final bounds = Aabb3.copy(entries.first.item.worldBounds!);

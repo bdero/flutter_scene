@@ -93,9 +93,18 @@ class MeshComponent extends Component {
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.worldTransform.setFrom(worldTransform);
+
+      final wasBounded = item.worldBounds != null;
       final boundsChanged = item.refreshWorldBounds();
-      if (frustumCulledChanged || boundsChanged) {
-        renderScene?.markBvhDirty();
+      final isBounded = item.worldBounds != null;
+
+      // A toggled cull flag or a bounded/unbounded transition changes the
+      // BVH membership and needs a rebuild; a plain move only needs a
+      // refit.
+      if (frustumCulledChanged || wasBounded != isBounded) {
+        renderScene?.markBvhStructureDirty();
+      } else if (boundsChanged && item.frustumCulled) {
+        renderScene?.markBvhBoundsDirty();
       }
     }
   }
