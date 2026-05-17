@@ -27,6 +27,8 @@ export 'src/geometry/mesh_geometry.dart'
     show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'
     show CuboidGeometry, PlaneGeometry, SphereGeometry;
+export 'src/geometry/polyline_geometry.dart'
+    show PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'
     show ExtrudeGeometry, RibbonAlignment, RibbonGeometry, TubeGeometry;
 
