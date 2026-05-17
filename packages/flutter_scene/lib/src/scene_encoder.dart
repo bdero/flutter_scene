@@ -9,11 +9,32 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
+/// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
+/// resolved pipeline, a per-pipeline grouping key, and the camera
+/// distance, all captured when [SceneEncoder.submit] is called.
+base class _OpaqueRecord {
+  _OpaqueRecord(this.item, this.pipeline, this.pipelineKey, this.depth);
+  final RenderItem item;
+  final gpu.RenderPipeline pipeline;
+  final int pipelineKey;
+  final double depth;
+}
+
+/// A deferred translucent draw. An instanced translucent item produces
+/// one record per instance, so each carries its own world transform.
 base class _TranslucentRecord {
-  _TranslucentRecord(this.worldTransform, this.geometry, this.material);
+  _TranslucentRecord(
+    this.worldTransform,
+    this.geometry,
+    this.material,
+    this.pipeline,
+    this.depth,
+  );
   final Matrix4 worldTransform;
   final Geometry geometry;
   final Material material;
+  final gpu.RenderPipeline pipeline;
+  final double depth;
 }
 
 /// Render pipelines keyed by their (vertex, fragment) shader pair.
@@ -37,15 +58,16 @@ gpu.RenderPipeline _resolvePipeline(
 ///
 /// A render-graph pass (see `ScenePass`) creates a `gpu.RenderPass`,
 /// constructs an encoder against it, calls [submit] for every
-/// [RenderItem] in the scene's flat render list, then calls
-/// [flushTranslucent] to emit the deferred translucent draws.
+/// [RenderItem] the scene's spatial structure reports visible, then calls
+/// [flush] to sort and emit the deferred draws.
 ///
 /// The encoder splits draws into two phases within the one render pass:
 ///
 /// 1. **Opaque**, with depth writes enabled and color blending disabled,
-///    drawn in submission order as [submit] is called.
-/// 2. **Translucent**, deferred and depth-sorted back to front from the
-///    camera, drawn with premultiplied source-over blending.
+///    sorted by pipeline (to reduce state changes) and then front-to-back
+///    (so the depth test can reject occluded fragments early).
+/// 2. **Translucent**, depth-sorted back to front from the camera, drawn
+///    with premultiplied source-over blending.
 ///
 /// Applications typically do not construct `SceneEncoder` directly;
 /// custom [Geometry] or [Material] subclasses interact with it through
@@ -81,6 +103,7 @@ base class SceneEncoder {
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
+  final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
 
   /// View frustum derived from the camera's view-projection matrix at
@@ -92,13 +115,12 @@ base class SceneEncoder {
   /// [Aabb3] for every item, every frame.
   final Aabb3 cullScratchAabb = Aabb3();
 
-  /// Records a draw call for [item], unless it is hidden or frustum
+  /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
   ///
-  /// Opaque items are encoded immediately into the active render pass.
-  /// Translucent items (where [Material.isOpaque] returns `false`) are
-  /// queued and re-emitted in [flushTranslucent] after a back-to-front
-  /// depth sort.
+  /// Both opaque and translucent draws are deferred; [flush] sorts and
+  /// emits them. A translucent instanced item is queued as one draw per
+  /// instance so each can be depth-sorted independently.
   void submit(RenderItem item) {
     if (!item.visible) return;
     if (item.frustumCulled) {
@@ -111,48 +133,63 @@ base class SceneEncoder {
       }
     }
 
+    final pipeline = _resolvePipeline(
+      item.geometry.vertexShader,
+      item.material.fragmentShader,
+    );
+
+    if (item.material.isOpaque()) {
+      _opaqueRecords.add(
+        _OpaqueRecord(
+          item,
+          pipeline,
+          identityHashCode(pipeline),
+          _depthOf(item.worldTransform),
+        ),
+      );
+      return;
+    }
+
+    // Translucent. Instanced items are exploded into one record per
+    // instance, like any other translucent draw.
     final instances = item.instanceTransforms;
     if (instances != null) {
-      if (item.material.isOpaque()) {
-        _encodeInstanced(
+      for (final instanceTransform in instances) {
+        final worldTransform = item.worldTransform * instanceTransform;
+        _translucentRecords.add(
+          _TranslucentRecord(
+            worldTransform,
+            item.geometry,
+            item.material,
+            pipeline,
+            _depthOf(worldTransform),
+          ),
+        );
+      }
+    } else {
+      _translucentRecords.add(
+        _TranslucentRecord(
           item.worldTransform,
           item.geometry,
           item.material,
-          instances,
-        );
-      } else {
-        // Translucent instances are depth-sorted individually, like any
-        // other translucent draw.
-        for (final instanceTransform in instances) {
-          _translucentRecords.add(
-            _TranslucentRecord(
-              item.worldTransform * instanceTransform,
-              item.geometry,
-              item.material,
-            ),
-          );
-        }
-      }
-      return;
+          pipeline,
+          _depthOf(item.worldTransform),
+        ),
+      );
     }
-
-    if (item.material.isOpaque()) {
-      _encode(item.worldTransform, item.geometry, item.material);
-      return;
-    }
-    _translucentRecords.add(
-      _TranslucentRecord(item.worldTransform, item.geometry, item.material),
-    );
   }
 
-  void _encode(Matrix4 worldTransform, Geometry geometry, Material material) {
-    _renderPass.clearBindings();
-    final pipeline = _resolvePipeline(
-      geometry.vertexShader,
-      material.fragmentShader,
-    );
-    _renderPass.bindPipeline(pipeline);
+  double _depthOf(Matrix4 worldTransform) =>
+      worldTransform.getTranslation().distanceTo(_camera.position);
 
+  void _encode(
+    gpu.RenderPipeline pipeline,
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+  ) {
+    _renderPass.clearBindings();
+    _renderPass.bindPipeline(pipeline);
     geometry.bind(
       _renderPass,
       _transientsBuffer,
@@ -164,20 +201,17 @@ base class SceneEncoder {
     _renderPass.draw();
   }
 
-  /// Draws an opaque instanced item: resolves the pipeline and binds the
-  /// material once, then re-binds only the geometry (with each instance's
-  /// world transform) and draws, once per instance.
+  /// Draws an opaque instanced item: binds the pipeline and the material
+  /// once, then re-binds only the geometry (with each instance's world
+  /// transform) and draws, once per instance.
   void _encodeInstanced(
+    gpu.RenderPipeline pipeline,
     Matrix4 nodeTransform,
     Geometry geometry,
     Material material,
     List<Matrix4> instances,
   ) {
     _renderPass.clearBindings();
-    final pipeline = _resolvePipeline(
-      geometry.vertexShader,
-      material.fragmentShader,
-    );
     _renderPass.bindPipeline(pipeline);
     material.bind(_renderPass, _transientsBuffer, _lighting);
     for (final instanceTransform in instances) {
@@ -192,23 +226,43 @@ base class SceneEncoder {
     }
   }
 
-  /// Emits the deferred translucent draws and finishes recording.
+  /// Sorts and emits every deferred draw, then finishes recording.
   ///
-  /// Translucent records are sorted back-to-front by translation distance
-  /// to the camera, then drawn with premultiplied source-over blending
-  /// and depth writes disabled. After this returns the encoder has
-  /// finished recording into its render pass; the caller is responsible
-  /// for submitting the owning command buffer.
-  void flushTranslucent() {
-    _translucentRecords.sort((a, b) {
-      var aDistance = a.worldTransform.getTranslation().distanceTo(
-        _camera.position,
-      );
-      var bDistance = b.worldTransform.getTranslation().distanceTo(
-        _camera.position,
-      );
-      return bDistance.compareTo(aDistance);
+  /// Opaque draws are sorted by pipeline (state-change grouping) and then
+  /// front-to-back (early-Z), and drawn first. Translucent draws are then
+  /// sorted back-to-front and drawn with premultiplied source-over
+  /// blending and depth writes disabled. After this returns the encoder
+  /// has finished recording into its render pass; the caller submits the
+  /// owning command buffer.
+  void flush() {
+    _opaqueRecords.sort((a, b) {
+      final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
+      if (byPipeline != 0) return byPipeline;
+      return a.depth.compareTo(b.depth);
     });
+    for (final record in _opaqueRecords) {
+      final item = record.item;
+      final instances = item.instanceTransforms;
+      if (instances != null) {
+        _encodeInstanced(
+          record.pipeline,
+          item.worldTransform,
+          item.geometry,
+          item.material,
+          instances,
+        );
+      } else {
+        _encode(
+          record.pipeline,
+          item.worldTransform,
+          item.geometry,
+          item.material,
+        );
+      }
+    }
+    _opaqueRecords.clear();
+
+    _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
     // Premultiplied source-over blending.
@@ -223,8 +277,13 @@ base class SceneEncoder {
         destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
       ),
     );
-    for (var record in _translucentRecords) {
-      _encode(record.worldTransform, record.geometry, record.material);
+    for (final record in _translucentRecords) {
+      _encode(
+        record.pipeline,
+        record.worldTransform,
+        record.geometry,
+        record.material,
+      );
     }
     _translucentRecords.clear();
   }

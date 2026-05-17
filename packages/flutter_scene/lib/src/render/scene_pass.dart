@@ -121,7 +121,7 @@ class ScenePass extends RenderGraphPass {
       lighting,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
-    encoder.flushTranslucent();
+    encoder.flush();
     commandBuffer.submit();
 
     context.blackboard.set(kHdrColorBlackboardKey, hdrColor);
