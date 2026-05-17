@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
@@ -221,4 +222,202 @@ class MeshAccumulator {
     texCoords: Float32List.fromList(_texCoords),
     indices: _indices,
   );
+}
+
+/// A round cross-section of constant radius swept along a [ScenePath].
+///
+/// Useful for a 3D route tube or pipe. Texture coordinates run `0..1`
+/// around the circumference and by arc-length distance along the path.
+class TubeGeometry extends MeshGeometry {
+  /// Sweeps a tube of the given [radius] along [path].
+  ///
+  /// [radialSegments] sets how many faces wrap the circumference and
+  /// [stations] how many cross-sections run along the path. With [caps]
+  /// the two ends are closed by a disk. Pass [GeometryStorage.updatable]
+  /// to allow [updatePath].
+  factory TubeGeometry(
+    ScenePath path, {
+    double radius = 0.5,
+    int radialSegments = 12,
+    int stations = 64,
+    bool caps = true,
+    GeometryStorage storage = GeometryStorage.fixed,
+  }) {
+    return TubeGeometry._(
+      radius,
+      radialSegments,
+      stations,
+      caps,
+      buildTubeArrays(
+        path,
+        radius: radius,
+        radialSegments: radialSegments,
+        stations: stations,
+        caps: caps,
+      ),
+      storage,
+    );
+  }
+
+  TubeGeometry._(
+    this._radius,
+    this._radialSegments,
+    this._stations,
+    this._caps,
+    SweptArrays arrays,
+    GeometryStorage storage,
+  ) : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+        storage: storage,
+      );
+
+  final double _radius;
+  final int _radialSegments;
+  final int _stations;
+  final bool _caps;
+
+  /// Re-sweeps the tube along [path], reusing the GPU buffers.
+  ///
+  /// The radius, tessellation, and caps are unchanged, so the topology
+  /// is stable. Requires [GeometryStorage.updatable].
+  void updatePath(ScenePath path) {
+    final arrays = buildTubeArrays(
+      path,
+      radius: _radius,
+      radialSegments: _radialSegments,
+      stations: _stations,
+      caps: _caps,
+    );
+    updatePositions(arrays.positions);
+    updateNormals(arrays.normals);
+    updateTexCoords(arrays.texCoords);
+  }
+}
+
+/// Generates the vertex arrays for a [TubeGeometry].
+SweptArrays buildTubeArrays(
+  ScenePath path, {
+  required double radius,
+  required int radialSegments,
+  required int stations,
+  required bool caps,
+}) {
+  if (stations < 2) {
+    throw ArgumentError.value(stations, 'stations', 'must be at least two');
+  }
+  if (radialSegments < 3) {
+    throw ArgumentError.value(
+      radialSegments,
+      'radialSegments',
+      'must be at least three',
+    );
+  }
+  final frames = evenlySpacedFrames(path, stations);
+  final length = path.length;
+  final accumulator = MeshAccumulator();
+  final ringBases = <int>[];
+
+  for (var i = 0; i < stations; i++) {
+    final frame = frames[i];
+    final v = length * i / (stations - 1);
+    ringBases.add(accumulator.vertexCount);
+    // One extra vertex closes the loop so the texture seam is clean.
+    for (var k = 0; k <= radialSegments; k++) {
+      final theta = 2 * math.pi * k / radialSegments;
+      final radial =
+          frame.normal * math.cos(theta) + frame.binormal * math.sin(theta);
+      accumulator.addVertex(
+        frame.position + radial * radius,
+        radial,
+        k / radialSegments,
+        v,
+      );
+    }
+  }
+
+  stitchRings(accumulator, ringBases, radialSegments + 1);
+
+  if (caps) {
+    _addDiskCap(
+      accumulator,
+      frames.first,
+      radius,
+      radialSegments,
+      atEnd: false,
+    );
+    _addDiskCap(accumulator, frames.last, radius, radialSegments, atEnd: true);
+  }
+  return accumulator.toArrays();
+}
+
+// Closes one end of a tube with a fan of triangles.
+void _addDiskCap(
+  MeshAccumulator accumulator,
+  ScenePathFrame frame,
+  double radius,
+  int radialSegments, {
+  required bool atEnd,
+}) {
+  final ringPositions = <Vector3>[];
+  final ringTexCoords = <Vector2>[];
+  for (var k = 0; k < radialSegments; k++) {
+    final theta = 2 * math.pi * k / radialSegments;
+    final radial =
+        frame.normal * math.cos(theta) + frame.binormal * math.sin(theta);
+    ringPositions.add(frame.position + radial * radius);
+    ringTexCoords.add(
+      Vector2(0.5 + 0.5 * math.cos(theta), 0.5 + 0.5 * math.sin(theta)),
+    );
+  }
+  addFanCap(
+    accumulator,
+    center: frame.position,
+    normal: atEnd ? frame.tangent : -frame.tangent,
+    ringPositions: ringPositions,
+    ringTexCoords: ringTexCoords,
+    centerTexCoord: Vector2(0.5, 0.5),
+    reverseWinding: !atEnd,
+  );
+}
+
+/// Adds a triangle fan that closes a cross-section ring.
+///
+/// The fan runs from [center] to each vertex of [ringPositions], which
+/// must be ordered around the ring. Every vertex takes the cap [normal].
+void addFanCap(
+  MeshAccumulator accumulator, {
+  required Vector3 center,
+  required Vector3 normal,
+  required List<Vector3> ringPositions,
+  required List<Vector2> ringTexCoords,
+  required Vector2 centerTexCoord,
+  required bool reverseWinding,
+}) {
+  final count = ringPositions.length;
+  final centerIndex = accumulator.addVertex(
+    center,
+    normal,
+    centerTexCoord.x,
+    centerTexCoord.y,
+  );
+  final ringIndices = <int>[
+    for (var k = 0; k < count; k++)
+      accumulator.addVertex(
+        ringPositions[k],
+        normal,
+        ringTexCoords[k].x,
+        ringTexCoords[k].y,
+      ),
+  ];
+  for (var k = 0; k < count; k++) {
+    final next = (k + 1) % count;
+    if (reverseWinding) {
+      accumulator.addTriangle(centerIndex, ringIndices[next], ringIndices[k]);
+    } else {
+      accumulator.addTriangle(centerIndex, ringIndices[k], ringIndices[next]);
+    }
+  }
 }
