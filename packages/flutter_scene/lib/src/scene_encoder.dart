@@ -213,6 +213,7 @@ base class SceneEncoder {
       _camera.position,
     );
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    _renderPass.setPrimitiveType(geometry.primitiveType);
     _renderPass.draw();
   }
 
@@ -229,6 +230,7 @@ base class SceneEncoder {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    _renderPass.setPrimitiveType(geometry.primitiveType);
     for (final instanceTransform in instances) {
       geometry.bind(
         _renderPass,

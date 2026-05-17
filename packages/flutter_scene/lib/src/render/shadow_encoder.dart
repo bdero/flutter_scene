@@ -63,6 +63,7 @@ class ShadowEncoder {
       _depthShader,
     );
     _renderPass.bindPipeline(pipeline);
+    _renderPass.setPrimitiveType(item.geometry.primitiveType);
 
     final instances = item.instanceTransforms;
     if (instances != null) {

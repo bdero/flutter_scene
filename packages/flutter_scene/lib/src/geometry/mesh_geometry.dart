@@ -27,16 +27,21 @@ class MeshGeometry extends UnskinnedGeometry {
   /// attributes fall back to defaults: texture coordinate `(0, 0)` and
   /// color opaque white.
   ///
-  /// When [normals] is omitted, area-weighted vertex normals are
-  /// generated from the triangle faces. [indices], when supplied, is a
-  /// triangle list; when omitted the mesh is a non-indexed triangle list
-  /// and the vertex count must be a multiple of three.
+  /// When [normals] is omitted and [primitiveType] is a triangle list,
+  /// area-weighted vertex normals are generated from the faces; for line
+  /// and point primitives, absent normals keep their default. [indices],
+  /// when supplied, is an index list; when omitted a triangle mesh must
+  /// have a vertex count that is a multiple of three.
+  ///
+  /// [primitiveType] selects how the vertex/index data is assembled into
+  /// primitives when drawn, and defaults to a triangle list.
   MeshGeometry.fromArrays({
     required Float32List positions,
     Float32List? normals,
     Float32List? texCoords,
     Float32List? colors,
     List<int>? indices,
+    gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
   }) {
     if (positions.length % 3 != 0) {
       throw ArgumentError(
@@ -45,14 +50,19 @@ class MeshGeometry extends UnskinnedGeometry {
       );
     }
     final vertexCount = positions.length ~/ 3;
+    this.primitiveType = primitiveType;
 
+    // Normals are generated from triangle faces; line and point
+    // geometry has none, so absent normals are left at their default.
     final resolvedNormals =
         normals ??
-        InterleavedLayoutAdapter.generateNormals(
-          positions: positions,
-          vertexCount: vertexCount,
-          indices: indices,
-        );
+        (primitiveType == gpu.PrimitiveType.triangle
+            ? InterleavedLayoutAdapter.generateNormals(
+              positions: positions,
+              vertexCount: vertexCount,
+              indices: indices,
+            )
+            : null);
 
     final vertexBytes = InterleavedLayoutAdapter.packUnskinned(
       positions: positions,

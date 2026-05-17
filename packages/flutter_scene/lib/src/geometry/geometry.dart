@@ -33,6 +33,15 @@ abstract class Geometry {
 
   gpu.Shader? _vertexShader;
 
+  /// How the vertex/index data is assembled into primitives when drawn.
+  ///
+  /// Defaults to [gpu.PrimitiveType.triangle]. Set it to
+  /// [gpu.PrimitiveType.lineStrip] or [gpu.PrimitiveType.line] for line
+  /// geometry, or [gpu.PrimitiveType.point] for a point list. Native
+  /// line and point primitives render at a fixed one-pixel size; thick
+  /// styled lines are built as triangle geometry instead.
+  gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle;
+
   vm.Aabb3? _localBounds;
   vm.Sphere? _localBoundingSphere;
 
