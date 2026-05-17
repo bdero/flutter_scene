@@ -45,13 +45,20 @@ base class Mesh {
 
   vm.Aabb3? _localBoundsCache;
   bool _localBoundsCached = false;
+  List<int>? _cachedBoundsVersions;
 
   /// Local-space union of every primitive's [Geometry.localBounds], or
-  /// `null` when no primitive has computable bounds. Cached; call
-  /// [markLocalBoundsDirty] after replacing a primitive's geometry or
-  /// mutating geometry that participates in the union.
+  /// `null` when no primitive has computable bounds.
+  ///
+  /// Cached. The cache refreshes itself when a primitive's geometry
+  /// reports a new [Geometry.localBoundsVersion], so an updatable
+  /// geometry that is mutated in place stays correct without an explicit
+  /// invalidation. Call [markLocalBoundsDirty] after replacing a
+  /// primitive's geometry.
   vm.Aabb3? get localBounds {
-    if (_localBoundsCached) return _localBoundsCache;
+    if (_localBoundsCached && _boundsVersionsUnchanged()) {
+      return _localBoundsCache;
+    }
     vm.Aabb3? result;
     for (final p in primitives) {
       final b = p.geometry.localBounds;
@@ -64,14 +71,30 @@ base class Mesh {
     }
     _localBoundsCache = result;
     _localBoundsCached = true;
+    _cachedBoundsVersions = <int>[
+      for (final p in primitives) p.geometry.localBoundsVersion,
+    ];
     return result;
   }
 
+  bool _boundsVersionsUnchanged() {
+    final snapshot = _cachedBoundsVersions;
+    if (snapshot == null || snapshot.length != primitives.length) {
+      return false;
+    }
+    for (var i = 0; i < primitives.length; i++) {
+      if (snapshot[i] != primitives[i].geometry.localBoundsVersion) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Invalidate the cached [localBounds]. Call this after replacing a
-  /// primitive's geometry or mutating geometry that participates in the
-  /// union.
+  /// primitive's geometry.
   void markLocalBoundsDirty() {
     _localBoundsCache = null;
     _localBoundsCached = false;
+    _cachedBoundsVersions = null;
   }
 }
