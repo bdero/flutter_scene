@@ -123,7 +123,9 @@ SweptArrays buildRibbonArrays(
     final Vector3 across;
     final Vector3 normal;
     if (alignment == RibbonAlignment.ground) {
-      var sideways = up.cross(frame.tangent);
+      // tangent cross up (not up cross tangent) so the strip is wound
+      // with its lit surface facing up, like the path-aligned branch.
+      var sideways = frame.tangent.cross(up);
       if (sideways.length2 < 1e-12) sideways = frame.binormal;
       across = sideways.normalized();
       normal = up.normalized();

@@ -4,10 +4,22 @@
 // uploads to the GPU and is exercised by the example app.
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
+
+// Right-hand-rule normal of a triangle. The engine treats the side
+// opposite this normal as the front face.
+Vector3 triangleNormal(Float32List positions, List<int> indices, int triangle) {
+  Vector3 at(int v) =>
+      Vector3(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
+  final a = at(indices[triangle * 3]);
+  final b = at(indices[triangle * 3 + 1]);
+  final c = at(indices[triangle * 3 + 2]);
+  return (b - a).cross(c - a);
+}
 
 void main() {
   group('buildCuboidArrays', () {
@@ -53,6 +65,20 @@ void main() {
       expect(
         () => buildPlaneArrays(width: 1, depth: 1, segmentsX: 0, segmentsZ: 1),
         throwsArgumentError,
+      );
+    });
+
+    test('triangles are wound so the surface faces +Y', () {
+      final arrays = buildPlaneArrays(
+        width: 2,
+        depth: 2,
+        segmentsX: 1,
+        segmentsZ: 1,
+      );
+      // A +Y-facing surface has a -Y geometric normal.
+      expect(
+        triangleNormal(arrays.positions, arrays.indices, 0).y,
+        lessThan(0),
       );
     });
   });

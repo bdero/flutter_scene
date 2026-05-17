@@ -186,10 +186,10 @@ PrimitiveArrays buildPlaneArrays({
       final v10 = v00 + 1;
       final v01 = v00 + columns;
       final v11 = v01 + 1;
-      // Wound counter-clockwise as seen from +Y.
+      // Wound so the lit surface faces +Y, toward a camera above.
       indices
-        ..addAll([v00, v01, v10])
-        ..addAll([v10, v01, v11]);
+        ..addAll([v00, v10, v01])
+        ..addAll([v10, v11, v01]);
     }
   }
 

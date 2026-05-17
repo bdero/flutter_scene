@@ -17,6 +17,21 @@ double _distance(Float32List positions, int a, int b) {
   return math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// Right-hand-rule normal of a triangle. The engine treats the side
+// opposite this normal as the front face.
+Vector3 _triangleNormal(
+  Float32List positions,
+  List<int> indices,
+  int triangle,
+) {
+  Vector3 at(int v) =>
+      Vector3(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
+  final a = at(indices[triangle * 3]);
+  final b = at(indices[triangle * 3 + 1]);
+  final c = at(indices[triangle * 3 + 2]);
+  return (b - a).cross(c - a);
+}
+
 void main() {
   group('evenlySpacedFrames', () {
     test('returns the requested count spaced by arc length', () {
@@ -101,6 +116,21 @@ void main() {
         up: Vector3(0, 1, 0),
       );
       expect(_distance(arrays.positions, 0, 1), closeTo(3, 1e-5));
+    });
+
+    test('a ground ribbon is wound so the surface faces +Y', () {
+      final arrays = buildRibbonArrays(
+        PolylinePath([Vector3(0, 0, 0), Vector3(10, 0, 0)]),
+        width: 2,
+        stations: 2,
+        alignment: RibbonAlignment.ground,
+        up: Vector3(0, 1, 0),
+      );
+      // A +Y-facing surface has a -Y geometric normal.
+      expect(
+        _triangleNormal(arrays.positions, arrays.indices, 0).y,
+        lessThan(0),
+      );
     });
   });
 
