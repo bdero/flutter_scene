@@ -153,6 +153,13 @@ base class Scene implements SceneGraph {
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
+  /// Transient-uniform allocator, created once and reused every frame.
+  ///
+  /// A [gpu.HostBuffer] cycles through several frames of backing storage on
+  /// `reset()`, so one instance is meant to live for the scene's lifetime
+  /// rather than being recreated per frame.
+  gpu.HostBuffer? _transientsBuffer;
+
   /// The image-based-lighting environment, or null to use the engine's
   /// default (the built-in procedural [EnvironmentMap.studio], built
   /// lazily on first render).
@@ -267,7 +274,11 @@ base class Scene implements SceneGraph {
     // thread only after the first frame.
     final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
 
-    final transientsBuffer = gpu.gpuContext.createHostBuffer();
+    // Reuse one host buffer across frames; reset() cycles it to the next
+    // frame's backing storage.
+    final transientsBuffer =
+        _transientsBuffer ??= gpu.gpuContext.createHostBuffer();
+    transientsBuffer.reset();
 
     final light = directionalLight;
     final castsShadow = light != null && light.castsShadow;
