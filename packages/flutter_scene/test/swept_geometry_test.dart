@@ -173,4 +173,67 @@ void main() {
       }
     });
   });
+
+  group('buildExtrudeArrays', () {
+    final square = [
+      Vector2(-1, -1),
+      Vector2(1, -1),
+      Vector2(1, 1),
+      Vector2(-1, 1),
+    ];
+
+    SweptArrays extrude({required bool caps}) => buildExtrudeArrays(
+      PolylinePath([Vector3(0, 0, 0), Vector3(10, 0, 0)]),
+      profile: square,
+      stations: 3,
+      caps: caps,
+    );
+
+    test('rejects a profile with fewer than three points', () {
+      final path = PolylinePath([Vector3(0, 0, 0), Vector3(1, 0, 0)]);
+      expect(
+        () => buildExtrudeArrays(
+          path,
+          profile: [Vector2(0, 0), Vector2(1, 0)],
+          stations: 2,
+          caps: false,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects fewer than two stations', () {
+      final path = PolylinePath([Vector3(0, 0, 0), Vector3(1, 0, 0)]);
+      expect(
+        () =>
+            buildExtrudeArrays(path, profile: square, stations: 1, caps: false),
+        throwsArgumentError,
+      );
+    });
+
+    test('side surface vertex and index counts follow the profile', () {
+      final arrays = extrude(caps: false);
+      // stations * (profilePoints + 1) vertices.
+      expect(arrays.positions, hasLength(3 * 5 * 3));
+      // (stations - 1) * profilePoints quads.
+      expect(arrays.indices, hasLength(2 * 4 * 6));
+    });
+
+    test('caps add a fan at each end', () {
+      final arrays = extrude(caps: true);
+      expect(arrays.positions, hasLength((3 * 5 + 2 * 5) * 3));
+      expect(arrays.indices, hasLength(2 * 4 * 6 + 2 * 4 * 3));
+    });
+
+    test('every normal is unit length', () {
+      final arrays = extrude(caps: true);
+      final count = arrays.normals.length ~/ 3;
+      for (var v = 0; v < count; v++) {
+        final nx = arrays.normals[v * 3];
+        final ny = arrays.normals[v * 3 + 1];
+        final nz = arrays.normals[v * 3 + 2];
+        expect(math.sqrt(nx * nx + ny * ny + nz * nz), closeTo(1, 1e-5));
+      }
+    });
+  });
 }
