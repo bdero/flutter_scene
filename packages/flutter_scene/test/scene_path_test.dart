@@ -107,4 +107,98 @@ void main() {
       _expectVector(path.frameAtDistance(2).position, Vector3(2, 0, 0));
     });
   });
+
+  group('CatmullRomPath', () {
+    test('rejects fewer than two points', () {
+      expect(() => CatmullRomPath([Vector3(0, 0, 0)]), throwsArgumentError);
+    });
+
+    test('passes through every control point', () {
+      final points = [
+        Vector3(0, 0, 0),
+        Vector3(1, 2, 0),
+        Vector3(3, 1, 1),
+        Vector3(4, 0, 0),
+      ];
+      final path = CatmullRomPath(points);
+      for (var i = 0; i < points.length; i++) {
+        _expectVector(path.positionAt(i / (points.length - 1)), points[i]);
+      }
+    });
+
+    test('an interior segment of collinear points stays straight', () {
+      final path = CatmullRomPath([
+        Vector3(0, 0, 0),
+        Vector3(1, 0, 0),
+        Vector3(2, 0, 0),
+        Vector3(3, 0, 0),
+      ]);
+      // Midpoint of the segment between points 1 and 2.
+      _expectVector(path.positionAt(0.5), Vector3(1.5, 0, 0));
+    });
+
+    test('length is at least the endpoint chord', () {
+      final path = CatmullRomPath([
+        Vector3(0, 0, 0),
+        Vector3(2, 3, 0),
+        Vector3(6, 0, 0),
+      ]);
+      expect(path.length, greaterThanOrEqualTo(6 - 1e-6));
+    });
+  });
+
+  group('BezierPath', () {
+    test('rejects a control point count that is not 3n + 1', () {
+      expect(
+        () => BezierPath([Vector3(0, 0, 0), Vector3(1, 0, 0)]),
+        throwsArgumentError,
+      );
+      expect(
+        () => BezierPath([
+          Vector3(0, 0, 0),
+          Vector3(1, 0, 0),
+          Vector3(2, 0, 0),
+          Vector3(3, 0, 0),
+          Vector3(4, 0, 0),
+        ]),
+        throwsArgumentError,
+      );
+    });
+
+    test('spans the first and last control points', () {
+      final path = BezierPath([
+        Vector3(0, 0, 0),
+        Vector3(1, 2, 0),
+        Vector3(3, 2, 0),
+        Vector3(4, 0, 0),
+      ]);
+      _expectVector(path.positionAt(0), Vector3(0, 0, 0));
+      _expectVector(path.positionAt(1), Vector3(4, 0, 0));
+    });
+
+    test('evenly spaced collinear controls trace the straight line', () {
+      final path = BezierPath([
+        Vector3(0, 0, 0),
+        Vector3(1, 0, 0),
+        Vector3(2, 0, 0),
+        Vector3(3, 0, 0),
+      ]);
+      _expectVector(path.positionAt(0.5), Vector3(1.5, 0, 0));
+      _expectVector(path.tangentAt(0.5), Vector3(1, 0, 0));
+    });
+
+    test('joins two segments through the shared control point', () {
+      final path = BezierPath([
+        Vector3(0, 0, 0),
+        Vector3(1, 1, 0),
+        Vector3(2, 1, 0),
+        Vector3(3, 0, 0),
+        Vector3(4, -1, 0),
+        Vector3(5, -1, 0),
+        Vector3(6, 0, 0),
+      ]);
+      _expectVector(path.positionAt(0.5), Vector3(3, 0, 0));
+      _expectVector(path.positionAt(1), Vector3(6, 0, 0));
+    });
+  });
 }
