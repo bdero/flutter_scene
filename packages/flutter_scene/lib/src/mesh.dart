@@ -1,7 +1,5 @@
-import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
@@ -75,22 +73,5 @@ base class Mesh {
   void markLocalBoundsDirty() {
     _localBoundsCache = null;
     _localBoundsCached = false;
-  }
-
-  /// Draws the [Geometry] and [Material] data of each [MeshPrimitive] onto the screen.
-  ///
-  /// This method prepares the [Mesh] for rendering by passing its data to a [SceneDrawList].
-  /// For skinned meshes, which are typically used in animations,
-  /// the joint [gpu.Texture] data is also included to ensure proper rendering of animated features.
-  void render(
-    SceneDrawList encoder,
-    vm.Matrix4 worldTransform,
-    gpu.Texture? jointsTexture,
-    int jointTextureWidth,
-  ) {
-    for (var primitive in primitives) {
-      primitive.geometry.setJointsTexture(jointsTexture, jointTextureWidth);
-      encoder.encode(worldTransform, primitive.geometry, primitive.material);
-    }
   }
 }

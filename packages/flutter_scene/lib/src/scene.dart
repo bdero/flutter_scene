@@ -11,6 +11,7 @@ import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
 import 'render/render_graph.dart';
+import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/tonemap_pass.dart';
@@ -150,6 +151,12 @@ base class Scene implements SceneGraph {
   /// Transformations applied to this [Node] affect all child [Node] objects.
   final Node root = Node();
 
+  /// The flat list of drawable items the render passes iterate.
+  ///
+  /// Kept in sync by the node graph as mesh-bearing nodes are added and
+  /// removed. Engine-internal; not part of the stable public API.
+  final RenderScene renderScene = RenderScene();
+
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
@@ -285,11 +292,15 @@ base class Scene implements SceneGraph {
     final lightSpaceMatrix =
         castsShadow ? light.computeLightSpaceMatrix() : null;
 
+    // Walk the graph once to tick animations and refresh the flat
+    // render list before the passes iterate it.
+    root.scenePrePass();
+
     final graph = RenderGraph();
     if (castsShadow) {
       graph.addPass(
         ShadowPass(
-          root: root,
+          renderScene: renderScene,
           lightSpaceMatrix: lightSpaceMatrix!,
           resolution: light.shadowMapResolution,
         ),
@@ -298,7 +309,7 @@ base class Scene implements SceneGraph {
     graph.addPass(
       ScenePass(
         camera: camera,
-        root: root,
+        renderScene: renderScene,
         dimensions: pixelSize,
         environmentMap: environmentMap,
         environmentIntensity: environmentIntensity,

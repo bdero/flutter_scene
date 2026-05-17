@@ -7,10 +7,10 @@ part of '../animation.dart';
 /// usually interact with it indirectly through [Node.createAnimationClip]
 /// and [AnimationClip].
 ///
-/// [update] is called automatically during [Node.render]. It advances
-/// every clip by the wall-clock delta since the previous frame, blends
-/// their results into the bind pose, and writes the resulting transforms
-/// back to the bound nodes.
+/// [update] is called automatically by the scene's per-frame pre-pass.
+/// It advances every clip by the wall-clock delta since the previous
+/// frame, blends their results into the bind pose, and writes the
+/// resulting transforms back to the bound nodes.
 class AnimationPlayer {
   final Map<Node, AnimationTransforms> _targetTransforms = {};
   final Map<String, AnimationClip> _clips = {};

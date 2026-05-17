@@ -6,8 +6,8 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
-import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 
@@ -15,15 +15,15 @@ import 'package:flutter_scene/src/scene_encoder.dart';
 /// [ScenePass] produces. The downstream tone-mapping pass reads it.
 const String kHdrColorBlackboardKey = 'hdr_scene_color';
 
-/// Draws the scene graph (opaque, then depth-sorted translucent) into a
-/// floating-point HDR color target, publishing it on the render-graph
-/// blackboard for the tone-mapping pass to resolve. If a [ShadowPass] ran
-/// earlier this frame its shadow map is picked up from the blackboard and
-/// threaded into the per-draw [Lighting].
+/// Draws the scene's render items (opaque, then depth-sorted
+/// translucent) into a floating-point HDR color target, publishing it on
+/// the render-graph blackboard for the tone-mapping pass to resolve. If a
+/// [ShadowPass] ran earlier this frame its shadow map is picked up from
+/// the blackboard and threaded into the per-draw [Lighting].
 class ScenePass extends RenderGraphPass {
   ScenePass({
     required Camera camera,
-    required Node root,
+    required RenderScene renderScene,
     required ui.Size dimensions,
     required EnvironmentMap environmentMap,
     required double environmentIntensity,
@@ -31,7 +31,7 @@ class ScenePass extends RenderGraphPass {
     DirectionalLight? directionalLight,
     Matrix4? lightSpaceMatrix,
   }) : _camera = camera,
-       _root = root,
+       _renderScene = renderScene,
        _dimensions = dimensions,
        _environmentMap = environmentMap,
        _environmentIntensity = environmentIntensity,
@@ -40,7 +40,7 @@ class ScenePass extends RenderGraphPass {
        _lightSpaceMatrix = lightSpaceMatrix;
 
   final Camera _camera;
-  final Node _root;
+  final RenderScene _renderScene;
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
   final double _environmentIntensity;
@@ -120,7 +120,9 @@ class ScenePass extends RenderGraphPass {
       _dimensions,
       lighting,
     );
-    _root.render(encoder, Matrix4.identity());
+    for (final item in _renderScene.items) {
+      encoder.submit(item);
+    }
     encoder.flushTranslucent();
     commandBuffer.submit();
 
