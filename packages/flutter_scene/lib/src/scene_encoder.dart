@@ -115,6 +115,12 @@ base class SceneEncoder {
   /// [Aabb3] for every item, every frame.
   final Aabb3 cullScratchAabb = Aabb3();
 
+  // The pipeline currently bound on the render pass, or null before the
+  // first bind. `clearBindings` does not clear the pipeline, so a draw
+  // that reuses it can skip the rebind. Opaque draws are pipeline-sorted,
+  // so reuse runs are common.
+  gpu.RenderPipeline? _boundPipeline;
+
   /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
   ///
@@ -182,6 +188,15 @@ base class SceneEncoder {
   double _depthOf(Matrix4 worldTransform) =>
       worldTransform.getTranslation().distanceTo(_camera.position);
 
+  // Binds [pipeline] unless it is already the bound one. `clearBindings`
+  // leaves the pipeline in place, so consecutive draws that share a
+  // pipeline only need to bind it once.
+  void _bindPipeline(gpu.RenderPipeline pipeline) {
+    if (identical(_boundPipeline, pipeline)) return;
+    _renderPass.bindPipeline(pipeline);
+    _boundPipeline = pipeline;
+  }
+
   void _encode(
     gpu.RenderPipeline pipeline,
     Matrix4 worldTransform,
@@ -189,7 +204,7 @@ base class SceneEncoder {
     Material material,
   ) {
     _renderPass.clearBindings();
-    _renderPass.bindPipeline(pipeline);
+    _bindPipeline(pipeline);
     geometry.bind(
       _renderPass,
       _transientsBuffer,
@@ -201,9 +216,9 @@ base class SceneEncoder {
     _renderPass.draw();
   }
 
-  /// Draws an opaque instanced item: binds the pipeline and the material
-  /// once, then re-binds only the geometry (with each instance's world
-  /// transform) and draws, once per instance.
+  /// Draws an opaque instanced item: binds the pipeline (when it changed)
+  /// and the material once, then re-binds only the geometry (with each
+  /// instance's world transform) and draws, once per instance.
   void _encodeInstanced(
     gpu.RenderPipeline pipeline,
     Matrix4 nodeTransform,
@@ -212,7 +227,7 @@ base class SceneEncoder {
     List<Matrix4> instances,
   ) {
     _renderPass.clearBindings();
-    _renderPass.bindPipeline(pipeline);
+    _bindPipeline(pipeline);
     material.bind(_renderPass, _transientsBuffer, _lighting);
     for (final instanceTransform in instances) {
       geometry.bind(
