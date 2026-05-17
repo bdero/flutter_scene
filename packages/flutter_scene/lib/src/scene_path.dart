@@ -217,6 +217,15 @@ abstract class ScenePath {
 
 double _clamp01(double v) => v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
 
+// Maps natural parameter [t] to a segment index and a local `0..1`
+// offset within it, given a curve of [segments] equal-parameter spans.
+(int, double) _segmentOf(double t, int segments) {
+  final scaled = _clamp01(t) * segments;
+  var segment = scaled.floor();
+  if (segment >= segments) segment = segments - 1;
+  return (segment, scaled - segment);
+}
+
 class _PathTable {
   _PathTable({
     required this.parameters,
@@ -246,13 +255,13 @@ class PolylinePath extends ScenePath {
 
   @override
   Vector3 positionAt(double t) {
-    final (segment, local) = _segmentAt(t);
+    final (segment, local) = _segmentOf(t, _points.length - 1);
     return _points[segment] * (1.0 - local) + _points[segment + 1] * local;
   }
 
   @override
   Vector3 tangentAt(double t) {
-    final (segment, _) = _segmentAt(t);
+    final (segment, _) = _segmentOf(t, _points.length - 1);
     final direction = _points[segment + 1] - _points[segment];
     if (direction.length2 < 1e-12) return Vector3(1.0, 0.0, 0.0);
     return direction.normalized();
@@ -263,12 +272,131 @@ class PolylinePath extends ScenePath {
     final segments = _points.length - 1;
     return <double>[for (var i = 0; i <= segments; i++) i / segments];
   }
+}
 
-  (int, double) _segmentAt(double t) {
-    final segments = _points.length - 1;
-    final scaled = _clamp01(t) * segments;
-    var segment = scaled.floor();
-    if (segment >= segments) segment = segments - 1;
-    return (segment, scaled - segment);
+// Natural-parameter samples per segment for the smooth curve types,
+// used to bake their arc-length and frame tables.
+const int _smoothCurveSamplesPerSegment = 24;
+
+List<double> _subdividedParameters(int segments) {
+  final params = <double>[];
+  for (var s = 0; s < segments; s++) {
+    for (var k = 0; k < _smoothCurveSamplesPerSegment; k++) {
+      params.add((s + k / _smoothCurveSamplesPerSegment) / segments);
+    }
   }
+  params.add(1.0);
+  return params;
+}
+
+/// A smooth curve passing through every one of a list of points.
+///
+/// The curve interpolates its control points with uniform Catmull-Rom
+/// segments, so `positionAt` returns a control point exactly at that
+/// point's natural parameter.
+class CatmullRomPath extends ScenePath {
+  /// Creates a Catmull-Rom curve through [points], which is copied. At
+  /// least two points are required.
+  CatmullRomPath(List<Vector3> points)
+    : _points = <Vector3>[for (final p in points) p.clone()] {
+    if (_points.length < 2) {
+      throw ArgumentError('A path needs at least two points');
+    }
+  }
+
+  final List<Vector3> _points;
+
+  @override
+  Vector3 positionAt(double t) {
+    final (segment, s) = _segmentOf(t, _points.length - 1);
+    final (p0, p1, p2, p3) = _controlPoints(segment);
+    final s2 = s * s;
+    final s3 = s2 * s;
+    return (p1 * 2.0 +
+            (p2 - p0) * s +
+            (p0 * 2.0 - p1 * 5.0 + p2 * 4.0 - p3) * s2 +
+            (p1 * 3.0 - p0 - p2 * 3.0 + p3) * s3) *
+        0.5;
+  }
+
+  @override
+  Vector3 tangentAt(double t) {
+    final (segment, s) = _segmentOf(t, _points.length - 1);
+    final (p0, p1, p2, p3) = _controlPoints(segment);
+    final derivative =
+        ((p2 - p0) +
+            (p0 * 2.0 - p1 * 5.0 + p2 * 4.0 - p3) * (2.0 * s) +
+            (p1 * 3.0 - p0 - p2 * 3.0 + p3) * (3.0 * s * s)) *
+        0.5;
+    if (derivative.length2 < 1e-12) return Vector3(1.0, 0.0, 0.0);
+    return derivative.normalized();
+  }
+
+  @override
+  List<double> sampleParameters() => _subdividedParameters(_points.length - 1);
+
+  // The four control points for [segment], with the endpoints repeated
+  // so the first and last segments still interpolate cleanly.
+  (Vector3, Vector3, Vector3, Vector3) _controlPoints(int segment) {
+    final last = _points.length - 1;
+    Vector3 at(int i) => _points[i < 0 ? 0 : (i > last ? last : i)];
+    return (at(segment - 1), at(segment), at(segment + 1), at(segment + 2));
+  }
+}
+
+/// A path of joined cubic Bezier segments.
+///
+/// Each segment is defined by four control points, and adjacent
+/// segments share an endpoint, so the control point count must be
+/// `3 * segments + 1`.
+class BezierPath extends ScenePath {
+  /// Creates a Bezier path from [controlPoints], which is copied. The
+  /// count must be `3 * segments + 1` for one or more segments.
+  BezierPath(List<Vector3> controlPoints)
+    : _points = <Vector3>[for (final p in controlPoints) p.clone()] {
+    if (_points.length < 4 || (_points.length - 1) % 3 != 0) {
+      throw ArgumentError(
+        'A Bezier path needs 3 * segments + 1 control points',
+      );
+    }
+  }
+
+  final List<Vector3> _points;
+
+  int get _segments => (_points.length - 1) ~/ 3;
+
+  @override
+  Vector3 positionAt(double t) {
+    final (segment, s) = _segmentOf(t, _segments);
+    final base = segment * 3;
+    final p0 = _points[base];
+    final p1 = _points[base + 1];
+    final p2 = _points[base + 2];
+    final p3 = _points[base + 3];
+    final u = 1.0 - s;
+    return p0 * (u * u * u) +
+        p1 * (3.0 * u * u * s) +
+        p2 * (3.0 * u * s * s) +
+        p3 * (s * s * s);
+  }
+
+  @override
+  Vector3 tangentAt(double t) {
+    final (segment, s) = _segmentOf(t, _segments);
+    final base = segment * 3;
+    final p0 = _points[base];
+    final p1 = _points[base + 1];
+    final p2 = _points[base + 2];
+    final p3 = _points[base + 3];
+    final u = 1.0 - s;
+    final derivative =
+        (p1 - p0) * (3.0 * u * u) +
+        (p2 - p1) * (6.0 * u * s) +
+        (p3 - p2) * (3.0 * s * s);
+    if (derivative.length2 < 1e-12) return Vector3(1.0, 0.0, 0.0);
+    return derivative.normalized();
+  }
+
+  @override
+  List<double> sampleParameters() => _subdividedParameters(_segments);
 }
