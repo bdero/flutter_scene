@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -163,10 +164,11 @@ base class Node implements SceneGraph {
   // The components attached to this node, in attach order.
   final List<Component> _components = [];
 
-  // Typed fast path: the subset of [_components] that are mesh
-  // components, so the per-frame pre-pass refreshes render items without
-  // scanning the full component list.
+  // Typed fast paths: the subsets of [_components] that feed the render
+  // layer, so the per-frame pre-pass refreshes their render items
+  // without scanning the full component list.
   final List<MeshComponent> _meshComponents = [];
+  final List<InstancedMeshComponent> _instancedMeshComponents = [];
 
   /// Attaches [component] to this node.
   ///
@@ -181,6 +183,8 @@ base class Node implements SceneGraph {
     if (component is MeshComponent) {
       _meshComponents.add(component);
       markBoundsDirty();
+    } else if (component is InstancedMeshComponent) {
+      _instancedMeshComponents.add(component);
     }
     component.attachTo(this);
     if (_renderScene != null) {
@@ -204,6 +208,8 @@ base class Node implements SceneGraph {
     if (component is MeshComponent) {
       _meshComponents.remove(component);
       markBoundsDirty();
+    } else if (component is InstancedMeshComponent) {
+      _instancedMeshComponents.remove(component);
     }
   }
 
@@ -926,10 +932,16 @@ base class Node implements SceneGraph {
       for (final meshComponent in _meshComponents) {
         meshComponent.refreshRenderItems();
       }
+      for (final instancedMeshComponent in _instancedMeshComponents) {
+        instancedMeshComponent.refreshRenderItem();
+      }
     } else {
       // Keep a hidden subtree's items out of the render passes.
       for (final meshComponent in _meshComponents) {
         meshComponent.hideRenderItems();
+      }
+      for (final instancedMeshComponent in _instancedMeshComponents) {
+        instancedMeshComponent.hideRenderItem();
       }
     }
     for (final child in children) {

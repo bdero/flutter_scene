@@ -102,7 +102,7 @@ base class SceneEncoder {
   void submit(RenderItem item) {
     if (!item.visible) return;
     if (item.frustumCulled) {
-      final bounds = item.geometry.localBounds;
+      final bounds = item.cullBounds;
       if (bounds != null) {
         cullScratchAabb
           ..copyFrom(bounds)
@@ -110,6 +110,32 @@ base class SceneEncoder {
         if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
       }
     }
+
+    final instances = item.instanceTransforms;
+    if (instances != null) {
+      if (item.material.isOpaque()) {
+        _encodeInstanced(
+          item.worldTransform,
+          item.geometry,
+          item.material,
+          instances,
+        );
+      } else {
+        // Translucent instances are depth-sorted individually, like any
+        // other translucent draw.
+        for (final instanceTransform in instances) {
+          _translucentRecords.add(
+            _TranslucentRecord(
+              item.worldTransform * instanceTransform,
+              item.geometry,
+              item.material,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     if (item.material.isOpaque()) {
       _encode(item.worldTransform, item.geometry, item.material);
       return;
@@ -136,6 +162,34 @@ base class SceneEncoder {
     );
     material.bind(_renderPass, _transientsBuffer, _lighting);
     _renderPass.draw();
+  }
+
+  /// Draws an opaque instanced item: resolves the pipeline and binds the
+  /// material once, then re-binds only the geometry (with each instance's
+  /// world transform) and draws, once per instance.
+  void _encodeInstanced(
+    Matrix4 nodeTransform,
+    Geometry geometry,
+    Material material,
+    List<Matrix4> instances,
+  ) {
+    _renderPass.clearBindings();
+    final pipeline = _resolvePipeline(
+      geometry.vertexShader,
+      material.fragmentShader,
+    );
+    _renderPass.bindPipeline(pipeline);
+    material.bind(_renderPass, _transientsBuffer, _lighting);
+    for (final instanceTransform in instances) {
+      geometry.bind(
+        _renderPass,
+        _transientsBuffer,
+        nodeTransform * instanceTransform,
+        _cameraTransform,
+        _camera.position,
+      );
+      _renderPass.draw();
+    }
   }
 
   /// Emits the deferred translucent draws and finishes recording.
