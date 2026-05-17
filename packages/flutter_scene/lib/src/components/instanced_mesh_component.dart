@@ -47,10 +47,16 @@ class InstancedMeshComponent extends Component {
     final item = _renderItem;
     if (item == null) return;
     item.visible = true;
-    item.frustumCulled = node.frustumCulled;
+    final frustumCulled = node.frustumCulled;
+    final frustumCulledChanged = item.frustumCulled != frustumCulled;
+    item.frustumCulled = frustumCulled;
     item.worldTransform.setFrom(node.globalTransform);
     item.instanceTransforms = instancedMesh.instances;
     item.instanceBounds = instancedMesh.aggregateBounds;
+    final boundsChanged = item.refreshWorldBounds();
+    if (frustumCulledChanged || boundsChanged) {
+      node.internalRenderScene?.markBvhDirty();
+    }
   }
 
   /// Keeps this component's render item out of the render passes. Called

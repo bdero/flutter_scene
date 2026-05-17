@@ -326,6 +326,10 @@ base class Scene implements SceneGraph {
     }
     _tickedThisFrame = false;
 
+    // Rebuild the spatial culling structure if the pre-pass changed the
+    // scene, before the render passes query it.
+    renderScene.rebuildIfDirty();
+
     final graph = RenderGraph();
     if (castsShadow) {
       graph.addPass(
