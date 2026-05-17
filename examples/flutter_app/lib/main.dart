@@ -6,6 +6,7 @@ import 'package:example_app/example_animation.dart';
 import 'example_cuboid.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
+import 'example_nav_route.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
 
@@ -36,6 +37,8 @@ class _MyAppState extends State<MyApp> {
     ticker.start();
 
     examples = {
+      'Navigation Route':
+          (context) => ExampleNavRoute(elapsedSeconds: elapsedSeconds),
       'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
       'Animation':
           (context) => ExampleAnimation(elapsedSeconds: elapsedSeconds),
