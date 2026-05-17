@@ -103,4 +103,74 @@ void main() {
       expect(_distance(arrays.positions, 0, 1), closeTo(3, 1e-5));
     });
   });
+
+  group('buildTubeArrays', () {
+    SweptArrays tube({required bool caps}) => buildTubeArrays(
+      PolylinePath([Vector3(0, 0, 0), Vector3(10, 0, 0)]),
+      radius: 2,
+      radialSegments: 8,
+      stations: 3,
+      caps: caps,
+    );
+
+    test('rejects a degenerate tessellation', () {
+      final path = PolylinePath([Vector3(0, 0, 0), Vector3(1, 0, 0)]);
+      expect(
+        () => buildTubeArrays(
+          path,
+          radius: 1,
+          radialSegments: 2,
+          stations: 3,
+          caps: false,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => buildTubeArrays(
+          path,
+          radius: 1,
+          radialSegments: 8,
+          stations: 1,
+          caps: false,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('side surface vertex and index counts follow the tessellation', () {
+      final arrays = tube(caps: false);
+      // stations * (radialSegments + 1) vertices.
+      expect(arrays.positions, hasLength(3 * 9 * 3));
+      // (stations - 1) * radialSegments quads.
+      expect(arrays.indices, hasLength(2 * 8 * 6));
+    });
+
+    test('caps add a fan at each end', () {
+      final withCaps = tube(caps: true);
+      // Side surface plus a center and ring per cap.
+      expect(withCaps.positions, hasLength((3 * 9 + 2 * 9) * 3));
+      expect(withCaps.indices, hasLength(2 * 8 * 6 + 2 * 8 * 3));
+    });
+
+    test('side vertices sit at the radius from the centerline', () {
+      final arrays = tube(caps: false);
+      final count = arrays.positions.length ~/ 3;
+      for (var v = 0; v < count; v++) {
+        final y = arrays.positions[v * 3 + 1];
+        final z = arrays.positions[v * 3 + 2];
+        expect(math.sqrt(y * y + z * z), closeTo(2, 1e-5));
+      }
+    });
+
+    test('every normal is unit length', () {
+      final arrays = tube(caps: true);
+      final count = arrays.normals.length ~/ 3;
+      for (var v = 0; v < count; v++) {
+        final nx = arrays.normals[v * 3];
+        final ny = arrays.normals[v * 3 + 1];
+        final nz = arrays.normals[v * 3 + 2];
+        expect(math.sqrt(nx * nx + ny * ny + nz * nz), closeTo(1, 1e-5));
+      }
+    });
+  });
 }
