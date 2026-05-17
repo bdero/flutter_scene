@@ -218,6 +218,30 @@ base class Scene implements SceneGraph {
     root.removeAll();
   }
 
+  // Whether the per-frame tick already ran for the upcoming render.
+  bool _tickedThisFrame = false;
+
+  // Wall-clock timestamp of the previous tick, used to derive a delta
+  // when only [render] is called.
+  int? _lastTickMillis;
+
+  void _tick(double deltaSeconds) {
+    _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
+    root.scenePrePass(deltaSeconds);
+  }
+
+  /// Advances the scene by [deltaSeconds]: ticks every node's components
+  /// and animation players, and refreshes the flat render layer.
+  ///
+  /// Calling this is optional. A caller that only calls [render] gets an
+  /// implicit tick with a wall-clock delta. Call [update] explicitly to
+  /// drive the scene with a fixed or supplied timestep, then call
+  /// [render]; the render then skips its implicit tick.
+  void update(double deltaSeconds) {
+    _tick(deltaSeconds);
+    _tickedThisFrame = true;
+  }
+
   /// Renders the current state of this [Scene] onto the given [ui.Canvas] using the specified [Camera].
   ///
   /// The [Camera] provides the perspective from which the scene is viewed, and the [ui.Canvas]
@@ -292,9 +316,15 @@ base class Scene implements SceneGraph {
     final lightSpaceMatrix =
         castsShadow ? light.computeLightSpaceMatrix() : null;
 
-    // Walk the graph once to tick animations and refresh the flat
-    // render list before the passes iterate it.
-    root.scenePrePass();
+    // Walk the graph once to tick components and animations and refresh
+    // the flat render list before the passes iterate it. Skipped when
+    // update() already ran the tick for this frame.
+    if (!_tickedThisFrame) {
+      final nowMillis = DateTime.now().millisecondsSinceEpoch;
+      final lastMillis = _lastTickMillis ?? nowMillis;
+      _tick((nowMillis - lastMillis) / 1000.0);
+    }
+    _tickedThisFrame = false;
 
     final graph = RenderGraph();
     if (castsShadow) {
