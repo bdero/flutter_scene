@@ -27,6 +27,7 @@ export 'src/geometry/mesh_geometry.dart'
     show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'
     show CuboidGeometry, PlaneGeometry, SphereGeometry;
+export 'src/geometry/swept_geometry.dart' show RibbonAlignment, RibbonGeometry;
 
 export 'src/material/environment.dart';
 export 'src/material/material.dart';
