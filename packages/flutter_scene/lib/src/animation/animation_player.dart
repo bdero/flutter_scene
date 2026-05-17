@@ -8,13 +8,12 @@ part of '../animation.dart';
 /// and [AnimationClip].
 ///
 /// [update] is called automatically by the scene's per-frame pre-pass.
-/// It advances every clip by the wall-clock delta since the previous
-/// frame, blends their results into the bind pose, and writes the
-/// resulting transforms back to the bound nodes.
+/// It advances every clip by the frame delta, blends their results into
+/// the bind pose, and writes the resulting transforms back to the bound
+/// nodes.
 class AnimationPlayer {
   final Map<Node, AnimationTransforms> _targetTransforms = {};
   final Map<String, AnimationClip> _clips = {};
-  int? _previousTimeInMilliseconds;
 
   /// Instantiates [animation] as an [AnimationClip] bound to [bindTarget]
   /// and registers it with this player.
@@ -43,21 +42,14 @@ class AnimationPlayer {
     return _clips[name];
   }
 
-  /// Advances all registered clips by the wall-clock delta since the
-  /// previous call and applies their blended result to the bound nodes.
+  /// Advances all registered clips by [deltaSeconds] and applies their
+  /// blended result to the bound nodes.
   ///
   /// Resets each animated node to its bind pose, advances every clip by
   /// the delta, normalizes weights when their sum exceeds `1`, and then
   /// writes the resulting `(translation, rotation, scale)` decomposition
   /// back to [Node.localTransform].
-  void update() {
-    // Initialize the previous time if it has not been set yet.
-    _previousTimeInMilliseconds ??= DateTime.now().millisecondsSinceEpoch;
-
-    int newTime = DateTime.now().millisecondsSinceEpoch;
-    double deltaTime = (newTime - _previousTimeInMilliseconds!) / 1000.0;
-    _previousTimeInMilliseconds = newTime;
-
+  void update(double deltaSeconds) {
     // Reset the animated pose state.
     for (final transforms in _targetTransforms.values) {
       transforms.animatedPose = transforms.bindPose.clone();
@@ -72,7 +64,7 @@ class AnimationPlayer {
 
     // Update and apply all clips to the animation pose state.
     for (final clip in _clips.values) {
-      clip.advance(deltaTime);
+      clip.advance(deltaSeconds);
       clip.applyToBindings(_targetTransforms, weightMultiplier);
     }
 

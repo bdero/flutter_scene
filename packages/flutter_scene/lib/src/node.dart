@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/component.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -146,9 +147,57 @@ base class Node implements SceneGraph {
   // frame by [scenePrePass].
   bool _effectiveVisible = false;
 
+  // The components attached to this node, in attach order.
+  final List<Component> _components = [];
+
+  /// Attaches [component] to this node.
+  ///
+  /// The component must not already be attached to a node. This fires its
+  /// [Component.onAttach] hook, and, if this node is already part of a
+  /// live scene, its [Component.onMount] and [Component.onLoad] hooks.
+  void addComponent(Component component) {
+    if (component.isAttached) {
+      throw Exception('Component is already attached to a node');
+    }
+    _components.add(component);
+    component.attachTo(this);
+    if (_renderScene != null) {
+      component.mount();
+    }
+  }
+
+  /// Detaches [component] from this node.
+  ///
+  /// Fires [Component.onUnmount] (when this node is in a live scene) and
+  /// [Component.onDetach]. Throws if [component] is not attached here.
+  void removeComponent(Component component) {
+    if (!_components.contains(component)) {
+      throw Exception('Component is not attached to this node');
+    }
+    if (_renderScene != null) {
+      component.unmount();
+    }
+    component.detachFrom();
+    _components.remove(component);
+  }
+
+  /// Returns the first attached component of type [T], or `null`.
+  T? getComponent<T>() {
+    for (final component in _components) {
+      if (component is T) return component as T;
+    }
+    return null;
+  }
+
+  /// Returns every attached component of type [T], in attach order.
+  Iterable<T> getComponents<T>() => _components.whereType<T>();
+
   void _mount(RenderScene renderScene) {
     _renderScene = renderScene;
     _registerRenderItems();
+    for (final component in _components) {
+      component.mount();
+    }
     for (final child in children) {
       child._mount(renderScene);
     }
@@ -157,6 +206,9 @@ base class Node implements SceneGraph {
   void _unmount() {
     for (final child in children) {
       child._unmount();
+    }
+    for (final component in _components) {
+      component.unmount();
     }
     _unregisterRenderItems();
     _renderScene = null;
@@ -845,16 +897,25 @@ base class Node implements SceneGraph {
   }
 
   /// Walks this node's subtree once per frame to prepare it for
-  /// rendering: ticks animation players and refreshes the [RenderItem]s
-  /// the render passes iterate.
+  /// rendering: ticks components and animation players and refreshes the
+  /// [RenderItem]s the render passes iterate.
   ///
-  /// Called by [Scene.render]; not normally called directly.
-  /// [ancestorsVisible] is whether every ancestor of this node is
+  /// Called by [Scene.update] and [Scene.render]; not normally called
+  /// directly. [deltaSeconds] is the elapsed time since the previous
+  /// tick. [ancestorsVisible] is whether every ancestor of this node is
   /// visible, and defaults to `true` for the root.
-  void scenePrePass([bool ancestorsVisible = true]) {
+  void scenePrePass(double deltaSeconds, [bool ancestorsVisible = true]) {
     _effectiveVisible = ancestorsVisible && visible;
+
+    // Components tick whenever the node is mounted, independent of
+    // visibility. An index loop tolerates a component adding or removing
+    // a sibling component during its own update.
+    for (int i = 0; i < _components.length; i++) {
+      _components[i].tick(deltaSeconds);
+    }
+
     if (_effectiveVisible) {
-      _animationPlayer?.update();
+      _animationPlayer?.update(deltaSeconds);
       _refreshRenderItems();
     } else {
       // Keep a hidden subtree's items out of the render passes.
@@ -863,7 +924,7 @@ base class Node implements SceneGraph {
       }
     }
     for (final child in children) {
-      child.scenePrePass(_effectiveVisible);
+      child.scenePrePass(deltaSeconds, _effectiveVisible);
     }
   }
 

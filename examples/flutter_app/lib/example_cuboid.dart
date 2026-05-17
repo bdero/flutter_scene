@@ -12,13 +12,29 @@ class ExampleCuboid extends StatefulWidget {
   ExampleCuboidState createState() => ExampleCuboidState();
 }
 
+/// Spins the owning node about its Y axis. A minimal user-defined
+/// [Component]: behavior attached to a node through the [update] hook.
+class SpinComponent extends Component {
+  SpinComponent(this.radiansPerSecond);
+
+  final double radiansPerSecond;
+
+  @override
+  void update(double deltaSeconds) {
+    node.localTransform =
+        node.localTransform *
+        vm.Matrix4.rotationY(radiansPerSecond * deltaSeconds);
+  }
+}
+
 class ExampleCuboidState extends State<ExampleCuboid> {
   Scene scene = Scene();
 
   @override
   void initState() {
     final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), UnlitMaterial());
-    scene.addMesh(mesh);
+    final node = Node(mesh: mesh)..addComponent(SpinComponent(1.0));
+    scene.add(node);
 
     super.initState();
   }
