@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -22,8 +20,9 @@ import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 /// Construct an instance directly and call [uploadVertexData] (or
 /// [setVertices]/[setIndices] with already-uploaded buffer views) to
 /// supply mesh data, or use [Geometry.fromFlatbuffer] when deserializing
-/// a `.model` payload. [CuboidGeometry] is provided as a built-in
-/// example.
+/// a `.model` payload. For procedurally generated meshes, `MeshGeometry`
+/// and `GeometryBuilder` assemble a [Geometry] from vertex attribute
+/// arrays without packing vertex bytes by hand.
 abstract class Geometry {
   gpu.BufferView? _vertices;
   int _vertexCount = 0;
@@ -521,44 +520,5 @@ class SkinnedGeometry extends Geometry {
       frameInfoFloats.buffer.asByteData(),
     );
     pass.bindUniform(frameInfoSlot, frameInfoView);
-  }
-}
-
-/// A unit-cube geometry sized to the supplied extents.
-///
-/// Useful as a quick placeholder or for debugging — pair with any
-/// [Material] to render an axis-aligned box. Each face has unique
-/// vertex colors, which can be visualized with [UnlitMaterial].
-class CuboidGeometry extends UnskinnedGeometry {
-  /// Builds a cuboid spanning `-extents/2` to `+extents/2` on each axis.
-  CuboidGeometry(vm.Vector3 extents) {
-    final e = extents / 2;
-    // Layout: Position, normal, uv, color
-    final vertices = Float32List.fromList(<double>[
-      -e.x, -e.y, -e.z, /* */ 0, 0, -1, /* */ 0, 0, /* */ 1, 0, 0, 1, //
-      e.x, -e.y, -e.z, /*  */ 0, 0, -1, /* */ 1, 0, /* */ 0, 1, 0, 1, //
-      e.x, e.y, -e.z, /*   */ 0, 0, -1, /* */ 1, 1, /* */ 0, 0, 1, 1, //
-      -e.x, e.y, -e.z, /*  */ 0, 0, -1, /* */ 0, 1, /* */ 0, 0, 0, 1, //
-      -e.x, -e.y, e.z, /*  */ 0, 0, -1, /* */ 0, 0, /* */ 0, 1, 1, 1, //
-      e.x, -e.y, e.z, /*   */ 0, 0, -1, /* */ 1, 0, /* */ 1, 0, 1, 1, //
-      e.x, e.y, e.z, /*    */ 0, 0, -1, /* */ 1, 1, /* */ 1, 1, 0, 1, //
-      -e.x, e.y, e.z, /*   */ 0, 0, -1, /* */ 0, 1, /* */ 1, 1, 1, 1, //
-    ]);
-
-    final indices = Uint16List.fromList(<int>[
-      0, 1, 3, 3, 1, 2, //
-      1, 5, 2, 2, 5, 6, //
-      5, 4, 6, 6, 4, 7, //
-      4, 0, 7, 7, 0, 3, //
-      3, 2, 7, 7, 2, 6, //
-      4, 5, 0, 0, 5, 1, //
-    ]);
-
-    uploadVertexData(
-      ByteData.sublistView(vertices),
-      8,
-      ByteData.sublistView(indices),
-      indexType: gpu.IndexType.int16,
-    );
   }
 }

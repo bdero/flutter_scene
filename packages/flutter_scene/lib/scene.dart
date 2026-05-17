@@ -23,6 +23,8 @@ library;
 export 'src/animation.dart';
 
 export 'src/geometry/geometry.dart';
+export 'src/geometry/mesh_geometry.dart';
+export 'src/geometry/primitives.dart' show CuboidGeometry;
 
 export 'src/material/environment.dart';
 export 'src/material/material.dart';
