@@ -1,5 +1,3 @@
-import 'dart:ui' hide Scene;
-
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
@@ -13,7 +11,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
-import 'package:flutter_scene/src/scene_encoder.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene_importer/importer.dart';
@@ -129,8 +127,63 @@ base class Node implements SceneGraph {
   Mesh? get mesh => _mesh;
   set mesh(Mesh? value) {
     if (identical(_mesh, value)) return;
+    _unregisterRenderItems();
     _mesh = value;
+    _registerRenderItems();
     markBoundsDirty();
+  }
+
+  // The render scene this node is mounted into, or null when the node is
+  // not part of a live scene graph. While mounted, the node's mesh
+  // primitives are registered as [RenderItem]s in this scene.
+  RenderScene? _renderScene;
+
+  // This node's render items, one per mesh primitive. Empty when the
+  // node has no mesh or is not mounted.
+  final List<RenderItem> _renderItems = [];
+
+  // Whether this node and every ancestor is visible, recomputed each
+  // frame by [scenePrePass].
+  bool _effectiveVisible = false;
+
+  void _mount(RenderScene renderScene) {
+    _renderScene = renderScene;
+    _registerRenderItems();
+    for (final child in children) {
+      child._mount(renderScene);
+    }
+  }
+
+  void _unmount() {
+    for (final child in children) {
+      child._unmount();
+    }
+    _unregisterRenderItems();
+    _renderScene = null;
+  }
+
+  void _registerRenderItems() {
+    final renderScene = _renderScene;
+    final mesh = _mesh;
+    if (renderScene == null || mesh == null) return;
+    for (final primitive in mesh.primitives) {
+      final item = RenderItem(
+        geometry: primitive.geometry,
+        material: primitive.material,
+      );
+      _renderItems.add(item);
+      renderScene.add(item);
+    }
+  }
+
+  void _unregisterRenderItems() {
+    final renderScene = _renderScene;
+    if (renderScene != null) {
+      for (final item in _renderItems) {
+        renderScene.remove(item);
+      }
+    }
+    _renderItems.clear();
   }
 
   // Combined local-space AABB cache. Three states:
@@ -545,6 +598,7 @@ base class Node implements SceneGraph {
       throw Exception('Node already has a parent');
     }
     _isSceneRoot = true;
+    _mount(scene.renderScene);
   }
 
   @override
@@ -555,6 +609,10 @@ base class Node implements SceneGraph {
     children.add(child);
     child._parent = this;
     child._markWorldTransformDirty();
+    final renderScene = _renderScene;
+    if (renderScene != null) {
+      child._mount(renderScene);
+    }
     markBoundsDirty();
   }
 
@@ -579,6 +637,9 @@ base class Node implements SceneGraph {
     children.remove(child);
     child._parent = null;
     child._markWorldTransformDirty();
+    if (child._renderScene != null) {
+      child._unmount();
+    }
     markBoundsDirty();
   }
 
@@ -783,56 +844,48 @@ base class Node implements SceneGraph {
     }
   }
 
-  /// Recursively records [Mesh] draw operations for this node and all its children.
+  /// Walks this node's subtree once per frame to prepare it for
+  /// rendering: ticks animation players and refreshes the [RenderItem]s
+  /// the render passes iterate.
   ///
-  /// To display this node in a `dart:ui` [Canvas], add this node to a [Scene] and call [Scene.render] instead.
-  void render(SceneDrawList encoder, Matrix4 parentWorldTransform) {
-    if (!visible) {
-      return;
-    }
-
-    if (_animationPlayer != null) {
-      _animationPlayer!.update();
-    }
-
-    // Reuse the cached world transform when nothing in the ancestor
-    // chain has changed; recompute and cache it otherwise.
-    final Matrix4 worldTransform;
-    if (_worldTransformDirty) {
-      _worldTransform
-        ..setFrom(parentWorldTransform)
-        ..multiply(_localTransform);
-      _worldTransformDirty = false;
-      worldTransform = _worldTransform;
+  /// Called by [Scene.render]; not normally called directly.
+  /// [ancestorsVisible] is whether every ancestor of this node is
+  /// visible, and defaults to `true` for the root.
+  void scenePrePass([bool ancestorsVisible = true]) {
+    _effectiveVisible = ancestorsVisible && visible;
+    if (_effectiveVisible) {
+      _animationPlayer?.update();
+      _refreshRenderItems();
     } else {
-      worldTransform = _worldTransform;
+      // Keep a hidden subtree's items out of the render passes.
+      for (final item in _renderItems) {
+        item.visible = false;
+      }
     }
+    for (final child in children) {
+      child.scenePrePass(_effectiveVisible);
+    }
+  }
 
-    // Subtree-level frustum cull. Skipped when the user opted out
-    // (frustumCulled = false) or when the subtree reports no bound
-    // (skinned content, or geometry without computable bounds — both
-    // of which conservatively pass through to the render path).
-    if (frustumCulled) {
-      final localBounds = combinedLocalBounds;
-      if (localBounds != null) {
-        encoder.cullScratchAabb.copyFrom(localBounds);
-        encoder.cullScratchAabb.transform(worldTransform);
-        if (!encoder.frustum.intersectsWithAabb3(encoder.cullScratchAabb)) {
-          return;
-        }
+  void _refreshRenderItems() {
+    if (_renderItems.isEmpty) return;
+    final worldTransform = globalTransform;
+
+    // A skinned node uploads its joint matrices once per frame; both
+    // render passes then sample the same joints texture.
+    final skin = this.skin;
+    if (skin != null) {
+      final jointsTexture = skin.getJointsTexture();
+      final jointsTextureWidth = skin.getTextureWidth();
+      for (final item in _renderItems) {
+        item.geometry.setJointsTexture(jointsTexture, jointsTextureWidth);
       }
     }
 
-    if (mesh != null) {
-      mesh!.render(
-        encoder,
-        worldTransform,
-        skin?.getJointsTexture(),
-        skin?.getTextureWidth() ?? 0,
-      );
-    }
-    for (var child in children) {
-      child.render(encoder, worldTransform);
+    for (final item in _renderItems) {
+      item.visible = true;
+      item.frustumCulled = frustumCulled;
+      item.worldTransform.setFrom(worldTransform);
     }
   }
 }

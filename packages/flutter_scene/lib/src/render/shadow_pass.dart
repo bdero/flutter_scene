@@ -1,8 +1,8 @@
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_encoder.dart';
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the
@@ -18,14 +18,14 @@ const String kShadowMapBlackboardKey = 'directional_shadow_map';
 /// test). Cleared to 1.0 so texels no caster covers read as "lit".
 class ShadowPass extends RenderGraphPass {
   ShadowPass({
-    required Node root,
+    required RenderScene renderScene,
     required Matrix4 lightSpaceMatrix,
     required int resolution,
-  }) : _root = root,
+  }) : _renderScene = renderScene,
        _lightSpaceMatrix = lightSpaceMatrix,
        _resolution = resolution;
 
-  final Node _root;
+  final RenderScene _renderScene;
   final Matrix4 _lightSpaceMatrix;
   final int _resolution;
 
@@ -68,7 +68,9 @@ class ShadowPass extends RenderGraphPass {
       context.transientsBuffer,
       _lightSpaceMatrix,
     );
-    _root.render(encoder, Matrix4.identity());
+    for (final item in _renderScene.items) {
+      encoder.submit(item);
+    }
     commandBuffer.submit();
     context.blackboard.set(kShadowMapBlackboardKey, color);
   }

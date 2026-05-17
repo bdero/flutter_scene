@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 
 base class _TranslucentRecord {
   _TranslucentRecord(this.worldTransform, this.geometry, this.material);
@@ -31,36 +32,18 @@ gpu.RenderPipeline _resolvePipeline(
       .createRenderPipeline(vertexShader, fragmentShader);
 }
 
-/// The sink that [Node.render] and [Mesh.render] write draw calls into.
+/// Records draw calls for one frame's color pass into a single
+/// `gpu.RenderPass`.
 ///
-/// Implemented by [SceneEncoder] (the main color pass) and by the
-/// shadow-map pass's depth-only encoder, so the scene-graph walk and its
-/// culling are shared between them.
-abstract interface class SceneDrawList {
-  /// Culling frustum for subtree-level visibility checks.
-  Frustum get frustum;
-
-  /// Scratch [Aabb3] reused by the per-node cull check so it can transform
-  /// a local AABB into world space without allocating per node, per frame.
-  Aabb3 get cullScratchAabb;
-
-  /// Records a draw of [geometry] with [material] at [worldTransform].
-  void encode(Matrix4 worldTransform, Geometry geometry, Material material);
-}
-
-/// Records scene-graph draw calls into a single `gpu.RenderPass` for one
-/// frame.
-///
-/// `SceneEncoder` is the bridge between the scene graph and Flutter GPU.
 /// A render-graph pass (see `ScenePass`) creates a `gpu.RenderPass`,
-/// constructs an encoder against it, walks the scene graph with
-/// [Node.render] (which forwards to [encode]), then calls
+/// constructs an encoder against it, calls [submit] for every
+/// [RenderItem] in the scene's flat render list, then calls
 /// [flushTranslucent] to emit the deferred translucent draws.
 ///
 /// The encoder splits draws into two phases within the one render pass:
 ///
 /// 1. **Opaque**, with depth writes enabled and color blending disabled,
-///    drawn in submission order as [encode] is called.
+///    drawn in submission order as [submit] is called.
 /// 2. **Translucent**, deferred and depth-sorted back to front from the
 ///    camera, drawn with premultiplied source-over blending.
 ///
@@ -68,7 +51,7 @@ abstract interface class SceneDrawList {
 /// custom [Geometry] or [Material] subclasses interact with it through
 /// their `bind` callbacks, which receive the `gpu.RenderPass` and
 /// `gpu.HostBuffer` directly.
-base class SceneEncoder implements SceneDrawList {
+base class SceneEncoder {
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
   ///
@@ -101,32 +84,38 @@ base class SceneEncoder implements SceneDrawList {
   final List<_TranslucentRecord> _translucentRecords = [];
 
   /// View frustum derived from the camera's view-projection matrix at
-  /// the start of this frame. Used by [Node.render] for subtree-level
-  /// culling.
-  @override
+  /// the start of this frame. Used by [submit] for per-item culling.
   late final Frustum frustum;
 
-  /// Reusable AABB owned by this encoder so the per-node cull check can
+  /// Reusable AABB owned by this encoder so the per-item cull check can
   /// transform a local AABB into world space without allocating a new
-  /// [Aabb3] every frame, every node.
-  @override
+  /// [Aabb3] for every item, every frame.
   final Aabb3 cullScratchAabb = Aabb3();
 
-  /// Records a draw call for [geometry] with [material] at
-  /// [worldTransform].
+  /// Records a draw call for [item], unless it is hidden or frustum
+  /// culled.
   ///
-  /// Opaque draws are encoded immediately into the active render pass.
-  /// Translucent draws (where [Material.isOpaque] returns `false`) are
+  /// Opaque items are encoded immediately into the active render pass.
+  /// Translucent items (where [Material.isOpaque] returns `false`) are
   /// queued and re-emitted in [flushTranslucent] after a back-to-front
   /// depth sort.
-  @override
-  void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
-    if (material.isOpaque()) {
-      _encode(worldTransform, geometry, material);
+  void submit(RenderItem item) {
+    if (!item.visible) return;
+    if (item.frustumCulled) {
+      final bounds = item.geometry.localBounds;
+      if (bounds != null) {
+        cullScratchAabb
+          ..copyFrom(bounds)
+          ..transform(item.worldTransform);
+        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
+      }
+    }
+    if (item.material.isOpaque()) {
+      _encode(item.worldTransform, item.geometry, item.material);
       return;
     }
     _translucentRecords.add(
-      _TranslucentRecord(worldTransform, geometry, material),
+      _TranslucentRecord(item.worldTransform, item.geometry, item.material),
     );
   }
 

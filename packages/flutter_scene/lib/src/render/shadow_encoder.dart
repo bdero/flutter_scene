@@ -1,19 +1,17 @@
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/geometry/geometry.dart';
-import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/scene_encoder.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
-/// A [SceneDrawList] that records each opaque shadow caster's depth into a
-/// shadow-map render pass, from a directional light's point of view.
+/// Records each opaque shadow caster's depth into a shadow-map render
+/// pass, from a directional light's point of view.
 ///
 /// Reuses the engine's standard vertex shaders (so unskinned and skinned
 /// geometry both cast shadows) paired with the `DepthOnlyFragment`
 /// shader, supplying the light-space view-projection matrix in place of
 /// the camera transform. Translucent materials don't cast shadows.
-class ShadowEncoder implements SceneDrawList {
+class ShadowEncoder {
   ShadowEncoder(
     this._renderPass,
     this._transientsBuffer,
@@ -38,27 +36,37 @@ class ShadowEncoder implements SceneDrawList {
       baseShaderLibrary['DepthOnlyFragment']!;
   static final Vector3 _cameraPositionPlaceholder = Vector3.zero();
 
-  @override
+  /// Frustum of the light-space view-projection, used for per-item
+  /// culling.
   late final Frustum frustum;
 
-  @override
+  /// Reusable AABB for the per-item cull check.
   final Aabb3 cullScratchAabb = Aabb3();
 
-  @override
-  void encode(Matrix4 worldTransform, Geometry geometry, Material material) {
-    if (!material.isOpaque()) {
-      return;
+  /// Records [item]'s depth, unless it is hidden, translucent (no shadow),
+  /// or culled by the light frustum.
+  void submit(RenderItem item) {
+    if (!item.visible) return;
+    if (!item.material.isOpaque()) return;
+    if (item.frustumCulled) {
+      final bounds = item.geometry.localBounds;
+      if (bounds != null) {
+        cullScratchAabb
+          ..copyFrom(bounds)
+          ..transform(item.worldTransform);
+        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
+      }
     }
     _renderPass.clearBindings();
     final pipeline = gpu.gpuContext.createRenderPipeline(
-      geometry.vertexShader,
+      item.geometry.vertexShader,
       _depthShader,
     );
     _renderPass.bindPipeline(pipeline);
-    geometry.bind(
+    item.geometry.bind(
       _renderPass,
       _transientsBuffer,
-      worldTransform,
+      item.worldTransform,
       _lightSpaceMatrix,
       _cameraPositionPlaceholder,
     );
