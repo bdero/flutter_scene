@@ -120,9 +120,7 @@ class ScenePass extends RenderGraphPass {
       _dimensions,
       lighting,
     );
-    for (final item in _renderScene.items) {
-      encoder.submit(item);
-    }
+    _renderScene.cull(encoder.frustum, encoder.submit);
     encoder.flushTranslucent();
     commandBuffer.submit();
 

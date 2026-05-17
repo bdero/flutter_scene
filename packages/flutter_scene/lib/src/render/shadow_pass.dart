@@ -68,9 +68,7 @@ class ShadowPass extends RenderGraphPass {
       context.transientsBuffer,
       _lightSpaceMatrix,
     );
-    for (final item in _renderScene.items) {
-      encoder.submit(item);
-    }
+    _renderScene.cull(encoder.frustum, encoder.submit);
     commandBuffer.submit();
     context.blackboard.set(kShadowMapBlackboardKey, color);
   }

@@ -86,11 +86,17 @@ class MeshComponent extends Component {
       }
     }
 
+    final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
     for (final item in _renderItems) {
       item.visible = true;
+      final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.worldTransform.setFrom(worldTransform);
+      final boundsChanged = item.refreshWorldBounds();
+      if (frustumCulledChanged || boundsChanged) {
+        renderScene?.markBvhDirty();
+      }
     }
   }
 
