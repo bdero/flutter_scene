@@ -92,6 +92,39 @@ void main() {
       Bvh.build(items).query(frustum, hits.add);
       expect(hits, items.toSet());
     });
+
+    test('refit tracks an item that moved', () {
+      final mover = _itemAt(0);
+      final bvh = Bvh.build([
+        mover,
+        for (int i = 1; i < 5; i++) _itemAt(i * 4.0),
+      ]);
+
+      final nearOrigin = Frustum.matrix(
+        makeOrthographicMatrix(-2, 2, -2, 2, -100, 100),
+      );
+      var hits = <RenderItem>{};
+      bvh.query(nearOrigin, hits.add);
+      expect(hits, {mover}, reason: 'mover starts in the frustum');
+
+      // Move the item far away and refit.
+      mover.worldBounds = Aabb3.minMax(
+        Vector3(99.5, -0.5, -0.5),
+        Vector3(100.5, 0.5, 0.5),
+      );
+      bvh.refit();
+
+      hits = <RenderItem>{};
+      bvh.query(nearOrigin, hits.add);
+      expect(hits, isEmpty, reason: 'the moved item left the frustum');
+
+      hits = <RenderItem>{};
+      bvh.query(
+        Frustum.matrix(makeOrthographicMatrix(98, 102, -2, 2, -100, 100)),
+        hits.add,
+      );
+      expect(hits, {mover}, reason: 'the moved item is found at its new spot');
+    });
   });
 
   group('RenderScene.cull', () {

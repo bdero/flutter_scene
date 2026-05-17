@@ -53,9 +53,19 @@ class InstancedMeshComponent extends Component {
     item.worldTransform.setFrom(node.globalTransform);
     item.instanceTransforms = instancedMesh.instances;
     item.instanceBounds = instancedMesh.aggregateBounds;
+
+    final wasBounded = item.worldBounds != null;
     final boundsChanged = item.refreshWorldBounds();
-    if (frustumCulledChanged || boundsChanged) {
-      node.internalRenderScene?.markBvhDirty();
+    final isBounded = item.worldBounds != null;
+
+    // A toggled cull flag or a bounded/unbounded transition changes the
+    // BVH membership and needs a rebuild; a plain move only needs a
+    // refit.
+    final renderScene = node.internalRenderScene;
+    if (frustumCulledChanged || wasBounded != isBounded) {
+      renderScene?.markBvhStructureDirty();
+    } else if (boundsChanged && item.frustumCulled) {
+      renderScene?.markBvhBoundsDirty();
     }
   }
 
