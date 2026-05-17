@@ -37,8 +37,6 @@ class _MyAppState extends State<MyApp> {
     ticker.start();
 
     examples = {
-      'Navigation Route':
-          (context) => ExampleNavRoute(elapsedSeconds: elapsedSeconds),
       'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
       'Animation':
           (context) => ExampleAnimation(elapsedSeconds: elapsedSeconds),
@@ -46,6 +44,8 @@ class _MyAppState extends State<MyApp> {
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
       'Instancing':
           (context) => ExampleInstancing(elapsedSeconds: elapsedSeconds),
+      'Navigation Route':
+          (context) => ExampleNavRoute(elapsedSeconds: elapsedSeconds),
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
       'Stress Tests':
           (context) => ExampleStressTests(elapsedSeconds: elapsedSeconds),
