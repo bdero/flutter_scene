@@ -28,7 +28,7 @@ export 'src/geometry/mesh_geometry.dart'
 export 'src/geometry/primitives.dart'
     show CuboidGeometry, PlaneGeometry, SphereGeometry;
 export 'src/geometry/swept_geometry.dart'
-    show RibbonAlignment, RibbonGeometry, TubeGeometry;
+    show ExtrudeGeometry, RibbonAlignment, RibbonGeometry, TubeGeometry;
 
 export 'src/material/environment.dart';
 export 'src/material/material.dart';

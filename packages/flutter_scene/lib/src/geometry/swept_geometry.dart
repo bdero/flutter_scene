@@ -421,3 +421,180 @@ void addFanCap(
     }
   }
 }
+
+/// An arbitrary closed 2D profile swept along a [ScenePath].
+///
+/// The profile is a closed polygon in the path's cross-section plane.
+/// Texture coordinates run `0..1` around the profile and by arc-length
+/// distance along the path. End caps assume a convex profile.
+class ExtrudeGeometry extends MeshGeometry {
+  /// Sweeps [profile] along [path].
+  ///
+  /// [profile] is a closed polygon of at least three points, in the
+  /// path's normal/binormal plane. [stations] is the number of
+  /// cross-sections along the path. With [caps] the two ends are
+  /// closed. Pass [GeometryStorage.updatable] to allow [updatePath].
+  factory ExtrudeGeometry(
+    ScenePath path, {
+    required List<Vector2> profile,
+    int stations = 64,
+    bool caps = true,
+    GeometryStorage storage = GeometryStorage.fixed,
+  }) {
+    final copied = <Vector2>[for (final p in profile) p.clone()];
+    return ExtrudeGeometry._(
+      copied,
+      stations,
+      caps,
+      buildExtrudeArrays(path, profile: copied, stations: stations, caps: caps),
+      storage,
+    );
+  }
+
+  ExtrudeGeometry._(
+    this._profile,
+    this._stations,
+    this._caps,
+    SweptArrays arrays,
+    GeometryStorage storage,
+  ) : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+        storage: storage,
+      );
+
+  final List<Vector2> _profile;
+  final int _stations;
+  final bool _caps;
+
+  /// Re-sweeps the profile along [path], reusing the GPU buffers.
+  ///
+  /// The profile, station count, and caps are unchanged, so the
+  /// topology is stable. Requires [GeometryStorage.updatable].
+  void updatePath(ScenePath path) {
+    final arrays = buildExtrudeArrays(
+      path,
+      profile: _profile,
+      stations: _stations,
+      caps: _caps,
+    );
+    updatePositions(arrays.positions);
+    updateNormals(arrays.normals);
+    updateTexCoords(arrays.texCoords);
+  }
+}
+
+/// Generates the vertex arrays for an [ExtrudeGeometry].
+SweptArrays buildExtrudeArrays(
+  ScenePath path, {
+  required List<Vector2> profile,
+  required int stations,
+  required bool caps,
+}) {
+  if (stations < 2) {
+    throw ArgumentError.value(stations, 'stations', 'must be at least two');
+  }
+  if (profile.length < 3) {
+    throw ArgumentError.value(
+      profile.length,
+      'profile',
+      'needs at least three points',
+    );
+  }
+  final frames = evenlySpacedFrames(path, stations);
+  final length = path.length;
+  final pointCount = profile.length;
+  final profileNormals = _profileNormals(profile);
+  final accumulator = MeshAccumulator();
+  final ringBases = <int>[];
+
+  for (var i = 0; i < stations; i++) {
+    final frame = frames[i];
+    final v = length * i / (stations - 1);
+    ringBases.add(accumulator.vertexCount);
+    // One extra vertex closes the loop so the texture seam is clean.
+    for (var k = 0; k <= pointCount; k++) {
+      final point = profile[k % pointCount];
+      final profileNormal = profileNormals[k % pointCount];
+      final position =
+          frame.position + frame.normal * point.x + frame.binormal * point.y;
+      final normal =
+          (frame.normal * profileNormal.x + frame.binormal * profileNormal.y)
+              .normalized();
+      accumulator.addVertex(position, normal, k / pointCount, v);
+    }
+  }
+
+  stitchRings(accumulator, ringBases, pointCount + 1);
+
+  if (caps) {
+    _addProfileCap(accumulator, frames.first, profile, atEnd: false);
+    _addProfileCap(accumulator, frames.last, profile, atEnd: true);
+  }
+  return accumulator.toArrays();
+}
+
+// Closes one end of an extrusion with a fan over the profile.
+void _addProfileCap(
+  MeshAccumulator accumulator,
+  ScenePathFrame frame,
+  List<Vector2> profile, {
+  required bool atEnd,
+}) {
+  var centerX = 0.0;
+  var centerY = 0.0;
+  for (final point in profile) {
+    centerX += point.x;
+    centerY += point.y;
+  }
+  centerX /= profile.length;
+  centerY /= profile.length;
+
+  Vector3 lift(double x, double y) =>
+      frame.position + frame.normal * x + frame.binormal * y;
+
+  addFanCap(
+    accumulator,
+    center: lift(centerX, centerY),
+    normal: atEnd ? frame.tangent : -frame.tangent,
+    ringPositions: <Vector3>[
+      for (final point in profile) lift(point.x, point.y),
+    ],
+    ringTexCoords: <Vector2>[
+      for (final point in profile) Vector2(point.x, point.y),
+    ],
+    centerTexCoord: Vector2(centerX, centerY),
+    reverseWinding: !atEnd,
+  );
+}
+
+// Per-vertex outward 2D normals for a closed profile. The polygon's
+// signed area picks the outward direction, so either winding works.
+List<Vector2> _profileNormals(List<Vector2> profile) {
+  final count = profile.length;
+  var doubledArea = 0.0;
+  for (var k = 0; k < count; k++) {
+    final a = profile[k];
+    final b = profile[(k + 1) % count];
+    doubledArea += a.x * b.y - b.x * a.y;
+  }
+  final sign = doubledArea >= 0.0 ? 1.0 : -1.0;
+
+  Vector2 edgeNormal(Vector2 edge) => Vector2(edge.y, -edge.x) * sign;
+
+  return <Vector2>[
+    for (var k = 0; k < count; k++)
+      () {
+        final previous = profile[(k - 1 + count) % count];
+        final current = profile[k];
+        final next = profile[(k + 1) % count];
+        var normal =
+            edgeNormal(current - previous) + edgeNormal(next - current);
+        if (normal.length2 < 1e-12) normal = edgeNormal(next - current);
+        if (normal.length2 < 1e-12) normal = Vector2(1.0, 0.0);
+        return normal.normalized();
+      }(),
+  ];
+}
