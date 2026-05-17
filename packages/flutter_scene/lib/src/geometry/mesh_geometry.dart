@@ -6,6 +6,25 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 
+/// How a [MeshGeometry] manages its GPU buffers over its lifetime.
+enum GeometryStorage {
+  /// The vertex and index buffers are uploaded once at construction and
+  /// never change. This is the right choice for imported or generated
+  /// meshes that stay still.
+  fixed,
+
+  /// The vertex and index buffers are retained so the mesh can be
+  /// updated in place every frame without reallocating GPU memory. Use
+  /// this for geometry that is regenerated continuously, such as a route
+  /// line that follows a moving vehicle.
+  ///
+  /// An updatable geometry keeps a CPU-side copy of each attribute and
+  /// allocates its buffers with spare capacity, so topology-stable
+  /// updates ([MeshGeometry.updatePositions] and friends) and bounded
+  /// growth ([MeshGeometry.rebuild]) avoid reallocation.
+  updatable,
+}
+
 /// A triangle mesh built at runtime from vertex attribute arrays.
 ///
 /// `MeshGeometry` is the general-purpose [Geometry] for procedurally
@@ -17,6 +36,13 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 /// normals, texture coordinates, colors) and never pack vertex bytes by
 /// hand; the arrays are interleaved into the engine vertex layout
 /// internally.
+///
+/// Pass [GeometryStorage.updatable] as the storage mode to create a
+/// geometry that can be mutated in place. [updatePositions],
+/// [updateNormals], [updateTexCoords], and [updateColors] replace one
+/// attribute when the vertex count is unchanged; [rebuild] replaces
+/// everything and reallocates only when the data outgrows the spare
+/// capacity.
 class MeshGeometry extends UnskinnedGeometry {
   /// Builds a mesh from structure-of-arrays vertex attributes.
   ///
@@ -35,6 +61,12 @@ class MeshGeometry extends UnskinnedGeometry {
   ///
   /// [primitiveType] selects how the vertex/index data is assembled into
   /// primitives when drawn, and defaults to a triangle list.
+  ///
+  /// [storage] selects whether the mesh can later be updated in place.
+  /// An updatable mesh fixes its indexed-or-not state at construction:
+  /// supplying [indices] makes [rebuild] require indices thereafter, and
+  /// omitting them makes it reject them. To start empty, pass a
+  /// zero-length [positions] array with [GeometryStorage.updatable].
   MeshGeometry.fromArrays({
     required Float32List positions,
     Float32List? normals,
@@ -42,6 +74,7 @@ class MeshGeometry extends UnskinnedGeometry {
     Float32List? colors,
     List<int>? indices,
     gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
+    this.storage = GeometryStorage.fixed,
   }) {
     if (positions.length % 3 != 0) {
       throw ArgumentError(
@@ -56,7 +89,7 @@ class MeshGeometry extends UnskinnedGeometry {
     // geometry has none, so absent normals are left at their default.
     final resolvedNormals =
         normals ??
-        (primitiveType == gpu.PrimitiveType.triangle
+        (vertexCount > 0 && primitiveType == gpu.PrimitiveType.triangle
             ? InterleavedLayoutAdapter.generateNormals(
               positions: positions,
               vertexCount: vertexCount,
@@ -64,14 +97,181 @@ class MeshGeometry extends UnskinnedGeometry {
             )
             : null);
 
+    if (storage == GeometryStorage.fixed) {
+      _uploadFixed(
+        positions,
+        vertexCount,
+        resolvedNormals,
+        texCoords,
+        colors,
+        indices,
+      );
+    } else {
+      _indexed = indices != null;
+      _setCpuStreams(
+        positions,
+        vertexCount,
+        resolvedNormals,
+        texCoords,
+        colors,
+      );
+      _vertexCapacity = nextBufferCapacity(vertexCount);
+      _vertexBuffer = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        _vertexCapacity * kInterleavedVertexBytes,
+      );
+      _liveVertexCount = vertexCount;
+      _uploadVertexBytes();
+      if (_indexed) _uploadIndices(indices!);
+      _recomputeBounds();
+    }
+  }
+
+  /// How this geometry's GPU buffers are managed; see [GeometryStorage].
+  final GeometryStorage storage;
+
+  /// Bytes per vertex in the interleaved unskinned layout.
+  static const int kInterleavedVertexBytes =
+      InterleavedLayoutAdapter.floatsPerVertex * 4;
+
+  // --- Updatable-storage state. Unused while [storage] is fixed. ---
+
+  bool _indexed = false;
+  int _liveVertexCount = 0;
+  int _vertexCapacity = 0;
+  int _indexCapacity = 0;
+  gpu.DeviceBuffer? _vertexBuffer;
+  gpu.DeviceBuffer? _indexBuffer;
+  gpu.IndexType _indexType = gpu.IndexType.int16;
+
+  // CPU-side copies of every attribute stream, sized to the live vertex
+  // count. Retained so a single-attribute update can re-pack the
+  // interleaved buffer, which holds every attribute together.
+  Float32List _cpuPositions = Float32List(0);
+  Float32List _cpuNormals = Float32List(0);
+  Float32List _cpuTexCoords = Float32List(0);
+  Float32List _cpuColors = Float32List(0);
+
+  /// The number of vertices currently drawn.
+  int get vertexCount => _liveVertexCount;
+
+  /// Whether this geometry can be updated in place.
+  bool get isUpdatable => storage == GeometryStorage.updatable;
+
+  /// Replaces every vertex position, keeping the vertex count unchanged.
+  ///
+  /// [positions] holds three floats per vertex and must match the
+  /// current [vertexCount]. To change the vertex count, use [rebuild].
+  /// Throws a [StateError] unless this geometry is
+  /// [GeometryStorage.updatable].
+  void updatePositions(Float32List positions) {
+    _ensureUpdatable('updatePositions');
+    _checkAttributeLength('positions', positions.length, 3);
+    _cpuPositions = Float32List.fromList(positions);
+    _uploadVertexBytes();
+    _recomputeBounds();
+  }
+
+  /// Replaces every vertex normal, keeping the vertex count unchanged.
+  void updateNormals(Float32List normals) {
+    _ensureUpdatable('updateNormals');
+    _checkAttributeLength('normals', normals.length, 3);
+    _cpuNormals = Float32List.fromList(normals);
+    _uploadVertexBytes();
+  }
+
+  /// Replaces every texture coordinate, keeping the vertex count
+  /// unchanged.
+  void updateTexCoords(Float32List texCoords) {
+    _ensureUpdatable('updateTexCoords');
+    _checkAttributeLength('texCoords', texCoords.length, 2);
+    _cpuTexCoords = Float32List.fromList(texCoords);
+    _uploadVertexBytes();
+  }
+
+  /// Replaces every vertex color, keeping the vertex count unchanged.
+  void updateColors(Float32List colors) {
+    _ensureUpdatable('updateColors');
+    _checkAttributeLength('colors', colors.length, 4);
+    _cpuColors = Float32List.fromList(colors);
+    _uploadVertexBytes();
+  }
+
+  /// Replaces all of this geometry's data, allowing the vertex and index
+  /// counts to change.
+  ///
+  /// Reuses the existing GPU buffers when the new data fits within their
+  /// spare capacity, and reallocates with headroom only when it does
+  /// not. The indexed-or-not state is fixed at construction: a geometry
+  /// created with indices requires [indices] here, and one created
+  /// without must omit them. Throws a [StateError] unless this geometry
+  /// is [GeometryStorage.updatable].
+  void rebuild({
+    required Float32List positions,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? colors,
+    List<int>? indices,
+  }) {
+    _ensureUpdatable('rebuild');
+    if (positions.length % 3 != 0) {
+      throw ArgumentError(
+        'positions has ${positions.length} floats; expected a multiple of '
+        'three (one vec3 per vertex)',
+      );
+    }
+    if (_indexed && indices == null) {
+      throw ArgumentError(
+        'This geometry was created with indices; rebuild requires them',
+      );
+    }
+    if (!_indexed && indices != null) {
+      throw ArgumentError(
+        'This geometry was created without indices; rebuild must not '
+        'supply them',
+      );
+    }
+    final vertexCount = positions.length ~/ 3;
+    final resolvedNormals =
+        normals ??
+        (vertexCount > 0 && primitiveType == gpu.PrimitiveType.triangle
+            ? InterleavedLayoutAdapter.generateNormals(
+              positions: positions,
+              vertexCount: vertexCount,
+              indices: indices,
+            )
+            : null);
+
+    _setCpuStreams(positions, vertexCount, resolvedNormals, texCoords, colors);
+    if (vertexCount > _vertexCapacity) {
+      _vertexCapacity = nextBufferCapacity(vertexCount);
+      _vertexBuffer = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        _vertexCapacity * kInterleavedVertexBytes,
+      );
+    }
+    _liveVertexCount = vertexCount;
+    _uploadVertexBytes();
+    if (_indexed) _uploadIndices(indices!);
+    _recomputeBounds();
+  }
+
+  void _uploadFixed(
+    Float32List positions,
+    int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? colors,
+    List<int>? indices,
+  ) {
+    _liveVertexCount = vertexCount;
     final vertexBytes = InterleavedLayoutAdapter.packUnskinned(
       positions: positions,
       vertexCount: vertexCount,
-      normals: resolvedNormals,
+      normals: normals,
       texCoords: texCoords,
       colors: colors,
     );
-
     ByteData? indexBytes;
     var indexType = gpu.IndexType.int16;
     if (indices != null) {
@@ -79,7 +279,6 @@ class MeshGeometry extends UnskinnedGeometry {
       indexBytes = ByteData.sublistView(packed.bytes);
       indexType = packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
     }
-
     uploadVertexData(
       ByteData.sublistView(vertexBytes),
       vertexCount,
@@ -87,6 +286,172 @@ class MeshGeometry extends UnskinnedGeometry {
       indexType: indexType,
     );
   }
+
+  // Re-packs the live CPU streams into the interleaved buffer and binds
+  // it. Reuses the retained DeviceBuffer; no allocation.
+  void _uploadVertexBytes() {
+    final bytes = InterleavedLayoutAdapter.packUnskinned(
+      positions: _cpuPositions,
+      vertexCount: _liveVertexCount,
+      normals: _cpuNormals,
+      texCoords: _cpuTexCoords,
+      colors: _cpuColors,
+    );
+    final buffer = _vertexBuffer!;
+    if (bytes.isNotEmpty) {
+      buffer.overwrite(ByteData.sublistView(bytes));
+      buffer.flush(offsetInBytes: 0, lengthInBytes: bytes.length);
+    }
+    setVertices(
+      gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: bytes.length),
+      _liveVertexCount,
+    );
+  }
+
+  void _uploadIndices(List<int> indices) {
+    final packed = InterleavedLayoutAdapter.packIndices(indices);
+    final indexType =
+        packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
+    final elementBytes = packed.is32Bit ? 4 : 2;
+    if (_indexBuffer == null ||
+        indices.length > _indexCapacity ||
+        indexType != _indexType) {
+      _indexCapacity = nextBufferCapacity(indices.length);
+      _indexType = indexType;
+      _indexBuffer = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        _indexCapacity * elementBytes,
+      );
+    }
+    final buffer = _indexBuffer!;
+    if (packed.bytes.isNotEmpty) {
+      buffer.overwrite(ByteData.sublistView(packed.bytes));
+      buffer.flush(offsetInBytes: 0, lengthInBytes: packed.bytes.length);
+    }
+    setIndices(
+      gpu.BufferView(
+        buffer,
+        offsetInBytes: 0,
+        lengthInBytes: packed.bytes.length,
+      ),
+      indexType,
+    );
+  }
+
+  void _setCpuStreams(
+    Float32List positions,
+    int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? colors,
+  ) {
+    if (normals != null && normals.length != vertexCount * 3) {
+      throw ArgumentError(
+        'normals has ${normals.length} floats; expected ${vertexCount * 3}',
+      );
+    }
+    if (texCoords != null && texCoords.length != vertexCount * 2) {
+      throw ArgumentError(
+        'texCoords has ${texCoords.length} floats; expected '
+        '${vertexCount * 2}',
+      );
+    }
+    if (colors != null && colors.length != vertexCount * 4) {
+      throw ArgumentError(
+        'colors has ${colors.length} floats; expected ${vertexCount * 4}',
+      );
+    }
+    _cpuPositions = Float32List.fromList(positions);
+    _cpuNormals =
+        normals != null
+            ? Float32List.fromList(normals)
+            : _filledStream(vertexCount, 3, const [0.0, 0.0, 1.0]);
+    _cpuTexCoords =
+        texCoords != null
+            ? Float32List.fromList(texCoords)
+            : Float32List(vertexCount * 2);
+    _cpuColors =
+        colors != null
+            ? Float32List.fromList(colors)
+            : _filledStream(vertexCount, 4, const [1.0, 1.0, 1.0, 1.0]);
+  }
+
+  void _recomputeBounds() {
+    if (_liveVertexCount == 0) {
+      setLocalBounds(null, null);
+      return;
+    }
+    var minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+    var maxX = double.negativeInfinity,
+        maxY = double.negativeInfinity,
+        maxZ = double.negativeInfinity;
+    for (var v = 0; v < _liveVertexCount; v++) {
+      final x = _cpuPositions[v * 3];
+      final y = _cpuPositions[v * 3 + 1];
+      final z = _cpuPositions[v * 3 + 2];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    final min = Vector3(minX, minY, minZ);
+    final max = Vector3(maxX, maxY, maxZ);
+    final center = (min + max) * 0.5;
+    final radius = ((max - min) * 0.5).length;
+    setLocalBounds(Aabb3.minMax(min, max), Sphere.centerRadius(center, radius));
+  }
+
+  void _ensureUpdatable(String operation) {
+    if (storage != GeometryStorage.updatable) {
+      throw StateError(
+        '$operation requires GeometryStorage.updatable; this geometry is '
+        'fixed',
+      );
+    }
+  }
+
+  void _checkAttributeLength(String name, int length, int componentsPerVertex) {
+    final expected = _liveVertexCount * componentsPerVertex;
+    if (length != expected) {
+      throw ArgumentError(
+        '$name has $length floats; a topology-stable update expects '
+        '$expected for $_liveVertexCount vertices. Use rebuild to change '
+        'the vertex count.',
+      );
+    }
+  }
+
+  static Float32List _filledStream(
+    int vertexCount,
+    int componentsPerVertex,
+    List<double> value,
+  ) {
+    final stream = Float32List(vertexCount * componentsPerVertex);
+    for (var v = 0; v < vertexCount; v++) {
+      for (var c = 0; c < componentsPerVertex; c++) {
+        stream[v * componentsPerVertex + c] = value[c];
+      }
+    }
+    return stream;
+  }
+}
+
+/// Rounds [needed] up to a buffer capacity with spare headroom.
+///
+/// Updatable geometry allocates its GPU buffers at the returned size so
+/// that a buffer which grows gradually reallocates only a logarithmic
+/// number of times rather than on every change. The result is the
+/// smallest power of two that is at least [needed] and at least
+/// [minimum].
+int nextBufferCapacity(int needed, {int minimum = 16}) {
+  if (needed <= minimum) return minimum;
+  var capacity = minimum;
+  while (capacity < needed) {
+    capacity <<= 1;
+  }
+  return capacity;
 }
 
 /// Assembles a [MeshGeometry] one vertex and triangle at a time.
@@ -205,13 +570,17 @@ class GeometryBuilder {
   }
 
   /// Builds and GPU-uploads the accumulated mesh.
-  MeshGeometry build() {
+  ///
+  /// Pass [GeometryStorage.updatable] for [storage] to build a mesh that
+  /// can be mutated in place afterwards.
+  MeshGeometry build({GeometryStorage storage = GeometryStorage.fixed}) {
     return MeshGeometry.fromArrays(
       positions: Float32List.fromList(_positions),
       normals: _resolveNormals(),
       texCoords: Float32List.fromList(_texCoords),
       colors: Float32List.fromList(_colors),
       indices: _indices.isEmpty ? null : List.of(_indices),
+      storage: storage,
     );
   }
 

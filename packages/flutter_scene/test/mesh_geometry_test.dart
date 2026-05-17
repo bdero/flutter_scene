@@ -102,4 +102,23 @@ void main() {
       expect(floats.sublist(3, 6), [0, 1, 0]);
     });
   });
+
+  group('nextBufferCapacity', () {
+    test('returns the minimum when the need is small', () {
+      expect(nextBufferCapacity(0), 16);
+      expect(nextBufferCapacity(16), 16);
+    });
+
+    test('rounds up to the next power of two', () {
+      expect(nextBufferCapacity(17), 32);
+      expect(nextBufferCapacity(100), 128);
+      expect(nextBufferCapacity(128), 128);
+      expect(nextBufferCapacity(1000), 1024);
+    });
+
+    test('honors a custom minimum', () {
+      expect(nextBufferCapacity(3, minimum: 8), 8);
+      expect(nextBufferCapacity(9, minimum: 8), 16);
+    });
+  });
 }

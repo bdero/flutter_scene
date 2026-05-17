@@ -23,7 +23,8 @@ library;
 export 'src/animation.dart';
 
 export 'src/geometry/geometry.dart';
-export 'src/geometry/mesh_geometry.dart';
+export 'src/geometry/mesh_geometry.dart'
+    show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'
     show CuboidGeometry, PlaneGeometry, SphereGeometry;
 
