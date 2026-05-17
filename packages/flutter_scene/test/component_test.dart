@@ -90,4 +90,48 @@ void main() {
       expect(component.isLoaded, isFalse);
     });
   });
+
+  group('Node.mesh convenience', () {
+    test('a node has no mesh by default', () {
+      final node = Node();
+      expect(node.mesh, isNull);
+      expect(node.getComponent<MeshComponent>(), isNull);
+    });
+
+    test('the mesh constructor argument attaches a MeshComponent', () {
+      final mesh = Mesh.primitives(primitives: []);
+      final node = Node(mesh: mesh);
+
+      final component = node.getComponent<MeshComponent>();
+      expect(component, isNotNull);
+      expect(identical(component!.mesh, mesh), isTrue);
+      expect(identical(node.mesh, mesh), isTrue);
+    });
+
+    test('the mesh setter attaches a MeshComponent and round-trips', () {
+      final mesh = Mesh.primitives(primitives: []);
+      final node = Node();
+      node.mesh = mesh;
+
+      expect(identical(node.mesh, mesh), isTrue);
+      expect(identical(node.getComponent<MeshComponent>()!.mesh, mesh), isTrue);
+    });
+
+    test('reassigning the mesh keeps a single MeshComponent', () {
+      final node = Node(mesh: Mesh.primitives(primitives: []));
+      final replacement = Mesh.primitives(primitives: []);
+      node.mesh = replacement;
+
+      expect(node.getComponents<MeshComponent>().length, 1);
+      expect(identical(node.mesh, replacement), isTrue);
+    });
+
+    test('setting the mesh to null removes the MeshComponent', () {
+      final node = Node(mesh: Mesh.primitives(primitives: []));
+      node.mesh = null;
+
+      expect(node.mesh, isNull);
+      expect(node.getComponent<MeshComponent>(), isNull);
+    });
+  });
 }

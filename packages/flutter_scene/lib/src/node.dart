@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
-import 'package:flutter_scene/src/component.dart';
+import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -28,10 +29,14 @@ base class Node implements SceneGraph {
   /// Creates a node with an optional [name], [localTransform], and [mesh].
   ///
   /// When omitted, [localTransform] defaults to the identity matrix and the
-  /// node has no associated geometry.
+  /// node has no associated geometry. A non-null [mesh] is attached as a
+  /// [MeshComponent].
   Node({this.name = '', Matrix4? localTransform, Mesh? mesh})
-    : _localTransform = localTransform ?? Matrix4.identity(),
-      _mesh = mesh;
+    : _localTransform = localTransform ?? Matrix4.identity() {
+    if (mesh != null) {
+      addComponent(MeshComponent(mesh));
+    }
+  }
 
   /// The name of this node, used for identification.
   String name;
@@ -120,28 +125,36 @@ base class Node implements SceneGraph {
   Node? get parent => _parent;
   bool _isSceneRoot = false;
 
-  Mesh? _mesh;
-
-  /// The collection of [MeshPrimitive] objects that represent the 3D geometry and material properties of this node.
+  /// The collection of [MeshPrimitive] objects that represent the 3D
+  /// geometry and material properties of this node.
   ///
-  /// This property is `null` if this node does not have any associated geometry or material.
-  Mesh? get mesh => _mesh;
+  /// This is a convenience over the node's first [MeshComponent]. The
+  /// getter returns that component's mesh, or `null` when the node has no
+  /// `MeshComponent`. The setter replaces the first `MeshComponent`'s
+  /// mesh (adding a `MeshComponent` when there is none), or, given
+  /// `null`, removes every `MeshComponent`.
+  Mesh? get mesh => _meshComponents.isEmpty ? null : _meshComponents.first.mesh;
   set mesh(Mesh? value) {
-    if (identical(_mesh, value)) return;
-    _unregisterRenderItems();
-    _mesh = value;
-    _registerRenderItems();
-    markBoundsDirty();
+    if (value == null) {
+      for (final meshComponent in _meshComponents.toList()) {
+        removeComponent(meshComponent);
+      }
+    } else if (_meshComponents.isNotEmpty) {
+      _meshComponents.first.mesh = value;
+    } else {
+      addComponent(MeshComponent(value));
+    }
   }
 
   // The render scene this node is mounted into, or null when the node is
-  // not part of a live scene graph. While mounted, the node's mesh
-  // primitives are registered as [RenderItem]s in this scene.
+  // not part of a live scene graph.
   RenderScene? _renderScene;
 
-  // This node's render items, one per mesh primitive. Empty when the
-  // node has no mesh or is not mounted.
-  final List<RenderItem> _renderItems = [];
+  /// The render scene this node is mounted into, or `null` when the node
+  /// is not part of a live scene graph. Used by engine components to
+  /// register and unregister their render items.
+  @internal
+  RenderScene? get internalRenderScene => _renderScene;
 
   // Whether this node and every ancestor is visible, recomputed each
   // frame by [scenePrePass].
@@ -149,6 +162,11 @@ base class Node implements SceneGraph {
 
   // The components attached to this node, in attach order.
   final List<Component> _components = [];
+
+  // Typed fast path: the subset of [_components] that are mesh
+  // components, so the per-frame pre-pass refreshes render items without
+  // scanning the full component list.
+  final List<MeshComponent> _meshComponents = [];
 
   /// Attaches [component] to this node.
   ///
@@ -160,6 +178,10 @@ base class Node implements SceneGraph {
       throw Exception('Component is already attached to a node');
     }
     _components.add(component);
+    if (component is MeshComponent) {
+      _meshComponents.add(component);
+      markBoundsDirty();
+    }
     component.attachTo(this);
     if (_renderScene != null) {
       component.mount();
@@ -179,6 +201,10 @@ base class Node implements SceneGraph {
     }
     component.detachFrom();
     _components.remove(component);
+    if (component is MeshComponent) {
+      _meshComponents.remove(component);
+      markBoundsDirty();
+    }
   }
 
   /// Returns the first attached component of type [T], or `null`.
@@ -194,7 +220,6 @@ base class Node implements SceneGraph {
 
   void _mount(RenderScene renderScene) {
     _renderScene = renderScene;
-    _registerRenderItems();
     for (final component in _components) {
       component.mount();
     }
@@ -210,32 +235,7 @@ base class Node implements SceneGraph {
     for (final component in _components) {
       component.unmount();
     }
-    _unregisterRenderItems();
     _renderScene = null;
-  }
-
-  void _registerRenderItems() {
-    final renderScene = _renderScene;
-    final mesh = _mesh;
-    if (renderScene == null || mesh == null) return;
-    for (final primitive in mesh.primitives) {
-      final item = RenderItem(
-        geometry: primitive.geometry,
-        material: primitive.material,
-      );
-      _renderItems.add(item);
-      renderScene.add(item);
-    }
-  }
-
-  void _unregisterRenderItems() {
-    final renderScene = _renderScene;
-    if (renderScene != null) {
-      for (final item in _renderItems) {
-        renderScene.remove(item);
-      }
-    }
-    _renderItems.clear();
   }
 
   // Combined local-space AABB cache. Three states:
@@ -267,7 +267,7 @@ base class Node implements SceneGraph {
     vm.Aabb3? result;
     bool subtreeBounded = true;
 
-    final m = _mesh;
+    final m = mesh;
     if (m != null) {
       final mb = m.localBounds;
       if (mb != null) {
@@ -586,8 +586,10 @@ base class Node implements SceneGraph {
     // and it already starts out transform-dirty.
     _localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
-    // Unpack mesh. Assign through the private field so we don't trip
-    // markBoundsDirty before we install the baked combined AABB below.
+    // Unpack mesh. Attach the mesh component directly: the node is still
+    // being built and not yet mounted, so skip addComponent's mount and
+    // bounds-invalidation path. The baked combined AABB is installed
+    // below.
     if (fbNode.meshPrimitives != null) {
       List<MeshPrimitive> meshPrimitives = [];
       for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
@@ -598,7 +600,12 @@ base class Node implements SceneGraph {
                 : UnlitMaterial();
         meshPrimitives.add(MeshPrimitive(geometry, material));
       }
-      _mesh = Mesh.primitives(primitives: meshPrimitives);
+      final meshComponent = MeshComponent(
+        Mesh.primitives(primitives: meshPrimitives),
+      );
+      _components.add(meshComponent);
+      _meshComponents.add(meshComponent);
+      meshComponent.attachTo(this);
     }
 
     // Connect children. Same private-field assignment to avoid
@@ -916,37 +923,17 @@ base class Node implements SceneGraph {
 
     if (_effectiveVisible) {
       _animationPlayer?.update(deltaSeconds);
-      _refreshRenderItems();
+      for (final meshComponent in _meshComponents) {
+        meshComponent.refreshRenderItems();
+      }
     } else {
       // Keep a hidden subtree's items out of the render passes.
-      for (final item in _renderItems) {
-        item.visible = false;
+      for (final meshComponent in _meshComponents) {
+        meshComponent.hideRenderItems();
       }
     }
     for (final child in children) {
       child.scenePrePass(deltaSeconds, _effectiveVisible);
-    }
-  }
-
-  void _refreshRenderItems() {
-    if (_renderItems.isEmpty) return;
-    final worldTransform = globalTransform;
-
-    // A skinned node uploads its joint matrices once per frame; both
-    // render passes then sample the same joints texture.
-    final skin = this.skin;
-    if (skin != null) {
-      final jointsTexture = skin.getJointsTexture();
-      final jointsTextureWidth = skin.getTextureWidth();
-      for (final item in _renderItems) {
-        item.geometry.setJointsTexture(jointsTexture, jointsTextureWidth);
-      }
-    }
-
-    for (final item in _renderItems) {
-      item.visible = true;
-      item.frustumCulled = frustumCulled;
-      item.worldTransform.setFrom(worldTransform);
     }
   }
 }
