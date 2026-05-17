@@ -71,6 +71,15 @@ void main() {
       expect(g.localBounds, isNull);
       expect(g.localBoundingSphere, isNull);
     });
+
+    test('localBoundsVersion increments on each set', () {
+      final g = _StubGeometry();
+      expect(g.localBoundsVersion, 0);
+      g.setLocalBounds(_aabb(Vector3.zero(), Vector3.all(1)), null);
+      expect(g.localBoundsVersion, 1);
+      g.setLocalBounds(null, null);
+      expect(g.localBoundsVersion, 2);
+    });
   });
 
   group('Mesh.localBounds', () {
@@ -126,6 +135,24 @@ void main() {
       expect(m.localBounds!.max, Vector3(1, 1, 1), reason: 'cache hit');
       m.markLocalBoundsDirty();
       expect(m.localBounds!.max, Vector3(5, 5, 5), reason: 'after dirty');
+    });
+
+    test('refreshes when a geometry mutates its bounds in place', () {
+      final geometry = _StubGeometry(
+        aabb: _aabb(Vector3(0, 0, 0), Vector3(1, 1, 1)),
+      );
+      final m = Mesh.primitives(
+        primitives: [MeshPrimitive(geometry, _StubMaterial())],
+      );
+      // Prime the cache.
+      expect(m.localBounds!.max, Vector3(1, 1, 1));
+      // Mutate the same geometry object in place. The localBoundsVersion
+      // bump lets the cache notice without a markLocalBoundsDirty call.
+      geometry.setLocalBounds(
+        _aabb(Vector3(0, 0, 0), Vector3(7, 7, 7)),
+        Sphere.centerRadius(Vector3.zero(), 1),
+      );
+      expect(m.localBounds!.max, Vector3(7, 7, 7));
     });
   });
 

@@ -44,6 +44,14 @@ abstract class Geometry {
 
   vm.Aabb3? _localBounds;
   vm.Sphere? _localBoundingSphere;
+  int _localBoundsVersion = 0;
+
+  /// A counter that increments each time [setLocalBounds] changes the
+  /// bounds.
+  ///
+  /// Lets cache holders such as [Mesh] notice that an updatable
+  /// geometry's bounds moved without an explicit invalidation call.
+  int get localBoundsVersion => _localBoundsVersion;
 
   /// Local-space axis-aligned bounding box of this geometry's vertex
   /// positions, or `null` if bounds are unknown. Computed by
@@ -63,6 +71,7 @@ abstract class Geometry {
   void setLocalBounds(vm.Aabb3? aabb, vm.Sphere? sphere) {
     _localBounds = aabb;
     _localBoundingSphere = sphere;
+    _localBoundsVersion++;
   }
 
   /// The vertex shader used when rendering this geometry.
