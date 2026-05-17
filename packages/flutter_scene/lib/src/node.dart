@@ -31,7 +31,7 @@ base class Node implements SceneGraph {
   /// When omitted, [localTransform] defaults to the identity matrix and the
   /// node has no associated geometry.
   Node({this.name = '', Matrix4? localTransform, Mesh? mesh})
-    : localTransform = localTransform ?? Matrix4.identity(),
+    : _localTransform = localTransform ?? Matrix4.identity(),
       _mesh = mesh;
 
   /// The name of this node, used for identification.
@@ -52,10 +52,25 @@ base class Node implements SceneGraph {
   /// this flag.
   bool frustumCulled = true;
 
-  /// The transformation matrix representing the node's position, rotation, and scale relative to the parent node.
+  Matrix4 _localTransform;
+
+  /// The transform of this node relative to its parent: position,
+  /// rotation, and scale.
   ///
-  /// If the node does not have a parent, `localTransform` and [globalTransform] share the same transformation matrix instance.
-  Matrix4 localTransform = Matrix4.identity();
+  /// Assigning marks this node and its descendants' cached world
+  /// transforms stale, and this node and its ancestors' cached bounds
+  /// stale. Mutating the returned matrix in place does not, so call
+  /// [markTransformDirty] after an in-place edit.
+  Matrix4 get localTransform => _localTransform;
+  set localTransform(Matrix4 value) {
+    _localTransform = value;
+    markTransformDirty();
+  }
+
+  // Cached world-space transform, valid while _worldTransformDirty is
+  // false. Recomputed lazily by globalTransform and by the render walk.
+  final Matrix4 _worldTransform = Matrix4.identity();
+  bool _worldTransformDirty = true;
 
   /// The skin attached to this node, used for skeletal animation. Set by
   /// importers (both the offline .model path and the runtime glTF/GLB loader).
@@ -81,15 +96,23 @@ base class Node implements SceneGraph {
     }
   }
 
-  /// The transformation matrix representing the node's position, rotation, and scale in world space.
+  /// The world-space transform of this node, with every ancestor's
+  /// transform applied.
   ///
-  /// If the node does not have a parent, `globalTransform` and [localTransform] share the same transformation matrix instance.
+  /// Cached: O(1) when the cache is current, recomputed up the parent
+  /// chain only after a transform change.
   Matrix4 get globalTransform {
+    if (!_worldTransformDirty) return _worldTransform;
     final parent = _parent;
     if (parent == null) {
-      return localTransform;
+      _worldTransform.setFrom(_localTransform);
+    } else {
+      _worldTransform
+        ..setFrom(parent.globalTransform)
+        ..multiply(_localTransform);
     }
-    return parent.globalTransform * localTransform;
+    _worldTransformDirty = false;
+    return _worldTransform;
   }
 
   Node? _parent;
@@ -201,6 +224,26 @@ base class Node implements SceneGraph {
       current._combinedBoundsCache = null;
       current._combinedBoundsCached = false;
       current = current._parent;
+    }
+  }
+
+  /// Marks this node's transform changed: its own and its descendants'
+  /// cached world transforms become stale, and its own and its
+  /// ancestors' cached bounds become stale.
+  ///
+  /// Assigning [localTransform] does this automatically. Call it
+  /// manually only after mutating the [localTransform] matrix in place.
+  void markTransformDirty() {
+    _markWorldTransformDirty();
+    markBoundsDirty();
+  }
+
+  void _markWorldTransformDirty() {
+    // An already-dirty node has an already-dirty subtree, so stop.
+    if (_worldTransformDirty) return;
+    _worldTransformDirty = true;
+    for (final child in children) {
+      child._markWorldTransformDirty();
     }
   }
 
@@ -434,7 +477,9 @@ base class Node implements SceneGraph {
     List<gpu.Texture> textures,
   ) {
     name = fbNode.name ?? '';
-    localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
+    // Assign the private field directly: the node is still being built,
+    // and it already starts out transform-dirty.
+    _localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
 
     // Unpack mesh. Assign through the private field so we don't trip
     // markBoundsDirty before we install the baked combined AABB below.
@@ -509,6 +554,7 @@ base class Node implements SceneGraph {
     }
     children.add(child);
     child._parent = this;
+    child._markWorldTransformDirty();
     markBoundsDirty();
   }
 
@@ -532,6 +578,7 @@ base class Node implements SceneGraph {
     }
     children.remove(child);
     child._parent = null;
+    child._markWorldTransformDirty();
     markBoundsDirty();
   }
 
@@ -748,7 +795,18 @@ base class Node implements SceneGraph {
       _animationPlayer!.update();
     }
 
-    final worldTransform = parentWorldTransform * localTransform;
+    // Reuse the cached world transform when nothing in the ancestor
+    // chain has changed; recompute and cache it otherwise.
+    final Matrix4 worldTransform;
+    if (_worldTransformDirty) {
+      _worldTransform
+        ..setFrom(parentWorldTransform)
+        ..multiply(_localTransform);
+      _worldTransformDirty = false;
+      worldTransform = _worldTransform;
+    } else {
+      worldTransform = _worldTransform;
+    }
 
     // Subtree-level frustum cull. Skipped when the user opted out
     // (frustumCulled = false) or when the subtree reports no bound

@@ -15,6 +15,22 @@ base class _TranslucentRecord {
   final Material material;
 }
 
+/// Render pipelines keyed by their (vertex, fragment) shader pair.
+///
+/// A pipeline depends only on its two shaders (blend, depth, and cull
+/// state are set on the render pass, not baked into the pipeline), and
+/// shaders are loaded once and reused, so pipelines are cached for the
+/// process lifetime instead of being rebuilt per draw call.
+final Map<(gpu.Shader, gpu.Shader), gpu.RenderPipeline> _pipelineCache = {};
+
+gpu.RenderPipeline _resolvePipeline(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader,
+) {
+  return _pipelineCache[(vertexShader, fragmentShader)] ??= gpu.gpuContext
+      .createRenderPipeline(vertexShader, fragmentShader);
+}
+
 /// The sink that [Node.render] and [Mesh.render] write draw calls into.
 ///
 /// Implemented by [SceneEncoder] (the main color pass) and by the
@@ -116,7 +132,7 @@ base class SceneEncoder implements SceneDrawList {
 
   void _encode(Matrix4 worldTransform, Geometry geometry, Material material) {
     _renderPass.clearBindings();
-    var pipeline = gpu.gpuContext.createRenderPipeline(
+    final pipeline = _resolvePipeline(
       geometry.vertexShader,
       material.fragmentShader,
     );

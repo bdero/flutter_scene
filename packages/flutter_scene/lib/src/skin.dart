@@ -48,6 +48,20 @@ base class Skin {
   /// `joints[i]`.
   final List<Matrix4> inverseBindMatrices = [];
 
+  /// Ring of joints textures reused across frames by [getJointsTexture].
+  ///
+  /// Each frame writes the next slot so the GPU is never handed a texture
+  /// it may still be sampling from a recent frame. The ring is allocated
+  /// lazily and dropped if the joint count (and therefore the texture
+  /// size) ever changes.
+  static const int _jointsTextureRingSize = 3;
+  final List<gpu.Texture?> _jointsTextureRing = List<gpu.Texture?>.filled(
+    _jointsTextureRingSize,
+    null,
+  );
+  int _jointsTextureRingCursor = 0;
+  int _jointsTextureDimension = 0;
+
   /// Creates a [Skin] from a deserialized flatbuffer skin description,
   /// resolving each joint reference against the supplied [sceneNodes].
   ///
@@ -100,12 +114,24 @@ base class Skin {
       _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()),
     );
 
-    gpu.Texture texture = gpu.gpuContext.createTexture(
-      gpu.StorageMode.hostVisible,
-      dimensionSize,
-      dimensionSize,
-      format: gpu.PixelFormat.r32g32b32a32Float,
-    );
+    // Drop the ring if the texture size changed (joint count is fixed
+    // after construction, so this normally never triggers).
+    if (dimensionSize != _jointsTextureDimension) {
+      _jointsTextureRing.fillRange(0, _jointsTextureRing.length, null);
+      _jointsTextureDimension = dimensionSize;
+    }
+
+    // Advance to the next ring slot, allocating it on first use.
+    _jointsTextureRingCursor =
+        (_jointsTextureRingCursor + 1) % _jointsTextureRingSize;
+    final gpu.Texture texture =
+        _jointsTextureRing[_jointsTextureRingCursor] ??= gpu.gpuContext
+            .createTexture(
+              gpu.StorageMode.hostVisible,
+              dimensionSize,
+              dimensionSize,
+              format: gpu.PixelFormat.r32g32b32a32Float,
+            );
     // 64 bytes per matrix. 4 bytes per pixel.
     Float32List jointMatrixFloats = Float32List(
       dimensionSize * dimensionSize * 4,
