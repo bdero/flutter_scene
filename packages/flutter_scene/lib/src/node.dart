@@ -300,6 +300,35 @@ base class Node implements SceneGraph {
     return importGlb(bytes);
   }
 
+  /// Load a single-file `.glb` model from a [Stream] of byte chunks.
+  ///
+  /// Convenience wrapper for [fromGlbBytes] that drains the stream
+  /// into a single buffer before parsing. Useful when the caller has
+  /// a `Stream<List<int>>` (e.g. an `http` response body, a `dart:io`
+  /// `File.openRead()` pipe, or a websocket frame source) but not the
+  /// full byte buffer up-front.
+  ///
+  /// This factory buffers the entire stream in memory before
+  /// delegating to [fromGlbBytes] — peak memory equals the full GLB
+  /// size, matching [fromGlbBytes] semantics. True incremental
+  /// parsing of the GLB container is out of scope for this factory.
+  ///
+  /// Accepts `Stream<List<int>>` for compatibility with `dart:io` and
+  /// `package:http`; `Stream<Uint8List>` callers also work since
+  /// `Uint8List` implements `List<int>`.
+  ///
+  /// ```dart
+  /// final response = await http.Client().send(http.Request('GET', url));
+  /// final node = await Node.fromGlbStream(response.stream);
+  /// ```
+  static Future<Node> fromGlbStream(Stream<List<int>> stream) async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in stream) {
+      builder.add(chunk);
+    }
+    return fromGlbBytes(builder.toBytes());
+  }
+
   /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.
   static Future<Node> fromGlbAsset(String assetPath) async {
     final byteData = await rootBundle.load(assetPath);
