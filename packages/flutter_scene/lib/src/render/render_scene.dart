@@ -28,6 +28,28 @@ class RenderItem {
 
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
+
+  /// Per-instance model transforms, or `null` for a non-instanced item.
+  ///
+  /// When set, this item draws [geometry] / [material] once per entry,
+  /// each at `worldTransform * transform`. Refreshed each frame from the
+  /// owning [InstancedMeshComponent].
+  List<Matrix4>? instanceTransforms;
+
+  /// Node-local aggregate AABB covering every instance, used to
+  /// frustum-cull an instanced item as a single unit.
+  ///
+  /// `null` means the instanced item is unbounded and always drawn.
+  /// Ignored for non-instanced items.
+  Aabb3? instanceBounds;
+
+  /// The local-space AABB this item is frustum-culled against, or `null`
+  /// when it should be treated as always visible.
+  ///
+  /// An instanced item uses its [instanceBounds]; a regular item uses its
+  /// geometry's local bounds.
+  Aabb3? get cullBounds =>
+      instanceTransforms != null ? instanceBounds : geometry.localBounds;
 }
 
 /// The flat list of [RenderItem]s the renderer iterates.

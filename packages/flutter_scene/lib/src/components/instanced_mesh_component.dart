@@ -1,0 +1,62 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/instanced_mesh.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
+
+/// An engine [Component] that draws an [InstancedMesh].
+///
+/// While the owning node is part of a live scene, this component
+/// registers a single [RenderItem] for the whole instanced mesh and
+/// refreshes it each frame. The render passes draw every instance from
+/// that one item.
+class InstancedMeshComponent extends Component {
+  /// Creates a component that draws [instancedMesh].
+  InstancedMeshComponent(this.instancedMesh);
+
+  /// The instanced mesh this component draws.
+  final InstancedMesh instancedMesh;
+
+  RenderItem? _renderItem;
+
+  @override
+  void onMount() {
+    final renderScene = node.internalRenderScene;
+    if (renderScene == null) return;
+    final item = RenderItem(
+      geometry: instancedMesh.geometry,
+      material: instancedMesh.material,
+    );
+    _renderItem = item;
+    renderScene.add(item);
+  }
+
+  @override
+  void onUnmount() {
+    final item = _renderItem;
+    if (item != null) {
+      node.internalRenderScene?.remove(item);
+      _renderItem = null;
+    }
+  }
+
+  /// Refreshes this component's render item from the owning node's
+  /// transform and cull state and the current instance list. Called once
+  /// per frame by the scene pre-pass while the node is visible.
+  @internal
+  void refreshRenderItem() {
+    final item = _renderItem;
+    if (item == null) return;
+    item.visible = true;
+    item.frustumCulled = node.frustumCulled;
+    item.worldTransform.setFrom(node.globalTransform);
+    item.instanceTransforms = instancedMesh.instances;
+    item.instanceBounds = instancedMesh.aggregateBounds;
+  }
+
+  /// Keeps this component's render item out of the render passes. Called
+  /// by the scene pre-pass while the owning node is hidden.
+  @internal
+  void hideRenderItem() {
+    _renderItem?.visible = false;
+  }
+}

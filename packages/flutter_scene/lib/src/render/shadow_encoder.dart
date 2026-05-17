@@ -49,7 +49,7 @@ class ShadowEncoder {
     if (!item.visible) return;
     if (!item.material.isOpaque()) return;
     if (item.frustumCulled) {
-      final bounds = item.geometry.localBounds;
+      final bounds = item.cullBounds;
       if (bounds != null) {
         cullScratchAabb
           ..copyFrom(bounds)
@@ -63,6 +63,22 @@ class ShadowEncoder {
       _depthShader,
     );
     _renderPass.bindPipeline(pipeline);
+
+    final instances = item.instanceTransforms;
+    if (instances != null) {
+      for (final instanceTransform in instances) {
+        item.geometry.bind(
+          _renderPass,
+          _transientsBuffer,
+          item.worldTransform * instanceTransform,
+          _lightSpaceMatrix,
+          _cameraPositionPlaceholder,
+        );
+        _renderPass.draw();
+      }
+      return;
+    }
+
     item.geometry.bind(
       _renderPass,
       _transientsBuffer,
