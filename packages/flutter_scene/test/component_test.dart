@@ -14,6 +14,18 @@ class RecordingComponent extends Component {
 
 class OtherComponent extends Component {}
 
+/// Counts [update] calls for tick-gating assertions.
+class TickCountingComponent extends Component {
+  int updateCalls = 0;
+  double lastDelta = 0;
+
+  @override
+  void update(double deltaSeconds) {
+    updateCalls++;
+    lastDelta = deltaSeconds;
+  }
+}
+
 void main() {
   group('Node component collection', () {
     test('addComponent fires onAttach and sets the owner', () {
@@ -132,6 +144,39 @@ void main() {
 
       expect(node.mesh, isNull);
       expect(node.getComponent<MeshComponent>(), isNull);
+    });
+  });
+
+  group('component tick gating', () {
+    test('tick is a no-op before the component is mounted', () {
+      final component = TickCountingComponent();
+      Node().addComponent(component);
+      component.tick(1.0);
+      expect(component.updateCalls, 0);
+    });
+
+    test('tick is deferred until onLoad completes', () async {
+      final component = TickCountingComponent();
+      Node().addComponent(component);
+      component.mount();
+
+      component.tick(1.0);
+      expect(component.updateCalls, 0, reason: 'onLoad has not resolved yet');
+
+      await Future<void>.delayed(Duration.zero);
+      component.tick(0.5);
+      expect(component.updateCalls, 1);
+      expect(component.lastDelta, 0.5);
+    });
+
+    test('a disabled component does not tick', () async {
+      final component = TickCountingComponent()..enabled = false;
+      Node().addComponent(component);
+      component.mount();
+      await Future<void>.delayed(Duration.zero);
+
+      component.tick(1.0);
+      expect(component.updateCalls, 0);
     });
   });
 }
