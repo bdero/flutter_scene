@@ -9,7 +9,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 const double _carHeadingOffset = -pi / 2;
 
 const double _roadWidth = 5.0;
-const double _markingHeight = 0.13;
+const double _markingHeight = 0.05;
 
 /// An infotainment-style navigation scene: a long looping road track
 /// with painted edge and center lines, and the example car driving it
@@ -83,12 +83,23 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
 
   @override
   void initState() {
-    // The ground.
+    // A directional "sun" that lights the scene and casts shadows. Its
+    // shadow frustum is small; the painter recenters it on the car each
+    // frame so the car's shadow on the road stays crisp.
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(-0.45, -1.0, -0.35),
+      castsShadow: true,
+    );
+
+    // The ground. A lit material, so it receives the car's shadow.
     scene.add(
       Node(
         mesh: Mesh(
           PlaneGeometry(width: 64, depth: 64),
-          UnlitMaterial()..baseColorFactor = vm.Vector4(0.13, 0.14, 0.16, 1.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.13, 0.14, 0.16, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.95,
         ),
       ),
     );
@@ -128,11 +139,15 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // Adds the road's surface ribbon plus its edge and center marking
   // lines.
   void _addRoad(ScenePath road) {
+    // A lit material, so the road receives the car's shadow.
     scene.add(
       Node(
         mesh: Mesh(
           RibbonGeometry(road, width: _roadWidth, stations: 280),
-          UnlitMaterial()..baseColorFactor = vm.Vector4(0.30, 0.31, 0.35, 1.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.30, 0.31, 0.35, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.85,
         ),
       ),
     );
@@ -141,7 +156,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     for (final side in [-_roadWidth / 2, _roadWidth / 2]) {
       final line = PolylineGeometry(
         _offsetPath(road, side, lift: _markingHeight),
-        width: 5,
+        width: 8,
       );
       markings.add(line);
       scene.add(Node(mesh: Mesh(line, UnlitMaterial())));
@@ -150,7 +165,8 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     // A dashed yellow center line, each dash rounded at both ends.
     final center = PolylineGeometry(
       _offsetPath(road, 0.0, lift: _markingHeight),
-      width: 5,
+      width: 8 * 0.01,
+      widthMode: PolylineWidthMode.worldUnits,
       dash: const DashPattern(
         dashLength: 1.6,
         gapLength: 1.2,
@@ -315,6 +331,10 @@ class _NavRoutePainter extends CustomPainter {
         frame.position + _lateral(frame.tangent) * (_roadWidth / 4);
     // The car travels against the path tangent.
     final travelDirection = -frame.tangent;
+
+    // Keep the shadow frustum centered on the car so its shadow on the
+    // road stays inside the (small, crisp) shadow map.
+    scene.directionalLight?.shadowFocusPoint = carPosition;
 
     final camera = _followCamera(carPosition, travelDirection);
 
