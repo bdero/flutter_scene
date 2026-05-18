@@ -81,6 +81,11 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // Rolling wheel-spin angle, advanced from the spin slider each frame.
   double _wheelRotation = 0.0;
 
+  // The animated route line ahead of the car. Its mesh is rebuilt every
+  // frame by the painter; the node and material persist.
+  final Node _navNode = Node();
+  final UnlitMaterial _navMaterial = UnlitMaterial();
+
   @override
   void initState() {
     // A directional "sun" that lights the scene and casts shadows. Its
@@ -105,6 +110,10 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     );
 
     _addRoad(mainRoad);
+
+    // The route line ahead of the car lives in its own node; the
+    // painter rebuilds its mesh every frame.
+    scene.add(_navNode);
 
     // The example car drives the loop. It is wrapped in a parent node so
     // its imported transform is left intact, and scaled from its bounds.
@@ -245,6 +254,8 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
               carScale: carScale,
               carLift: carLift,
               followCam: _followCam,
+              navNode: _navNode,
+              navMaterial: _navMaterial,
               elapsedSeconds: widget.elapsedSeconds,
             ),
           ),
@@ -291,6 +302,72 @@ List<vm.Vector3> _offsetPath(
   return result;
 }
 
+// Arc length between bright bands in the route line, and how fast (in
+// pattern cycles per second) the bands flow forward along it.
+const double _navWavelength = 7.0;
+const double _navPulseSpeed = 0.8;
+
+// Builds the route line: a thick blue ribbon lying flat just above the
+// car's lane, starting just ahead of the car and reaching forward along
+// the road. A flat ribbon (rather than a camera-facing line) never
+// tilts down into the road surface, and ordinary depth testing then
+// layers it correctly: above the flat road, below the taller car. Each
+// vertex carries a color from a gradient whose bright bands flow away
+// from the car as [elapsedSeconds] advances.
+MeshGeometry _buildNavLine(
+  ScenePath road,
+  double carDistance,
+  double elapsedSeconds,
+) {
+  const samples = 44;
+  const startOffset = 1.6; // begins just past the car's front
+  const aheadLength = 32.0; // how far ahead the route reaches
+  const lift = 0.08; // floats just above the road
+  const halfWidth = 0.55; // a ~1.1 unit wide ribbon
+  final up = vm.Vector3(0, 1, 0);
+  final deep = vm.Vector3(0.05, 0.18, 0.55);
+  final bright = vm.Vector3(0.45, 0.85, 1.5);
+
+  final builder = GeometryBuilder(deduplicate: false)..normal(up);
+  for (var i = 0; i < samples; i++) {
+    final t = i / (samples - 1);
+    final ahead = startOffset + (aheadLength - startOffset) * t;
+    // Ahead of the car is the decreasing-distance direction; wrap so the
+    // line reaches across the loop's seam.
+    final d = (carDistance - ahead) % road.length;
+    final frame = road.frameAtDistance(d);
+    final lateral = _lateral(frame.tangent);
+    final center = frame.position + lateral * (_roadWidth / 4);
+    final y = center.y + lift;
+    final left = center - lateral * halfWidth;
+    final right = center + lateral * halfWidth;
+
+    // Bright bands flow outward, dimming toward the far end.
+    final phase =
+        (ahead - startOffset) / _navWavelength -
+        elapsedSeconds * _navPulseSpeed;
+    final pulse = 0.5 + 0.5 * sin(2 * pi * phase);
+    final fade = 1.0 - 0.5 * t;
+    final c = (deep + (bright - deep) * pulse)..scale(fade);
+
+    builder
+      ..color(vm.Vector4(c.x, c.y, c.z, 1.0))
+      ..addVertex(vm.Vector3(left.x, y, left.z))
+      ..addVertex(vm.Vector3(right.x, y, right.z));
+  }
+  // Stitch consecutive cross-sections into a triangle strip. The line is
+  // sampled in the car's travel direction (decreasing path distance), so
+  // the winding is reversed from a forward-traversed ribbon to keep the
+  // surface facing up.
+  for (var i = 0; i < samples - 1; i++) {
+    final base = i * 2;
+    builder
+      ..addTriangle(base, base + 1, base + 2)
+      ..addTriangle(base + 1, base + 3, base + 2);
+  }
+  return builder.build();
+}
+
 // Mutable smoothing state for the chase camera, carried across frames.
 class _FollowCamState {
   vm.Vector3? anchorPosition;
@@ -307,6 +384,8 @@ class _NavRoutePainter extends CustomPainter {
     required this.carScale,
     required this.carLift,
     required this.followCam,
+    required this.navNode,
+    required this.navMaterial,
     required this.elapsedSeconds,
   });
 
@@ -317,6 +396,8 @@ class _NavRoutePainter extends CustomPainter {
   final double carScale;
   final double carLift;
   final _FollowCamState followCam;
+  final Node navNode;
+  final UnlitMaterial navMaterial;
   final double elapsedSeconds;
 
   @override
@@ -341,6 +422,15 @@ class _NavRoutePainter extends CustomPainter {
     // The camera-facing marking lines are rebuilt for the current view.
     for (final marking in markings) {
       marking.updateForCamera(camera, size);
+    }
+
+    // The route line: a thick blue ribbon along the lane ahead of the
+    // car, rebuilt each frame so its gradient pulses forward.
+    if (carNode != null) {
+      navNode.mesh = Mesh(
+        _buildNavLine(road, distance, elapsedSeconds),
+        navMaterial,
+      );
     }
 
     final car = carNode;
