@@ -14,14 +14,14 @@ import 'package:flutter_scene/src/material/environment.dart';
 /// analytic contribution is layered on top of the IBL ambient term. The
 /// shader normalizes [direction], so it need not be unit length.
 ///
-/// When [castsShadow] is true the renderer adds a depth-only shadow pass
-/// from the light's point of view, sampled with PCF. The shadow uses a
-/// fixed orthographic frustum: a [shadowFrustumSize] × [shadowFrustumSize]
-/// square, [shadowFrustumDepth] deep, centered on [shadowFocusPoint].
-/// Geometry outside that box is unshadowed, so size the box (and move the
-/// focus point) to cover the part of the scene you care about. Shadowing
-/// fades back to lit over the box's outer [shadowFadeRange] world units,
-/// so its edge is soft rather than a hard cutoff.
+/// When [castsShadow] is true the renderer adds a depth-only shadow
+/// pass. Shadows are cascaded: the camera view is split into
+/// [shadowCascadeCount] depth ranges out to [shadowMaxDistance], each
+/// fit with its own shadow map so near geometry stays crisp over a long
+/// view distance. The penumbra is a soft Poisson-disk PCF kernel of
+/// radius [shadowSoftness], and shadowing fades back to lit at the far
+/// edge over [shadowFadeRange]. Cascaded shadows require the scene to
+/// render with a [PerspectiveCamera].
 class DirectionalLight {
   /// Creates a [DirectionalLight].
   ///
@@ -33,20 +33,16 @@ class DirectionalLight {
     Vector3? color,
     this.intensity = 3.0,
     this.castsShadow = false,
-    Vector3? shadowFocusPoint,
-    this.shadowFrustumSize = 12.0,
-    this.shadowFrustumDepth = 50.0,
     this.shadowFadeRange = 2.0,
-    this.shadowSoftness = 0.3,
+    this.shadowSoftness = 0.08,
     this.shadowCascadeCount = 4,
     this.shadowMaxDistance = 150.0,
     this.shadowCascadeSplitLambda = 0.6,
     this.shadowMapResolution = 1024,
-    this.shadowDepthBias = 0.0015,
+    this.shadowDepthBias = 0.02,
     this.shadowNormalBias = 0.02,
   }) : direction = direction ?? Vector3(-0.3, -1.0, -0.2),
-       color = color ?? Vector3(1.0, 1.0, 1.0),
-       shadowFocusPoint = shadowFocusPoint ?? Vector3.zero();
+       color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// The direction the light travels, in world space (from the light
   /// toward the scene). Need not be unit length.
@@ -61,21 +57,9 @@ class DirectionalLight {
   /// Whether this light casts shadows (adds a shadow-map pass).
   bool castsShadow;
 
-  /// World-space point the orthographic shadow frustum is centered on.
-  Vector3 shadowFocusPoint;
-
-  /// Side length of the (square) orthographic shadow frustum, in world
-  /// units. Larger covers more scene at lower effective resolution.
-  double shadowFrustumSize;
-
-  /// Depth (near-to-far extent) of the orthographic shadow frustum, in
-  /// world units, centered on [shadowFocusPoint] along the light axis.
-  double shadowFrustumDepth;
-
-  /// World-space width of the band at the shadow frustum's edge over
-  /// which shadowing fades back to lit, softening the otherwise hard
-  /// box edge. Clamped to half [shadowFrustumSize]; `0` disables the
-  /// fade.
+  /// World-space width of the band at the far shadow cascade's edge
+  /// over which shadowing fades back to lit, so the shadow distance
+  /// limit is soft rather than a hard cutoff. `0` disables the fade.
   double shadowFadeRange;
 
   /// World-space radius of the shadow penumbra. Larger values give a
@@ -101,8 +85,10 @@ class DirectionalLight {
   /// the resolution of each cascade's tile.
   int shadowMapResolution;
 
-  /// Constant depth bias subtracted from the receiver's light-space depth
-  /// before the shadow test, to combat self-shadow acne.
+  /// World-space depth bias subtracted from the receiver before the
+  /// shadow test. Converted into each cascade's clip-space depth range,
+  /// so a caster's shadow appears at the same world-height threshold in
+  /// every cascade rather than fading out in the coarser far ones.
   double shadowDepthBias;
 
   /// World-space offset along the surface normal applied to the receiver
@@ -110,58 +96,6 @@ class DirectionalLight {
   /// no slope-scaled depth-bias rasterizer state, so this carries the
   /// load of acne removal on grazing surfaces.
   double shadowNormalBias;
-
-  /// Builds the world → light-clip-space matrix used to render and sample
-  /// the shadow map. Uses the same column-vector / `[0, 1]` depth
-  /// conventions as [PerspectiveCamera.getViewTransform].
-  Matrix4 computeLightSpaceMatrix() {
-    final length = direction.length;
-    final dir =
-        length == 0.0 ? Vector3(0.0, -1.0, 0.0) : Vector3.copy(direction)
-          ..scale(1.0 / length);
-    final up =
-        dir.y.abs() > 0.99 ? Vector3(0.0, 0.0, 1.0) : Vector3(0.0, 1.0, 0.0);
-
-    const near = 0.01;
-    final far = shadowFrustumDepth;
-    final eye = shadowFocusPoint - dir * (far * 0.5);
-    final view = _lookAt(eye, shadowFocusPoint, up);
-
-    final s = shadowFrustumSize;
-    // Symmetric orthographic projection, column-major, mapping z in
-    // [near, far] to [0, 1] (matching the perspective projection).
-    final ortho = Matrix4(
-      2.0 / s,
-      0.0,
-      0.0,
-      0.0, //
-      0.0,
-      2.0 / s,
-      0.0,
-      0.0, //
-      0.0,
-      0.0,
-      1.0 / (far - near),
-      0.0, //
-      0.0,
-      0.0,
-      -near / (far - near),
-      1.0, //
-    );
-    final matrix = ortho * view;
-
-    // Texel snapping: shift the projection by a sub-texel amount so a
-    // fixed world reference (the origin) always lands on a texel center.
-    // Without this the shadow map's texel grid slides under the scene as
-    // the focus point moves, and shadow edges shimmer.
-    final reference = matrix.transformed(Vector4(0.0, 0.0, 0.0, 1.0));
-    final resolution = shadowMapResolution.toDouble();
-    final texelX = (reference.x * 0.5 + 0.5) * resolution;
-    final texelY = (reference.y * 0.5 + 0.5) * resolution;
-    final offsetX = (texelX.roundToDouble() - texelX) / resolution * 2.0;
-    final offsetY = (texelY.roundToDouble() - texelY) / resolution * 2.0;
-    return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
-  }
 
   /// Builds the [shadowCascadeCount] shadow cascades that cover
   /// [camera]'s view out to [shadowMaxDistance], for a render target of
@@ -235,6 +169,7 @@ class DirectionalLight {
         ShadowCascade(
           lightSpaceMatrix: _cascadeLightSpaceMatrix(lightDir, center, radius),
           splitDistance: splits[c + 1],
+          boxSize: radius * 2.0,
         ),
       );
     }
@@ -326,17 +261,26 @@ class DirectionalLight {
 /// samples its shadow map tile, plus the camera view distance at which
 /// its coverage ends.
 class ShadowCascade {
-  /// Creates a cascade from its [lightSpaceMatrix] and [splitDistance].
-  ShadowCascade({required this.lightSpaceMatrix, required this.splitDistance});
+  /// Creates a cascade from its [lightSpaceMatrix], [splitDistance], and
+  /// [boxSize].
+  ShadowCascade({
+    required this.lightSpaceMatrix,
+    required this.splitDistance,
+    required this.boxSize,
+  });
 
   /// World -> light-clip-space matrix that renders and samples this
   /// cascade's shadow map tile.
   final Matrix4 lightSpaceMatrix;
 
   /// Camera view-space distance, in world units, at which this
-  /// cascade's coverage ends. A fragment uses the first cascade whose
-  /// [splitDistance] exceeds its view depth.
+  /// cascade's coverage ends.
   final double splitDistance;
+
+  /// World-space side length of this cascade's orthographic box, used
+  /// to convert world-space softness and fade widths into the
+  /// cascade's UV space.
+  final double boxSize;
 }
 
 /// The lighting state handed to a [Material] when it binds for a draw.
@@ -350,7 +294,7 @@ class Lighting {
     this.environmentIntensity = 1.0,
     this.directionalLight,
     this.shadowMap,
-    this.lightSpaceMatrix,
+    this.cascades = const [],
   });
 
   /// The image-based-lighting environment in effect for this draw.
@@ -363,12 +307,12 @@ class Lighting {
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;
 
-  /// The shadow map (a depth-in-`.r` texture) for [directionalLight], or
-  /// null when shadows are off for this frame. Sampled with
-  /// [lightSpaceMatrix].
+  /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
+  /// cascade tiles as a horizontal strip) for [directionalLight], or
+  /// null when shadows are off for this frame. Sampled with [cascades].
   final gpu.Texture? shadowMap;
 
-  /// World → light-clip-space matrix matching [shadowMap], or null when
-  /// there is no shadow map this frame.
-  final Matrix4? lightSpaceMatrix;
+  /// The shadow cascades matching [shadowMap], near-to-far, or empty
+  /// when there is no shadow map this frame.
+  final List<ShadowCascade> cascades;
 }

@@ -329,7 +329,6 @@ class _StressSceneState extends State<_StressScene> {
       color: vm.Vector3(1.0, 0.97, 0.9),
       intensity: 2.5,
       castsShadow: true,
-      shadowFrustumSize: 8.0,
     );
     unawaited(_load());
   }

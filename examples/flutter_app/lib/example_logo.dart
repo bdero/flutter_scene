@@ -24,7 +24,6 @@ class ExampleLogoState extends State<ExampleLogo> {
       color: vm.Vector3(1.0, 0.97, 0.9),
       intensity: 3.0,
       castsShadow: true,
-      shadowFrustumSize: 8.0,
     );
 
     // A simple ground plane to catch the logo's shadow.

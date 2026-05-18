@@ -88,12 +88,13 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
 
   @override
   void initState() {
-    // A directional "sun" that lights the scene and casts shadows. Its
-    // shadow frustum is small; the painter recenters it on the car each
-    // frame so the car's shadow on the road stays crisp.
+    // A directional "sun" that lights the scene and casts cascaded
+    // shadows. The shadow distance is kept tight to this scene so the
+    // near cascade stays high-resolution under the car.
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-0.45, -1.0, -0.35),
       castsShadow: true,
+      shadowMaxDistance: 60.0,
     );
 
     // The ground. A lit material, so it receives the car's shadow.
@@ -304,8 +305,8 @@ List<vm.Vector3> _offsetPath(
 
 // Arc length between bright bands in the route line, and how fast (in
 // pattern cycles per second) the bands flow forward along it.
-const double _navWavelength = 7.0;
-const double _navPulseSpeed = 0.8;
+const double _navWavelength = 20.0;
+const double _navPulseSpeed = 0.4;
 
 // Builds the route line: a thick blue ribbon lying flat just above the
 // car's lane, starting just ahead of the car and reaching forward along
@@ -319,10 +320,10 @@ MeshGeometry _buildNavLine(
   double carDistance,
   double elapsedSeconds,
 ) {
-  const samples = 44;
+  const samples = 88;
   const startOffset = 1.6; // begins just past the car's front
-  const aheadLength = 32.0; // how far ahead the route reaches
-  const lift = 0.08; // floats just above the road
+  const aheadLength = 84.0; // how far ahead the route reaches
+  const lift = 0.58; // floats just above the road
   const halfWidth = 0.55; // a ~1.1 unit wide ribbon
   final up = vm.Vector3(0, 1, 0);
   final deep = vm.Vector3(0.05, 0.18, 0.55);
@@ -412,10 +413,6 @@ class _NavRoutePainter extends CustomPainter {
         frame.position + _lateral(frame.tangent) * (_roadWidth / 4);
     // The car travels against the path tangent.
     final travelDirection = -frame.tangent;
-
-    // Keep the shadow frustum centered on the car so its shadow on the
-    // road stays inside the (small, crisp) shadow map.
-    scene.directionalLight?.shadowFocusPoint = carPosition;
 
     final camera = _followCamera(carPosition, travelDirection);
 

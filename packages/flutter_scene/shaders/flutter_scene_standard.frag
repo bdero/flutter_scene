@@ -19,9 +19,13 @@ uniform FragInfo {
   // Active only when has_directional_light > 0.5.
   vec4 directional_light_direction;
   vec4 directional_light_color;
-  // World -> light-clip-space matrix for sampling shadow_map. Used only
-  // when casts_shadow > 0.5.
-  mat4 light_space_matrix;
+  // World -> light-clip-space matrix per shadow cascade; the first
+  // shadow_cascade_count entries are valid. Used when casts_shadow > 0.5.
+  mat4 light_space_matrix[4];
+  // World-space orthographic box size of each cascade (x..w map to
+  // cascade 0..3), used to scale world-space softness and fade widths
+  // into a cascade's UV space.
+  vec4 cascade_box_sizes;
   float vertex_color_weight;
   float metallic_factor;
   float roughness_factor;
@@ -44,12 +48,13 @@ uniform FragInfo {
   // forced fully opaque.
   float alpha_mode;
   float alpha_cutoff;
-  // UV-space half-width over which shadowing fades back to lit at the
-  // shadow map border, softening the box edge. 0 disables the fade.
+  // World-space width over which shadowing fades back to lit at the far
+  // cascade's edge, softening the shadow distance limit. 0 disables it.
   float shadow_fade;
-  // UV-space radius of the soft-shadow (PCF) sampling disk; the shadow
-  // penumbra width.
+  // World-space radius of the soft-shadow (PCF) penumbra.
   float shadow_softness;
+  // Number of valid cascades in light_space_matrix (1 to 4).
+  float shadow_cascade_count;
 }
 frag_info;
 
@@ -102,31 +107,42 @@ const vec2 kPoissonDisk[16] = vec2[](
     vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
     vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790));
 
-// Soft PCF shadow lookup. Returns 1.0 (lit) .. 0.0 (fully shadowed).
-// `world_pos` and `n` are world-space; `n` is the (perturbed) shading
-// normal, used for normal-offset bias to fight grazing-angle acne.
-float SampleShadow(vec3 world_pos, vec3 n) {
-  vec3 biased_pos = world_pos + n * frag_info.shadow_normal_bias;
-  vec4 light_clip = frag_info.light_space_matrix * vec4(biased_pos, 1.0);
+// Samples one cascade's tile of the shadow atlas strip with a rotated
+// 16-tap Poisson-disk PCF. `world_pos` and `n` are world-space.
+float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
+  float box = frag_info.cascade_box_sizes[cascade];
+
+  // Normal-offset bias. A soft PCF kernel on a surface tilted relative
+  // to the light straddles a depth gradient and would self-shadow, so
+  // lift the receiver along its normal far enough that the whole kernel
+  // clears the surface. The offset scales with the kernel's world
+  // radius (shadow_softness) and the surface's slope to the light. It
+  // depends only on geometry, not the cascade, so all cascades agree
+  // and there is no banding at their seams.
+  vec3 light_toward = -normalize(frag_info.directional_light_direction.xyz);
+  float ndotl = max(dot(n, light_toward), 0.15);
+  float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / (ndotl * ndotl),
+                    8.0);
+  float normal_offset =
+      frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
+  vec3 biased = world_pos + n * normal_offset;
+
+  vec4 light_clip =
+      frag_info.light_space_matrix[cascade] * vec4(biased, 1.0);
   vec3 proj = light_clip.xyz / light_clip.w;
   vec2 uv = proj.xy * 0.5 + 0.5;
-  // The shadow map is a render-to-texture target; flip V to match its
-  // sampled Y orientation (top-down on Metal/Vulkan, bottom-up on OpenGL
-  // ES -- see render_target_flip_y).
-  if (frag_info.render_target_flip_y > 0.5) {
-    uv.y = 1.0 - uv.y;
-  }
-  // Outside the orthographic shadow frustum: treat as lit.
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
-      proj.z > 1.0) {
-    return 1.0;
-  }
-  float receiver_depth = proj.z - frag_info.shadow_bias;
+  // The depth bias is world-space; convert it to this cascade's clip-z
+  // (its orthographic depth range is 3 * box) so a caster crosses the
+  // shadow threshold at the same world height in every cascade, with
+  // no discontinuity where cascades meet.
+  float receiver_depth = proj.z - frag_info.shadow_bias / (3.0 * box);
 
-  // Poisson-disk PCF. The disk radius is the penumbra width; a
-  // per-fragment rotation hides the sample pattern so 16 taps read as
-  // a smooth soft edge instead of banding.
-  float radius = max(frag_info.shadow_softness, frag_info.shadow_texel_size);
+  // World-space penumbra -> this cascade's UV space, floored at a texel.
+  float radius =
+      max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
+  float inv_count = 1.0 / float(count);
+
+  // A per-fragment rotation hides the 16-tap pattern as a smooth edge.
   float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -137,20 +153,53 @@ float SampleShadow(vec3 world_pos, vec3 n) {
   for (int i = 0; i < 16; i++) {
     vec2 p = kPoissonDisk[i];
     vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
-    float caster_depth = texture(shadow_map, uv + offset).r;
+    // Keep samples in this cascade's tile, then place into the strip.
+    vec2 cuv = clamp(uv + offset, vec2(0.0), vec2(1.0));
+    vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
+    // The atlas is a render-to-texture target; flip V to match its
+    // sampled Y orientation (see render_target_flip_y).
+    if (frag_info.render_target_flip_y > 0.5) {
+      atlas_uv.y = 1.0 - atlas_uv.y;
+    }
+    float caster_depth = texture(shadow_map, atlas_uv).r;
     lit += receiver_depth <= caster_depth ? 1.0 : 0.0;
   }
   float shadow = lit / 16.0;
 
-  // Fade shadowing back to lit over the outer `shadow_fade` of UV space
-  // so the shadow map's box edge is soft rather than a hard cutoff.
-  float fade = frag_info.shadow_fade;
-  if (fade > 0.0) {
+  // Only the last cascade has a real outer edge (inner cascades hand
+  // off to the next), so fade just it back to lit at the boundary.
+  if (cascade == count - 1 && frag_info.shadow_fade > 0.0) {
+    float fade = frag_info.shadow_fade / box;
     vec2 edge = smoothstep(vec2(0.0), vec2(fade), uv) *
                 smoothstep(vec2(0.0), vec2(fade), vec2(1.0) - uv);
     shadow = mix(1.0, shadow, edge.x * edge.y);
   }
   return shadow;
+}
+
+// Soft cascaded-shadow lookup. Returns 1.0 (lit) .. 0.0 (fully
+// shadowed). `world_pos` and `n` are world-space; `n` is the
+// (perturbed) shading normal. Picks the first (highest-resolution)
+// cascade whose box contains the fragment.
+float SampleShadow(vec3 world_pos, vec3 n) {
+  int count = int(frag_info.shadow_cascade_count);
+  for (int c = 0; c < 4; c++) {
+    if (c >= count) {
+      break;
+    }
+    // Containment test with the unbiased position.
+    vec4 light_clip =
+        frag_info.light_space_matrix[c] * vec4(world_pos, 1.0);
+    vec3 proj = light_clip.xyz / light_clip.w;
+    vec2 uv = proj.xy * 0.5 + 0.5;
+    // Skip cascades whose box does not contain the fragment.
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 ||
+        proj.z < 0.0 || proj.z > 1.0) {
+      continue;
+    }
+    return SampleCascade(c, world_pos, n, count);
+  }
+  return 1.0;
 }
 
 void main() {

@@ -217,36 +217,39 @@ class PhysicallyBasedMaterial extends Material {
 
     final EnvironmentMap env = environment ?? lighting.environmentMap;
     final DirectionalLight? light = lighting.directionalLight;
-    final shadowMatrix =
-        lighting.shadowMap == null ? null : lighting.lightSpaceMatrix;
+    final cascades =
+        lighting.shadowMap == null
+            ? const <ShadowCascade>[]
+            : lighting.cascades;
 
-    // FragInfo std140 layout (352 bytes / 88 floats; the trailing run of
-    // scalars pads the block up to a 16-byte multiple):
-    //   [0..3]   vec4  color
-    //   [4..7]   vec4  emissive_factor
-    //   [8..43]  vec4  diffuse_sh0..8 (xyz used, w padding)
-    //   [44..47] vec4  directional_light_direction (xyz used)
-    //   [48..51] vec4  directional_light_color (rgb = color * intensity)
-    //   [52..67] mat4  light_space_matrix (column-major)
-    //   [68]     float vertex_color_weight
-    //   [69]     float metallic_factor
-    //   [70]     float roughness_factor
-    //   [71]     float has_normal_map
-    //   [72]     float normal_scale
-    //   [73]     float occlusion_strength
-    //   [74]     float environment_intensity
-    //   [75]     float has_directional_light
-    //   [76]     float casts_shadow
-    //   [77]     float shadow_bias
-    //   [78]     float shadow_normal_bias
-    //   [79]     float shadow_texel_size
-    //   [80]     float render_target_flip_y
-    //   [81]     float alpha_mode (0 opaque, 1 mask, 2 blend)
-    //   [82]     float alpha_cutoff
-    //   [83]     float shadow_fade (UV-space border fade half-width)
-    //   [84]     float shadow_softness (UV-space penumbra radius)
-    //   [85..87] padding to a 16-byte multiple
-    final fragInfo = Float32List(88);
+    // FragInfo std140 layout (560 bytes / 140 floats):
+    //   [0..3]    vec4  color
+    //   [4..7]    vec4  emissive_factor
+    //   [8..43]   vec4  diffuse_sh0..8 (xyz used, w padding)
+    //   [44..47]  vec4  directional_light_direction (xyz used)
+    //   [48..51]  vec4  directional_light_color (rgb = color * intensity)
+    //   [52..115] mat4  light_space_matrix[4] (shadow cascades)
+    //   [116..119] vec4 cascade_box_sizes (world-space box size each)
+    //   [120]     float vertex_color_weight
+    //   [121]     float metallic_factor
+    //   [122]     float roughness_factor
+    //   [123]     float has_normal_map
+    //   [124]     float normal_scale
+    //   [125]     float occlusion_strength
+    //   [126]     float environment_intensity
+    //   [127]     float has_directional_light
+    //   [128]     float casts_shadow
+    //   [129]     float shadow_bias
+    //   [130]     float shadow_normal_bias
+    //   [131]     float shadow_texel_size (1 / cascade tile resolution)
+    //   [132]     float render_target_flip_y
+    //   [133]     float alpha_mode (0 opaque, 1 mask, 2 blend)
+    //   [134]     float alpha_cutoff
+    //   [135]     float shadow_fade (world-space far-edge fade width)
+    //   [136]     float shadow_softness (world-space penumbra radius)
+    //   [137]     float shadow_cascade_count
+    //   [138..139] padding to a 16-byte multiple
+    final fragInfo = Float32List(140);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -269,40 +272,36 @@ class PhysicallyBasedMaterial extends Material {
       fragInfo[49] = light.color.y * light.intensity;
       fragInfo[50] = light.color.z * light.intensity;
     }
-    if (shadowMatrix != null) {
-      fragInfo.setRange(52, 68, shadowMatrix.storage);
+    for (var i = 0; i < cascades.length; i++) {
+      fragInfo.setRange(
+        52 + i * 16,
+        68 + i * 16,
+        cascades[i].lightSpaceMatrix.storage,
+      );
+      fragInfo[116 + i] = cascades[i].boxSize;
     }
-    fragInfo[68] = vertexColorWeight;
-    fragInfo[69] = metallicFactor;
-    fragInfo[70] = roughnessFactor;
-    fragInfo[71] = normalTexture != null ? 1.0 : 0.0;
-    fragInfo[72] = normalScale;
-    fragInfo[73] = occlusionStrength;
-    fragInfo[74] = lighting.environmentIntensity;
-    fragInfo[75] = light != null ? 1.0 : 0.0;
-    fragInfo[76] = shadowMatrix != null ? 1.0 : 0.0;
-    fragInfo[77] = light?.shadowDepthBias ?? 0.0;
-    fragInfo[78] = light?.shadowNormalBias ?? 0.0;
-    fragInfo[79] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
+    fragInfo[120] = vertexColorWeight;
+    fragInfo[121] = metallicFactor;
+    fragInfo[122] = roughnessFactor;
+    fragInfo[123] = normalTexture != null ? 1.0 : 0.0;
+    fragInfo[124] = normalScale;
+    fragInfo[125] = occlusionStrength;
+    fragInfo[126] = lighting.environmentIntensity;
+    fragInfo[127] = light != null ? 1.0 : 0.0;
+    fragInfo[128] = cascades.isEmpty ? 0.0 : 1.0;
+    fragInfo[129] = light?.shadowDepthBias ?? 0.0;
+    fragInfo[130] = light?.shadowNormalBias ?? 0.0;
+    fragInfo[131] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
     // Render-to-texture targets (the shadow map, the prefiltered-radiance
     // atlas) sample top-down on Metal/Vulkan and bottom-up on OpenGL ES.
     // Flutter GPU has no backend query; offscreen-MSAA support is a proxy
     // (true on Metal/Vulkan, false on OpenGL ES).
-    fragInfo[80] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
-    fragInfo[81] = alphaMode.index.toDouble();
-    fragInfo[82] = alphaCutoff;
-    // UV-space half-width of the shadow map's soft border, from the
-    // light's world-space fade range. Zero when there is no shadow.
-    fragInfo[83] =
-        light == null || shadowMatrix == null
-            ? 0.0
-            : (light.shadowFadeRange / light.shadowFrustumSize).clamp(0.0, 0.5);
-    // UV-space radius of the soft-shadow (PCF) kernel, from the light's
-    // world-space penumbra radius.
-    fragInfo[84] =
-        light == null || shadowMatrix == null
-            ? 0.0
-            : (light.shadowSoftness / light.shadowFrustumSize).clamp(0.0, 0.04);
+    fragInfo[132] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
+    fragInfo[133] = alphaMode.index.toDouble();
+    fragInfo[134] = alphaCutoff;
+    fragInfo[135] = light?.shadowFadeRange ?? 0.0;
+    fragInfo[136] = light?.shadowSoftness ?? 0.0;
+    fragInfo[137] = cascades.length.toDouble();
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
