@@ -6,6 +6,13 @@
 
 uniform sampler2D source_equirect;
 
+uniform PrefilterInfo {
+  // 1.0 when source_equirect already holds linear radiance (an HDR
+  // environment); 0.0 when it is sRGB-encoded and must be linearized.
+  float source_is_linear;
+}
+prefilter_info;
+
 in vec2 v_uv;  // [0, 1]^2 over the whole atlas; v_uv.y = 0 at the top.
 
 out vec4 frag_color;
@@ -13,9 +20,17 @@ out vec4 frag_color;
 #include <pbr.glsl>      // kPi, SRGBToLinear
 #include <texture.glsl>  // kPrefilterBands, Spherical<->Equirectangular
 
+// Samples the source environment as linear radiance. An sRGB source is
+// linearized; an HDR source (source_is_linear) already is linear.
+vec3 SampleSourceRadiance(vec3 direction) {
+  vec3 c = SampleEnvironmentTexture(source_equirect, direction);
+  return prefilter_info.source_is_linear > 0.5 ? c : SRGBToLinear(c);
+}
+
 // GGX importance samples accumulated per output texel. Fixed (compile-time)
-// so the loop bound is constant.
-const int kPrefilterSamples = 64;
+// so the loop bound is constant. High enough that the per-texel-rotated
+// sample set (see main) reads as fine noise rather than visible swirls.
+const int kPrefilterSamples = 256;
 
 // Van der Corput radical inverse in base 2, computed with float ops only
 // (no integer bit operations, which aren't reliably available in the GLSL
@@ -59,20 +74,29 @@ void main() {
   vec3 v = n;
   float roughness = band_index / max(kPrefilterBands - 1.0, 1.0);
 
+  // Per-texel azimuthal rotation of the importance-sample set. The GGX
+  // samples live in a tangent frame that rotates with n, so a fixed
+  // sample set leaves a spatially-coherent under-sampling bias that shows
+  // up as concentric swirls in the rougher bands. Rotating the set by a
+  // per-texel pseudo-random angle decorrelates that bias into fine noise,
+  // which the prefilter average then smooths away.
+  float jitter = fract(
+      52.9829189 *
+      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+
   vec3 color = vec3(0.0);
   float total_weight = 0.0;
   for (int i = 0; i < kPrefilterSamples; i++) {
-    vec3 h = ImportanceSampleGGX(Hammersley(i, kPrefilterSamples), n, roughness);
+    vec2 xi = Hammersley(i, kPrefilterSamples);
+    xi.x = fract(xi.x + jitter);
+    vec3 h = ImportanceSampleGGX(xi, n, roughness);
     vec3 l = normalize(2.0 * dot(v, h) * h - v);
     float n_dot_l = dot(n, l);
     if (n_dot_l > 0.0) {
-      color +=
-          SRGBToLinear(SampleEnvironmentTexture(source_equirect, l)) * n_dot_l;
+      color += SampleSourceRadiance(l) * n_dot_l;
       total_weight += n_dot_l;
     }
   }
-  color = total_weight > 0.0
-              ? color / total_weight
-              : SRGBToLinear(SampleEnvironmentTexture(source_equirect, n));
+  color = total_weight > 0.0 ? color / total_weight : SampleSourceRadiance(n);
   frag_color = vec4(color, 1.0);
 }

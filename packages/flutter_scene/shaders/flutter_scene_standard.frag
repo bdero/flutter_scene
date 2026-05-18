@@ -55,6 +55,10 @@ uniform FragInfo {
   float shadow_softness;
   // Number of valid cascades in light_space_matrix (1 to 4).
   float shadow_cascade_count;
+  // Rotates the image-based-lighting environment: the diffuse-SH and
+  // prefiltered-radiance lookup directions are transformed by this before
+  // sampling. Identity leaves the environment unrotated.
+  mat3 environment_transform;
 }
 frag_info;
 
@@ -252,16 +256,22 @@ void main() {
   // camera.
   float n_dot_v = max(dot(normal, camera_normal), 0.0);
 
-  vec3 reflection_normal = reflect(camera_normal, normal);
+  // reflect() needs the incident ray (camera -> surface); camera_normal
+  // points surface -> camera, so negate it. Sampling the environment with
+  // the un-negated vector would mirror reflections to the opposite side.
+  vec3 reflection_normal = reflect(-camera_normal, normal);
 
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
   vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
 
-  vec3 irradiance = max(EvaluateDiffuseSH(normal), vec3(0.0)) *
+  // The IBL environment can be rotated; transform the lookup directions.
+  vec3 env_normal = frag_info.environment_transform * normal;
+  vec3 env_reflection = frag_info.environment_transform * reflection_normal;
+  vec3 irradiance = max(EvaluateDiffuseSH(env_normal), vec3(0.0)) *
                     frag_info.environment_intensity;
   vec3 prefiltered_color =
-      SamplePrefilteredRadiance(prefiltered_radiance, reflection_normal,
-                                roughness, frag_info.render_target_flip_y) *
+      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection,
+                                roughness) *
       frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside

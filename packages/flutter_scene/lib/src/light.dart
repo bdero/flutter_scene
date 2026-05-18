@@ -292,10 +292,11 @@ class Lighting {
   Lighting({
     required this.environmentMap,
     this.environmentIntensity = 1.0,
+    Matrix3? environmentTransform,
     this.directionalLight,
     this.shadowMap,
     this.cascades = const [],
-  });
+  }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
   final EnvironmentMap environmentMap;
@@ -303,6 +304,10 @@ class Lighting {
   /// Scalar multiplier applied to [environmentMap]'s contribution
   /// (the scene's `environmentIntensity`).
   final double environmentIntensity;
+
+  /// Rotation applied to the image-based-lighting environment (the
+  /// scene's `environmentTransform`). Identity leaves it unrotated.
+  final Matrix3 environmentTransform;
 
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;

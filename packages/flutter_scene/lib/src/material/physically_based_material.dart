@@ -222,7 +222,7 @@ class PhysicallyBasedMaterial extends Material {
             ? const <ShadowCascade>[]
             : lighting.cascades;
 
-    // FragInfo std140 layout (560 bytes / 140 floats):
+    // FragInfo std140 layout (608 bytes / 152 floats):
     //   [0..3]    vec4  color
     //   [4..7]    vec4  emissive_factor
     //   [8..43]   vec4  diffuse_sh0..8 (xyz used, w padding)
@@ -248,8 +248,9 @@ class PhysicallyBasedMaterial extends Material {
     //   [135]     float shadow_fade (world-space far-edge fade width)
     //   [136]     float shadow_softness (world-space penumbra radius)
     //   [137]     float shadow_cascade_count
-    //   [138..139] padding to a 16-byte multiple
-    final fragInfo = Float32List(140);
+    //   [138..139] padding to a 16-byte boundary
+    //   [140..150] mat3  environment_transform (3 vec3 columns, w padding)
+    final fragInfo = Float32List(152);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -302,6 +303,15 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[135] = light?.shadowFadeRange ?? 0.0;
     fragInfo[136] = light?.shadowSoftness ?? 0.0;
     fragInfo[137] = cascades.length.toDouble();
+    // mat3 environment_transform: std140 stores each column as a vec3
+    // padded to 16 bytes, so the three columns land at [140], [144],
+    // [148]. Matrix3.storage is column-major (3 floats per column).
+    final envTransform = lighting.environmentTransform.storage;
+    for (var col = 0; col < 3; col++) {
+      fragInfo[140 + col * 4] = envTransform[col * 3];
+      fragInfo[141 + col * 4] = envTransform[col * 3 + 1];
+      fragInfo[142 + col * 4] = envTransform[col * 3 + 2];
+    }
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
