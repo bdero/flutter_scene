@@ -6,13 +6,17 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart' hide Animation;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_math/vector_math.dart' as vm;
+
+import 'hdr_image.dart';
 
 // Toggle these on to inspect scenes as they load. Both are off by
 // default; flip them locally when debugging a renderer regression in
@@ -65,6 +69,18 @@ const _catalog = <_StressTest>[
         'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
         'main/Models/AntiqueCamera/glTF-Binary/AntiqueCamera.glb',
     sizeBytes: 17540348,
+  ),
+  _StressTest(
+    id: 'DamagedHelmet',
+    title: 'Damaged Helmet',
+    description:
+        'The canonical glTF PBR test asset: one mesh with base color, '
+        'normal, metallic-roughness, emissive, and occlusion maps. A quick '
+        'all-in-one PBR fidelity check.',
+    url:
+        'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
+        'main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb',
+    sizeBytes: 3773916,
   ),
   _StressTest(
     id: 'SciFiHelmet',
@@ -203,6 +219,124 @@ const _catalog = <_StressTest>[
   ),
 ];
 
+// An image-based-lighting environment selectable from the scene's
+// environment menu.
+class _Environment {
+  const _Environment({required this.id, required this.title, this.url});
+
+  final String id;
+  final String title;
+
+  /// Radiance `.hdr` URL, or null for the renderer's built-in procedural
+  /// studio environment.
+  final String? url;
+}
+
+// Khronos sample-environment HDRs, downloaded at runtime. They are Git LFS
+// blobs, so they are fetched through media.githubusercontent.com (the
+// raw.githubusercontent.com path serves only the LFS pointer).
+const _kEnvironmentBaseUrl =
+    'https://media.githubusercontent.com/media/KhronosGroup/'
+    'glTF-Sample-Environments/main';
+
+const _environments = <_Environment>[
+  _Environment(id: 'studio', title: 'Studio (built-in)'),
+  _Environment(id: 'axis_test', title: 'Axis Test (solid colors)'),
+  _Environment(
+    id: 'neutral',
+    title: 'Studio Neutral',
+    url: '$_kEnvironmentBaseUrl/neutral.hdr',
+  ),
+  _Environment(
+    id: 'footprint_court',
+    title: 'Footprint Court',
+    url: '$_kEnvironmentBaseUrl/footprint_court.hdr',
+  ),
+  _Environment(
+    id: 'pisa',
+    title: 'Pisa',
+    url: '$_kEnvironmentBaseUrl/pisa.hdr',
+  ),
+  _Environment(
+    id: 'doge2',
+    title: "Doge's Palace",
+    url: '$_kEnvironmentBaseUrl/doge2.hdr',
+  ),
+  _Environment(
+    id: 'ennis',
+    title: 'Ennis House',
+    url: '$_kEnvironmentBaseUrl/ennis.hdr',
+  ),
+  _Environment(
+    id: 'field',
+    title: 'Field',
+    url: '$_kEnvironmentBaseUrl/field.hdr',
+  ),
+  _Environment(
+    id: 'helipad',
+    title: 'Helipad',
+    url: '$_kEnvironmentBaseUrl/helipad.hdr',
+  ),
+  _Environment(
+    id: 'papermill',
+    title: 'Papermill Ruins',
+    url: '$_kEnvironmentBaseUrl/papermill.hdr',
+  ),
+  _Environment(
+    id: 'directional',
+    title: 'Directional (test)',
+    url: '$_kEnvironmentBaseUrl/directional.hdr',
+  ),
+  _Environment(
+    id: 'chromatic',
+    title: 'Chromatic (test)',
+    url: '$_kEnvironmentBaseUrl/chromatic.hdr',
+  ),
+];
+
+// Generates a procedural test environment: a low-resolution equirect
+// colored by the dominant world axis of each direction (+X red, -X cyan,
+// +Y green, -Y magenta, +Z blue, -Z yellow). Solid colors make the
+// environment's orientation unambiguous in reflections and ambient light.
+({Float32List pixels, int width, int height}) _buildAxisTestEquirect() {
+  const width = 256;
+  const height = 128;
+  final pixels = Float32List(width * height * 4);
+  for (var py = 0; py < height; py++) {
+    // Row 0 is the down pole, matching EnvironmentMap.studio's convention.
+    final v = (py + 0.5) / height;
+    final latitude = (v - 0.5) * pi;
+    final cosLat = cos(latitude);
+    final dirY = sin(latitude);
+    for (var px = 0; px < width; px++) {
+      final u = (px + 0.5) / width;
+      final longitude = (u - 0.5) * 2.0 * pi;
+      final dirX = cosLat * cos(longitude);
+      final dirZ = cosLat * sin(longitude);
+      double r, g, b;
+      if (dirX.abs() >= dirY.abs() && dirX.abs() >= dirZ.abs()) {
+        r = dirX >= 0 ? 1.0 : 0.0; // +X red, -X cyan
+        g = dirX >= 0 ? 0.0 : 1.0;
+        b = dirX >= 0 ? 0.0 : 1.0;
+      } else if (dirY.abs() >= dirZ.abs()) {
+        r = dirY >= 0 ? 0.0 : 1.0; // +Y green, -Y magenta
+        g = dirY >= 0 ? 1.0 : 0.0;
+        b = dirY >= 0 ? 0.0 : 1.0;
+      } else {
+        r = dirZ >= 0 ? 0.0 : 1.0; // +Z blue, -Z yellow
+        g = dirZ >= 0 ? 0.0 : 1.0;
+        b = dirZ >= 0 ? 1.0 : 0.0;
+      }
+      final o = (py * width + px) * 4;
+      pixels[o] = r;
+      pixels[o + 1] = g;
+      pixels[o + 2] = b;
+      pixels[o + 3] = 1.0;
+    }
+  }
+  return (pixels: pixels, width: width, height: height);
+}
+
 class ExampleStressTests extends StatefulWidget {
   const ExampleStressTests({super.key, this.elapsedSeconds = 0});
   final double elapsedSeconds;
@@ -321,15 +455,28 @@ class _StressSceneState extends State<_StressScene> {
   int? _total;
   Object? _error;
 
+  // Image-based-lighting environment. `_activeEnvironment` tracks the menu
+  // choice; the renderer's built-in studio environment is the default.
+  // Loaded HDR environments are cached so re-selecting one is instant.
+  _Environment _activeEnvironment = _environments.first;
+  bool _environmentLoading = false;
+  final Map<String, EnvironmentMap> _environmentCache = {};
+
+  // Tone-mapping exposure and image-based-lighting intensity, tunable
+  // from the lighting panel. Both default to the renderer's neutral 1.0.
+  double _exposure = 1.0;
+  double _environmentIntensity = 1.0;
+
+  // Environment rotation in degrees about each world axis.
+  double _envRotationX = 0.0;
+  double _envRotationY = 0.0;
+  double _envRotationZ = 0.0;
+
   @override
   void initState() {
     super.initState();
-    _scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(0.4, -1.0, 0.3),
-      color: vm.Vector3(1.0, 0.97, 0.9),
-      intensity: 2.5,
-      castsShadow: true,
-    );
+    // No analytic light: these scenes are lit purely by the image-based
+    // environment, so the environment menu is what's being evaluated.
     unawaited(_load());
   }
 
@@ -403,6 +550,82 @@ class _StressSceneState extends State<_StressScene> {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  // Switches the scene's image-based-lighting environment. Downloads and
+  // decodes the HDR on first use (cached afterward); the built-in studio
+  // environment needs no download.
+  Future<void> _selectEnvironment(_Environment environment) async {
+    if (environment.id == _activeEnvironment.id && !_environmentLoading) {
+      return;
+    }
+    setState(() {
+      _activeEnvironment = environment;
+      _environmentLoading = true;
+    });
+    try {
+      final map = await _resolveEnvironment(environment);
+      if (!mounted) return;
+      setState(() {
+        _scene.environment = map;
+        _environmentLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _environmentLoading = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Failed to load ${environment.title}: $e')),
+      );
+    }
+  }
+
+  // Returns the [EnvironmentMap] for [environment], or null for the
+  // renderer's built-in studio default. HDR environments are downloaded,
+  // decoded off the UI isolate, prefiltered, and cached; the axis-test
+  // environment is generated procedurally.
+  Future<EnvironmentMap?> _resolveEnvironment(_Environment environment) async {
+    if (environment.id == 'studio') return null; // renderer's built-in
+
+    final cached = _environmentCache[environment.id];
+    if (cached != null) return cached;
+
+    final EnvironmentMap map;
+    if (environment.id == 'axis_test') {
+      final test = _buildAxisTestEquirect();
+      map = await EnvironmentMap.fromEquirectHdr(
+        linearPixels: test.pixels,
+        width: test.width,
+        height: test.height,
+      );
+    } else {
+      final supportDir = await getApplicationSupportDirectory();
+      final dir = Directory('${supportDir.path}/stress_tests/environments');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final bytes = await _fetchCached(
+        environment.url!,
+        File('${dir.path}/${environment.id}.hdr'),
+        onChunk: (_) {},
+      );
+      final hdr = await compute(loadHdrEnvironment, bytes);
+      map = await EnvironmentMap.fromEquirectHdr(
+        linearPixels: hdr.pixels,
+        width: hdr.width,
+        height: hdr.height,
+      );
+    }
+    _environmentCache[environment.id] = map;
+    return map;
+  }
+
+  // Rebuilds the scene's environment rotation from the three Euler angles.
+  void _applyEnvironmentRotation() {
+    const degToRad = pi / 180.0;
+    _scene.environmentTransform =
+        vm.Matrix3.rotationY(_envRotationY * degToRad) *
+        vm.Matrix3.rotationX(_envRotationX * degToRad) *
+        vm.Matrix3.rotationZ(_envRotationZ * degToRad);
   }
 
   Animation? _findAnimation(Node root, String name) {
@@ -654,6 +877,51 @@ class _StressSceneState extends State<_StressScene> {
         ),
         if (_ready)
           Positioned(
+            left: 8,
+            bottom: 8,
+            child: _LightingPanel(
+              activeEnvironment: _activeEnvironment,
+              environmentLoading: _environmentLoading,
+              onEnvironmentSelected: _selectEnvironment,
+              exposure: _exposure,
+              environmentIntensity: _environmentIntensity,
+              envRotationX: _envRotationX,
+              envRotationY: _envRotationY,
+              envRotationZ: _envRotationZ,
+              onExposureChanged: (value) {
+                setState(() {
+                  _exposure = value;
+                  _scene.exposure = value;
+                });
+              },
+              onEnvironmentIntensityChanged: (value) {
+                setState(() {
+                  _environmentIntensity = value;
+                  _scene.environmentIntensity = value;
+                });
+              },
+              onEnvRotationXChanged: (value) {
+                setState(() {
+                  _envRotationX = value;
+                  _applyEnvironmentRotation();
+                });
+              },
+              onEnvRotationYChanged: (value) {
+                setState(() {
+                  _envRotationY = value;
+                  _applyEnvironmentRotation();
+                });
+              },
+              onEnvRotationZChanged: (value) {
+                setState(() {
+                  _envRotationZ = value;
+                  _applyEnvironmentRotation();
+                });
+              },
+            ),
+          ),
+        if (_ready)
+          Positioned(
             right: 8,
             bottom: 8,
             child: IgnorePointer(
@@ -712,6 +980,223 @@ class _LoadingOverlay extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// The "Active Environment" menu: a compact dark pill that opens the list
+// of selectable image-based-lighting environments. Shows a spinner while
+// the chosen environment downloads and prefilters.
+class _EnvironmentMenu extends StatelessWidget {
+  const _EnvironmentMenu({
+    required this.active,
+    required this.loading,
+    required this.onSelected,
+  });
+
+  final _Environment active;
+  final bool loading;
+  final ValueChanged<_Environment> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white12,
+      borderRadius: BorderRadius.circular(4),
+      child: PopupMenuButton<_Environment>(
+        tooltip: 'Select environment',
+        position: PopupMenuPosition.over,
+        onSelected: onSelected,
+        itemBuilder:
+            (context) => [
+              for (final environment in _environments)
+                PopupMenuItem<_Environment>(
+                  value: environment,
+                  child: Text(environment.title),
+                ),
+            ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.light_mode, color: Colors.white, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                active.title,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              const SizedBox(width: 6),
+              loading
+                  ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                  : const Icon(
+                    Icons.arrow_drop_down,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Bottom-left lighting panel: the environment menu plus exposure and
+// image-based-lighting intensity sliders.
+class _LightingPanel extends StatelessWidget {
+  const _LightingPanel({
+    required this.activeEnvironment,
+    required this.environmentLoading,
+    required this.onEnvironmentSelected,
+    required this.exposure,
+    required this.environmentIntensity,
+    required this.envRotationX,
+    required this.envRotationY,
+    required this.envRotationZ,
+    required this.onExposureChanged,
+    required this.onEnvironmentIntensityChanged,
+    required this.onEnvRotationXChanged,
+    required this.onEnvRotationYChanged,
+    required this.onEnvRotationZChanged,
+  });
+
+  final _Environment activeEnvironment;
+  final bool environmentLoading;
+  final ValueChanged<_Environment> onEnvironmentSelected;
+  final double exposure;
+  final double environmentIntensity;
+  final double envRotationX;
+  final double envRotationY;
+  final double envRotationZ;
+  final ValueChanged<double> onExposureChanged;
+  final ValueChanged<double> onEnvironmentIntensityChanged;
+  final ValueChanged<double> onEnvRotationXChanged;
+  final ValueChanged<double> onEnvRotationYChanged;
+  final ValueChanged<double> onEnvRotationZChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 248,
+      constraints: const BoxConstraints(maxHeight: 440),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _EnvironmentMenu(
+              active: activeEnvironment,
+              loading: environmentLoading,
+              onSelected: onEnvironmentSelected,
+            ),
+            const SizedBox(height: 4),
+            _LabeledSlider(
+              label: 'Exposure',
+              value: exposure,
+              min: 0.1,
+              max: 8.0,
+              onChanged: onExposureChanged,
+            ),
+            _LabeledSlider(
+              label: 'IBL intensity',
+              value: environmentIntensity,
+              min: 0.0,
+              max: 4.0,
+              onChanged: onEnvironmentIntensityChanged,
+            ),
+            _LabeledSlider(
+              label: 'Env rotation X',
+              value: envRotationX,
+              min: -180.0,
+              max: 180.0,
+              onChanged: onEnvRotationXChanged,
+            ),
+            _LabeledSlider(
+              label: 'Env rotation Y',
+              value: envRotationY,
+              min: -180.0,
+              max: 180.0,
+              onChanged: onEnvRotationYChanged,
+            ),
+            _LabeledSlider(
+              label: 'Env rotation Z',
+              value: envRotationZ,
+              min: -180.0,
+              max: 180.0,
+              onChanged: onEnvRotationZChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// A compact labeled slider for the lighting panel: label and current
+// value on one row, the slider below.
+class _LabeledSlider extends StatelessWidget {
+  const _LabeledSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              Text(
+                value.toStringAsFixed(2),
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+          ),
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
     );
   }
 }
