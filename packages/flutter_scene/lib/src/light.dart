@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 
 /// An infinitely-distant light source (e.g. the sun) that illuminates
@@ -35,6 +38,9 @@ class DirectionalLight {
     this.shadowFrustumDepth = 50.0,
     this.shadowFadeRange = 2.0,
     this.shadowSoftness = 0.3,
+    this.shadowCascadeCount = 4,
+    this.shadowMaxDistance = 150.0,
+    this.shadowCascadeSplitLambda = 0.6,
     this.shadowMapResolution = 1024,
     this.shadowDepthBias = 0.0015,
     this.shadowNormalBias = 0.02,
@@ -77,7 +83,22 @@ class DirectionalLight {
   /// Poisson-disk PCF kernel.
   double shadowSoftness;
 
-  /// Pixel resolution of the (square) shadow map.
+  /// Number of shadow cascades, clamped to 1 through 4. More cascades
+  /// keep shadows crisp over a longer view distance, each at the cost
+  /// of one more depth pass. Used by [computeCascades].
+  int shadowCascadeCount;
+
+  /// View distance, in world units, out to which [computeCascades]
+  /// spreads the shadow cascades. Beyond it surfaces are unshadowed.
+  double shadowMaxDistance;
+
+  /// Blends the cascade split spacing between logarithmic (`1.0`) and
+  /// uniform (`0.0`). Higher values give the near cascades
+  /// proportionally more resolution. Used by [computeCascades].
+  double shadowCascadeSplitLambda;
+
+  /// Pixel resolution of the (square) shadow map. With cascades this is
+  /// the resolution of each cascade's tile.
   int shadowMapResolution;
 
   /// Constant depth bias subtracted from the receiver's light-space depth
@@ -142,6 +163,137 @@ class DirectionalLight {
     return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
   }
 
+  /// Builds the [shadowCascadeCount] shadow cascades that cover
+  /// [camera]'s view out to [shadowMaxDistance], for a render target of
+  /// the given [aspectRatio]. Returned near-to-far.
+  ///
+  /// Each cascade fits a bounding sphere to its slice of the camera
+  /// frustum, so the cascade's projection size stays constant as the
+  /// camera rotates; the projection is then texel-snapped so shadow
+  /// edges do not shimmer.
+  List<ShadowCascade> computeCascades(
+    PerspectiveCamera camera,
+    double aspectRatio,
+  ) {
+    final count = shadowCascadeCount.clamp(1, 4);
+    final near = camera.fovNear;
+    final far = shadowMaxDistance;
+
+    // Practical split scheme: a blend of logarithmic and uniform
+    // spacing, so the near cascades get proportionally more resolution.
+    final splits = <double>[near];
+    for (var i = 1; i <= count; i++) {
+      final ratio = i / count;
+      final logSplit = near * math.pow(far / near, ratio);
+      final uniformSplit = near + (far - near) * ratio;
+      splits.add(
+        shadowCascadeSplitLambda * logSplit +
+            (1.0 - shadowCascadeSplitLambda) * uniformSplit,
+      );
+    }
+
+    // Camera basis and field-of-view tangents.
+    final forward = (camera.target - camera.position).normalized();
+    final right = camera.up.cross(forward).normalized();
+    final up = forward.cross(right).normalized();
+    final tanV = math.tan(camera.fovRadiansY * 0.5);
+    final tanH = tanV * aspectRatio;
+
+    final lightLength = direction.length;
+    final lightDir =
+        lightLength == 0.0
+            ? Vector3(0.0, -1.0, 0.0)
+            : direction * (1.0 / lightLength);
+
+    final cascades = <ShadowCascade>[];
+    for (var c = 0; c < count; c++) {
+      // The eight world-space corners of this cascade's frustum slice.
+      final corners = <Vector3>[];
+      final center = Vector3.zero();
+      for (final depth in [splits[c], splits[c + 1]]) {
+        final planeCenter = camera.position + forward * depth;
+        for (final sx in const [-1.0, 1.0]) {
+          for (final sy in const [-1.0, 1.0]) {
+            final corner =
+                planeCenter +
+                right * (sx * depth * tanH) +
+                up * (sy * depth * tanV);
+            corners.add(corner);
+            center.add(corner);
+          }
+        }
+      }
+      // The slice is symmetric about the view axis, so the corner
+      // average is the center of their bounding sphere.
+      center.scale(1.0 / 8.0);
+      var radius = 0.0;
+      for (final corner in corners) {
+        radius = math.max(radius, (corner - center).length);
+      }
+
+      cascades.add(
+        ShadowCascade(
+          lightSpaceMatrix: _cascadeLightSpaceMatrix(lightDir, center, radius),
+          splitDistance: splits[c + 1],
+        ),
+      );
+    }
+    return cascades;
+  }
+
+  // The world -> light-clip matrix for a cascade whose frustum slice is
+  // bounded by a sphere ([sphereCenter], [sphereRadius]). The
+  // orthographic box is the sphere's bounding square, extended along
+  // the light axis so casters behind the slice still reach it, and
+  // texel-snapped against the world origin.
+  Matrix4 _cascadeLightSpaceMatrix(
+    Vector3 lightDir,
+    Vector3 sphereCenter,
+    double sphereRadius,
+  ) {
+    final up =
+        lightDir.y.abs() > 0.99
+            ? Vector3(0.0, 0.0, 1.0)
+            : Vector3(0.0, 1.0, 0.0);
+    // The eye sits well behind the sphere so casters between it and the
+    // slice are captured.
+    final eye = sphereCenter - lightDir * (sphereRadius * 3.0);
+    final view = _lookAt(eye, sphereCenter, up);
+
+    const near = 0.0;
+    final far = sphereRadius * 6.0;
+    final s = sphereRadius * 2.0;
+    final ortho = Matrix4(
+      2.0 / s,
+      0.0,
+      0.0,
+      0.0, //
+      0.0,
+      2.0 / s,
+      0.0,
+      0.0, //
+      0.0,
+      0.0,
+      1.0 / (far - near),
+      0.0, //
+      0.0,
+      0.0,
+      -near / (far - near),
+      1.0, //
+    );
+    final matrix = ortho * view;
+
+    // Texel-snap against the world origin so the cascade's texel grid
+    // is stable as the camera (and so the cascade) moves.
+    final reference = matrix.transformed(Vector4(0.0, 0.0, 0.0, 1.0));
+    final resolution = shadowMapResolution.toDouble();
+    final texelX = (reference.x * 0.5 + 0.5) * resolution;
+    final texelY = (reference.y * 0.5 + 0.5) * resolution;
+    final offsetX = (texelX.roundToDouble() - texelX) / resolution * 2.0;
+    final offsetY = (texelY.roundToDouble() - texelY) / resolution * 2.0;
+    return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
+  }
+
   static Matrix4 _lookAt(Vector3 position, Vector3 target, Vector3 up) {
     final forward = (target - position).normalized();
     final right = up.cross(forward).normalized();
@@ -165,6 +317,26 @@ class DirectionalLight {
       1.0, //
     );
   }
+}
+
+/// One cascade of a cascaded shadow map, produced by
+/// [DirectionalLight.computeCascades].
+///
+/// A cascade owns the world -> light-clip-space matrix that renders and
+/// samples its shadow map tile, plus the camera view distance at which
+/// its coverage ends.
+class ShadowCascade {
+  /// Creates a cascade from its [lightSpaceMatrix] and [splitDistance].
+  ShadowCascade({required this.lightSpaceMatrix, required this.splitDistance});
+
+  /// World -> light-clip-space matrix that renders and samples this
+  /// cascade's shadow map tile.
+  final Matrix4 lightSpaceMatrix;
+
+  /// Camera view-space distance, in world units, at which this
+  /// cascade's coverage ends. A fragment uses the first cascade whose
+  /// [splitDistance] exceeds its view depth.
+  final double splitDistance;
 }
 
 /// The lighting state handed to a [Material] when it binds for a draw.
