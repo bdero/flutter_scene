@@ -1,8 +1,8 @@
 // Covers PolylineGeometry: the camera-facing strip expansion math,
-// round cap disks, and the factory's argument checks. The expansion is
-// pure (it takes a view-projection matrix), so it runs without a GPU
-// context; the PolylineGeometry class itself uploads to the GPU and is
-// exercised by the example app.
+// round cap disks, the draw-on range, and the factory's argument
+// checks. The expansion is pure (it takes a view-projection matrix),
+// so it runs without a GPU context; the PolylineGeometry class itself
+// uploads to the GPU and is exercised by the example app.
 
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -27,6 +27,12 @@ Vector3 _vertex(Float32List positions, int index) => Vector3(
   positions[index * 3 + 1],
   positions[index * 3 + 2],
 );
+
+void _expectVector(Vector3 actual, Vector3 expected, {double tol = 1e-5}) {
+  expect(actual.x, closeTo(expected.x, tol));
+  expect(actual.y, closeTo(expected.y, tol));
+  expect(actual.z, closeTo(expected.z, tol));
+}
 
 void main() {
   const size = ui.Size(800, 600);
@@ -79,6 +85,8 @@ void main() {
       widths: [0.5, 0.5],
       widthMode: PolylineWidthMode.worldUnits,
       cap: PolylineCap.butt,
+      drawStart: 0.0,
+      drawEnd: 1.0,
       viewProjection: viewProjection,
       cameraPosition: camera.position,
       viewportSize: size,
@@ -121,6 +129,8 @@ void main() {
         widths: [24.0, 24.0],
         widthMode: PolylineWidthMode.screenPixels,
         cap: PolylineCap.butt,
+        drawStart: 0.0,
+        drawEnd: 1.0,
         viewProjection: viewProjection,
         cameraPosition: camera.position,
         viewportSize: size,
@@ -147,6 +157,8 @@ void main() {
             widths: [16.0, 16.0],
             widthMode: PolylineWidthMode.screenPixels,
             cap: PolylineCap.butt,
+            drawStart: 0.0,
+            drawEnd: 1.0,
             viewProjection: viewProjection,
             cameraPosition: camera.position,
             viewportSize: size,
@@ -165,6 +177,50 @@ void main() {
     });
   });
 
+  group('expandPolyline draw range', () {
+    ({Float32List positions, Float32List normals}) expand(
+      double drawStart,
+      double drawEnd,
+    ) => expandPolyline(
+      [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(2, 0, 0), Vector3(3, 0, 0)],
+      widths: List<double>.filled(4, 1.0),
+      widthMode: PolylineWidthMode.worldUnits,
+      cap: PolylineCap.butt,
+      drawStart: drawStart,
+      drawEnd: drawEnd,
+      viewProjection: viewProjection,
+      cameraPosition: camera.position,
+      viewportSize: size,
+    );
+
+    double pairWidth(Float32List positions, int point) => _vertex(
+      positions,
+      point * 2,
+    ).distanceTo(_vertex(positions, point * 2 + 1));
+
+    test('the full range leaves every point at width', () {
+      final expanded = expand(0.0, 1.0);
+      for (var i = 0; i < 4; i++) {
+        expect(pairWidth(expanded.positions, i), closeTo(1.0, 1e-5));
+      }
+    });
+
+    test('a point past drawEnd collapses onto the end boundary', () {
+      // Length 3; drawEnd 0.5 means the visible range ends at arc 1.5.
+      final expanded = expand(0.0, 0.5);
+      // Point 2 (arc 2) is past the range.
+      expect(pairWidth(expanded.positions, 2), closeTo(0, 1e-5));
+      _expectVector(_vertex(expanded.positions, 4), Vector3(1.5, 0, 0));
+    });
+
+    test('a point before drawStart collapses onto the start boundary', () {
+      final expanded = expand(0.5, 1.0);
+      // Point 0 (arc 0) is before the range.
+      expect(pairWidth(expanded.positions, 0), closeTo(0, 1e-5));
+      _expectVector(_vertex(expanded.positions, 0), Vector3(1.5, 0, 0));
+    });
+  });
+
   group('round caps', () {
     ({Float32List positions, Float32List normals}) expand(
       List<Vector3> points, {
@@ -176,6 +232,8 @@ void main() {
         widths: List<double>.filled(points.length, width),
         widthMode: PolylineWidthMode.worldUnits,
         cap: cap,
+        drawStart: 0.0,
+        drawEnd: 1.0,
         viewProjection: viewProjection,
         cameraPosition: camera.position,
         viewportSize: size,
