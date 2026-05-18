@@ -4,6 +4,14 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
+/// Process-lifetime cache of depth-pass render pipelines, keyed by vertex
+/// shader. The depth fragment shader is constant, so only the (skinned /
+/// unskinned) vertex shader varies; the engine loads each shader once, so
+/// the depth pass only ever needs two pipelines. Caching them keeps the
+/// shadow pass from rebuilding a pipeline for every caster, every cascade,
+/// every frame.
+final Map<gpu.Shader, gpu.RenderPipeline> _depthPipelineCache = {};
+
 /// Records each opaque shadow caster's depth into a shadow-map render
 /// pass, from a directional light's point of view.
 ///
@@ -43,6 +51,11 @@ class ShadowEncoder {
   /// Reusable AABB for the per-item cull check.
   final Aabb3 cullScratchAabb = Aabb3();
 
+  /// The pipeline currently bound on the render pass, or null before the
+  /// first draw. `clearBindings` leaves the pipeline in place, so
+  /// consecutive casters that share one only bind it once.
+  gpu.RenderPipeline? _boundPipeline;
+
   /// Records [item]'s depth, unless it is hidden, translucent (no shadow),
   /// or culled by the light frustum.
   void submit(RenderItem item) {
@@ -58,11 +71,13 @@ class ShadowEncoder {
       }
     }
     _renderPass.clearBindings();
-    final pipeline = gpu.gpuContext.createRenderPipeline(
-      item.geometry.vertexShader,
-      _depthShader,
-    );
-    _renderPass.bindPipeline(pipeline);
+    final pipeline =
+        _depthPipelineCache[item.geometry.vertexShader] ??= gpu.gpuContext
+            .createRenderPipeline(item.geometry.vertexShader, _depthShader);
+    if (!identical(_boundPipeline, pipeline)) {
+      _renderPass.bindPipeline(pipeline);
+      _boundPipeline = pipeline;
+    }
     _renderPass.setPrimitiveType(item.geometry.primitiveType);
 
     final instances = item.instanceTransforms;
