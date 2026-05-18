@@ -42,6 +42,9 @@ class ShadowPass extends RenderGraphPass {
     // hundreds of world units, and fp16's ~11-bit mantissa quantizes
     // window-space depth into steps coarser than the shadow depth bias.
     // That made the flat distant ground self-shadow in moire bands.
+    //
+    // TODO(bdero): Only the red channel is used. Add r32Float to Flutter
+    // GPU and use it here instead.
     final color = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: atlasWidth,

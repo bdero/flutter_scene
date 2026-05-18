@@ -10,7 +10,6 @@ import 'package:flutter_scene_importer/constants.dart';
 /// 12 floats (48 bytes) per vertex, ordered position (3), normal (3),
 /// texture coordinates (2), color (4).
 ///
-/// This is the translation layer described in `docs/dynamic_geometry.md`.
 /// The geometry construction API accepts attributes as independent typed
 /// arrays; this adapter packs them into the single interleaved buffer the
 /// built-in pipelines consume. It is intentionally the one place that

@@ -226,7 +226,7 @@ abstract class RenderGraphPass {
 /// [TransientTexturePool], and passes communicate through a per-frame
 /// [Blackboard]. It does not insert GPU barriers (Flutter GPU handles
 /// synchronization internally), alias transient memory, or cull unused
-/// passes. See `docs/renderer-roadmap.md`.
+/// passes.
 class RenderGraph {
   final List<RenderGraphPass> _passes = [];
   final Blackboard _blackboard = Blackboard();
