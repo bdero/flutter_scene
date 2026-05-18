@@ -64,6 +64,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
       linePoints,
       width: 16,
       cap: PolylineCap.round,
+      dash: const DashPattern(dashLength: 2.0, gapLength: 1.3),
       perVertexColor: <vm.Vector4>[
         for (var i = 0; i < linePoints.length; i++)
           _lerpColor(

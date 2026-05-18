@@ -28,6 +28,21 @@ enum PolylineCap {
   round,
 }
 
+/// A repeating dash-and-gap pattern for a [PolylineGeometry], measured
+/// in scene units along the line's arc length.
+class DashPattern {
+  /// Creates a dash pattern; both lengths must be positive.
+  const DashPattern({required this.dashLength, required this.gapLength})
+    : assert(dashLength > 0, 'dashLength must be positive'),
+      assert(gapLength > 0, 'gapLength must be positive');
+
+  /// The drawn length of each dash.
+  final double dashLength;
+
+  /// The undrawn length between dashes.
+  final double gapLength;
+}
+
 // Triangle-fan segments in a round cap disk.
 const int _diskSegments = 16;
 
@@ -41,50 +56,74 @@ const int _diskSegments = 16;
 /// The result is an ordinary triangle mesh: pair it with any material,
 /// and use [perVertexColor] for gradient or distance-fade effects.
 ///
-/// [PolylineCap.round] adds a camera-facing disk at each end point, and
-/// [drawStart]/[drawEnd] trim the line or animate it drawing on.
-/// Corners use an averaged direction, which stays smooth on a finely
-/// sampled curve but can pinch on a very sharp turn. Dashes, rounded
-/// corner joins, and a GPU vertex-shader expansion that avoids the
-/// per-frame rebuild are planned follow-ups; see
-/// `docs/dynamic_geometry.md`.
+/// [PolylineCap.round] adds a camera-facing disk at each end point,
+/// [drawStart]/[drawEnd] trim the line or animate it drawing on, and a
+/// [DashPattern] breaks it into dashes. Corners use an averaged
+/// direction, which stays smooth on a finely sampled curve but can
+/// pinch on a very sharp turn. Rounded corner joins and a GPU
+/// vertex-shader expansion that avoids the per-frame rebuild are
+/// planned follow-ups; see `docs/dynamic_geometry.md`.
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///
   /// [width] is measured per [widthMode]. [perVertexWidth] overrides it
   /// per point for tapering, and [perVertexColor] sets a color per
-  /// point for gradients. [cap] selects rounded or flat ends. The strip
-  /// is a placeholder until the first [updateForCamera] call.
+  /// point for gradients. [cap] selects rounded or flat ends, and
+  /// [dash] breaks the line into dashes. The strip is a placeholder
+  /// until the first [updateForCamera] call.
   factory PolylineGeometry(
     List<Vector3> points, {
     double width = 8.0,
     PolylineWidthMode widthMode = PolylineWidthMode.screenPixels,
     PolylineCap cap = PolylineCap.butt,
+    DashPattern? dash,
     List<double>? perVertexWidth,
     List<Vector4>? perVertexColor,
   }) {
     if (points.length < 2) {
       throw ArgumentError('A polyline needs at least two points');
     }
-    final copied = <Vector3>[for (final p in points) p.clone()];
-    final count = copied.length;
-    if (perVertexWidth != null && perVertexWidth.length != count) {
+    final inputCount = points.length;
+    if (perVertexWidth != null && perVertexWidth.length != inputCount) {
       throw ArgumentError('perVertexWidth must have one entry per point');
     }
-    if (perVertexColor != null && perVertexColor.length != count) {
+    if (perVertexColor != null && perVertexColor.length != inputCount) {
       throw ArgumentError('perVertexColor must have one entry per point');
     }
-    final widths =
+    var working = <Vector3>[for (final p in points) p.clone()];
+    var workingWidths =
         perVertexWidth != null
             ? List<double>.of(perVertexWidth)
-            : List<double>.filled(count, width);
+            : List<double>.filled(inputCount, width);
+    var workingColors = <Vector4>[
+      for (var i = 0; i < inputCount; i++)
+        perVertexColor?[i] ?? Vector4(1.0, 1.0, 1.0, 1.0),
+    ];
+
+    // Dashes resample the line into dash segments joined by zero-width
+    // gap points, so the gap regions draw nothing.
+    if (dash != null) {
+      final dashed = resampleDashed(
+        working,
+        workingWidths,
+        workingColors,
+        dash,
+      );
+      working = dashed.points;
+      workingWidths = dashed.widths;
+      workingColors = dashed.colors;
+    }
+
+    final copied = working;
+    final widths = workingWidths;
+    final count = copied.length;
 
     // Cumulative arc length at each point, for the texture v coordinate.
     final distances = List<double>.filled(count, 0.0);
     for (var i = 1; i < count; i++) {
       distances[i] = distances[i - 1] + copied[i].distanceTo(copied[i - 1]);
     }
-    Vector4 colorOf(int i) => perVertexColor?[i] ?? Vector4(1.0, 1.0, 1.0, 1.0);
+    Vector4 colorOf(int i) => workingColors[i];
 
     // Texture coordinates and colors do not depend on the camera, so
     // they are set once here. The placeholder positions collapse the
@@ -380,6 +419,81 @@ Vector3 _pointAtArc(List<Vector3> points, List<double> arc, double target) {
   final span = arc[hi] - arc[lo];
   final local = span > 1e-12 ? (clamped - arc[lo]) / span : 0.0;
   return points[lo] + (points[hi] - points[lo]) * local;
+}
+
+/// Resamples a polyline into dash segments per [dash].
+///
+/// Each dash starts and ends with a full-width point at the exact dash
+/// boundary; consecutive dashes are joined by zero-width gap points so
+/// the gap draws nothing. The overall line keeps its two end points, so
+/// round caps still apply to them.
+({List<Vector3> points, List<double> widths, List<Vector4> colors})
+resampleDashed(
+  List<Vector3> points,
+  List<double> widths,
+  List<Vector4> colors,
+  DashPattern dash,
+) {
+  final count = points.length;
+  final arc = List<double>.filled(count, 0.0);
+  for (var i = 1; i < count; i++) {
+    arc[i] = arc[i - 1] + points[i].distanceTo(points[i - 1]);
+  }
+  final total = arc[count - 1];
+  if (total <= 0.0) return (points: points, widths: widths, colors: colors);
+
+  // Position, width, and color at an arc-length distance.
+  (Vector3, double, Vector4) sampleAt(double distance) {
+    final target = distance < 0.0 ? 0.0 : (distance > total ? total : distance);
+    var hi = 1;
+    while (hi < count - 1 && arc[hi] < target) {
+      hi++;
+    }
+    final lo = hi - 1;
+    final span = arc[hi] - arc[lo];
+    final local = span > 1e-12 ? (target - arc[lo]) / span : 0.0;
+    return (
+      points[lo] + (points[hi] - points[lo]) * local,
+      widths[lo] + (widths[hi] - widths[lo]) * local,
+      colors[lo] + (colors[hi] - colors[lo]) * local,
+    );
+  }
+
+  final period = dash.dashLength + dash.gapLength;
+  final dashes = <(double, double)>[];
+  for (var k = 0; k * period < total; k++) {
+    final a = k * period;
+    dashes.add((a, math.min(a + dash.dashLength, total)));
+  }
+
+  final outPoints = <Vector3>[];
+  final outWidths = <double>[];
+  final outColors = <Vector4>[];
+  void emit(Vector3 p, double w, Vector4 c) {
+    outPoints.add(p);
+    outWidths.add(w);
+    outColors.add(c);
+  }
+
+  for (var k = 0; k < dashes.length; k++) {
+    final (a, b) = dashes[k];
+    final (startPos, startWidth, startColor) = sampleAt(a);
+    final (endPos, endWidth, endColor) = sampleAt(b);
+    // A zero-width gap connector before every dash but the first.
+    if (k > 0) emit(startPos, 0.0, startColor);
+    emit(startPos, startWidth, startColor);
+    for (var i = 0; i < count; i++) {
+      if (arc[i] > a && arc[i] < b) emit(points[i], widths[i], colors[i]);
+    }
+    emit(endPos, endWidth, endColor);
+    // A zero-width gap connector after every dash but the last.
+    if (k < dashes.length - 1) emit(endPos, 0.0, endColor);
+  }
+
+  if (outPoints.length < 2) {
+    return (points: points, widths: widths, colors: colors);
+  }
+  return (points: outPoints, widths: outWidths, colors: outColors);
 }
 
 List<Vector3> _pointTangents(List<Vector3> points) {
