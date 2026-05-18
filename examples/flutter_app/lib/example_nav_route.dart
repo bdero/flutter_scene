@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -85,6 +86,12 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // frame by the painter; the node and material persist.
   final Node _navNode = Node();
   final UnlitMaterial _navMaterial = UnlitMaterial();
+
+  // The free "inspection" camera, and whether it is active. While
+  // inactive it is kept synced to the chase camera (by the painter), so
+  // toggling it on does not jump the view.
+  bool _freeCamera = false;
+  final _FreeCamState _freeCam = _FreeCamState();
 
   @override
   void initState() {
@@ -240,41 +247,124 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     }
   }
 
+  // Toggles the free inspection camera. Returning to the chase camera
+  // snaps it back onto the car.
+  void _toggleFreeCamera() {
+    setState(() {
+      _freeCamera = !_freeCamera;
+      _freeCam.heldKeys.clear();
+      _freeCam.lastElapsed = widget.elapsedSeconds;
+      if (!_freeCamera) {
+        _followCam.anchorPosition = null;
+        _followCam.anchorDirection = null;
+      }
+    });
+  }
+
+  // Tracks held keys for the free camera. Movement keys are consumed
+  // while it is active so the platform does not beep at them.
+  KeyEventResult _onFreeCameraKey(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      _freeCam.heldKeys.add(event.logicalKey);
+    } else if (event is KeyUpEvent) {
+      _freeCam.heldKeys.remove(event.logicalKey);
+    }
+    return _freeCamera && _freeCamMoveKeys.contains(event.logicalKey)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  // Rotates the free camera by a drag.
+  void _onFreeCameraLook(DragUpdateDetails details) {
+    setState(() {
+      _freeCam.yaw += details.delta.dx * 0.005;
+      _freeCam.pitch = (_freeCam.pitch - details.delta.dy * 0.005).clamp(
+        -1.5,
+        1.5,
+      );
+    });
+  }
+
+  // Advances the free camera by the held movement keys, once per frame.
+  void _moveFreeCamera() {
+    final dt = (widget.elapsedSeconds - _freeCam.lastElapsed).clamp(0.0, 0.1);
+    _freeCam.lastElapsed = widget.elapsedSeconds;
+    const speed = 20.0;
+    final keys = _freeCam.heldKeys;
+    final forward = _freeCam.forward;
+    final right = vm.Vector3(0, 1, 0).cross(forward)..normalize();
+    final move = vm.Vector3.zero();
+    if (keys.contains(LogicalKeyboardKey.keyW)) move.add(forward);
+    if (keys.contains(LogicalKeyboardKey.keyS)) move.sub(forward);
+    if (keys.contains(LogicalKeyboardKey.keyD)) move.add(right);
+    if (keys.contains(LogicalKeyboardKey.keyA)) move.sub(right);
+    if (keys.contains(LogicalKeyboardKey.space)) {
+      move.add(vm.Vector3(0, 1, 0));
+    }
+    if (keys.contains(LogicalKeyboardKey.shiftLeft) ||
+        keys.contains(LogicalKeyboardKey.shiftRight)) {
+      move.sub(vm.Vector3(0, 1, 0));
+    }
+    if (move.length2 > 1e-6) {
+      move.normalize();
+      _freeCam.position += move * (speed * dt);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     _applyCarParts();
-    return Stack(
-      children: [
-        SizedBox.expand(
-          child: CustomPaint(
-            painter: _NavRoutePainter(
-              scene: scene,
-              road: mainRoad,
-              markings: markings,
-              carNode: carNode,
-              carScale: carScale,
-              carLift: carLift,
-              followCam: _followCam,
-              navNode: _navNode,
-              navMaterial: _navMaterial,
-              elapsedSeconds: widget.elapsedSeconds,
+    if (_freeCamera) _moveFreeCamera();
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onFreeCameraKey,
+      child: Stack(
+        children: [
+          // The 3D scene. In free-camera mode a drag rotates the view.
+          Positioned.fill(
+            child: GestureDetector(
+              onPanUpdate: _freeCamera ? _onFreeCameraLook : null,
+              child: CustomPaint(
+                painter: _NavRoutePainter(
+                  scene: scene,
+                  road: mainRoad,
+                  markings: markings,
+                  carNode: carNode,
+                  carScale: carScale,
+                  carLift: carLift,
+                  followCam: _followCam,
+                  freeCamera: _freeCamera,
+                  freeCam: _freeCam,
+                  navNode: _navNode,
+                  navMaterial: _navMaterial,
+                  elapsedSeconds: widget.elapsedSeconds,
+                ),
+              ),
             ),
           ),
-        ),
-        if (_carPartsReady)
+          if (_carPartsReady)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _CarControlsMenu(
+                open: _controlsOpen,
+                onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
+                parts: _carParts,
+                onControl:
+                    (key, value) =>
+                        setState(() => _carParts[key]!.amount = value),
+              ),
+            ),
           Positioned(
-            top: 8,
-            right: 8,
-            child: _CarControlsMenu(
-              open: _controlsOpen,
-              onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
-              parts: _carParts,
-              onControl:
-                  (key, value) =>
-                      setState(() => _carParts[key]!.amount = value),
+            left: 8,
+            bottom: 8,
+            child: _CameraToggle(
+              freeCamera: _freeCamera,
+              onToggle: _toggleFreeCamera,
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -323,8 +413,8 @@ MeshGeometry _buildNavLine(
   const samples = 88;
   const startOffset = 1.6; // begins just past the car's front
   const aheadLength = 84.0; // how far ahead the route reaches
-  const lift = 0.58; // floats just above the road
-  const halfWidth = 0.55; // a ~1.1 unit wide ribbon
+  const lift = 0.18; // floats just above the road
+  const halfWidth = 0.35; // a ~1.1 unit wide ribbon
   final up = vm.Vector3(0, 1, 0);
   final deep = vm.Vector3(0.05, 0.18, 0.55);
   final bright = vm.Vector3(0.45, 0.85, 1.5);
@@ -376,6 +466,31 @@ class _FollowCamState {
   double lastElapsed = 0.0;
 }
 
+// The keys the free camera consumes for movement.
+final Set<LogicalKeyboardKey> _freeCamMoveKeys = {
+  LogicalKeyboardKey.keyW,
+  LogicalKeyboardKey.keyA,
+  LogicalKeyboardKey.keyS,
+  LogicalKeyboardKey.keyD,
+  LogicalKeyboardKey.space,
+  LogicalKeyboardKey.shiftLeft,
+  LogicalKeyboardKey.shiftRight,
+};
+
+// Mutable state for the free "inspection" camera: a fly camera driven
+// by held keys and drag-to-look.
+class _FreeCamState {
+  vm.Vector3 position = vm.Vector3(0, 12, 30);
+  double yaw = 0.0;
+  double pitch = 0.0;
+  final Set<LogicalKeyboardKey> heldKeys = {};
+  double lastElapsed = 0.0;
+
+  // The unit look direction from [yaw] (around Y) and [pitch].
+  vm.Vector3 get forward =>
+      vm.Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch));
+}
+
 class _NavRoutePainter extends CustomPainter {
   _NavRoutePainter({
     required this.scene,
@@ -385,6 +500,8 @@ class _NavRoutePainter extends CustomPainter {
     required this.carScale,
     required this.carLift,
     required this.followCam,
+    required this.freeCamera,
+    required this.freeCam,
     required this.navNode,
     required this.navMaterial,
     required this.elapsedSeconds,
@@ -397,6 +514,8 @@ class _NavRoutePainter extends CustomPainter {
   final double carScale;
   final double carLift;
   final _FollowCamState followCam;
+  final bool freeCamera;
+  final _FreeCamState freeCam;
   final Node navNode;
   final UnlitMaterial navMaterial;
   final double elapsedSeconds;
@@ -414,7 +533,22 @@ class _NavRoutePainter extends CustomPainter {
     // The car travels against the path tangent.
     final travelDirection = -frame.tangent;
 
-    final camera = _followCamera(carPosition, travelDirection);
+    // The free inspection camera replaces the chase camera when active.
+    // While the chase camera is in use the free camera is kept synced
+    // to it, so toggling the free camera on does not jump the view.
+    final PerspectiveCamera camera;
+    if (freeCamera) {
+      camera = PerspectiveCamera(
+        position: freeCam.position.clone(),
+        target: freeCam.position + freeCam.forward,
+      );
+    } else {
+      camera = _followCamera(carPosition, travelDirection);
+      freeCam.position = camera.position.clone();
+      final look = (camera.target - camera.position)..normalize();
+      freeCam.yaw = atan2(look.x, look.z);
+      freeCam.pitch = asin(look.y.clamp(-1.0, 1.0));
+    }
 
     // The camera-facing marking lines are rebuilt for the current view.
     for (final marking in markings) {
@@ -644,6 +778,63 @@ class _SliderRow extends StatelessWidget {
         ),
         Expanded(
           child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+        ),
+      ],
+    );
+  }
+}
+
+// A toggle for the free "inspection" camera, with a usage hint shown
+// while it is active. Styled to match the Car Controls card.
+class _CameraToggle extends StatelessWidget {
+  const _CameraToggle({required this.freeCamera, required this.onToggle});
+
+  final bool freeCamera;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (freeCamera)
+          Card(
+            color: Colors.black54,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                'WASD to move, Space and Shift for up and down, drag to look',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+              ),
+            ),
+          ),
+        Card(
+          color: Colors.black54,
+          child: InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    freeCamera ? Icons.videocam : Icons.videocam_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    freeCamera ? 'Free camera' : 'Chase camera',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
