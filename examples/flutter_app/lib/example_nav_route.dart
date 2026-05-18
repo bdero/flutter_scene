@@ -74,6 +74,13 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // Smoothing state for the chase camera, carried across frames.
   final _FollowCamState _followCam = _FollowCamState();
 
+  // The car's animated parts (doors, wheels), keyed by node name.
+  final Map<String, _CarPart> _carParts = {};
+  bool _carPartsReady = false;
+  bool _controlsOpen = false;
+  // Rolling wheel-spin angle, advanced from the spin slider each frame.
+  double _wheelRotation = 0.0;
+
   @override
   void initState() {
     // The ground.
@@ -101,6 +108,17 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
         carScale = longest > 0 ? 2.5 / longest : 1.0;
         carLift = -bounds.min.y * carScale;
       }
+
+      // Capture the doors and wheels so the controls submenu can pose
+      // them; each part remembers its imported transform to pose from.
+      for (final name in _carPartNames) {
+        final node = carRoot.getChildByNamePath([name]);
+        if (node != null) {
+          _carParts[name] = _CarPart(node, node.localTransform.clone());
+        }
+      }
+      _carPartsReady = _carParts.length == _carPartNames.length;
+
       if (mounted) setState(() => carNode = parent);
     });
 
@@ -150,19 +168,85 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
     );
   }
 
+  // Poses the car's doors and wheels from the current control amounts.
+  // Runs every frame so slider changes and the rolling wheels both take
+  // effect. The door and wheel math mirrors the Car example.
+  void _applyCarParts() {
+    if (!_carPartsReady) return;
+
+    // Side doors swing open about their hinge.
+    for (final name in const [
+      'DoorFront.L',
+      'DoorFront.R',
+      'DoorBack.L',
+      'DoorBack.R',
+    ]) {
+      final part = _carParts[name]!;
+      part.node.localTransform =
+          part.startTransform.clone()
+            ..rotate(vm.Vector3(0, -1, 0), part.amount * pi / 2);
+    }
+    final frunk = _carParts['Frunk']!;
+    frunk.node.localTransform =
+        frunk.startTransform.clone()
+          ..rotate(vm.Vector3(0, 0, 1), frunk.amount * pi / 2);
+    final trunk = _carParts['Trunk']!;
+    trunk.node.localTransform =
+        trunk.startTransform.clone()
+          ..rotate(vm.Vector3(0, 0, -1), trunk.amount * pi / 2);
+
+    // The spin slider sets a speed, accumulated into a rolling angle.
+    _wheelRotation += _carParts['WheelBack.L']!.amount / 10;
+    for (final name in const ['WheelBack.L', 'WheelBack.R']) {
+      final wheel = _carParts[name]!;
+      wheel.node.localTransform =
+          wheel.startTransform.clone()
+            ..rotate(vm.Vector3(0, 0, -1), _wheelRotation);
+    }
+    // The front wheels also steer about their vertical axis.
+    final steer = _carParts['WheelFront.L']!.amount;
+    for (final name in const ['WheelFront.L', 'WheelFront.R']) {
+      final wheel = _carParts[name]!;
+      wheel.node.localTransform =
+          wheel.startTransform.clone() *
+          vm.Matrix4.rotationY(-steer / 2) *
+          vm.Matrix4.rotationZ(-_wheelRotation);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _NavRoutePainter(
-        scene: scene,
-        road: mainRoad,
-        markings: markings,
-        carNode: carNode,
-        carScale: carScale,
-        carLift: carLift,
-        followCam: _followCam,
-        elapsedSeconds: widget.elapsedSeconds,
-      ),
+    _applyCarParts();
+    return Stack(
+      children: [
+        SizedBox.expand(
+          child: CustomPaint(
+            painter: _NavRoutePainter(
+              scene: scene,
+              road: mainRoad,
+              markings: markings,
+              carNode: carNode,
+              carScale: carScale,
+              carLift: carLift,
+              followCam: _followCam,
+              elapsedSeconds: widget.elapsedSeconds,
+            ),
+          ),
+        ),
+        if (_carPartsReady)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: _CarControlsMenu(
+              open: _controlsOpen,
+              onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
+              parts: _carParts,
+              onControl:
+                  (key, value) =>
+                      setState(() => _carParts[key]!.amount = value),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -301,4 +385,160 @@ class _NavRoutePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// The car node names the controls submenu poses.
+const List<String> _carPartNames = [
+  'DoorFront.L',
+  'DoorFront.R',
+  'DoorBack.L',
+  'DoorBack.R',
+  'Frunk',
+  'Trunk',
+  'WheelFront.L',
+  'WheelFront.R',
+  'WheelBack.L',
+  'WheelBack.R',
+];
+
+// One slider each: a label, the car part whose amount it drives, and
+// the slider's range. Back doors and the front-left wheel stand in for
+// their mirrored partners, which follow along.
+const List<(String, String, double, double)> _carControls = [
+  ('Front door L', 'DoorFront.L', 0.0, 1.0),
+  ('Front door R', 'DoorFront.R', 0.0, 1.0),
+  ('Back door L', 'DoorBack.L', 0.0, 1.0),
+  ('Back door R', 'DoorBack.R', 0.0, 1.0),
+  ('Frunk', 'Frunk', 0.0, 1.0),
+  ('Trunk', 'Trunk', 0.0, 1.0),
+  ('Wheel spin', 'WheelBack.L', 0.0, 1.0),
+  ('Wheel steer', 'WheelFront.L', -1.0, 1.0),
+];
+
+// A car node the controls submenu animates, plus its imported
+// transform and the current control amount driving it.
+class _CarPart {
+  _CarPart(this.node, this.startTransform);
+
+  final Node node;
+  final vm.Matrix4 startTransform;
+  double amount = 0.0;
+}
+
+// A collapsible submenu of sliders that pose the car's doors and
+// wheels, styled to match the Toon example's control card.
+class _CarControlsMenu extends StatelessWidget {
+  const _CarControlsMenu({
+    required this.open,
+    required this.onToggle,
+    required this.parts,
+    required this.onControl,
+  });
+
+  final bool open;
+  final VoidCallback onToggle;
+  final Map<String, _CarPart> parts;
+  final void Function(String key, double value) onControl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.black54,
+      child: SizedBox(
+        width: 340,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The toggle header.
+            InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.directions_car,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Car Controls',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      open ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (open) ...[
+              const Divider(height: 1, color: Colors.white24),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final (label, key, lo, hi) in _carControls)
+                      _SliderRow(
+                        label: label,
+                        value: parts[key]!.amount,
+                        min: lo,
+                        max: hi,
+                        onChanged: (value) => onControl(key, value),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// A labeled slider styled to match the Toon example's controls.
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            '$label: ${value.toStringAsFixed(2)}',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        Expanded(
+          child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+        ),
+      ],
+    );
+  }
 }
