@@ -70,7 +70,7 @@ const int _diskSegments = 16;
 /// direction, which stays smooth on a finely sampled curve but can
 /// pinch on a very sharp turn. Rounded corner joins and a GPU
 /// vertex-shader expansion that avoids the per-frame rebuild are
-/// planned follow-ups; see `docs/dynamic_geometry.md`.
+/// planned follow-ups.
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///
