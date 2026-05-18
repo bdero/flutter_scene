@@ -153,8 +153,11 @@ float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
   for (int i = 0; i < 16; i++) {
     vec2 p = kPoissonDisk[i];
     vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
-    // Keep samples in this cascade's tile, then place into the strip.
-    vec2 cuv = clamp(uv + offset, vec2(0.0), vec2(1.0));
+    // Keep samples a texel inside this cascade's tile, so bilinear
+    // filtering of the atlas never reaches across the tile boundary
+    // into a neighbouring cascade's depths.
+    vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+                     vec2(1.0 - frag_info.shadow_texel_size));
     vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
     // The atlas is a render-to-texture target; flip V to match its
     // sampled Y orientation (see render_target_flip_y).
