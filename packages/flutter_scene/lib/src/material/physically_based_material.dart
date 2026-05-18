@@ -370,15 +370,20 @@ class PhysicallyBasedMaterial extends Material {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
-    // Nearest + clamp (the SamplerOptions defaults): the shader does a
-    // manual PCF comparison, so we don't want linear-filtered depths, and
-    // out-of-bounds PCF taps should clamp rather than wrap. When there's
-    // no shadow this frame, the white placeholder reads as depth 1.0
-    // (always lit) and casts_shadow is 0 anyway.
+    // Bilinear + clamp. Linear filtering interpolates the stored depth
+    // between texels, so a flat receiver compares against the smooth
+    // surface rather than a coarse cascade's blocky per-texel depth,
+    // which removes the patchy self-shadow on distant ground. Clamp (not
+    // wrap) keeps out-of-bounds PCF taps from reading another cascade's
+    // tile. When there's no shadow this frame the white placeholder
+    // reads as depth 1.0 (always lit) and casts_shadow is 0 anyway.
     pass.bindTexture(
       fragmentShader.getUniformSlot('shadow_map'),
       Material.whitePlaceholder(lighting.shadowMap),
-      sampler: gpu.SamplerOptions(),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+      ),
     );
   }
 

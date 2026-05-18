@@ -7,14 +7,14 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_encoder.dart';
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the
-/// directional shadow map atlas (a depth-in-`.r` fp16 texture). The
+/// directional shadow map atlas (a depth-in-`.r` fp32 texture). The
 /// downstream scene pass reads it from here.
 const String kShadowMapBlackboardKey = 'directional_shadow_map';
 
 /// Renders the scene's depth from a directional light into a cascaded
 /// shadow map atlas and publishes it on the render-graph blackboard.
 ///
-/// The atlas is one fp16 color texture holding the cascade tiles as a
+/// The atlas is one fp32 color texture holding the cascade tiles as a
 /// horizontal strip, each [tileResolution] square; window-space depth
 /// goes in the red channel (a transient depth attachment backs the
 /// depth test). It is cleared to 1.0 so texels no caster covers read as
@@ -38,11 +38,15 @@ class ShadowPass extends RenderGraphPass {
   @override
   void execute(RenderGraphContext context) {
     final atlasWidth = _tileResolution * _cascades.length;
+    // fp32 (not fp16): the far cascade's orthographic depth range spans
+    // hundreds of world units, and fp16's ~11-bit mantissa quantizes
+    // window-space depth into steps coarser than the shadow depth bias.
+    // That made the flat distant ground self-shadow in moire bands.
     final color = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: atlasWidth,
         height: _tileResolution,
-        format: gpu.PixelFormat.r16g16b16a16Float,
+        format: gpu.PixelFormat.r32g32b32a32Float,
         debugName: 'directional_shadow_map',
       ),
     );
