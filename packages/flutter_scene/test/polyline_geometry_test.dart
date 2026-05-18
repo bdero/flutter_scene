@@ -84,7 +84,7 @@ void main() {
       points,
       widths: [0.5, 0.5],
       widthMode: PolylineWidthMode.worldUnits,
-      cap: PolylineCap.butt,
+      diskPoints: const <int>[],
       drawStart: 0.0,
       drawEnd: 1.0,
       viewProjection: viewProjection,
@@ -128,7 +128,7 @@ void main() {
         points,
         widths: [24.0, 24.0],
         widthMode: PolylineWidthMode.screenPixels,
-        cap: PolylineCap.butt,
+        diskPoints: const <int>[],
         drawStart: 0.0,
         drawEnd: 1.0,
         viewProjection: viewProjection,
@@ -156,7 +156,7 @@ void main() {
             [Vector3(-1, 0, z), Vector3(1, 0, z)],
             widths: [16.0, 16.0],
             widthMode: PolylineWidthMode.screenPixels,
-            cap: PolylineCap.butt,
+            diskPoints: const <int>[],
             drawStart: 0.0,
             drawEnd: 1.0,
             viewProjection: viewProjection,
@@ -185,7 +185,7 @@ void main() {
       [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(2, 0, 0), Vector3(3, 0, 0)],
       widths: List<double>.filled(4, 1.0),
       widthMode: PolylineWidthMode.worldUnits,
-      cap: PolylineCap.butt,
+      diskPoints: const <int>[],
       drawStart: drawStart,
       drawEnd: drawEnd,
       viewProjection: viewProjection,
@@ -231,7 +231,7 @@ void main() {
         points,
         widths: List<double>.filled(points.length, width),
         widthMode: PolylineWidthMode.worldUnits,
-        cap: cap,
+        diskPoints: diskPointIndices(points.length, cap),
         drawStart: 0.0,
         drawEnd: 1.0,
         viewProjection: viewProjection,
@@ -286,6 +286,22 @@ void main() {
       final geometricNormal = (rim1 - center).cross(rim0 - center);
       expect(geometricNormal.dot(camera.position - start), lessThan(0));
     });
+
+    test('a disk is emitted for every requested disk point', () {
+      final expanded = expandPolyline(
+        [Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(2, 0, 0)],
+        widths: List<double>.filled(3, 2.0),
+        widthMode: PolylineWidthMode.worldUnits,
+        diskPoints: const <int>[0, 1, 2],
+        drawStart: 0.0,
+        drawEnd: 1.0,
+        viewProjection: viewProjection,
+        cameraPosition: camera.position,
+        viewportSize: size,
+      );
+      // The strip is 3 points (6 vertices) plus a 17-vertex disk each.
+      expect(expanded.positions, hasLength((3 * 2 + 3 * 17) * 3));
+    });
   });
 
   group('resampleDashed', () {
@@ -326,6 +342,21 @@ void main() {
         const DashPattern(dashLength: 1, gapLength: 1),
       );
       expect(result.points, same(points));
+    });
+
+    test('dash cap indices mark both ends of every dash', () {
+      final result = resampleDashed(
+        [Vector3(0, 0, 0), Vector3(10, 0, 0)],
+        List<double>.filled(2, 2.0),
+        [white, white],
+        const DashPattern(dashLength: 3, gapLength: 1, cap: PolylineCap.round),
+      );
+      // Dashes (0,3), (4,7), (8,10): two boundary points each.
+      expect(result.dashCapIndices, hasLength(6));
+      // Every marked index is a full-width dash boundary, never a gap.
+      for (final index in result.dashCapIndices) {
+        expect(result.widths[index], 2.0);
+      }
     });
   });
 }

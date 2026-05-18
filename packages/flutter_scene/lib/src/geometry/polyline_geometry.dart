@@ -32,15 +32,22 @@ enum PolylineCap {
 /// in scene units along the line's arc length.
 class DashPattern {
   /// Creates a dash pattern; both lengths must be positive.
-  const DashPattern({required this.dashLength, required this.gapLength})
-    : assert(dashLength > 0, 'dashLength must be positive'),
-      assert(gapLength > 0, 'gapLength must be positive');
+  const DashPattern({
+    required this.dashLength,
+    required this.gapLength,
+    this.cap = PolylineCap.butt,
+  }) : assert(dashLength > 0, 'dashLength must be positive'),
+       assert(gapLength > 0, 'gapLength must be positive');
 
   /// The drawn length of each dash.
   final double dashLength;
 
   /// The undrawn length between dashes.
   final double gapLength;
+
+  /// How each dash's two ends are finished. [PolylineCap.round] caps
+  /// every dash with a camera-facing disk; the default is flat ends.
+  final PolylineCap cap;
 }
 
 // Triangle-fan segments in a round cap disk.
@@ -58,7 +65,8 @@ const int _diskSegments = 16;
 ///
 /// [PolylineCap.round] adds a camera-facing disk at each end point,
 /// [drawStart]/[drawEnd] trim the line or animate it drawing on, and a
-/// [DashPattern] breaks it into dashes. Corners use an averaged
+/// [DashPattern] breaks it into dashes, which its own cap can round.
+/// Corners use an averaged
 /// direction, which stays smooth on a finely sampled curve but can
 /// pinch on a very sharp turn. Rounded corner joins and a GPU
 /// vertex-shader expansion that avoids the per-frame rebuild are
@@ -102,6 +110,7 @@ class PolylineGeometry extends MeshGeometry {
 
     // Dashes resample the line into dash segments joined by zero-width
     // gap points, so the gap regions draw nothing.
+    var dashCapIndices = const <int>[];
     if (dash != null) {
       final dashed = resampleDashed(
         working,
@@ -112,6 +121,7 @@ class PolylineGeometry extends MeshGeometry {
       working = dashed.points;
       workingWidths = dashed.widths;
       workingColors = dashed.colors;
+      dashCapIndices = dashed.dashCapIndices;
     }
 
     final copied = working;
@@ -128,7 +138,13 @@ class PolylineGeometry extends MeshGeometry {
     // Texture coordinates and colors do not depend on the camera, so
     // they are set once here. The placeholder positions collapse the
     // strip onto the points until updateForCamera runs.
-    final diskPoints = diskPointIndices(count, cap);
+    //
+    // Round dash caps put a disk at every dash boundary; otherwise the
+    // disks are just the line's two round ends.
+    final diskPoints =
+        (dash != null && dash.cap == PolylineCap.round)
+            ? dashCapIndices
+            : diskPointIndices(count, cap);
     final stripVertexCount = count * 2;
     final vertexCount =
         stripVertexCount + diskPoints.length * (_diskSegments + 1);
@@ -183,7 +199,7 @@ class PolylineGeometry extends MeshGeometry {
       copied,
       widths,
       widthMode,
-      cap,
+      diskPoints,
       positions: positions,
       normals: normals,
       texCoords: texCoords,
@@ -196,7 +212,7 @@ class PolylineGeometry extends MeshGeometry {
     this._points,
     this._widths,
     this._widthMode,
-    this._cap, {
+    this._diskPoints, {
     required super.positions,
     required super.normals,
     required super.texCoords,
@@ -207,7 +223,9 @@ class PolylineGeometry extends MeshGeometry {
   final List<Vector3> _points;
   final List<double> _widths;
   final PolylineWidthMode _widthMode;
-  final PolylineCap _cap;
+  // The point indices that receive a round cap disk: the line's round
+  // ends, or every dash boundary when the dash pattern is round-capped.
+  final List<int> _diskPoints;
 
   /// The fraction of the line, by arc length, where the visible range
   /// begins. With [drawEnd] this trims the line or animates it drawing
@@ -226,7 +244,7 @@ class PolylineGeometry extends MeshGeometry {
       _points,
       widths: _widths,
       widthMode: _widthMode,
-      cap: _cap,
+      diskPoints: _diskPoints,
       drawStart: drawStart,
       drawEnd: drawEnd,
       viewProjection: camera.getViewTransform(viewportSize),
@@ -254,6 +272,8 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
 /// the visible range: points outside it collapse onto the range
 /// boundary with zero width.
 ///
+/// [diskPoints] lists the point indices that receive a round cap disk.
+///
 /// Pure: it takes the view-projection matrix rather than touching the
 /// GPU, so it can be exercised without a render context. The strip is
 /// two vertices per point; each round cap adds a disk of `1 + 16`
@@ -262,7 +282,7 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
   List<Vector3> points, {
   required List<double> widths,
   required PolylineWidthMode widthMode,
-  required PolylineCap cap,
+  required List<int> diskPoints,
   required double drawStart,
   required double drawEnd,
   required Matrix4 viewProjection,
@@ -338,7 +358,6 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
     }
   }
 
-  final diskPoints = diskPointIndices(count, cap);
   final vertexCount = count * 2 + diskPoints.length * (_diskSegments + 1);
   final positions = Float32List(vertexCount * 3);
   final normals = Float32List(vertexCount * 3);
@@ -426,8 +445,14 @@ Vector3 _pointAtArc(List<Vector3> points, List<double> arc, double target) {
 /// Each dash starts and ends with a full-width point at the exact dash
 /// boundary; consecutive dashes are joined by zero-width gap points so
 /// the gap draws nothing. The overall line keeps its two end points, so
-/// round caps still apply to them.
-({List<Vector3> points, List<double> widths, List<Vector4> colors})
+/// round caps still apply to them. `dashCapIndices` lists the resampled
+/// indices of every dash boundary, for per-dash round caps.
+({
+  List<Vector3> points,
+  List<double> widths,
+  List<Vector4> colors,
+  List<int> dashCapIndices,
+})
 resampleDashed(
   List<Vector3> points,
   List<double> widths,
@@ -440,7 +465,14 @@ resampleDashed(
     arc[i] = arc[i - 1] + points[i].distanceTo(points[i - 1]);
   }
   final total = arc[count - 1];
-  if (total <= 0.0) return (points: points, widths: widths, colors: colors);
+  if (total <= 0.0) {
+    return (
+      points: points,
+      widths: widths,
+      colors: colors,
+      dashCapIndices: const <int>[],
+    );
+  }
 
   // Position, width, and color at an arc-length distance.
   (Vector3, double, Vector4) sampleAt(double distance) {
@@ -469,6 +501,7 @@ resampleDashed(
   final outPoints = <Vector3>[];
   final outWidths = <double>[];
   final outColors = <Vector4>[];
+  final dashCapIndices = <int>[];
   void emit(Vector3 p, double w, Vector4 c) {
     outPoints.add(p);
     outWidths.add(w);
@@ -482,18 +515,30 @@ resampleDashed(
     // A zero-width gap connector before every dash but the first.
     if (k > 0) emit(startPos, 0.0, startColor);
     emit(startPos, startWidth, startColor);
+    dashCapIndices.add(outPoints.length - 1);
     for (var i = 0; i < count; i++) {
       if (arc[i] > a && arc[i] < b) emit(points[i], widths[i], colors[i]);
     }
     emit(endPos, endWidth, endColor);
+    dashCapIndices.add(outPoints.length - 1);
     // A zero-width gap connector after every dash but the last.
     if (k < dashes.length - 1) emit(endPos, 0.0, endColor);
   }
 
   if (outPoints.length < 2) {
-    return (points: points, widths: widths, colors: colors);
+    return (
+      points: points,
+      widths: widths,
+      colors: colors,
+      dashCapIndices: const <int>[],
+    );
   }
-  return (points: outPoints, widths: outWidths, colors: outColors);
+  return (
+    points: outPoints,
+    widths: outWidths,
+    colors: outColors,
+    dashCapIndices: dashCapIndices,
+  );
 }
 
 List<Vector3> _pointTangents(List<Vector3> points) {
