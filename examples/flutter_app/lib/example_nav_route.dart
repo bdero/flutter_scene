@@ -71,6 +71,9 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   double carScale = 1.0;
   double carLift = 0.0;
 
+  // Smoothing state for the chase camera, carried across frames.
+  final _FollowCamState _followCam = _FollowCamState();
+
   @override
   void initState() {
     // The ground.
@@ -153,6 +156,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
         carNode: carNode,
         carScale: carScale,
         carLift: carLift,
+        followCam: _followCam,
         elapsedSeconds: widget.elapsedSeconds,
       ),
     );
@@ -183,6 +187,13 @@ List<vm.Vector3> _offsetPath(
   return result;
 }
 
+// Mutable smoothing state for the chase camera, carried across frames.
+class _FollowCamState {
+  vm.Vector3? anchorPosition;
+  vm.Vector3? anchorDirection;
+  double lastElapsed = 0.0;
+}
+
 class _NavRoutePainter extends CustomPainter {
   _NavRoutePainter({
     required this.scene,
@@ -191,6 +202,7 @@ class _NavRoutePainter extends CustomPainter {
     required this.carNode,
     required this.carScale,
     required this.carLift,
+    required this.followCam,
     required this.elapsedSeconds,
   });
 
@@ -200,43 +212,87 @@ class _NavRoutePainter extends CustomPainter {
   final Node? carNode;
   final double carScale;
   final double carLift;
+  final _FollowCamState followCam;
   final double elapsedSeconds;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final angle = elapsedSeconds * 0.3;
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(sin(angle) * 42, 27, cos(angle) * 42),
-      target: vm.Vector3(0, 0.3, 0),
-    );
+    // The car's pose on the loop. Distance runs backward along the path
+    // so the car travels counterclockwise, and its lane is the
+    // centerline shifted to the opposite side. Querying the smooth
+    // curve directly keeps the heading continuous.
+    final distance = (-elapsedSeconds * 4.0) % road.length;
+    final frame = road.frameAtDistance(distance);
+    final carPosition =
+        frame.position + _lateral(frame.tangent) * (_roadWidth / 4);
+    // The car travels against the path tangent.
+    final travelDirection = -frame.tangent;
+
+    final camera = _followCamera(carPosition, travelDirection);
 
     // The camera-facing marking lines are rebuilt for the current view.
     for (final marking in markings) {
       marking.updateForCamera(camera, size);
     }
 
-    // Drive the car around the loop. Distance runs backward along the
-    // path so the car travels counterclockwise, and its lane is the
-    // centerline shifted to the opposite side. Querying the smooth
-    // curve directly keeps the heading continuous.
     final car = carNode;
     if (car != null) {
-      final distance = (-elapsedSeconds * 9.0) % road.length;
-      final frame = road.frameAtDistance(distance);
-      final position =
-          frame.position + _lateral(frame.tangent) * (_roadWidth / 4);
-      // The car travels against the path tangent.
       final heading =
-          atan2(-frame.tangent.x, -frame.tangent.z) + _carHeadingOffset;
+          atan2(travelDirection.x, travelDirection.z) + _carHeadingOffset;
       car.localTransform =
           vm.Matrix4.translation(
-              vm.Vector3(position.x, position.y + carLift, position.z),
+              vm.Vector3(carPosition.x, carPosition.y + carLift, carPosition.z),
             )
             ..rotateY(heading)
             ..scaleByDouble(carScale, carScale, carScale, 1.0);
     }
 
     scene.render(camera, canvas, viewport: Offset.zero & size);
+  }
+
+  // A chase camera that eases along behind the car and looks down at it
+  // at 45 degrees. The followed anchor lags the car, which smooths the
+  // swing through curves; the camera sits rigidly behind the anchor, so
+  // the downward angle stays a constant 45 degrees.
+  PerspectiveCamera _followCamera(
+    vm.Vector3 carPosition,
+    vm.Vector3 travelDirection,
+  ) {
+    const followDistance = 6.5;
+    const lookLift = 0.2;
+    const stiffness = 5.0;
+
+    // Ease the anchor toward the car by a time-based fraction.
+    final dt = (elapsedSeconds - followCam.lastElapsed).clamp(0.0, 0.05);
+    followCam.lastElapsed = elapsedSeconds;
+    final blend = 1.0 - exp(-stiffness * dt);
+
+    final anchorPosition = followCam.anchorPosition;
+    final anchorDirection = followCam.anchorDirection;
+    if (anchorPosition == null || anchorDirection == null) {
+      followCam.anchorPosition = carPosition.clone();
+      followCam.anchorDirection = travelDirection.clone();
+    } else {
+      followCam.anchorPosition =
+          anchorPosition + (carPosition - anchorPosition) * blend;
+      final direction =
+          anchorDirection + (travelDirection - anchorDirection) * blend;
+      if (direction.length2 > 1e-9) direction.normalize();
+      followCam.anchorDirection = direction;
+    }
+
+    final anchor = followCam.anchorPosition!;
+    final forward = followCam.anchorDirection!;
+    // Behind the anchor, raised by the follow distance above the look
+    // target: equal horizontal and vertical offsets give a 45 degree
+    // downward look.
+    return PerspectiveCamera(
+      position:
+          anchor -
+          forward * followDistance +
+          vm.Vector3(0.0, lookLift + followDistance / 2, 0.0),
+      target: anchor + vm.Vector3(0.0, lookLift + 2, 0.0),
+    );
   }
 
   @override
