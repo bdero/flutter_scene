@@ -28,17 +28,7 @@ enum PolylineCap {
   round,
 }
 
-/// How a [PolylineGeometry] turns corners.
-enum PolylineJoin {
-  /// The strip bends through a shared averaged direction. Cheap, but it
-  /// can pinch on very sharp turns.
-  miter,
-
-  /// A disk fills each corner, rounding the outside of the bend.
-  round,
-}
-
-// Triangle-fan segments in a round cap or join disk.
+// Triangle-fan segments in a round cap disk.
 const int _diskSegments = 16;
 
 /// A thick, camera-facing line through a list of points.
@@ -51,25 +41,24 @@ const int _diskSegments = 16;
 /// The result is an ordinary triangle mesh: pair it with any material,
 /// and use [perVertexColor] for gradient or distance-fade effects.
 ///
-/// Round caps and joins ([PolylineCap.round], [PolylineJoin.round]) add
-/// camera-facing disks at the end and corner points. Dashes, an animated
-/// draw-on range, and a GPU vertex-shader expansion that avoids the
-/// per-frame rebuild are planned follow-ups; see
-/// `docs/dynamic_geometry.md`.
+/// [PolylineCap.round] adds a camera-facing disk at each end point.
+/// Corners use an averaged direction, which stays smooth on a finely
+/// sampled curve but can pinch on a very sharp turn. Dashes, an animated
+/// draw-on range, rounded corner joins, and a GPU vertex-shader
+/// expansion that avoids the per-frame rebuild are planned follow-ups;
+/// see `docs/dynamic_geometry.md`.
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///
   /// [width] is measured per [widthMode]. [perVertexWidth] overrides it
   /// per point for tapering, and [perVertexColor] sets a color per
-  /// point for gradients. [cap] and [join] select rounded ends and
-  /// corners. The strip is a placeholder until the first
-  /// [updateForCamera] call.
+  /// point for gradients. [cap] selects rounded or flat ends. The strip
+  /// is a placeholder until the first [updateForCamera] call.
   factory PolylineGeometry(
     List<Vector3> points, {
     double width = 8.0,
     PolylineWidthMode widthMode = PolylineWidthMode.screenPixels,
     PolylineCap cap = PolylineCap.butt,
-    PolylineJoin join = PolylineJoin.miter,
     List<double>? perVertexWidth,
     List<Vector4>? perVertexColor,
   }) {
@@ -99,7 +88,7 @@ class PolylineGeometry extends MeshGeometry {
     // Texture coordinates and colors do not depend on the camera, so
     // they are set once here. The placeholder positions collapse the
     // strip onto the points until updateForCamera runs.
-    final diskPoints = diskPointIndices(count, cap, join);
+    final diskPoints = diskPointIndices(count, cap);
     final stripVertexCount = count * 2;
     final vertexCount =
         stripVertexCount + diskPoints.length * (_diskSegments + 1);
@@ -136,7 +125,7 @@ class PolylineGeometry extends MeshGeometry {
         ..addAll([a + 1, a + 2, a + 3]);
     }
 
-    // A triangle-fan disk for each round cap or join point.
+    // A triangle-fan disk for each round cap.
     for (var ord = 0; ord < diskPoints.length; ord++) {
       final point = diskPoints[ord];
       final base = stripVertexCount + ord * (_diskSegments + 1);
@@ -155,7 +144,6 @@ class PolylineGeometry extends MeshGeometry {
       widths,
       widthMode,
       cap,
-      join,
       positions: positions,
       normals: normals,
       texCoords: texCoords,
@@ -168,8 +156,7 @@ class PolylineGeometry extends MeshGeometry {
     this._points,
     this._widths,
     this._widthMode,
-    this._cap,
-    this._join, {
+    this._cap, {
     required super.positions,
     required super.normals,
     required super.texCoords,
@@ -181,7 +168,6 @@ class PolylineGeometry extends MeshGeometry {
   final List<double> _widths;
   final PolylineWidthMode _widthMode;
   final PolylineCap _cap;
-  final PolylineJoin _join;
 
   /// Rebuilds the camera-facing strip for [camera] and [viewportSize].
   ///
@@ -192,7 +178,6 @@ class PolylineGeometry extends MeshGeometry {
       widths: _widths,
       widthMode: _widthMode,
       cap: _cap,
-      join: _join,
       viewProjection: camera.getViewTransform(viewportSize),
       cameraPosition: camera.position,
       viewportSize: viewportSize,
@@ -202,37 +187,27 @@ class PolylineGeometry extends MeshGeometry {
   }
 }
 
-/// The polyline point indices that receive a round cap or join disk, in
-/// the order [expandPolyline] emits them: the two end points first,
-/// then the interior points.
-List<int> diskPointIndices(int count, PolylineCap cap, PolylineJoin join) {
-  final indices = <int>[];
+/// The polyline point indices that receive a round cap disk: the two
+/// end points when [cap] is [PolylineCap.round], otherwise none.
+List<int> diskPointIndices(int count, PolylineCap cap) {
   if (cap == PolylineCap.round) {
-    indices
-      ..add(0)
-      ..add(count - 1);
+    return <int>[0, count - 1];
   }
-  if (join == PolylineJoin.round) {
-    for (var i = 1; i < count - 1; i++) {
-      indices.add(i);
-    }
-  }
-  return indices;
+  return const <int>[];
 }
 
 /// Expands [points] into a camera-facing triangle strip's vertex
-/// positions and normals, including round cap and join disks.
+/// positions and normals, including round cap disks.
 ///
 /// Pure: it takes the view-projection matrix rather than touching the
 /// GPU, so it can be exercised without a render context. The strip is
-/// two vertices per point; each round cap or join adds a disk of
-/// `1 + 16` vertices.
+/// two vertices per point; each round cap adds a disk of `1 + 16`
+/// vertices.
 ({Float32List positions, Float32List normals}) expandPolyline(
   List<Vector3> points, {
   required List<double> widths,
   required PolylineWidthMode widthMode,
   required PolylineCap cap,
-  required PolylineJoin join,
   required Matrix4 viewProjection,
   required Vector3 cameraPosition,
   required ui.Size viewportSize,
@@ -300,7 +275,7 @@ List<int> diskPointIndices(int count, PolylineCap cap, PolylineJoin join) {
     }
   }
 
-  final diskPoints = diskPointIndices(count, cap, join);
+  final diskPoints = diskPointIndices(count, cap);
   final vertexCount = count * 2 + diskPoints.length * (_diskSegments + 1);
   final positions = Float32List(vertexCount * 3);
   final normals = Float32List(vertexCount * 3);

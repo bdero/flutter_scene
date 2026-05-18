@@ -64,7 +64,6 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
       linePoints,
       width: 16,
       cap: PolylineCap.round,
-      join: PolylineJoin.round,
       perVertexColor: <vm.Vector4>[
         for (var i = 0; i < linePoints.length; i++)
           _lerpColor(
