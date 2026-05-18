@@ -41,12 +41,13 @@ const int _diskSegments = 16;
 /// The result is an ordinary triangle mesh: pair it with any material,
 /// and use [perVertexColor] for gradient or distance-fade effects.
 ///
-/// [PolylineCap.round] adds a camera-facing disk at each end point.
+/// [PolylineCap.round] adds a camera-facing disk at each end point, and
+/// [drawStart]/[drawEnd] trim the line or animate it drawing on.
 /// Corners use an averaged direction, which stays smooth on a finely
-/// sampled curve but can pinch on a very sharp turn. Dashes, an animated
-/// draw-on range, rounded corner joins, and a GPU vertex-shader
-/// expansion that avoids the per-frame rebuild are planned follow-ups;
-/// see `docs/dynamic_geometry.md`.
+/// sampled curve but can pinch on a very sharp turn. Dashes, rounded
+/// corner joins, and a GPU vertex-shader expansion that avoids the
+/// per-frame rebuild are planned follow-ups; see
+/// `docs/dynamic_geometry.md`.
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///
@@ -169,6 +170,15 @@ class PolylineGeometry extends MeshGeometry {
   final PolylineWidthMode _widthMode;
   final PolylineCap _cap;
 
+  /// The fraction of the line, by arc length, where the visible range
+  /// begins. With [drawEnd] this trims the line or animates it drawing
+  /// on. Clamped to `0..1`; the default is `0`.
+  double drawStart = 0.0;
+
+  /// The fraction of the line, by arc length, where the visible range
+  /// ends. See [drawStart]. The default is `1`.
+  double drawEnd = 1.0;
+
   /// Rebuilds the camera-facing strip for [camera] and [viewportSize].
   ///
   /// Call once per frame before rendering. Reuses the GPU buffers.
@@ -178,6 +188,8 @@ class PolylineGeometry extends MeshGeometry {
       widths: _widths,
       widthMode: _widthMode,
       cap: _cap,
+      drawStart: drawStart,
+      drawEnd: drawEnd,
       viewProjection: camera.getViewTransform(viewportSize),
       cameraPosition: camera.position,
       viewportSize: viewportSize,
@@ -199,6 +211,10 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
 /// Expands [points] into a camera-facing triangle strip's vertex
 /// positions and normals, including round cap disks.
 ///
+/// [drawStart] and [drawEnd] (fractions `0..1` of the arc length) trim
+/// the visible range: points outside it collapse onto the range
+/// boundary with zero width.
+///
 /// Pure: it takes the view-projection matrix rather than touching the
 /// GPU, so it can be exercised without a render context. The strip is
 /// two vertices per point; each round cap adds a disk of `1 + 16`
@@ -208,14 +224,22 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
   required List<double> widths,
   required PolylineWidthMode widthMode,
   required PolylineCap cap,
+  required double drawStart,
+  required double drawEnd,
   required Matrix4 viewProjection,
   required Vector3 cameraPosition,
   required ui.Size viewportSize,
 }) {
   final count = points.length;
-  final tangents = _pointTangents(points);
+  final (drawnPoints, drawnWidths) = _applyDrawRange(
+    points,
+    widths,
+    drawStart,
+    drawEnd,
+  );
+  final tangents = _pointTangents(drawnPoints);
   final viewDirections = <Vector3>[
-    for (final p in points) _towardCamera(cameraPosition, p),
+    for (final p in drawnPoints) _towardCamera(cameraPosition, p),
   ];
 
   // Strip edge vertices, computed per point.
@@ -226,14 +250,14 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
     for (var i = 0; i < count; i++) {
       var across = tangents[i].cross(viewDirections[i]);
       if (across.length2 < 1e-12) across = _anyPerpendicular(tangents[i]);
-      across = across.normalized() * (widths[i] / 2.0);
-      left[i] = points[i] - across;
-      right[i] = points[i] + across;
+      across = across.normalized() * (drawnWidths[i] / 2.0);
+      left[i] = drawnPoints[i] - across;
+      right[i] = drawnPoints[i] + across;
     }
   } else {
     final inverse = Matrix4.inverted(viewProjection);
     final clip = <Vector4>[
-      for (final p in points)
+      for (final p in drawnPoints)
         viewProjection.transformed(Vector4(p.x, p.y, p.z, 1.0)),
     ];
     final width = viewportSize.width;
@@ -255,7 +279,7 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
       screenX /= length;
       screenY /= length;
       // Perpendicular, offset by half the pixel width, expressed in NDC.
-      final half = widths[i] / 2.0;
+      final half = drawnWidths[i] / 2.0;
       final ndcOffsetX = -screenY * half * 2.0 / width;
       final ndcOffsetY = -screenX * half * 2.0 / height;
       left[i] = _unproject(
@@ -287,18 +311,75 @@ List<int> diskPointIndices(int count, PolylineCap cap) {
   var base = count * 2;
   for (final point in diskPoints) {
     // The strip half-width at the point, recovered from its two edges,
-    // works for both world and screen modes.
+    // works for both world and screen modes. It is zero for a point
+    // collapsed by the draw range, hiding that cap.
     final radius = (left[point] - right[point]).length / 2.0;
     base = _emitDisk(
       positions,
       normals,
       base,
-      points[point],
+      drawnPoints[point],
       viewDirections[point],
       radius,
     );
   }
   return (positions: positions, normals: normals);
+}
+
+double _clamp01(double v) => v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+
+// Trims the polyline to the [drawStart, drawEnd] arc-length range.
+// Points outside the range collapse onto the boundary position with
+// zero width, so the strip there is degenerate and draws nothing.
+(List<Vector3>, List<double>) _applyDrawRange(
+  List<Vector3> points,
+  List<double> widths,
+  double drawStart,
+  double drawEnd,
+) {
+  final start = _clamp01(drawStart);
+  final end = _clamp01(drawEnd);
+  if (start <= 0.0 && end >= 1.0) return (points, widths);
+
+  final count = points.length;
+  final arc = List<double>.filled(count, 0.0);
+  for (var i = 1; i < count; i++) {
+    arc[i] = arc[i - 1] + points[i].distanceTo(points[i - 1]);
+  }
+  final total = arc[count - 1];
+  if (total <= 0.0) return (points, widths);
+
+  final startPosition = _pointAtArc(points, arc, start * total);
+  final endPosition = _pointAtArc(points, arc, end * total);
+  final drawnPoints = <Vector3>[];
+  final drawnWidths = <double>[];
+  for (var i = 0; i < count; i++) {
+    final fraction = arc[i] / total;
+    if (fraction < start) {
+      drawnPoints.add(startPosition);
+      drawnWidths.add(0.0);
+    } else if (fraction > end) {
+      drawnPoints.add(endPosition);
+      drawnWidths.add(0.0);
+    } else {
+      drawnPoints.add(points[i]);
+      drawnWidths.add(widths[i]);
+    }
+  }
+  return (drawnPoints, drawnWidths);
+}
+
+// The point at arc-length distance [target] along the polyline.
+Vector3 _pointAtArc(List<Vector3> points, List<double> arc, double target) {
+  final clamped = target < 0.0 ? 0.0 : (target > arc.last ? arc.last : target);
+  var hi = 1;
+  while (hi < arc.length - 1 && arc[hi] < clamped) {
+    hi++;
+  }
+  final lo = hi - 1;
+  final span = arc[hi] - arc[lo];
+  final local = span > 1e-12 ? (clamped - arc[lo]) / span : 0.0;
+  return points[lo] + (points[hi] - points[lo]) * local;
 }
 
 List<Vector3> _pointTangents(List<Vector3> points) {

@@ -126,14 +126,14 @@ class _NavRoutePainter extends CustomPainter {
       target: vm.Vector3(0, 0.3, 0),
     );
 
-    // The camera-facing route line is rebuilt for the current view.
-    routeLine.updateForCamera(camera, size);
-
-    // Drive the marker along the route, looping.
+    // The marker drives the route, looping, and the line draws on up to
+    // it.
     final distance = (elapsedSeconds * 3.5) % route.length;
     markerNode.localTransform = vm.Matrix4.translation(
       route.positionAtDistance(distance)..y = 0.45,
     );
+    routeLine.drawEnd = distance / route.length;
+    routeLine.updateForCamera(camera, size);
 
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
