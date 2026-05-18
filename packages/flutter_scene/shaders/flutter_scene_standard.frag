@@ -192,9 +192,15 @@ float SampleShadow(vec3 world_pos, vec3 n) {
         frag_info.light_space_matrix[c] * vec4(world_pos, 1.0);
     vec3 proj = light_clip.xyz / light_clip.w;
     vec2 uv = proj.xy * 0.5 + 0.5;
-    // Skip cascades whose box does not contain the fragment.
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 ||
-        proj.z < 0.0 || proj.z > 1.0) {
+    // Require room for the PCF kernel inside the cascade's tile, so its
+    // samples never clamp against the tile edge (which would smear the
+    // edge texel into a thin seam). A fragment closer to the edge than
+    // the kernel radius falls through to the next, larger cascade.
+    float margin =
+        max(frag_info.shadow_softness / frag_info.cascade_box_sizes[c],
+            frag_info.shadow_texel_size);
+    if (uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||
+        uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0) {
       continue;
     }
     return SampleCascade(c, world_pos, n, count);
