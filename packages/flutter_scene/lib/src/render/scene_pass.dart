@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/light.dart';
@@ -26,6 +27,7 @@ class ScenePass extends RenderGraphPass {
     required ui.Size dimensions,
     required EnvironmentMap environmentMap,
     required double environmentIntensity,
+    Matrix3? environmentTransform,
     required bool enableMsaa,
     DirectionalLight? directionalLight,
     List<ShadowCascade> cascades = const [],
@@ -34,6 +36,7 @@ class ScenePass extends RenderGraphPass {
        _dimensions = dimensions,
        _environmentMap = environmentMap,
        _environmentIntensity = environmentIntensity,
+       _environmentTransform = environmentTransform,
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
        _cascades = cascades;
@@ -43,6 +46,7 @@ class ScenePass extends RenderGraphPass {
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
   final double _environmentIntensity;
+  final Matrix3? _environmentTransform;
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final List<ShadowCascade> _cascades;
@@ -105,6 +109,7 @@ class ScenePass extends RenderGraphPass {
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentIntensity: _environmentIntensity,
+      environmentTransform: _environmentTransform,
       directionalLight: _directionalLight,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,

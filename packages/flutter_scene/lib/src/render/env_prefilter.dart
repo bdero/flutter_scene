@@ -36,6 +36,22 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
   lengthInBytes: 6 * 2 * 4,
 );
 
+// TODO(bdero): Prefilter-quality follow-ups, roughly in priority order:
+//  - Filtered importance sampling: sample a mip chain of the source
+//    equirect (mapping each GGX sample's cone solid angle to a mip LOD)
+//    so a sample integrates an area instead of a point. That removes the
+//    residual sampling noise and lets kPrefilterSamples drop back to
+//    ~32. Blocked on two Flutter GPU gaps worth upstreaming: `textureLod`
+//    is unavailable in the shader dialect (see `SampleEnvironmentTextureLod`
+//    in texture.glsl), and there is no API to generate or upload texture
+//    mip levels.
+//  - A prefiltered cubemap instead of this equirectangular atlas: removes
+//    the pole distortion (smearing on near-vertical reflections) and the
+//    resolution ceiling. Needs mipmapped cubemap texture support in
+//    Flutter GPU (https://github.com/flutter/flutter/issues/145027).
+//  - A mip-style atlas: one large sharp band plus progressively smaller
+//    rough bands, rather than equal-size bands, so mirror reflections get
+//    real resolution without bloating the rough bands.
 /// Prefilters an equirectangular radiance texture into a vertical
 /// roughness-band atlas for image-based specular lighting.
 ///
@@ -46,9 +62,14 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
 /// on the environment and sampled at draw time by the standard shader's
 /// `SamplePrefilteredRadiance`.
 ///
-/// [sourceEquirect] is treated as an sRGB-encoded equirectangular radiance
-/// map; the atlas stores linear radiance.
-gpu.Texture prefilterEquirectRadiance(gpu.Texture sourceEquirect) {
+/// [sourceEquirect] is an equirectangular radiance map. By default it is
+/// treated as sRGB-encoded; pass [sourceIsLinear] when it already holds
+/// linear radiance (an HDR environment), so it is not linearized twice.
+/// The atlas always stores linear radiance.
+gpu.Texture prefilterEquirectRadiance(
+  gpu.Texture sourceEquirect, {
+  bool sourceIsLinear = false,
+}) {
   final atlas = gpu.gpuContext.createTexture(
     gpu.StorageMode.devicePrivate,
     kPrefilterBandWidth,
@@ -82,6 +103,12 @@ gpu.Texture prefilterEquirectRadiance(gpu.Texture sourceEquirect) {
       widthAddressMode: gpu.SamplerAddressMode.repeat,
       heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
     ),
+  );
+  // A single float (std140-padded to 16 bytes): the sRGB-vs-linear flag.
+  final info = Float32List(4)..[0] = sourceIsLinear ? 1.0 : 0.0;
+  renderPass.bindUniform(
+    fragmentShader.getUniformSlot('PrefilterInfo'),
+    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
   );
   renderPass.draw();
   commandBuffer.submit();

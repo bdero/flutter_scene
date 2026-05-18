@@ -95,6 +95,74 @@ base class EnvironmentMap {
     );
   }
 
+  /// Builds an [EnvironmentMap] from a high-dynamic-range equirectangular
+  /// radiance map: linear (not sRGB) RGBA float pixels, row-major,
+  /// [width] by [height].
+  ///
+  /// Unlike [fromUIImages], the input is linear HDR, so radiance above 1.0
+  /// (bright skies, the sun) is preserved through the prefilter and lights
+  /// the scene at its true intensity. Pass [diffuseSphericalHarmonics] to
+  /// supply your own diffuse term instead of projecting it.
+  static Future<EnvironmentMap> fromEquirectHdr({
+    required Float32List linearPixels,
+    required int width,
+    required int height,
+    List<Vector3>? diffuseSphericalHarmonics,
+  }) async {
+    assert(linearPixels.length == width * height * 4);
+    // The radiance texture is fp16, not fp32: the prefilter samples it
+    // with a linear sampler, and 32-bit-float textures are not filterable
+    // on several GPU backends (notably Apple Silicon), which would make
+    // the prefiltered atlas read back as black. fp16 is universally
+    // filterable and carries ample range for radiance.
+    final radianceTexture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      width,
+      height,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+    )..overwrite(ByteData.sublistView(_floatPixelsToHalf(linearPixels)));
+    final prefilteredRadiance = prefilterEquirectRadiance(
+      radianceTexture,
+      sourceIsLinear: true,
+    );
+    final sh =
+        diffuseSphericalHarmonics ??
+        _projectLinearEquirectToSphericalHarmonics(linearPixels, width, height);
+    return EnvironmentMap._(prefilteredRadiance, sh);
+  }
+
+  // Scratch storage for reinterpreting a 32-bit float as its raw bits.
+  static final Float32List _floatBits = Float32List(1);
+  static final Uint32List _floatBitsView = Uint32List.view(_floatBits.buffer);
+
+  /// Converts linear RGBA float [pixels] to half-float (fp16) bit patterns
+  /// for upload to an `r16g16b16a16Float` texture.
+  static Uint16List _floatPixelsToHalf(Float32List pixels) {
+    final half = Uint16List(pixels.length);
+    for (var i = 0; i < pixels.length; i++) {
+      half[i] = _floatToHalfBits(pixels[i]);
+    }
+    return half;
+  }
+
+  /// Converts one 32-bit float to a 16-bit half-float bit pattern.
+  /// Subnormals flush to zero; values past the half range clamp to the
+  /// largest finite half.
+  static int _floatToHalfBits(double value) {
+    _floatBits[0] = value;
+    final bits = _floatBitsView[0];
+    final sign = (bits >>> 16) & 0x8000;
+    final exponent = ((bits >>> 23) & 0xff) - 112; // rebias 127 -> 15
+    final mantissa = bits & 0x7fffff;
+    if (exponent >= 0x1f) {
+      return sign | 0x7bff; // overflow / inf / nan -> largest finite half
+    }
+    if (exponent <= 0) {
+      return sign; // underflow -> signed zero
+    }
+    return sign | (exponent << 10) | (mantissa >>> 13);
+  }
+
   /// Builds the package's built-in procedural "studio" environment.
   ///
   /// A neutral image-based-lighting setup generated on the fly (no bundled
@@ -241,12 +309,42 @@ base class EnvironmentMap {
     );
   }
 
-  /// Core SH-9 projection over RGBA8 equirectangular [bytes] of the given
-  /// dimensions. Shared by [computeDiffuseSphericalHarmonics] and [studio].
+  /// SH-9 projection over RGBA8 sRGB equirectangular [bytes].
   static List<Vector3> _projectEquirectToSphericalHarmonics(
     Uint8List bytes,
     int width,
     int height,
+  ) {
+    return _projectEquirect(width, height, (px, py) {
+      final o = (py * width + px) * 4;
+      // Linearize sRGB the same way the shader's SRGBToLinear does.
+      return (
+        _srgbToLinear(bytes[o] / 255.0),
+        _srgbToLinear(bytes[o + 1] / 255.0),
+        _srgbToLinear(bytes[o + 2] / 255.0),
+      );
+    });
+  }
+
+  /// SH-9 projection over linear-radiance RGBA float equirect [pixels].
+  static List<Vector3> _projectLinearEquirectToSphericalHarmonics(
+    Float32List pixels,
+    int width,
+    int height,
+  ) {
+    return _projectEquirect(width, height, (px, py) {
+      final o = (py * width + px) * 4;
+      return (pixels[o], pixels[o + 1], pixels[o + 2]);
+    });
+  }
+
+  /// Core SH-9 projection over an equirectangular image of the given
+  /// dimensions. [sampleLinearRgb] returns the linear RGB radiance at a
+  /// pixel; callers adapt their own storage (sRGB bytes, HDR floats).
+  static List<Vector3> _projectEquirect(
+    int width,
+    int height,
+    (double, double, double) Function(int px, int py) sampleLinearRgb,
   ) {
     // Quadrature over a regular grid in equirectangular UV space. The grid
     // resolution is independent of the source image; sampling 192x96 cells
@@ -274,12 +372,7 @@ base class EnvironmentMap {
         final dirZ = cosLat * math.sin(longitude);
         final px = (u * width).floor().clamp(0, width - 1);
 
-        final o = (py * width + px) * 4;
-        // Linearize sRGB the same way the shader's SRGBToLinear does.
-        final r = _srgbToLinear(bytes[o] / 255.0);
-        final g = _srgbToLinear(bytes[o + 1] / 255.0);
-        final b = _srgbToLinear(bytes[o + 2] / 255.0);
-
+        final (r, g, b) = sampleLinearRgb(px, py);
         _accumulateSh(coefficients, dirX, dirY, dirZ, r, g, b, weightRow);
       }
     }

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:vector_math/vector_math.dart' show Matrix3;
 import 'camera.dart';
 import 'light.dart';
 import 'material/environment.dart';
@@ -179,6 +180,10 @@ base class Scene implements SceneGraph {
   /// (the default) is neutral.
   double environmentIntensity = 1.0;
 
+  /// Rotation applied to the image-based-lighting [environment] when it is
+  /// sampled. Identity (the default) leaves the environment unrotated.
+  Matrix3 environmentTransform = Matrix3.identity();
+
   /// Optional analytic directional light (e.g. a sun) layered on top of
   /// the image-based lighting. Null (the default) means IBL only.
   DirectionalLight? directionalLight;
@@ -350,6 +355,7 @@ base class Scene implements SceneGraph {
         dimensions: pixelSize,
         environmentMap: environmentMap,
         environmentIntensity: environmentIntensity,
+        environmentTransform: environmentTransform,
         enableMsaa: enableMsaa,
         directionalLight: light,
         cascades: cascades,

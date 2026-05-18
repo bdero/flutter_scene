@@ -52,13 +52,13 @@ const float kPrefilterBandHeight = 256.0;
 const float kPrefilterBandEdgeClamp = 1.0 / kPrefilterBandHeight;
 
 // Samples the prefiltered radiance atlas for reflection `direction` at the
-// given perceptual `roughness`, interpolating between the two nearest bands.
-// `flip_y` is 1.0 on backends whose render-to-texture targets sample
-// top-down (Metal/Vulkan) and 0.0 where they sample bottom-up (OpenGL ES);
-// Flutter GPU exposes no backend macro, so the caller passes it. Sample the
-// atlas with a horizontal-repeat / vertical-clamp sampler.
+// given perceptual `roughness`, interpolating between the two nearest
+// bands. The atlas samples in the same V orientation it was rendered (the
+// prefilter's full-screen pass already accounts for the render-to-texture
+// orientation), so no flip is applied here. Sample the atlas with a
+// horizontal-repeat / vertical-clamp sampler.
 vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
-                               float roughness, float flip_y) {
+                               float roughness) {
   vec2 eq = SphericalToEquirectangular(direction);
   eq.y = clamp(eq.y, kPrefilterBandEdgeClamp, 1.0 - kPrefilterBandEdgeClamp);
   float band = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);
@@ -67,10 +67,6 @@ vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
   float t = band - b0;
   float v0 = (b0 + eq.y) / kPrefilterBands;
   float v1 = (b1 + eq.y) / kPrefilterBands;
-  if (flip_y > 0.5) {
-    v0 = 1.0 - v0;
-    v1 = 1.0 - v1;
-  }
   return mix(texture(atlas, vec2(eq.x, v0)).rgb,
              texture(atlas, vec2(eq.x, v1)).rgb, t);
 }
