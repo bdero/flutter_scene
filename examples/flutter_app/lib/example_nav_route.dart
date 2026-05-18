@@ -129,11 +129,15 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
       scene.add(Node(mesh: Mesh(line, UnlitMaterial())));
     }
 
-    // A dashed yellow center line.
+    // A dashed yellow center line, each dash rounded at both ends.
     final center = PolylineGeometry(
       _offsetPath(road, 0.0, lift: _markingHeight),
       width: 5,
-      dash: const DashPattern(dashLength: 1.6, gapLength: 1.2),
+      dash: const DashPattern(
+        dashLength: 1.6,
+        gapLength: 1.2,
+        cap: PolylineCap.round,
+      ),
     );
     markings.add(center);
     scene.add(
