@@ -44,6 +44,12 @@ uniform FragInfo {
   // forced fully opaque.
   float alpha_mode;
   float alpha_cutoff;
+  // UV-space half-width over which shadowing fades back to lit at the
+  // shadow map border, softening the box edge. 0 disables the fade.
+  float shadow_fade;
+  // UV-space radius of the soft-shadow (PCF) sampling disk; the shadow
+  // penumbra width.
+  float shadow_softness;
 }
 frag_info;
 
@@ -85,7 +91,18 @@ vec3 EvaluateDiffuseSH(vec3 n) {
          frag_info.diffuse_sh8.xyz * (0.546274 * (n.x * n.x - n.y * n.y));
 }
 
-// 3x3 PCF shadow lookup. Returns 1.0 (lit) .. 0.0 (fully shadowed).
+// A 16-tap Poisson disk, sampled by the soft-shadow PCF kernel.
+const vec2 kPoissonDisk[16] = vec2[](
+    vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
+    vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
+    vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
+    vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379),
+    vec2(0.44323325, -0.97511554), vec2(0.53742981, -0.47373420),
+    vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
+    vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
+    vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790));
+
+// Soft PCF shadow lookup. Returns 1.0 (lit) .. 0.0 (fully shadowed).
 // `world_pos` and `n` are world-space; `n` is the (perturbed) shading
 // normal, used for normal-offset bias to fight grazing-angle acne.
 float SampleShadow(vec3 world_pos, vec3 n) {
@@ -105,16 +122,35 @@ float SampleShadow(vec3 world_pos, vec3 n) {
     return 1.0;
   }
   float receiver_depth = proj.z - frag_info.shadow_bias;
-  float texel = frag_info.shadow_texel_size;
+
+  // Poisson-disk PCF. The disk radius is the penumbra width; a
+  // per-fragment rotation hides the sample pattern so 16 taps read as
+  // a smooth soft edge instead of banding.
+  float radius = max(frag_info.shadow_softness, frag_info.shadow_texel_size);
+  float noise = fract(
+      52.9829189 *
+      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float angle = noise * 6.28318530718;
+  float ca = cos(angle);
+  float sa = sin(angle);
   float lit = 0.0;
-  for (int dx = -1; dx <= 1; dx++) {
-    for (int dy = -1; dy <= 1; dy++) {
-      vec2 sample_uv = uv + vec2(float(dx), float(dy)) * texel;
-      float caster_depth = texture(shadow_map, sample_uv).r;
-      lit += receiver_depth <= caster_depth ? 1.0 : 0.0;
-    }
+  for (int i = 0; i < 16; i++) {
+    vec2 p = kPoissonDisk[i];
+    vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
+    float caster_depth = texture(shadow_map, uv + offset).r;
+    lit += receiver_depth <= caster_depth ? 1.0 : 0.0;
   }
-  return lit / 9.0;
+  float shadow = lit / 16.0;
+
+  // Fade shadowing back to lit over the outer `shadow_fade` of UV space
+  // so the shadow map's box edge is soft rather than a hard cutoff.
+  float fade = frag_info.shadow_fade;
+  if (fade > 0.0) {
+    vec2 edge = smoothstep(vec2(0.0), vec2(fade), uv) *
+                smoothstep(vec2(0.0), vec2(fade), vec2(1.0) - uv);
+    shadow = mix(1.0, shadow, edge.x * edge.y);
+  }
+  return shadow;
 }
 
 void main() {

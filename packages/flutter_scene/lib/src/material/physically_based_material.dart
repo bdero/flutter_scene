@@ -220,7 +220,7 @@ class PhysicallyBasedMaterial extends Material {
     final shadowMatrix =
         lighting.shadowMap == null ? null : lighting.lightSpaceMatrix;
 
-    // FragInfo std140 layout (336 bytes / 84 floats; the trailing run of
+    // FragInfo std140 layout (352 bytes / 88 floats; the trailing run of
     // scalars pads the block up to a 16-byte multiple):
     //   [0..3]   vec4  color
     //   [4..7]   vec4  emissive_factor
@@ -243,8 +243,10 @@ class PhysicallyBasedMaterial extends Material {
     //   [80]     float render_target_flip_y
     //   [81]     float alpha_mode (0 opaque, 1 mask, 2 blend)
     //   [82]     float alpha_cutoff
-    //   [83]     padding to a 16-byte multiple
-    final fragInfo = Float32List(84);
+    //   [83]     float shadow_fade (UV-space border fade half-width)
+    //   [84]     float shadow_softness (UV-space penumbra radius)
+    //   [85..87] padding to a 16-byte multiple
+    final fragInfo = Float32List(88);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -289,6 +291,18 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[80] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
     fragInfo[81] = alphaMode.index.toDouble();
     fragInfo[82] = alphaCutoff;
+    // UV-space half-width of the shadow map's soft border, from the
+    // light's world-space fade range. Zero when there is no shadow.
+    fragInfo[83] =
+        light == null || shadowMatrix == null
+            ? 0.0
+            : (light.shadowFadeRange / light.shadowFrustumSize).clamp(0.0, 0.5);
+    // UV-space radius of the soft-shadow (PCF) kernel, from the light's
+    // world-space penumbra radius.
+    fragInfo[84] =
+        light == null || shadowMatrix == null
+            ? 0.0
+            : (light.shadowSoftness / light.shadowFrustumSize).clamp(0.0, 0.04);
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),

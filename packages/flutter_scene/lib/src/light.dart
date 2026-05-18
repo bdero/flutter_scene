@@ -16,7 +16,9 @@ import 'package:flutter_scene/src/material/environment.dart';
 /// fixed orthographic frustum: a [shadowFrustumSize] × [shadowFrustumSize]
 /// square, [shadowFrustumDepth] deep, centered on [shadowFocusPoint].
 /// Geometry outside that box is unshadowed, so size the box (and move the
-/// focus point) to cover the part of the scene you care about.
+/// focus point) to cover the part of the scene you care about. Shadowing
+/// fades back to lit over the box's outer [shadowFadeRange] world units,
+/// so its edge is soft rather than a hard cutoff.
 class DirectionalLight {
   /// Creates a [DirectionalLight].
   ///
@@ -31,6 +33,8 @@ class DirectionalLight {
     Vector3? shadowFocusPoint,
     this.shadowFrustumSize = 12.0,
     this.shadowFrustumDepth = 50.0,
+    this.shadowFadeRange = 2.0,
+    this.shadowSoftness = 0.3,
     this.shadowMapResolution = 1024,
     this.shadowDepthBias = 0.0015,
     this.shadowNormalBias = 0.02,
@@ -61,6 +65,17 @@ class DirectionalLight {
   /// Depth (near-to-far extent) of the orthographic shadow frustum, in
   /// world units, centered on [shadowFocusPoint] along the light axis.
   double shadowFrustumDepth;
+
+  /// World-space width of the band at the shadow frustum's edge over
+  /// which shadowing fades back to lit, softening the otherwise hard
+  /// box edge. Clamped to half [shadowFrustumSize]; `0` disables the
+  /// fade.
+  double shadowFadeRange;
+
+  /// World-space radius of the shadow penumbra. Larger values give a
+  /// softer shadow edge; `0` gives a hard edge. Sampled by a rotated
+  /// Poisson-disk PCF kernel.
+  double shadowSoftness;
 
   /// Pixel resolution of the (square) shadow map.
   int shadowMapResolution;
@@ -112,7 +127,19 @@ class DirectionalLight {
       -near / (far - near),
       1.0, //
     );
-    return ortho * view;
+    final matrix = ortho * view;
+
+    // Texel snapping: shift the projection by a sub-texel amount so a
+    // fixed world reference (the origin) always lands on a texel center.
+    // Without this the shadow map's texel grid slides under the scene as
+    // the focus point moves, and shadow edges shimmer.
+    final reference = matrix.transformed(Vector4(0.0, 0.0, 0.0, 1.0));
+    final resolution = shadowMapResolution.toDouble();
+    final texelX = (reference.x * 0.5 + 0.5) * resolution;
+    final texelY = (reference.y * 0.5 + 0.5) * resolution;
+    final offsetX = (texelX.roundToDouble() - texelX) / resolution * 2.0;
+    final offsetY = (texelY.roundToDouble() - texelY) / resolution * 2.0;
+    return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
   }
 
   static Matrix4 _lookAt(Vector3 position, Vector3 target, Vector3 up) {
