@@ -312,9 +312,12 @@ base class Scene implements SceneGraph {
     transientsBuffer.reset();
 
     final light = directionalLight;
-    final castsShadow = light != null && light.castsShadow;
-    final lightSpaceMatrix =
-        castsShadow ? light.computeLightSpaceMatrix() : null;
+    // Cascaded shadows fit the camera frustum, so they require a
+    // perspective camera; other camera types render without shadows.
+    final cascades =
+        light != null && light.castsShadow && camera is PerspectiveCamera
+            ? light.computeCascades(camera, pixelSize.width / pixelSize.height)
+            : const <ShadowCascade>[];
 
     // Walk the graph once to tick components and animations and refresh
     // the flat render list before the passes iterate it. Skipped when
@@ -331,12 +334,12 @@ base class Scene implements SceneGraph {
     renderScene.rebuildIfDirty();
 
     final graph = RenderGraph();
-    if (castsShadow) {
+    if (cascades.isNotEmpty) {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
-          lightSpaceMatrix: lightSpaceMatrix!,
-          resolution: light.shadowMapResolution,
+          cascades: cascades,
+          tileResolution: light!.shadowMapResolution,
         ),
       );
     }
@@ -349,7 +352,7 @@ base class Scene implements SceneGraph {
         environmentIntensity: environmentIntensity,
         enableMsaa: enableMsaa,
         directionalLight: light,
-        lightSpaceMatrix: lightSpaceMatrix,
+        cascades: cascades,
       ),
     );
     graph.addPass(

@@ -1,6 +1,5 @@
-// Covers DirectionalLight's shadow matrix math: the texel snapping that
-// keeps the shadow map's grid pinned to the world, and the cascaded
-// shadow map split scheme and per-cascade fitting.
+// Covers DirectionalLight.computeCascades: the cascaded shadow map
+// split scheme and per-cascade frustum fitting.
 
 import 'dart:math';
 
@@ -10,34 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 void main() {
-  group('DirectionalLight.computeLightSpaceMatrix', () {
-    // Snapping shifts the projection so a fixed world reference lands on
-    // a texel center. The world origin should therefore project to an
-    // integer texel for any focus point; that is what keeps the texel
-    // grid pinned to the world.
-    test('texel snapping pins the world origin to a texel center', () {
-      for (final focus in [
-        Vector3(0.3, 0.0, 0.0),
-        Vector3(5.123, 0.0, -2.7),
-        Vector3(-11.9, 0.4, 8.05),
-      ]) {
-        final light = DirectionalLight(
-          direction: Vector3(-0.3, -1.0, -0.2),
-          castsShadow: true,
-          shadowFocusPoint: focus,
-        );
-        final clip = light.computeLightSpaceMatrix().transformed(
-          Vector4(0, 0, 0, 1),
-        );
-        final resolution = light.shadowMapResolution.toDouble();
-        final texelX = (clip.x * 0.5 + 0.5) * resolution;
-        final texelY = (clip.y * 0.5 + 0.5) * resolution;
-        expect(texelX - texelX.roundToDouble(), closeTo(0.0, 1e-3));
-        expect(texelY - texelY.roundToDouble(), closeTo(0.0, 1e-3));
-      }
-    });
-  });
-
   group('DirectionalLight.computeCascades', () {
     final camera = PerspectiveCamera(
       position: Vector3(0, 8, -20),
@@ -96,6 +67,16 @@ void main() {
           }
         }
         sliceNear = sliceFar;
+      }
+    });
+
+    // Each cascade reports the world-space size of its orthographic
+    // box, used to scale world-space softness and fade into UV space.
+    test('reports a positive box size for every cascade', () {
+      final light = DirectionalLight(castsShadow: true);
+      final cascades = light.computeCascades(camera, aspectRatio);
+      for (final cascade in cascades) {
+        expect(cascade.boxSize, greaterThan(0.0));
       }
     });
   });
