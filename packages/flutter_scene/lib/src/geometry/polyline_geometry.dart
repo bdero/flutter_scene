@@ -19,6 +19,28 @@ enum PolylineWidthMode {
   worldUnits,
 }
 
+/// How a [PolylineGeometry] finishes its two end points.
+enum PolylineCap {
+  /// The strip ends flat at the end point.
+  butt,
+
+  /// A half-disk rounds the end off to the line's half-width.
+  round,
+}
+
+/// How a [PolylineGeometry] turns corners.
+enum PolylineJoin {
+  /// The strip bends through a shared averaged direction. Cheap, but it
+  /// can pinch on very sharp turns.
+  miter,
+
+  /// A disk fills each corner, rounding the outside of the bend.
+  round,
+}
+
+// Triangle-fan segments in a round cap or join disk.
+const int _diskSegments = 16;
+
 /// A thick, camera-facing line through a list of points.
 ///
 /// `PolylineGeometry` builds a triangle strip that always faces the
@@ -29,21 +51,25 @@ enum PolylineWidthMode {
 /// The result is an ordinary triangle mesh: pair it with any material,
 /// and use [perVertexColor] for gradient or distance-fade effects.
 ///
-/// Joins use an averaged corner direction, which can spike on very
-/// sharp turns. Caps are flat. Dashes, an animated draw-on range, and a
-/// GPU vertex-shader expansion that avoids the per-frame rebuild are
-/// planned follow-ups; see `docs/dynamic_geometry.md`.
+/// Round caps and joins ([PolylineCap.round], [PolylineJoin.round]) add
+/// camera-facing disks at the end and corner points. Dashes, an animated
+/// draw-on range, and a GPU vertex-shader expansion that avoids the
+/// per-frame rebuild are planned follow-ups; see
+/// `docs/dynamic_geometry.md`.
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///
   /// [width] is measured per [widthMode]. [perVertexWidth] overrides it
   /// per point for tapering, and [perVertexColor] sets a color per
-  /// point for gradients. The strip is a placeholder until the first
+  /// point for gradients. [cap] and [join] select rounded ends and
+  /// corners. The strip is a placeholder until the first
   /// [updateForCamera] call.
   factory PolylineGeometry(
     List<Vector3> points, {
     double width = 8.0,
     PolylineWidthMode widthMode = PolylineWidthMode.screenPixels,
+    PolylineCap cap = PolylineCap.butt,
+    PolylineJoin join = PolylineJoin.miter,
     List<double>? perVertexWidth,
     List<Vector4>? perVertexColor,
   }) {
@@ -63,33 +89,46 @@ class PolylineGeometry extends MeshGeometry {
             ? List<double>.of(perVertexWidth)
             : List<double>.filled(count, width);
 
+    // Cumulative arc length at each point, for the texture v coordinate.
+    final distances = List<double>.filled(count, 0.0);
+    for (var i = 1; i < count; i++) {
+      distances[i] = distances[i - 1] + copied[i].distanceTo(copied[i - 1]);
+    }
+    Vector4 colorOf(int i) => perVertexColor?[i] ?? Vector4(1.0, 1.0, 1.0, 1.0);
+
     // Texture coordinates and colors do not depend on the camera, so
     // they are set once here. The placeholder positions collapse the
     // strip onto the points until updateForCamera runs.
-    final texCoords = Float32List(count * 2 * 2);
-    final colors = Float32List(count * 2 * 4);
-    final placeholder = Float32List(count * 2 * 3);
-    final normals = Float32List(count * 2 * 3);
-    var distance = 0.0;
-    for (var i = 0; i < count; i++) {
-      if (i > 0) distance += copied[i].distanceTo(copied[i - 1]);
-      final color = perVertexColor?[i] ?? Vector4(1.0, 1.0, 1.0, 1.0);
-      for (var side = 0; side < 2; side++) {
-        final v = i * 2 + side;
-        placeholder[v * 3] = copied[i].x;
-        placeholder[v * 3 + 1] = copied[i].y;
-        placeholder[v * 3 + 2] = copied[i].z;
-        normals[v * 3 + 2] = 1.0;
-        texCoords[v * 2] = side.toDouble();
-        texCoords[v * 2 + 1] = distance;
-        colors[v * 4] = color.x;
-        colors[v * 4 + 1] = color.y;
-        colors[v * 4 + 2] = color.z;
-        colors[v * 4 + 3] = color.w;
-      }
+    final diskPoints = diskPointIndices(count, cap, join);
+    final stripVertexCount = count * 2;
+    final vertexCount =
+        stripVertexCount + diskPoints.length * (_diskSegments + 1);
+    final positions = Float32List(vertexCount * 3);
+    final normals = Float32List(vertexCount * 3);
+    final texCoords = Float32List(vertexCount * 2);
+    final colors = Float32List(vertexCount * 4);
+
+    void writeVertex(int v, Vector3 at, double u, double texV, Vector4 color) {
+      positions[v * 3] = at.x;
+      positions[v * 3 + 1] = at.y;
+      positions[v * 3 + 2] = at.z;
+      normals[v * 3 + 2] = 1.0;
+      texCoords[v * 2] = u;
+      texCoords[v * 2 + 1] = texV;
+      colors[v * 4] = color.x;
+      colors[v * 4 + 1] = color.y;
+      colors[v * 4 + 2] = color.z;
+      colors[v * 4 + 3] = color.w;
     }
 
     final indices = <int>[];
+
+    // The strip: two vertices per point.
+    for (var i = 0; i < count; i++) {
+      final color = colorOf(i);
+      writeVertex(i * 2, copied[i], 0.0, distances[i], color);
+      writeVertex(i * 2 + 1, copied[i], 1.0, distances[i], color);
+    }
     for (var i = 0; i < count - 1; i++) {
       final a = i * 2;
       indices
@@ -97,11 +136,27 @@ class PolylineGeometry extends MeshGeometry {
         ..addAll([a + 1, a + 2, a + 3]);
     }
 
+    // A triangle-fan disk for each round cap or join point.
+    for (var ord = 0; ord < diskPoints.length; ord++) {
+      final point = diskPoints[ord];
+      final base = stripVertexCount + ord * (_diskSegments + 1);
+      final color = colorOf(point);
+      for (var k = 0; k <= _diskSegments; k++) {
+        writeVertex(base + k, copied[point], 0.5, distances[point], color);
+      }
+      for (var k = 0; k < _diskSegments; k++) {
+        final next = (k + 1) % _diskSegments;
+        indices.addAll([base, base + 1 + next, base + 1 + k]);
+      }
+    }
+
     return PolylineGeometry._(
       copied,
       widths,
       widthMode,
-      positions: placeholder,
+      cap,
+      join,
+      positions: positions,
       normals: normals,
       texCoords: texCoords,
       colors: colors,
@@ -112,7 +167,9 @@ class PolylineGeometry extends MeshGeometry {
   PolylineGeometry._(
     this._points,
     this._widths,
-    this._widthMode, {
+    this._widthMode,
+    this._cap,
+    this._join, {
     required super.positions,
     required super.normals,
     required super.texCoords,
@@ -123,6 +180,8 @@ class PolylineGeometry extends MeshGeometry {
   final List<Vector3> _points;
   final List<double> _widths;
   final PolylineWidthMode _widthMode;
+  final PolylineCap _cap;
+  final PolylineJoin _join;
 
   /// Rebuilds the camera-facing strip for [camera] and [viewportSize].
   ///
@@ -132,6 +191,8 @@ class PolylineGeometry extends MeshGeometry {
       _points,
       widths: _widths,
       widthMode: _widthMode,
+      cap: _cap,
+      join: _join,
       viewProjection: camera.getViewTransform(viewportSize),
       cameraPosition: camera.position,
       viewportSize: viewportSize,
@@ -141,88 +202,126 @@ class PolylineGeometry extends MeshGeometry {
   }
 }
 
-/// Expands [points] into a camera-facing triangle-strip's vertex
-/// positions and normals.
+/// The polyline point indices that receive a round cap or join disk, in
+/// the order [expandPolyline] emits them: the two end points first,
+/// then the interior points.
+List<int> diskPointIndices(int count, PolylineCap cap, PolylineJoin join) {
+  final indices = <int>[];
+  if (cap == PolylineCap.round) {
+    indices
+      ..add(0)
+      ..add(count - 1);
+  }
+  if (join == PolylineJoin.round) {
+    for (var i = 1; i < count - 1; i++) {
+      indices.add(i);
+    }
+  }
+  return indices;
+}
+
+/// Expands [points] into a camera-facing triangle strip's vertex
+/// positions and normals, including round cap and join disks.
 ///
 /// Pure: it takes the view-projection matrix rather than touching the
-/// GPU, so it can be exercised without a render context. Returns two
-/// vertices per point (the strip edges), with normals facing the
-/// camera.
+/// GPU, so it can be exercised without a render context. The strip is
+/// two vertices per point; each round cap or join adds a disk of
+/// `1 + 16` vertices.
 ({Float32List positions, Float32List normals}) expandPolyline(
   List<Vector3> points, {
   required List<double> widths,
   required PolylineWidthMode widthMode,
+  required PolylineCap cap,
+  required PolylineJoin join,
   required Matrix4 viewProjection,
   required Vector3 cameraPosition,
   required ui.Size viewportSize,
 }) {
   final count = points.length;
-  final positions = Float32List(count * 2 * 3);
-  final normals = Float32List(count * 2 * 3);
   final tangents = _pointTangents(points);
+  final viewDirections = <Vector3>[
+    for (final p in points) _towardCamera(cameraPosition, p),
+  ];
+
+  // Strip edge vertices, computed per point.
+  final left = List<Vector3>.filled(count, Vector3.zero());
+  final right = List<Vector3>.filled(count, Vector3.zero());
 
   if (widthMode == PolylineWidthMode.worldUnits) {
     for (var i = 0; i < count; i++) {
-      final point = points[i];
-      final viewDirection = _towardCamera(cameraPosition, point);
-      var across = tangents[i].cross(viewDirection);
+      var across = tangents[i].cross(viewDirections[i]);
       if (across.length2 < 1e-12) across = _anyPerpendicular(tangents[i]);
       across = across.normalized() * (widths[i] / 2.0);
-      _writePair(
-        positions,
-        normals,
-        i,
-        point - across,
-        point + across,
-        viewDirection,
+      left[i] = points[i] - across;
+      right[i] = points[i] + across;
+    }
+  } else {
+    final inverse = Matrix4.inverted(viewProjection);
+    final clip = <Vector4>[
+      for (final p in points)
+        viewProjection.transformed(Vector4(p.x, p.y, p.z, 1.0)),
+    ];
+    final width = viewportSize.width;
+    final height = viewportSize.height;
+    for (var i = 0; i < count; i++) {
+      final here = clip[i];
+      final w = here.w.abs() < 1e-6 ? 1e-6 : here.w;
+      final previous = clip[i == 0 ? 0 : i - 1];
+      final next = clip[i == count - 1 ? count - 1 : i + 1];
+      // Screen-space direction between the neighbors.
+      var screenX = (_ndcX(next) - _ndcX(previous)) * width;
+      var screenY = -(_ndcY(next) - _ndcY(previous)) * height;
+      var length = math.sqrt(screenX * screenX + screenY * screenY);
+      if (length < 1e-9) {
+        screenX = 1.0;
+        screenY = 0.0;
+        length = 1.0;
+      }
+      screenX /= length;
+      screenY /= length;
+      // Perpendicular, offset by half the pixel width, expressed in NDC.
+      final half = widths[i] / 2.0;
+      final ndcOffsetX = -screenY * half * 2.0 / width;
+      final ndcOffsetY = -screenX * half * 2.0 / height;
+      left[i] = _unproject(
+        inverse,
+        here.x + ndcOffsetX * w,
+        here.y + ndcOffsetY * w,
+        here.z,
+        w,
+      );
+      right[i] = _unproject(
+        inverse,
+        here.x - ndcOffsetX * w,
+        here.y - ndcOffsetY * w,
+        here.z,
+        w,
       );
     }
-    return (positions: positions, normals: normals);
   }
 
-  final inverse = Matrix4.inverted(viewProjection);
-  final clip = <Vector4>[
-    for (final p in points)
-      viewProjection.transformed(Vector4(p.x, p.y, p.z, 1.0)),
-  ];
-  final width = viewportSize.width;
-  final height = viewportSize.height;
+  final diskPoints = diskPointIndices(count, cap, join);
+  final vertexCount = count * 2 + diskPoints.length * (_diskSegments + 1);
+  final positions = Float32List(vertexCount * 3);
+  final normals = Float32List(vertexCount * 3);
+
   for (var i = 0; i < count; i++) {
-    final here = clip[i];
-    final w = here.w.abs() < 1e-6 ? 1e-6 : here.w;
-    final previous = clip[i == 0 ? 0 : i - 1];
-    final next = clip[i == count - 1 ? count - 1 : i + 1];
-    // Screen-space direction between the neighbors.
-    var screenX = (_ndcX(next) - _ndcX(previous)) * width;
-    var screenY = -(_ndcY(next) - _ndcY(previous)) * height;
-    var length = math.sqrt(screenX * screenX + screenY * screenY);
-    if (length < 1e-9) {
-      screenX = 1.0;
-      screenY = 0.0;
-      length = 1.0;
-    }
-    screenX /= length;
-    screenY /= length;
-    // Perpendicular, offset by half the pixel width, expressed in NDC.
-    final half = widths[i] / 2.0;
-    final ndcOffsetX = -screenY * half * 2.0 / width;
-    final ndcOffsetY = -screenX * half * 2.0 / height;
-    final viewDirection = _towardCamera(cameraPosition, points[i]);
-    final left = _unproject(
-      inverse,
-      here.x + ndcOffsetX * w,
-      here.y + ndcOffsetY * w,
-      here.z,
-      w,
+    _writePair(positions, normals, i, left[i], right[i], viewDirections[i]);
+  }
+
+  var base = count * 2;
+  for (final point in diskPoints) {
+    // The strip half-width at the point, recovered from its two edges,
+    // works for both world and screen modes.
+    final radius = (left[point] - right[point]).length / 2.0;
+    base = _emitDisk(
+      positions,
+      normals,
+      base,
+      points[point],
+      viewDirections[point],
+      radius,
     );
-    final right = _unproject(
-      inverse,
-      here.x - ndcOffsetX * w,
-      here.y - ndcOffsetY * w,
-      here.z,
-      w,
-    );
-    _writePair(positions, normals, i, left, right, viewDirection);
   }
   return (positions: positions, normals: normals);
 }
@@ -245,6 +344,32 @@ List<Vector3> _pointTangents(List<Vector3> points) {
             : delta.normalized();
       }(),
   ];
+}
+
+// Emits a camera-facing disk: a center vertex and a ring, fanned into
+// triangles. The disk is nudged slightly toward the camera so it draws
+// over the strip rather than z-fighting with it.
+int _emitDisk(
+  Float32List positions,
+  Float32List normals,
+  int base,
+  Vector3 center,
+  Vector3 viewDirection,
+  double radius,
+) {
+  final faceCenter = center + viewDirection * (radius * 0.1);
+  final u = _anyPerpendicular(viewDirection);
+  final v = viewDirection.cross(u);
+  _writeVertex(positions, normals, base, faceCenter, viewDirection);
+  for (var k = 0; k < _diskSegments; k++) {
+    final angle = 2.0 * math.pi * k / _diskSegments;
+    final rim =
+        faceCenter +
+        u * (radius * math.cos(angle)) +
+        v * (radius * math.sin(angle));
+    _writeVertex(positions, normals, base + 1 + k, rim, viewDirection);
+  }
+  return base + 1 + _diskSegments;
 }
 
 double _ndcX(Vector4 clip) => clip.x / (clip.w.abs() < 1e-6 ? 1e-6 : clip.w);
@@ -270,6 +395,22 @@ Vector3 _anyPerpendicular(Vector3 direction) {
   return direction.cross(reference).normalized();
 }
 
+void _writeVertex(
+  Float32List positions,
+  Float32List normals,
+  int vertex,
+  Vector3 position,
+  Vector3 normal,
+) {
+  final base = vertex * 3;
+  positions[base] = position.x;
+  positions[base + 1] = position.y;
+  positions[base + 2] = position.z;
+  normals[base] = normal.x;
+  normals[base + 1] = normal.y;
+  normals[base + 2] = normal.z;
+}
+
 void _writePair(
   Float32List positions,
   Float32List normals,
@@ -278,16 +419,6 @@ void _writePair(
   Vector3 right,
   Vector3 normal,
 ) {
-  final base = point * 2 * 3;
-  positions[base] = left.x;
-  positions[base + 1] = left.y;
-  positions[base + 2] = left.z;
-  positions[base + 3] = right.x;
-  positions[base + 4] = right.y;
-  positions[base + 5] = right.z;
-  for (var v = 0; v < 6; v += 3) {
-    normals[base + v] = normal.x;
-    normals[base + v + 1] = normal.y;
-    normals[base + v + 2] = normal.z;
-  }
+  _writeVertex(positions, normals, point * 2, left, normal);
+  _writeVertex(positions, normals, point * 2 + 1, right, normal);
 }
