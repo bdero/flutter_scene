@@ -287,4 +287,45 @@ void main() {
       expect(geometricNormal.dot(camera.position - start), lessThan(0));
     });
   });
+
+  group('resampleDashed', () {
+    final white = Vector4(1, 1, 1, 1);
+
+    test('splits a line into dashes joined by zero-width gaps', () {
+      final result = resampleDashed(
+        [Vector3(0, 0, 0), Vector3(10, 0, 0)],
+        List<double>.filled(2, 1.0),
+        [white, white],
+        const DashPattern(dashLength: 3, gapLength: 1),
+      );
+      // Dashes (0,3), (4,7), (8,10): 3 + 4 + 3 points.
+      expect(result.points, hasLength(10));
+      // One zero-width gap connector on each side of each interior gap.
+      expect(result.widths.where((w) => w == 0.0), hasLength(4));
+    });
+
+    test('the line keeps full-width end points for the caps', () {
+      final result = resampleDashed(
+        [Vector3(0, 0, 0), Vector3(10, 0, 0)],
+        List<double>.filled(2, 2.0),
+        [white, white],
+        const DashPattern(dashLength: 3, gapLength: 1),
+      );
+      expect(result.widths.first, 2.0);
+      expect(result.widths.last, 2.0);
+      _expectVector(result.points.first, Vector3(0, 0, 0));
+      _expectVector(result.points.last, Vector3(10, 0, 0));
+    });
+
+    test('a zero-length line is returned unchanged', () {
+      final points = [Vector3(0, 0, 0), Vector3(0, 0, 0)];
+      final result = resampleDashed(
+        points,
+        [1.0, 1.0],
+        [white, white],
+        const DashPattern(dashLength: 1, gapLength: 1),
+      );
+      expect(result.points, same(points));
+    });
+  });
 }
