@@ -1,0 +1,21 @@
+name: flutter_gpu_shim_smoke
+description: "Smoke test for flutter_gpu_shim's WebGL2 -> ui.Image surface bridge."
+publish_to: 'none'
+
+version: 0.0.1
+
+resolution: workspace
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_gpu_shim: ^0.0.1
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
