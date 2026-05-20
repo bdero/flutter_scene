@@ -13,9 +13,13 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu_shim: ^0.0.1
+  flat_buffers: ^23.5.26
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/base.shaderbundle

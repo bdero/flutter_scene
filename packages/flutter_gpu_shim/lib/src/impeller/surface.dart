@@ -18,11 +18,18 @@ class Surface {
   int get width => throw UnimplementedError();
   int get height => throw UnimplementedError();
 
+  bool isLost = false;
+  void Function()? onContextLost;
+  void Function()? onContextRestored;
+
   void clearToColor(double r, double g, double b, double a) =>
       throw UnimplementedError();
 
   Future<ui.Image> snapshot({bool transferOwnership = false}) =>
       throw UnimplementedError();
+
+  bool forceContextLoss() => throw UnimplementedError();
+  bool forceContextRestore() => throw UnimplementedError();
 
   void dispose() {}
 }
