@@ -3,6 +3,7 @@ import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:web/web.dart' as web;
 
 import 'src/shader_bundle_generated.dart' as fb;
@@ -24,95 +25,6 @@ class _ShadersTabState extends State<ShadersTab> {
   String? _fatal;
   int? _formatVersion;
   final List<_CompileResult> _results = [];
-
-  static final RegExp _strippableExtensions = RegExp(
-    r'^(#extension\s+(?:GL_OES_standard_derivatives|GL_EXT_shader_texture_lod)\b[^\n]*)',
-    multiLine: true,
-  );
-
-  /// Replace `#extension` directives for features that are core in WebGL2's
-  /// GLSL ES 3.00 dialect with a comment. Preserves line numbers so info-log
-  /// references stay aligned. NB: WebGL2 does not promote these extensions to
-  /// builtins for `#version 100` shaders; this alone is not enough to make
-  /// Impeller's GLSL ES 1.00 output compile when it uses derivatives or
-  /// explicit LOD.
-  static String _stripWebGL2CoreExtensions(String source) {
-    return source.replaceAllMapped(
-      _strippableExtensions,
-      (m) => '// stripped by shim: ${m.group(1)}',
-    );
-  }
-
-  /// Mechanically transpile Impeller's GLSL ES 1.00 output to GLSL ES 3.00
-  /// so it can compile in a WebGL2 context where the derivatives and
-  /// explicit-LOD features are core. Not a general-purpose GLSL transpiler;
-  /// it covers the transformations Impeller's emitter exercises.
-  static String _transpileToGlsl300Es(
-    String source, {
-    required bool isFragment,
-  }) {
-    var out = source;
-
-    // Version directive.
-    out = out.replaceFirst(
-      RegExp(r'^#version\s+100\b[^\n]*', multiLine: true),
-      '#version 300 es',
-    );
-
-    // Drop extensions whose features are core in 300 es.
-    out = out.replaceAll(
-      RegExp(
-        r'^#extension\s+(?:GL_OES_standard_derivatives|GL_EXT_shader_texture_lod)\b[^\n]*\n',
-        multiLine: true,
-      ),
-      '',
-    );
-
-    // Storage qualifiers. `varying` becomes `in` in fragment shaders and
-    // `out` in vertex shaders; `attribute` always becomes `in`.
-    out = out.replaceAll(RegExp(r'\battribute\b'), 'in');
-    out = out.replaceAll(RegExp(r'\bvarying\b'), isFragment ? 'in' : 'out');
-
-    // Texture builtins. GLSL ES 3.00's `texture` and `textureLod` overload
-    // on sampler type, so the 1.00 family collapses cleanly.
-    out = out.replaceAll(RegExp(r'\btexture2DLodEXT\b'), 'textureLod');
-    out = out.replaceAll(RegExp(r'\btexture2DLod\b'), 'textureLod');
-    out = out.replaceAll(RegExp(r'\btextureCubeLod\b'), 'textureLod');
-    out = out.replaceAll(RegExp(r'\btexture2DProj\b'), 'textureProj');
-    out = out.replaceAll(RegExp(r'\btexture2D\b'), 'texture');
-    out = out.replaceAll(RegExp(r'\btextureCube\b'), 'texture');
-
-    if (isFragment) {
-      // `gl_FragColor` and `gl_FragData[0]` are both gone in 3.00; redirect
-      // them to an explicit out variable. Anything beyond index 0 would need
-      // explicit `layout(location=N) out ...` declarations (multi-render-target);
-      // flutter_scene's shaders don't use MRT today.
-      out = out.replaceAll(RegExp(r'\bgl_FragColor\b'), '_frag_color');
-      out = out.replaceAll(
-        RegExp(r'\bgl_FragData\s*\[\s*0\s*\]'),
-        '_frag_color',
-      );
-
-      const injection = '\n\nout highp vec4 _frag_color;\n';
-      final precisionMatches =
-          RegExp(
-            r'precision\s+\w+\s+\w+\s*;',
-            multiLine: true,
-          ).allMatches(out).toList();
-      if (precisionMatches.isNotEmpty) {
-        final last = precisionMatches.last;
-        out = out.substring(0, last.end) + injection + out.substring(last.end);
-      } else {
-        final firstNewline = out.indexOf('\n');
-        out =
-            '${out.substring(0, firstNewline + 1)}'
-            '$injection'
-            '${out.substring(firstNewline + 1)}';
-      }
-    }
-
-    return out;
-  }
 
   @override
   void initState() {
@@ -165,9 +77,12 @@ class _ShadersTabState extends State<ShadersTab> {
           case _ProcessingMode.raw:
             break;
           case _ProcessingMode.strip:
-            source = _stripWebGL2CoreExtensions(source);
+            source = gpu.stripWebGl2CoreExtensions(source);
           case _ProcessingMode.transpile:
-            source = _transpileToGlsl300Es(source, isFragment: isFragment);
+            source = gpu.transpileGlslEs100To300(
+              source,
+              isFragment: isFragment,
+            );
         }
         final stage =
             isFragment
