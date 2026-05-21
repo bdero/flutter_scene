@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:flutter_scene_importer/gltf.dart';
 
 import '../asset_helpers.dart';

@@ -1,7 +1,7 @@
 // ignore: depend_on_referenced_packages
 import 'dart:typed_data';
 
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart'

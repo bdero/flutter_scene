@@ -1,7 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';

@@ -1,7 +1,7 @@
 // InstancedMesh API tests. Uses stub Geometry and Material so the tests
 // run without a Flutter GPU context.
 
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';

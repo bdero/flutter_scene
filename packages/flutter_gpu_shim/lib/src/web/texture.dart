@@ -249,11 +249,14 @@ base class Texture {
     );
   }
 
-  /// Not implemented on web. Use [GpuContext.snapshot] to display the
-  /// rendered canvas.
+  /// Synchronously snapshot this texture into a `ui.Image` for display via
+  /// `Canvas.drawImageRect`. Matches flutter_gpu's synchronous `asImage`,
+  /// which is what flutter_scene's `Scene.render(camera, canvas)` paint
+  /// path relies on.
   ui.Image asImage() {
-    throw UnimplementedError(
-      'Texture.asImage is not implemented on web. Use GpuContext.snapshot.',
-    );
+    if (!enableShaderReadUsage) {
+      throw Exception('Only shader-readable textures can be used as UI images');
+    }
+    return _gpuContext.snapshotTextureSync(this);
   }
 }

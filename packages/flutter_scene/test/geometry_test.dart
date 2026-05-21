@@ -2,7 +2,7 @@
 // wiring that consumes it (SceneEncoder, ShadowEncoder) draws to the
 // GPU and is exercised by the example app rather than here.
 
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 
 int _getNextPowerOfTwoSize(int x) {
   if (x == 0) {
