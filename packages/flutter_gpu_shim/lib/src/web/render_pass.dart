@@ -479,11 +479,16 @@ base class RenderPass {
   }
 
   void clearBindings() {
+    // Clears per-draw resource bindings (vertex/index buffers, uniforms,
+    // textures) but NOT the bound pipeline - matching flutter_gpu, where the
+    // pipeline persists until the next bindPipeline. flutter_scene's encoder
+    // relies on this: it caches the last pipeline and skips re-binding it
+    // across consecutive draws with the same material, so nulling it here
+    // would leave later draws with no pipeline.
     final gl = _gpuContext._gl;
     if (_vao != null) {
       gl.bindVertexArray(null);
     }
-    _boundPipeline = null;
     _drawVertexCount = 0;
     _indexBufferView = null;
     _indexCount = 0;

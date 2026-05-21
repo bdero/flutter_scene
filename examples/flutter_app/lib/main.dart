@@ -1,13 +1,17 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_scene/scene.dart' show Scene;
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
-import 'example_stress_tests.dart';
+// The stress-test harness uses dart:io (asset caching to disk); on web a
+// stub stands in for it.
+import 'example_stress_tests_stub.dart'
+    if (dart.library.io) 'example_stress_tests.dart';
 import 'example_toon.dart';
 
 void main() {
@@ -64,26 +68,38 @@ class _MyAppState extends State<MyApp> {
         useMaterial3: true,
       ),
       home: Scaffold(
-        body: Stack(
-          children: [
-            SizedBox.expand(child: examples[selectedExample]!(context)),
-            // Example picker (top-left, overlaid on the scene).
-            Positioned(
-              top: 8,
-              left: 8,
-              child: _ExamplePicker(
-                examples: examples.keys.toList(growable: false),
-                selected: selectedExample,
-                onSelected: (next) {
-                  setState(() {
-                    ticker.stop();
-                    ticker.start();
-                    selectedExample = next;
-                  });
-                },
-              ),
-            ),
-          ],
+        body: FutureBuilder<void>(
+          // Gate example construction on static-resource init. Examples build
+          // geometry/materials in initState, which touches the shader bundle;
+          // on web that bundle must finish loading first (sync asset reads
+          // aren't possible there).
+          future: Scene.initializeStaticResources(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return Stack(
+              children: [
+                SizedBox.expand(child: examples[selectedExample]!(context)),
+                // Example picker (top-left, overlaid on the scene).
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: _ExamplePicker(
+                    examples: examples.keys.toList(growable: false),
+                    selected: selectedExample,
+                    onSelected: (next) {
+                      setState(() {
+                        ticker.stop();
+                        ticker.start();
+                        selectedExample = next;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
