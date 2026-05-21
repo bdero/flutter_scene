@@ -1,3 +1,13 @@
+## 0.14.1
+
+Quality and packaging pass to a full pub.dev score.
+
+* Now WASM-compatible: the build-hook helpers no longer pull `dart:io` onto
+  the web/wasm dependency graph (they run on the native host only).
+* Added a package example and a fuller description.
+* Bumped `flat_buffers` to `^25.9.23`.
+* Internal: lint and formatting cleanup of the generated flatbuffer readers.
+
 ## 0.14.0
 
 Renderer overhaul. The lighting/material/scene API changed in a few
