@@ -13,7 +13,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Material;
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
