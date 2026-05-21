@@ -66,17 +66,27 @@ class _TriangleTabState extends State<TriangleTab> {
         library['TriangleFrag']!,
       );
 
+      // An indexed quad: 4 corner vertices, 6 indices (two triangles that
+      // share the 0->2 diagonal). Exercises drawElements + index reuse.
       final verts = Float32List.fromList([
         // x,    y
-        -0.7, -0.7, // bottom left
-        0.7, -0.7, // bottom right
-        0.0, 0.7, // top
+        -0.8, -0.8, // 0 bottom left
+        0.8, -0.8, // 1 bottom right
+        0.8, 0.8, // 2 top right
+        -0.8, 0.8, // 3 top left
       ]);
       final vb = gpu.gpuContext.createDeviceBuffer(
         gpu.StorageMode.hostVisible,
         verts.lengthInBytes,
       );
       vb.overwrite(verts.buffer.asByteData());
+
+      final indices = Uint16List.fromList([0, 1, 2, 0, 2, 3]);
+      final ib = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        indices.lengthInBytes,
+      );
+      ib.overwrite(indices.buffer.asByteData());
 
       final colorTex = gpu.gpuContext.createTexture(
         gpu.StorageMode.devicePrivate,
@@ -101,7 +111,16 @@ class _TriangleTabState extends State<TriangleTab> {
           offsetInBytes: 0,
           lengthInBytes: verts.lengthInBytes,
         ),
-        3,
+        4,
+      );
+      pass.bindIndexBuffer(
+        gpu.BufferView(
+          ib,
+          offsetInBytes: 0,
+          lengthInBytes: indices.lengthInBytes,
+        ),
+        gpu.IndexType.int16,
+        6,
       );
       pass.setViewport(
         gpu.Viewport(
@@ -174,11 +193,12 @@ class _TriangleTabState extends State<TriangleTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Triangle via shim GpuContext + RenderPass',
+                        'Indexed quad via shim GpuContext + RenderPass',
                         style: TextStyle(fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        '256 x 256, inline GLSL ES 1.00 -> 300 es transpile',
+                        '256 x 256, drawElements (4 verts / 6 indices), '
+                        'inline GLSL ES 1.00 -> 300 es',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.black.withValues(alpha: 0.6),
