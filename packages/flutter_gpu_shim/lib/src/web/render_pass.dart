@@ -333,7 +333,60 @@ base class RenderPass {
   }
 
   void bindUniform(UniformSlot slot, BufferView bufferView) {
-    throw UnimplementedError('bindUniform arrives in Phase 3');
+    final pipeline = _boundPipeline;
+    if (pipeline == null) {
+      throw StateError('bindUniform called before bindPipeline');
+    }
+    final struct = slot.shader._uniformStructs[slot.uniformName];
+    if (struct == null) return;
+
+    final gl = _gpuContext._gl;
+    final staging = bufferView.buffer._staging;
+    final base = bufferView.offsetInBytes;
+    for (final member in struct.members) {
+      final loc = pipeline._memberLocations['${struct.name}.${member.name}'];
+      if (loc == null) continue; // optimized out by the linker
+      _setUniformMember(gl, loc, member, staging, base + member.offsetInBytes);
+    }
+  }
+
+  void _setUniformMember(
+    web.WebGL2RenderingContext gl,
+    web.WebGLUniformLocation loc,
+    _UniformMember member,
+    Uint8List staging,
+    int byteOffset,
+  ) {
+    final floatCount = member.vecSize * member.columns * member.elementCount;
+    // View the staged bytes as floats. Uniform members are 4-byte aligned.
+    final floats = staging.buffer.asFloat32List(
+      staging.offsetInBytes + byteOffset,
+      floatCount,
+    );
+    if (member.columns == 1) {
+      switch (member.vecSize) {
+        case 1:
+          gl.uniform1fv(loc, floats.toJS);
+        case 2:
+          gl.uniform2fv(loc, floats.toJS);
+        case 3:
+          gl.uniform3fv(loc, floats.toJS);
+        case 4:
+          gl.uniform4fv(loc, floats.toJS);
+      }
+    } else {
+      // Matrix. NB: mat2/mat3 stored with std140 column padding would need
+      // repacking; mat4 is tightly packed and matches GL. flutter_scene's
+      // mesh shaders use mat4, so mat4 is the path that's exercised today.
+      switch (member.columns) {
+        case 2:
+          gl.uniformMatrix2fv(loc, false, floats.toJS);
+        case 3:
+          gl.uniformMatrix3fv(loc, false, floats.toJS);
+        case 4:
+          gl.uniformMatrix4fv(loc, false, floats.toJS);
+      }
+    }
   }
 
   void bindTexture(
@@ -341,7 +394,53 @@ base class RenderPass {
     Texture texture, {
     SamplerOptions? sampler,
   }) {
-    throw UnimplementedError('bindTexture arrives in Phase 3');
+    final pipeline = _boundPipeline;
+    if (pipeline == null) {
+      throw StateError('bindTexture called before bindPipeline');
+    }
+    final unit = pipeline._samplerUnits[slot.uniformName];
+    if (unit == null) return;
+
+    final gl = _gpuContext._gl;
+    gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
+    gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, texture.glTexture);
+    if (sampler != null) {
+      gl.texParameteri(
+        web.WebGL2RenderingContext.TEXTURE_2D,
+        web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
+        sampler.minFilter == MinMagFilter.nearest
+            ? web.WebGL2RenderingContext.NEAREST
+            : web.WebGL2RenderingContext.LINEAR,
+      );
+      gl.texParameteri(
+        web.WebGL2RenderingContext.TEXTURE_2D,
+        web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
+        sampler.magFilter == MinMagFilter.nearest
+            ? web.WebGL2RenderingContext.NEAREST
+            : web.WebGL2RenderingContext.LINEAR,
+      );
+      gl.texParameteri(
+        web.WebGL2RenderingContext.TEXTURE_2D,
+        web.WebGL2RenderingContext.TEXTURE_WRAP_S,
+        _glAddressMode(sampler.widthAddressMode),
+      );
+      gl.texParameteri(
+        web.WebGL2RenderingContext.TEXTURE_2D,
+        web.WebGL2RenderingContext.TEXTURE_WRAP_T,
+        _glAddressMode(sampler.heightAddressMode),
+      );
+    }
+  }
+
+  static int _glAddressMode(SamplerAddressMode mode) {
+    switch (mode) {
+      case SamplerAddressMode.clampToEdge:
+        return web.WebGL2RenderingContext.CLAMP_TO_EDGE;
+      case SamplerAddressMode.repeat:
+        return web.WebGL2RenderingContext.REPEAT;
+      case SamplerAddressMode.mirror:
+        return web.WebGL2RenderingContext.MIRRORED_REPEAT;
+    }
   }
 
   void clearBindings() {

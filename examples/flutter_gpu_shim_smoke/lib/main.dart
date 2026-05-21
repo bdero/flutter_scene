@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'bridge_tab.dart';
+import 'mesh_tab.dart';
 import 'shaders_tab.dart';
 import 'triangle_tab.dart';
 
@@ -27,7 +28,7 @@ class SmokeHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('flutter_gpu_shim smoke test'),
@@ -36,11 +37,12 @@ class SmokeHome extends StatelessWidget {
               Tab(text: 'Bridge'),
               Tab(text: 'Shaders'),
               Tab(text: 'Triangle'),
+              Tab(text: 'Mesh'),
             ],
           ),
         ),
         body: const TabBarView(
-          children: [BridgeTab(), ShadersTab(), TriangleTab()],
+          children: [BridgeTab(), ShadersTab(), TriangleTab(), MeshTab()],
         ),
       ),
     );

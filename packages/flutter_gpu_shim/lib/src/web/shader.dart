@@ -2,26 +2,43 @@ part of '_gpu.dart';
 
 /// Reflected metadata for one member of a uniform struct.
 class _UniformMember {
-  const _UniformMember(this.name, this.offset, this.sizeInBytes);
+  const _UniformMember(
+    this.name,
+    this.offsetInBytes,
+    this.vecSize,
+    this.columns,
+    this.arrayElements,
+  );
+
   final String name;
-  final int offset;
-  final int sizeInBytes;
+  final int offsetInBytes;
+
+  /// Components per column: 1 for a scalar, N for a vecN, the row count for a
+  /// matrix.
+  final int vecSize;
+
+  /// 1 for scalars and vectors; N for an NxN matrix.
+  final int columns;
+
+  /// 0 if this member is not an array.
+  final int arrayElements;
+
+  bool get isMatrix => columns > 1;
+  int get elementCount => arrayElements == 0 ? 1 : arrayElements;
 }
 
-/// Reflected metadata for a uniform struct (UBO binding).
+/// Reflected metadata for a uniform struct (set as individual uniforms).
 class _UniformStruct {
-  _UniformStruct(this.name, this.binding, this.sizeInBytes, this.members);
+  const _UniformStruct(this.name, this.sizeInBytes, this.members);
   final String name;
-  final int binding;
   final int sizeInBytes;
   final List<_UniformMember> members;
 }
 
 /// Reflected metadata for a sampler binding.
 class _TextureBinding {
-  const _TextureBinding(this.name, this.unit);
+  const _TextureBinding(this.name);
   final String name;
-  final int unit;
 }
 
 /// Reflected metadata for a vertex attribute.
@@ -43,22 +60,16 @@ base class UniformSlot {
   final Shader shader;
   final String uniformName;
 
-  int? get sizeInBytes {
-    final s = shader._uniformStructs[uniformName];
-    return s?.sizeInBytes;
-  }
+  int? get sizeInBytes => shader._uniformStructs[uniformName]?.sizeInBytes;
 
   int? getMemberOffsetInBytes(String memberName) {
     final s = shader._uniformStructs[uniformName];
     if (s == null) return null;
     for (final m in s.members) {
-      if (m.name == memberName) return m.offset;
+      if (m.name == memberName) return m.offsetInBytes;
     }
     return null;
   }
-
-  // Reflection-driven helpers will land in Phase 2+ when ShaderLibrary
-  // starts populating the bindings list from the bundle's metadata.
 }
 
 base class Shader {
@@ -71,23 +82,31 @@ base class Shader {
   // ignore: unused_field
   String? _entrypoint;
   final Map<String, _UniformStruct> _uniformStructs = {};
-  // ignore: unused_field
+
+  /// Maps a uniform struct's type name (what reflection and flutter_scene
+  /// use, e.g. "FrameInfo") to its GLSL instance name (what GL uniform
+  /// lookups use, e.g. "frame_info"). Parsed from the shader source.
+  final Map<String, String> _structInstanceNames = {};
   final List<_TextureBinding> _textureBindings = [];
   final List<_VertexInput> _vertexInputs = [];
-  // Set by the bundle loader once shader-bundle reflection lands in Phase 2+.
-  final int _vertexStride = 0;
+  int _vertexStride = 0;
 
-  /// Internal: the compiled GL shader handle.
   web.WebGLShader? get glShader => _glShader;
 
   /// Internal: vertex inputs reflected from the shader bundle. Empty for
-  /// inline-source pipelines, which rely on the linker assigning
-  /// attribute locations and `getAttribLocation` at bind time.
+  /// inline-source pipelines, which rely on the linker assigning attribute
+  /// locations and `getAttribLocation` at bind time.
   // ignore: library_private_types_in_public_api
   List<_VertexInput> get vertexInputs => _vertexInputs;
 
   /// Internal: total per-vertex stride in bytes (vertex shaders only).
   int get vertexStride => _vertexStride;
+
+  // ignore: library_private_types_in_public_api
+  Iterable<_UniformStruct> get uniformStructs => _uniformStructs.values;
+
+  // ignore: library_private_types_in_public_api
+  List<_TextureBinding> get textureBindings => _textureBindings;
 
   UniformSlot getUniformSlot(String uniformName) =>
       UniformSlot._(this, uniformName);
