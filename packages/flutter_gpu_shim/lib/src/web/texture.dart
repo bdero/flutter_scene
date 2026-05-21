@@ -232,10 +232,37 @@ base class Texture {
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
     gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, _texture);
-    final view = sourceBytes.buffer.asUint8List(
-      sourceBytes.offsetInBytes,
-      sourceBytes.lengthInBytes,
-    );
+    // texSubImage2D requires the JS typed-array view to match the GL pixel
+    // type: FLOAT wants a Float32Array, HALF_FLOAT a Uint16Array, and the
+    // integer formats a Uint8Array. (A Uint8Array for a FLOAT texture throws
+    // "type FLOAT but ArrayBufferView not Float32Array".)
+    final JSObject view;
+    switch (_glFormat.type) {
+      case web.WebGL2RenderingContext.FLOAT:
+        view =
+            sourceBytes.buffer
+                .asFloat32List(
+                  sourceBytes.offsetInBytes,
+                  sourceBytes.lengthInBytes ~/ 4,
+                )
+                .toJS;
+      case web.WebGL2RenderingContext.HALF_FLOAT:
+        view =
+            sourceBytes.buffer
+                .asUint16List(
+                  sourceBytes.offsetInBytes,
+                  sourceBytes.lengthInBytes ~/ 2,
+                )
+                .toJS;
+      default:
+        view =
+            sourceBytes.buffer
+                .asUint8List(
+                  sourceBytes.offsetInBytes,
+                  sourceBytes.lengthInBytes,
+                )
+                .toJS;
+    }
     gl.texSubImage2D(
       web.WebGL2RenderingContext.TEXTURE_2D,
       mipLevel,
@@ -245,7 +272,7 @@ base class Texture {
       mipHeight.toJS,
       _glFormat.format.toJS,
       _glFormat.type,
-      view.toJS,
+      view,
     );
   }
 
