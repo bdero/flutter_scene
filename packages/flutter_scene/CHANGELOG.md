@@ -1,7 +1,7 @@
 ## 0.14.0
 
 Renderer overhaul. The lighting/material/scene API changed in a few
-breaking ways (small consumer base, worth getting right) — see below.
+breaking ways (small consumer base, worth getting right). See below.
 
 * **Render graph.** Rendering is now structured as an ordered list of
   passes (`RenderGraph` / `RenderGraphPass` / `RenderGraphContext` /
@@ -14,7 +14,7 @@ breaking ways (small consumer base, worth getting right) — see below.
   operator, and the display EOTF and writes the 8-bit swapchain.
   Material shaders output linear HDR premultiplied by alpha and no
   longer tone-map or gamma-encode (breaking for custom `ShaderMaterial`
-  shaders — see `MATERIALS.md`).
+  shaders; see `MATERIALS.md`).
 * **Tone mapping & exposure moved onto `Scene`.** `Scene.exposure`
   (default `1.0`) and `Scene.toneMapping` (`ToneMappingMode`, default
   Khronos PBR Neutral; ACES / Reinhard / linear also selectable).
@@ -51,6 +51,19 @@ breaking ways (small consumer base, worth getting right) — see below.
 * **`ShaderMaterial.useEnvironment`** now binds `prefiltered_radiance` +
   `brdf_lut` (not the former `radiance_texture` / `irradiance_texture` /
   `brdf_lut`).
+* **Web support.** `flutter_scene` now runs on Flutter web. Where Impeller
+  and Flutter GPU aren't available, it renders through a built-in WebGL2
+  backend (a drop-in for `flutter_gpu`), and works under both the CanvasKit
+  and Skwasm web renderers. On native platforms it still uses Flutter GPU at
+  zero cost.
+* **Single package (breaking for direct importer users).**
+  `flutter_scene_importer` has been folded into `flutter_scene` and is no
+  longer published separately. Its build-hook helper now lives at
+  `package:flutter_scene/build_hooks.dart` (`buildModels`). A curated
+  `package:flutter_scene/gpu.dart` exposes just the GPU types needed to
+  author custom `ShaderMaterial` shaders (`Shader`, `ShaderLibrary`,
+  `loadShaderLibraryAsync`, `Texture`, sampler types); the rest of the GPU
+  layer is internal.
 
 ## 0.13.0
 
@@ -184,7 +197,7 @@ breaking ways (small consumer base, worth getting right) — see below.
 ## 0.11.0
 
 * Add a runtime GLB importer. `Node.fromGlbBytes(Uint8List)` and
-  `Node.fromGlbAsset(String)` decode a glTF binary directly at runtime —
+  `Node.fromGlbAsset(String)` decode a glTF binary directly at runtime:
   no offline `.model` conversion, no build-hook step. Useful for
   user-uploaded models, network-loaded assets, and model editors. (#12)
 * Bump `flutter_scene_importer` to `^0.11.0` (pure-Dart `.glb` → `.model`
