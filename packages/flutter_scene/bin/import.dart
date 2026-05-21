@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:flutter_scene_importer/offline_import.dart';
+import 'package:flutter_scene/src/importer/offline_import.dart';
 
 void main(List<String> args) {
   final parser =

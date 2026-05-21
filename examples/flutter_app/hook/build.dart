@@ -1,6 +1,6 @@
 import 'package:hooks/hooks.dart';
 import 'package:flutter_gpu_shaders/build.dart';
-import 'package:flutter_scene_importer/build_hooks.dart';
+import 'package:flutter_scene/build_hooks.dart';
 
 void main(List<String> args) {
   build(args, (config, output) async {

@@ -4,7 +4,7 @@
 library impeller.fb;
 
 import 'dart:typed_data' show Uint8List;
-import 'package:flutter_scene_importer/third_party/flat_buffers.dart' as fb;
+import 'package:flutter_scene/src/importer/third_party/flat_buffers.dart' as fb;
 
 class ComponentType {
   final int value;

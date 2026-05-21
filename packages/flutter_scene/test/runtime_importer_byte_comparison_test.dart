@@ -3,9 +3,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
-import 'package:flutter_scene_importer/importer.dart';
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene/src/importer/importer.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:test/test.dart';
 
 /// Side-by-side byte comparison: my Dart-only runtime parser vs the existing

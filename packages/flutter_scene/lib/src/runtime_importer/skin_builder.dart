@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../node.dart';
 import '../skin.dart';

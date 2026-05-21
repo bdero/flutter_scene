@@ -13,7 +13,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Material;
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -48,9 +48,15 @@ class _ExampleToonState extends State<ExampleToon> {
 
   @override
   void initState() {
-    // Load the toon shader bundle the example app's build hook
-    // produces.
-    final shaderLibrary = gpu.ShaderLibrary.fromAsset(
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // Load the toon shader bundle the example app's build hook produces.
+    // Use the async loader: shader bundles can't be read synchronously on
+    // web (gpu.ShaderLibrary.fromAsset throws there).
+    final shaderLibrary = await gpu.loadShaderLibraryAsync(
       'build/shaderbundles/example.shaderbundle',
     );
     final toonShader = shaderLibrary?['ToonFragment'];
@@ -61,39 +67,37 @@ class _ExampleToonState extends State<ExampleToon> {
       );
     }
 
-    Node.fromAsset('build/models/dash.model').then((dash) {
-      dash.name = 'Dash';
+    final dash = await Node.fromAsset('build/models/dash.model');
+    dash.name = 'Dash';
 
-      // Build one ShaderMaterial; every skinned primitive on the model
-      // shares it so parameter tweaks are reflected everywhere.
-      final material = ShaderMaterial(fragmentShader: toonShader);
-      _refreshUniforms(material);
-      // Default white placeholder so the texture sampler is bound even
-      // when the model itself doesn't carry a base color texture.
-      material.setTexture(
-        'base_color_texture',
-        Material.getWhitePlaceholderTexture(),
-      );
-      _toonMaterial = material;
+    // Build one ShaderMaterial; every skinned primitive on the model
+    // shares it so parameter tweaks are reflected everywhere.
+    final material = ShaderMaterial(fragmentShader: toonShader);
+    _refreshUniforms(material);
+    // Default white placeholder so the texture sampler is bound even
+    // when the model itself doesn't carry a base color texture.
+    material.setTexture(
+      'base_color_texture',
+      Material.getWhitePlaceholderTexture(),
+    );
+    _toonMaterial = material;
 
-      _applyMaterialToAllPrimitives(dash, material);
+    _applyMaterialToAllPrimitives(dash, material);
 
-      // Start the Walk animation looping. Dash walks in place, so the
-      // root transform doesn't drift; we drive the visible rotation
-      // via `_dashGroup.localTransform` in build() instead.
-      dash.createAnimationClip(dash.findAnimationByName('Walk')!)
-        ..loop = true
-        ..play();
+    // Start the Walk animation looping. Dash walks in place, so the
+    // root transform doesn't drift; we drive the visible rotation
+    // via `_dashGroup.localTransform` in build() instead.
+    dash.createAnimationClip(dash.findAnimationByName('Walk')!)
+      ..loop = true
+      ..play();
 
-      _dashGroup.add(dash);
-      scene.add(_dashGroup);
-      scene.exposure = 1.5;
-      setState(() {
-        loaded = true;
-      });
+    _dashGroup.add(dash);
+    scene.add(_dashGroup);
+    scene.exposure = 1.5;
+    if (!mounted) return;
+    setState(() {
+      loaded = true;
     });
-
-    super.initState();
   }
 
   @override

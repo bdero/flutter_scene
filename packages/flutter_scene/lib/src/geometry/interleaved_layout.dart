@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_scene_importer/constants.dart';
+import 'package:flutter_scene/src/importer/constants.dart';
 
 /// Translates structure-of-arrays vertex attributes into the interleaved
 /// unskinned vertex layout.

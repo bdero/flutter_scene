@@ -1,13 +1,13 @@
 import 'dart:typed_data';
 
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/light.dart';
 
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 
 /// Base class for shading a [MeshPrimitive].
 ///
