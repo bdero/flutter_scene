@@ -13,6 +13,7 @@ environment:
   flutter: ">=3.29.0-1.0.pre.242"
 
 dependencies:
+  flat_buffers: ^23.5.26
   flutter:
     sdk: flutter
   flutter_gpu:

@@ -24,11 +24,10 @@ base class RenderPipeline {
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
 
-    // Bind attribute locations from the vertex shader's reflected inputs
-    // so the layout is deterministic regardless of compiler ordering.
-    // Inline pipelines have no reflection data; in that case we let the
-    // linker assign locations and look them up post-link with
-    // getAttribLocation when binding the vertex buffer.
+    // Bind attribute locations from the vertex shader's reflected inputs so
+    // the layout is deterministic. Inline pipelines have no reflection data;
+    // there the linker assigns locations and bindVertexBuffer looks them up
+    // with getAttribLocation.
     for (final input in vertexShader.vertexInputs) {
       gl.bindAttribLocation(program, input.location, input.name);
     }
@@ -44,6 +43,8 @@ base class RenderPipeline {
       gl.deleteProgram(program);
       throw Exception('Failed to link program: $log');
     }
+
+    _buildUniformCaches();
   }
 
   final GpuContext _gpuContext;
@@ -53,6 +54,42 @@ base class RenderPipeline {
   final VertexLayout? _vertexLayout;
   late final web.WebGLProgram _program;
 
-  /// Internal: the linked WebGL program handle.
+  /// GL uniform locations keyed by "structName.memberName".
+  final Map<String, web.WebGLUniformLocation?> _memberLocations = {};
+
+  /// Texture unit assigned to each reflected sampler name.
+  final Map<String, int> _samplerUnits = {};
+
   web.WebGLProgram get glProgram => _program;
+
+  void _buildUniformCaches() {
+    final gl = _gpuContext._gl;
+    gl.useProgram(_program);
+    var nextUnit = 0;
+    for (final shader in [vertexShader, fragmentShader]) {
+      for (final struct in shader.uniformStructs) {
+        // GL uniform names use the struct's instance name; reflection and
+        // callers use its type name. Look up via instance, key by type.
+        final instance =
+            shader._structInstanceNames[struct.name] ?? struct.name;
+        for (final m in struct.members) {
+          final glName = '$instance.${m.name}';
+          final loc =
+              gl.getUniformLocation(_program, glName) ??
+              gl.getUniformLocation(_program, '$glName[0]');
+          _memberLocations['${struct.name}.${m.name}'] = loc;
+        }
+      }
+      for (final tex in shader.textureBindings) {
+        if (_samplerUnits.containsKey(tex.name)) continue;
+        final unit = nextUnit++;
+        _samplerUnits[tex.name] = unit;
+        final loc = gl.getUniformLocation(_program, tex.name);
+        if (loc != null) {
+          // Bind the sampler uniform to its texture unit once at link time.
+          gl.uniform1i(loc, unit);
+        }
+      }
+    }
+  }
 }
