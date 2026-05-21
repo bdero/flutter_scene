@@ -15,4 +15,9 @@
 /// ```
 library;
 
-export 'src/importer/build_hooks.dart' show buildModels;
+// Native uses the real dart:io implementation; web/wasm resolves to a stub so
+// dart:io (and package:hooks) stay off the wasm dependency graph, keeping the
+// package WASM-compatible. Build hooks only ever run on the native host.
+export 'src/importer/build_hooks.dart'
+    if (dart.library.js_interop) 'src/importer/build_hooks_unsupported.dart'
+    show buildModels;

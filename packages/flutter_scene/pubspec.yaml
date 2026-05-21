@@ -1,5 +1,5 @@
 name: flutter_scene
-description: 3D rendering library for Flutter.
+description: A general-purpose realtime 3D rendering library for Flutter.
 version: 0.14.0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
@@ -25,7 +25,7 @@ dependencies:
   # Reader for the bundled GPU shim's shader-bundle flatbuffer. The importer's
   # own glTF flatbuffers use a separate vendored copy under
   # src/importer/third_party.
-  flat_buffers: ^23.5.26
+  flat_buffers: ^25.9.23
   flutter:
     sdk: flutter
   # Native-only: the bundled GPU shim re-exports flutter_gpu on native and
