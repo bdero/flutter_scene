@@ -13,15 +13,20 @@ class BufferView {
   final int lengthInBytes;
 }
 
-/// A region of GPU-resident memory backed by a WebGL2 buffer object.
+/// A region of GPU-resident memory backed by WebGL2 buffer object(s).
 ///
-/// WebGL2 permanently "types" a buffer the first time it is bound to a
-/// target: a buffer ever bound to `ELEMENT_ARRAY_BUFFER` can never be bound
-/// elsewhere, and vice-versa. flutter_gpu's DeviceBuffer is generic (the
-/// caller decides vertex vs index vs uniform at bind time), so we can't
-/// know the correct target at construction. We therefore stage writes in a
-/// Dart-side byte array and create + upload the GL buffer lazily on first
-/// bind, using whatever target the RenderPass asks for.
+/// WebGL2 permanently "types" a buffer the first time it is bound: a buffer
+/// ever bound to `ELEMENT_ARRAY_BUFFER` can never be bound to any other
+/// target, and vice-versa. flutter_gpu's DeviceBuffer is generic - and
+/// flutter_scene in particular packs vertices *and* indices into one
+/// DeviceBuffer and binds sub-ranges of it as both a vertex buffer and an
+/// index buffer. WebGL2 forbids that with a single buffer object.
+///
+/// So writes are staged in a Dart-side byte array, and up to two GL buffers
+/// are created lazily from it: one for element (index) use and one for
+/// everything else (vertex / uniform / copy). Both mirror the full staging,
+/// so the caller's absolute byte offsets line up in either. The duplication
+/// is web-only and limited to buffers actually used as both.
 base class DeviceBuffer {
   DeviceBuffer._initialize(
     GpuContext gpuContext,
@@ -34,9 +39,8 @@ base class DeviceBuffer {
 
   final GpuContext _gpuContext;
   late final Uint8List _staging;
-  web.WebGLBuffer? _glBuffer;
-  int _allocTarget = 0;
-  bool _needsUpload = false;
+  web.WebGLBuffer? _glElementBuffer;
+  web.WebGLBuffer? _glOtherBuffer;
   bool _valid = false;
 
   final StorageMode storageMode;
@@ -49,30 +53,30 @@ base class DeviceBuffer {
           ? web.WebGL2RenderingContext.STATIC_DRAW
           : web.WebGL2RenderingContext.DYNAMIC_DRAW;
 
-  /// Internal: ensure the GL buffer exists, typed for [target], bind it, and
-  /// flush any staged bytes. The first call fixes the buffer's GL type; a
-  /// non-element buffer may later be bound to other non-element targets
-  /// (e.g. UNIFORM_BUFFER) but never to ELEMENT_ARRAY_BUFFER.
+  /// Internal: bind the GL buffer appropriate for [target], creating and
+  /// uploading it from the staging bytes on first use. Index buffers get a
+  /// dedicated element-typed buffer; all other targets share a non-element
+  /// buffer.
   web.WebGLBuffer _bindForTarget(int target) {
     final gl = _gpuContext._gl;
-    if (_glBuffer == null) {
-      final buffer = gl.createBuffer();
+    final isElement = target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER;
+    var buffer = isElement ? _glElementBuffer : _glOtherBuffer;
+    if (buffer == null) {
+      buffer = gl.createBuffer();
       if (buffer == null) {
         throw StateError('Failed to create WebGL buffer');
       }
-      _glBuffer = buffer;
-      _allocTarget = target;
+      if (isElement) {
+        _glElementBuffer = buffer;
+      } else {
+        _glOtherBuffer = buffer;
+      }
       gl.bindBuffer(target, buffer);
       gl.bufferData(target, _staging.toJS, _usage);
-      _needsUpload = false;
     } else {
-      gl.bindBuffer(target, _glBuffer);
-      if (_needsUpload) {
-        gl.bufferSubData(target, 0, _staging.toJS);
-        _needsUpload = false;
-      }
+      gl.bindBuffer(target, buffer);
     }
-    return _glBuffer!;
+    return buffer;
   }
 
   /// Overwrite a byte range. Source bytes must fit at the destination
@@ -95,21 +99,31 @@ base class DeviceBuffer {
       destinationOffsetInBytes + length,
       sourceBytes.buffer.asUint8List(sourceBytes.offsetInBytes, length),
     );
-    if (_glBuffer == null) {
-      // Not yet on the GPU; the whole staging buffer uploads on first bind.
-      _needsUpload = true;
-    } else {
-      // Already typed and resident: push just the changed range.
-      final gl = _gpuContext._gl;
-      gl.bindBuffer(_allocTarget, _glBuffer);
+    // Push the changed range to any already-resident GL buffers. Buffers not
+    // yet created pick up the full staging on first bind.
+    final gl = _gpuContext._gl;
+    final sub = Uint8List.sublistView(
+      _staging,
+      destinationOffsetInBytes,
+      destinationOffsetInBytes + length,
+    );
+    if (_glOtherBuffer != null) {
+      gl.bindBuffer(web.WebGL2RenderingContext.ARRAY_BUFFER, _glOtherBuffer);
       gl.bufferSubData(
-        _allocTarget,
+        web.WebGL2RenderingContext.ARRAY_BUFFER,
         destinationOffsetInBytes,
-        Uint8List.sublistView(
-          _staging,
-          destinationOffsetInBytes,
-          destinationOffsetInBytes + length,
-        ).toJS,
+        sub.toJS,
+      );
+    }
+    if (_glElementBuffer != null) {
+      gl.bindBuffer(
+        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+        _glElementBuffer,
+      );
+      gl.bufferSubData(
+        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+        destinationOffsetInBytes,
+        sub.toJS,
       );
     }
     return true;

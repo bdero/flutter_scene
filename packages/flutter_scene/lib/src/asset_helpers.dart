@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 
 /// Uploads a decoded `dart:ui` [ui.Image] to a Flutter GPU texture.
 ///

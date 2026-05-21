@@ -24,7 +24,7 @@ base class DepthStencilAttachment {
   DepthStencilAttachment({
     this.depthLoadAction = LoadAction.clear,
     this.depthStoreAction = StoreAction.dontCare,
-    this.depthClearValue = 1.0,
+    this.depthClearValue = 0.0,
     this.stencilLoadAction = LoadAction.clear,
     this.stencilStoreAction = StoreAction.dontCare,
     this.stencilClearValue = 0,
@@ -94,22 +94,28 @@ base class SamplerOptions {
   SamplerAddressMode heightAddressMode;
 }
 
-base class Viewport {
-  const Viewport({
-    required this.x,
-    required this.y,
-    required this.width,
-    required this.height,
-    this.minDepth = 0.0,
-    this.maxDepth = 1.0,
-  });
+base class DepthRange {
+  DepthRange({this.zNear = 0.0, this.zFar = 1.0});
+  double zNear;
+  double zFar;
+}
 
-  final double x;
-  final double y;
-  final double width;
-  final double height;
-  final double minDepth;
-  final double maxDepth;
+base class Scissor {
+  Scissor({this.x = 0, this.y = 0, this.width = 0, this.height = 0});
+  int x, y, width, height;
+}
+
+base class Viewport {
+  Viewport({
+    this.x = 0,
+    this.y = 0,
+    this.width = 0,
+    this.height = 0,
+    DepthRange? depthRange,
+  }) : depthRange = depthRange ?? DepthRange();
+
+  int x, y, width, height;
+  DepthRange depthRange;
 }
 
 base class RenderTarget {
@@ -245,6 +251,9 @@ base class RenderPass {
     final depth = _target.depthStencilAttachment;
     if (depth != null) {
       if (depth.depthLoadAction == LoadAction.clear) {
+        // glClear(DEPTH) respects depthMask, which a prior draw may have
+        // turned off; force it on so the clear actually writes.
+        gl.depthMask(true);
         gl.clearDepth(depth.depthClearValue);
         clearMask |= web.WebGL2RenderingContext.DEPTH_BUFFER_BIT;
       }
@@ -459,51 +468,156 @@ base class RenderPass {
   }
 
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
-    /* Phase 3 */
+    final gl = _gpuContext._gl;
+    if (enable) {
+      gl.enable(web.WebGL2RenderingContext.BLEND);
+    } else {
+      gl.disable(web.WebGL2RenderingContext.BLEND);
+    }
   }
+
   void setColorBlendEquation(
     ColorBlendEquation equation, {
     int colorAttachmentIndex = 0,
   }) {
-    /* Phase 3 */
+    final gl = _gpuContext._gl;
+    gl.blendEquationSeparate(
+      _glBlendOp(equation.colorBlendOperation),
+      _glBlendOp(equation.alphaBlendOperation),
+    );
+    gl.blendFuncSeparate(
+      _glBlendFactor(equation.sourceColorBlendFactor),
+      _glBlendFactor(equation.destinationColorBlendFactor),
+      _glBlendFactor(equation.sourceAlphaBlendFactor),
+      _glBlendFactor(equation.destinationAlphaBlendFactor),
+    );
   }
+
   void setDepthWriteEnable(bool enable) {
-    /* Phase 3 */
+    _gpuContext._gl.depthMask(enable);
   }
+
   void setDepthCompareOperation(CompareFunction compareFunction) {
-    /* Phase 3 */
+    final gl = _gpuContext._gl;
+    if (compareFunction == CompareFunction.always) {
+      gl.disable(web.WebGL2RenderingContext.DEPTH_TEST);
+    } else {
+      gl.enable(web.WebGL2RenderingContext.DEPTH_TEST);
+      gl.depthFunc(_glCompare(compareFunction));
+    }
   }
+
   void setStencilReference(int referenceValue) {
-    /* not implemented */
+    /* not implemented; flutter_scene does not use stencil */
   }
   void setStencilConfig(
     StencilConfig configuration, {
     StencilFace targetFace = StencilFace.both,
   }) {
-    /* not implemented */
+    /* not implemented; flutter_scene does not use stencil */
   }
+
   void setCullMode(CullMode cullMode) {
-    /* Phase 3 */
+    final gl = _gpuContext._gl;
+    switch (cullMode) {
+      case CullMode.none:
+        gl.disable(web.WebGL2RenderingContext.CULL_FACE);
+      case CullMode.frontFace:
+        gl.enable(web.WebGL2RenderingContext.CULL_FACE);
+        gl.cullFace(web.WebGL2RenderingContext.FRONT);
+      case CullMode.backFace:
+        gl.enable(web.WebGL2RenderingContext.CULL_FACE);
+        gl.cullFace(web.WebGL2RenderingContext.BACK);
+    }
   }
+
   void setPolygonMode(PolygonMode polygonMode) {
-    /* not implemented */
+    /* not implemented; WebGL2 has no glPolygonMode */
   }
+
   void setPrimitiveType(PrimitiveType primitiveType) {
     _primitiveType = primitiveType;
   }
 
   void setWindingOrder(WindingOrder windingOrder) {
-    /* Phase 3 */
+    _gpuContext._gl.frontFace(
+      windingOrder == WindingOrder.clockwise
+          ? web.WebGL2RenderingContext.CW
+          : web.WebGL2RenderingContext.CCW,
+    );
+  }
+
+  static int _glCompare(CompareFunction f) {
+    switch (f) {
+      case CompareFunction.never:
+        return web.WebGL2RenderingContext.NEVER;
+      case CompareFunction.always:
+        return web.WebGL2RenderingContext.ALWAYS;
+      case CompareFunction.less:
+        return web.WebGL2RenderingContext.LESS;
+      case CompareFunction.equal:
+        return web.WebGL2RenderingContext.EQUAL;
+      case CompareFunction.lessEqual:
+        return web.WebGL2RenderingContext.LEQUAL;
+      case CompareFunction.greater:
+        return web.WebGL2RenderingContext.GREATER;
+      case CompareFunction.notEqual:
+        return web.WebGL2RenderingContext.NOTEQUAL;
+      case CompareFunction.greaterEqual:
+        return web.WebGL2RenderingContext.GEQUAL;
+    }
+  }
+
+  static int _glBlendOp(BlendOperation op) {
+    switch (op) {
+      case BlendOperation.add:
+        return web.WebGL2RenderingContext.FUNC_ADD;
+      case BlendOperation.subtract:
+        return web.WebGL2RenderingContext.FUNC_SUBTRACT;
+      case BlendOperation.reverseSubtract:
+        return web.WebGL2RenderingContext.FUNC_REVERSE_SUBTRACT;
+    }
+  }
+
+  static int _glBlendFactor(BlendFactor f) {
+    switch (f) {
+      case BlendFactor.zero:
+        return web.WebGL2RenderingContext.ZERO;
+      case BlendFactor.one:
+        return web.WebGL2RenderingContext.ONE;
+      case BlendFactor.sourceColor:
+        return web.WebGL2RenderingContext.SRC_COLOR;
+      case BlendFactor.oneMinusSourceColor:
+        return web.WebGL2RenderingContext.ONE_MINUS_SRC_COLOR;
+      case BlendFactor.sourceAlpha:
+        return web.WebGL2RenderingContext.SRC_ALPHA;
+      case BlendFactor.oneMinusSourceAlpha:
+        return web.WebGL2RenderingContext.ONE_MINUS_SRC_ALPHA;
+      case BlendFactor.destinationColor:
+        return web.WebGL2RenderingContext.DST_COLOR;
+      case BlendFactor.oneMinusDestinationColor:
+        return web.WebGL2RenderingContext.ONE_MINUS_DST_COLOR;
+      case BlendFactor.destinationAlpha:
+        return web.WebGL2RenderingContext.DST_ALPHA;
+      case BlendFactor.oneMinusDestinationAlpha:
+        return web.WebGL2RenderingContext.ONE_MINUS_DST_ALPHA;
+      case BlendFactor.sourceAlphaSaturated:
+        return web.WebGL2RenderingContext.SRC_ALPHA_SATURATE;
+      case BlendFactor.blendColor:
+        return web.WebGL2RenderingContext.CONSTANT_COLOR;
+      case BlendFactor.oneMinusBlendColor:
+        return web.WebGL2RenderingContext.ONE_MINUS_CONSTANT_COLOR;
+      case BlendFactor.blendAlpha:
+        return web.WebGL2RenderingContext.CONSTANT_ALPHA;
+      case BlendFactor.oneMinusBlendAlpha:
+        return web.WebGL2RenderingContext.ONE_MINUS_CONSTANT_ALPHA;
+    }
   }
 
   void setViewport(Viewport viewport) {
     final gl = _gpuContext._gl;
-    gl.viewport(
-      viewport.x.toInt(),
-      viewport.y.toInt(),
-      viewport.width.toInt(),
-      viewport.height.toInt(),
-    );
+    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+    gl.depthRange(viewport.depthRange.zNear, viewport.depthRange.zFar);
   }
 
   void draw() {

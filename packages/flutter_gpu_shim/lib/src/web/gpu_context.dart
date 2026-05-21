@@ -147,20 +147,12 @@ base class GpuContext {
     );
   }
 
-  /// Blit [texture]'s contents onto the underlying `OffscreenCanvas` and
-  /// return it as a `ui.Image`. The bridge between offscreen-rendered
-  /// Textures and Flutter widgets until a proper present/swapchain story
-  /// lands in Phase 5. Web-specific; not in flutter_gpu. Prefer the
-  /// top-level [presentTextureAsImage] which works through the unified
-  /// shim API on every backend.
-  Future<ui.Image> _presentTextureAsImage(
-    Texture texture, {
-    bool transferOwnership = false,
-  }) async {
+  /// Blit a single-sample [texture]'s contents onto the underlying
+  /// `OffscreenCanvas`, resizing it to match. Shared by the present paths.
+  void _blitTextureToCanvas(Texture texture) {
     if (texture.sampleCount != 1) {
       throw UnimplementedError(
-        'presentTextureAsImage on MSAA textures requires a resolve pass; '
-        'use the resolved single-sample texture instead.',
+        'Cannot present an MSAA texture directly; use its resolve texture.',
       );
     }
     if (_canvas.width != texture.width) _canvas.width = texture.width;
@@ -179,9 +171,6 @@ base class GpuContext {
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
-    // Straight 1:1 blit. The browser's createImageFromTextureSource handles
-    // the GL-vs-canvas origin difference, so an explicit Y-flip here would
-    // double-flip and render the image upside down.
     _gl.blitFramebuffer(
       0,
       0,
@@ -196,7 +185,32 @@ base class GpuContext {
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, null);
     _gl.deleteFramebuffer(readFbo);
+  }
 
+  /// Synchronously snapshot [texture] into a `ui.Image`. Blits to the
+  /// OffscreenCanvas, transfers the canvas content out as an ImageBitmap,
+  /// and wraps it. `transferToImageBitmap` and `createImageFromImageBitmap`
+  /// are both synchronous on CanvasKit and Skwasm, so this works inside a
+  /// synchronous paint callback - which is what flutter_scene's
+  /// `Texture.asImage()` -> `canvas.drawImageRect` path needs.
+  ui.Image snapshotTextureSync(Texture texture) {
+    _blitTextureToCanvas(texture);
+    final bitmap = _canvas.transferToImageBitmap();
+    final result = ui_web.createImageFromImageBitmap(bitmap as JSAny);
+    if (result is ui.Image) return result;
+    throw StateError(
+      'createImageFromImageBitmap returned a Future; expected a synchronous '
+      'ui.Image on this renderer.',
+    );
+  }
+
+  /// Blit [texture] onto the OffscreenCanvas and return it as a `ui.Image`
+  /// via `createImageFromTextureSource` (async copy path).
+  Future<ui.Image> _presentTextureAsImage(
+    Texture texture, {
+    bool transferOwnership = false,
+  }) async {
+    _blitTextureToCanvas(texture);
     return ui_web.createImageFromTextureSource(
       _canvas as JSAny,
       width: texture.width,

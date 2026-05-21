@@ -162,7 +162,7 @@ base class DepthStencilAttachment {
   DepthStencilAttachment({
     this.depthLoadAction = LoadAction.clear,
     this.depthStoreAction = StoreAction.dontCare,
-    this.depthClearValue = 1.0,
+    this.depthClearValue = 0.0,
     this.stencilLoadAction = LoadAction.clear,
     this.stencilStoreAction = StoreAction.dontCare,
     this.stencilClearValue = 0,
@@ -226,21 +226,27 @@ base class SamplerOptions {
   SamplerAddressMode heightAddressMode;
 }
 
+base class DepthRange {
+  DepthRange({this.zNear = 0.0, this.zFar = 1.0});
+  double zNear;
+  double zFar;
+}
+
+base class Scissor {
+  Scissor({this.x = 0, this.y = 0, this.width = 0, this.height = 0});
+  int x, y, width, height;
+}
+
 base class Viewport {
-  const Viewport({
-    required this.x,
-    required this.y,
-    required this.width,
-    required this.height,
-    this.minDepth = 0.0,
-    this.maxDepth = 1.0,
-  });
-  final double x;
-  final double y;
-  final double width;
-  final double height;
-  final double minDepth;
-  final double maxDepth;
+  Viewport({
+    this.x = 0,
+    this.y = 0,
+    this.width = 0,
+    this.height = 0,
+    DepthRange? depthRange,
+  }) : depthRange = depthRange ?? DepthRange();
+  int x, y, width, height;
+  DepthRange depthRange;
 }
 
 base class RenderTarget {

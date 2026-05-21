@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:flutter_gpu_shim/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3;
 import 'camera.dart';
 import 'light.dart';
@@ -16,6 +16,7 @@ import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/tonemap_pass.dart';
+import 'shaders.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
 
@@ -131,7 +132,10 @@ base class Scene implements SceneGraph {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
-    _initializeStaticResources = Material.initializeStaticResources()
+    _initializeStaticResources = Future.wait([
+          loadBaseShaderLibrary(),
+          Material.initializeStaticResources(),
+        ])
         .onError((e, stacktrace) {
           log(
             'Failed to initialize static Flutter Scene resources',
@@ -139,6 +143,7 @@ base class Scene implements SceneGraph {
             stackTrace: stacktrace,
           );
           _initializeStaticResources = null;
+          return const <void>[];
         })
         .then((_) {
           _readyToRender = true;
