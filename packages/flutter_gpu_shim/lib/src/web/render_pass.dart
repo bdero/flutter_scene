@@ -150,6 +150,16 @@ base class RenderPass {
   int _drawVertexCount = 0;
   PrimitiveType _primitiveType = PrimitiveType.triangle;
 
+  BufferView? _indexBufferView;
+  IndexType _indexType = IndexType.int32;
+  int _indexCount = 0;
+
+  void _ensureVao() {
+    final gl = _gpuContext._gl;
+    _vao ??= gl.createVertexArray();
+    gl.bindVertexArray(_vao);
+  }
+
   // ---- framebuffer setup ---------------------------------------------------
 
   void _bindFramebuffer() {
@@ -259,12 +269,8 @@ base class RenderPass {
       throw StateError('bindVertexBuffer called before bindPipeline');
     }
 
-    _vao ??= gl.createVertexArray();
-    gl.bindVertexArray(_vao);
-    gl.bindBuffer(
-      web.WebGL2RenderingContext.ARRAY_BUFFER,
-      bufferView.buffer.glBuffer,
-    );
+    _ensureVao();
+    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
 
     final inputs = pipeline.vertexShader.vertexInputs;
     if (inputs.isEmpty) {
@@ -315,7 +321,15 @@ base class RenderPass {
     IndexType indexType,
     int indexCount,
   ) {
-    throw UnimplementedError('bindIndexBuffer arrives in Phase 2');
+    // ELEMENT_ARRAY_BUFFER binding is captured in VAO state, so the VAO must
+    // be bound first.
+    _ensureVao();
+    bufferView.buffer._bindForTarget(
+      web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+    );
+    _indexBufferView = bufferView;
+    _indexType = indexType;
+    _indexCount = indexCount;
   }
 
   void bindUniform(UniformSlot slot, BufferView bufferView) {
@@ -337,6 +351,8 @@ base class RenderPass {
     }
     _boundPipeline = null;
     _drawVertexCount = 0;
+    _indexBufferView = null;
+    _indexCount = 0;
   }
 
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
@@ -392,7 +408,19 @@ base class RenderPass {
     if (_boundPipeline == null) {
       throw StateError('draw called before bindPipeline');
     }
-    gl.drawArrays(_glPrimitiveType(_primitiveType), 0, _drawVertexCount);
+    final indexView = _indexBufferView;
+    if (indexView != null) {
+      gl.drawElements(
+        _glPrimitiveType(_primitiveType),
+        _indexCount,
+        _indexType == IndexType.int16
+            ? web.WebGL2RenderingContext.UNSIGNED_SHORT
+            : web.WebGL2RenderingContext.UNSIGNED_INT,
+        indexView.offsetInBytes,
+      );
+    } else {
+      gl.drawArrays(_glPrimitiveType(_primitiveType), 0, _drawVertexCount);
+    }
   }
 
   static int _glPrimitiveType(PrimitiveType p) {
