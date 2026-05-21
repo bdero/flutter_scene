@@ -1,5 +1,5 @@
 name: flutter_scene
-description: A 3D rendering library for Flutter. Renders with Flutter GPU on Impeller-enabled native platforms, and with a WebGL2 backend on the web.
+description: 3D rendering library for Flutter.
 version: 0.14.0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
