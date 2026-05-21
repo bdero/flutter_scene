@@ -4,17 +4,36 @@ This file is loaded into Claude's context. It captures non-obvious things about 
 
 ## Repository shape
 
-This is a Dart **pub workspace** (no melos). Three published-or-runnable members:
+This is a Dart **pub workspace** (no melos). One published package plus two runnable example apps:
 
 | Path | What it is |
 | --- | --- |
-| `packages/flutter_scene` | Core 3D library. Published to pub.dev. |
-| `packages/flutter_scene_importer` | Offline glTF → `.model` flatbuffer importer (build hook). Published. |
-| `examples/flutter_app` | Runnable example app. Not published. |
+| `packages/flutter_scene` | The entire library. Published to pub.dev. Contains the renderer, the runtime + offline glTF importer (`lib/src/importer/`), and an internal `flutter_gpu` shim (`lib/src/gpu/`). |
+| `examples/flutter_app` | Runnable example app (8 examples). Not published. |
+| `examples/flutter_gpu_shim_smoke` | Dev-only smoke test for the web GPU backend (6 isolation tabs). Not published. |
 
-Root `pubspec.yaml` is `name: _`, `publish_to: none`, just lists workspace members. Each member declares `resolution: workspace`. Don't add melos — `dart pub publish` per-package directory works clean.
+`flutter_scene_importer` and `flutter_gpu_shim` used to be separate published packages; both were folded into `flutter_scene` (commit `ea2f5e1`) so the single published package has no path/git deps. Old `flutter_scene_importer` pub.dev versions remain, but it is no longer published.
+
+Root `pubspec.yaml` is `name: _`, `publish_to: none`, just lists workspace members. Each member declares `resolution: workspace`. Don't add melos.
 
 The workspace lockfile lives at root and is gitignored (`pubspec.lock`).
+
+## GPU backend / web shim
+
+`lib/src/gpu/` is an internal drop-in for `package:flutter_gpu`, selected by a conditional export in `lib/src/gpu/gpu.dart`:
+
+- **native** (`dart.library.io`): re-exports `package:flutter_gpu` verbatim (zero cost).
+- **web** (`dart.library.js_interop`): a WebGL2 backend (lets flutter_scene run on web, where Impeller/Flutter GPU don't exist).
+- **fallback**: a throwing stub. The analyzer resolves to the stub, so the stub must mirror the full public surface or `flutter analyze` breaks.
+
+flutter_scene's own code imports `package:flutter_scene/src/gpu/gpu.dart as gpu`. The **curated public surface** for the custom-shader (`ShaderMaterial`) workflow is `package:flutter_scene/gpu.dart` (`Shader`, `ShaderLibrary`, `loadShaderLibraryAsync`, `Texture`, `SamplerOptions`, sampler enums). The low-level shim (contexts, passes, buffers, pipelines) stays internal; the smoke app reaches it via `lib/src` with `implementation_imports` disabled.
+
+Web specifics worth knowing:
+- Shaders: the bundle's `opengl_es` GLSL ES 1.00 is transpiled to 3.00 at load (`lib/src/gpu/shared/glsl_transpile.dart`). That transpile also negates `gl_Position.y` in vertex shaders, and `RenderPass.setWindingOrder` inverts CW/CCW, so render-to-texture is stored top-down (matching Impeller); the present blit flips Y back. Mirrors `flutter/flutter#186556`.
+- `ShaderLibrary.fromAsset` is sync and throws on web; use `loadShaderLibraryAsync`. Touching `baseShaderLibrary` (every Geometry/Material ctor) must happen after `Scene.initializeStaticResources()` completes.
+- `Texture.asImage()` is synchronous on web via `OffscreenCanvas.transferToImageBitmap()` + `ui_web.createImageFromImageBitmap` (both sync on CanvasKit and Skwasm), so flutter_scene's synchronous render path needs no API change.
+- Run on web: `flutter run -d chrome` (`--wasm` for Skwasm). The example apps' `web/` scaffolding is gitignored; `flutter create` crashes when a direct `flutter_gpu: sdk` dep is present, so copy `web/` from another app instead.
+- `lib/src/gpu/web/shader_bundle_generated.dart` is flatc output, hand-patched (`Uint64Reader` -> `Uint32Reader`, since dart2js can't read uint64). Re-apply if regenerated.
 
 ## Toolchain expectations
 
@@ -26,7 +45,7 @@ The workspace lockfile lives at root and is gitignored (`pubspec.lock`).
   dart pub global run dart_style:format <files>
   ```
   Saves a CI round-trip — local `dart format` reformats differently from CI on master Flutter.
-- **`*/third_party/*` and `*_flatbuffers.dart` are excluded from format checks.** Don't reformat them.
+- **`*/third_party/*`, `*_flatbuffers.dart`, and `lib/src/gpu/web/shader_bundle_generated.dart` are excluded from format/analysis.** Don't reformat them.
 
 ## Branch protection
 
@@ -34,17 +53,19 @@ The workspace lockfile lives at root and is gitignored (`pubspec.lock`).
 
 ## Build hooks
 
-Both `flutter_scene` and `flutter_scene_importer` use the **`hooks` package** (not `native_assets_cli` — that was discontinued). Imports look like:
+`flutter_scene` uses the **`hooks` package** (not `native_assets_cli` — that was discontinued) for its shader-bundle build hook (`hook/build.dart`). Imports look like:
 
 ```dart
 import 'package:hooks/hooks.dart';
 ```
 
+Consumer apps that pre-convert `.glb` assets to `.model` call `buildModels` from `package:flutter_scene/build_hooks.dart` in their own `hook/build.dart` (see `examples/flutter_app/hook/build.dart`, which calls both `buildModels` and `buildShaderBundleJson`).
+
 The `--enable-experiment=native-assets` flag is **obsolete** in Dart 3.10+. Don't add it; doing so breaks the build (this was issue #82).
 
 ## Vertex layout (engine convention)
 
-Constants live in `packages/flutter_scene_importer/lib/constants.dart`.
+Constants live in `packages/flutter_scene/lib/src/importer/constants.dart`.
 
 - **Unskinned**: 48 bytes per vertex = 12 floats: position(3), normal(3), tex_coords(2), color(4).
 - **Skinned**: 80 bytes per vertex = 20 floats: unskinned + joints(4) + weights(4).
@@ -55,7 +76,7 @@ Match this layout exactly when emitting vertex data, or rendering breaks in subt
 
 ## Coordinate system gotcha
 
-glTF is right-handed (Y-up, +Z out of screen). flutter_scene's pipeline expects the opposite Z. The C++ importer applies `MakeScale({1, 1, -1})` on the **scene root transform** to convert (`importer_gltf.cc:499`). The runtime GLB importer does the same (`runtime_importer.dart`).
+glTF is right-handed (Y-up, +Z out of screen). flutter_scene's pipeline expects the opposite Z. The importers apply `MakeScale({1, 1, -1})` on the **scene root transform** to convert: the runtime GLB importer (`lib/src/runtime_importer/`) and the offline importer (`lib/src/importer/`, schema `lib/src/importer/scene.fbs`). (A former C++ importer did the same; it was deleted in commit `3f3a157`.)
 
 If you write another importer, apply the same scene-root flip — *not* a per-triangle winding swap. Hand-rolled winding flips fix geometry orientation but leave normals and IBL sampling wrong.
 
@@ -176,8 +197,9 @@ Don't apply both `feature proposal` and `roadmap` to the same issue — the form
 
 ## Releasing
 
-1. Bump version in the package's `pubspec.yaml` and add a CHANGELOG entry.
-2. `flutter pub publish --dry-run` from inside the package directory.
-3. If the importer is being released too, publish `flutter_scene_importer` **first**, then `flutter_scene` (which depends on it).
-4. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
-5. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too — pub.dev blocks the publish otherwise. The Flutter SDK constraint can capture the master-channel requirement (`flutter: ">=3.29.0-1.0.pre.242"`).
+There's now a single published package (`flutter_scene`); the old importer-first ordering is gone.
+
+1. Bump version in `packages/flutter_scene/pubspec.yaml` and add a CHANGELOG entry.
+2. `flutter pub publish --dry-run` from inside `packages/flutter_scene`.
+3. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
+4. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too — pub.dev blocks the publish otherwise. The Flutter SDK constraint can capture the master-channel requirement (`flutter: ">=3.29.0-1.0.pre.242"`).
