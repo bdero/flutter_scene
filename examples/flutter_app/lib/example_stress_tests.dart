@@ -4,7 +4,6 @@
 // scenes without committing big binary blobs to the repo.
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -13,10 +12,10 @@ import 'package:flutter/material.dart' hide Animation;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'hdr_image.dart';
+import 'stress_cache.dart';
 
 // Toggle these on to inspect scenes as they load. Both are off by
 // default; flip them locally when debugging a renderer regression in
@@ -598,16 +597,7 @@ class _StressSceneState extends State<_StressScene> {
         height: test.height,
       );
     } else {
-      final supportDir = await getApplicationSupportDirectory();
-      final dir = Directory('${supportDir.path}/stress_tests/environments');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      final bytes = await _fetchCached(
-        environment.url!,
-        File('${dir.path}/${environment.id}.hdr'),
-        onChunk: (_) {},
-      );
+      final bytes = await _fetchResource(environment.url!, onChunk: (_) {});
       final hdr = await compute(loadHdrEnvironment, bytes);
       map = await EnvironmentMap.fromEquirectHdr(
         linearPixels: hdr.pixels,
@@ -1225,93 +1215,66 @@ class _ScenePainter extends CustomPainter {
 // siblings on demand through Node.fromGltfBytes; every sibling is
 // fetched relative to the `.gltf`'s own URL and cached beside it.
 Future<Node> _importTest(_StressTest test, void Function(int) onChunk) async {
-  final supportDir = await getApplicationSupportDirectory();
-  final cacheRoot = Directory('${supportDir.path}/stress_tests');
-
   if (!test.isMultiFile) {
-    if (!await cacheRoot.exists()) {
-      await cacheRoot.create(recursive: true);
-    }
-    final bytes = await _fetchCached(
+    final bytes = await _fetchResource(
       test.url,
-      File('${cacheRoot.path}/${test.id}.glb'),
       onChunk: onChunk,
       expectedSize: test.sizeBytes,
     );
     return Node.fromGlbBytes(bytes);
   }
 
-  // Multi-file glTF: the `.gltf` and its siblings share a per-test dir.
-  final dir = Directory('${cacheRoot.path}/${test.id}');
-  if (!await dir.exists()) {
-    await dir.create(recursive: true);
-  }
+  // Multi-file glTF: the `.gltf` and its `.bin` / image siblings are each
+  // fetched (and cached) by their own absolute URL, resolved relative to the
+  // `.gltf`'s URL.
   final baseUri = Uri.parse(test.url);
-  final gltfBytes = await _fetchCached(
-    test.url,
-    File('${dir.path}/${_uriBasename(test.url)}'),
-    onChunk: onChunk,
-  );
+  final gltfBytes = await _fetchResource(test.url, onChunk: onChunk);
   return Node.fromGltfBytes(
     gltfBytes,
     resolveUri:
-        (uri) => _fetchCached(
-          baseUri.resolve(uri).toString(),
-          File('${dir.path}/${_uriBasename(uri)}'),
-          onChunk: onChunk,
-        ),
+        (uri) =>
+            _fetchResource(baseUri.resolve(uri).toString(), onChunk: onChunk),
   );
 }
 
-/// The last path segment of a (possibly percent-encoded) URI, used as
-/// the cache filename for a downloaded resource.
-String _uriBasename(String uri) {
-  final decoded = Uri.decodeComponent(uri);
-  final slash = decoded.lastIndexOf('/');
-  return slash < 0 ? decoded : decoded.substring(slash + 1);
-}
-
-// Downloads `url` into `cacheFile`, skipping the download when a usable
-// cache file is already present, and returns the bytes. `onChunk` is
-// fed each chunk's length while streaming -- and the whole file's
-// length on a cache hit -- so callers can show cumulative progress.
-Future<Uint8List> _fetchCached(
-  String url,
-  File cacheFile, {
+// Fetches `url` and returns its bytes. Serves from the platform cache
+// (on-disk on native, in-memory on web) when a usable copy is present;
+// otherwise streams the download via http, caches it, and returns it.
+// `onChunk` is fed each streamed chunk's length -- and the whole length on a
+// cache hit -- so callers can show cumulative progress.
+Future<Uint8List> _fetchResource(
+  String url, {
   required void Function(int bytes) onChunk,
   int? expectedSize,
 }) async {
-  if (await cacheFile.exists()) {
-    final bytes = await cacheFile.readAsBytes();
-    // With a known size, reject a suspiciously short (interrupted)
-    // cache file; otherwise just require it to be non-empty.
+  final cached = await loadCachedResource(url);
+  if (cached != null) {
+    // With a known size, reject a suspiciously short (interrupted) cache
+    // entry; otherwise just require it to be non-empty.
     final usable =
         expectedSize == null
-            ? bytes.isNotEmpty
-            : bytes.lengthInBytes >= expectedSize * 0.95;
+            ? cached.isNotEmpty
+            : cached.lengthInBytes >= expectedSize * 0.95;
     if (usable) {
-      onChunk(bytes.lengthInBytes);
-      return bytes;
+      onChunk(cached.lengthInBytes);
+      return cached;
     }
-    await cacheFile.delete();
   }
 
   final client = http.Client();
   try {
     final response = await client.send(http.Request('GET', Uri.parse(url)));
     if (response.statusCode != 200) {
-      throw HttpException('GET $url returned ${response.statusCode}');
+      throw Exception('GET $url returned ${response.statusCode}');
     }
-    final sink = cacheFile.openWrite();
-    try {
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        onChunk(chunk.length);
-      }
-    } finally {
-      await sink.close();
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in response.stream) {
+      builder.add(chunk);
+      onChunk(chunk.length);
     }
-    return cacheFile.readAsBytes();
+    final bytes = builder.takeBytes();
+    await storeCachedResource(url, bytes);
+    return bytes;
   } finally {
     client.close();
   }

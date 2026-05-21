@@ -8,10 +8,7 @@ import 'example_cuboid.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
-// The stress-test harness uses dart:io (asset caching to disk); on web a
-// stub stands in for it.
-import 'example_stress_tests_stub.dart'
-    if (dart.library.io) 'example_stress_tests.dart';
+import 'example_stress_tests.dart';
 import 'example_toon.dart';
 
 void main() {
