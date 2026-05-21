@@ -171,15 +171,19 @@ base class GpuContext {
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
+    // Flip vertically during the blit (dst Y runs height -> 0). Render
+    // targets are now stored top-down because the vertex stage negates
+    // gl_Position.y (see glsl_transpile), so the final swapchain texture is
+    // top-down too; this flip presents it upright on the canvas.
     _gl.blitFramebuffer(
       0,
       0,
       texture.width,
       texture.height,
       0,
-      0,
-      texture.width,
       texture.height,
+      texture.width,
+      0,
       web.WebGL2RenderingContext.COLOR_BUFFER_BIT,
       web.WebGL2RenderingContext.NEAREST,
     );

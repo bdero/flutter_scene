@@ -567,10 +567,14 @@ base class RenderPass {
   }
 
   void setWindingOrder(WindingOrder windingOrder) {
+    // Inverted relative to the requested order: the vertex shaders negate
+    // gl_Position.y (see glsl_transpile's vertex Y-flip) to store
+    // render-to-texture content top-down, which also mirrors triangle
+    // winding. Swapping CW<->CCW here keeps face culling correct.
     _gpuContext._gl.frontFace(
       windingOrder == WindingOrder.clockwise
-          ? web.WebGL2RenderingContext.CW
-          : web.WebGL2RenderingContext.CCW,
+          ? web.WebGL2RenderingContext.CCW
+          : web.WebGL2RenderingContext.CW,
     );
   }
 

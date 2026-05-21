@@ -37,6 +37,7 @@ final RegExp _texture2D = RegExp(r'\btexture2D\b');
 final RegExp _textureCube = RegExp(r'\btextureCube\b');
 final RegExp _glFragColor = RegExp(r'\bgl_FragColor\b');
 final RegExp _glFragData0 = RegExp(r'\bgl_FragData\s*\[\s*0\s*\]');
+final RegExp _mainEntry = RegExp(r'\bvoid\s+main\s*\(\s*(?:void)?\s*\)');
 final RegExp _precisionLine = RegExp(
   r'precision\s+\w+\s+\w+\s*;',
   multiLine: true,
@@ -73,9 +74,14 @@ String stripWebGl2CoreExtensions(String source) {
 ///   * `texture2DProj` -> `textureProj`
 ///   * In fragment shaders: `gl_FragColor` and `gl_FragData[0]` are
 ///     redirected to an injected `out highp vec4 _frag_color`.
+///   * In vertex shaders: `gl_Position.y` is negated (the entry point is
+///     wrapped) so render-to-texture content is stored top-down, matching
+///     what flutter_scene's shaders assume when they later sample those
+///     targets. See [transpileGlslEs100To300]'s body for the rationale.
 ///
-/// [isFragment] selects the right `varying` translation and gates the
-/// fragment-output injection. Use `false` for vertex shaders.
+/// [isFragment] selects the right `varying` translation, gates the
+/// fragment-output injection, and gates the vertex Y-flip. Use `false` for
+/// vertex shaders.
 String transpileGlslEs100To300(String source, {required bool isFragment}) {
   var out = source;
 
@@ -107,6 +113,31 @@ String transpileGlslEs100To300(String source, {required bool isFragment}) {
           '${out.substring(0, firstNewline + 1)}'
           '$injection'
           '${out.substring(firstNewline + 1)}';
+    }
+  } else {
+    // Vertex stage: absorb the render-to-texture Y-axis difference here.
+    // WebGL2 rasterizes into FBO textures bottom-up, but flutter_scene (like
+    // Impeller's Metal/Vulkan backends) assumes render-to-texture content is
+    // stored top-down - that's what its shaders expect when they later sample
+    // those targets (the IBL prefilter atlas, the HDR scene color). Negating
+    // gl_Position.y makes every offscreen render the shim does store top-down.
+    // The winding order is inverted to match (see RenderPass.setWindingOrder).
+    // Mirrors flutter/flutter#186556, which does the same in Impeller's GLES
+    // backend. Every shim render pass targets an offscreen texture (the
+    // present is a blit, not a render pass), so the flip is unconditional.
+    final mainMatch = _mainEntry.firstMatch(out);
+    if (mainMatch != null) {
+      out = out.replaceRange(
+        mainMatch.start,
+        mainMatch.end,
+        'void _impeller_vertex_main()',
+      );
+      out =
+          '$out\n\n'
+          'void main() {\n'
+          '  _impeller_vertex_main();\n'
+          '  gl_Position.y = -gl_Position.y;\n'
+          '}\n';
     }
   }
 
