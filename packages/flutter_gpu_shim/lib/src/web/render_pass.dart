@@ -370,13 +370,47 @@ base class RenderPass {
     Uint8List staging,
     int byteOffset,
   ) {
-    final floatCount = member.vecSize * member.columns * member.elementCount;
-    // View the staged bytes as floats. Uniform members are 4-byte aligned.
-    final floats = staging.buffer.asFloat32List(
-      staging.offsetInBytes + byteOffset,
-      floatCount,
-    );
-    if (member.columns == 1) {
+    if (member.columns > 1) {
+      // Matrix, possibly an array. In std140 each matrix column is aligned
+      // to 16 bytes (a mat3 column is a vec3 padded to vec4); GL's
+      // uniformMatrix*fv wants tightly-packed columns, so repack. The matrix
+      // count comes from the total size, not arrayElements (which Impeller
+      // overloads to mean column count for a standalone matrix).
+      const columnStride = 16;
+      final cols = member.columns;
+      final rows = member.vecSize;
+      final count = member.totalSizeInBytes ~/ (cols * columnStride);
+      final tight = Float32List(count * cols * rows);
+      var w = 0;
+      for (var m = 0; m < count; m++) {
+        for (var c = 0; c < cols; c++) {
+          final colBytes = byteOffset + (m * cols + c) * columnStride;
+          final col = staging.buffer.asFloat32List(
+            staging.offsetInBytes + colBytes,
+            rows,
+          );
+          for (var r = 0; r < rows; r++) {
+            tight[w++] = col[r];
+          }
+        }
+      }
+      switch (cols) {
+        case 2:
+          gl.uniformMatrix2fv(loc, false, tight.toJS);
+        case 3:
+          gl.uniformMatrix3fv(loc, false, tight.toJS);
+        case 4:
+          gl.uniformMatrix4fv(loc, false, tight.toJS);
+      }
+    } else {
+      // Vector / scalar, possibly an array. vec4 arrays are tightly packed
+      // (16-byte elements); vec3/vec2/scalar arrays would have std140
+      // padding, but flutter_scene's uniforms don't use those.
+      final count = member.arrayElements == 0 ? 1 : member.arrayElements;
+      final floats = staging.buffer.asFloat32List(
+        staging.offsetInBytes + byteOffset,
+        member.vecSize * count,
+      );
       switch (member.vecSize) {
         case 1:
           gl.uniform1fv(loc, floats.toJS);
@@ -386,18 +420,6 @@ base class RenderPass {
           gl.uniform3fv(loc, floats.toJS);
         case 4:
           gl.uniform4fv(loc, floats.toJS);
-      }
-    } else {
-      // Matrix. NB: mat2/mat3 stored with std140 column padding would need
-      // repacking; mat4 is tightly packed and matches GL. flutter_scene's
-      // mesh shaders use mat4, so mat4 is the path that's exercised today.
-      switch (member.columns) {
-        case 2:
-          gl.uniformMatrix2fv(loc, false, floats.toJS);
-        case 3:
-          gl.uniformMatrix3fv(loc, false, floats.toJS);
-        case 4:
-          gl.uniformMatrix4fv(loc, false, floats.toJS);
       }
     }
   }

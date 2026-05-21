@@ -8,6 +8,7 @@ class _UniformMember {
     this.vecSize,
     this.columns,
     this.arrayElements,
+    this.totalSizeInBytes,
   );
 
   final String name;
@@ -20,11 +21,15 @@ class _UniformMember {
   /// 1 for scalars and vectors; N for an NxN matrix.
   final int columns;
 
-  /// 0 if this member is not an array.
+  /// 0 if this member is not an array. Note: for a standalone matrix
+  /// Impeller's reflection sets this to the column count, so it can't be
+  /// trusted to mean "array length" for matrices - use [totalSizeInBytes].
   final int arrayElements;
 
+  /// Total reflected size in bytes (includes std140 column/array padding).
+  final int totalSizeInBytes;
+
   bool get isMatrix => columns > 1;
-  int get elementCount => arrayElements == 0 ? 1 : arrayElements;
 }
 
 /// Reflected metadata for a uniform struct (set as individual uniforms).

@@ -108,6 +108,7 @@ base class ShaderLibrary {
             f.vecSize,
             f.columns,
             f.arrayElements,
+            f.totalSizeInBytes,
           ),
         );
       }
