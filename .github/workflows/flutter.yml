@@ -35,7 +35,6 @@ jobs:
       matrix:
         package:
           - packages/flutter_scene
-          - packages/flutter_scene_importer
     steps:
       - uses: actions/checkout@v4
       - name: Set up Flutter
