@@ -13,9 +13,10 @@ Scene: 3D library for Flutter
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
   <a title="Test" href="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml?query=event%3Apush+branch%3Amaster"><img src="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml/badge.svg?branch=master&event=push"/></a>
+  <a title="Discord" href="https://discord.gg/BfGKrcheRj"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white"/></a>
 </p>
 
-Scene is a general purpose realtime 3D rendering library for Flutter. It started life as a C++ component of the Impeller rendering backend in Flutter Engine, and is currently being actively developed as a pure Dart package powered by the Flutter GPU API.
+Scene is a general purpose realtime 3D rendering library for Flutter. It started life as a C++ component of the Impeller rendering backend in Flutter Engine, and is currently being actively developed as a pure Dart package powered by the Flutter GPU API, with a built-in WebGL2 backend so it also runs on the web.
 
 The primary goal of this project is to make performant cross platform 3D easy in Flutter.
 
@@ -47,7 +48,7 @@ The primary goal of this project is to make performant cross platform 3D easy in
 
 - This package is in an early preview state. Things may break!
 - Relies on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
-- This package currently only works when [Impeller is enabled](https://docs.flutter.dev/perf/impeller#availability).
+- On native platforms this package requires [Impeller](https://docs.flutter.dev/perf/impeller#availability) to be enabled. On the web it runs on a built-in WebGL2 backend instead.
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
 - Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
 
@@ -62,11 +63,13 @@ The primary goal of this project is to make performant cross platform 3D easy in
 
 ### **Q:** What platforms does this package support?
 
-`flutter_scene` supports all platforms that [Impeller](https://docs.flutter.dev/perf/impeller#availability) currently supports.
+On native platforms `flutter_scene` runs anywhere [Impeller](https://docs.flutter.dev/perf/impeller#availability) does. On the web it runs on a built-in WebGL2 backend.
 
 On iOS and Android, Impeller is Flutter's default production renderer. So on these platforms, `flutter_scene` works without any additional project configuration.
 
 On MacOS, Windows, and Linux, Impeller is able to run, but is not on by default and must be enabled. When invoking `flutter run`, Impeller can be enabled by passing the `--enable-impeller` flag.
+
+On the web, no flags are needed; it works under both the CanvasKit and Skwasm renderers.
 
 |         Platform | Status          |
 | ---------------: | :-------------- |
@@ -75,24 +78,22 @@ On MacOS, Windows, and Linux, Impeller is able to run, but is not on by default 
 |            MacOS | 🟡 Preview       |
 |          Windows | 🟡 Preview       |
 |            Linux | 🟡 Preview       |
-|              Web | 🔴 Not Supported |
+|              Web | 🟡 Preview       |
 | Custom embedders | 🟢 Supported     |
 
-### **Q:** When will web be supported?
+### **Q:** How does web support work?
 
-Although there has been some very promising experimentation with porting Impeller to web, there is currently no ETA on web platform support.
-
-Web is an important platform, and both `flutter_gpu` and `flutter_scene` will eventually support Flutter web.
+Impeller and Flutter GPU aren't available on the web, so `flutter_scene` ships a built-in WebGL2 backend (a drop-in for `flutter_gpu`) and renders through it there. It works under both the CanvasKit and Skwasm web renderers. Web support is new and in preview, so expect rough edges.
 
 ## Repository
 
-This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) containing all of the related packages and the example app:
+This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) containing the library and the example apps:
 
 | Path | Description |
 | --- | --- |
-| [`packages/flutter_scene`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene) | The core 3D rendering library. Published to pub.dev as [`flutter_scene`](https://pub.dev/packages/flutter_scene). |
-| [`packages/flutter_scene_importer`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_importer) | Offline glTF → Flutter Scene model importer (build hook). Published to pub.dev as [`flutter_scene_importer`](https://pub.dev/packages/flutter_scene_importer). |
+| [`packages/flutter_scene`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene) | The 3D rendering library, including the offline glTF importer and the web (WebGL2) backend. Published to pub.dev as [`flutter_scene`](https://pub.dev/packages/flutter_scene). |
 | [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app) | Runnable example app exercising the library. |
+| [`examples/flutter_gpu_shim_smoke`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_gpu_shim_smoke) | Dev-only smoke test for the web backend. |
 
 To run the example app from a fresh clone:
 
@@ -101,6 +102,7 @@ flutter pub get                                             # resolves the works
 flutter config --enable-native-assets                       # one-time setup
 
 cd examples/flutter_app
-flutter create . --platforms=macos,ios,android,linux,windows  # generate gitignored platform stubs
-flutter run --enable-flutter-gpu --enable-impeller            # add `-d <device>` if needed
+flutter create . --platforms=macos,ios,android,linux,windows,web  # generate gitignored platform stubs
+flutter run --enable-flutter-gpu --enable-impeller            # native; add `-d <device>` if needed
+flutter run -d chrome                                         # web
 ```
