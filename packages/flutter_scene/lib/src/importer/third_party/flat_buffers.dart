@@ -34,10 +34,11 @@ class BufferContext {
   ByteData get buffer => _buffer;
 
   /// Create from a FlatBuffer represented by a list of bytes (uint8).
-  factory BufferContext.fromBytes(List<int> byteList) =>
-      BufferContext(byteList is Uint8List
-          ? byteList.buffer.asByteData(byteList.offsetInBytes)
-          : ByteData.view(Uint8List.fromList(byteList).buffer));
+  factory BufferContext.fromBytes(List<int> byteList) => BufferContext(
+    byteList is Uint8List
+        ? byteList.buffer.asByteData(byteList.offsetInBytes)
+        : ByteData.view(Uint8List.fromList(byteList).buffer),
+  );
 
   /// Create from a FlatBuffer represented by ByteData.
   BufferContext(this._buffer);
@@ -164,9 +165,9 @@ class Builder {
     bool internStrings = false,
     Allocator allocator = const DefaultAllocator(),
     this.deduplicateTables = true,
-  })  : _allocator = allocator,
-        _buf = allocator.allocate(initialSize),
-        _vTables = deduplicateTables ? [] : const [] {
+  }) : _allocator = allocator,
+       _buf = allocator.allocate(initialSize),
+       _vTables = deduplicateTables ? [] : const [] {
     if (internStrings) {
       _strings = <String, int>{};
     }
@@ -365,8 +366,10 @@ class Builder {
   Uint8List get buffer {
     assert(_finished);
     final finishedSize = size();
-    return _buf.buffer
-        .asUint8List(_buf.lengthInBytes - finishedSize, finishedSize);
+    return _buf.buffer.asUint8List(
+      _buf.lengthInBytes - finishedSize,
+      finishedSize,
+    );
   }
 
   /// Finish off the creation of the buffer.  The given [offset] is used as the
@@ -383,14 +386,18 @@ class Builder {
     if (fileIdentifier != null) {
       for (var i = 0; i < 4; i++) {
         _setUint8AtTail(
-            finishedSize - _sizeofUint32 - i, fileIdentifier.codeUnitAt(i));
+          finishedSize - _sizeofUint32 - i,
+          fileIdentifier.codeUnitAt(i),
+        );
       }
     }
 
     // zero out the added padding
-    for (var i = sizeBeforePadding + 1;
-        i <= finishedSize - requiredBytes;
-        i++) {
+    for (
+      var i = sizeBeforePadding + 1;
+      i <= finishedSize - requiredBytes;
+      i++
+    ) {
       _setUint8AtTail(i, 0);
     }
     _finished = true;
@@ -702,8 +709,10 @@ class Builder {
   int writeString(String value, {bool asciiOptimization = false}) {
     assert(!_inVTable);
     if (_strings != null) {
-      return _strings!
-          .putIfAbsent(value, () => _writeString(value, asciiOptimization));
+      return _strings!.putIfAbsent(
+        value,
+        () => _writeString(value, asciiOptimization),
+      );
     } else {
       return _writeString(value, asciiOptimization);
     }
@@ -1018,10 +1027,13 @@ class ListReader<E> extends Reader<List<E>> {
     return lazy
         ? _FbGenericList<E>(_elementReader, bc, listOffset)
         : List<E>.generate(
-            bc.buffer.getUint32(listOffset, Endian.little),
-            (int index) => _elementReader.read(
-                bc, listOffset + size + _elementReader.size * index),
-            growable: true);
+          bc.buffer.getUint32(listOffset, Endian.little),
+          (int index) => _elementReader.read(
+            bc,
+            listOffset + size + _elementReader.size * index,
+          ),
+          growable: true,
+        );
   }
 }
 
@@ -1305,7 +1317,7 @@ class _FbGenericList<E> extends _FbList<E> {
   List<E?>? _items;
 
   _FbGenericList(this.elementReader, BufferContext bp, int offset)
-      : super(bp, offset);
+    : super(bp, offset);
 
   @override
   @pragma('vm:prefer-inline')
@@ -1448,7 +1460,11 @@ abstract class Allocator {
   /// Params [inUseBack] and [inUseFront] indicate how much of [oldData] is
   /// actually in use at each end, and needs to be copied.
   ByteData resize(
-      ByteData oldData, int newSize, int inUseBack, int inUseFront) {
+    ByteData oldData,
+    int newSize,
+    int inUseBack,
+    int inUseFront,
+  ) {
     final newData = allocate(newSize);
     _copyDownward(oldData, newData, inUseBack, inUseFront);
     deallocate(oldData);
@@ -1459,17 +1475,25 @@ abstract class Allocator {
   /// memory of size [inUseFront] and [inUseBack] will be copied from the front
   /// and back of the old memory allocation.
   void _copyDownward(
-      ByteData oldData, ByteData newData, int inUseBack, int inUseFront) {
+    ByteData oldData,
+    ByteData newData,
+    int inUseBack,
+    int inUseFront,
+  ) {
     if (inUseBack != 0) {
       newData.buffer.asUint8List().setAll(
-          newData.lengthInBytes - inUseBack,
-          oldData.buffer.asUint8List().getRange(
-              oldData.lengthInBytes - inUseBack, oldData.lengthInBytes));
+        newData.lengthInBytes - inUseBack,
+        oldData.buffer.asUint8List().getRange(
+          oldData.lengthInBytes - inUseBack,
+          oldData.lengthInBytes,
+        ),
+      );
     }
     if (inUseFront != 0) {
-      newData.buffer
-          .asUint8List()
-          .setAll(0, oldData.buffer.asUint8List().getRange(0, inUseFront));
+      newData.buffer.asUint8List().setAll(
+        0,
+        oldData.buffer.asUint8List().getRange(0, inUseFront),
+      );
     }
   }
 }

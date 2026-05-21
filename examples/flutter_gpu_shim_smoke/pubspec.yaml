@@ -16,7 +16,7 @@ dependencies:
   # smoke app reaches into that internal library directly; implementation_imports
   # is disabled in analysis_options.yaml for that reason.
   flutter_scene: ^0.14.0
-  flat_buffers: ^23.5.26
+  flat_buffers: ^25.9.23
   vector_math: ^2.1.4
   web: ^1.1.0
 

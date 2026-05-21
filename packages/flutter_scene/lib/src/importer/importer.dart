@@ -38,5 +38,5 @@ class ImportedScene {
   ///
   /// Returns the generated `fb.Scene` accessor; cast at the call site
   /// when type information is needed.
-  get flatbuffer => _scene;
+  fb.Scene get flatbuffer => _scene;
 }
