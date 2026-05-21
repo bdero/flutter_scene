@@ -154,6 +154,9 @@ base class RenderPass {
   IndexType _indexType = IndexType.int32;
   int _indexCount = 0;
 
+  web.WebGLFramebuffer? _fbo;
+  bool _finished = false;
+
   void _ensureVao() {
     final gl = _gpuContext._gl;
     _vao ??= gl.createVertexArray();
@@ -174,6 +177,7 @@ base class RenderPass {
     if (fbo == null) {
       throw StateError('Failed to create WebGL framebuffer');
     }
+    _fbo = fbo;
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
 
     if (color.sampleCount == 1) {
@@ -520,6 +524,57 @@ base class RenderPass {
     } else {
       gl.drawArrays(_glPrimitiveType(_primitiveType), 0, _drawVertexCount);
     }
+  }
+
+  /// Called by CommandBuffer when the pass ends (a new pass begins, or the
+  /// buffer is submitted). Resolves MSAA color attachments into their
+  /// resolve textures.
+  void _finish() {
+    if (_finished) return;
+    _finished = true;
+    final gl = _gpuContext._gl;
+    for (final att in _target.colorAttachments) {
+      final resolve = att.resolveTexture;
+      final needsResolve =
+          att.texture.sampleCount > 1 &&
+          resolve != null &&
+          (att.storeAction == StoreAction.multisampleResolve ||
+              att.storeAction == StoreAction.storeAndMultisampleResolve);
+      if (needsResolve) {
+        _resolveColor(gl, att.texture, resolve);
+      }
+    }
+  }
+
+  void _resolveColor(
+    web.WebGL2RenderingContext gl,
+    Texture msaa,
+    Texture resolve,
+  ) {
+    final resolveFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(web.WebGL2RenderingContext.READ_FRAMEBUFFER, _fbo);
+    gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, resolveFbo);
+    gl.framebufferTexture2D(
+      web.WebGL2RenderingContext.DRAW_FRAMEBUFFER,
+      web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+      web.WebGL2RenderingContext.TEXTURE_2D,
+      resolve.glTexture,
+      0,
+    );
+    gl.blitFramebuffer(
+      0,
+      0,
+      msaa.width,
+      msaa.height,
+      0,
+      0,
+      resolve.width,
+      resolve.height,
+      web.WebGL2RenderingContext.COLOR_BUFFER_BIT,
+      web.WebGL2RenderingContext.NEAREST,
+    );
+    gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(resolveFbo);
   }
 
   static int _glPrimitiveType(PrimitiveType p) {

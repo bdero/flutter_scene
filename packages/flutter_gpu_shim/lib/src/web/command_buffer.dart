@@ -8,14 +8,23 @@ base class CommandBuffer {
   CommandBuffer._(this._gpuContext);
 
   final GpuContext _gpuContext;
+  RenderPass? _activePass;
 
   RenderPass createRenderPass(RenderTarget renderTarget) {
-    return RenderPass._(_gpuContext, renderTarget);
+    // Starting a new pass ends the previous one (triggers its MSAA resolve),
+    // so a subsequent pass that samples the resolve texture sees finished
+    // contents.
+    _activePass?._finish();
+    final pass = RenderPass._(_gpuContext, renderTarget);
+    _activePass = pass;
+    return pass;
   }
 
   void submit({CompletionCallback? completionCallback}) {
-    // WebGL2 commands are already submitted; `gl.flush()` is implicit at
-    // tab/raster boundaries. Fire the callback synchronously for API parity.
+    // WebGL2 commands are already submitted; finishing the last pass runs
+    // its MSAA resolve. `gl.flush()` is implicit at raster boundaries.
+    _activePass?._finish();
+    _activePass = null;
     completionCallback?.call(CompletionStatus.successful);
   }
 }
