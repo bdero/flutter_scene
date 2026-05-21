@@ -3,7 +3,7 @@ import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:web/web.dart' as web;
 
 import 'src/shader_bundle_generated.dart' as fb;

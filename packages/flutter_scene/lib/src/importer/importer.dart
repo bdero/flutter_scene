@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 
 /// A deserialized Flutter Scene `.model` payload.
 ///

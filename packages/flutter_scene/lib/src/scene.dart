@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3;
 import 'camera.dart';
 import 'light.dart';

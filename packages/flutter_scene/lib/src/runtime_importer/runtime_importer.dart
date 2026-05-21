@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../material/unlit_material.dart';
 import '../mesh.dart';

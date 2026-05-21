@@ -9,6 +9,7 @@ platforms:
   android:
   windows:
   linux:
+  web:
 
 resolution: workspace
 
@@ -17,16 +18,27 @@ environment:
   flutter: ">=3.29.0-1.0.pre.242"
 
 dependencies:
+  # Offline glTF -> .model import (build hook + CLI): arg parsing and image
+  # decoding. Build/offline-time only; tree-shaken from runtime builds.
+  args: ^2.5.0
   collection: ^1.19.0
+  # Reader for the bundled GPU shim's shader-bundle flatbuffer. The importer's
+  # own glTF flatbuffers use a separate vendored copy under
+  # src/importer/third_party.
+  flat_buffers: ^23.5.26
   flutter:
     sdk: flutter
+  # Native-only: the bundled GPU shim re-exports flutter_gpu on native and
+  # falls back to a WebGL2 backend on web.
   flutter_gpu:
     sdk: flutter
   flutter_gpu_shaders: ^0.4.0
-  flutter_gpu_shim: ^0.0.1
-  flutter_scene_importer: ^0.12.0
   hooks: ^1.0.0
+  image: ^4.5.0
+  logging: ^1.2.0
   vector_math: ^2.1.4
+  # WebGL2 bindings for the web GPU backend.
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:

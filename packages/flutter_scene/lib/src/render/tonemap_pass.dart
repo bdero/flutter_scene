@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';

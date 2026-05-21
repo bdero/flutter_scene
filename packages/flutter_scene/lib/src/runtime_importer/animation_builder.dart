@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../animation.dart';
 import '../node.dart';

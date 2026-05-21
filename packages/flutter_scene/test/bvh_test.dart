@@ -1,7 +1,7 @@
 // BVH tests. Builds a Bvh over RenderItems with stub geometry/material
 // and checks that query agrees with a brute-force frustum test.
 
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';

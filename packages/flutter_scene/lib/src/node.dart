@@ -1,7 +1,7 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
@@ -16,8 +16,8 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
-import 'package:flutter_scene_importer/importer.dart';
+import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene/src/importer/importer.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 

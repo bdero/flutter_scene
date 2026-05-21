@@ -1,12 +1,12 @@
 // ignore: depend_on_referenced_packages
 import 'dart:typed_data';
 
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart'
+import 'package:flutter_scene/src/importer/generated/scene_impeller.fb_flatbuffers.dart'
     as fb;
-export 'package:flutter_scene_importer/generated/scene_impeller.fb_flatbuffers.dart';
+export 'package:flutter_scene/src/importer/generated/scene_impeller.fb_flatbuffers.dart';
 
 /// Conversion helpers from the flatbuffer 4×4 matrix type.
 extension MatrixHelpers on fb.Matrix {

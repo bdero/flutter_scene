@@ -1,4 +1,4 @@
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 const String _kBaseShaderBundlePath =
     'packages/flutter_scene/build/shaderbundles/base.shaderbundle';

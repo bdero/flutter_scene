@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:test/test.dart';
 
 /// Tests for the pure-data layer of the runtime importer (no GPU required).

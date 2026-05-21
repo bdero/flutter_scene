@@ -6,7 +6,7 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:flutter_scene_importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Reads vertex `v`'s normal (floats 3..5 of the 12-float unskinned

@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
-import 'package:flutter_gpu_shim/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
-import 'package:flutter_scene_importer/flatbuffer.dart' as fb;
+import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring

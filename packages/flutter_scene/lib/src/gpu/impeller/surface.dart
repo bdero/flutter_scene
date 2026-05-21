@@ -5,7 +5,7 @@ part of '_gpu.dart';
 // (Impeller) platforms, the equivalent is a flutter_gpu Texture displayed via
 // the Texture widget; the shim does not abstract that here.
 //
-// This stub exists only so the unified `package:flutter_gpu_shim/gpu.dart`
+// This stub exists only so the unified `package:flutter_scene/src/gpu/gpu.dart`
 // entry point compiles on native targets. Calling any method throws.
 class Surface {
   Surface({required int width, required int height}) {
