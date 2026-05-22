@@ -16,12 +16,25 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'hdr_image.dart';
 import 'stress_cache.dart';
+// The in-memory offline (ahead-of-time) glTF -> .model conversion, used by the
+// per-test importer toggle below. Reaching into flutter_scene's internals is
+// intentional here: this is a renderer stress test, not a typical consumer.
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
 
 // Toggle these on to inspect scenes as they load. Both are off by
 // default; flip them locally when debugging a renderer regression in
 // a specific stress test.
 const bool _kDebugDumpScene = false;
 const bool _kDebugTintMaterials = false;
+
+/// Which importer path a stress test exercises. [runtime] uses the direct GLB
+/// importer (`Node.fromGlbBytes` / `Node.fromGltfBytes`). [offline] runs the
+/// ahead-of-time glTF -> .model conversion in memory and loads the result via
+/// `Node.fromFlatbuffer`, the same conversion the `buildModels` build hook
+/// performs. Offline is `.glb` only (the offline importer has no multi-file
+/// `.gltf` path).
+enum _ImporterMode { runtime, offline }
 
 class _StressTest {
   const _StressTest({
@@ -454,6 +467,10 @@ class _StressSceneState extends State<_StressScene> {
   int? _total;
   Object? _error;
 
+  // Which importer to exercise. Switchable per test via the toggle; offline
+  // is only offered for single-file .glb tests.
+  _ImporterMode _importerMode = _ImporterMode.runtime;
+
   // Image-based-lighting environment. `_activeEnvironment` tracks the menu
   // choice; the renderer's built-in studio environment is the default.
   // Loaded HDR environments are cached so re-selecting one is instant.
@@ -491,7 +508,7 @@ class _StressSceneState extends State<_StressScene> {
 
   Future<void> _load() async {
     try {
-      final node = await _importTest(widget.test, _reportChunk);
+      final node = await _importTest(widget.test, _importerMode, _reportChunk);
       node.name = widget.test.id;
 
       if (_kDebugDumpScene) {
@@ -549,6 +566,20 @@ class _StressSceneState extends State<_StressScene> {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  // Switches the importer path and reloads the model. The download is cached,
+  // so this just re-imports the same bytes via the chosen path.
+  void _setImporterMode(_ImporterMode mode) {
+    if (mode == _importerMode) return;
+    _scene.removeAll();
+    setState(() {
+      _importerMode = mode;
+      _ready = false;
+      _downloaded = 0;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   // Switches the scene's image-based-lighting environment. Downloads and
@@ -865,6 +896,54 @@ class _StressSceneState extends State<_StressScene> {
             ),
           ),
         ),
+        // Importer toggle (single-file .glb only; offline has no multi-file
+        // path). Lets the offline ahead-of-time importer be compared against
+        // the runtime importer on the same model.
+        if (_ready && !widget.test.isMultiFile)
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Material(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: Text('Importer'),
+                      ),
+                      SegmentedButton<_ImporterMode>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(
+                            value: _ImporterMode.runtime,
+                            label: Text('Runtime'),
+                          ),
+                          ButtonSegment(
+                            value: _ImporterMode.offline,
+                            label: Text('Offline'),
+                          ),
+                        ],
+                        selected: {_importerMode},
+                        onSelectionChanged:
+                            (selection) => _setImporterMode(selection.first),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (_ready)
           Positioned(
             left: 8,
@@ -1214,19 +1293,31 @@ class _ScenePainter extends CustomPainter {
 // `.gltf` models download the `.gltf` and resolve its `.bin` / image
 // siblings on demand through Node.fromGltfBytes; every sibling is
 // fetched relative to the `.gltf`'s own URL and cached beside it.
-Future<Node> _importTest(_StressTest test, void Function(int) onChunk) async {
+Future<Node> _importTest(
+  _StressTest test,
+  _ImporterMode mode,
+  void Function(int) onChunk,
+) async {
   if (!test.isMultiFile) {
     final bytes = await _fetchResource(
       test.url,
       onChunk: onChunk,
       expectedSize: test.sizeBytes,
     );
+    if (mode == _ImporterMode.offline) {
+      // Exercise the offline (ahead-of-time) importer: run the same
+      // glTF -> .model conversion the build hook performs, in memory, then
+      // load the result. This is the path issue #134 lives in.
+      final modelBytes = importGlbToModelBytes(bytes);
+      return Node.fromFlatbuffer(ByteData.sublistView(modelBytes));
+    }
     return Node.fromGlbBytes(bytes);
   }
 
-  // Multi-file glTF: the `.gltf` and its `.bin` / image siblings are each
-  // fetched (and cached) by their own absolute URL, resolved relative to the
-  // `.gltf`'s URL.
+  // Multi-file glTF: the offline importer is .glb-only, so this is always the
+  // runtime path. The `.gltf` and its `.bin` / image siblings are each fetched
+  // (and cached) by their own absolute URL, resolved relative to the `.gltf`'s
+  // URL.
   final baseUri = Uri.parse(test.url);
   final gltfBytes = await _fetchResource(test.url, onChunk: onChunk);
   return Node.fromGltfBytes(
