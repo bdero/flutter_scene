@@ -201,5 +201,16 @@ There's now a single published package (`flutter_scene`); the old importer-first
 
 1. Bump version in `packages/flutter_scene/pubspec.yaml` and add a CHANGELOG entry.
 2. `flutter pub publish --dry-run` from inside `packages/flutter_scene`.
-3. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
-4. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too — pub.dev blocks the publish otherwise. The Flutter SDK constraint can capture the master-channel requirement (`flutter: ">=3.29.0-1.0.pre.242"`).
+3. Run `pana` and confirm the score is still **160/160** before publishing:
+   ```sh
+   dart pub global activate pana
+   dart pub global run pana --no-warning packages/flutter_scene
+   ```
+   We held a perfect score; keep it there. The points that are easy to lose:
+   - **Stale dependency constraints (40 pts).** A constraint that doesn't allow a dependency's latest *stable* stops earning points ~30 days after that stable ships. pana warns before the clock runs out, so widen the constraint proactively. (This is the `hooks` 1.x -> 2.0 situation tracked in the issue history.)
+   - **Static analysis in generated files (50 pts).** pana does NOT honor `analysis_options.yaml` excludes for its analysis check. Generated files (`*_flatbuffers.dart`, `lib/src/gpu/web/shader_bundle_generated.dart`) must carry `// ignore_for_file:` headers, not just be excluded.
+   - **`description` length (docs pts).** Keep the pubspec `description` at 60+ characters; a shorter one is penalized.
+   - **Platform/WASM support.** `platforms:` in the pubspec must list `web:`, and the package must stay WASM-compatible (no `dart:io` on the web dependency graph; see the build-hook conditional export).
+4. Publish: `flutter pub publish` from inside `packages/flutter_scene` (use `--force` to skip the prompt) on a clean `master` at the bumped version. The merge of the release-prep PR is what gets the bump onto `master` first.
+5. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
+6. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too; pub.dev blocks the publish otherwise. The Flutter SDK constraint can capture the master-channel requirement (`flutter: ">=3.29.0-1.0.pre.242"`).
