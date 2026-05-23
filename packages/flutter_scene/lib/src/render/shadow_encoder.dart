@@ -90,6 +90,11 @@ class ShadowEncoder {
           _lightSpaceMatrix,
           _cameraPositionPlaceholder,
         );
+        final flip =
+            item.windingFlipped != (instanceTransform.determinant() < 0);
+        _renderPass.setWindingOrder(
+          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
+        );
         _renderPass.draw();
       }
       return;
@@ -101,6 +106,13 @@ class ShadowEncoder {
       item.worldTransform,
       _lightSpaceMatrix,
       _cameraPositionPlaceholder,
+    );
+    // Mirrored casters reverse winding; flip the cull order so the same faces
+    // that are visible also cast shadows.
+    _renderPass.setWindingOrder(
+      item.windingFlipped
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
     );
     _renderPass.draw();
   }

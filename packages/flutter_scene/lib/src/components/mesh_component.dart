@@ -74,6 +74,7 @@ class MeshComponent extends Component {
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
     final worldTransform = node.globalTransform;
+    final windingFlipped = node.windingFlipped;
 
     // A skinned node uploads its joint matrices once per frame; both
     // render passes then sample the same joints texture.
@@ -93,6 +94,7 @@ class MeshComponent extends Component {
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.worldTransform.setFrom(worldTransform);
+      item.windingFlipped = windingFlipped;
 
       final wasBounded = item.worldBounds != null;
       final boundsChanged = item.refreshWorldBounds();

@@ -27,6 +27,11 @@ class RenderItem {
   /// Mirrors the owning node's frustum-cull opt-in, refreshed each frame.
   bool frustumCulled = true;
 
+  /// Whether the owning node's transform reverses triangle winding (a mirror
+  /// up the chain). Refreshed each frame; the encoder flips cull winding when
+  /// set so mirrored nodes don't render inside-out.
+  bool windingFlipped = false;
+
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
 
