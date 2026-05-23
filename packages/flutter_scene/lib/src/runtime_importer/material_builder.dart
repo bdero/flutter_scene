@@ -21,6 +21,7 @@ Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
       final t = _resolveTexture(pbr.baseColorTexture, textures);
       if (t != null) m.baseColorTexture = t;
     }
+    m.doubleSided = gm.doubleSided;
     return m;
   }
   final m = PhysicallyBasedMaterial();
@@ -52,6 +53,7 @@ Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
   );
   m.alphaMode = _alphaMode(gm.alphaMode);
   m.alphaCutoff = gm.alphaCutoff;
+  m.doubleSided = gm.doubleSided;
   return m;
 }
 

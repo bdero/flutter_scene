@@ -159,6 +159,13 @@ abstract class Material {
     }
   }
 
+  /// Whether to render both faces of triangles drawn with this material
+  /// (glTF's `material.doubleSided`). When true, [bind] disables back-face
+  /// culling so the geometry is visible from both sides; otherwise back faces
+  /// are culled. Defaults to false. The runtime importer sets it from the glTF
+  /// material.
+  bool doubleSided = false;
+
   gpu.Shader? _fragmentShader;
 
   /// The fragment shader used when rendering geometry with this material.
@@ -191,7 +198,7 @@ abstract class Material {
     gpu.HostBuffer transientsBuffer,
     Lighting lighting,
   ) {
-    pass.setCullMode(gpu.CullMode.backFace);
+    pass.setCullMode(doubleSided ? gpu.CullMode.none : gpu.CullMode.backFace);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
