@@ -29,12 +29,14 @@ base class _TranslucentRecord {
     this.material,
     this.pipeline,
     this.depth,
+    this.windingFlipped,
   );
   final Matrix4 worldTransform;
   final Geometry geometry;
   final Material material;
   final gpu.RenderPipeline pipeline;
   final double depth;
+  final bool windingFlipped;
 }
 
 /// Render pipelines keyed by their (vertex, fragment) shader pair.
@@ -169,6 +171,7 @@ base class SceneEncoder {
             item.material,
             pipeline,
             _depthOf(worldTransform),
+            item.windingFlipped != (instanceTransform.determinant() < 0),
           ),
         );
       }
@@ -180,6 +183,7 @@ base class SceneEncoder {
           item.material,
           pipeline,
           _depthOf(item.worldTransform),
+          item.windingFlipped,
         ),
       );
     }
@@ -202,6 +206,7 @@ base class SceneEncoder {
     Matrix4 worldTransform,
     Geometry geometry,
     Material material,
+    bool windingFlipped,
   ) {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
@@ -213,6 +218,12 @@ base class SceneEncoder {
       _camera.position,
     );
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    if (windingFlipped) {
+      // A mirrored (negative-determinant) transform reverses triangle
+      // winding; flip the cull order so front faces aren't culled. Material
+      // .bind set the default counter-clockwise winding.
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+    }
     _renderPass.setPrimitiveType(geometry.primitiveType);
     _renderPass.draw();
   }
@@ -226,6 +237,7 @@ base class SceneEncoder {
     Geometry geometry,
     Material material,
     List<Matrix4> instances,
+    bool windingFlipped,
   ) {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
@@ -238,6 +250,11 @@ base class SceneEncoder {
         nodeTransform * instanceTransform,
         _cameraTransform,
         _camera.position,
+      );
+      // Each instance can itself mirror; combine with the node's parity.
+      final flip = windingFlipped != (instanceTransform.determinant() < 0);
+      _renderPass.setWindingOrder(
+        flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
       );
       _renderPass.draw();
     }
@@ -267,6 +284,7 @@ base class SceneEncoder {
           item.geometry,
           item.material,
           instances,
+          item.windingFlipped,
         );
       } else {
         _encode(
@@ -274,6 +292,7 @@ base class SceneEncoder {
           item.worldTransform,
           item.geometry,
           item.material,
+          item.windingFlipped,
         );
       }
     }
@@ -300,6 +319,7 @@ base class SceneEncoder {
         record.worldTransform,
         record.geometry,
         record.material,
+        record.windingFlipped,
       );
     }
     _translucentRecords.clear();

@@ -77,6 +77,18 @@ base class Node implements SceneGraph {
   final Matrix4 _worldTransform = Matrix4.identity();
   bool _worldTransformDirty = true;
 
+  // Whether this node's accumulated transform reverses triangle winding (an
+  // odd number of negative-determinant transforms up the chain). Cached
+  // alongside _worldTransform and invalidated by the same dirty flag.
+  bool _windingFlipped = false;
+
+  /// When true, this node's own transform is treated as a coordinate-system
+  /// convention rather than a geometry mirror, and excluded from
+  /// [windingFlipped]. The importers set this on the synthesized scene root
+  /// that flips glTF's handedness (`scale(1, 1, -1)`), so that flip does not
+  /// reverse cull winding the way a real mirror node should.
+  bool excludeFromWindingParity = false;
+
   /// The skin attached to this node, used for skeletal animation. Set by
   /// importers (both the offline .model path and the runtime glTF/GLB loader).
   Skin? skin;
@@ -109,15 +121,30 @@ base class Node implements SceneGraph {
   Matrix4 get globalTransform {
     if (!_worldTransformDirty) return _worldTransform;
     final parent = _parent;
+    final selfFlip =
+        !excludeFromWindingParity && _localTransform.determinant() < 0;
     if (parent == null) {
       _worldTransform.setFrom(_localTransform);
+      _windingFlipped = selfFlip;
     } else {
       _worldTransform
         ..setFrom(parent.globalTransform)
         ..multiply(_localTransform);
+      // parent.globalTransform above refreshed the parent's cache, so
+      // parent._windingFlipped is current.
+      _windingFlipped = selfFlip != parent._windingFlipped;
     }
     _worldTransformDirty = false;
     return _worldTransform;
+  }
+
+  /// Whether this node's accumulated transform reverses triangle winding (a
+  /// mirror / negative scale somewhere up the chain). The renderer flips cull
+  /// winding for such nodes so their front faces are not culled.
+  bool get windingFlipped {
+    // Touch globalTransform to refresh the cache (which sets _windingFlipped).
+    globalTransform;
+    return _windingFlipped;
   }
 
   Node? _parent;
@@ -541,7 +568,7 @@ base class Node implements SceneGraph {
     Node result = Node(
       name: 'root',
       localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity(),
-    );
+    )..excludeFromWindingParity = true;
 
     if (fbScene.nodes == null || fbScene.children == null) {
       return result; // The scene is empty. ¯\_(ツ)_/¯

@@ -113,7 +113,7 @@ Future<Node> _buildScene(
   final root = Node(
     name: 'root',
     localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-  );
+  )..excludeFromWindingParity = true;
   if (sceneIndex != null && sceneIndex < doc.scenes.length) {
     for (final rootNodeIdx in doc.scenes[sceneIndex].nodes) {
       if (rootNodeIdx >= 0 && rootNodeIdx < engineNodes.length) {
