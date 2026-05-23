@@ -1,3 +1,16 @@
+## 0.14.2
+
+Rendering fixes.
+
+* Fixed mirrored geometry rendering inside-out. A node with a
+  negative-determinant transform (a mirror or negative scale) reverses
+  triangle winding, so its front faces were being culled. Cull winding now
+  follows the sign of the node's world-transform determinant, matching the
+  glTF 2.0 spec (section 3.7.4 Instantiation). Applies to the scene pass,
+  the shadow pass, and instanced draws.
+* Fixed `material.doubleSided` being ignored by the runtime glTF importer.
+  Double-sided materials are no longer back-face culled.
+
 ## 0.14.1
 
 Quality and packaging pass to a full pub.dev score.
