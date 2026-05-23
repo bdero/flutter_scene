@@ -50,7 +50,29 @@ The primary goal of this project is to make performant cross platform 3D easy in
 - Relies on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
 - On native platforms this package requires [Impeller](https://docs.flutter.dev/perf/impeller#availability) to be enabled. On the web it runs on a built-in WebGL2 backend instead.
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
-- Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
+
+## Installing
+
+Add flutter_scene from pub.dev:
+
+```yaml
+dependencies:
+  flutter_scene: ^0.14.2
+```
+
+Published releases target the Flutter GPU API revision in the most recent stable Flutter.
+
+To use the newest Flutter GPU features ahead of a stable release, depend on the bleeding-edge version via git instead. This tracks the Flutter master channel:
+
+```yaml
+dependencies:
+  flutter_scene:
+    git:
+      url: https://github.com/bdero/flutter_scene.git
+      ref: master
+```
+
+`ref: master` follows the tip and can break when the Flutter GPU API changes under it; pin `ref` to a specific commit for a reproducible build.
 
 ## Features
 

@@ -195,11 +195,40 @@ Labels we use beyond GitHub defaults:
 
 Don't apply both `feature proposal` and `roadmap` to the same issue — the former is "user asked for it", the latter is "we plan to build it."
 
+## Versioning and SDK constraints
+
+flutter_scene is coupled to Flutter GPU. That API has lived in the Flutter repository for years and ships across channels, but it is still experimental, gated behind the `--enable-flutter-gpu` flag and Impeller, and its surface still changes: breaking changes land on master first and flow outward over time. flutter_scene tracks the latest (master) API, so an SDK carrying an older Flutter GPU API revision won't match. The package is therefore coupled to a long-lived but still-evolving SDK API, and the policy follows from that:
+
+- **Never cap `environment.flutter` (leave the upper bound open).** Every popular package leaves it open (checked the pub.dev API for provider, riverpod, flutter_bloc, dio, go_router, shared_preferences, http, get_it, path_provider, url_launcher, image_picker, google_fonts: zero cap the Flutter upper bound). The Dart team discourages tight upper SDK bounds because they cause ecosystem-wide resolution conflicts. The only upper bound is the Dart `<4.0.0` next-major guard that `^3.x` already implies.
+- **Keep the Flutter lower bound low and in prerelease form** (e.g. `>=3.29.0-1.0.pre.242`). It must be prerelease form: a master build is `X.Y.0-1.0.pre.N`, which sorts below `X.Y.0`, so a plain `>=3.41.0` would exclude every master build on the 3.41 line, which is the primary audience right now. A low prerelease-form bound keeps master builds installable and does not over-restrict. The current pubspec already does this; don't "tidy" it into a plain stable tag.
+- **The version constraint cannot express Flutter GPU compatibility.** Whether a given SDK has the Flutter GPU API revision flutter_scene was built against, and whether the feature is even usable (gated by `--enable-flutter-gpu` and Impeller), is not encoded in the Flutter version number. So no lower or upper bound can guarantee a working setup; the constraint only asserts framework-API compatibility. This is why master users should pin via git (below) rather than rely on the resolver.
+- **Do not cap or retract old versions to engineer a clean failure.** A user on the tip of master breaks either way: either the functionality doesn't work (the "former"), or, if you capped, there's no compatible version (the "latter"). We accept the former. Forcing the latter is non-idiomatic, high-maintenance, and risks conflicts.
+- **Master-channel users depend via git, not pub.dev.** pub.dev's resolver can't track a moving unstable API. Direct them to `flutter_scene: { git: { url: ..., ref: ... } }`, with the master branch tracking Flutter master and named branches per Flutter release line. The README should carry this, and bug reports filed while tracking master get pointed here.
+
+## Release branch workflow
+
+Releases are cut from a long-lived `stable` branch, never from `master`. `master` is bleeding-edge (tracks Flutter master and the latest Flutter GPU API revision) and is never published.
+
+Model: `stable` is `master` plus a thin, persistent series of compatibility patches that bridge master's Flutter GPU API to the revision in the current stable Flutter. `git log master..stable` should only ever show those patches plus the release commit. Feature work is shared by being the same commits, not cherry-picked.
+
+Per release:
+
+1. `git checkout stable && git rebase master`. This replays the compat patches onto the latest master and brings all new features for free. Resolve conflicts only where master changed an API a patch bridges (that conflict is the signal to re-bridge it).
+2. Bump the pubspec version and add the CHANGELOG entry (the release commit). Keep CHANGELOG entries and code on `master` so they ride in via the rebase; only the version bump and the compat patches are `stable`-only.
+3. Run the Releasing checklist below from `stable`: dry-run, pana, publish, push the branch, then cut the GitHub release (which creates the `vX.Y.Z` tag).
+
+Notes:
+- **Tags are the permanent, reproducible record.** Rebasing/force-pushing `stable` moves the branch ref but never loses a tagged commit (the tag keeps it reachable). Release lineage lives in the tag set, not in `git log stable`.
+- **Enable `git rerere`** (`git config rerere.enabled true`) so repeated rebases of the patch series auto-replay your conflict resolutions.
+- **Drop obsolete compat patches** once a stable Flutter ships the API master already had: just don't replay them. The patch set shrinks toward zero as stable catches up, then the next API break on master starts a fresh one.
+- **Consumers depend on a tag or a pub.dev version, never on the `stable` branch HEAD** (it force-rebases). The README git-dependency snippet says this.
+- One `stable` branch supports the latest stable Flutter only. Fork a per-stable branch (same patch-series model off that stable's baseline) only if you ever need to ship fixes to multiple stable lines at once.
+
 ## Releasing
 
 There's now a single published package (`flutter_scene`); the old importer-first ordering is gone.
 
-1. Bump version in `packages/flutter_scene/pubspec.yaml` and add a CHANGELOG entry.
+1. On the `stable` branch (see Release branch workflow), bump the version in `packages/flutter_scene/pubspec.yaml` and add a CHANGELOG entry.
 2. `flutter pub publish --dry-run` from inside `packages/flutter_scene`.
 3. Run `pana` and confirm the score is still **160/160** before publishing:
    ```sh
@@ -211,6 +240,12 @@ There's now a single published package (`flutter_scene`); the old importer-first
    - **Static analysis in generated files (50 pts).** pana does NOT honor `analysis_options.yaml` excludes for its analysis check. Generated files (`*_flatbuffers.dart`, `lib/src/gpu/web/shader_bundle_generated.dart`) must carry `// ignore_for_file:` headers, not just be excluded.
    - **`description` length (docs pts).** Keep the pubspec `description` at 60+ characters; a shorter one is penalized.
    - **Platform/WASM support.** `platforms:` in the pubspec must list `web:`, and the package must stay WASM-compatible (no `dart:io` on the web dependency graph; see the build-hook conditional export).
-4. Publish: `flutter pub publish` from inside `packages/flutter_scene` (use `--force` to skip the prompt) on a clean `master` at the bumped version. The merge of the release-prep PR is what gets the bump onto `master` first.
-5. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
-6. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too; pub.dev blocks the publish otherwise. The Flutter SDK constraint can capture the master-channel requirement (`flutter: ">=3.29.0-1.0.pre.242"`).
+4. Publish: `flutter pub publish` from inside `packages/flutter_scene` (use `--force` to skip the prompt), from the `stable` branch at the release commit.
+5. Push the branch and cut a GitHub release, which creates the `vX.Y.Z` tag at the published commit:
+   ```sh
+   git push --force-with-lease origin stable
+   gh release create v0.14.3 --target <released-commit-sha> --title "v0.14.3" --generate-notes
+   ```
+   `gh release create` creates the tag if it doesn't exist (at `--target`), so this is how the release commit gets tagged. Pass the exact commit sha so the tag pins that commit and survives later `stable` rebases. Use the CHANGELOG entry as the notes body instead of `--generate-notes` if you prefer. The tag is the permanent, reproducible record (see Release branch workflow).
+6. After publishing, wait a few minutes for pub.dev's package-listing API to propagate before consumers can `flutter pub get`. The `/api/packages/<name>/versions/<version>` endpoint refreshes faster than `/api/packages/<name>` (which lists "latest").
+7. SDK constraints: don't pin to a prerelease Dart version (e.g. `>=3.10.0-dev`) unless publishing as a prerelease too; pub.dev blocks the publish otherwise. The Flutter constraint policy is in Versioning and SDK constraints above.
