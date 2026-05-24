@@ -15,6 +15,12 @@ void main() {
 
   for (final smoke in kSmokeScenes) {
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
+      // flutter_scene gates rendering on this future. Wait BEFORE building the
+      // widget: a Geometry/Material ctor (run in SmokeSceneView.initState during
+      // pumpWidget) touches baseShaderLibrary, which throws on web if touched
+      // before initialization completes.
+      await Scene.initializeStaticResources();
+
       await tester.pumpWidget(
         MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -24,9 +30,6 @@ void main() {
           ),
         ),
       );
-
-      // flutter_scene gates rendering on this future; wait before capturing.
-      await Scene.initializeStaticResources();
 
       // Let the post-ready repaint and GPU frames settle.
       for (var i = 0; i < 20; i++) {
