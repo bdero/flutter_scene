@@ -9,6 +9,16 @@ class PostProcessSettings {
   /// Color grading applied to the linear HDR scene color before tone
   /// mapping.
   final ColorGradingSettings colorGrading = ColorGradingSettings();
+
+  /// Channel separation toward the edges, sampled before grading.
+  final ChromaticAberrationSettings chromaticAberration =
+      ChromaticAberrationSettings();
+
+  /// Edge darkening applied after tone mapping.
+  final VignetteSettings vignette = VignetteSettings();
+
+  /// Animated noise applied after tone mapping.
+  final FilmGrainSettings filmGrain = FilmGrainSettings();
 }
 
 /// Color grading applied to the linear HDR scene color, before exposure
@@ -47,4 +57,39 @@ class ColorGradingSettings {
 
   /// Per-channel highlight scale (gain). `(1, 1, 1)` is neutral.
   Vector3 gain = Vector3.all(1.0);
+}
+
+/// Splits the red and blue channels toward the edges, like a simple lens.
+/// Sampled from the scene color before grading and tone mapping.
+class ChromaticAberrationSettings {
+  /// Whether the effect runs. Off by default.
+  bool enabled = false;
+
+  /// How far the channels separate at the edges. `0` is none.
+  double intensity = 0.5;
+}
+
+/// Darkens the image toward the edges, after tone mapping.
+class VignetteSettings {
+  /// Whether the vignette runs. Off by default.
+  bool enabled = false;
+
+  /// How dark the edges become. `0` is none, `1` is fully dark.
+  double intensity = 0.5;
+
+  /// Where the darkening begins, measured from the center. Smaller values
+  /// darken more of the image.
+  double radius = 0.75;
+
+  /// Softness of the falloff from clear to dark.
+  double smoothness = 0.5;
+}
+
+/// Adds animated noise over the final image, after tone mapping.
+class FilmGrainSettings {
+  /// Whether the grain runs. Off by default.
+  bool enabled = false;
+
+  /// Strength of the noise. `0` is none.
+  double intensity = 0.3;
 }

@@ -3,9 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
-/// Number of floats in the `ResolveInfo` uniform block: six std140 rows
+/// Number of floats in the `ResolveInfo` uniform block: nine std140 rows
 /// of four floats each.
-const int kResolveInfoFloatCount = 24;
+const int kResolveInfoFloatCount = 36;
 
 /// Packs the resolve pass's `ResolveInfo` uniform block.
 ///
@@ -13,12 +13,20 @@ const int kResolveInfoFloatCount = 24;
 /// `vec3` grading channels are stored as the first three floats of a
 /// 16-byte row so the packing is straightforward. Kept as a pure function
 /// so it can be unit tested without a GPU context.
+///
+/// [time] is a wall-clock seconds value used to animate film grain.
 Float32List packResolveInfo({
   required double exposure,
   required ToneMappingMode toneMappingMode,
   required bool flipY,
-  required ColorGradingSettings grading,
+  required double time,
+  required PostProcessSettings settings,
 }) {
+  final grading = settings.colorGrading;
+  final aberration = settings.chromaticAberration;
+  final vignette = settings.vignette;
+  final grain = settings.filmGrain;
+
   final info = Float32List(kResolveInfoFloatCount);
 
   // Row 0: resolve controls.
@@ -50,6 +58,21 @@ Float32List packResolveInfo({
   info[20] = grading.gain.x;
   info[21] = grading.gain.y;
   info[22] = grading.gain.z;
+
+  // Row 6: chromatic aberration, then time.
+  info[24] = aberration.enabled ? 1.0 : 0.0;
+  info[25] = aberration.intensity;
+  info[26] = time;
+
+  // Row 7: vignette.
+  info[28] = vignette.enabled ? 1.0 : 0.0;
+  info[29] = vignette.intensity;
+  info[30] = vignette.radius;
+  info[31] = vignette.smoothness;
+
+  // Row 8: film grain, then padding.
+  info[32] = grain.enabled ? 1.0 : 0.0;
+  info[33] = grain.intensity;
 
   return info;
 }

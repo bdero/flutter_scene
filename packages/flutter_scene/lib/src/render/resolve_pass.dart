@@ -20,16 +20,16 @@ class ResolvePass extends RenderGraphPass {
     required gpu.RenderTarget target,
     required double exposure,
     required ToneMappingMode toneMappingMode,
-    required ColorGradingSettings colorGrading,
+    required PostProcessSettings postProcess,
   }) : _target = target,
        _exposure = exposure,
        _toneMappingMode = toneMappingMode,
-       _colorGrading = colorGrading;
+       _postProcess = postProcess;
 
   final gpu.RenderTarget _target;
   final double _exposure;
   final ToneMappingMode _toneMappingMode;
-  final ColorGradingSettings _colorGrading;
+  final PostProcessSettings _postProcess;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -79,13 +79,18 @@ class ResolvePass extends RenderGraphPass {
       context.transientsBuffer.emplace(ByteData.sublistView(flipInfo)),
     );
 
+    // Wall-clock seconds (wrapped to keep float precision) drive the
+    // animated film grain.
+    final timeSeconds =
+        DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
     // The vertex stage handles the render-to-texture Y-flip, so the resolve
     // samples without a fragment-stage V-flip (flipY is always false).
     final info = packResolveInfo(
       exposure: _exposure,
       toneMappingMode: _toneMappingMode,
       flipY: false,
-      grading: _colorGrading,
+      time: timeSeconds,
+      settings: _postProcess,
     );
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('ResolveInfo'),
