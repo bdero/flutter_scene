@@ -29,6 +29,13 @@ PerspectiveCamera _camera() => PerspectiveCamera(
   target: vm.Vector3(0, 0, 0),
 );
 
+/// A slightly elevated view for the shadow scene, framed so the small
+/// ground plane stays central and the corners remain the magenta clear.
+PerspectiveCamera _shadowCamera() => PerspectiveCamera(
+  position: vm.Vector3(2.6, 2.4, 3.0),
+  target: vm.Vector3(0, 0.25, 0),
+);
+
 Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
   final material =
       PhysicallyBasedMaterial()
@@ -67,6 +74,38 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           vm.Matrix4.diagonal3Values(-1.0, 1.0, 1.0);
     scene.add(node);
     return (scene: scene, camera: _camera());
+  }),
+  // A directional light casting a shadow from a floating cuboid onto a
+  // ground plane. Exercises the ShadowPass (a depth-only shadow-map pass)
+  // and the lit material's shadow sampling, which the other scenes don't.
+  SmokeScene('directional_shadow', () {
+    final scene = Scene();
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(-0.4, -1.0, -0.35),
+      castsShadow: true,
+      shadowMaxDistance: 20.0,
+    );
+    // Ground plane (receiver), centered at the origin in the XZ plane.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.80, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    // Caster, floating above the plane so its shadow reads as a distinct
+    // blob (a stronger visual-diff signal than a shadow merged into the base).
+    final caster = _cuboid(vm.Vector4(0.85, 0.45, 0.25, 1.0), 0.0, 0.6)
+      ..localTransform =
+          vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)) *
+          vm.Matrix4.rotationY(0.6);
+    scene.add(caster);
+    return (scene: scene, camera: _shadowCamera());
   }),
 ];
 
