@@ -19,6 +19,9 @@ class ExampleSettings {
   /// Film grain shared across the examples.
   final FilmGrainSettings filmGrain = FilmGrainSettings();
 
+  /// Bloom shared across the examples.
+  final BloomSettings bloom = BloomSettings();
+
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
     final grading = scene.postProcess.colorGrading;
@@ -45,6 +48,12 @@ class ExampleSettings {
     final grain = scene.postProcess.filmGrain;
     grain.enabled = filmGrain.enabled;
     grain.intensity = filmGrain.intensity;
+
+    final sceneBloom = scene.postProcess.bloom;
+    sceneBloom.enabled = bloom.enabled;
+    sceneBloom.threshold = bloom.threshold;
+    sceneBloom.intensity = bloom.intensity;
+    sceneBloom.scatter = bloom.scatter;
   }
 }
 
