@@ -23,6 +23,14 @@ void main() {
       // ignore: avoid_print
       print('SMOKEDBG ${smoke.id}: init done');
 
+      // Bare frame with no flutter_scene content: isolates whether the
+      // headless runner pumps frames at all (vsync) from scene rendering.
+      await tester.pumpWidget(
+        const MaterialApp(home: ColoredBox(color: Color(0xFF202020))),
+      );
+      // ignore: avoid_print
+      print('SMOKEDBG ${smoke.id}: bare pumped');
+
       await tester.pumpWidget(
         MaterialApp(
           debugShowCheckedModeBanner: false,

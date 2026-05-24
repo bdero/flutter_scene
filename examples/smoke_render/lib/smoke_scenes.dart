@@ -127,9 +127,13 @@ class _SmokeSceneViewState extends State<SmokeSceneView> {
   @override
   void initState() {
     super.initState();
+    // ignore: avoid_print
+    print('SMOKEDBG ${widget.scene.id}: initState building scene');
     final setup = widget.scene.setup();
     _scene = setup.scene;
     _camera = setup.camera;
+    // ignore: avoid_print
+    print('SMOKEDBG ${widget.scene.id}: initState scene built');
 
     // The first paint happens before flutter_scene's static resources finish
     // loading and is skipped; this view is otherwise static, so trigger one
@@ -166,7 +170,11 @@ class _SmokePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // ignore: avoid_print
+    print('SMOKEDBG paint: before scene.render');
     scene.render(camera, canvas, viewport: Offset.zero & size);
+    // ignore: avoid_print
+    print('SMOKEDBG paint: after scene.render');
   }
 
   @override
