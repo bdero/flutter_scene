@@ -238,7 +238,12 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
       title: const Text('Post-processing'),
       initiallyExpanded: true,
       childrenPadding: EdgeInsets.zero,
-      children: [_buildColorGrading()],
+      children: [
+        _buildColorGrading(),
+        _buildChromaticAberration(),
+        _buildVignette(),
+        _buildFilmGrain(),
+      ],
     );
   }
 
@@ -269,6 +274,69 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         }),
         _slider('Tint', grading.tint, -1, 1, (v) {
           grading.tint = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildChromaticAberration() {
+    final settings = exampleSettings.chromaticAberration;
+    return ExpansionTile(
+      title: const Text('Chromatic aberration'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Intensity', settings.intensity, 0, 1, (v) {
+          settings.intensity = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildVignette() {
+    final settings = exampleSettings.vignette;
+    return ExpansionTile(
+      title: const Text('Vignette'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Intensity', settings.intensity, 0, 1, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Radius', settings.radius, 0, 1.5, (v) {
+          settings.radius = v;
+        }),
+        _slider('Smoothness', settings.smoothness, 0, 1, (v) {
+          settings.smoothness = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildFilmGrain() {
+    final settings = exampleSettings.filmGrain;
+    return ExpansionTile(
+      title: const Text('Film grain'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Intensity', settings.intensity, 0, 1, (v) {
+          settings.intensity = v;
         }),
       ],
     );

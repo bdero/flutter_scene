@@ -9,18 +9,42 @@ class ExampleSettings {
   /// Color grading shared across the examples.
   final ColorGradingSettings colorGrading = ColorGradingSettings();
 
+  /// Chromatic aberration shared across the examples.
+  final ChromaticAberrationSettings chromaticAberration =
+      ChromaticAberrationSettings();
+
+  /// Vignette shared across the examples.
+  final VignetteSettings vignette = VignetteSettings();
+
+  /// Film grain shared across the examples.
+  final FilmGrainSettings filmGrain = FilmGrainSettings();
+
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
-    final target = scene.postProcess.colorGrading;
-    target.enabled = colorGrading.enabled;
-    target.brightness = colorGrading.brightness;
-    target.contrast = colorGrading.contrast;
-    target.saturation = colorGrading.saturation;
-    target.temperature = colorGrading.temperature;
-    target.tint = colorGrading.tint;
-    target.lift.setFrom(colorGrading.lift);
-    target.gamma.setFrom(colorGrading.gamma);
-    target.gain.setFrom(colorGrading.gain);
+    final grading = scene.postProcess.colorGrading;
+    grading.enabled = colorGrading.enabled;
+    grading.brightness = colorGrading.brightness;
+    grading.contrast = colorGrading.contrast;
+    grading.saturation = colorGrading.saturation;
+    grading.temperature = colorGrading.temperature;
+    grading.tint = colorGrading.tint;
+    grading.lift.setFrom(colorGrading.lift);
+    grading.gamma.setFrom(colorGrading.gamma);
+    grading.gain.setFrom(colorGrading.gain);
+
+    final aberration = scene.postProcess.chromaticAberration;
+    aberration.enabled = chromaticAberration.enabled;
+    aberration.intensity = chromaticAberration.intensity;
+
+    final vig = scene.postProcess.vignette;
+    vig.enabled = vignette.enabled;
+    vig.intensity = vignette.intensity;
+    vig.radius = vignette.radius;
+    vig.smoothness = vignette.smoothness;
+
+    final grain = scene.postProcess.filmGrain;
+    grain.enabled = filmGrain.enabled;
+    grain.intensity = filmGrain.intensity;
   }
 }
 
