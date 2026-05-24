@@ -12,8 +12,8 @@ import 'package:flutter_scene/src/tone_mapping.dart';
 /// produced by [ScenePass], read from the blackboard) into the
 /// display-referred swapchain image: applies exposure, the tone mapping
 /// operator, and the display EOTF as a single full-screen pass.
-class TonemapPass extends RenderGraphPass {
-  TonemapPass({
+class ResolvePass extends RenderGraphPass {
+  ResolvePass({
     required gpu.RenderTarget target,
     required double exposure,
     required ToneMappingMode toneMappingMode,
@@ -47,12 +47,12 @@ class TonemapPass extends RenderGraphPass {
   );
 
   @override
-  String get name => 'TonemapPass';
+  String get name => 'ResolvePass';
 
   @override
   void execute(RenderGraphContext context) {
     final hdrColor = context.blackboard.require<gpu.Texture>(
-      kHdrColorBlackboardKey,
+      kSceneColorBlackboardKey,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();

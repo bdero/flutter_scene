@@ -11,13 +11,16 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 
-/// Render-graph blackboard key for the linear HDR scene-color texture
-/// [ScenePass] produces. The downstream tone-mapping pass reads it.
-const String kHdrColorBlackboardKey = 'hdr_scene_color';
+/// Render-graph blackboard key for the current scene-color texture.
+///
+/// [ScenePass] publishes the linear HDR scene color here. Post-processing
+/// passes read it and republish their own output, so the resolve pass
+/// reads whatever the last pass produced.
+const String kSceneColorBlackboardKey = 'scene_color';
 
 /// Draws the scene's render items (opaque, then depth-sorted
 /// translucent) into a floating-point HDR color target, publishing it on
-/// the render-graph blackboard for the tone-mapping pass to resolve. If a
+/// the render-graph blackboard for the resolve pass to read. If a
 /// [ShadowPass] ran earlier this frame its shadow map is picked up from
 /// the blackboard and threaded into the per-draw [Lighting].
 class ScenePass extends RenderGraphPass {
@@ -128,6 +131,6 @@ class ScenePass extends RenderGraphPass {
     encoder.flush();
     commandBuffer.submit();
 
-    context.blackboard.set(kHdrColorBlackboardKey, hdrColor);
+    context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
   }
 }
