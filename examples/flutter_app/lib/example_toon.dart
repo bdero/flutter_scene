@@ -17,6 +17,8 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_settings.dart';
+
 class ExampleToon extends StatefulWidget {
   const ExampleToon({super.key, this.elapsedSeconds = 0});
   final double elapsedSeconds;
@@ -282,6 +284,7 @@ class _ScenePainter extends CustomPainter {
       position: vm.Vector3(0, 2, -6),
       target: vm.Vector3(0, 1.5, 0),
     );
+    exampleSettings.applyTo(scene);
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 

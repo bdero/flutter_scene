@@ -14,6 +14,8 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:http/http.dart' as http;
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_settings.dart';
+
 import 'hdr_image.dart';
 import 'stress_cache.dart';
 // The in-memory offline (ahead-of-time) glTF -> .model conversion, used by the
@@ -882,10 +884,11 @@ class _StressSceneState extends State<_StressScene> {
             downloaded: _downloaded,
             total: _total,
           ),
-        // Top-right: the main app's dropdown owns the top-left corner.
+        // Below the example picker: the settings sidebar owns the
+        // top-right corner, and the app dropdown owns the top-left.
         Positioned(
-          right: 8,
-          top: 8,
+          left: 8,
+          top: 56,
           child: Material(
             color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
             shape: const CircleBorder(),
@@ -1280,6 +1283,7 @@ class _ScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final camera = PerspectiveCamera(position: position, target: target);
+    exampleSettings.applyTo(scene);
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 

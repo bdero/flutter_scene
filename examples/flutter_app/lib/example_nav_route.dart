@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_settings.dart';
+
 // Added to the heading derived from the lane tangent, to account for the
 // car model's forward axis. Flip the sign if the car faces backward.
 const double _carHeadingOffset = -pi / 2;
@@ -344,8 +346,8 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
           ),
           if (_carPartsReady)
             Positioned(
-              top: 8,
-              right: 8,
+              top: 56,
+              left: 8,
               child: _CarControlsMenu(
                 open: _controlsOpen,
                 onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
@@ -576,6 +578,7 @@ class _NavRoutePainter extends CustomPainter {
             ..scaleByDouble(carScale, carScale, carScale, 1.0);
     }
 
+    exampleSettings.applyTo(scene);
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 
