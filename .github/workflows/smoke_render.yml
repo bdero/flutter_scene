@@ -1,0 +1,88 @@
+name: smoke render
+
+# Renders a small set of deterministic scenes against the latest Flutter master
+# and uploads the frames to Argos for visual diffing. Catches rendering
+# regressions (black screen / nothing drawn / unlit) that crash tests miss.
+# Manual or daily. Notifies on failure.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * *" # daily, 07:00 UTC
+
+jobs:
+  macos:
+    name: macOS (Flutter master)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - name: Flutter and engine revision
+        run: flutter --version
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+      - name: Render smoke scenes
+        working-directory: examples/smoke_render
+        run: >
+          flutter drive
+          --driver=test_driver/integration_test.dart
+          --target=integration_test/smoke_test.dart
+          -d macos --enable-impeller --enable-flutter-gpu
+      - name: Upload to Argos
+        if: ${{ !cancelled() }}
+        working-directory: examples/smoke_render
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+        run: npx --yes @argos-ci/cli upload build/smoke --build-name macos
+      - name: Notify Discord on failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -sf -H "Content-Type: application/json" \
+              -d "{\"content\":\"Smoke render failed (macOS, Flutter master): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" \
+              "$DISCORD_WEBHOOK_URL" || true
+          fi
+
+  web:
+    name: web (Flutter master)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - name: Flutter and engine revision
+        run: flutter --version
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+      - uses: nanasess/setup-chromedriver@v2
+      - name: Render smoke scenes
+        working-directory: examples/smoke_render
+        run: |
+          chromedriver --port=4444 &
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/smoke_test.dart \
+            -d web-server --browser-name=chrome --headless --driver-port=4444
+      - name: Upload to Argos
+        if: ${{ !cancelled() }}
+        working-directory: examples/smoke_render
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+        run: npx --yes @argos-ci/cli upload build/smoke --build-name web
+      - name: Notify Discord on failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -sf -H "Content-Type: application/json" \
+              -d "{\"content\":\"Smoke render failed (web, Flutter master): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" \
+              "$DISCORD_WEBHOOK_URL" || true
+          fi
