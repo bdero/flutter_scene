@@ -240,6 +240,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
       childrenPadding: EdgeInsets.zero,
       children: [
         _buildColorGrading(),
+        _buildBloom(),
         _buildChromaticAberration(),
         _buildVignette(),
         _buildFilmGrain(),
@@ -337,6 +338,31 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         ),
         _slider('Intensity', settings.intensity, 0, 1, (v) {
           settings.intensity = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildBloom() {
+    final settings = exampleSettings.bloom;
+    return ExpansionTile(
+      title: const Text('Bloom'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Threshold', settings.threshold, 0, 4, (v) {
+          settings.threshold = v;
+        }),
+        _slider('Intensity', settings.intensity, 0, 2, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Scatter', settings.scatter, 0, 1, (v) {
+          settings.scatter = v;
         }),
       ],
     );
