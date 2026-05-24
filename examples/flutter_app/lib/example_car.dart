@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_settings.dart';
+
 class ExampleCar extends StatefulWidget {
   const ExampleCar({super.key, this.elapsedSeconds = 0});
   final double elapsedSeconds;
@@ -196,6 +198,7 @@ class _ScenePainter extends CustomPainter {
       target: vm.Vector3(0, 0, 0),
     );
 
+    exampleSettings.applyTo(scene);
     scene.render(camera, canvas, viewport: Offset.zero & size);
   }
 

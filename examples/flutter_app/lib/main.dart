@@ -8,6 +8,7 @@ import 'example_cuboid.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
+import 'example_settings.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
 
@@ -94,6 +95,9 @@ class _MyAppState extends State<MyApp> {
                     },
                   ),
                 ),
+                // Settings sidebar (top-right): global post-processing
+                // controls applied to whichever example is on screen.
+                const Positioned(top: 8, right: 8, child: _SettingsSidebar()),
               ],
             );
           },
@@ -145,6 +149,159 @@ class _ExamplePicker extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Collapsible settings sidebar (top-right). Edits the shared
+/// [exampleSettings], which every example applies to its scene before
+/// rendering, so one set of controls drives whichever example is shown.
+///
+/// Effects are grouped under collapsible sections so more can be added as
+/// the post-processing suite grows.
+class _SettingsSidebar extends StatefulWidget {
+  const _SettingsSidebar();
+
+  @override
+  State<_SettingsSidebar> createState() => _SettingsSidebarState();
+}
+
+class _SettingsSidebarState extends State<_SettingsSidebar> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = Theme.of(
+      context,
+    ).colorScheme.surface.withValues(alpha: 0.95);
+
+    if (!_expanded) {
+      return Material(
+        color: surface,
+        borderRadius: BorderRadius.circular(8),
+        elevation: 2,
+        child: IconButton(
+          icon: const Icon(Icons.tune),
+          tooltip: 'Settings',
+          onPressed: () => setState(() => _expanded = true),
+        ),
+      );
+    }
+
+    return Material(
+      color: surface,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 2,
+      child: SizedBox(
+        width: 320,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height - 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+                child: Row(
+                  children: [
+                    Text(
+                      'Settings',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Close settings',
+                      onPressed: () => setState(() => _expanded = false),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [_buildPostProcessing()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostProcessing() {
+    return ExpansionTile(
+      title: const Text('Post-processing'),
+      initiallyExpanded: true,
+      childrenPadding: EdgeInsets.zero,
+      children: [_buildColorGrading()],
+    );
+  }
+
+  Widget _buildColorGrading() {
+    final grading = exampleSettings.colorGrading;
+    return ExpansionTile(
+      title: const Text('Color grading'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: grading.enabled,
+          onChanged: (value) => setState(() => grading.enabled = value),
+        ),
+        _slider('Brightness', grading.brightness, 0, 2, (v) {
+          grading.brightness = v;
+        }),
+        _slider('Contrast', grading.contrast, 0, 2, (v) {
+          grading.contrast = v;
+        }),
+        _slider('Saturation', grading.saturation, 0, 2, (v) {
+          grading.saturation = v;
+        }),
+        _slider('Temperature', grading.temperature, -1, 1, (v) {
+          grading.temperature = v;
+        }),
+        _slider('Tint', grading.tint, -1, 1, (v) {
+          grading.tint = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) {
+    final textStyle = Theme.of(context).textTheme.bodySmall;
+    return Row(
+      children: [
+        SizedBox(width: 84, child: Text(label, style: textStyle)),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: (v) => setState(() => onChanged(v)),
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            value.toStringAsFixed(2),
+            style: textStyle,
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
     );
   }
 }
