@@ -12,6 +12,7 @@ import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
 import 'post_process/post_process.dart';
+import 'render/bloom_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
@@ -376,8 +377,12 @@ base class Scene implements SceneGraph {
         cascades: cascades,
       ),
     );
-    // Post-processing passes that operate on the linear HDR scene color
-    // run here, before the resolve. None yet.
+    // Bloom runs in HDR before the resolve, which composites it back in.
+    if (postProcess.bloom.enabled) {
+      graph.addPass(
+        BloomPass(dimensions: pixelSize, settings: postProcess.bloom),
+      );
+    }
     graph.addPass(
       ResolvePass(
         target: swapchainTarget,

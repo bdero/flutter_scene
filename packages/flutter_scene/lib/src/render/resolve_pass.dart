@@ -2,7 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/post_process/post_process.dart';
+import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/resolve_info.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
@@ -99,6 +101,21 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.getUniformSlot('scene_color'),
       hdrColor,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    // Bloom is present only when BloomPass ran this frame; otherwise a
+    // placeholder fills the slot and the resolve skips it (flag off).
+    final bloomTexture =
+        context.blackboard.get<gpu.Texture>(kBloomTextureBlackboardKey) ??
+        Material.getWhitePlaceholderTexture();
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('bloom_color'),
+      bloomTexture,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
         magFilter: gpu.MinMagFilter.linear,

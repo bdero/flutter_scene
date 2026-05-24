@@ -3,9 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
-/// Number of floats in the `ResolveInfo` uniform block: nine std140 rows
+/// Number of floats in the `ResolveInfo` uniform block: ten std140 rows
 /// of four floats each.
-const int kResolveInfoFloatCount = 36;
+const int kResolveInfoFloatCount = 40;
 
 /// Packs the resolve pass's `ResolveInfo` uniform block.
 ///
@@ -26,6 +26,7 @@ Float32List packResolveInfo({
   final aberration = settings.chromaticAberration;
   final vignette = settings.vignette;
   final grain = settings.filmGrain;
+  final bloom = settings.bloom;
 
   final info = Float32List(kResolveInfoFloatCount);
 
@@ -73,6 +74,10 @@ Float32List packResolveInfo({
   // Row 8: film grain, then padding.
   info[32] = grain.enabled ? 1.0 : 0.0;
   info[33] = grain.intensity;
+
+  // Row 9: bloom, then padding.
+  info[36] = bloom.enabled ? 1.0 : 0.0;
+  info[37] = bloom.intensity;
 
   return info;
 }

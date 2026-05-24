@@ -46,10 +46,16 @@ uniform ResolveInfo {
   float grain_intensity;
   float _pad4;
   float _pad5;
+
+  float bloom_enabled;
+  float bloom_intensity;
+  float _pad6;
+  float _pad7;
 }
 resolve_info;
 
 uniform sampler2D scene_color;
+uniform sampler2D bloom_color;
 
 in vec2 v_uv;
 
@@ -120,6 +126,11 @@ void main() {
     vec4 hdr = texture(scene_color, uv);
     color = Unpremultiply(hdr);
     alpha = hdr.a;
+  }
+
+  // Bloom is computed in HDR by BloomPass and added back here.
+  if (resolve_info.bloom_enabled > 0.5) {
+    color += texture(bloom_color, uv).rgb * resolve_info.bloom_intensity;
   }
 
   color *= resolve_info.exposure;
