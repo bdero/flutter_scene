@@ -8,3 +8,4 @@ workspace:
   - packages/flutter_scene
   - examples/flutter_app
   - examples/flutter_gpu_shim_smoke
+  - examples/smoke_render
