@@ -1,7 +1,9 @@
 // Resolve pass: reads the linear HDR scene color (with premultiplied
-// alpha), applies exposure, optional color grading, a tone mapping
-// operator, and the display EOTF, and writes the display-referred
-// swapchain image.
+// alpha) and produces the display-referred swapchain image. In order it
+// applies chromatic aberration (at sample time), exposure, color grading,
+// a tone mapping operator, the display EOTF, then vignette and film grain.
+// Each effect is gated by a flag, so a disabled effect costs only a
+// branch and leaves the image unchanged.
 uniform ResolveInfo {
   float exposure;
   // 0 = Khronos PBR Neutral, 1 = ACES filmic, 2 = Reinhard, else linear.
@@ -29,6 +31,21 @@ uniform ResolveInfo {
   vec4 lift;
   vec4 gamma;
   vec4 gain;
+
+  float chromatic_aberration_enabled;
+  float chromatic_aberration_intensity;
+  float time;
+  float _pad3;
+
+  float vignette_enabled;
+  float vignette_intensity;
+  float vignette_radius;
+  float vignette_smoothness;
+
+  float grain_enabled;
+  float grain_intensity;
+  float _pad4;
+  float _pad5;
 }
 resolve_info;
 
@@ -72,12 +89,38 @@ vec3 ApplyColorGrading(vec3 color) {
   return color;
 }
 
+// Un-premultiplies a sampled premultiplied-alpha color.
+vec3 Unpremultiply(vec4 c) { return c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
+
+// Value noise for film grain. Mixing time in as a third coordinate
+// re-randomizes every pixel each frame, rather than sliding one fixed
+// noise field across the screen.
+float GrainNoise(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+
 void main() {
   vec2 uv = resolve_info.flip_y > 0.5 ? vec2(v_uv.x, 1.0 - v_uv.y) : v_uv;
-  vec4 hdr = texture(scene_color, uv);
-  // Un-premultiply so the curves see the actual surface color, then
-  // re-premultiply for compositing onto the Flutter canvas.
-  vec3 color = hdr.a > 0.0 ? hdr.rgb / hdr.a : vec3(0.0);
+
+  // Sample the scene color. Chromatic aberration pulls the red and blue
+  // channels from offset positions that grow toward the edges.
+  vec3 color;
+  float alpha;
+  if (resolve_info.chromatic_aberration_enabled > 0.5) {
+    vec2 offset =
+        (uv - 0.5) * resolve_info.chromatic_aberration_intensity * 0.04;
+    vec4 center = texture(scene_color, uv);
+    color = vec3(Unpremultiply(texture(scene_color, uv + offset)).r,
+                 Unpremultiply(center).g,
+                 Unpremultiply(texture(scene_color, uv - offset)).b);
+    alpha = center.a;
+  } else {
+    vec4 hdr = texture(scene_color, uv);
+    color = Unpremultiply(hdr);
+    alpha = hdr.a;
+  }
 
   color *= resolve_info.exposure;
   if (resolve_info.grading_enabled > 0.5) {
@@ -95,9 +138,26 @@ void main() {
     mapped = clamp(color, 0.0, 1.0);
   }
 
+  // Vignette: darken toward the edges of the screen.
+  if (resolve_info.vignette_enabled > 0.5) {
+    float dist = length((v_uv - 0.5) * 2.0);
+    float falloff = smoothstep(
+        resolve_info.vignette_radius,
+        resolve_info.vignette_radius + resolve_info.vignette_smoothness,
+        dist);
+    mapped *= 1.0 - falloff * resolve_info.vignette_intensity;
+  }
+
+  // Film grain: animated per-pixel noise.
+  if (resolve_info.grain_enabled > 0.5) {
+    float n =
+        GrainNoise(vec3(gl_FragCoord.xy, resolve_info.time * 60.0)) - 0.5;
+    mapped = max(mapped + n * resolve_info.grain_intensity, vec3(0.0));
+  }
+
 #ifndef IMPELLER_TARGET_METAL
   mapped = pow(mapped, vec3(1.0 / kGamma));
 #endif
 
-  frag_color = vec4(mapped * hdr.a, hdr.a);
+  frag_color = vec4(mapped * alpha, alpha);
 }

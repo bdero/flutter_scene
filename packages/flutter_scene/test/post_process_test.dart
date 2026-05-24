@@ -26,9 +26,35 @@ void main() {
     });
   });
 
+  group('overlay settings defaults', () {
+    test('chromatic aberration', () {
+      final aberration = ChromaticAberrationSettings();
+      expect(aberration.enabled, isFalse);
+      expect(aberration.intensity, 0.5);
+    });
+
+    test('vignette', () {
+      final vignette = VignetteSettings();
+      expect(vignette.enabled, isFalse);
+      expect(vignette.intensity, 0.5);
+      expect(vignette.radius, 0.75);
+      expect(vignette.smoothness, 0.5);
+    });
+
+    test('film grain', () {
+      final grain = FilmGrainSettings();
+      expect(grain.enabled, isFalse);
+      expect(grain.intensity, 0.3);
+    });
+  });
+
   group('PostProcessSettings', () {
-    test('color grading is off by default', () {
-      expect(PostProcessSettings().colorGrading.enabled, isFalse);
+    test('every effect is off by default', () {
+      final settings = PostProcessSettings();
+      expect(settings.colorGrading.enabled, isFalse);
+      expect(settings.chromaticAberration.enabled, isFalse);
+      expect(settings.vignette.enabled, isFalse);
+      expect(settings.filmGrain.enabled, isFalse);
     });
   });
 
@@ -38,9 +64,11 @@ void main() {
         exposure: 1.0,
         toneMappingMode: ToneMappingMode.pbrNeutral,
         flipY: false,
-        grading: ColorGradingSettings(),
+        time: 0.0,
+        settings: PostProcessSettings(),
       );
       expect(info.length, kResolveInfoFloatCount);
+      expect(info.length, 36);
     });
 
     test('packs the resolve controls', () {
@@ -48,7 +76,8 @@ void main() {
         exposure: 2.5,
         toneMappingMode: ToneMappingMode.reinhard,
         flipY: true,
-        grading: ColorGradingSettings(),
+        time: 0.0,
+        settings: PostProcessSettings(),
       );
       expect(info[0], 2.5);
       expect(info[1], ToneMappingMode.reinhard.index.toDouble());
@@ -61,28 +90,30 @@ void main() {
         exposure: 1.0,
         toneMappingMode: ToneMappingMode.pbrNeutral,
         flipY: false,
-        grading: ColorGradingSettings(),
+        time: 0.0,
+        settings: PostProcessSettings(),
       );
       expect(info[2], 0.0);
     });
 
     test('packs grading fields at their std140 slots', () {
-      final grading =
-          ColorGradingSettings()
-            ..enabled = true
-            ..brightness = 1.1
-            ..contrast = 1.2
-            ..saturation = 0.9
-            ..temperature = 0.3
-            ..tint = -0.2
-            ..lift = Vector3(0.01, 0.02, 0.03)
-            ..gamma = Vector3(1.1, 1.2, 1.3)
-            ..gain = Vector3(0.8, 0.9, 1.0);
+      final settings = PostProcessSettings();
+      settings.colorGrading
+        ..enabled = true
+        ..brightness = 1.1
+        ..contrast = 1.2
+        ..saturation = 0.9
+        ..temperature = 0.3
+        ..tint = -0.2
+        ..lift = Vector3(0.01, 0.02, 0.03)
+        ..gamma = Vector3(1.1, 1.2, 1.3)
+        ..gain = Vector3(0.8, 0.9, 1.0);
       final info = packResolveInfo(
         exposure: 1.0,
         toneMappingMode: ToneMappingMode.pbrNeutral,
         flipY: false,
-        grading: grading,
+        time: 0.0,
+        settings: settings,
       );
 
       expect(info[3], 1.0);
@@ -110,6 +141,41 @@ void main() {
       expect(info[20], closeTo(0.8, 1e-6));
       expect(info[21], closeTo(0.9, 1e-6));
       expect(info[22], closeTo(1.0, 1e-6));
+    });
+
+    test('packs overlay fields and time at their std140 slots', () {
+      final settings = PostProcessSettings();
+      settings.chromaticAberration
+        ..enabled = true
+        ..intensity = 0.7;
+      settings.vignette
+        ..enabled = true
+        ..intensity = 0.6
+        ..radius = 0.8
+        ..smoothness = 0.3;
+      settings.filmGrain
+        ..enabled = true
+        ..intensity = 0.25;
+      final info = packResolveInfo(
+        exposure: 1.0,
+        toneMappingMode: ToneMappingMode.pbrNeutral,
+        flipY: false,
+        time: 2.0,
+        settings: settings,
+      );
+
+      expect(info[24], 1.0);
+      expect(info[25], closeTo(0.7, 1e-6));
+      expect(info[26], closeTo(2.0, 1e-6));
+      expect(info[27], 0.0);
+      expect(info[28], 1.0);
+      expect(info[29], closeTo(0.6, 1e-6));
+      expect(info[30], closeTo(0.8, 1e-6));
+      expect(info[31], closeTo(0.3, 1e-6));
+      expect(info[32], 1.0);
+      expect(info[33], closeTo(0.25, 1e-6));
+      expect(info[34], 0.0);
+      expect(info[35], 0.0);
     });
   });
 }

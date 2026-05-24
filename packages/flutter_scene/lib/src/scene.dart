@@ -383,7 +383,7 @@ base class Scene implements SceneGraph {
         target: swapchainTarget,
         exposure: exposure,
         toneMappingMode: toneMapping,
-        colorGrading: postProcess.colorGrading,
+        postProcess: postProcess,
       ),
     );
     // Post-processing passes that operate on the display image run here,
