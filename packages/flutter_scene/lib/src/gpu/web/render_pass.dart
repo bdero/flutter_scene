@@ -146,6 +146,17 @@ base class RenderPass {
   RenderPass._(this._gpuContext, this._target) {
     _bindFramebuffer();
     _applyLoadActions();
+    // Reset the fixed-function state that GL holds globally but Impeller
+    // scopes per pass. Cull mode and winding order otherwise leak from the
+    // previous pass's last draw into a pass that doesn't set them (e.g. the
+    // full-screen tonemap blit, which inherits whatever the scene pass left
+    // bound). A mirrored (negative-determinant) node leaves the winding
+    // flipped, which would then back-face cull the blit and blank the frame.
+    // Mirrors Impeller's GLES backend, which re-initialises this state at the
+    // start of every pass encode.
+    final gl = _gpuContext._gl;
+    gl.disable(web.WebGL2RenderingContext.CULL_FACE);
+    gl.frontFace(web.WebGL2RenderingContext.CCW);
   }
 
   final GpuContext _gpuContext;
