@@ -15,7 +15,7 @@ import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
-import 'render/tonemap_pass.dart';
+import 'render/resolve_pass.dart';
 import 'render/y_flip.dart';
 import 'shaders.dart';
 import 'surface.dart';
@@ -371,13 +371,17 @@ base class Scene implements SceneGraph {
         cascades: cascades,
       ),
     );
+    // Post-processing passes that operate on the linear HDR scene color
+    // run here, before the resolve. None yet.
     graph.addPass(
-      TonemapPass(
+      ResolvePass(
         target: swapchainTarget,
         exposure: exposure,
         toneMappingMode: toneMapping,
       ),
     );
+    // Post-processing passes that operate on the display image run here,
+    // after the resolve. None yet.
     graph.execute(
       transientsBuffer: transientsBuffer,
       texturePool: surface.transientTexturePool,
