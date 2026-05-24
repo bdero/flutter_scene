@@ -100,16 +100,26 @@ vec3 EvaluateDiffuseSH(vec3 n) {
          frag_info.diffuse_sh8.xyz * (0.546274 * (n.x * n.x - n.y * n.y));
 }
 
-// A 16-tap Poisson disk, sampled by the soft-shadow PCF kernel.
-const vec2 kPoissonDisk[16] = vec2[](
-    vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
-    vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
-    vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
-    vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379),
-    vec2(0.44323325, -0.97511554), vec2(0.53742981, -0.47373420),
-    vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
-    vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
-    vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790));
+// One rotated Poisson-disk PCF tap into a cascade's atlas tile. Factored out
+// so the kernel can be unrolled with inline literals at the call site (see the
+// note in SampleCascade); the compiler inlines this.
+float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
+                float inv_count, float receiver_depth) {
+  vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
+  // Keep samples a texel inside this cascade's tile, so bilinear filtering of
+  // the atlas never reaches across the tile boundary into a neighbouring
+  // cascade's depths.
+  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+                   vec2(1.0 - frag_info.shadow_texel_size));
+  vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
+  // The atlas is a render-to-texture target; flip V to match its sampled Y
+  // orientation (see render_target_flip_y).
+  if (frag_info.render_target_flip_y > 0.5) {
+    atlas_uv.y = 1.0 - atlas_uv.y;
+  }
+  float caster_depth = texture(shadow_map, atlas_uv).r;
+  return receiver_depth <= caster_depth ? 1.0 : 0.0;
+}
 
 // Samples one cascade's tile of the shadow atlas strip with a rotated
 // 16-tap Poisson-disk PCF. `world_pos` and `n` are world-space.
@@ -153,24 +163,41 @@ float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
   float angle = noise * 6.28318530718;
   float ca = cos(angle);
   float sa = sin(angle);
+
+  // 16-tap Poisson-disk PCF, unrolled with the kernel as inline literals.
+  //
+  // TODO(flutter_scene): this would naturally loop over a file-scope
+  // `const vec2 kPoissonDisk[16] = vec2[](...)`, but *any* const array (even
+  // one filled element by element, which the SPIR-V optimizer folds back into
+  // a constant) makes impellerc/SPIRV-Cross emit a GLSL array constructor
+  // (`vec2[](...)`) in its `#version 100` GLES output. That is invalid
+  // ES 1.00, so the shader fails to compile on conformant ES drivers
+  // (e.g. Mesa/llvmpipe under headless CI); lenient drivers accept it. Flutter
+  // GPU shaders should compile anywhere Flutter runs, so the real fix belongs
+  // upstream (impellerc should emit valid ES 1.00, or the bundle's GLES stage
+  // should target ES 3.00). Restore the const-array loop once that lands.
+  // See: <upstream issue>.
+#define _SHADOW_TAP(px, py) \
+  ShadowTap(vec2(px, py), ca, sa, radius, uv, cascade, inv_count, \
+            receiver_depth)
   float lit = 0.0;
-  for (int i = 0; i < 16; i++) {
-    vec2 p = kPoissonDisk[i];
-    vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
-    // Keep samples a texel inside this cascade's tile, so bilinear
-    // filtering of the atlas never reaches across the tile boundary
-    // into a neighbouring cascade's depths.
-    vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
-                     vec2(1.0 - frag_info.shadow_texel_size));
-    vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
-    // The atlas is a render-to-texture target; flip V to match its
-    // sampled Y orientation (see render_target_flip_y).
-    if (frag_info.render_target_flip_y > 0.5) {
-      atlas_uv.y = 1.0 - atlas_uv.y;
-    }
-    float caster_depth = texture(shadow_map, atlas_uv).r;
-    lit += receiver_depth <= caster_depth ? 1.0 : 0.0;
-  }
+  lit += _SHADOW_TAP(-0.94201624, -0.39906216);
+  lit += _SHADOW_TAP(0.94558609, -0.76890725);
+  lit += _SHADOW_TAP(-0.09418410, -0.92938870);
+  lit += _SHADOW_TAP(0.34495938, 0.29387760);
+  lit += _SHADOW_TAP(-0.91588581, 0.45771432);
+  lit += _SHADOW_TAP(-0.81544232, -0.87912464);
+  lit += _SHADOW_TAP(-0.38277543, 0.27676845);
+  lit += _SHADOW_TAP(0.97484398, 0.75648379);
+  lit += _SHADOW_TAP(0.44323325, -0.97511554);
+  lit += _SHADOW_TAP(0.53742981, -0.47373420);
+  lit += _SHADOW_TAP(-0.26496911, -0.41893023);
+  lit += _SHADOW_TAP(0.79197514, 0.19090188);
+  lit += _SHADOW_TAP(-0.24188840, 0.99706507);
+  lit += _SHADOW_TAP(-0.81409955, 0.91437590);
+  lit += _SHADOW_TAP(0.19984126, 0.78641367);
+  lit += _SHADOW_TAP(0.14383161, -0.14100790);
+#undef _SHADOW_TAP
   float shadow = lit / 16.0;
 
   // Only the last cascade has a real outer edge (inner cascades hand
