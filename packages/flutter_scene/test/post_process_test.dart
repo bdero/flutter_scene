@@ -46,6 +46,14 @@ void main() {
       expect(grain.enabled, isFalse);
       expect(grain.intensity, 0.3);
     });
+
+    test('bloom', () {
+      final bloom = BloomSettings();
+      expect(bloom.enabled, isFalse);
+      expect(bloom.threshold, 1.0);
+      expect(bloom.intensity, 0.5);
+      expect(bloom.scatter, 0.7);
+    });
   });
 
   group('PostProcessSettings', () {
@@ -55,6 +63,7 @@ void main() {
       expect(settings.chromaticAberration.enabled, isFalse);
       expect(settings.vignette.enabled, isFalse);
       expect(settings.filmGrain.enabled, isFalse);
+      expect(settings.bloom.enabled, isFalse);
     });
   });
 
@@ -68,7 +77,7 @@ void main() {
         settings: PostProcessSettings(),
       );
       expect(info.length, kResolveInfoFloatCount);
-      expect(info.length, 36);
+      expect(info.length, 40);
     });
 
     test('packs the resolve controls', () {
@@ -156,6 +165,9 @@ void main() {
       settings.filmGrain
         ..enabled = true
         ..intensity = 0.25;
+      settings.bloom
+        ..enabled = true
+        ..intensity = 0.8;
       final info = packResolveInfo(
         exposure: 1.0,
         toneMappingMode: ToneMappingMode.pbrNeutral,
@@ -176,6 +188,10 @@ void main() {
       expect(info[33], closeTo(0.25, 1e-6));
       expect(info[34], 0.0);
       expect(info[35], 0.0);
+      expect(info[36], 1.0);
+      expect(info[37], closeTo(0.8, 1e-6));
+      expect(info[38], 0.0);
+      expect(info[39], 0.0);
     });
   });
 }

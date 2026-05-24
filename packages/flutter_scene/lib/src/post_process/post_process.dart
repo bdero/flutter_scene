@@ -19,6 +19,10 @@ class PostProcessSettings {
 
   /// Animated noise applied after tone mapping.
   final FilmGrainSettings filmGrain = FilmGrainSettings();
+
+  /// Bright areas blooming into their surroundings, added in HDR before
+  /// tone mapping.
+  final BloomSettings bloom = BloomSettings();
 }
 
 /// Color grading applied to the linear HDR scene color, before exposure
@@ -92,4 +96,20 @@ class FilmGrainSettings {
 
   /// Strength of the noise. `0` is none.
   double intensity = 0.3;
+}
+
+/// Makes bright areas bleed light into their surroundings. Computed in a
+/// chain of HDR passes and added back to the scene before tone mapping.
+class BloomSettings {
+  /// Whether bloom runs. Off by default.
+  bool enabled = false;
+
+  /// HDR brightness above which a pixel starts to bloom.
+  double threshold = 1.0;
+
+  /// How strongly the bloom is added back to the scene. `0` is none.
+  double intensity = 0.5;
+
+  /// Spread of the blur, from `0` to `1`. Higher values bloom wider.
+  double scatter = 0.7;
 }

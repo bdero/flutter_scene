@@ -34,5 +34,17 @@
     "YFlipProbeFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_yflip_probe.frag"
+    },
+    "BloomThresholdFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_bloom_threshold.frag"
+    },
+    "BloomDownsampleFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_bloom_downsample.frag"
+    },
+    "BloomUpsampleFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_bloom_upsample.frag"
     }
 }
