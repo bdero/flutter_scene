@@ -23,9 +23,9 @@
         "type": "vertex",
         "file": "shaders/flutter_scene_fullscreen.vert"
     },
-    "TonemapFragment": {
+    "ResolveFragment": {
         "type": "fragment",
-        "file": "shaders/flutter_scene_tonemap.frag"
+        "file": "shaders/flutter_scene_resolve.frag"
     },
     "PrefilterEnvFragment": {
         "type": "fragment",

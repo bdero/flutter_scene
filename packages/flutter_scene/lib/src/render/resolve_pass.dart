@@ -2,7 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
+import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/resolve_info.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
@@ -10,25 +12,29 @@ import 'package:flutter_scene/src/tone_mapping.dart';
 
 /// Resolves the linear HDR scene color (a floating-point render target
 /// produced by [ScenePass], read from the blackboard) into the
-/// display-referred swapchain image: applies exposure, the tone mapping
-/// operator, and the display EOTF as a single full-screen pass.
+/// display-referred swapchain image: applies exposure, optional color
+/// grading, the tone mapping operator, and the display EOTF as a single
+/// full-screen pass.
 class ResolvePass extends RenderGraphPass {
   ResolvePass({
     required gpu.RenderTarget target,
     required double exposure,
     required ToneMappingMode toneMappingMode,
+    required ColorGradingSettings colorGrading,
   }) : _target = target,
        _exposure = exposure,
-       _toneMappingMode = toneMappingMode;
+       _toneMappingMode = toneMappingMode,
+       _colorGrading = colorGrading;
 
   final gpu.RenderTarget _target;
   final double _exposure;
   final ToneMappingMode _toneMappingMode;
+  final ColorGradingSettings _colorGrading;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
   static final gpu.Shader _fragmentShader =
-      baseShaderLibrary['TonemapFragment']!;
+      baseShaderLibrary['ResolveFragment']!;
 
   // Two triangles of NDC positions covering the screen (6 vec2s).
   static final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext
@@ -73,21 +79,20 @@ class ResolvePass extends RenderGraphPass {
       context.transientsBuffer.emplace(ByteData.sublistView(flipInfo)),
     );
 
-    // TonemapInfo std140: { float exposure; float tone_mapping_mode;
-    // float flip_y; float pad; }. flip_y flips the V coordinate when
-    // sampling the HDR target. With the vertex-stage flip above, every
-    // backend's HDR target is now stored top-down, so no sampling flip is
-    // needed (0.0). Kept as a uniform for the shader contract.
-    final info = Float32List(4);
-    info[0] = _exposure;
-    info[1] = _toneMappingMode.index.toDouble();
-    info[2] = 0.0;
+    // The vertex stage handles the render-to-texture Y-flip, so the resolve
+    // samples without a fragment-stage V-flip (flipY is always false).
+    final info = packResolveInfo(
+      exposure: _exposure,
+      toneMappingMode: _toneMappingMode,
+      flipY: false,
+      grading: _colorGrading,
+    );
     renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('TonemapInfo'),
+      _fragmentShader.getUniformSlot('ResolveInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('hdr_color'),
+      _fragmentShader.getUniformSlot('scene_color'),
       hdrColor,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
