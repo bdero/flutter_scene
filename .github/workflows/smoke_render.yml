@@ -11,10 +11,15 @@ on:
     - cron: "0 7 * * *" # daily, 07:00 UTC
 
 jobs:
-  macos:
-    name: macOS (Flutter master)
-    runs-on: macos-latest
-    timeout-minutes: 12
+  linux:
+    name: linux (Flutter master)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # No GPU on the runner; force Mesa's software rasterizers (GL llvmpipe,
+      # Vulkan lavapipe) so Impeller has a backend under Xvfb.
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GALLIUM_DRIVER: llvmpipe
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -22,15 +27,22 @@ jobs:
           channel: master
       - name: Flutter and engine revision
         run: flutter --version
-      - run: flutter config --enable-native-assets
+      - name: Install Linux desktop build deps + software GL/Vulkan + Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            xvfb libgl1-mesa-dri libegl-mesa0 libgles2 mesa-vulkan-drivers
+      - run: flutter config --enable-linux-desktop --enable-native-assets
       - run: flutter pub get
       - name: Render smoke scenes
         working-directory: examples/smoke_render
         run: >
+          xvfb-run -a -s "-screen 0 1280x1024x24"
           flutter drive
           --driver=test_driver/integration_test.dart
           --target=integration_test/smoke_test.dart
-          -d macos --enable-impeller --enable-flutter-gpu
+          -d linux --enable-impeller --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
@@ -38,7 +50,7 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name macos 2>&1) || true
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name linux 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
@@ -50,7 +62,7 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (macOS, Flutter master). Run: $RUN_URL"
+          CONTENT="Smoke render failed (linux, Flutter master). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true

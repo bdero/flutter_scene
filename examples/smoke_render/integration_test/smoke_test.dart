@@ -20,16 +20,6 @@ void main() {
       // pumpWidget) touches baseShaderLibrary, which throws on web if touched
       // before initialization completes.
       await Scene.initializeStaticResources();
-      // ignore: avoid_print
-      print('SMOKEDBG ${smoke.id}: init done');
-
-      // Bare frame with no flutter_scene content: isolates whether the
-      // headless runner pumps frames at all (vsync) from scene rendering.
-      await tester.pumpWidget(
-        const MaterialApp(home: ColoredBox(color: Color(0xFF202020))),
-      );
-      // ignore: avoid_print
-      print('SMOKEDBG ${smoke.id}: bare pumped');
 
       await tester.pumpWidget(
         MaterialApp(
@@ -40,23 +30,17 @@ void main() {
           ),
         ),
       );
-      // ignore: avoid_print
-      print('SMOKEDBG ${smoke.id}: pumped');
 
       // Let the post-ready repaint and GPU frames settle.
       for (var i = 0; i < 20; i++) {
         await tester.pump(const Duration(milliseconds: 50));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
-      // ignore: avoid_print
-      print('SMOKEDBG ${smoke.id}: settled');
 
       final boundary =
           smokeSceneKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
-      // ignore: avoid_print
-      print('SMOKEDBG ${smoke.id}: toImage done');
       final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
       final rgba =
           (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
