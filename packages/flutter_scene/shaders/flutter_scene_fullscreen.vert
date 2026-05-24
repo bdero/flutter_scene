@@ -5,7 +5,7 @@
 // UV is derived from the position; V increases downward (origin at the
 // top), matching the standard texture-sampling convention. Passes that
 // sample a render-to-texture input account for that target's per-backend
-// Y orientation themselves (see flutter_scene_tonemap.frag's flip_y).
+// Y orientation themselves (see flutter_scene_resolve.frag's flip_y).
 // flip_y is -1 on backends where flutter_scene flips render-to-texture in
 // the vertex stage (the OpenGL ES Y-flip workaround; see y_flip.dart), +1
 // otherwise. It negates gl_Position.y so this pass's offscreen target is
@@ -14,7 +14,6 @@ uniform FlipInfo {
   float flip_y;
 }
 flip_info;
-
 in vec2 position;
 
 out vec2 v_uv;

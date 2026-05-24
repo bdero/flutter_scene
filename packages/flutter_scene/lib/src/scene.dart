@@ -11,6 +11,7 @@ import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
+import 'post_process/post_process.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
@@ -203,6 +204,10 @@ base class Scene implements SceneGraph {
   /// display image. Defaults to [ToneMappingMode.pbrNeutral].
   ToneMappingMode toneMapping = ToneMappingMode.pbrNeutral;
 
+  /// Built-in post-processing settings, such as color grading. Every
+  /// effect is off by default.
+  final PostProcessSettings postProcess = PostProcessSettings();
+
   @override
   void add(Node child) {
     root.add(child);
@@ -378,6 +383,7 @@ base class Scene implements SceneGraph {
         target: swapchainTarget,
         exposure: exposure,
         toneMappingMode: toneMapping,
+        colorGrading: postProcess.colorGrading,
       ),
     );
     // Post-processing passes that operate on the display image run here,

@@ -351,7 +351,7 @@ void main() {
 
   // Linear HDR, premultiplied by alpha. Exposure, the tone-mapping
   // operator, and the display EOTF are applied later by the tone-mapping
-  // resolve pass (see flutter_scene_tonemap.frag), so this writes into a
+  // resolve pass (see flutter_scene_resolve.frag), so this writes into a
   // floating-point scene-color target.
   vec3 out_color = ambient + direct + emissive;
   frag_color = vec4(out_color, 1.0) * alpha;
