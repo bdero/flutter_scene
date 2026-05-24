@@ -3,7 +3,7 @@ name: smoke render
 # Renders a small set of deterministic scenes against the latest Flutter master
 # and uploads the frames to Argos for visual diffing. Catches rendering
 # regressions (black screen / nothing drawn / unlit) that crash tests miss.
-# Manual or daily. Notifies on failure.
+# Manual or daily. Notifies Discord on failure.
 
 on:
   workflow_dispatch:
@@ -32,21 +32,28 @@ jobs:
           --target=integration_test/smoke_test.dart
           -d macos --enable-impeller --enable-flutter-gpu
       - name: Upload to Argos
+        id: argos
         if: ${{ !cancelled() }}
         working-directory: examples/smoke_render
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
-        run: npx --yes @argos-ci/cli upload build/smoke --build-name macos
+        run: |
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name macos 2>&1) || true
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ARGOS_URL: ${{ steps.argos.outputs.build_url }}
         run: |
-          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-            curl -sf -H "Content-Type: application/json" \
-              -d "{\"content\":\"Smoke render failed (macOS, Flutter master): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" \
-              "$DISCORD_WEBHOOK_URL" || true
-          fi
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CONTENT="Smoke render failed (macOS, Flutter master). Run: $RUN_URL"
+          [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   web:
     name: web (Flutter master)
@@ -71,18 +78,25 @@ jobs:
             --target=integration_test/smoke_test.dart \
             -d web-server --browser-name=chrome --headless --driver-port=4444
       - name: Upload to Argos
+        id: argos
         if: ${{ !cancelled() }}
         working-directory: examples/smoke_render
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
-        run: npx --yes @argos-ci/cli upload build/smoke --build-name web
+        run: |
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name web 2>&1) || true
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ARGOS_URL: ${{ steps.argos.outputs.build_url }}
         run: |
-          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-            curl -sf -H "Content-Type: application/json" \
-              -d "{\"content\":\"Smoke render failed (web, Flutter master): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}" \
-              "$DISCORD_WEBHOOK_URL" || true
-          fi
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CONTENT="Smoke render failed (web, Flutter master). Run: $RUN_URL"
+          [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
