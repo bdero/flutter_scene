@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -22,14 +22,6 @@ void main() {
       // pumpWidget) touches baseShaderLibrary, which throws on web if touched
       // before initialization completes.
       await Scene.initializeStaticResources();
-      final c = gpu.gpuContext;
-      // ignore: avoid_print
-      print(
-        'CAPS msaa=${c.doesSupportOffscreenMSAA} '
-        'color=${c.defaultColorFormat} '
-        'depthstencil=${c.defaultDepthStencilFormat} '
-        'align=${c.minimumUniformByteAlignment}',
-      );
 
       await tester.pumpWidget(
         MaterialApp(
@@ -46,6 +38,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
+      // ignore: avoid_print
+      print(
+        'SMOKE ${smoke.id}: backendFlipsRenderTargetY=$backendFlipsRenderTargetY',
+      );
 
       final boundary =
           smokeSceneKey.currentContext!.findRenderObject()
