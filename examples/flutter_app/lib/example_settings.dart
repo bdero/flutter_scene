@@ -1,3 +1,4 @@
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 
 /// Post-processing settings shared by every example.
@@ -21,6 +22,13 @@ class ExampleSettings {
 
   /// Bloom shared across the examples.
   final BloomSettings bloom = BloomSettings();
+
+  /// A custom, user-authored effect, built by [loadExampleEffects]. Null
+  /// until the example shader bundle finishes loading.
+  PostEffect? waveEffect;
+
+  /// Amplitude of the custom wave effect.
+  double waveAmplitude = 0.008;
 
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
@@ -54,8 +62,38 @@ class ExampleSettings {
     sceneBloom.threshold = bloom.threshold;
     sceneBloom.intensity = bloom.intensity;
     sceneBloom.scatter = bloom.scatter;
+
+    final wave = waveEffect;
+    if (wave != null) {
+      wave.setUniformBlockFromFloats('WaveInfo', [
+        waveAmplitude,
+        24.0,
+        3.0,
+        0.0,
+      ]);
+      if (!scene.postProcess.customEffects.contains(wave)) {
+        scene.postProcess.customEffects.add(wave);
+      }
+    }
   }
 }
 
 /// The single shared settings instance used across the example app.
 final ExampleSettings exampleSettings = ExampleSettings();
+
+/// Loads the example shader bundle and builds the custom post-processing
+/// effects. Awaited at startup alongside [Scene.initializeStaticResources].
+Future<void> loadExampleEffects() async {
+  final library = await gpu.loadShaderLibraryAsync(
+    'build/shaderbundles/example.shaderbundle',
+  );
+  final waveShader = library?['WaveFragment'];
+  if (waveShader != null) {
+    exampleSettings.waveEffect = PostEffect(
+      fragmentShader: waveShader,
+      insertion: PostInsertion.beforeTonemap,
+      enabled: false,
+      useFrameInfo: true,
+    );
+  }
+}
