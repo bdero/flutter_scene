@@ -3,12 +3,22 @@ name: smoke render
 # Renders a small set of deterministic scenes against the latest Flutter master
 # and uploads the frames to Argos for visual diffing. Catches rendering
 # regressions (black screen / nothing drawn / unlit) that crash tests miss.
-# Manual or daily. Notifies Discord on failure.
+# Runs on pull requests and pushes to master, so Argos diffs each PR against
+# the master baseline, plus manually and daily. Notifies Discord when a
+# non-PR run fails.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 7 * * *" # daily, 07:00 UTC
+  push:
+    branches: [master]
+  pull_request:
+
+# A new push to a branch or PR supersedes its still-running render.
+concurrency:
+  group: smoke-render-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:
@@ -55,7 +65,7 @@ jobs:
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           ARGOS_URL: ${{ steps.argos.outputs.build_url }}
@@ -101,7 +111,7 @@ jobs:
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           ARGOS_URL: ${{ steps.argos.outputs.build_url }}
