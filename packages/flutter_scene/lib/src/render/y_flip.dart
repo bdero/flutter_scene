@@ -25,7 +25,7 @@ import 'package:vector_math/vector_math.dart';
 //
 // TODO(flutter_scene): remove this once the GLES render-to-texture top-down
 // fix (flutter/flutter#186556 or equivalent) is in the supported engines.
-// See: <upstream issue link>.
+// See: https://github.com/bdero/flutter_scene/issues/145.
 
 bool _flipsRenderTargetY = false;
 bool _probed = false;
