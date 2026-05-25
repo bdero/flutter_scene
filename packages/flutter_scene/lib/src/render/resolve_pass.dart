@@ -12,23 +12,28 @@ import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
+/// Render-graph blackboard key for the display-referred color the resolve
+/// pass produces. After-tone-mapping custom effects read it and republish
+/// their own output.
+const String kDisplayColorBlackboardKey = 'display_color';
+
 /// Resolves the linear HDR scene color (a floating-point render target
 /// produced by [ScenePass], read from the blackboard) into the
-/// display-referred swapchain image: applies exposure, optional color
-/// grading, the tone mapping operator, and the display EOTF as a single
-/// full-screen pass.
+/// display-referred image: applies exposure, optional color grading, the
+/// tone mapping operator, and the display EOTF as a single full-screen
+/// pass. Writes into [outputColor] and publishes it on the blackboard.
 class ResolvePass extends RenderGraphPass {
   ResolvePass({
-    required gpu.RenderTarget target,
+    required gpu.Texture outputColor,
     required double exposure,
     required ToneMappingMode toneMappingMode,
     required PostProcessSettings postProcess,
-  }) : _target = target,
+  }) : _outputColor = outputColor,
        _exposure = exposure,
        _toneMappingMode = toneMappingMode,
        _postProcess = postProcess;
 
-  final gpu.RenderTarget _target;
+  final gpu.Texture _outputColor;
   final double _exposure;
   final ToneMappingMode _toneMappingMode;
   final PostProcessSettings _postProcess;
@@ -64,7 +69,9 @@ class ResolvePass extends RenderGraphPass {
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final renderPass = commandBuffer.createRenderPass(_target);
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _outputColor)),
+    );
     final pipeline = gpu.gpuContext.createRenderPipeline(
       _vertexShader,
       _fragmentShader,
@@ -125,5 +132,7 @@ class ResolvePass extends RenderGraphPass {
     );
     renderPass.draw();
     commandBuffer.submit();
+
+    context.blackboard.set(kDisplayColorBlackboardKey, _outputColor);
   }
 }

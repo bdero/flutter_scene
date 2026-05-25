@@ -11,8 +11,10 @@ import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
+import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
+import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
@@ -314,9 +316,6 @@ base class Scene implements SceneGraph {
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
     );
-    final swapchainTarget = gpu.RenderTarget.singleColor(
-      gpu.ColorAttachment(texture: swapchainColor),
-    );
 
     // Resolve the IBL environment up front (before building the render
     // graph): the default is built lazily here on first use, which submits
@@ -377,22 +376,106 @@ base class Scene implements SceneGraph {
         cascades: cascades,
       ),
     );
+    // Split custom effects by where they run in the chain.
+    final beforeTonemap = <PostEffect>[];
+    final afterTonemap = <PostEffect>[];
+    for (final effect in postProcess.customEffects) {
+      if (!effect.enabled) {
+        continue;
+      }
+      if (effect.insertion == PostInsertion.beforeTonemap) {
+        beforeTonemap.add(effect);
+      } else {
+        afterTonemap.add(effect);
+      }
+    }
+
+    final pool = surface.transientTexturePool;
+    final width = pixelSize.width.toInt();
+    final height = pixelSize.height.toInt();
+    final postTime =
+        DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
+
+    // Custom effects on the linear HDR scene color, ping-ponging through
+    // HDR buffers and republishing the scene-color handle that bloom and
+    // the resolve read.
+    for (var i = 0; i < beforeTonemap.length; i++) {
+      final output = pool.acquire(
+        TransientTextureDescriptor.color(
+          width: width,
+          height: height,
+          format: gpu.PixelFormat.r16g16b16a16Float,
+          debugName: i.isEven ? 'post_hdr_a' : 'post_hdr_b',
+        ),
+      );
+      graph.addPass(
+        PostEffectPass(
+          effect: beforeTonemap[i],
+          inputKey: kSceneColorBlackboardKey,
+          outputKey: kSceneColorBlackboardKey,
+          output: output,
+          dimensions: pixelSize,
+          time: postTime,
+        ),
+      );
+    }
+
     // Bloom runs in HDR before the resolve, which composites it back in.
     if (postProcess.bloom.enabled) {
       graph.addPass(
         BloomPass(dimensions: pixelSize, settings: postProcess.bloom),
       );
     }
+
+    // The resolve writes the swapchain directly unless after-tone-mapping
+    // effects need an intermediate buffer to chain on.
+    final gpu.Texture resolveOutput =
+        afterTonemap.isEmpty
+            ? swapchainColor
+            : pool.acquire(
+              TransientTextureDescriptor.color(
+                width: width,
+                height: height,
+                format: swapchainColor.format,
+                debugName: 'post_ldr_resolve',
+              ),
+            );
     graph.addPass(
       ResolvePass(
-        target: swapchainTarget,
+        outputColor: resolveOutput,
         exposure: exposure,
         toneMappingMode: toneMapping,
         postProcess: postProcess,
       ),
     );
-    // Post-processing passes that operate on the display image run here,
-    // after the resolve. None yet.
+
+    // Custom effects on the display-referred image. The last one writes
+    // the swapchain that gets composited onto the canvas.
+    for (var i = 0; i < afterTonemap.length; i++) {
+      final isLast = i == afterTonemap.length - 1;
+      final output =
+          isLast
+              ? swapchainColor
+              : pool.acquire(
+                TransientTextureDescriptor.color(
+                  width: width,
+                  height: height,
+                  format: swapchainColor.format,
+                  debugName: i.isEven ? 'post_ldr_a' : 'post_ldr_b',
+                ),
+              );
+      graph.addPass(
+        PostEffectPass(
+          effect: afterTonemap[i],
+          inputKey: kDisplayColorBlackboardKey,
+          outputKey: kDisplayColorBlackboardKey,
+          output: output,
+          dimensions: pixelSize,
+          time: postTime,
+        ),
+      );
+    }
+
     graph.execute(
       transientsBuffer: transientsBuffer,
       texturePool: surface.transientTexturePool,

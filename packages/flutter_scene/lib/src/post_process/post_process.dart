@@ -1,5 +1,7 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/post_process/post_effect.dart';
+
 /// Built-in post-processing settings for a [Scene].
 ///
 /// Reachable through `Scene.postProcess`. Every effect is off by default,
@@ -23,6 +25,10 @@ class PostProcessSettings {
   /// Bright areas blooming into their surroundings, added in HDR before
   /// tone mapping.
   final BloomSettings bloom = BloomSettings();
+
+  /// User-authored custom effects, run in list order at their chosen
+  /// insertion point (see [PostEffect]).
+  final List<PostEffect> customEffects = [];
 }
 
 /// Color grading applied to the linear HDR scene color, before exposure
