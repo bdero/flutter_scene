@@ -1,3 +1,19 @@
+## 0.15.0
+
+Post-processing effects chain.
+
+* Added a post-processing suite configured per scene via
+  `Scene.postProcess`: bloom, color grading (brightness, contrast,
+  saturation, white balance, lift/gamma/gain), vignette, chromatic
+  aberration, and film grain. Each effect is off by default.
+* Added `PostEffect`, a custom post-processing effect authored as a
+  fragment shader, the post-processing counterpart of `ShaderMaterial`.
+  An effect runs before or after tone mapping and reads the current color
+  through `input_color`. See `POST_PROCESSING.md`.
+* The tone-mapping pass is now the resolve pass: it applies exposure,
+  color grading, the tone-mapping operator, and the display EOTF, and
+  composites bloom.
+
 ## 0.14.2
 
 Rendering fixes.
