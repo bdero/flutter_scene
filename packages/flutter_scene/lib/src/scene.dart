@@ -384,11 +384,20 @@ base class Scene implements SceneGraph {
     );
 
     final image = swapchainColor.asImage();
-    canvas.drawImageRect(
-      image,
-      ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height),
-      drawArea,
-      ui.Paint()..filterQuality = ui.FilterQuality.medium,
-    );
+    final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
+    final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
+    if (backendFlipsRenderTargetY) {
+      // The Y-flip workaround stores the scene top-down via the vertex stage
+      // (see y_flip.dart). The web shim pairs that with a present-time blit
+      // flip; on native there is no such flip (asImage presents as-is), so
+      // flip the blit vertically here to land the image right-side up.
+      canvas.save();
+      canvas.translate(0, drawArea.top + drawArea.bottom);
+      canvas.scale(1, -1);
+      canvas.drawImageRect(image, srcRect, drawArea, paint);
+      canvas.restore();
+    } else {
+      canvas.drawImageRect(image, srcRect, drawArea, paint);
+    }
   }
 }
