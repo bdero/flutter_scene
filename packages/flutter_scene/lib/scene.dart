@@ -48,6 +48,7 @@ export 'src/light.dart';
 export 'src/math_extensions.dart';
 export 'src/mesh.dart';
 export 'src/node.dart';
+export 'src/post_process/post_effect.dart';
 export 'src/post_process/post_process.dart';
 export 'src/render/env_prefilter.dart';
 export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
