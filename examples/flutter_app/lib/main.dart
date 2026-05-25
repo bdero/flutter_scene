@@ -1,7 +1,7 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter_scene/scene.dart' show Scene;
+import 'package:flutter_scene/scene.dart' show Scene, PostInsertion;
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
@@ -28,6 +28,7 @@ class _MyAppState extends State<MyApp> {
   double elapsedSeconds = 0;
   String selectedExample = '';
   Map<String, WidgetBuilder> examples = {};
+  late final Future<void> _ready;
 
   @override
   void initState() {
@@ -54,6 +55,11 @@ class _MyAppState extends State<MyApp> {
     };
     selectedExample = examples.keys.first;
 
+    _ready = Future.wait([
+      Scene.initializeStaticResources(),
+      loadExampleEffects(),
+    ]);
+
     super.initState();
   }
 
@@ -71,7 +77,7 @@ class _MyAppState extends State<MyApp> {
           // geometry/materials in initState, which touches the shader bundle;
           // on web that bundle must finish loading first (sync asset reads
           // aren't possible there).
-          future: Scene.initializeStaticResources(),
+          future: _ready,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
@@ -244,6 +250,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _buildChromaticAberration(),
         _buildVignette(),
         _buildFilmGrain(),
+        _buildCustomEffect(),
       ],
     );
   }
@@ -363,6 +370,40 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         }),
         _slider('Scatter', settings.scatter, 0, 1, (v) {
           settings.scatter = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildCustomEffect() {
+    final effect = exampleSettings.waveEffect;
+    if (effect == null) {
+      return const SizedBox.shrink();
+    }
+    return ExpansionTile(
+      title: const Text('Custom: wave'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: effect.enabled,
+          onChanged: (value) => setState(() => effect.enabled = value),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('After tone mapping'),
+          value: effect.insertion == PostInsertion.afterTonemap,
+          onChanged:
+              (value) => setState(() {
+                effect.insertion =
+                    value
+                        ? PostInsertion.afterTonemap
+                        : PostInsertion.beforeTonemap;
+              }),
+        ),
+        _slider('Amplitude', exampleSettings.waveAmplitude, 0, 0.03, (v) {
+          exampleSettings.waveAmplitude = v;
         }),
       ],
     );
