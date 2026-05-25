@@ -30,5 +30,9 @@
     "PrefilterEnvFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_prefilter_env.frag"
+    },
+    "YFlipProbeFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_yflip_probe.frag"
     }
 }

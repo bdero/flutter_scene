@@ -16,6 +16,7 @@ import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/tonemap_pass.dart';
+import 'render/y_flip.dart';
 import 'shaders.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
@@ -279,6 +280,10 @@ base class Scene implements SceneGraph {
       );
       return;
     }
+
+    // Measure the backend's render-to-texture Y orientation once, on the
+    // first frame (the OpenGL ES context is only up after the first frame).
+    probeBackendYFlip();
 
     final drawArea = viewport ?? canvas.getLocalClipBounds();
     if (drawArea.isEmpty) {
