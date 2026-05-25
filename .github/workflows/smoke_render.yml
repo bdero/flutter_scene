@@ -43,6 +43,13 @@ jobs:
           --driver=test_driver/integration_test.dart
           --target=integration_test/smoke_test.dart
           -d linux --enable-impeller --enable-flutter-gpu
+      - name: Upload captured frames
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-frames-linux
+          path: examples/smoke_render/build/smoke/*.png
+          if-no-files-found: warn
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
