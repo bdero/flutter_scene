@@ -293,11 +293,12 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[129] = light?.shadowDepthBias ?? 0.0;
     fragInfo[130] = light?.shadowNormalBias ?? 0.0;
     fragInfo[131] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
-    // Render-to-texture targets (the shadow map, the prefiltered-radiance
-    // atlas) sample top-down on Metal/Vulkan and bottom-up on OpenGL ES.
-    // Flutter GPU has no backend query; offscreen-MSAA support is a proxy
-    // (true on Metal/Vulkan, false on OpenGL ES).
-    fragInfo[132] = gpu.gpuContext.doesSupportOffscreenMSAA ? 1.0 : 0.0;
+    // render_target_flip_y: flips V when sampling render-to-texture targets
+    // (the shadow map, the prefiltered-radiance atlas). flutter_scene now
+    // stores those top-down on every backend (Metal/Vulkan natively; OpenGL
+    // ES via the vertex-stage Y-flip workaround, see y_flip.dart), so the
+    // top-down sampling value (1.0) is correct everywhere.
+    fragInfo[132] = 1.0;
     fragInfo[133] = alphaMode.index.toDouble();
     fragInfo[134] = alphaCutoff;
     fragInfo[135] = light?.shadowFadeRange ?? 0.0;
