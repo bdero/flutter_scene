@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  errors:
+    # The shader bundle and its sidecar are build-hook outputs (produced by
+    # buildMaterials in hook/build.dart) and are absent on a clean checkout,
+    # such as in CI before the build runs. Don't fail analysis on their being
+    # missing; `dart analyze` otherwise reports them as warnings and exits 2.
+    asset_does_not_exist: ignore
+    asset_directory_does_not_exist: ignore
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
