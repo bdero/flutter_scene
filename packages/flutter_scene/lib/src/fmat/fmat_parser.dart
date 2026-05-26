@@ -15,16 +15,21 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
 
   final material = blocks['material'];
   if (material == null) {
-    throw FmatException('Missing required `material { ... }` block.',
-        fileName: fileName);
+    throw FmatException(
+      'Missing required `material { ... }` block.',
+      fileName: fileName,
+    );
   }
   final fragment = blocks['fragment'];
   if (fragment == null) {
-    throw FmatException('Missing required `fragment { ... }` block.',
-        fileName: fileName);
+    throw FmatException(
+      'Missing required `fragment { ... }` block.',
+      fileName: fileName,
+    );
   }
 
-  final tokens = _Lexer(material.content, fileName, material.startLine).tokenize();
+  final tokens =
+      _Lexer(material.content, fileName, material.startLine).tokenize();
   final tree = _ValueParser(tokens, fileName).parseObjectBody();
 
   return _build(tree, fragment, fileName);
@@ -88,8 +93,10 @@ Map<String, _Block> _extractBlocks(String source, String? fileName) {
     }
     if (i == keywordStart) {
       throw FmatException(
-          'Expected a top-level block keyword (`material` or `fragment`).',
-          fileName: fileName, line: line);
+        'Expected a top-level block keyword (`material` or `fragment`).',
+        fileName: fileName,
+        line: line,
+      );
     }
     final keyword = source.substring(keywordStart, i);
 
@@ -97,8 +104,11 @@ Map<String, _Block> _extractBlocks(String source, String? fileName) {
     i = t2.i;
     line = t2.line;
     if (i >= source.length || source[i] != '{') {
-      throw FmatException('Expected `{` after `$keyword`.',
-          fileName: fileName, line: line);
+      throw FmatException(
+        'Expected `{` after `$keyword`.',
+        fileName: fileName,
+        line: line,
+      );
     }
 
     // Capture the brace-matched content.
@@ -130,13 +140,19 @@ Map<String, _Block> _extractBlocks(String source, String? fileName) {
       }
     }
     if (depth != 0) {
-      throw FmatException('Unterminated `$keyword { ... }` block.',
-          fileName: fileName, line: contentStartLine);
+      throw FmatException(
+        'Unterminated `$keyword { ... }` block.',
+        fileName: fileName,
+        line: contentStartLine,
+      );
     }
     final content = source.substring(contentStart, i - 1);
     if (blocks.containsKey(keyword)) {
-      throw FmatException('Duplicate `$keyword` block.',
-          fileName: fileName, line: contentStartLine);
+      throw FmatException(
+        'Duplicate `$keyword` block.',
+        fileName: fileName,
+        line: contentStartLine,
+      );
     }
     blocks[keyword] = _Block(content, contentStartLine);
   }
@@ -161,7 +177,20 @@ bool _isIdentStart(String c) {
 // Lexer for the metadata dialect.
 // ---------------------------------------------------------------------------
 
-enum _Tok { lbrace, rbrace, lbracket, rbracket, lparen, rparen, colon, comma, ident, number, string, eof }
+enum _Tok {
+  lbrace,
+  rbrace,
+  lbracket,
+  rbracket,
+  lparen,
+  rparen,
+  colon,
+  comma,
+  ident,
+  number,
+  string,
+  eof,
+}
 
 class _Token {
   _Token(this.type, this.value, this.line);
@@ -201,23 +230,26 @@ class _Lexer {
       } else if (_isIdentStart(c)) {
         tokens.add(_lexIdent());
       } else {
-        throw FmatException('Unexpected character `$c`.',
-            fileName: fileName, line: _reportLine);
+        throw FmatException(
+          'Unexpected character `$c`.',
+          fileName: fileName,
+          line: _reportLine,
+        );
       }
     }
   }
 
   _Tok? _singleCharToken(String c) => switch (c) {
-        '{' => _Tok.lbrace,
-        '}' => _Tok.rbrace,
-        '[' => _Tok.lbracket,
-        ']' => _Tok.rbracket,
-        '(' => _Tok.lparen,
-        ')' => _Tok.rparen,
-        ':' => _Tok.colon,
-        ',' => _Tok.comma,
-        _ => null,
-      };
+    '{' => _Tok.lbrace,
+    '}' => _Tok.rbrace,
+    '[' => _Tok.lbracket,
+    ']' => _Tok.rbracket,
+    '(' => _Tok.lparen,
+    ')' => _Tok.rparen,
+    ':' => _Tok.colon,
+    ',' => _Tok.comma,
+    _ => null,
+  };
 
   void _skipTrivia() {
     while (_i < source.length) {
@@ -251,15 +283,21 @@ class _Lexer {
     final sb = StringBuffer();
     while (_i < source.length && source[_i] != '"') {
       if (source[_i] == '\n') {
-        throw FmatException('Unterminated string.',
-            fileName: fileName, line: startLine);
+        throw FmatException(
+          'Unterminated string.',
+          fileName: fileName,
+          line: startLine,
+        );
       }
       sb.write(source[_i]);
       _i++;
     }
     if (_i >= source.length) {
-      throw FmatException('Unterminated string.',
-          fileName: fileName, line: startLine);
+      throw FmatException(
+        'Unterminated string.',
+        fileName: fileName,
+        line: startLine,
+      );
     }
     _i++; // closing quote
     return _Token(_Tok.string, sb.toString(), startLine);
@@ -330,8 +368,11 @@ class _ValueParser {
 
   _Token _expect(_Tok type, String what) {
     if (_cur.type != type) {
-      throw FmatException('Expected $what.',
-          fileName: fileName, line: _cur.line);
+      throw FmatException(
+        'Expected $what.',
+        fileName: fileName,
+        line: _cur.line,
+      );
     }
     return _advance();
   }
@@ -349,13 +390,19 @@ class _ValueParser {
     final map = <String, Object?>{};
     while (_cur.type != terminator) {
       if (_cur.type != _Tok.ident && _cur.type != _Tok.string) {
-        throw FmatException('Expected a key.',
-            fileName: fileName, line: _cur.line);
+        throw FmatException(
+          'Expected a key.',
+          fileName: fileName,
+          line: _cur.line,
+        );
       }
       final key = _advance().value as String;
       if (map.containsKey(key)) {
-        throw FmatException('Duplicate key `$key`.',
-            fileName: fileName, line: _cur.line);
+        throw FmatException(
+          'Duplicate key `$key`.',
+          fileName: fileName,
+          line: _cur.line,
+        );
       }
       _expect(_Tok.colon, '`:` after `$key`');
       map[key] = _parseValue();
@@ -391,8 +438,11 @@ class _ValueParser {
         }
         return _Ident(t.value as String, t.line);
       default:
-        throw FmatException('Expected a value.',
-            fileName: fileName, line: t.line);
+        throw FmatException(
+          'Expected a value.',
+          fileName: fileName,
+          line: t.line,
+        );
     }
   }
 
@@ -432,19 +482,45 @@ class _ValueParser {
 // ---------------------------------------------------------------------------
 
 const _reservedNames = <String>{
-  'frag_info', 'FragInfo', 'frag_color',
-  'v_position', 'v_normal', 'v_viewvector', 'v_texture_coords', 'v_color',
-  'prefiltered_radiance', 'brdf_lut', 'shadow_map',
-  'MaterialInputs', 'material', 'material_params', 'MaterialParams',
-  'Surface', 'EvaluateLighting', 'InitMaterialInputs', 'PrepareMaterial',
-  'GetWorldPosition', 'GetWorldNormal', 'GetViewDirection', 'GetUV0',
-  'GetVertexColor', 'main',
+  'frag_info',
+  'FragInfo',
+  'frag_color',
+  'v_position',
+  'v_normal',
+  'v_viewvector',
+  'v_texture_coords',
+  'v_color',
+  'prefiltered_radiance',
+  'brdf_lut',
+  'shadow_map',
+  'MaterialInputs',
+  'material',
+  'material_params',
+  'MaterialParams',
+  'Surface',
+  'EvaluateLighting',
+  'InitMaterialInputs',
+  'PrepareMaterial',
+  'GetWorldPosition',
+  'GetWorldNormal',
+  'GetViewDirection',
+  'GetUV0',
+  'GetVertexColor',
+  'main',
 };
 
 FmatMaterial _build(
-    Map<String, Object?> tree, _Block fragment, String? fileName) {
+  Map<String, Object?> tree,
+  _Block fragment,
+  String? fileName,
+) {
   const knownKeys = {
-    'name', 'shading_model', 'blending', 'culling', 'parameters', 'requires'
+    'name',
+    'shading_model',
+    'blending',
+    'culling',
+    'parameters',
+    'requires',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -454,19 +530,33 @@ FmatMaterial _build(
 
   final name = tree['name'];
   if (name is! String || name.isEmpty) {
-    throw FmatException('`name` is required and must be a non-empty string.',
-        fileName: fileName);
+    throw FmatException(
+      '`name` is required and must be a non-empty string.',
+      fileName: fileName,
+    );
   }
 
   final shadingModel = _enum<FmatShadingModel>(
-      tree['shading_model'], FmatShadingModel.values, 'shading_model',
-      defaultValue: FmatShadingModel.lit, fileName: fileName);
+    tree['shading_model'],
+    FmatShadingModel.values,
+    'shading_model',
+    defaultValue: FmatShadingModel.lit,
+    fileName: fileName,
+  );
   final blending = _enum<FmatBlending>(
-      tree['blending'], FmatBlending.values, 'blending',
-      defaultValue: FmatBlending.opaque, fileName: fileName);
+    tree['blending'],
+    FmatBlending.values,
+    'blending',
+    defaultValue: FmatBlending.opaque,
+    fileName: fileName,
+  );
   final culling = _enum<FmatCulling>(
-      tree['culling'], FmatCulling.values, 'culling',
-      defaultValue: FmatCulling.back, fileName: fileName);
+    tree['culling'],
+    FmatCulling.values,
+    'culling',
+    defaultValue: FmatCulling.back,
+    fileName: fileName,
+  );
 
   final parameters = _buildParameters(tree['parameters'], fileName);
 
@@ -474,9 +564,11 @@ FmatMaterial _build(
   // fully parse GLSL; this catches the common omission with a clear message.
   if (!RegExp(r'\bvoid\s+Surface\s*\(').hasMatch(fragment.content)) {
     throw FmatException(
-        'The `fragment` block must define '
-        '`void Surface(inout MaterialInputs material)`.',
-        fileName: fileName, line: fragment.startLine);
+      'The `fragment` block must define '
+      '`void Surface(inout MaterialInputs material)`.',
+      fileName: fileName,
+      line: fragment.startLine,
+    );
   }
 
   return FmatMaterial(
@@ -491,19 +583,27 @@ FmatMaterial _build(
 }
 
 T _enum<T extends Enum>(
-    Object? value, List<T> values, String key,
-    {required T defaultValue, String? fileName}) {
+  Object? value,
+  List<T> values,
+  String key, {
+  required T defaultValue,
+  String? fileName,
+}) {
   if (value == null) return defaultValue;
   if (value is! _Ident) {
-    throw FmatException('`$key` must be one of ${values.map((v) => v.name)}.',
-        fileName: fileName);
+    throw FmatException(
+      '`$key` must be one of ${values.map((v) => v.name)}.',
+      fileName: fileName,
+    );
   }
   for (final v in values) {
     if (v.name == value.name) return v;
   }
   throw FmatException(
-      '`$key` is `${value.name}`, expected one of ${values.map((v) => v.name)}.',
-      fileName: fileName, line: value.line);
+    '`$key` is `${value.name}`, expected one of ${values.map((v) => v.name)}.',
+    fileName: fileName,
+    line: value.line,
+  );
 }
 
 List<FmatParameter> _buildParameters(Object? raw, String? fileName) {
@@ -515,13 +615,17 @@ List<FmatParameter> _buildParameters(Object? raw, String? fileName) {
   final seen = <String>{};
   for (final entry in raw) {
     if (entry is! Map<String, Object?>) {
-      throw FmatException('Each parameter must be an object.',
-          fileName: fileName);
+      throw FmatException(
+        'Each parameter must be an object.',
+        fileName: fileName,
+      );
     }
     for (final key in entry.keys) {
       if (!{'type', 'name', 'hint', 'default'}.contains(key)) {
-        throw FmatException('Unknown parameter key `$key`.',
-            fileName: fileName);
+        throw FmatException(
+          'Unknown parameter key `$key`.',
+          fileName: fileName,
+        );
       }
     }
 
@@ -531,35 +635,50 @@ List<FmatParameter> _buildParameters(Object? raw, String? fileName) {
     }
     if (typeTok.name == 'mat3') {
       throw FmatException(
-          '`mat3` parameters are not supported because of a GLES std140 '
-          'layout bug; use `mat4`.',
-          fileName: fileName, line: typeTok.line);
+        '`mat3` parameters are not supported because of a GLES std140 '
+        'layout bug; use `mat4`.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
     }
     final type = FmatType.fromToken(typeTok.name);
     if (type == null) {
-      throw FmatException('Unknown parameter type `${typeTok.name}`.',
-          fileName: fileName, line: typeTok.line);
+      throw FmatException(
+        'Unknown parameter type `${typeTok.name}`.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
     }
 
     final nameVal = entry['name'];
     final pname = switch (nameVal) {
       String s => s,
       _Ident id => id.name,
-      _ => throw FmatException('Parameter `name` is required.',
-          fileName: fileName),
+      _ =>
+        throw FmatException(
+          'Parameter `name` is required.',
+          fileName: fileName,
+        ),
     };
     _validateParamName(pname, fileName);
     if (!seen.add(pname)) {
-      throw FmatException('Duplicate parameter name `$pname`.',
-          fileName: fileName);
+      throw FmatException(
+        'Duplicate parameter name `$pname`.',
+        fileName: fileName,
+      );
     }
 
     final hint = _buildHint(entry['hint'], type, pname, fileName);
-    final defaultValue =
-        _buildDefault(entry['default'], type, pname, fileName);
+    final defaultValue = _buildDefault(entry['default'], type, pname, fileName);
 
-    params.add(FmatParameter(
-        type: type, name: pname, hint: hint, defaultValue: defaultValue));
+    params.add(
+      FmatParameter(
+        type: type,
+        name: pname,
+        hint: hint,
+        defaultValue: defaultValue,
+      ),
+    );
   }
   return params;
 }
@@ -568,29 +687,40 @@ void _validateParamName(String name, String? fileName) {
   if (name.isEmpty ||
       !_isIdentStart(name[0]) ||
       !name.split('').every(_isIdentChar)) {
-    throw FmatException('`$name` is not a valid identifier.',
-        fileName: fileName);
+    throw FmatException(
+      '`$name` is not a valid identifier.',
+      fileName: fileName,
+    );
   }
   if (name.startsWith('gl_')) {
-    throw FmatException('Parameter names may not start with `gl_`.',
-        fileName: fileName);
+    throw FmatException(
+      'Parameter names may not start with `gl_`.',
+      fileName: fileName,
+    );
   }
   if (_reservedNames.contains(name)) {
     throw FmatException(
-        '`$name` collides with an engine-reserved identifier.',
-        fileName: fileName);
+      '`$name` collides with an engine-reserved identifier.',
+      fileName: fileName,
+    );
   }
 }
 
 FmatHint? _buildHint(
-    Object? raw, FmatType type, String pname, String? fileName) {
+  Object? raw,
+  FmatType type,
+  String pname,
+  String? fileName,
+) {
   if (raw == null) return null;
 
   FmatHint colorHint(int line) {
     if (type != FmatType.vec3 && type != FmatType.vec4) {
       throw FmatException(
-          '`source_color` on `$pname` requires a vec3 or vec4.',
-          fileName: fileName, line: line);
+        '`source_color` on `$pname` requires a vec3 or vec4.',
+        fileName: fileName,
+        line: line,
+      );
     }
     return const FmatHint(FmatHintKind.sourceColor);
   }
@@ -598,8 +728,10 @@ FmatHint? _buildHint(
   FmatHint samplerDefault(FmatHintKind kind, int line) {
     if (!type.isSampler) {
       throw FmatException(
-          'A sampler-default hint on `$pname` requires a sampler type.',
-          fileName: fileName, line: line);
+        'A sampler-default hint on `$pname` requires a sampler type.',
+        fileName: fileName,
+        line: line,
+      );
     }
     return FmatHint(kind);
   }
@@ -610,64 +742,88 @@ FmatHint? _buildHint(
       'default_white' => samplerDefault(FmatHintKind.defaultWhite, raw.line),
       'default_black' => samplerDefault(FmatHintKind.defaultBlack, raw.line),
       'default_normal' => samplerDefault(FmatHintKind.defaultNormal, raw.line),
-      'default_transparent' =>
-        samplerDefault(FmatHintKind.defaultTransparent, raw.line),
-      _ => throw FmatException('Unknown hint `${raw.name}` on `$pname`.',
-          fileName: fileName, line: raw.line),
+      'default_transparent' => samplerDefault(
+        FmatHintKind.defaultTransparent,
+        raw.line,
+      ),
+      _ =>
+        throw FmatException(
+          'Unknown hint `${raw.name}` on `$pname`.',
+          fileName: fileName,
+          line: raw.line,
+        ),
     };
   }
   if (raw is _Call && raw.name == 'range') {
     if (type != FmatType.float_ && type != FmatType.int_) {
-      throw FmatException('`range` on `$pname` requires a float or int.',
-          fileName: fileName, line: raw.line);
+      throw FmatException(
+        '`range` on `$pname` requires a float or int.',
+        fileName: fileName,
+        line: raw.line,
+      );
     }
     if (raw.args.length != 3 || raw.args.any((a) => a is! num)) {
       throw FmatException(
-          '`range` takes three numbers: range(min, max, step).',
-          fileName: fileName, line: raw.line);
+        '`range` takes three numbers: range(min, max, step).',
+        fileName: fileName,
+        line: raw.line,
+      );
     }
-    return FmatHint(FmatHintKind.range,
-        rangeMin: (raw.args[0] as num).toDouble(),
-        rangeMax: (raw.args[1] as num).toDouble(),
-        rangeStep: (raw.args[2] as num).toDouble());
+    return FmatHint(
+      FmatHintKind.range,
+      rangeMin: (raw.args[0] as num).toDouble(),
+      rangeMax: (raw.args[1] as num).toDouble(),
+      rangeStep: (raw.args[2] as num).toDouble(),
+    );
   }
   throw FmatException('Invalid hint on `$pname`.', fileName: fileName);
 }
 
 Object? _buildDefault(
-    Object? raw, FmatType type, String pname, String? fileName) {
+  Object? raw,
+  FmatType type,
+  String pname,
+  String? fileName,
+) {
   if (raw == null) return null;
   if (type.isSampler) {
     throw FmatException(
-        'Samplers take a placeholder via `hint`, not `default` (`$pname`).',
-        fileName: fileName);
+      'Samplers take a placeholder via `hint`, not `default` (`$pname`).',
+      fileName: fileName,
+    );
   }
   if (type == FmatType.float_) {
     if (raw is! num) {
-      throw FmatException('`default` for `$pname` must be a number.',
-          fileName: fileName);
+      throw FmatException(
+        '`default` for `$pname` must be a number.',
+        fileName: fileName,
+      );
     }
     return raw.toDouble();
   }
   if (type == FmatType.int_) {
     if (raw is! num || raw != raw.toInt()) {
-      throw FmatException('`default` for `$pname` must be an integer.',
-          fileName: fileName);
+      throw FmatException(
+        '`default` for `$pname` must be an integer.',
+        fileName: fileName,
+      );
     }
     return raw.toInt();
   }
   // Vector / matrix.
   if (raw is! List || raw.any((e) => e is! num)) {
     throw FmatException(
-        '`default` for `$pname` must be a list of ${type.componentCount} '
-        'numbers.',
-        fileName: fileName);
+      '`default` for `$pname` must be a list of ${type.componentCount} '
+      'numbers.',
+      fileName: fileName,
+    );
   }
   if (raw.length != type.componentCount) {
     throw FmatException(
-        '`default` for `$pname` has ${raw.length} components, '
-        'expected ${type.componentCount}.',
-        fileName: fileName);
+      '`default` for `$pname` has ${raw.length} components, '
+      'expected ${type.componentCount}.',
+      fileName: fileName,
+    );
   }
   return raw.map((e) => (e as num).toDouble()).toList();
 }

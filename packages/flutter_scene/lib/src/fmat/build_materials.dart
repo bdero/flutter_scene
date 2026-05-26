@@ -104,8 +104,9 @@ Future<void> buildMaterials({
     }
 
     final fragFileName = '$entryName.frag';
-    File(generatedDir.uri.resolve(fragFileName).toFilePath())
-        .writeAsStringSync(compiled.glsl);
+    File(
+      generatedDir.uri.resolve(fragFileName).toFilePath(),
+    ).writeAsStringSync(compiled.glsl);
 
     manifest[entryName] = <String, Object?>{
       'type': 'fragment',
@@ -122,8 +123,9 @@ Future<void> buildMaterials({
   // so its `file` entries resolve relative to it.
   final manifestRelativePath =
       'build/fmat/$bundleName/$bundleName.shaderbundle.json';
-  File(packageRoot.resolve(manifestRelativePath).toFilePath())
-      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
+  File(
+    packageRoot.resolve(manifestRelativePath).toFilePath(),
+  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 
   // Compile, with flutter_scene's shaders/ on the include path so the generated
   // shaders' framework `#include`s resolve directly (no copies).
@@ -135,10 +137,11 @@ Future<void> buildMaterials({
   );
 
   // Write the combined parameter sidecar next to the produced bundle.
-  File(packageRoot
-          .resolve('build/shaderbundles/$bundleName.fmat.json')
-          .toFilePath())
-      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(sidecars));
+  File(
+    packageRoot
+        .resolve('build/shaderbundles/$bundleName.fmat.json')
+        .toFilePath(),
+  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(sidecars));
 
   // Declare the real inputs as dependencies. buildShaderBundleJson declares the
   // (generated) .frag files; the sources that actually drive a rebuild are the

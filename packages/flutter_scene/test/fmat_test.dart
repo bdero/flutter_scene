@@ -30,8 +30,13 @@ fragment {
 }
 ''';
 
-Matcher _throwsFmat(String messageSubstring) => throwsA(isA<FmatException>()
-    .having((e) => e.message, 'message', contains(messageSubstring)));
+Matcher _throwsFmat(String messageSubstring) => throwsA(
+  isA<FmatException>().having(
+    (e) => e.message,
+    'message',
+    contains(messageSubstring),
+  ),
+);
 
 void main() {
   group('parse', () {
@@ -43,8 +48,11 @@ void main() {
       expect(m.culling, FmatCulling.none);
       expect(m.parameters.length, 4);
 
-      expect(m.uniformParameters.map((p) => p.name),
-          ['tint', 'strength', 'steps']);
+      expect(m.uniformParameters.map((p) => p.name), [
+        'tint',
+        'strength',
+        'steps',
+      ]);
       expect(m.samplerParameters.map((p) => p.name), ['detail_texture']);
 
       final tint = m.parameters.firstWhere((p) => p.name == 'tint');
@@ -82,10 +90,12 @@ fragment { void Surface(inout MaterialInputs material) {} }
     test('tracks the fragment block source line for #line mapping', () {
       // Explicit newlines so the line count is unambiguous: the fragment
       // block keyword is on line 2.
-      final m = parseFmat('material { name: "x" }\n'
-          'fragment {\n'
-          '  void Surface(inout MaterialInputs material) {}\n'
-          '}');
+      final m = parseFmat(
+        'material { name: "x" }\n'
+        'fragment {\n'
+        '  void Surface(inout MaterialInputs material) {}\n'
+        '}',
+      );
       expect(m.fragmentSourceLine, 2);
     });
   });
@@ -116,8 +126,10 @@ fragment {
 ''');
       expect(c.glsl, isNot(contains('material_lighting.glsl')));
       expect(c.glsl, isNot(contains('EvaluateLighting')));
-      expect(c.glsl,
-          contains('vec4(material.base_color.rgb, 1.0) * material.base_color.a'));
+      expect(
+        c.glsl,
+        contains('vec4(material.base_color.rgb, 1.0) * material.base_color.a'),
+      );
     });
   });
 
@@ -154,77 +166,92 @@ fragment { void Surface(inout MaterialInputs material) {} }
 ''';
 
     test('rejects mat3 with a helpful message', () {
-      expect(() => parseFmat(wrap('{ type: mat3, name: m }')),
-          _throwsFmat('mat3'));
+      expect(
+        () => parseFmat(wrap('{ type: mat3, name: m }')),
+        _throwsFmat('mat3'),
+      );
     });
 
     test('rejects an unknown parameter type', () {
-      expect(() => parseFmat(wrap('{ type: frobnicate, name: x }')),
-          _throwsFmat('Unknown parameter type'));
+      expect(
+        () => parseFmat(wrap('{ type: frobnicate, name: x }')),
+        _throwsFmat('Unknown parameter type'),
+      );
     });
 
     test('rejects duplicate parameter names', () {
       expect(
-          () => parseFmat(
-              wrap('{ type: float, name: a }, { type: float, name: a }')),
-          _throwsFmat('Duplicate parameter name'));
+        () => parseFmat(
+          wrap('{ type: float, name: a }, { type: float, name: a }'),
+        ),
+        _throwsFmat('Duplicate parameter name'),
+      );
     });
 
     test('rejects reserved identifiers', () {
-      expect(() => parseFmat(wrap('{ type: float, name: material }')),
-          _throwsFmat('reserved'));
+      expect(
+        () => parseFmat(wrap('{ type: float, name: material }')),
+        _throwsFmat('reserved'),
+      );
     });
 
     test('rejects a vector default of the wrong length', () {
       expect(
-          () => parseFmat(wrap('{ type: vec4, name: c, default: [1, 2, 3] }')),
-          _throwsFmat('components'));
+        () => parseFmat(wrap('{ type: vec4, name: c, default: [1, 2, 3] }')),
+        _throwsFmat('components'),
+      );
     });
 
     test('rejects source_color on a non-color type', () {
       expect(
-          () =>
-              parseFmat(wrap('{ type: float, name: f, hint: source_color }')),
-          _throwsFmat('source_color'));
+        () => parseFmat(wrap('{ type: float, name: f, hint: source_color }')),
+        _throwsFmat('source_color'),
+      );
     });
 
     test('rejects range on a non-numeric type', () {
       expect(
-          () => parseFmat(
-              wrap('{ type: vec4, name: v, hint: range(0, 1, 0.1) }')),
-          _throwsFmat('range'));
+        () =>
+            parseFmat(wrap('{ type: vec4, name: v, hint: range(0, 1, 0.1) }')),
+        _throwsFmat('range'),
+      );
     });
 
     test('requires a name', () {
       expect(
-          () => parseFmat('''
+        () => parseFmat('''
 material { shading_model: lit }
 fragment { void Surface(inout MaterialInputs material) {} }
 '''),
-          _throwsFmat('name'));
+        _throwsFmat('name'),
+      );
     });
 
     test('requires a fragment block', () {
-      expect(() => parseFmat('material { name: "X" }'),
-          _throwsFmat('fragment'));
+      expect(
+        () => parseFmat('material { name: "X" }'),
+        _throwsFmat('fragment'),
+      );
     });
 
     test('requires a Surface function in the fragment block', () {
       expect(
-          () => parseFmat('''
+        () => parseFmat('''
 material { name: "X" }
 fragment { void NotSurface() {} }
 '''),
-          _throwsFmat('Surface'));
+        _throwsFmat('Surface'),
+      );
     });
 
     test('rejects unknown material keys', () {
       expect(
-          () => parseFmat('''
+        () => parseFmat('''
 material { name: "X", shadingmodel: lit }
 fragment { void Surface(inout MaterialInputs material) {} }
 '''),
-          _throwsFmat('Unknown material key'));
+        _throwsFmat('Unknown material key'),
+      );
     });
   });
 }
