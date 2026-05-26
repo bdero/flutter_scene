@@ -3,6 +3,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
@@ -248,9 +249,11 @@ class PhysicallyBasedMaterial extends Material {
     //   [135]     float shadow_fade (world-space far-edge fade width)
     //   [136]     float shadow_softness (world-space penumbra radius)
     //   [137]     float shadow_cascade_count
-    //   [138..139] padding to a 16-byte boundary
-    //   [140..150] mat3  environment_transform (3 vec3 columns, w padding)
-    final fragInfo = Float32List(152);
+    //   [138]     float prefilter_flip_y (OpenGL ES atlas latitude flip)
+    //   [139]     padding to a 16-byte boundary
+    //   [140..155] mat4  environment_transform (3x3 rotation, last col/row
+    //              identity; mat4 not mat3 to dodge a GLES std140-mat3 bug)
+    final fragInfo = Float32List(156);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -304,15 +307,24 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[135] = light?.shadowFadeRange ?? 0.0;
     fragInfo[136] = light?.shadowSoftness ?? 0.0;
     fragInfo[137] = cascades.length.toDouble();
-    // mat3 environment_transform: std140 stores each column as a vec3
-    // padded to 16 bytes, so the three columns land at [140], [144],
-    // [148]. Matrix3.storage is column-major (3 floats per column).
+    // prefilter_flip_y: invert the atlas latitude when sampling on backends
+    // that store render-to-texture bottom-up (OpenGL ES). See y_flip.dart and
+    // SamplePrefilteredRadiance. Temporary, part of the Y-flip workaround.
+    fragInfo[138] = backendFlipsRenderTargetY ? 1.0 : 0.0;
+    // mat4 environment_transform: the 3x3 rotation in the upper-left, last
+    // row/column identity. A mat4 (not mat3) because Impeller's OpenGL ES
+    // backend mis-reads a std140 mat3 uniform (its padded vec3 columns),
+    // which collapsed the IBL lookup directions to a constant on GLES; a
+    // mat4's columns are tightly-packed vec4s, identical across backends.
+    // std140 mat4 columns are 16 bytes each, landing at [140], [144], [148],
+    // [152]. Matrix3.storage is column-major (3 floats per column).
     final envTransform = lighting.environmentTransform.storage;
     for (var col = 0; col < 3; col++) {
       fragInfo[140 + col * 4] = envTransform[col * 3];
       fragInfo[141 + col * 4] = envTransform[col * 3 + 1];
       fragInfo[142 + col * 4] = envTransform[col * 3 + 2];
     }
+    fragInfo[155] = 1.0; // mat4 column 3 = (0, 0, 0, 1)
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),

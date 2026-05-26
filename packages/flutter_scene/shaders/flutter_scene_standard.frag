@@ -55,10 +55,17 @@ uniform FragInfo {
   float shadow_softness;
   // Number of valid cascades in light_space_matrix (1 to 4).
   float shadow_cascade_count;
+  // 1 to invert the prefiltered-radiance atlas latitude when sampling, 0
+  // otherwise. Set on backends that store render-to-texture bottom-up (OpenGL
+  // ES); see SamplePrefilteredRadiance and y_flip.dart. Temporary workaround.
+  float prefilter_flip_y;
   // Rotates the image-based-lighting environment: the diffuse-SH and
   // prefiltered-radiance lookup directions are transformed by this before
-  // sampling. Identity leaves the environment unrotated.
-  mat3 environment_transform;
+  // sampling. Identity leaves the environment unrotated. A mat4 (not mat3)
+  // so the std140 columns are tightly packed vec4s: Impeller's OpenGL ES
+  // backend mis-reads a std140 mat3 uniform (padded vec3 columns), which
+  // collapsed env_normal/env_reflection to a constant on GLES.
+  mat4 environment_transform;
 }
 frag_info;
 
@@ -292,13 +299,14 @@ void main() {
   vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
 
   // The IBL environment can be rotated; transform the lookup directions.
-  vec3 env_normal = frag_info.environment_transform * normal;
-  vec3 env_reflection = frag_info.environment_transform * reflection_normal;
+  mat3 environment_transform = mat3(frag_info.environment_transform);
+  vec3 env_normal = environment_transform * normal;
+  vec3 env_reflection = environment_transform * reflection_normal;
   vec3 irradiance = max(EvaluateDiffuseSH(env_normal), vec3(0.0)) *
                     frag_info.environment_intensity;
   vec3 prefiltered_color =
-      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection,
-                                roughness) *
+      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection, roughness,
+                                frag_info.prefilter_flip_y) *
       frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
