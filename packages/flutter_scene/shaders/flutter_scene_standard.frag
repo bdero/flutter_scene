@@ -1,97 +1,16 @@
-uniform FragInfo {
-  vec4 color;
-  vec4 emissive_factor;
-  // Diffuse irradiance L2 spherical-harmonic coefficients (xyz = RGB,
-  // w unused). The cosine convolution (A_l band factors) and the 1/pi
-  // Lambertian term are already folded in, so evaluating the polynomial
-  // yields E(n)/pi, ready to multiply by the diffuse albedo.
-  vec4 diffuse_sh0;
-  vec4 diffuse_sh1;
-  vec4 diffuse_sh2;
-  vec4 diffuse_sh3;
-  vec4 diffuse_sh4;
-  vec4 diffuse_sh5;
-  vec4 diffuse_sh6;
-  vec4 diffuse_sh7;
-  vec4 diffuse_sh8;
-  // Directional light: xyz = direction the light travels (toward the
-  // scene); rgb of the second vector = color premultiplied by intensity.
-  // Active only when has_directional_light > 0.5.
-  vec4 directional_light_direction;
-  vec4 directional_light_color;
-  // World -> light-clip-space matrix per shadow cascade; the first
-  // shadow_cascade_count entries are valid. Used when casts_shadow > 0.5.
-  mat4 light_space_matrix[4];
-  // World-space orthographic box size of each cascade (x..w map to
-  // cascade 0..3), used to scale world-space softness and fade widths
-  // into a cascade's UV space.
-  vec4 cascade_box_sizes;
-  float vertex_color_weight;
-  float metallic_factor;
-  float roughness_factor;
-  float has_normal_map;
-  float normal_scale;
-  float occlusion_strength;
-  float environment_intensity;
-  float has_directional_light;
-  float casts_shadow;
-  float shadow_bias;
-  float shadow_normal_bias;
-  float shadow_texel_size; // 1 / shadow map resolution
-  // 1.0 on backends whose render-to-texture targets sample top-down
-  // (Metal/Vulkan), 0.0 where they sample bottom-up (OpenGL ES). Applied
-  // when sampling the shadow map and the prefiltered-radiance atlas; the
-  // Dart side fills it (Flutter GPU has no backend macro).
-  float render_target_flip_y;
-  // glTF alpha mode: 0 opaque, 1 mask, 2 blend. In mask mode a fragment
-  // whose alpha is below alpha_cutoff is discarded and the rest are
-  // forced fully opaque.
-  float alpha_mode;
-  float alpha_cutoff;
-  // World-space width over which shadowing fades back to lit at the far
-  // cascade's edge, softening the shadow distance limit. 0 disables it.
-  float shadow_fade;
-  // World-space radius of the soft-shadow (PCF) penumbra.
-  float shadow_softness;
-  // Number of valid cascades in light_space_matrix (1 to 4).
-  float shadow_cascade_count;
-  // 1 to invert the prefiltered-radiance atlas latitude when sampling, 0
-  // otherwise. Set on backends that store render-to-texture bottom-up (OpenGL
-  // ES); see SamplePrefilteredRadiance and y_flip.dart. Temporary workaround.
-  float prefilter_flip_y;
-  // Rotates the image-based-lighting environment: the diffuse-SH and
-  // prefiltered-radiance lookup directions are transformed by this before
-  // sampling. Identity leaves the environment unrotated. A mat4 (not mat3)
-  // so the std140 columns are tightly packed vec4s: Impeller's OpenGL ES
-  // backend mis-reads a std140 mat3 uniform (padded vec3 columns), which
-  // collapsed env_normal/env_reflection to a constant on GLES.
-  mat4 environment_transform;
-}
-frag_info;
+#include <material_varyings.glsl>
+#include <normals.glsl>
+#include <pbr.glsl>
+#include <texture.glsl>
+#include <material_engine_lighting.glsl>
+#include <material_inputs.glsl>
+#include <material_lighting.glsl>
 
 uniform sampler2D base_color_texture;
 uniform sampler2D emissive_texture;
 uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
 uniform sampler2D occlusion_texture;
-
-uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
-uniform sampler2D brdf_lut;
-uniform sampler2D shadow_map;
-
-in vec3 v_position;
-in vec3 v_normal;
-in vec3 v_viewvector; // camera_position - vertex_position
-in vec2 v_texture_coords;
-in vec4 v_color;
-
-out vec4 frag_color;
-
-#include <normals.glsl>
-#include <pbr.glsl>
-#include <texture.glsl>
-#include <material_inputs.glsl>
-#include <material_lighting.glsl>
 
 // Fills the surface description for the standard glTF metallic-roughness
 // material from the FragInfo parameters and the material textures. The shared
