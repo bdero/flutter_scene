@@ -1,7 +1,9 @@
 /// Build-hook helpers for flutter_scene.
 ///
-/// Call [buildModels] from your app's `hook/build.dart` to convert glTF
-/// (`.glb`) source assets into flutter_scene's `.model` format at build time:
+/// Call these from your app's `hook/build.dart` at build time: [buildModels]
+/// converts glTF (`.glb`) source assets into flutter_scene's `.model` format,
+/// and [buildMaterials] compiles `.fmat` custom-material files into a Flutter
+/// GPU shader bundle plus a parameter sidecar.
 ///
 /// ```dart
 /// import 'package:hooks/hooks.dart';
@@ -10,14 +12,22 @@
 /// void main(List<String> args) {
 ///   build(args, (config, output) async {
 ///     buildModels(buildInput: config, inputFilePaths: ['assets/dash.glb']);
+///     await buildMaterials(
+///       buildInput: config,
+///       buildOutput: output,
+///       materials: ['materials/toon.fmat'],
+///     );
 ///   });
 /// }
 /// ```
 library;
 
-// Native uses the real dart:io implementation; web/wasm resolves to a stub so
+// Native uses the real dart:io implementations; web/wasm resolves to stubs so
 // dart:io (and package:hooks) stay off the wasm dependency graph, keeping the
 // package WASM-compatible. Build hooks only ever run on the native host.
 export 'src/importer/build_hooks.dart'
     if (dart.library.js_interop) 'src/importer/build_hooks_unsupported.dart'
     show buildModels;
+export 'src/fmat/build_materials.dart'
+    if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
+    show buildMaterials;
