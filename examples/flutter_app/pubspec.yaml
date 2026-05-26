@@ -12,7 +12,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_gpu_shaders: ^0.4.0
+  flutter_gpu_shaders: ^0.4.4
   flutter_scene: ^0.14.0
   hooks: ^1.0.0
   http: ^1.2.0
@@ -31,5 +31,9 @@ flutter:
     - build/models/
     # Source .glb files for the runtime importer demo.
     - assets_src/
-    # Custom shader bundle for the toon example.
+    # Custom shader bundle for the raw-ShaderMaterial toon example.
     - build/shaderbundles/example.shaderbundle
+    # .fmat custom-material bundle and its parameter sidecar, for the
+    # "Toon (.fmat)" example (built by buildMaterials in hook/build.dart).
+    - build/shaderbundles/materials.shaderbundle
+    - build/shaderbundles/materials.fmat.json

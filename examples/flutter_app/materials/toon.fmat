@@ -1,0 +1,52 @@
+// Toon custom material, authored in the .fmat format. Unlit: Surface() computes
+// the final banded-diffuse-plus-rim color directly. A port of the raw
+// example_toon.frag, but with declared, type-checked parameters and no
+// hand-packed uniform block.
+
+material {
+  name: "FmatToon",
+  shading_model: unlit,
+  blending: opaque,
+  culling: back,
+
+  parameters: [
+    { type: vec4, name: base_color, hint: source_color, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: vec4, name: rim_color, hint: source_color, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: vec3, name: light_direction, default: [0.4, 0.7, 0.5] },
+    { type: float, name: band_count, hint: range(1, 8, 1), default: 3.0 },
+    { type: float, name: rim_strength, hint: range(0, 2, 0.01), default: 0.6 },
+    { type: float, name: rim_width, hint: range(0, 1, 0.01), default: 0.3 },
+    { type: float, name: ambient, hint: range(0, 1, 0.01), default: 0.2 },
+    { type: sampler2d, name: base_color_texture, hint: default_white },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 normal = GetWorldNormal();
+    vec3 light_dir = normalize(material_params.light_direction);
+    vec3 view_dir = GetViewDirection();
+
+    // Banded N.L diffuse: floor() quantizes the term into bands.
+    float n_dot_l = max(dot(normal, light_dir), 0.0);
+    float bands = max(material_params.band_count, 1.0);
+    float banded = floor(n_dot_l * bands + 0.001) / bands;
+
+    // Rim term: bright at grazing angles.
+    float n_dot_v = max(dot(normal, view_dir), 0.0);
+    float rim = 1.0 - n_dot_v;
+    rim = smoothstep(1.0 - material_params.rim_width, 1.0, rim) *
+          material_params.rim_strength;
+
+    vec4 albedo_sample = texture(base_color_texture, GetUV0());
+    vec3 albedo = material_params.base_color.rgb * albedo_sample.rgb;
+
+    vec3 lit = albedo *
+        (material_params.ambient + banded * (1.0 - material_params.ambient));
+    vec3 final_color = lit + material_params.rim_color.rgb * rim;
+
+    float alpha = material_params.base_color.a * albedo_sample.a;
+    material.base_color = vec4(final_color, alpha);
+    PrepareMaterial(material);
+  }
+}

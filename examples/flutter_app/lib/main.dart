@@ -11,6 +11,7 @@ import 'example_nav_route.dart';
 import 'example_settings.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
+import 'example_toon_fmat.dart';
 
 void main() {
   runApp(const MyApp());
@@ -50,6 +51,8 @@ class _MyAppState extends State<MyApp> {
       'Navigation Route':
           (context) => ExampleNavRoute(elapsedSeconds: elapsedSeconds),
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
+      'Toon (.fmat)':
+          (context) => ExampleToonFmat(elapsedSeconds: elapsedSeconds),
       'Stress Tests':
           (context) => ExampleStressTests(elapsedSeconds: elapsedSeconds),
     };

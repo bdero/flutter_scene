@@ -18,5 +18,14 @@ void main(List<String> args) {
       buildOutput: output,
       manifestFileName: 'shaders/example.shaderbundle.json',
     );
+    // Compile the .fmat custom material into its own bundle plus a parameter
+    // sidecar, consumed by the "Toon (.fmat)" example through
+    // PreprocessedMaterial. Produces build/shaderbundles/materials.shaderbundle
+    // and materials.fmat.json (both listed as assets in pubspec.yaml).
+    await buildMaterials(
+      buildInput: config,
+      buildOutput: output,
+      materials: ['materials/toon.fmat'],
+    );
   });
 }
