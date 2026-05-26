@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -47,8 +51,26 @@ Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
     ..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3);
 }
 
-/// The smoke scene set. Kept small and procedural (no asset/model build hook)
-/// so the captures are deterministic.
+/// Custom-material assets pre-loaded by [loadSmokeMaterials], so the
+/// synchronous [SmokeScene] setup closures can build a [PreprocessedMaterial].
+gpu.ShaderLibrary? _materialsLibrary;
+Map<String, Object?>? _materialsMetadata;
+
+/// Loads the `buildMaterials` output (bundle plus parameter sidecar) once. Call
+/// before pumping a scene that uses a custom material.
+Future<void> loadSmokeMaterials() async {
+  if (_materialsLibrary != null) return;
+  _materialsLibrary = await gpu.loadShaderLibraryAsync(
+    'build/shaderbundles/materials.shaderbundle',
+  );
+  final sidecar = await rootBundle.loadString(
+    'build/shaderbundles/materials.fmat.json',
+  );
+  _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
+}
+
+/// The smoke scene set. Mostly procedural for determinism; the final scene
+/// exercises a custom `.fmat` material compiled by the build hook.
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Diffuse-ish PBR under the default studio IBL.
   SmokeScene('pbr_cuboid', () {
@@ -106,6 +128,36 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           vm.Matrix4.rotationY(0.6);
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
+  }),
+  // A custom .fmat material (the unlit toon) compiled by buildMaterials and
+  // driven through PreprocessedMaterial. Exercises the whole custom-material
+  // path end to end: the build hook, the generated shader, the sidecar, and
+  // the type-checked runtime parameters.
+  SmokeScene('fmat_toon', () {
+    final shader = _materialsLibrary!['FmatToon']!;
+    final metadata =
+        (_materialsMetadata!['FmatToon'] as Map).cast<String, Object?>();
+    final material = PreprocessedMaterial(
+      fragmentShader: shader,
+      metadata: metadata,
+    );
+    material.parameters
+      ..setColor('base_color', const Color(0xFFE0A030))
+      ..setColor('rim_color', const Color(0xFF40C0FF))
+      // Light toward the camera so the banded diffuse reads on the visible
+      // faces.
+      ..setVec3('light_direction', vm.Vector3(3.0, 2.0, 4.0))
+      ..setFloat('band_count', 4.0)
+      ..setFloat('ambient', 0.3)
+      ..setFloat('rim_strength', 0.4)
+      ..setFloat('rim_width', 0.35);
+    final scene = Scene();
+    scene.add(
+      Node(
+        mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material),
+      )..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3),
+    );
+    return (scene: scene, camera: _camera());
   }),
 ];
 

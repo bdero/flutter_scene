@@ -20,6 +20,7 @@ void main() {
       // pumpWidget) touches baseShaderLibrary, which throws on web if touched
       // before initialization completes.
       await Scene.initializeStaticResources();
+      await loadSmokeMaterials();
 
       await tester.pumpWidget(
         MaterialApp(
