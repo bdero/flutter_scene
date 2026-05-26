@@ -32,7 +32,9 @@ dependencies:
   # falls back to a WebGL2 backend on web.
   flutter_gpu:
     sdk: flutter
-  flutter_gpu_shaders: ^0.4.0
+  # 0.4.4 adds the includeDirectories parameter that buildMaterials uses to put
+  # flutter_scene's framework shaders on impellerc's include path.
+  flutter_gpu_shaders: ^0.4.4
   hooks: ^1.0.0
   image: ^4.5.0
   logging: ^1.2.0
