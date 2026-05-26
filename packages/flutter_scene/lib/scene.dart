@@ -34,7 +34,9 @@ export 'src/geometry/swept_geometry.dart'
 
 export 'src/material/environment.dart';
 export 'src/material/material.dart';
+export 'src/material/material_parameters.dart';
 export 'src/material/physically_based_material.dart';
+export 'src/material/preprocessed_material.dart';
 export 'src/material/shader_material.dart';
 export 'src/material/unlit_material.dart';
 
