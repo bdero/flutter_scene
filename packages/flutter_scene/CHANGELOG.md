@@ -1,7 +1,14 @@
 ## 0.15.0
 
-Post-processing effects chain.
+Custom materials and a post-processing effects chain.
 
+* Added the `.fmat` custom-material format: declare typed parameters and a
+  small `Surface()` GLSL function instead of hand-binding a raw shader. The
+  `buildMaterials` build hook compiles a `.fmat` into a shader bundle plus a
+  metadata sidecar; at runtime, `PreprocessedMaterial` and `MaterialParameters`
+  set the parameters by name with type checking and no manual std140 packing.
+  The lower-level `ShaderMaterial` remains as an escape hatch. See
+  `MATERIALS.md`.
 * Added a post-processing suite configured per scene via
   `Scene.postProcess`: bloom, color grading (brightness, contrast,
   saturation, white balance, lift/gamma/gain), vignette, chromatic
@@ -13,6 +20,9 @@ Post-processing effects chain.
 * The tone-mapping pass is now the resolve pass: it applies exposure,
   color grading, the tone-mapping operator, and the display EOTF, and
   composites bloom.
+* Fixed image-based lighting on the OpenGL ES backend.
+* Building `.fmat` custom materials requires `flutter_gpu_shaders` 0.4.4 or
+  newer.
 
 ## 0.14.2
 

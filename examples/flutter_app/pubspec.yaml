@@ -13,7 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu_shaders: ^0.4.4
-  flutter_scene: ^0.14.0
+  flutter_scene: ^0.15.0
   hooks: ^1.0.0
   http: ^1.2.0
   path_provider: ^2.1.0
