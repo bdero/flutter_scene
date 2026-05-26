@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
@@ -217,43 +217,23 @@ class PhysicallyBasedMaterial extends Material {
     super.bind(pass, transientsBuffer, lighting);
 
     final EnvironmentMap env = environment ?? lighting.environmentMap;
-    final DirectionalLight? light = lighting.directionalLight;
-    final cascades =
-        lighting.shadowMap == null
-            ? const <ShadowCascade>[]
-            : lighting.cascades;
 
-    // FragInfo std140 layout (608 bytes / 152 floats):
+    // FragInfo std140 layout (608 bytes / 152 floats). EngineLightingUniforms
+    // packs the shared engine lighting, image-based-lighting, and shadow
+    // fields (identical for every lit material); this material fills only its
+    // own, disjoint fields:
     //   [0..3]    vec4  color
     //   [4..7]    vec4  emissive_factor
-    //   [8..43]   vec4  diffuse_sh0..8 (xyz used, w padding)
-    //   [44..47]  vec4  directional_light_direction (xyz used)
-    //   [48..51]  vec4  directional_light_color (rgb = color * intensity)
-    //   [52..115] mat4  light_space_matrix[4] (shadow cascades)
-    //   [116..119] vec4 cascade_box_sizes (world-space box size each)
     //   [120]     float vertex_color_weight
     //   [121]     float metallic_factor
     //   [122]     float roughness_factor
     //   [123]     float has_normal_map
     //   [124]     float normal_scale
     //   [125]     float occlusion_strength
-    //   [126]     float environment_intensity
-    //   [127]     float has_directional_light
-    //   [128]     float casts_shadow
-    //   [129]     float shadow_bias
-    //   [130]     float shadow_normal_bias
-    //   [131]     float shadow_texel_size (1 / cascade tile resolution)
-    //   [132]     float render_target_flip_y
     //   [133]     float alpha_mode (0 opaque, 1 mask, 2 blend)
     //   [134]     float alpha_cutoff
-    //   [135]     float shadow_fade (world-space far-edge fade width)
-    //   [136]     float shadow_softness (world-space penumbra radius)
-    //   [137]     float shadow_cascade_count
-    //   [138]     float prefilter_flip_y (OpenGL ES atlas latitude flip)
-    //   [139]     padding to a 16-byte boundary
-    //   [140..155] mat4  environment_transform (3x3 rotation, last col/row
-    //              identity; mat4 not mat3 to dodge a GLES std140-mat3 bug)
-    final fragInfo = Float32List(156);
+    final fragInfo = Float32List(EngineLightingUniforms.fragInfoFloatCount);
+    EngineLightingUniforms.packInto(fragInfo, lighting, env);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;
@@ -262,69 +242,14 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[5] = emissiveFactor.g;
     fragInfo[6] = emissiveFactor.b;
     fragInfo[7] = emissiveFactor.a;
-    final shCoefficients = env.diffuseSphericalHarmonics;
-    for (var i = 0; i < shCoefficients.length; i++) {
-      fragInfo[8 + i * 4] = shCoefficients[i].x;
-      fragInfo[9 + i * 4] = shCoefficients[i].y;
-      fragInfo[10 + i * 4] = shCoefficients[i].z;
-    }
-    if (light != null) {
-      fragInfo[44] = light.direction.x;
-      fragInfo[45] = light.direction.y;
-      fragInfo[46] = light.direction.z;
-      fragInfo[48] = light.color.x * light.intensity;
-      fragInfo[49] = light.color.y * light.intensity;
-      fragInfo[50] = light.color.z * light.intensity;
-    }
-    for (var i = 0; i < cascades.length; i++) {
-      fragInfo.setRange(
-        52 + i * 16,
-        68 + i * 16,
-        cascades[i].lightSpaceMatrix.storage,
-      );
-      fragInfo[116 + i] = cascades[i].boxSize;
-    }
     fragInfo[120] = vertexColorWeight;
     fragInfo[121] = metallicFactor;
     fragInfo[122] = roughnessFactor;
     fragInfo[123] = normalTexture != null ? 1.0 : 0.0;
     fragInfo[124] = normalScale;
     fragInfo[125] = occlusionStrength;
-    fragInfo[126] = lighting.environmentIntensity;
-    fragInfo[127] = light != null ? 1.0 : 0.0;
-    fragInfo[128] = cascades.isEmpty ? 0.0 : 1.0;
-    fragInfo[129] = light?.shadowDepthBias ?? 0.0;
-    fragInfo[130] = light?.shadowNormalBias ?? 0.0;
-    fragInfo[131] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
-    // render_target_flip_y: flips V when sampling render-to-texture targets
-    // (the shadow map, the prefiltered-radiance atlas). flutter_scene now
-    // stores those top-down on every backend (Metal/Vulkan natively; OpenGL
-    // ES via the vertex-stage Y-flip workaround, see y_flip.dart), so the
-    // top-down sampling value (1.0) is correct everywhere.
-    fragInfo[132] = 1.0;
     fragInfo[133] = alphaMode.index.toDouble();
     fragInfo[134] = alphaCutoff;
-    fragInfo[135] = light?.shadowFadeRange ?? 0.0;
-    fragInfo[136] = light?.shadowSoftness ?? 0.0;
-    fragInfo[137] = cascades.length.toDouble();
-    // prefilter_flip_y: invert the atlas latitude when sampling on backends
-    // that store render-to-texture bottom-up (OpenGL ES). See y_flip.dart and
-    // SamplePrefilteredRadiance. Temporary, part of the Y-flip workaround.
-    fragInfo[138] = backendFlipsRenderTargetY ? 1.0 : 0.0;
-    // mat4 environment_transform: the 3x3 rotation in the upper-left, last
-    // row/column identity. A mat4 (not mat3) because Impeller's OpenGL ES
-    // backend mis-reads a std140 mat3 uniform (its padded vec3 columns),
-    // which collapsed the IBL lookup directions to a constant on GLES; a
-    // mat4's columns are tightly-packed vec4s, identical across backends.
-    // std140 mat4 columns are 16 bytes each, landing at [140], [144], [148],
-    // [152]. Matrix3.storage is column-major (3 floats per column).
-    final envTransform = lighting.environmentTransform.storage;
-    for (var col = 0; col < 3; col++) {
-      fragInfo[140 + col * 4] = envTransform[col * 3];
-      fragInfo[141 + col * 4] = envTransform[col * 3 + 1];
-      fragInfo[142 + col * 4] = envTransform[col * 3 + 2];
-    }
-    fragInfo[155] = 1.0; // mat4 column 3 = (0, 0, 0, 1)
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -370,43 +295,15 @@ class PhysicallyBasedMaterial extends Material {
         heightAddressMode: gpu.SamplerAddressMode.repeat,
       ),
     );
-    // Specular IBL atlas: horizontal repeat (the panorama wraps in
-    // longitude), vertical clamp (it's a stack of roughness bands;
-    // wrapping V would bleed between them).
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('prefiltered_radiance'),
-      env.prefilteredRadianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('brdf_lut'),
-      Material.getBrdfLutTexture(),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
-    // Bilinear + clamp. Linear filtering interpolates the stored depth
-    // between texels, so a flat receiver compares against the smooth
-    // surface rather than a coarse cascade's blocky per-texel depth,
-    // which removes the patchy self-shadow on distant ground. Clamp (not
-    // wrap) keeps out-of-bounds PCF taps from reading another cascade's
-    // tile. When there's no shadow this frame the white placeholder
-    // reads as depth 1.0 (always lit) and casts_shadow is 0 anyway.
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('shadow_map'),
-      Material.whitePlaceholder(lighting.shadowMap),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-      ),
+    // Image-based-lighting atlas, BRDF LUT, and shadow map. Shared with
+    // PreprocessedMaterial: the sampler choices (radiance repeat/clamp, LUT
+    // clamp/clamp, shadow bilinear/clamp) and the white shadow placeholder
+    // live in EngineLightingUniforms.
+    EngineLightingUniforms.bindEngineTextures(
+      pass,
+      fragmentShader,
+      lighting,
+      env,
     );
   }
 
