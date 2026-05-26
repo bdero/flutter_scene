@@ -21,8 +21,10 @@ String emitFragmentGlsl(FmatMaterial material) {
   final sb = StringBuffer();
   final lit = material.shadingModel == FmatShadingModel.lit;
 
-  sb.writeln('// Generated from a .fmat material by flutter_scene. '
-      'Do not edit.');
+  sb.writeln(
+    '// Generated from a .fmat material by flutter_scene. '
+    'Do not edit.',
+  );
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
   sb.writeln('#include <texture.glsl>');
@@ -64,8 +66,10 @@ String emitFragmentGlsl(FmatMaterial material) {
     sb.writeln('  frag_color = EvaluateLighting(material);');
   } else {
     sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');
-    sb.writeln('  frag_color = vec4(material.base_color.rgb, 1.0) * '
-        'material.base_color.a;');
+    sb.writeln(
+      '  frag_color = vec4(material.base_color.rgb, 1.0) * '
+      'material.base_color.a;',
+    );
   }
   sb.writeln('}');
 
@@ -103,11 +107,11 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
 Map<String, Object?> _hintJson(FmatHint hint) {
   return switch (hint.kind) {
     FmatHintKind.range => <String, Object?>{
-        'kind': 'range',
-        'min': hint.rangeMin,
-        'max': hint.rangeMax,
-        'step': hint.rangeStep,
-      },
+      'kind': 'range',
+      'min': hint.rangeMin,
+      'max': hint.rangeMax,
+      'step': hint.rangeStep,
+    },
     FmatHintKind.sourceColor => const {'kind': 'source_color'},
     FmatHintKind.defaultWhite => const {'kind': 'default_white'},
     FmatHintKind.defaultBlack => const {'kind': 'default_black'},

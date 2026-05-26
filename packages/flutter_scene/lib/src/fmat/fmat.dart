@@ -10,7 +10,10 @@ import 'package:flutter_scene/src/fmat/fmat_parser.dart';
 
 export 'package:flutter_scene/src/fmat/fmat_ast.dart';
 export 'package:flutter_scene/src/fmat/fmat_emitter.dart'
-    show emitFragmentGlsl, buildSidecar, kMaterialParamsBlock,
+    show
+        emitFragmentGlsl,
+        buildSidecar,
+        kMaterialParamsBlock,
         kMaterialParamsInstance;
 export 'package:flutter_scene/src/fmat/fmat_parser.dart' show parseFmat;
 
