@@ -1,38 +1,220 @@
 # Custom materials in flutter_scene
 
-This doc walks through writing a custom material for flutter_scene by
-authoring a fragment shader. The current surface is `ShaderMaterial`;
-a more ergonomic declarative material format is planned and tracked
-in [issue #22][issue22].
+flutter_scene gives you two ways to write a custom material:
 
-If you've worked with Three.js's `ShaderMaterial`, Bevy's `Material`
-trait, or Filament's `.mat` files, the underlying mental model will
-be familiar. flutter_scene's surface is the most permissive of the
-three: you write a complete GLSL fragment shader, declare the uniform
-blocks and samplers you want, and bind them by name from Dart.
+1. **The `.fmat` declarative format (recommended).** You declare your
+   parameters once and fill in a small `Surface()` function in GLSL. A build
+   hook compiles it, and `PreprocessedMaterial` wires it up at runtime: typed,
+   name-addressed parameters with no std140 packing by hand, and the engine's
+   physically based lighting for free if you want it. This is the path most
+   materials should use.
+2. **`ShaderMaterial` (the low-level escape hatch).** You write a complete raw
+   GLSL fragment shader, declare your own uniform blocks and samplers, and bind
+   them by name from Dart, packing std140 yourself. Use this when you need full
+   control or a shader shape the `.fmat` format doesn't cover yet.
 
-## Authoring workflow at a glance
+Both paths share the same engine contract (the vertex outputs your shader
+receives and the color it must output), documented below. If you've used
+Filament's `.mat` files or Godot's shaders, the `.fmat` model will feel
+familiar; if you've used Three.js's `ShaderMaterial`, that's `ShaderMaterial`
+here.
 
-1. Add `flutter_gpu_shaders` to your app and create a shader bundle
-   manifest plus a `hook/build.dart` that compiles it.
-2. Write a fragment shader. Consume the standard vertex outputs the
-   engine provides; declare your own uniform blocks and textures.
-3. Load the compiled bundle at runtime with
-   `gpu.ShaderLibrary.fromAsset(...)` and pull out your fragment
-   shader entry by name.
-4. Construct a `ShaderMaterial` wrapping the shader; set its uniform
-   blocks and textures by name; attach it to the `MeshPrimitive`s
-   that should use it.
+The roadmap for this surface is tracked in [issue #22][issue22].
 
-The toon example under `examples/flutter_app/` is a complete worked
-case. Read along with this doc.
+---
 
-## The engine contract
+# The `.fmat` format
 
-flutter_scene's engine vertex shaders (`UnskinnedVertex` and
-`SkinnedVertex`, both in the bundle exposed as
-`baseShaderLibrary`) emit the same five outputs in both layouts.
-Your fragment shader receives them as `in` declarations:
+## Quick start
+
+Author a material. A `.fmat` file has two blocks: a `material { }` metadata
+block and a `fragment { }` GLSL block.
+
+```
+// materials/toon.fmat
+material {
+  name: "Toon",
+  shading_model: unlit,
+  blending: opaque,
+  culling: back,
+
+  parameters: [
+    { type: vec4,      name: base_color, hint: source_color, default: [1, 1, 1, 1] },
+    { type: vec3,      name: light_direction, default: [0.4, 0.7, 0.5] },
+    { type: int,       name: band_count, hint: range(1, 8, 1), default: 3 },
+    { type: sampler2d, name: base_color_texture, hint: default_white },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 n = GetWorldNormal();
+    float n_dot_l = max(dot(n, normalize(material_params.light_direction)), 0.0);
+    float bands = max(float(material_params.band_count), 1.0);
+    float banded = floor(n_dot_l * bands) / bands;
+
+    vec4 tex = texture(base_color_texture, GetUV0());
+    material.base_color = vec4(
+        material_params.base_color.rgb * tex.rgb * banded,
+        material_params.base_color.a * tex.a);
+    PrepareMaterial(material);
+  }
+}
+```
+
+Compile it from your app's `hook/build.dart`:
+
+```dart
+import 'package:flutter_scene/build_hooks.dart';
+import 'package:hooks/hooks.dart';
+
+void main(List<String> args) {
+  build(args, (config, output) async {
+    await buildMaterials(
+      buildInput: config,
+      buildOutput: output,
+      materials: ['materials/toon.fmat'],
+    );
+  });
+}
+```
+
+Declare the outputs as assets in `pubspec.yaml` (a `.shaderbundle` plus a
+`.fmat.json` parameter sidecar):
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene: ^0.14.0
+  hooks: ^1.0.0
+
+flutter:
+  assets:
+    - build/shaderbundles/materials.shaderbundle
+    - build/shaderbundles/materials.fmat.json
+```
+
+Then construct and use it at runtime:
+
+```dart
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_scene/gpu.dart' as gpu;
+import 'package:flutter_scene/scene.dart';
+
+final library = gpu.ShaderLibrary.fromAsset(
+  'build/shaderbundles/materials.shaderbundle',
+)!;
+final sidecar = (jsonDecode(
+  await rootBundle.loadString('build/shaderbundles/materials.fmat.json'),
+) as Map).cast<String, Object?>();
+
+final toon = PreprocessedMaterial(
+  fragmentShader: library['Toon']!,
+  metadata: (sidecar['Toon'] as Map).cast<String, Object?>(),
+);
+toon.parameters
+  ..setColor('base_color', const Color(0xFFE0A030))
+  ..setInt('band_count', 4)
+  ..setTexture('base_color_texture', myTexture);
+
+node.mesh!.primitives[0].material = toon;
+```
+
+The bundle entry name and the sidecar key are the material's `name`
+(`"Toon"` above). One `buildMaterials` call can compile several `.fmat` files
+into one bundle; each becomes an entry keyed by its `name`.
+
+## The `material` block
+
+| Key | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `name` | string (required) | | The bundle entry name and sidecar key. |
+| `shading_model` | `lit`, `unlit` | `lit` | `lit` runs the engine's PBR lighting; `unlit` outputs your color directly. |
+| `blending` | `opaque`, `alpha` | `opaque` | `alpha` routes the material through the depth-sorted translucent pass. |
+| `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
+| `parameters` | list of objects | `[]` | The material's parameters (see below). |
+
+## Parameters
+
+Each parameter is `{ type, name, hint?, default? }`.
+
+**Types.** Scalar and vector types (`float`, `int`, `vec2`, `vec3`, `vec4`,
+`mat4`) are packed into a uniform block named `MaterialParams`; you read them in
+the shader as `material_params.<name>`. Sampler types (`sampler2d`,
+`samplerCube`) are top-level uniforms; you read them by their bare name. `mat3`
+is intentionally unsupported because of a std140 layout bug on the GLES backend;
+use `mat4`.
+
+**Hints** add editor and runtime semantics:
+
+| Hint | Valid on | Effect |
+| --- | --- | --- |
+| `source_color` | `vec3`, `vec4` | The value is an sRGB-authored color; `setColor` decodes it to linear. |
+| `range(min, max, step)` | `float`, `int` | A bounded numeric range (recorded for tooling). |
+| `default_white` / `default_black` / `default_normal` / `default_transparent` | samplers | The placeholder texture used until you set one. |
+
+**Defaults** are a number for scalars, or a list for vectors and matrices
+(`default: [1, 1, 1, 1]` for a `vec4`). Samplers take a placeholder via their
+hint, not a `default`. Defaults are applied when the material is constructed, so
+an unset parameter still renders sensibly.
+
+## The `fragment` block
+
+The `fragment` block holds GLSL. A `lit` material must define
+`void Surface(inout MaterialInputs material)`; you fill the surface description
+and the engine runs the lighting. An `unlit` material's `Surface()` writes the
+final color into `material.base_color`.
+
+`MaterialInputs` is:
+
+```glsl
+struct MaterialInputs {
+  vec4 base_color;   // linear rgb, straight (non-premultiplied) alpha
+  vec3 normal;       // world-space shading normal
+  vec3 emissive;     // linear emissive radiance (lit only)
+  float metallic;    // 0 dielectric .. 1 conductor (lit only)
+  float roughness;   // perceptual roughness, 0..1 (lit only)
+  float occlusion;   // ambient occlusion, 1 = unoccluded (lit only)
+};
+```
+
+Call `PrepareMaterial(material)` before returning from `Surface()` (a Filament
+convention; it is reserved for derived-value setup).
+
+**Engine inputs are read through accessors** rather than the raw varyings:
+
+```glsl
+vec3 GetWorldPosition();   // world-space fragment position
+vec3 GetWorldNormal();     // normalized world-space geometric normal
+vec3 GetViewDirection();   // normalized direction toward the camera
+vec2 GetUV0();             // primary texture coordinates
+vec4 GetVertexColor();     // interpolated per-vertex color (white if none)
+```
+
+The standard GLSL helpers from the engine's shader library are `#include`d for
+you and available in `Surface()`: `SRGBToLinear`, the Cook-Torrance BRDF pieces
+(`FresnelSchlick`, `DistributionGGX`, ...), `PerturbNormal` (normal-map
+perturbation), and `SamplePrefilteredRadiance`.
+
+For a `lit` material, fill `base_color` / `metallic` / `roughness` / `normal` /
+`occlusion` / `emissive` and the engine produces the lit color (image-based
+lighting plus the scene's directional light, with shadows). For an `unlit`
+material, compute whatever you want and write it into `base_color`; the engine
+outputs it premultiplied.
+
+> The per-light `light()` hook (a custom BRDF inside the engine light loop) is
+> not implemented yet; today, `lit` uses the engine BRDF and `unlit` gives you
+> full control. See [issue #22][issue22].
+
+---
+
+# The engine contract (both paths)
+
+flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
+emit the same five world-space outputs. The `.fmat` accessors wrap these; a raw
+`ShaderMaterial` declares them directly:
 
 ```glsl
 in vec3 v_position;        // world space
@@ -42,60 +224,90 @@ in vec2 v_texture_coords;
 in vec4 v_color;           // per-vertex color, white when the model has none
 ```
 
-You must write to `out vec4 frag_color;` (the location-0 fragment
-output is fixed by the engine). Everything else is up to you.
+The fragment output is `out vec4 frag_color;` at location 0.
 
-**Write linear color premultiplied by alpha.** flutter_scene renders
-into a floating-point HDR scene-color target and then runs a single
-full-screen resolve pass that applies exposure (`Scene.exposure`), the
-tone-mapping operator (`Scene.toneMapping` — Khronos PBR Neutral by
-default), and the display EOTF. So your fragment shader should output
-*linear* radiance — do **not** tone-map or gamma-encode in your shader
-— and should premultiply RGB by alpha (e.g.
-`frag_color = vec4(linear_rgb, 1.0) * alpha;`). Values above 1.0 are
-fine and desirable; they're what the tone curve rolls off. If you
-sample an sRGB-encoded texture (like a base-color map), linearize it
-first (`pow(c, vec3(2.2))`).
+**Output linear color premultiplied by alpha.** flutter_scene renders into a
+floating-point HDR scene-color target and then runs one full-screen resolve pass
+that applies exposure (`Scene.exposure`), the tone-mapping operator
+(`Scene.toneMapping`, Khronos PBR Neutral by default), and the display EOTF. So
+your shader outputs *linear* radiance (do not tone-map or gamma-encode), and
+premultiplies rgb by alpha. Values above 1.0 are fine — the tone curve rolls
+them off. When you sample an sRGB texture, linearize it first (`SRGBToLinear`,
+or `pow(c, vec3(2.2))`). A `.fmat` material gets the premultiplied output for
+free; `EvaluateLighting` (lit) and the unlit path both handle it.
 
-The engine binds a vertex uniform block named `FrameInfo` containing
-the model, camera, and camera-position matrices. You do not see this
-in your fragment shader directly; the vertex outputs above are
-already in world space.
+The vertex `FrameInfo` block (model / camera matrices) is engine-bound and not
+visible in the fragment stage; the world-space outputs already encode it.
 
-When you set `ShaderMaterial.useEnvironment = true`, the engine also
-binds the active `Scene`'s image-based-lighting textures to these
-standard sampler names if your fragment shader declares them:
+---
 
-```glsl
-uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
-uniform sampler2D brdf_lut;             // split-sum DFG lookup
+# Building: the `buildMaterials` hook
+
+`buildMaterials` (from `package:flutter_scene/build_hooks.dart`) preprocesses
+each `.fmat`, emits GLSL, compiles it through `impellerc`, and writes two outputs
+under `build/shaderbundles/`:
+
+- `<bundleName>.shaderbundle` — the compiled Flutter GPU shader bundle.
+- `<bundleName>.fmat.json` — the parameter sidecar the runtime needs.
+
+`bundleName` defaults to `materials`. List both as assets (see the quick start).
+The generated shaders `#include` flutter_scene's framework GLSL; the hook puts
+that directory on `impellerc`'s include path for you, so nothing is copied into
+your project.
+
+You can call `buildMaterials` alongside `buildModels` and
+`buildShaderBundleJson` in the same hook.
+
+---
+
+# Runtime: `PreprocessedMaterial` and `MaterialParameters`
+
+Load the bundle (`gpu.ShaderLibrary.fromAsset`, or `loadShaderLibraryAsync` on
+web) and the sidecar (`rootBundle.loadString` + `jsonDecode`), then construct a
+`PreprocessedMaterial` per material entry (see the quick start). Set its
+parameters through `material.parameters`, a `MaterialParameters`.
+
+`MaterialParameters` is type-checked and name-addressed. You never compute std140
+offsets: parameter types come from the sidecar, byte offsets come from the
+compiled shader's reflection, and a wrong-typed value throws instead of silently
+corrupting the uniform block. Three tiers share one backing buffer:
+
+```dart
+// Typed setters (the safe default):
+params.setFloat('rim_width', 0.2);
+params.setVec4('tint', Vector4(0.5, 0.3, 1.0, 1.0));
+params.setColor('base_color', const Color(0xFF8844FF)); // sRGB-decoded if source_color
+params.setTexture('base_color_texture', myTexture);
+
+// Dynamic, dispatches on the declared type and throws on a mismatch:
+params['rim_width'] = 0.2;        // ok
+params['rim_width'] = Vector4.zero(); // throws: rim_width is float
+
+// Raw escape hatch for hot loops (you own correctness here):
+params.rawBlock.setFloat32(params.offsetOf('rim_width'), 0.2, Endian.host);
 ```
 
-`prefiltered_radiance` is a vertical atlas of equirectangular
-roughness bands (band `i` = perceptual roughness `i/(N-1)`, mirror at
-the top); sample it the way `flutter_scene_standard.frag`'s
-`SamplePrefilteredRadiance` does (interpolate between the two nearest
-bands, and flip V because it's a render-to-texture target). The diffuse
-irradiance spherical-harmonic coefficients are *not* bound generically
-— for the full PBR ambient term, declare your own uniform block for
-them or extend `PhysicallyBasedMaterial`. Leave these samplers
-undeclared if you don't want image-based lighting.
+A `source_color` parameter is sRGB-decoded to linear on `setColor` (matching the
+shader's `SRGBToLinear`), so authored colors look right. Setting an unknown name
+or a wrong type throws an `ArgumentError` with a message naming the parameter and
+its declared type.
 
-## Writing the fragment shader
+For a `lit` material, set `PreprocessedMaterial.environment` to override the
+scene-wide image-based-lighting environment for that material.
 
-Here's the smallest possible useful shader, which renders the
-per-vertex color modulated by a single uniform tint:
+---
+
+# `ShaderMaterial`: the low-level escape hatch
+
+When you need a shader shape the `.fmat` format doesn't cover, write a complete
+raw fragment shader and drive it with `ShaderMaterial`. You declare your own
+uniform blocks and samplers and bind them by name, packing std140 yourself.
 
 ```glsl
 // shaders/vertex_color.frag
-uniform FragInfo {
-  vec4 tint;
-}
-frag_info;
+uniform FragInfo { vec4 tint; } frag_info;
 
-in vec2 v_texture_coords;
 in vec4 v_color;
-
 out vec4 frag_color;
 
 void main() {
@@ -103,249 +315,120 @@ void main() {
 }
 ```
 
-Save the file under your app's shader directory, then add a manifest
-entry alongside the engine's built-in shaders:
-
-```json
-{
-  "VertexColorFragment": {
-    "type": "fragment",
-    "file": "shaders/vertex_color.frag"
-  }
-}
-```
-
-`flutter_gpu_shaders` compiles each entry through `impellerc` into a
-single `.shaderbundle` packaged with your app.
-
-## Building the shader bundle
-
-In your `hook/build.dart`:
+Add it to a `flutter_gpu_shaders` manifest, compile it with
+`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.4` dependency), then:
 
 ```dart
-import 'package:hooks/hooks.dart';
-import 'package:flutter_gpu_shaders/build.dart';
-
-void main(List<String> args) {
-  build(args, (config, output) async {
-    await buildShaderBundleJson(
-      buildInput: config,
-      buildOutput: output,
-      manifestFileName: 'shaders/my_bundle.shaderbundle.json',
-    );
-  });
-}
-```
-
-In your `pubspec.yaml`:
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  flutter_gpu:
-    sdk: flutter
-  flutter_gpu_shaders: ^0.4.0
-  flutter_scene: ^0.14.0
-
-flutter:
-  assets:
-    - build/shaderbundles/my_bundle.shaderbundle
-```
-
-The bundle is written to `build/shaderbundles/<name>.shaderbundle`,
-relative to your package root. It's the same workflow flutter_scene
-uses for its own shaders.
-
-## Wiring it up in Dart
-
-```dart
-import 'package:flutter_gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/scene.dart';
-
-// If you also `import 'package:flutter/material.dart'`, hide its
-// `Material` widget to avoid a clash with flutter_scene's:
-//
-//   import 'package:flutter/material.dart' hide Material;
-//
-// (flutter_scene's Material is the rendering material; Flutter
-// Material is the design system widget.)
-
-// 1. Load the bundle and pull out the fragment shader.
-final library = gpu.ShaderLibrary.fromAsset(
-  'build/shaderbundles/my_bundle.shaderbundle',
-)!;
-final fragmentShader = library['VertexColorFragment']!;
-
-// 2. Build a ShaderMaterial.
-final material = ShaderMaterial(fragmentShader: fragmentShader);
-
-// 3. Set parameters by name.
-material.setUniformBlockFromFloats('FragInfo', [
-  1.0, 0.8, 0.4, 1.0, // tint
-]);
-
-// 4. Attach to a mesh primitive.
+final library = gpu.ShaderLibrary.fromAsset('build/shaderbundles/my_bundle.shaderbundle')!;
+final material = ShaderMaterial(fragmentShader: library['VertexColorFragment']!);
+material.setUniformBlockFromFloats('FragInfo', [1.0, 0.8, 0.4, 1.0]); // tint
 node.mesh!.primitives[0].material = material;
 ```
 
-The runtime resolves uniform-block and sampler names against the
-shader's reflection metadata. If you misspell a name, Flutter GPU
-throws at draw time with a clear message naming the slot that
-couldn't be found.
+A uniform block is bound by its **type** name (`FragInfo`), not its instance
+name (`frag_info`). Set `ShaderMaterial.useEnvironment = true` to have the engine
+bind `prefiltered_radiance` and `brdf_lut` if your shader declares them (the
+diffuse-irradiance SH coefficients are not bound generically).
 
-## Uniform block packing
+## std140 packing (raw `ShaderMaterial` only)
 
-This is the largest footgun today. Flutter GPU resolves a uniform
-*block* by name and gives you a single byte buffer to fill. The
-contents of that buffer follow the GLSL std140 layout rules, which
-your packing code on the Dart side has to match exactly. The most
-common rules:
+With `ShaderMaterial` you fill a single byte buffer per uniform block, and its
+layout must match GLSL std140 exactly. (`.fmat` materials avoid this entirely —
+the runtime packs from reflection.)
 
-| Type            | Size  | Alignment | Notes |
-| --------------- | ----- | --------- | ----- |
-| `bool`, `int`, `float` | 4 | 4 | |
-| `vec2`          | 8     | 8         | |
-| `vec3`          | 12    | **16**    | Pads up to 16 bytes |
-| `vec4`          | 16    | 16        | |
-| `mat3`          | 48    | 16        | Three `vec4` columns, 4 bytes padding each |
-| `mat4`          | 64    | 16        | |
-| Array element   | varies | **16**   | Every array element strides to the next 16-byte boundary |
-| Struct          | varies | 16       | Same alignment as `vec4` |
+| Type | Size | Alignment | Notes |
+| --- | --- | --- | --- |
+| `bool` / `int` / `float` | 4 | 4 | |
+| `vec2` | 8 | 8 | |
+| `vec3` | 12 | **16** | pads to 16 |
+| `vec4` | 16 | 16 | |
+| `mat4` | 64 | 16 | four `vec4` columns |
+| array element | varies | **16** | each element strides to a 16-byte boundary |
 
-The two cases that bite most often: declare a `vec3` followed by a
-`float` and the float occupies the 4 bytes of trailing pad on the
-`vec3`, not a fresh 16-byte slot. Declare a `float` followed by a
-`vec3` and the `vec3` jumps to the next 16-byte boundary, leaving 12
-bytes of padding before it. **When in doubt, declare your block with
-`vec4`s and `float`s rounded up to multiples of four, and you'll be
-right.**
+The footguns are mixing `vec3` and `float`: a `float` after a `vec3` fills the
+`vec3`'s trailing pad, while a `vec3` after a `float` jumps to the next 16-byte
+boundary. **When in doubt, declare blocks with `vec4`s and group trailing scalars
+into `vec4`-aligned rows of four**, and the layout is unambiguous.
 
-A worked example: this GLSL block
+---
 
-```glsl
-uniform ToonInfo {
-  vec4 base_color;
-  vec4 rim_color;
-  vec4 light_direction;
-  float band_count;
-  float rim_strength;
-  float rim_width;
-  float ambient;
-}
-toon;
-```
+# Render state
 
-packs as 16 floats (64 bytes total), one `vec4` per row, with the
-four trailing scalars filling the final row. Construct it in Dart
-as:
+A `.fmat` material declares render state in its `material` block: `culling`
+(`back` / `front` / `none`) and `blending` (`opaque` / `alpha`). A
+`ShaderMaterial` exposes `cullingMode`, `windingOrder`, and `isOpaqueOverride`
+constructor fields.
 
-```dart
-material.setUniformBlock(
-  'ToonInfo',
-  ByteData.sublistView(
-    Float32List.fromList([
-      // base_color
-      1, 1, 1, 1,
-      // rim_color
-      0.6, 0.8, 1.0, 1.0,
-      // light_direction (vec4 with w=0)
-      0.4, 0.8, -0.5, 0,
-      // band_count, rim_strength, rim_width, ambient
-      3, 1.0, 0.6, 0.3,
-    ]),
-  ),
-);
-```
+Today `blending` is `opaque` (depth-write on, drawn in order) or `alpha`
+(depth-write off, depth-sorted, premultiplied source-over). Additive/multiply
+blend modes and per-material depth state are not configurable yet; they are
+encoder-controlled. See [issue #22][issue22].
 
-TODO ([#22][issue22]): the planned preprocessor will generate this
-packing code from a declarative material source so you never write
-it by hand. Until then, follow the std140 rules and document your
-block layouts in a comment near the GLSL declaration.
+---
 
-## Render-state knobs
+# Current state and what's next
 
-`ShaderMaterial` exposes a small set of render-state fields you can
-configure in the constructor or mutate later:
+The `.fmat` format, its preprocessor, the `buildMaterials` hook, and
+`PreprocessedMaterial` are implemented. Remaining and in-flight work, tracked in
+[issue #22][issue22]:
 
-- `cullingMode` (default `gpu.CullMode.backFace`): which faces to
-  cull before rasterization.
-- `windingOrder` (default `gpu.WindingOrder.counterClockwise`):
-  triangle winding convention. Match this to your model's
-  authoring; glTF uses counter-clockwise.
-- `isOpaqueOverride` (default `true`): whether the encoder treats
-  this material as opaque (depth-write enabled, drawn in submission
-  order) or translucent (deferred to a back-to-front pass with
-  alpha blending).
+- **Hot reload.** Today you restart to pick up a shader edit (the build hook
+  reruns on a restart when an input changes). The Flutter GPU shader hot-reload
+  chain is landing upstream (flutter/flutter#186346); once it rolls into the
+  Flutter SDK, editing a `.fmat` will hot reload in place with no app changes.
+- **The `light()` hook** for a custom per-light BRDF (toon banding inside the
+  engine light loop) is not implemented; use `unlit` for fully custom shading
+  for now.
+- **Typed codegen.** A future step will generate a typed Dart class per `.fmat`
+  (compile-time-checked setters); today you use the name-based
+  `MaterialParameters` API.
+- **Additive/multiply blending and per-material depth state** are not yet
+  configurable.
+- **Vertex-shader customization** is not exposed; materials use the engine's
+  standard vertex shaders.
+- **An inspector** that surfaces the parameter hints as UI does not exist (the
+  metadata is emitted for future tooling).
 
-Set `cullingMode: gpu.CullMode.none` to render double-sided. Set
-`isOpaqueOverride: false` to render translucent materials with
-alpha blending. There are no other render-state knobs today.
+---
 
-TODO ([#22][issue22]): expose the full pipeline-state surface
-declaratively (blend modes, depth modes, polygon mode) once the
-preprocessor lands.
+# Troubleshooting
 
-## Known limitations
+**`gpu.ShaderLibrary.fromAsset` returns null.** The bundle is not in your app's
+assets. Check that `build/shaderbundles/<name>.shaderbundle` (and, for `.fmat`,
+the `.fmat.json` sidecar) are under `flutter.assets`, and that your
+`hook/build.dart` ran. If a shader edit doesn't take effect, the build hook's
+input-hash cache may be stale; follow CLAUDE.md Trap #3's reset recipe.
 
-Each of these is tracked in [issue #22][issue22], which has the full
-design discussion for where the custom-materials surface is going.
+**A `MaterialParameters` setter throws.** You used an unknown parameter name or a
+type that doesn't match the declared type. The message names the parameter and
+its type. Check the `.fmat` `parameters` list.
 
-- **No shader hot reload.** Editing a `.frag` requires a full
-  restart; hot reload doesn't touch the `flutter_gpu_shaders` build
-  hook. This is the single largest authoring-friction gap today.
-- **No engine PBR helpers exposed to your shaders.** If you want
-  PBR-style shading with image-based lighting, you have to either
-  inline the math in your fragment shader or extend
-  `PhysicallyBasedMaterial`. The internal GLSL chunks
-  (`pbr.glsl`, `normals.glsl`, etc.) are not packaged for external
-  `#include` consumption yet.
-- **No declarative material format.** You write GLSL plus call
-  into `ShaderMaterial` from Dart. A planned `.mat`-style format
-  will drive both shader source and Dart bindings from one file.
-- **No inspector / hint annotations.** A planned preprocessor pass
-  will parse Godot-style uniform hints (`hint_range`,
-  `source_color`) and surface them for tooling.
-- **No vertex-shader customization.** Use `UnskinnedVertex` or
-  `SkinnedVertex` from `baseShaderLibrary` (or whichever the
-  geometry was built with).
+**"Failed to find uniform slot X" (raw `ShaderMaterial`).** Flutter GPU couldn't
+resolve a block or sampler name. A block is bound by its type name, not its
+instance name. Note that an instance name must fold (case- and
+underscore-insensitively) to the block name on the GLES backend
+(flutter/flutter#186394); the `.fmat` emitter handles this for you.
 
-## Troubleshooting
+**Wrong colors / black geometry (raw `ShaderMaterial`).** Almost always a std140
+packing mismatch; declare blocks without `vec3` members to rule it out. With a
+`.fmat` material this class of bug is gone (the runtime packs from reflection).
 
-**"`gpu.ShaderLibrary.fromAsset` returns null."** The bundle wasn't
-built into your app's asset directory. Check that
-`build/shaderbundles/<name>.shaderbundle` is listed under
-`flutter.assets` in your `pubspec.yaml`, and that your `hook/build.dart`
-ran (`flutter run` should rerun the hook on each build; if it doesn't,
-follow CLAUDE.md Trap #3's reset recipe).
+**Black or unlit model.** For a `lit` material, confirm the scene has an
+environment and/or a directional light. For raw `ShaderMaterial`, check
+`useEnvironment` and that all declared samplers are bound (unbound samplers read
+garbage on some backends).
 
-**"Failed to find uniform slot X."** Flutter GPU couldn't find a
-uniform block or sampler with the name you passed to `setUniformBlock`
-or `setTexture`. Most common cause: the shader declares it under a
-different name (the variable name, not the type name). For
-`uniform FragInfo { ... } frag_info;` the block is bound by the
-type name `FragInfo`, not the variable name `frag_info`.
+---
 
-**Wrong colors / black geometry.** Almost always a std140 packing
-mismatch. Add a `vec3` test to your block to verify the layout: if
-you read back something other than what you wrote, you have a
-padding bug. The simplest defense is to declare uniform blocks with
-no `vec3` members, just `vec4` and `float`/`vec2`/`vec4` aligned to
-4-float boundaries.
+# See also
 
-**Black model.** Check `useEnvironment` and your sampler bindings.
-Unbound samplers can read garbage on some backends.
-
-## See also
-
-- [Issue #22][issue22]: the declarative material format and
-  preprocessor design discussion.
-- `examples/flutter_app/lib/example_toon.dart`: the worked toon
-  shader that ships with the example app.
-- `packages/flutter_scene/shaders/flutter_scene_standard.frag`: the
-  engine's PBR fragment shader, useful as a reference for what a
-  full custom material can do.
-- `flutter_gpu_shaders` on pub.dev: the build-hook helper that
-  drives `impellerc`.
+- `examples/smoke_render/materials/toon.fmat` and the `fmat_toon` scene in
+  `examples/smoke_render/lib/smoke_scenes.dart`: a worked `.fmat` material
+  rendered through `PreprocessedMaterial`.
+- `examples/flutter_app/lib/example_toon.dart`: the raw-`ShaderMaterial` toon.
+- `packages/flutter_scene/shaders/flutter_scene_standard.frag` and
+  `material_lighting.glsl`: the engine's PBR shader and the lighting framework a
+  `lit` material composes against.
+- [Issue #22][issue22]: the custom-materials roadmap.
 
 [issue22]: https://github.com/bdero/flutter_scene/issues/22
