@@ -121,9 +121,13 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('shadow_map'),
       Material.whitePlaceholder(lighting.shadowMap),
+      // The atlas is fp32. GLES devices may support rendering/sampling float
+      // textures without GL_OES_texture_float_linear, making linear filtering
+      // incomplete. The shader already performs PCF explicitly, so nearest is
+      // the portable choice.
       sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
       ),
     );
   }
