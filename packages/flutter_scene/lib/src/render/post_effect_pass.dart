@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/post_process/post_effect.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Runs one custom [PostEffect] as a full-screen pass.
@@ -79,6 +80,14 @@ class PostEffectPass extends RenderGraphPass {
       gpu.gpuContext.createRenderPipeline(_vertexShader, shader),
     );
     bindVertexBufferCompat(renderPass, _quadView, 6);
+
+    // Vertex-stage Y-flip so this pass stores its output top-down (see
+    // y_flip.dart).
+    final flipInfo = Float32List(4)..[0] = backendYFlipSign;
+    renderPass.bindUniform(
+      _vertexShader.getUniformSlot('FlipInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(flipInfo)),
+    );
 
     renderPass.bindTexture(
       shader.getUniformSlot('input_color'),

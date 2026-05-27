@@ -171,13 +171,10 @@ base class GpuContext {
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
-    // Flip vertically during the blit (dst Y runs height -> 0). WebGL2
-    // rasterizes into FBO textures bottom-up, so the swapchain texture is
-    // stored bottom-up; this flip presents it upright on the canvas. (The
-    // engine's own backends store render-to-texture top-down, so flutter_scene
-    // applies no Y compensation; this present-time flip is the shim absorbing
-    // WebGL2's bottom-up FBO convention, equivalent to what Impeller's GLES
-    // backend does in-engine.)
+    // Flip vertically during the blit (dst Y runs height -> 0). Render
+    // targets are now stored top-down because the vertex stage negates
+    // gl_Position.y (see glsl_transpile), so the final swapchain texture is
+    // top-down too; this flip presents it upright on the canvas.
     _gl.blitFramebuffer(
       0,
       0,

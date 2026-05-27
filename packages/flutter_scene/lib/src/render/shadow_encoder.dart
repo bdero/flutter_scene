@@ -2,6 +2,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Process-lifetime cache of depth-pass render pipelines, keyed by vertex
@@ -26,6 +27,9 @@ class ShadowEncoder {
     this._lightSpaceMatrix,
   ) {
     frustum = Frustum.matrix(_lightSpaceMatrix);
+    // Matrix sent to the vertex shader; carries the GLES render-to-texture
+    // Y-flip (see y_flip.dart). Frustum culling keeps the unflipped one.
+    _shaderLightSpaceMatrix = applyBackendYFlip(_lightSpaceMatrix);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
@@ -33,12 +37,15 @@ class ShadowEncoder {
     // that are visible cast shadows; a depth bias on the receiver handles
     // self-shadow acne.
     _renderPass.setCullMode(gpu.CullMode.backFace);
-    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+    _renderPass.setWindingOrder(
+      backendWinding(gpu.WindingOrder.counterClockwise),
+    );
   }
 
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   final Matrix4 _lightSpaceMatrix;
+  late final Matrix4 _shaderLightSpaceMatrix;
 
   static final gpu.Shader _depthShader =
       baseShaderLibrary['DepthOnlyFragment']!;
@@ -87,13 +94,17 @@ class ShadowEncoder {
           _renderPass,
           _transientsBuffer,
           item.worldTransform * instanceTransform,
-          _lightSpaceMatrix,
+          _shaderLightSpaceMatrix,
           _cameraPositionPlaceholder,
         );
         final flip =
             item.windingFlipped != (instanceTransform.determinant() < 0);
         _renderPass.setWindingOrder(
-          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
+          backendWinding(
+            flip
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
+          ),
         );
         item.geometry.draw(_renderPass);
       }
@@ -104,15 +115,17 @@ class ShadowEncoder {
       _renderPass,
       _transientsBuffer,
       item.worldTransform,
-      _lightSpaceMatrix,
+      _shaderLightSpaceMatrix,
       _cameraPositionPlaceholder,
     );
     // Mirrored casters reverse winding; flip the cull order so the same faces
     // that are visible also cast shadows.
     _renderPass.setWindingOrder(
-      item.windingFlipped
-          ? gpu.WindingOrder.clockwise
-          : gpu.WindingOrder.counterClockwise,
+      backendWinding(
+        item.windingFlipped
+            ? gpu.WindingOrder.clockwise
+            : gpu.WindingOrder.counterClockwise,
+      ),
     );
     item.geometry.draw(_renderPass);
   }

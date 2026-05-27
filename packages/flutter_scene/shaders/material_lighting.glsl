@@ -38,11 +38,11 @@ float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
   vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
                    vec2(1.0 - frag_info.shadow_texel_size));
   vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
-  // The shadow atlas is a render-to-texture target stored top-down. NDC->UV
-  // (proj.xy * 0.5 + 0.5) maps NDC-top to v=1, but a top-down texture's top row
-  // is v=0, so flip V to sample the matching row. This is intrinsic to the
-  // top-down storage (not a backend Y-flip workaround), so it is unconditional.
-  atlas_uv.y = 1.0 - atlas_uv.y;
+  // The atlas is a render-to-texture target; flip V to match its sampled Y
+  // orientation (see render_target_flip_y).
+  if (frag_info.render_target_flip_y > 0.5) {
+    atlas_uv.y = 1.0 - atlas_uv.y;
+  }
   float caster_depth = texture(shadow_map, atlas_uv).r;
   return receiver_depth <= caster_depth ? 1.0 : 0.0;
 }
@@ -203,8 +203,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 irradiance = max(EvaluateDiffuseSH(env_normal), vec3(0.0)) *
                     frag_info.environment_intensity;
   vec3 prefiltered_color =
-      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection,
-                                roughness) *
+      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection, roughness,
+                                frag_info.prefilter_flip_y) *
       frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside

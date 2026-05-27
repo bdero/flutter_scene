@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/y_flip.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
@@ -93,6 +94,9 @@ base class SceneEncoder {
       _transientsBuffer = transientsBuffer {
     _cameraTransform = _camera.getViewTransform(dimensions);
     frustum = Frustum.matrix(_cameraTransform);
+    // Matrix sent to the vertex shader; carries the GLES render-to-texture
+    // Y-flip (see y_flip.dart). Frustum culling keeps the unflipped one.
+    _shaderCameraTransform = applyBackendYFlip(_cameraTransform);
 
     // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
@@ -105,6 +109,7 @@ base class SceneEncoder {
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
+  late final Matrix4 _shaderCameraTransform;
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
 
@@ -214,15 +219,16 @@ base class SceneEncoder {
       _renderPass,
       _transientsBuffer,
       worldTransform,
-      _cameraTransform,
+      _shaderCameraTransform,
       _camera.position,
     );
     material.bind(_renderPass, _transientsBuffer, _lighting);
     if (windingFlipped) {
       // A mirrored (negative-determinant) transform reverses triangle
       // winding; flip the cull order so front faces aren't culled. Material
-      // .bind set the default counter-clockwise winding.
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      // .bind set the default counter-clockwise winding. backendWinding wraps
+      // it for the GLES render-target Y-flip (see y_flip.dart).
+      _renderPass.setWindingOrder(backendWinding(gpu.WindingOrder.clockwise));
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
     geometry.draw(_renderPass);
@@ -248,13 +254,15 @@ base class SceneEncoder {
         _renderPass,
         _transientsBuffer,
         nodeTransform * instanceTransform,
-        _cameraTransform,
+        _shaderCameraTransform,
         _camera.position,
       );
       // Each instance can itself mirror; combine with the node's parity.
       final flip = windingFlipped != (instanceTransform.determinant() < 0);
       _renderPass.setWindingOrder(
-        flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
+        backendWinding(
+          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
+        ),
       );
       geometry.draw(_renderPass);
     }

@@ -65,14 +65,6 @@ base class RenderPipeline {
   void _buildUniformCaches() {
     final gl = _gpuContext._gl;
     gl.useProgram(_program);
-    final yFlipLocation = gl.getUniformLocation(_program, '_impeller_y_flip');
-    if (yFlipLocation != null) {
-      // Impeller's generated GLES shaders multiply gl_Position.y by this
-      // backend uniform. The web shim does not use Impeller's runtime uniform
-      // binding layer, so set the value that stores FBO render targets
-      // top-down, matching Flutter GPU's render-to-texture convention.
-      gl.uniform1f(yFlipLocation, -1.0);
-    }
     var nextUnit = 0;
     for (final shader in [vertexShader, fragmentShader]) {
       for (final struct in shader.uniformStructs) {

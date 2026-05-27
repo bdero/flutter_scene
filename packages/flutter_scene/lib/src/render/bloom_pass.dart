@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
+import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Render-graph blackboard key for the bloom texture [BloomPass] produces.
@@ -135,6 +136,7 @@ class BloomPass extends RenderGraphPass {
     );
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
+    _bindFlip(context, renderPass);
 
     final knee = _settings.threshold * 0.5 + 1e-4;
     final info = Float32List(4)
@@ -190,6 +192,7 @@ class BloomPass extends RenderGraphPass {
       renderPass.setColorBlendEnable(false);
     }
     bindVertexBufferCompat(renderPass, _quadView, 6);
+    _bindFlip(context, renderPass);
 
     final info = Float32List(4)
       ..[0] = 1.0 / sourceSize.width
@@ -206,6 +209,16 @@ class BloomPass extends RenderGraphPass {
     );
     drawCompat(renderPass, 6);
     commandBuffer.submit();
+  }
+
+  // Binds the full-screen vertex shader's Y-flip sign (see y_flip.dart) so
+  // each bloom pass stores its output top-down.
+  void _bindFlip(RenderGraphContext context, gpu.RenderPass renderPass) {
+    final flipInfo = Float32List(4)..[0] = backendYFlipSign;
+    renderPass.bindUniform(
+      _vertexShader.getUniformSlot('FlipInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(flipInfo)),
+    );
   }
 
   static final gpu.SamplerOptions _linearClamp = gpu.SamplerOptions(
