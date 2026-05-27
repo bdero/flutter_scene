@@ -1,29 +1,26 @@
-name: smoke render
+name: stable smoke render
 
-# Renders a small set of deterministic scenes against the latest Flutter master
-# and uploads the frames to Argos for visual diffing. Catches rendering
-# regressions (black screen / nothing drawn / unlit) that crash tests miss.
-# Runs on pull requests and pushes to master, so Argos diffs each PR against
-# the master baseline, plus manually and daily. Notifies Discord when a
-# non-PR run fails.
+# Renders the smoke scenes against Flutter stable and uploads them to Argos
+# under stable-specific build names, so stable baselines are tracked separately
+# from the Flutter master-channel smoke renders.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 7 * * *" # daily, 07:00 UTC
+    - cron: "30 7 * * *" # daily, 07:30 UTC
   push:
-    branches: [master]
+    branches: [stable]
   pull_request:
-    branches: [master]
+    branches: [stable]
 
 # A new push to a branch or PR supersedes its still-running render.
 concurrency:
-  group: smoke-render-${{ github.ref }}
+  group: stable-smoke-render-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   linux:
-    name: linux (Flutter master)
+    name: stable_linux (Flutter stable)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -33,9 +30,14 @@ jobs:
       GALLIUM_DRIVER: llvmpipe
     steps:
       - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        with:
+          ref: stable
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
       - uses: subosito/flutter-action@v2
         with:
-          channel: master
+          channel: stable
       - name: Flutter and engine revision
         run: flutter --version
       - name: Install Linux desktop build deps + software GL/Vulkan + Xvfb
@@ -61,7 +63,11 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name linux 2>&1) || true
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            export ARGOS_BRANCH=stable
+            export ARGOS_COMMIT="$(git rev-parse HEAD)"
+          fi
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name stable_linux --reference-branch stable 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
@@ -73,20 +79,25 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (linux, Flutter master). Run: $RUN_URL"
+          CONTENT="Smoke render failed (stable_linux, Flutter stable). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   web:
-    name: web (Flutter master)
+    name: stable_web (Flutter stable)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        with:
+          ref: stable
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
       - uses: subosito/flutter-action@v2
         with:
-          channel: master
+          channel: stable
       - name: Flutter and engine revision
         run: flutter --version
       - run: flutter config --enable-native-assets
@@ -107,7 +118,11 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name web 2>&1) || true
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            export ARGOS_BRANCH=stable
+            export ARGOS_COMMIT="$(git rev-parse HEAD)"
+          fi
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name stable_web --reference-branch stable 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
@@ -119,7 +134,7 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (web, Flutter master). Run: $RUN_URL"
+          CONTENT="Smoke render failed (stable_web, Flutter stable). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
