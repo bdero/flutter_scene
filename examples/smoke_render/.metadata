@@ -18,6 +18,9 @@ migration:
     - platform: linux
       create_revision: 72d04ce778634d7e6c2d383174c9a086f2b8bfba
       base_revision: 72d04ce778634d7e6c2d383174c9a086f2b8bfba
+    - platform: android
+      create_revision: 475014b679b1a9539d20290ecfc0f665bcaccfac
+      base_revision: 475014b679b1a9539d20290ecfc0f665bcaccfac
 
   # User provided section
 
