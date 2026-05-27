@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Number of roughness bands in a prefiltered-radiance atlas (band 0 =
@@ -93,13 +92,6 @@ gpu.Texture prefilterEquirectRadiance(
     gpu.gpuContext.createRenderPipeline(vertexShader, fragmentShader),
   );
   renderPass.bindVertexBuffer(_fullscreenQuadView, 6);
-  // Vertex-stage Y-flip so the atlas is stored top-down on backends that
-  // need it (the OpenGL ES workaround; see y_flip.dart).
-  final flipInfo = Float32List(4)..[0] = backendYFlipSign;
-  renderPass.bindUniform(
-    vertexShader.getUniformSlot('FlipInfo'),
-    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(flipInfo)),
-  );
   renderPass.bindTexture(
     fragmentShader.getUniformSlot('source_equirect'),
     sourceEquirect,

@@ -4,7 +4,6 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/render/y_flip.dart';
 
 /// A [Material] backed by a caller-supplied fragment shader.
 ///
@@ -177,9 +176,7 @@ class ShaderMaterial extends Material {
     Lighting lighting,
   ) {
     pass.setCullMode(cullingMode);
-    // backendWinding wraps the winding for the GLES render-target Y-flip
-    // workaround (see y_flip.dart); identity on Metal/Vulkan/web.
-    pass.setWindingOrder(backendWinding(windingOrder));
+    pass.setWindingOrder(windingOrder);
 
     for (final entry in _uniformBlocks.entries) {
       pass.bindUniform(

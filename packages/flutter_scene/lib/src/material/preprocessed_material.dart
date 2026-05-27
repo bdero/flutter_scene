@@ -7,7 +7,6 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
-import 'package:flutter_scene/src/render/y_flip.dart';
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
@@ -61,7 +60,7 @@ class PreprocessedMaterial extends Material {
     Lighting lighting,
   ) {
     pass.setCullMode(_cullMode(_culling));
-    pass.setWindingOrder(backendWinding(gpu.WindingOrder.counterClockwise));
+    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
 
     if (shadingModel == FmatShadingModel.lit) {
       final env = environment ?? lighting.environmentMap;

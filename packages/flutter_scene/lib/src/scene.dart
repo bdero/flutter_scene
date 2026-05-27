@@ -20,7 +20,6 @@ import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/resolve_pass.dart';
-import 'render/y_flip.dart';
 import 'shaders.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
@@ -289,10 +288,6 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    // Measure the backend's render-to-texture Y orientation once, on the
-    // first frame (the OpenGL ES context is only up after the first frame).
-    probeBackendYFlip();
-
     final drawArea = viewport ?? canvas.getLocalClipBounds();
     if (drawArea.isEmpty) {
       return;
@@ -484,18 +479,6 @@ base class Scene implements SceneGraph {
     final image = swapchainColor.asImage();
     final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
     final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
-    if (backendFlipsRenderTargetY) {
-      // The Y-flip workaround stores the scene top-down via the vertex stage
-      // (see y_flip.dart). The web shim pairs that with a present-time blit
-      // flip; on native there is no such flip (asImage presents as-is), so
-      // flip the blit vertically here to land the image right-side up.
-      canvas.save();
-      canvas.translate(0, drawArea.top + drawArea.bottom);
-      canvas.scale(1, -1);
-      canvas.drawImageRect(image, srcRect, drawArea, paint);
-      canvas.restore();
-    } else {
-      canvas.drawImageRect(image, srcRect, drawArea, paint);
-    }
+    canvas.drawImageRect(image, srcRect, drawArea, paint);
   }
 }
