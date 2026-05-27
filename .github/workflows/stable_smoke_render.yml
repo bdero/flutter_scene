@@ -1,8 +1,9 @@
 name: stable smoke render
 
-# Renders the smoke scenes against Flutter stable and uploads them to Argos
-# under stable-specific build names, so stable baselines are tracked separately
-# from the Flutter master-channel smoke renders.
+# Renders the smoke scenes for flutter_scene's stable branch against Flutter's
+# current 3.45 candidate branch and uploads them to Argos under stable-specific
+# build names, so stable baselines are tracked separately from the Flutter
+# master-channel smoke renders.
 
 on:
   workflow_dispatch:
@@ -20,7 +21,7 @@ concurrency:
 
 jobs:
   linux:
-    name: stable_linux (Flutter stable)
+    name: stable_linux (Flutter 3.45)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -37,7 +38,7 @@ jobs:
         if: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: beta
       - name: Flutter and engine revision
         run: flutter --version
       - name: Install Linux desktop build deps + software GL/Vulkan + Xvfb
@@ -79,13 +80,13 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (stable_linux, Flutter stable). Run: $RUN_URL"
+          CONTENT="Smoke render failed (stable_linux, Flutter 3.45). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   web:
-    name: stable_web (Flutter stable)
+    name: stable_web (Flutter 3.45)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -97,7 +98,7 @@ jobs:
         if: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: beta
       - name: Flutter and engine revision
         run: flutter --version
       - run: flutter config --enable-native-assets
@@ -134,7 +135,7 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (stable_web, Flutter stable). Run: $RUN_URL"
+          CONTENT="Smoke render failed (stable_web, Flutter 3.45). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
