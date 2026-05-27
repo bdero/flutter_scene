@@ -86,7 +86,7 @@ jobs:
       # Current Flutter master has a GLES Texture.overwrite raster-thread
       # submission regression after flutter/flutter#185890. Pin Android GLES
       # smoke goldens before that change until the upstream regression is fixed.
-      FLUTTER_REVISION: acd5e1a75afd78b6851315652edce6d8e34fbbe9
+      FLUTTER_REVISION: acd5e1a75af03247e82bf1cea8a63ae352c3d0b3
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Flutter
