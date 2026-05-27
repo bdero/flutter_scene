@@ -8,7 +8,6 @@ import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/resolve_info.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
-import 'package:flutter_scene/src/render/y_flip.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
@@ -79,21 +78,12 @@ class ResolvePass extends RenderGraphPass {
     renderPass.bindPipeline(pipeline);
     renderPass.bindVertexBuffer(_quadView, 6);
 
-    // Vertex-stage Y-flip: stores this pass's output top-down on backends
-    // that need it (the OpenGL ES workaround; see y_flip.dart).
-    final flipInfo = Float32List(4);
-    flipInfo[0] = backendYFlipSign;
-    renderPass.bindUniform(
-      _vertexShader.getUniformSlot('FlipInfo'),
-      context.transientsBuffer.emplace(ByteData.sublistView(flipInfo)),
-    );
-
     // Wall-clock seconds (wrapped to keep float precision) drive the
     // animated film grain.
     final timeSeconds =
         DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
-    // The vertex stage handles the render-to-texture Y-flip, so the resolve
-    // samples without a fragment-stage V-flip (flipY is always false).
+    // Render-to-texture content is stored top-down on every backend, so the
+    // resolve samples without a fragment-stage V-flip (flipY is always false).
     final info = packResolveInfo(
       exposure: _exposure,
       toneMappingMode: _toneMappingMode,

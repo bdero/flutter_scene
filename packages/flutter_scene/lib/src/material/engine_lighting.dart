@@ -4,7 +4,6 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/render/y_flip.dart';
 
 /// Packs the engine lighting half of the shared `FragInfo` uniform block and
 /// binds the image-based-lighting and shadow samplers.
@@ -17,9 +16,10 @@ import 'package:flutter_scene/src/render/y_flip.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (608 bytes / 152 floats of
-  /// data, allocated as 156 floats to reach the trailing mat4's 16-byte
-  /// boundary). See the layout map in the implementation.
+  /// The float count of the full `FragInfo` block (624 bytes / 156 floats:
+  /// the trailing mat4 `environment_transform` ends at float 155, with three
+  /// floats of std140 padding before it). See the layout map in the
+  /// implementation.
   static const fragInfoFloatCount = 156;
 
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
@@ -67,16 +67,9 @@ class EngineLightingUniforms {
     fragInfo[129] = light?.shadowDepthBias ?? 0.0;
     fragInfo[130] = light?.shadowNormalBias ?? 0.0;
     fragInfo[131] = light == null ? 0.0 : 1.0 / light.shadowMapResolution;
-    // render_target_flip_y: flutter_scene stores render-to-texture targets
-    // top-down on every backend, so the top-down sampling value (1.0) is
-    // correct everywhere.
-    fragInfo[132] = 1.0;
-    fragInfo[135] = light?.shadowFadeRange ?? 0.0;
-    fragInfo[136] = light?.shadowSoftness ?? 0.0;
-    fragInfo[137] = cascades.length.toDouble();
-    // prefilter_flip_y: invert the atlas latitude on backends that store
-    // render-to-texture bottom-up (OpenGL ES).
-    fragInfo[138] = backendFlipsRenderTargetY ? 1.0 : 0.0;
+    fragInfo[134] = light?.shadowFadeRange ?? 0.0;
+    fragInfo[135] = light?.shadowSoftness ?? 0.0;
+    fragInfo[136] = cascades.length.toDouble();
     // environment_transform: a mat4 carrying the 3x3 rotation; std140 mat4
     // columns are 16 bytes each, at [140], [144], [148], [152].
     final envTransform = lighting.environmentTransform.storage;

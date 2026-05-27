@@ -8,7 +8,6 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
-import 'package:flutter_scene/src/render/y_flip.dart';
 
 /// Base class for shading a [MeshPrimitive].
 ///
@@ -200,9 +199,7 @@ abstract class Material {
     Lighting lighting,
   ) {
     pass.setCullMode(doubleSided ? gpu.CullMode.none : gpu.CullMode.backFace);
-    // backendWinding wraps the default winding for the GLES render-target
-    // Y-flip workaround (see y_flip.dart); identity on Metal/Vulkan/web.
-    pass.setWindingOrder(backendWinding(gpu.WindingOrder.counterClockwise));
+    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
   /// Whether geometry rendered with this material is fully opaque.

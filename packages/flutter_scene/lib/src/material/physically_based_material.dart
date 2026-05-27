@@ -218,7 +218,7 @@ class PhysicallyBasedMaterial extends Material {
 
     final EnvironmentMap env = environment ?? lighting.environmentMap;
 
-    // FragInfo std140 layout (608 bytes / 152 floats). EngineLightingUniforms
+    // FragInfo std140 layout (624 bytes / 156 floats). EngineLightingUniforms
     // packs the shared engine lighting, image-based-lighting, and shadow
     // fields (identical for every lit material); this material fills only its
     // own, disjoint fields:
@@ -230,8 +230,8 @@ class PhysicallyBasedMaterial extends Material {
     //   [123]     float has_normal_map
     //   [124]     float normal_scale
     //   [125]     float occlusion_strength
-    //   [133]     float alpha_mode (0 opaque, 1 mask, 2 blend)
-    //   [134]     float alpha_cutoff
+    //   [132]     float alpha_mode (0 opaque, 1 mask, 2 blend)
+    //   [133]     float alpha_cutoff
     final fragInfo = Float32List(EngineLightingUniforms.fragInfoFloatCount);
     EngineLightingUniforms.packInto(fragInfo, lighting, env);
     fragInfo[0] = baseColorFactor.r;
@@ -248,8 +248,8 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[123] = normalTexture != null ? 1.0 : 0.0;
     fragInfo[124] = normalScale;
     fragInfo[125] = occlusionStrength;
-    fragInfo[133] = alphaMode.index.toDouble();
-    fragInfo[134] = alphaCutoff;
+    fragInfo[132] = alphaMode.index.toDouble();
+    fragInfo[133] = alphaCutoff;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
