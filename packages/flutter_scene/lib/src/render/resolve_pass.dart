@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/post_process/post_process.dart';
@@ -76,7 +77,7 @@ class ResolvePass extends RenderGraphPass {
       _fragmentShader,
     );
     renderPass.bindPipeline(pipeline);
-    renderPass.bindVertexBuffer(_quadView, 6);
+    bindVertexBufferCompat(renderPass, _quadView, 6);
 
     // Wall-clock seconds (wrapped to keep float precision) drive the
     // animated film grain.
@@ -120,7 +121,7 @@ class ResolvePass extends RenderGraphPass {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
-    renderPass.draw();
+    drawCompat(renderPass, 6);
     commandBuffer.submit();
 
     context.blackboard.set(kDisplayColorBlackboardKey, _outputColor);

@@ -277,12 +277,8 @@ base class RenderPass {
     _stub();
   }
   void bindPipeline(RenderPipeline pipeline) => _stub();
-  void bindVertexBuffer(BufferView bufferView, int vertexCount) => _stub();
-  void bindIndexBuffer(
-    BufferView bufferView,
-    IndexType indexType,
-    int indexCount,
-  ) => _stub();
+  void bindVertexBuffer(BufferView bufferView, {int slot = 0}) => _stub();
+  void bindIndexBuffer(BufferView bufferView, IndexType indexType) => _stub();
   void bindUniform(UniformSlot slot, BufferView bufferView) => _stub();
   void bindTexture(
     UniformSlot slot,
@@ -308,5 +304,6 @@ base class RenderPass {
   void setPrimitiveType(PrimitiveType primitiveType) => _stub();
   void setWindingOrder(WindingOrder windingOrder) => _stub();
   void setViewport(Viewport viewport) => _stub();
-  void draw() => _stub();
+  void draw(int vertexCount) => _stub();
+  void drawIndexed(int indexCount) => _stub();
 }

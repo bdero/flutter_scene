@@ -79,14 +79,21 @@ jobs:
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   android_gles:
-    name: android_gles (Flutter master)
+    name: android_gles (Flutter acd5e1a)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Current Flutter master has a GLES Texture.overwrite raster-thread
+      # submission regression after flutter/flutter#185890. Pin Android GLES
+      # smoke goldens before that change until the upstream regression is fixed.
+      FLUTTER_REVISION: acd5e1a75afd78b6851315652edce6d8e34fbbe9
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: master
+      - name: Install pinned Flutter
+        run: |
+          git clone --filter=blob:none https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          git -C "$RUNNER_TEMP/flutter" checkout "$FLUTTER_REVISION"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
       - name: Flutter and engine revision
         run: flutter --version
       - run: flutter config --enable-native-assets
@@ -106,13 +113,17 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            flutter devices
-            cd examples/smoke_render
-            flutter drive \
-              --driver=test_driver/integration_test.dart \
-              --target=integration_test/smoke_test.dart \
-              -d emulator-5554 --enable-impeller --enable-flutter-gpu
+          script: >
+            flutter devices &&
+            adb shell svc power stayon true &&
+            (adb shell wm dismiss-keyguard || true) &&
+            cd examples/smoke_render &&
+            flutter drive
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            -d emulator-5554
+            --enable-impeller
+            --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
@@ -132,7 +143,7 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (android_gles, Flutter master). Run: $RUN_URL"
+          CONTENT="Smoke render failed (android_gles, Flutter acd5e1a). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true

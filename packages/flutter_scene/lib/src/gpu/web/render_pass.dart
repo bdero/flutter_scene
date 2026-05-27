@@ -164,12 +164,11 @@ base class RenderPass {
 
   RenderPipeline? _boundPipeline;
   web.WebGLVertexArrayObject? _vao;
-  int _drawVertexCount = 0;
   PrimitiveType _primitiveType = PrimitiveType.triangle;
+  BufferView? _inlineVertexBufferView;
 
   BufferView? _indexBufferView;
   IndexType _indexType = IndexType.int32;
-  int _indexCount = 0;
 
   web.WebGLFramebuffer? _fbo;
   bool _finished = false;
@@ -286,7 +285,10 @@ base class RenderPass {
     gl.useProgram(pipeline._program);
   }
 
-  void bindVertexBuffer(BufferView bufferView, int vertexCount) {
+  void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
+    if (slot != 0) {
+      throw RangeError.value(slot, 'slot', 'WebGL2 backend only supports slot 0');
+    }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline;
     if (pipeline == null) {
@@ -298,31 +300,9 @@ base class RenderPass {
 
     final inputs = pipeline.vertexShader.vertexInputs;
     if (inputs.isEmpty) {
-      // Inline pipelines without reflection: assume a single vec2 / vec3 /
-      // vec4 attribute named "position" or whatever the linker assigned to
-      // location 0, packed tightly. Caller is responsible for matching
-      // the shader source's input declaration.
-      final location = gl.getAttribLocation(pipeline._program, 'position');
-      if (location < 0) {
-        throw Exception(
-          'RenderPipeline has no `position` attribute and no reflected '
-          'vertex inputs. Use a ShaderLibrary built from a bundle for '
-          'pipelines with non-trivial vertex layouts.',
-        );
-      }
-      // Infer component count from vertexCount + buffer size.
-      final perVertex = bufferView.lengthInBytes ~/ vertexCount;
-      final components = perVertex ~/ 4;
-      gl.enableVertexAttribArray(location);
-      gl.vertexAttribPointer(
-        location,
-        components,
-        web.WebGL2RenderingContext.FLOAT,
-        false,
-        perVertex,
-        bufferView.offsetInBytes,
-      );
+      _inlineVertexBufferView = bufferView;
     } else {
+      _inlineVertexBufferView = null;
       final stride = pipeline.vertexShader.vertexStride;
       for (final input in inputs) {
         gl.enableVertexAttribArray(input.location);
@@ -336,15 +316,9 @@ base class RenderPass {
         );
       }
     }
-
-    _drawVertexCount = vertexCount;
   }
 
-  void bindIndexBuffer(
-    BufferView bufferView,
-    IndexType indexType,
-    int indexCount,
-  ) {
+  void bindIndexBuffer(BufferView bufferView, IndexType indexType) {
     // ELEMENT_ARRAY_BUFFER binding is captured in VAO state, so the VAO must
     // be bound first.
     _ensureVao();
@@ -353,7 +327,6 @@ base class RenderPass {
     );
     _indexBufferView = bufferView;
     _indexType = indexType;
-    _indexCount = indexCount;
   }
 
   void bindUniform(UniformSlot slot, BufferView bufferView) {
@@ -500,9 +473,8 @@ base class RenderPass {
     if (_vao != null) {
       gl.bindVertexArray(null);
     }
-    _drawVertexCount = 0;
+    _inlineVertexBufferView = null;
     _indexBufferView = null;
-    _indexCount = 0;
   }
 
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
@@ -661,24 +633,62 @@ base class RenderPass {
     gl.depthRange(viewport.depthRange.zNear, viewport.depthRange.zFar);
   }
 
-  void draw() {
+  void _configureInlineVertexBuffer(int vertexCount) {
+    final pipeline = _boundPipeline;
+    final bufferView = _inlineVertexBufferView;
+    if (pipeline == null || bufferView == null) return;
+    final gl = _gpuContext._gl;
+    final location = gl.getAttribLocation(pipeline._program, 'position');
+    if (location < 0) {
+      throw Exception(
+        'RenderPipeline has no `position` attribute and no reflected '
+        'vertex inputs. Use a ShaderLibrary built from a bundle for '
+        'pipelines with non-trivial vertex layouts.',
+      );
+    }
+    final perVertex = bufferView.lengthInBytes ~/ vertexCount;
+    final components = perVertex ~/ 4;
+    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribPointer(
+      location,
+      components,
+      web.WebGL2RenderingContext.FLOAT,
+      false,
+      perVertex,
+      bufferView.offsetInBytes,
+    );
+  }
+
+  void draw(int vertexCount) {
     final gl = _gpuContext._gl;
     if (_boundPipeline == null) {
       throw StateError('draw called before bindPipeline');
     }
-    final indexView = _indexBufferView;
-    if (indexView != null) {
-      gl.drawElements(
-        _glPrimitiveType(_primitiveType),
-        _indexCount,
-        _indexType == IndexType.int16
-            ? web.WebGL2RenderingContext.UNSIGNED_SHORT
-            : web.WebGL2RenderingContext.UNSIGNED_INT,
-        indexView.offsetInBytes,
-      );
-    } else {
-      gl.drawArrays(_glPrimitiveType(_primitiveType), 0, _drawVertexCount);
+    _configureInlineVertexBuffer(vertexCount);
+    gl.drawArrays(_glPrimitiveType(_primitiveType), 0, vertexCount);
+  }
+
+  void drawIndexed(int indexCount) {
+    final gl = _gpuContext._gl;
+    if (_boundPipeline == null) {
+      throw StateError('drawIndexed called before bindPipeline');
     }
+    if (_inlineVertexBufferView != null) {
+      throw StateError('Indexed inline pipelines require reflected attributes');
+    }
+    final indexView = _indexBufferView;
+    if (indexView == null) {
+      throw StateError('drawIndexed called before bindIndexBuffer');
+    }
+    gl.drawElements(
+      _glPrimitiveType(_primitiveType),
+      indexCount,
+      _indexType == IndexType.int16
+          ? web.WebGL2RenderingContext.UNSIGNED_SHORT
+          : web.WebGL2RenderingContext.UNSIGNED_INT,
+      indexView.offsetInBytes,
+    );
   }
 
   /// Called by CommandBuffer when the pass ends (a new pass begins, or the

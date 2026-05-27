@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
@@ -347,6 +348,15 @@ abstract class Geometry {
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition,
   );
+
+  /// Emits this geometry's draw call after [bind] has prepared the render pass.
+  void draw(gpu.RenderPass pass) {
+    if (_indices != null) {
+      drawIndexedCompat(pass, _indexCount);
+    } else {
+      drawCompat(pass, _vertexCount);
+    }
+  }
 }
 
 /// Geometry whose vertices use the unskinned 48-byte layout: position
@@ -375,9 +385,9 @@ class UnskinnedGeometry extends Geometry {
       );
     }
 
-    pass.bindVertexBuffer(_vertices!, _vertexCount);
+    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
     if (_indices != null) {
-      pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
+      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
     }
 
     // Unskinned vertex UBO.
@@ -481,9 +491,9 @@ class SkinnedGeometry extends Geometry {
       );
     }
 
-    pass.bindVertexBuffer(_vertices!, _vertexCount);
+    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
     if (_indices != null) {
-      pass.bindIndexBuffer(_indices!, _indexType, _indexCount);
+      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
     }
 
     // Skinned vertex UBO. The model transform is identity on purpose:

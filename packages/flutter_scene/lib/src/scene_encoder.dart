@@ -225,7 +225,7 @@ base class SceneEncoder {
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
-    _renderPass.draw();
+    geometry.draw(_renderPass);
   }
 
   /// Draws an opaque instanced item: binds the pipeline (when it changed)
@@ -256,7 +256,7 @@ base class SceneEncoder {
       _renderPass.setWindingOrder(
         flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
       );
-      _renderPass.draw();
+      geometry.draw(_renderPass);
     }
   }
 

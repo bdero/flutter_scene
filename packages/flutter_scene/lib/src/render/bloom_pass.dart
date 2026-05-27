@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
@@ -133,7 +134,7 @@ class BloomPass extends RenderGraphPass {
       gpu.gpuContext.createRenderPipeline(_vertexShader, _thresholdShader),
     );
     renderPass.setColorBlendEnable(false);
-    renderPass.bindVertexBuffer(_quadView, 6);
+    bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final knee = _settings.threshold * 0.5 + 1e-4;
     final info =
@@ -149,7 +150,7 @@ class BloomPass extends RenderGraphPass {
       source,
       sampler: _linearClamp,
     );
-    renderPass.draw();
+    drawCompat(renderPass, 6);
     commandBuffer.submit();
   }
 
@@ -189,7 +190,7 @@ class BloomPass extends RenderGraphPass {
     } else {
       renderPass.setColorBlendEnable(false);
     }
-    renderPass.bindVertexBuffer(_quadView, 6);
+    bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final info =
         Float32List(4)
@@ -205,7 +206,7 @@ class BloomPass extends RenderGraphPass {
       source,
       sampler: _linearClamp,
     );
-    renderPass.draw();
+    drawCompat(renderPass, 6);
     commandBuffer.submit();
   }
 

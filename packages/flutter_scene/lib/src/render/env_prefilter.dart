@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/shaders.dart';
@@ -91,7 +92,7 @@ gpu.Texture prefilterEquirectRadiance(
   renderPass.bindPipeline(
     gpu.gpuContext.createRenderPipeline(vertexShader, fragmentShader),
   );
-  renderPass.bindVertexBuffer(_fullscreenQuadView, 6);
+  bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
     fragmentShader.getUniformSlot('source_equirect'),
     sourceEquirect,
@@ -108,7 +109,7 @@ gpu.Texture prefilterEquirectRadiance(
     fragmentShader.getUniformSlot('PrefilterInfo'),
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
   );
-  renderPass.draw();
+  drawCompat(renderPass, 6);
   commandBuffer.submit();
   return atlas;
 }

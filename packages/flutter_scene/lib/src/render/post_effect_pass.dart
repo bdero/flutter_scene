@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/post_process/post_effect.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
@@ -77,7 +78,7 @@ class PostEffectPass extends RenderGraphPass {
     renderPass.bindPipeline(
       gpu.gpuContext.createRenderPipeline(_vertexShader, shader),
     );
-    renderPass.bindVertexBuffer(_quadView, 6);
+    bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(
       shader.getUniformSlot('input_color'),
@@ -105,7 +106,7 @@ class PostEffectPass extends RenderGraphPass {
 
     _effect.bindUniforms(renderPass, context.transientsBuffer);
 
-    renderPass.draw();
+    drawCompat(renderPass, 6);
     commandBuffer.submit();
 
     context.blackboard.set(_outputKey, _output);

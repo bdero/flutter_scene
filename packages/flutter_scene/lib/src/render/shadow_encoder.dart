@@ -95,7 +95,7 @@ class ShadowEncoder {
         _renderPass.setWindingOrder(
           flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
         );
-        _renderPass.draw();
+        item.geometry.draw(_renderPass);
       }
       return;
     }
@@ -114,6 +114,6 @@ class ShadowEncoder {
           ? gpu.WindingOrder.clockwise
           : gpu.WindingOrder.counterClockwise,
     );
-    _renderPass.draw();
+    item.geometry.draw(_renderPass);
   }
 }
