@@ -287,7 +287,11 @@ base class RenderPass {
 
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
     if (slot != 0) {
-      throw RangeError.value(slot, 'slot', 'WebGL2 backend only supports slot 0');
+      throw RangeError.value(
+        slot,
+        'slot',
+        'WebGL2 backend only supports slot 0',
+      );
     }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline;
