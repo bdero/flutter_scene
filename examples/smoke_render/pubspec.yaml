@@ -7,14 +7,14 @@ version: 1.0.0+1
 resolution: workspace
 
 environment:
-  sdk: ^3.7.0
+  sdk: ^3.10.0
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_gpu_shaders: ^0.4.4
+  flutter_gpu_shaders: ^0.4.5
   flutter_scene: ^0.15.0
-  hooks: ^1.0.0
+  hooks: ^2.0.0
   vector_math: ^2.1.4
 
 dev_dependencies:

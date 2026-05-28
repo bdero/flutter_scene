@@ -117,7 +117,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_scene: ^0.15.0
-  hooks: ^1.0.0
+  hooks: ^2.0.0
 
 flutter:
   assets:
@@ -356,7 +356,7 @@ void main() {
 ```
 
 Add it to a `flutter_gpu_shaders` manifest, compile it with
-`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.4` dependency), then:
+`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.5` dependency), then:
 
 ```dart
 final library = gpu.ShaderLibrary.fromAsset('build/shaderbundles/my_bundle.shaderbundle')!;
