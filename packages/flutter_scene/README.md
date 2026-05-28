@@ -50,6 +50,7 @@ The primary goal of this project is to make performant cross platform 3D easy in
 - Relies on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md) for rendering, which is also in preview state.
 - On native platforms this package requires [Impeller](https://docs.flutter.dev/perf/impeller#availability) to be enabled. On the web it runs on a built-in WebGL2 backend instead.
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
+- Zero-manifest `.fmat` material builds use the experimental Dart DataAssets feature. On supported Flutter master builds, enable it with `flutter config --enable-dart-data-assets`.
 - Given the reliance on non-production features, switching to the [master channel](https://docs.flutter.dev/release/upgrade#other-channels) is recommended when using Flutter Scene.
 
 ## Features
@@ -100,6 +101,7 @@ To run the example app from a fresh clone:
 ```sh
 flutter pub get                                             # resolves the workspace
 flutter config --enable-native-assets                       # one-time setup
+flutter config --enable-dart-data-assets                    # one-time setup for DataAssets-backed .fmat materials
 
 cd examples/flutter_app
 flutter create . --platforms=macos,ios,android,linux,windows,web  # generate gitignored platform stubs

@@ -3,7 +3,9 @@
 /// Call these from your app's `hook/build.dart` at build time: [buildModels]
 /// converts glTF (`.glb`) source assets into flutter_scene's `.model` format,
 /// and [buildMaterials] compiles `.fmat` custom-material files into a Flutter
-/// GPU shader bundle plus a parameter sidecar.
+/// GPU shader bundle plus a parameter sidecar. In DataAssets mode, the material
+/// outputs are registered with the Flutter asset bundle and can be loaded by
+/// material name through `loadFmatMaterial`.
 ///
 /// ```dart
 /// import 'package:hooks/hooks.dart';
@@ -30,4 +32,4 @@ export 'src/importer/build_hooks.dart'
     show buildModels;
 export 'src/fmat/build_materials.dart'
     if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
-    show buildMaterials;
+    show MaterialAssetMode, buildMaterials;

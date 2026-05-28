@@ -22,6 +22,7 @@ dependencies:
   # decoding. Build/offline-time only; tree-shaken from runtime builds.
   args: ^2.5.0
   collection: ^1.19.0
+  data_assets: ^0.19.6
   # Reader for the bundled GPU shim's shader-bundle flatbuffer. The importer's
   # own glTF flatbuffers use a separate vendored copy under
   # src/importer/third_party.
