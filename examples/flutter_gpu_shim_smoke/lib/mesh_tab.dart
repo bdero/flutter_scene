@@ -127,7 +127,6 @@ class _MeshTabState extends State<MeshTab> {
           offsetInBytes: 0,
           lengthInBytes: verts.lengthInBytes,
         ),
-        4,
       );
       pass.bindIndexBuffer(
         gpu.BufferView(
@@ -136,13 +135,12 @@ class _MeshTabState extends State<MeshTab> {
           lengthInBytes: indices.lengthInBytes,
         ),
         gpu.IndexType.int16,
-        6,
       );
       pass.bindUniform(vert.getUniformSlot('FrameInfo'), frameView);
       pass.bindUniform(frag.getUniformSlot('FragInfo'), fragView);
       pass.bindTexture(frag.getUniformSlot('base_color_texture'), whiteTex);
       pass.setViewport(gpu.Viewport(x: 0, y: 0, width: _size, height: _size));
-      pass.draw();
+      pass.drawIndexed(6);
       pass.clearBindings();
       cmd.submit();
 

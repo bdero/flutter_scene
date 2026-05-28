@@ -122,10 +122,9 @@ class _HdrTabState extends State<HdrTab> {
           offsetInBytes: 0,
           lengthInBytes: verts.lengthInBytes,
         ),
-        3,
       );
       pass.setViewport(gpu.Viewport(x: 0, y: 0, width: _size, height: _size));
-      pass.draw();
+      pass.draw(3);
       pass.clearBindings();
       cmd.submit();
 
