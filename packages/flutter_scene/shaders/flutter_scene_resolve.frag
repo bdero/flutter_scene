@@ -1,7 +1,7 @@
 // Resolve pass: reads the linear HDR scene color (with premultiplied
 // alpha) and produces the display-referred swapchain image. In order it
 // applies chromatic aberration (at sample time), exposure, color grading,
-// a tone mapping operator, the display EOTF, then vignette and film grain.
+// a tone mapping operator, display encoding, then vignette and film grain.
 // Each effect is gated by a flag, so a disabled effect costs only a
 // branch and leaves the image unchanged.
 uniform ResolveInfo {
@@ -166,9 +166,9 @@ void main() {
     mapped = max(mapped + n * resolve_info.grain_intensity, vec3(0.0));
   }
 
-#ifndef IMPELLER_TARGET_METAL
+  // The swapchain texture is a plain UNorm render target, so encode the
+  // resolved linear color before handing it to Texture.asImage().
   mapped = pow(mapped, vec3(1.0 / kGamma));
-#endif
 
   frag_color = vec4(mapped * alpha, alpha);
 }

@@ -20,7 +20,7 @@ const String kDisplayColorBlackboardKey = 'display_color';
 /// Resolves the linear HDR scene color (a floating-point render target
 /// produced by [ScenePass], read from the blackboard) into the
 /// display-referred image: applies exposure, optional color grading, the
-/// tone mapping operator, and the display EOTF as a single full-screen
+/// tone mapping operator, and display encoding as a single full-screen
 /// pass. Writes into [outputColor] and publishes it on the blackboard.
 class ResolvePass extends RenderGraphPass {
   ResolvePass({

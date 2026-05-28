@@ -254,7 +254,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 emissive = material.emissive;
 
   // Linear HDR, premultiplied by alpha. Exposure, the tone-mapping
-  // operator, and the display EOTF are applied later by the tone-mapping
+  // operator, and display encoding are applied later by the tone-mapping
   // resolve pass (see flutter_scene_resolve.frag), so this writes into a
   // floating-point scene-color target.
   vec3 out_color = ambient + direct + emissive;

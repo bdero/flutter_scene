@@ -1,6 +1,6 @@
 // Tone mapping operators. Each maps a non-negative linear HDR color to a
-// display-referred [0, 1] color (still in linear Rec. 709; the EOTF /
-// gamma is applied separately by the caller where needed).
+// display-referred [0, 1] color (still in linear Rec. 709; display encoding
+// is applied separately by the caller where needed).
 
 // ACES filmic approximation (Stephen Hill fit).
 // source:
