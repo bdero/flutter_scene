@@ -111,7 +111,6 @@ class _TriangleTabState extends State<TriangleTab> {
           offsetInBytes: 0,
           lengthInBytes: verts.lengthInBytes,
         ),
-        4,
       );
       pass.bindIndexBuffer(
         gpu.BufferView(
@@ -120,10 +119,9 @@ class _TriangleTabState extends State<TriangleTab> {
           lengthInBytes: indices.lengthInBytes,
         ),
         gpu.IndexType.int16,
-        6,
       );
       pass.setViewport(gpu.Viewport(x: 0, y: 0, width: _size, height: _size));
-      pass.draw();
+      pass.drawIndexed(6);
       pass.clearBindings();
       cmd.submit();
 
