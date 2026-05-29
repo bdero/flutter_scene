@@ -79,10 +79,9 @@ class TransientTextureDescriptor {
          height: height,
          format: format,
          sampleCount: sampleCount,
-         storageMode:
-             shaderReadable
-                 ? gpu.StorageMode.devicePrivate
-                 : gpu.StorageMode.deviceTransient,
+         storageMode: shaderReadable
+             ? gpu.StorageMode.devicePrivate
+             : gpu.StorageMode.deviceTransient,
          enableShaderReadUsage: shaderReadable,
          debugName: debugName,
        );

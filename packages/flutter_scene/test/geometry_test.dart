@@ -28,8 +28,8 @@ void main() {
   });
 
   test('primitiveType is mutable', () {
-    final geometry =
-        _StubGeometry()..primitiveType = gpu.PrimitiveType.lineStrip;
+    final geometry = _StubGeometry()
+      ..primitiveType = gpu.PrimitiveType.lineStrip;
     expect(geometry.primitiveType, gpu.PrimitiveType.lineStrip);
   });
 }

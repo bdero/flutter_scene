@@ -130,13 +130,12 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
   if (j['pbrMetallicRoughness'] is Map) {
     final p = j['pbrMetallicRoughness'] as Map<String, Object?>;
     pbr = GltfPbrMetallicRoughness(
-      baseColorFactor:
-          p['baseColorFactor'] is List
-              ? (p['baseColorFactor'] as List)
-                  .cast<num>()
-                  .map((e) => e.toDouble())
-                  .toList(growable: false)
-              : const [1.0, 1.0, 1.0, 1.0],
+      baseColorFactor: p['baseColorFactor'] is List
+          ? (p['baseColorFactor'] as List)
+                .cast<num>()
+                .map((e) => e.toDouble())
+                .toList(growable: false)
+          : const [1.0, 1.0, 1.0, 1.0],
       baseColorTexture: _parseTextureInfo(p['baseColorTexture']),
       metallicFactor: ((p['metallicFactor'] as num?) ?? 1.0).toDouble(),
       roughnessFactor: ((p['roughnessFactor'] as num?) ?? 1.0).toDouble(),
@@ -153,13 +152,9 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
     normalTexture: _parseTextureInfo(j['normalTexture']),
     occlusionTexture: _parseTextureInfo(j['occlusionTexture']),
     emissiveTexture: _parseTextureInfo(j['emissiveTexture']),
-    emissiveFactor:
-        emissive is List
-            ? emissive
-                .cast<num>()
-                .map((e) => e.toDouble())
-                .toList(growable: false)
-            : const [0.0, 0.0, 0.0],
+    emissiveFactor: emissive is List
+        ? emissive.cast<num>().map((e) => e.toDouble()).toList(growable: false)
+        : const [0.0, 0.0, 0.0],
     alphaMode: (j['alphaMode'] as String?) ?? 'OPAQUE',
     alphaCutoff: ((j['alphaCutoff'] as num?) ?? 0.5).toDouble(),
     doubleSided: (j['doubleSided'] as bool?) ?? false,

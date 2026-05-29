@@ -314,12 +314,10 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
       vertexCount: packed.vertexCount,
     );
   }
-  out.indices =
-      fb.IndicesT()
-        ..data = packed.indexBytes
-        ..count = packed.indexCount
-        ..type =
-            packed.indices32Bit ? fb.IndexType.k32Bit : fb.IndexType.k16Bit;
+  out.indices = fb.IndicesT()
+    ..data = packed.indexBytes
+    ..count = packed.indexCount
+    ..type = packed.indices32Bit ? fb.IndexType.k32Bit : fb.IndexType.k16Bit;
 
   // Material.
   if (p.material != null && p.material! < doc.materials.length) {
@@ -343,8 +341,9 @@ fb.MeshPrimitiveT _buildMeshPrimitive(
 
 fb.MaterialT _buildMaterial(GltfMaterial m) {
   final out = fb.MaterialT();
-  out.type =
-      m.unlit ? fb.MaterialType.kUnlit : fb.MaterialType.kPhysicallyBased;
+  out.type = m.unlit
+      ? fb.MaterialType.kUnlit
+      : fb.MaterialType.kPhysicallyBased;
   out.baseColorTexture = m.pbrMetallicRoughness?.baseColorTexture?.index ?? -1;
   out.metallicRoughnessTexture =
       m.pbrMetallicRoughness?.metallicRoughnessTexture?.index ?? -1;
@@ -429,11 +428,10 @@ fb.SkinT _buildSkin(GltfSkin s, GltfDocument doc, Uint8List bufferData) {
     final accessor = doc.accessors[s.inverseBindMatrices!];
     final view = doc.bufferViews[accessor.bufferView!];
     final floats = readAccessorAsFloat32(accessor, view, bufferData);
-    out.inverseBindMatrices =
-        [
-          for (int i = 0; i < s.joints.length; i++)
-            _matrixFromFloats(floats, i * 16),
-        ].reversed.toList();
+    out.inverseBindMatrices = [
+      for (int i = 0; i < s.joints.length; i++)
+        _matrixFromFloats(floats, i * 16),
+    ].reversed.toList();
   } else {
     out.inverseBindMatrices = [
       for (int i = 0; i < s.joints.length; i++) _matrixT(Matrix4.identity()),

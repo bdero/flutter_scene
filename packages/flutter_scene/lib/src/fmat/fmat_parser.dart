@@ -28,8 +28,11 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
     );
   }
 
-  final tokens =
-      _Lexer(material.content, fileName, material.startLine).tokenize();
+  final tokens = _Lexer(
+    material.content,
+    fileName,
+    material.startLine,
+  ).tokenize();
   final tree = _ValueParser(tokens, fileName).parseObjectBody();
 
   return _build(tree, fragment, fileName);
@@ -654,11 +657,10 @@ List<FmatParameter> _buildParameters(Object? raw, String? fileName) {
     final pname = switch (nameVal) {
       String s => s,
       _Ident id => id.name,
-      _ =>
-        throw FmatException(
-          'Parameter `name` is required.',
-          fileName: fileName,
-        ),
+      _ => throw FmatException(
+        'Parameter `name` is required.',
+        fileName: fileName,
+      ),
     };
     _validateParamName(pname, fileName);
     if (!seen.add(pname)) {
@@ -746,12 +748,11 @@ FmatHint? _buildHint(
         FmatHintKind.defaultTransparent,
         raw.line,
       ),
-      _ =>
-        throw FmatException(
-          'Unknown hint `${raw.name}` on `$pname`.',
-          fileName: fileName,
-          line: raw.line,
-        ),
+      _ => throw FmatException(
+        'Unknown hint `${raw.name}` on `$pname`.',
+        fileName: fileName,
+        line: raw.line,
+      ),
     };
   }
   if (raw is _Call && raw.name == 'range') {

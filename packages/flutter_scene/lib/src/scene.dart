@@ -136,22 +136,23 @@ base class Scene implements SceneGraph {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
-    _initializeStaticResources = Future.wait([
-          loadBaseShaderLibrary(),
-          Material.initializeStaticResources(),
-        ])
-        .onError((e, stacktrace) {
-          log(
-            'Failed to initialize static Flutter Scene resources',
-            error: e,
-            stackTrace: stacktrace,
-          );
-          _initializeStaticResources = null;
-          return const <void>[];
-        })
-        .then((_) {
-          _readyToRender = true;
-        });
+    _initializeStaticResources =
+        Future.wait([
+              loadBaseShaderLibrary(),
+              Material.initializeStaticResources(),
+            ])
+            .onError((e, stacktrace) {
+              log(
+                'Failed to initialize static Flutter Scene resources',
+                error: e,
+                stackTrace: stacktrace,
+              );
+              _initializeStaticResources = null;
+              return const <void>[];
+            })
+            .then((_) {
+              _readyToRender = true;
+            });
     return _initializeStaticResources!;
   }
 
@@ -322,8 +323,8 @@ base class Scene implements SceneGraph {
 
     // Reuse one host buffer across frames; reset() cycles it to the next
     // frame's backing storage.
-    final transientsBuffer =
-        _transientsBuffer ??= gpu.gpuContext.createHostBuffer();
+    final transientsBuffer = _transientsBuffer ??= gpu.gpuContext
+        .createHostBuffer();
     transientsBuffer.reset();
 
     final light = directionalLight;
@@ -331,8 +332,8 @@ base class Scene implements SceneGraph {
     // perspective camera; other camera types render without shadows.
     final cascades =
         light != null && light.castsShadow && camera is PerspectiveCamera
-            ? light.computeCascades(camera, pixelSize.width / pixelSize.height)
-            : const <ShadowCascade>[];
+        ? light.computeCascades(camera, pixelSize.width / pixelSize.height)
+        : const <ShadowCascade>[];
 
     // Walk the graph once to tick components and animations and refresh
     // the flat render list before the passes iterate it. Skipped when
@@ -424,17 +425,16 @@ base class Scene implements SceneGraph {
 
     // The resolve writes the swapchain directly unless after-tone-mapping
     // effects need an intermediate buffer to chain on.
-    final gpu.Texture resolveOutput =
-        afterTonemap.isEmpty
-            ? swapchainColor
-            : pool.acquire(
-              TransientTextureDescriptor.color(
-                width: width,
-                height: height,
-                format: swapchainColor.format,
-                debugName: 'post_ldr_resolve',
-              ),
-            );
+    final gpu.Texture resolveOutput = afterTonemap.isEmpty
+        ? swapchainColor
+        : pool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: height,
+              format: swapchainColor.format,
+              debugName: 'post_ldr_resolve',
+            ),
+          );
     graph.addPass(
       ResolvePass(
         outputColor: resolveOutput,
@@ -448,17 +448,16 @@ base class Scene implements SceneGraph {
     // the swapchain that gets composited onto the canvas.
     for (var i = 0; i < afterTonemap.length; i++) {
       final isLast = i == afterTonemap.length - 1;
-      final output =
-          isLast
-              ? swapchainColor
-              : pool.acquire(
-                TransientTextureDescriptor.color(
-                  width: width,
-                  height: height,
-                  format: swapchainColor.format,
-                  debugName: i.isEven ? 'post_ldr_a' : 'post_ldr_b',
-                ),
-              );
+      final output = isLast
+          ? swapchainColor
+          : pool.acquire(
+              TransientTextureDescriptor.color(
+                width: width,
+                height: height,
+                format: swapchainColor.format,
+                debugName: i.isEven ? 'post_ldr_a' : 'post_ldr_b',
+              ),
+            );
       graph.addPass(
         PostEffectPass(
           effect: afterTonemap[i],

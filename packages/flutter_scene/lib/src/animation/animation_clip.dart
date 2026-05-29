@@ -147,8 +147,9 @@ class AnimationClip {
       final nodeName = channel.bindTarget.nodeName;
       // A channel may target the bind root itself or one of its
       // descendants. Resolving descendants first would miss the root.
-      final channelTarget =
-          nodeName == target.name ? target : target.getChildByName(nodeName);
+      final channelTarget = nodeName == target.name
+          ? target
+          : target.getChildByName(nodeName);
       if (channelTarget == null) continue;
       _bindings.add(_ChannelBinding(channel, channelTarget));
     }

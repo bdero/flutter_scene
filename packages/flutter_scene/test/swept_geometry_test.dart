@@ -46,12 +46,11 @@ void main() {
 
   group('stitchRings', () {
     test('connects two rings into a quad', () {
-      final accumulator =
-          MeshAccumulator()
-            ..addVertex(Vector3(0, 0, 0), Vector3(0, 1, 0), 0, 0)
-            ..addVertex(Vector3(1, 0, 0), Vector3(0, 1, 0), 1, 0)
-            ..addVertex(Vector3(0, 0, 1), Vector3(0, 1, 0), 0, 1)
-            ..addVertex(Vector3(1, 0, 1), Vector3(0, 1, 0), 1, 1);
+      final accumulator = MeshAccumulator()
+        ..addVertex(Vector3(0, 0, 0), Vector3(0, 1, 0), 0, 0)
+        ..addVertex(Vector3(1, 0, 0), Vector3(0, 1, 0), 1, 0)
+        ..addVertex(Vector3(0, 0, 1), Vector3(0, 1, 0), 0, 1)
+        ..addVertex(Vector3(1, 0, 1), Vector3(0, 1, 0), 1, 1);
       stitchRings(accumulator, [0, 2], 2);
       // One quad is two triangles.
       expect(accumulator.toArrays().indices, hasLength(6));

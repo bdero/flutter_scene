@@ -50,10 +50,9 @@ base class ShaderLibrary {
   }
 
   static Shader _buildFromBackend(fb.BackendShader backend) {
-    final stage =
-        backend.stage == fb.ShaderStage.kFragment
-            ? ShaderStage.fragment
-            : ShaderStage.vertex;
+    final stage = backend.stage == fb.ShaderStage.kFragment
+        ? ShaderStage.fragment
+        : ShaderStage.vertex;
     final shader = Shader._(gpuContext, stage);
     shader._entrypoint = backend.entrypoint;
 

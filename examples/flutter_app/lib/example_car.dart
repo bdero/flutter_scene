@@ -91,9 +91,8 @@ class ExampleCarState extends State<ExampleCar> {
 
     for (final wheelName in ['WheelBack.L', 'WheelBack.R']) {
       final wheel = nodes[wheelName]!;
-      wheel.node.localTransform =
-          wheel.startTransform.clone()
-            ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
+      wheel.node.localTransform = wheel.startTransform.clone()
+        ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
     }
 
     final wheelTurn = nodes['WheelFront.L']!.amount;
@@ -130,9 +129,8 @@ class ExampleCarState extends State<ExampleCar> {
                     value: nodes[doorName]!.amount,
                     onChanged: (value) {
                       final door = nodes[doorName]!;
-                      door.node.localTransform =
-                          door.startTransform.clone()
-                            ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
+                      door.node.localTransform = door.startTransform.clone()
+                        ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
                       door.amount = value;
                     },
                   ),
@@ -145,9 +143,8 @@ class ExampleCarState extends State<ExampleCar> {
                   value: nodes['Frunk']!.amount,
                   onChanged: (value) {
                     final door = nodes['Frunk']!;
-                    door.node.localTransform =
-                        door.startTransform.clone()
-                          ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
+                    door.node.localTransform = door.startTransform.clone()
+                      ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
                     door.amount = value;
                   },
                 ),
@@ -155,9 +152,8 @@ class ExampleCarState extends State<ExampleCar> {
                   value: nodes['Trunk']!.amount,
                   onChanged: (value) {
                     final door = nodes['Trunk']!;
-                    door.node.localTransform =
-                        door.startTransform.clone()
-                          ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
+                    door.node.localTransform = door.startTransform.clone()
+                      ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
                     door.amount = value;
                   },
                 ),

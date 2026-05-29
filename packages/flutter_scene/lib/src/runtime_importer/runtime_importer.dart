@@ -177,10 +177,9 @@ void _populateNode({
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
       );
-      final material =
-          p.material != null
-              ? buildMaterial(doc.materials[p.material!], textures)
-              : UnlitMaterial();
+      final material = p.material != null
+          ? buildMaterial(doc.materials[p.material!], textures)
+          : UnlitMaterial();
       primitives.add(MeshPrimitive(built.geometry, material));
     }
     if (primitives.isNotEmpty) {

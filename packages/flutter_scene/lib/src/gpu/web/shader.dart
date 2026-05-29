@@ -122,10 +122,9 @@ base class Shader {
   /// necessary.
   void _compile(String source) {
     final gl = _gpuContext._gl;
-    final type =
-        stage == ShaderStage.vertex
-            ? web.WebGL2RenderingContext.VERTEX_SHADER
-            : web.WebGL2RenderingContext.FRAGMENT_SHADER;
+    final type = stage == ShaderStage.vertex
+        ? web.WebGL2RenderingContext.VERTEX_SHADER
+        : web.WebGL2RenderingContext.FRAGMENT_SHADER;
     final s = gl.createShader(type);
     if (s == null) {
       throw StateError('Failed to create WebGL shader object');

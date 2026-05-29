@@ -41,13 +41,12 @@ class ExampleLogoState extends State<ExampleLogo> {
     ground.localTransform = vm.Matrix4.translation(vm.Vector3(0.0, -1.0, 0.0));
     scene.add(ground);
 
-    final loadModel = Node.fromAsset(
-      'build/models/flutter_logo_baked.model',
-    ).then((value) {
-      value.name = 'FlutterLogo';
-      scene.add(value);
-      debugPrint('Model loaded: ${value.name}');
-    });
+    final loadModel = Node.fromAsset('build/models/flutter_logo_baked.model')
+        .then((value) {
+          value.name = 'FlutterLogo';
+          scene.add(value);
+          debugPrint('Model loaded: ${value.name}');
+        });
 
     Future.wait([loadModel]).then((_) {
       debugPrint('Scene loaded.');

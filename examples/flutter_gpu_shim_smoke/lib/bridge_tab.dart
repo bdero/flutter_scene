@@ -168,12 +168,11 @@ class _BridgeTabState extends State<BridgeTab>
                   child: SizedBox(
                     width: side,
                     height: side,
-                    child:
-                        _image != null
-                            ? RawImage(image: _image, fit: BoxFit.fill)
-                            : _error != null
-                            ? _ErrorView(message: _error!)
-                            : const Center(child: CircularProgressIndicator()),
+                    child: _image != null
+                        ? RawImage(image: _image, fit: BoxFit.fill)
+                        : _error != null
+                        ? _ErrorView(message: _error!)
+                        : const Center(child: CircularProgressIndicator()),
                   ),
                 );
               },

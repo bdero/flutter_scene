@@ -137,10 +137,9 @@ class BloomPass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final knee = _settings.threshold * 0.5 + 1e-4;
-    final info =
-        Float32List(4)
-          ..[0] = _settings.threshold
-          ..[1] = knee;
+    final info = Float32List(4)
+      ..[0] = _settings.threshold
+      ..[1] = knee;
     renderPass.bindUniform(
       _thresholdShader.getUniformSlot('BloomThresholdInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
@@ -192,11 +191,10 @@ class BloomPass extends RenderGraphPass {
     }
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
-    final info =
-        Float32List(4)
-          ..[0] = 1.0 / sourceSize.width
-          ..[1] = 1.0 / sourceSize.height
-          ..[2] = _settings.scatter;
+    final info = Float32List(4)
+      ..[0] = 1.0 / sourceSize.width
+      ..[1] = 1.0 / sourceSize.height
+      ..[2] = _settings.scatter;
     renderPass.bindUniform(
       shader.getUniformSlot('BloomFilterInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),

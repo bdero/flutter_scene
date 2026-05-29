@@ -158,17 +158,16 @@ class _TriangleTabState extends State<TriangleTab> {
               child: SizedBox(
                 width: _size.toDouble(),
                 height: _size.toDouble(),
-                child:
-                    image != null
-                        ? RawImage(image: image, fit: BoxFit.fill)
-                        : _error != null
-                        ? SingleChildScrollView(
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        )
-                        : const Center(child: CircularProgressIndicator()),
+                child: image != null
+                    ? RawImage(image: image, fit: BoxFit.fill)
+                    : _error != null
+                    ? SingleChildScrollView(
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      )
+                    : const Center(child: CircularProgressIndicator()),
               ),
             ),
           ),

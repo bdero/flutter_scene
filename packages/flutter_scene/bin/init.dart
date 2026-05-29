@@ -15,8 +15,9 @@ Future<void> main(List<String> args) async {
   }
 
   final result = await installFlutterSceneBuildHook();
-  final sink =
-      result.status == InitHookStatus.needsManualInstall ? stderr : stdout;
+  final sink = result.status == InitHookStatus.needsManualInstall
+      ? stderr
+      : stdout;
   sink.writeln(result.message);
   if (result.status != InitHookStatus.needsManualInstall) {
     stdout.writeln('');

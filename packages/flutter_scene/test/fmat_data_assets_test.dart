@@ -128,15 +128,14 @@ void main() {
 
 BuildInput _buildInput({required bool buildDataAssets}) {
   final temp = Directory.systemTemp.createTempSync('flutter_scene_build_input');
-  final builder =
-      BuildInputBuilder()
-        ..setupShared(
-          packageRoot: temp.uri,
-          packageName: 'example_app',
-          outputDirectoryShared: temp.uri.resolve('.dart_tool/hook/'),
-          outputFile: temp.uri.resolve('.dart_tool/hook/output.json'),
-        )
-        ..setupBuildInput();
+  final builder = BuildInputBuilder()
+    ..setupShared(
+      packageRoot: temp.uri,
+      packageName: 'example_app',
+      outputDirectoryShared: temp.uri.resolve('.dart_tool/hook/'),
+      outputFile: temp.uri.resolve('.dart_tool/hook/output.json'),
+    )
+    ..setupBuildInput();
   builder.config.setupBuild(linkingEnabled: false);
   if (buildDataAssets) {
     DataAssetsExtension().setupBuildInput(builder);
