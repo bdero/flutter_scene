@@ -106,21 +106,20 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eu
-            flutter devices
-            adb shell svc power stayon true
-            adb shell wm dismiss-keyguard || true
-            adb logcat -c
-            cd examples/smoke_render
-            flutter drive \
-              --flavor gles \
-              --driver=test_driver/integration_test.dart \
-              --target=integration_test/smoke_test.dart \
-              -d emulator-5554 \
-              --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=opengles \
-              --enable-impeller \
-              --enable-flutter-gpu
+          script: >
+            flutter devices &&
+            adb shell svc power stayon true &&
+            (adb shell wm dismiss-keyguard || true) &&
+            adb logcat -c &&
+            cd examples/smoke_render &&
+            flutter drive
+            --flavor gles
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            -d emulator-5554
+            --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=opengles
+            --enable-impeller
+            --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
@@ -177,23 +176,22 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eu
-            flutter devices
-            adb shell getprop ro.hardware.vulkan || true
-            adb shell getprop ro.opengles.version || true
-            adb shell svc power stayon true
-            adb shell wm dismiss-keyguard || true
-            adb logcat -c
-            cd examples/smoke_render
-            flutter drive \
-              --flavor vulkan \
-              --driver=test_driver/integration_test.dart \
-              --target=integration_test/smoke_test.dart \
-              -d emulator-5554 \
-              --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=vulkan \
-              --enable-impeller \
-              --enable-flutter-gpu
+          script: >
+            flutter devices &&
+            (adb shell getprop ro.hardware.vulkan || true) &&
+            (adb shell getprop ro.opengles.version || true) &&
+            adb shell svc power stayon true &&
+            (adb shell wm dismiss-keyguard || true) &&
+            adb logcat -c &&
+            cd examples/smoke_render &&
+            flutter drive
+            --flavor vulkan
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            -d emulator-5554
+            --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=vulkan
+            --enable-impeller
+            --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
