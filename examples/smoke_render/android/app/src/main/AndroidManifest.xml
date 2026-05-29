@@ -11,7 +11,7 @@
             android:value="true" />
         <meta-data
             android:name="io.flutter.embedding.android.ImpellerBackend"
-            android:value="opengles" />
+            android:value="${impellerBackend}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
