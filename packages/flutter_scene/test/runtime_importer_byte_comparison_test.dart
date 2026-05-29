@@ -109,10 +109,9 @@ void main() {
     );
 
     // Find the index-of-first-difference in the vertex buffer (just for diagnostics).
-    final cmpLen =
-        mine.vertexBytes.length < theirVertexBytes.length
-            ? mine.vertexBytes.length
-            : theirVertexBytes.length;
+    final cmpLen = mine.vertexBytes.length < theirVertexBytes.length
+        ? mine.vertexBytes.length
+        : theirVertexBytes.length;
     int firstDiff = -1;
     for (int i = 0; i < cmpLen; i++) {
       if (mine.vertexBytes[i] != theirVertexBytes[i]) {
@@ -195,10 +194,9 @@ void main() {
       bufferData: container.binaryChunk,
     );
     final modelBytes = File(modelPath).readAsBytesSync();
-    final fbScene =
-        ImportedScene.fromFlatbuffer(
-          ByteData.sublistView(modelBytes),
-        ).flatbuffer;
+    final fbScene = ImportedScene.fromFlatbuffer(
+      ByteData.sublistView(modelBytes),
+    ).flatbuffer;
     fb.MeshPrimitive? theirPrim;
     for (final node in fbScene.nodes ?? <fb.Node>[]) {
       final prims = node.meshPrimitives;
@@ -328,8 +326,9 @@ void _comparePrimitiveBytes(
   );
 
   final modelBytes = File(modelPath).readAsBytesSync();
-  final fbScene =
-      ImportedScene.fromFlatbuffer(ByteData.sublistView(modelBytes)).flatbuffer;
+  final fbScene = ImportedScene.fromFlatbuffer(
+    ByteData.sublistView(modelBytes),
+  ).flatbuffer;
   fb.MeshPrimitive? theirPrim;
   for (final node in fbScene.nodes ?? <fb.Node>[]) {
     final prims = node.meshPrimitives;

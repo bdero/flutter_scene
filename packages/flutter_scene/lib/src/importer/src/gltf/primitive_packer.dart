@@ -112,24 +112,22 @@ PackedPrimitive packGltfPrimitive({
   final hasJoints =
       primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
-  final joints =
-      hasJoints
-          ? _readVec4(
-            primitive.attributes['JOINTS_0']!,
-            accessors,
-            bufferViews,
-            bufferData,
-          )
-          : null;
-  final weights =
-      hasJoints
-          ? _readVec4(
-            primitive.attributes['WEIGHTS_0']!,
-            accessors,
-            bufferViews,
-            bufferData,
-          )
-          : null;
+  final joints = hasJoints
+      ? _readVec4(
+          primitive.attributes['JOINTS_0']!,
+          accessors,
+          bufferViews,
+          bufferData,
+        )
+      : null;
+  final weights = hasJoints
+      ? _readVec4(
+          primitive.attributes['WEIGHTS_0']!,
+          accessors,
+          bufferViews,
+          bufferData,
+        )
+      : null;
 
   // Determine the output vertex set. With authored normals the mesh is
   // kept as-is; without them it is de-indexed for flat normals (see the

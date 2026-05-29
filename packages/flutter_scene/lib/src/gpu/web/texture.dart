@@ -239,29 +239,23 @@ base class Texture {
     final JSObject view;
     switch (_glFormat.type) {
       case web.WebGL2RenderingContext.FLOAT:
-        view =
-            sourceBytes.buffer
-                .asFloat32List(
-                  sourceBytes.offsetInBytes,
-                  sourceBytes.lengthInBytes ~/ 4,
-                )
-                .toJS;
+        view = sourceBytes.buffer
+            .asFloat32List(
+              sourceBytes.offsetInBytes,
+              sourceBytes.lengthInBytes ~/ 4,
+            )
+            .toJS;
       case web.WebGL2RenderingContext.HALF_FLOAT:
-        view =
-            sourceBytes.buffer
-                .asUint16List(
-                  sourceBytes.offsetInBytes,
-                  sourceBytes.lengthInBytes ~/ 2,
-                )
-                .toJS;
+        view = sourceBytes.buffer
+            .asUint16List(
+              sourceBytes.offsetInBytes,
+              sourceBytes.lengthInBytes ~/ 2,
+            )
+            .toJS;
       default:
-        view =
-            sourceBytes.buffer
-                .asUint8List(
-                  sourceBytes.offsetInBytes,
-                  sourceBytes.lengthInBytes,
-                )
-                .toJS;
+        view = sourceBytes.buffer
+            .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
+            .toJS;
     }
     gl.texSubImage2D(
       web.WebGL2RenderingContext.TEXTURE_2D,

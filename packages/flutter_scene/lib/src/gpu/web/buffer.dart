@@ -48,10 +48,9 @@ base class DeviceBuffer {
 
   bool get isValid => _valid;
 
-  int get _usage =>
-      storageMode == StorageMode.devicePrivate
-          ? web.WebGL2RenderingContext.STATIC_DRAW
-          : web.WebGL2RenderingContext.DYNAMIC_DRAW;
+  int get _usage => storageMode == StorageMode.devicePrivate
+      ? web.WebGL2RenderingContext.STATIC_DRAW
+      : web.WebGL2RenderingContext.DYNAMIC_DRAW;
 
   /// Internal: bind the GL buffer appropriate for [target], creating and
   /// uploading it from the staging bytes on first use. Index buffers get a

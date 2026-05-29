@@ -69,10 +69,9 @@ void main() {
         makeOrthographicMatrix(-2, 14, -10, 10, -100, 100),
       );
 
-      final expected =
-          items
-              .where((i) => frustum.intersectsWithAabb3(i.worldBounds!))
-              .toSet();
+      final expected = items
+          .where((i) => frustum.intersectsWithAabb3(i.worldBounds!))
+          .toSet();
       // The frustum must select a proper, non-empty subset, or the test
       // proves nothing.
       expect(expected, isNotEmpty);
