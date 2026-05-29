@@ -15,10 +15,20 @@ void main() {
 
   for (final smoke in kSmokeScenes) {
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
-      // flutter_scene gates rendering on this future. Wait BEFORE building the
-      // widget: a Geometry/Material ctor (run in SmokeSceneView.initState during
-      // pumpWidget) touches baseShaderLibrary, which throws on web if touched
-      // before initialization completes.
+      // Let Flutter render one ordinary frame before touching flutter_scene.
+      // Android GLES can race GPU context setup if Scene initialization uploads
+      // textures before the first frame has established the backend context.
+      await tester.pumpWidget(
+        const MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+        ),
+      );
+      await tester.pump();
+
+      // flutter_scene gates rendering on this future. Wait before building the
+      // smoke scene: Geometry/Material constructors touch the shader bundle,
+      // which must be loaded before SmokeSceneView constructs them.
       await Scene.initializeStaticResources();
       await loadSmokeMaterials();
 
