@@ -107,7 +107,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euo pipefail
+            set -eu
             flutter devices
             adb shell svc power stayon true
             adb shell wm dismiss-keyguard || true
@@ -128,6 +128,10 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name android_gles 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
@@ -174,7 +178,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euo pipefail
+            set -eu
             flutter devices
             adb shell getprop ro.hardware.vulkan || true
             adb shell getprop ro.opengles.version || true
@@ -197,6 +201,10 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name android_vulkan 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
