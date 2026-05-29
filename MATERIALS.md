@@ -62,7 +62,37 @@ fragment {
 }
 ```
 
-Compile it from your app's `hook/build.dart`:
+For the DataAssets workflow, install the build hook once from your app root:
+
+```sh
+dart run flutter_scene:init
+flutter config --enable-dart-data-assets
+```
+
+The generated hook auto-discovers `materials/**/*.fmat`, compiles the materials,
+and registers the generated `.shaderbundle`, `.fmat.json` sidecar, and runtime
+index as DataAssets. This path requires a Flutter toolchain with Dart DataAssets
+support; while the feature is experimental, that means a supported Flutter
+master build with `enable-dart-data-assets` enabled.
+
+Then load the material by name:
+
+```dart
+import 'package:flutter_scene/scene.dart';
+
+final toon = await loadFmatMaterial('Toon');
+toon.parameters
+  ..setColor('base_color', const Color(0xFFE0A030))
+  ..setInt('band_count', 4)
+  ..setTexture('base_color_texture', myTexture);
+
+node.mesh!.primitives[0].material = toon;
+```
+
+No generated files need to be listed in `flutter.assets` for the DataAssets
+workflow.
+
+For the legacy workflow, compile it from your app's `hook/build.dart`:
 
 ```dart
 import 'package:flutter_scene/build_hooks.dart';
@@ -86,8 +116,8 @@ Declare the outputs as assets in `pubspec.yaml` (a `.shaderbundle` plus a
 dependencies:
   flutter:
     sdk: flutter
-  flutter_scene: ^0.14.0
-  hooks: ^1.0.0
+  flutter_scene: ^0.15.0
+  hooks: ^2.0.0
 
 flutter:
   assets:
@@ -250,7 +280,17 @@ under `build/shaderbundles/`:
 - `<bundleName>.shaderbundle` — the compiled Flutter GPU shader bundle.
 - `<bundleName>.fmat.json` — the parameter sidecar the runtime needs.
 
-`bundleName` defaults to `materials`. List both as assets (see the quick start).
+`bundleName` defaults to `materials`. If `materials` is omitted,
+`buildMaterials` discovers `materials/**/*.fmat` automatically.
+
+The default `MaterialAssetMode.legacyOnly` preserves the historical behavior:
+list the `.shaderbundle` and `.fmat.json` files as assets. With
+`MaterialAssetMode.dataAssetsIfAvailable`, the hook registers generated files as
+DataAssets when the toolchain supports them and otherwise falls back to legacy
+output. With `MaterialAssetMode.dataAssetsRequired`, the hook fails early with
+setup guidance if DataAssets are unavailable; this is what
+`dart run flutter_scene:init` installs.
+
 The generated shaders `#include` flutter_scene's framework GLSL; the hook puts
 that directory on `impellerc`'s include path for you, so nothing is copied into
 your project.
@@ -316,7 +356,7 @@ void main() {
 ```
 
 Add it to a `flutter_gpu_shaders` manifest, compile it with
-`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.4` dependency), then:
+`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.5` dependency), then:
 
 ```dart
 final library = gpu.ShaderLibrary.fromAsset('build/shaderbundles/my_bundle.shaderbundle')!;

@@ -14,7 +14,7 @@ platforms:
 resolution: workspace
 
 environment:
-  sdk: ^3.7.0
+  sdk: ^3.10.0
   flutter: ">=3.29.0-1.0.pre.242"
 
 dependencies:
@@ -22,6 +22,7 @@ dependencies:
   # decoding. Build/offline-time only; tree-shaken from runtime builds.
   args: ^2.5.0
   collection: ^1.19.0
+  data_assets: ^0.20.0
   # Reader for the bundled GPU shim's shader-bundle flatbuffer. The importer's
   # own glTF flatbuffers use a separate vendored copy under
   # src/importer/third_party.
@@ -32,10 +33,10 @@ dependencies:
   # falls back to a WebGL2 backend on web.
   flutter_gpu:
     sdk: flutter
-  # 0.4.4 adds the includeDirectories parameter that buildMaterials uses to put
-  # flutter_scene's framework shaders on impellerc's include path.
-  flutter_gpu_shaders: ^0.4.4
-  hooks: ^1.0.0
+  # 0.4.5 includes the DataAssets shader-bundle mode used by the new
+  # zero-manifest .fmat workflow.
+  flutter_gpu_shaders: ^0.4.5
+  hooks: ^2.0.0
   image: ^4.5.0
   logging: ^1.2.0
   vector_math: ^2.1.4

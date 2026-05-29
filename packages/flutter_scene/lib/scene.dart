@@ -39,6 +39,8 @@ export 'src/material/physically_based_material.dart';
 export 'src/material/preprocessed_material.dart';
 export 'src/material/shader_material.dart';
 export 'src/material/unlit_material.dart';
+export 'src/fmat/material_registry.dart'
+    show FmatMaterialRegistry, loadFmatMaterial;
 
 export 'src/asset_helpers.dart';
 export 'src/camera.dart';

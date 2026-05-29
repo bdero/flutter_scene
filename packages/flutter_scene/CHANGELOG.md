@@ -1,3 +1,17 @@
+## Unreleased
+
+* Added a DataAssets-backed `.fmat` material workflow. `buildMaterials` can now
+  auto-discover `materials/**/*.fmat`, register generated shader bundles,
+  sidecars, and material indexes as DataAssets, and fail fast with setup
+  guidance when DataAssets are required but unavailable.
+* Added `dart run flutter_scene:init` to install a DataAssets-only build hook
+  for `.fmat` materials.
+* Added `FmatMaterialRegistry` and `loadFmatMaterial` for loading generated
+  `.fmat` materials by material name instead of manually loading the shader
+  bundle and sidecar.
+* Updated the `flutter_gpu_shaders` dependency to `^0.4.5` and moved the
+  hook-time dependencies to the `hooks` 2.x / `data_assets` 0.20.x stack.
+
 ## 0.15.0
 
 Custom materials and a post-processing effects chain.

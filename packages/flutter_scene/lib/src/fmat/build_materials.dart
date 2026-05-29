@@ -2,10 +2,76 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:data_assets/data_assets.dart';
 import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
 import 'fmat.dart';
+
+/// Controls how [buildMaterials] exposes generated `.fmat` shader assets.
+enum MaterialAssetMode {
+  /// Preserve the historical behavior: write generated files under
+  /// `build/shaderbundles/` and let users list those files in `flutter.assets`.
+  legacyOnly,
+
+  /// Register generated files as DataAssets when the current toolchain supports
+  /// them, and otherwise fall back to [legacyOnly].
+  dataAssetsIfAvailable,
+
+  /// Require DataAssets support and fail the build with a targeted migration
+  /// message when the current toolchain did not enable data assets for hooks.
+  dataAssetsRequired,
+}
+
+const String _dataAssetsUnavailableMessage =
+    'flutter_scene DataAssets mode requires Flutter support for Dart data '
+    'assets. This feature is currently experimental and available on supported '
+    'Flutter master builds. Run `flutter config --enable-dart-data-assets` or '
+    'set `FLUTTER_DART_DATA_ASSETS=true`, then rebuild. If your Flutter '
+    'toolchain does not recognize that setting, switch to a Flutter master '
+    'channel build or use MaterialAssetMode.legacyOnly and list the generated '
+    '`build/shaderbundles/*.shaderbundle` and `.fmat.json` files in '
+    '`flutter.assets`.';
+
+/// Returns the DataAsset name for a generated `.fmat` output.
+String fmatDataAssetName(String bundleName, String fileName) =>
+    'flutter_scene/fmat/$bundleName/$fileName';
+
+/// Returns the Flutter asset-bundle key for a DataAsset.
+String fmatFlutterAssetKey({required String package, required String name}) =>
+    'packages/$package/$name';
+
+/// Returns the asset key for a generated `.fmat` DataAsset.
+String fmatFlutterAssetKeyFor({
+  required String package,
+  required String bundleName,
+  required String fileName,
+}) => fmatFlutterAssetKey(
+  package: package,
+  name: fmatDataAssetName(bundleName, fileName),
+);
+
+List<String> discoverFmatMaterials(Uri packageRoot) {
+  final materialsDirectory = Directory.fromUri(
+    packageRoot.resolve('materials/'),
+  );
+  if (!materialsDirectory.existsSync()) {
+    return const [];
+  }
+  final rootPath = packageRoot.toFilePath(windows: false);
+  final materials =
+      materialsDirectory
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((file) => file.path.endsWith('.fmat'))
+          .map((file) {
+            final path = file.uri.toFilePath(windows: false);
+            return path.substring(rootPath.length);
+          })
+          .toList()
+        ..sort();
+  return materials;
+}
 
 /// The framework GLSL files (in flutter_scene's `shaders/` directory) that a
 /// generated material shader can `#include`. Declared as build dependencies so
@@ -44,12 +110,15 @@ const _frameworkShaderFiles = <String>[
 /// }
 /// ```
 ///
-/// Each path in [materials] is resolved relative to the package root. The
-/// produced bundle is written to `build/shaderbundles/[bundleName].shaderbundle`
-/// (one fragment entry per material, named by the material's `name`), and the
-/// combined parameter sidecar to
-/// `build/shaderbundles/[bundleName].fmat.json`. List both as assets in the
-/// app's pubspec.
+/// Each path in [materials] is resolved relative to the package root. If
+/// [materials] is omitted, `materials/**/*.fmat` is discovered automatically.
+/// The produced bundle is written to
+/// `build/shaderbundles/[bundleName].shaderbundle` (one fragment entry per
+/// material, named by the material's `name`), and the combined parameter
+/// sidecar to `build/shaderbundles/[bundleName].fmat.json`. In
+/// [MaterialAssetMode.legacyOnly], list both as assets in the app's pubspec.
+/// In DataAssets modes, the generated files are registered as DataAssets when
+/// the toolchain supports them.
 ///
 /// The generated shaders `#include` flutter_scene's framework GLSL; this hook
 /// puts flutter_scene's `shaders/` directory on `impellerc`'s include path (via
@@ -58,10 +127,21 @@ const _frameworkShaderFiles = <String>[
 Future<void> buildMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-  required List<String> materials,
+  List<String>? materials,
   String bundleName = 'materials',
+  MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
 }) async {
+  final dataAssetsAvailable = buildInput.config.buildDataAssets;
+  if (assetMode == MaterialAssetMode.dataAssetsRequired &&
+      !dataAssetsAvailable) {
+    throw UnsupportedError(_dataAssetsUnavailableMessage);
+  }
+
   final packageRoot = buildInput.packageRoot;
+  final materialPaths = materials ?? discoverFmatMaterials(packageRoot);
+  if (materialPaths.isEmpty) {
+    return;
+  }
 
   // Locate flutter_scene's framework shader directory. flutter_scene has no
   // top-level `flutter_scene.dart` library, so resolve through this package's
@@ -85,9 +165,10 @@ Future<void> buildMaterials({
 
   final manifest = <String, Object?>{};
   final sidecars = <String, Object?>{};
+  final materialSources = <String, String>{};
   final sourceDependencies = <Uri>[];
 
-  for (final materialPath in materials) {
+  for (final materialPath in materialPaths) {
     if (!materialPath.endsWith('.fmat')) {
       throw Exception('Material files must end with ".fmat": $materialPath');
     }
@@ -116,6 +197,7 @@ Future<void> buildMaterials({
       'file': 'build/fmat/$bundleName/$fragFileName',
     };
     sidecars[entryName] = compiled.sidecar;
+    materialSources[entryName] = materialPath;
     sourceDependencies.add(materialUri);
   }
 
@@ -137,11 +219,85 @@ Future<void> buildMaterials({
   );
 
   // Write the combined parameter sidecar next to the produced bundle.
-  File(
+  final sidecarFile = File(
     packageRoot
         .resolve('build/shaderbundles/$bundleName.fmat.json')
         .toFilePath(),
-  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(sidecars));
+  );
+  sidecarFile.writeAsStringSync(
+    const JsonEncoder.withIndent('  ').convert(sidecars),
+  );
+
+  final shouldRegisterDataAssets =
+      dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
+  if (shouldRegisterDataAssets) {
+    final shaderBundleFile = packageRoot.resolve(
+      'build/shaderbundles/$bundleName.shaderbundle',
+    );
+    final shaderBundleAssetName = fmatDataAssetName(
+      bundleName,
+      '$bundleName.shaderbundle',
+    );
+    final sidecarAssetName = fmatDataAssetName(
+      bundleName,
+      '$bundleName.fmat.json',
+    );
+    final indexAssetName = fmatDataAssetName(
+      bundleName,
+      '$bundleName.index.json',
+    );
+    final shaderBundleAssetKey = fmatFlutterAssetKey(
+      package: buildInput.packageName,
+      name: shaderBundleAssetName,
+    );
+    final sidecarAssetKey = fmatFlutterAssetKey(
+      package: buildInput.packageName,
+      name: sidecarAssetName,
+    );
+    final indexAssetKey = fmatFlutterAssetKey(
+      package: buildInput.packageName,
+      name: indexAssetName,
+    );
+    final index = <String, Object?>{
+      'schema': 1,
+      'package': buildInput.packageName,
+      'bundleName': bundleName,
+      'shaderBundleAssetKey': shaderBundleAssetKey,
+      'sidecarAssetKey': sidecarAssetKey,
+      'materials': {
+        for (final key in sidecars.keys)
+          key: {'entryName': key, 'source': materialSources[key]},
+      },
+    };
+    final indexFile = File(
+      packageRoot
+          .resolve('build/shaderbundles/$bundleName.index.json')
+          .toFilePath(),
+    );
+    indexFile.writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(index),
+    );
+
+    buildOutput.assets.data.addAll([
+      DataAsset(
+        package: buildInput.packageName,
+        name: shaderBundleAssetName,
+        file: shaderBundleFile,
+      ),
+      DataAsset(
+        package: buildInput.packageName,
+        name: sidecarAssetName,
+        file: sidecarFile.uri,
+      ),
+      DataAsset(
+        package: buildInput.packageName,
+        name: indexAssetName,
+        file: indexFile.uri,
+      ),
+    ]);
+    buildOutput.metadata['flutter_scene.fmat.$bundleName.indexAssetKey'] =
+        indexAssetKey;
+  }
 
   // Declare the real inputs as dependencies. buildShaderBundleJson declares the
   // (generated) .frag files; the sources that actually drive a rebuild are the

@@ -6,14 +6,18 @@
 /// web/wasm is never expected.
 library;
 
+/// Web/wasm placeholder for the native build-hook enum.
+enum MaterialAssetMode { legacyOnly, dataAssetsIfAvailable, dataAssetsRequired }
+
 /// Throws on web/wasm; see the library doc above. The native signature takes
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses
 /// `Object` instead so it pulls in no `dart:io`.
 Never buildMaterials({
   required Object buildInput,
   required Object buildOutput,
-  required List<String> materials,
+  List<String>? materials,
   String bundleName = 'materials',
+  MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
 }) =>
     throw UnsupportedError(
       'buildMaterials runs at build time on native platforms only.',
