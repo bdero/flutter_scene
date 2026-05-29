@@ -91,10 +91,10 @@ class MeshGeometry extends UnskinnedGeometry {
         normals ??
         (vertexCount > 0 && primitiveType == gpu.PrimitiveType.triangle
             ? InterleavedLayoutAdapter.generateNormals(
-                positions: positions,
-                vertexCount: vertexCount,
-                indices: indices,
-              )
+              positions: positions,
+              vertexCount: vertexCount,
+              indices: indices,
+            )
             : null);
 
     if (storage == GeometryStorage.fixed) {
@@ -236,10 +236,10 @@ class MeshGeometry extends UnskinnedGeometry {
         normals ??
         (vertexCount > 0 && primitiveType == gpu.PrimitiveType.triangle
             ? InterleavedLayoutAdapter.generateNormals(
-                positions: positions,
-                vertexCount: vertexCount,
-                indices: indices,
-              )
+              positions: positions,
+              vertexCount: vertexCount,
+              indices: indices,
+            )
             : null);
 
     _setCpuStreams(positions, vertexCount, resolvedNormals, texCoords, colors);
@@ -310,9 +310,8 @@ class MeshGeometry extends UnskinnedGeometry {
 
   void _uploadIndices(List<int> indices) {
     final packed = InterleavedLayoutAdapter.packIndices(indices);
-    final indexType = packed.is32Bit
-        ? gpu.IndexType.int32
-        : gpu.IndexType.int16;
+    final indexType =
+        packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
     final elementBytes = packed.is32Bit ? 4 : 2;
     if (_indexBuffer == null ||
         indices.length > _indexCapacity ||
@@ -363,15 +362,18 @@ class MeshGeometry extends UnskinnedGeometry {
       );
     }
     _cpuPositions = Float32List.fromList(positions);
-    _cpuNormals = normals != null
-        ? Float32List.fromList(normals)
-        : _filledStream(vertexCount, 3, const [0.0, 0.0, 1.0]);
-    _cpuTexCoords = texCoords != null
-        ? Float32List.fromList(texCoords)
-        : Float32List(vertexCount * 2);
-    _cpuColors = colors != null
-        ? Float32List.fromList(colors)
-        : _filledStream(vertexCount, 4, const [1.0, 1.0, 1.0, 1.0]);
+    _cpuNormals =
+        normals != null
+            ? Float32List.fromList(normals)
+            : _filledStream(vertexCount, 3, const [0.0, 0.0, 1.0]);
+    _cpuTexCoords =
+        texCoords != null
+            ? Float32List.fromList(texCoords)
+            : Float32List(vertexCount * 2);
+    _cpuColors =
+        colors != null
+            ? Float32List.fromList(colors)
+            : _filledStream(vertexCount, 4, const [1.0, 1.0, 1.0, 1.0]);
   }
 
   void _recomputeBounds() {

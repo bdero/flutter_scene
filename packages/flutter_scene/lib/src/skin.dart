@@ -124,13 +124,14 @@ base class Skin {
     // Advance to the next ring slot, allocating it on first use.
     _jointsTextureRingCursor =
         (_jointsTextureRingCursor + 1) % _jointsTextureRingSize;
-    final gpu.Texture texture = _jointsTextureRing[_jointsTextureRingCursor] ??=
-        gpu.gpuContext.createTexture(
-          gpu.StorageMode.hostVisible,
-          dimensionSize,
-          dimensionSize,
-          format: gpu.PixelFormat.r32g32b32a32Float,
-        );
+    final gpu.Texture texture =
+        _jointsTextureRing[_jointsTextureRingCursor] ??= gpu.gpuContext
+            .createTexture(
+              gpu.StorageMode.hostVisible,
+              dimensionSize,
+              dimensionSize,
+              format: gpu.PixelFormat.r32g32b32a32Float,
+            );
     // 64 bytes per matrix. 4 bytes per pixel.
     Float32List jointMatrixFloats = Float32List(
       dimensionSize * dimensionSize * 4,

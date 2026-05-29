@@ -134,9 +134,10 @@ class DirectionalLight {
     final tanH = tanV * aspectRatio;
 
     final lightLength = direction.length;
-    final lightDir = lightLength == 0.0
-        ? Vector3(0.0, -1.0, 0.0)
-        : direction * (1.0 / lightLength);
+    final lightDir =
+        lightLength == 0.0
+            ? Vector3(0.0, -1.0, 0.0)
+            : direction * (1.0 / lightLength);
 
     final cascades = <ShadowCascade>[];
     for (var c = 0; c < count; c++) {
@@ -185,9 +186,10 @@ class DirectionalLight {
     Vector3 sphereCenter,
     double sphereRadius,
   ) {
-    final up = lightDir.y.abs() > 0.99
-        ? Vector3(0.0, 0.0, 1.0)
-        : Vector3(0.0, 1.0, 0.0);
+    final up =
+        lightDir.y.abs() > 0.99
+            ? Vector3(0.0, 0.0, 1.0)
+            : Vector3(0.0, 1.0, 0.0);
     // The eye sits well behind the sphere so casters between it and the
     // slice are captured.
     final eye = sphereCenter - lightDir * (sphereRadius * 3.0);

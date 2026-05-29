@@ -91,12 +91,13 @@ class PostEffectPass extends RenderGraphPass {
       // float time; float pad; }, padded to 32 bytes.
       final w = _dimensions.width;
       final h = _dimensions.height;
-      final info = Float32List(8)
-        ..[0] = w
-        ..[1] = h
-        ..[2] = w == 0 ? 0.0 : 1.0 / w
-        ..[3] = h == 0 ? 0.0 : 1.0 / h
-        ..[4] = _time;
+      final info =
+          Float32List(8)
+            ..[0] = w
+            ..[1] = h
+            ..[2] = w == 0 ? 0.0 : 1.0 / w
+            ..[3] = h == 0 ? 0.0 : 1.0 / h
+            ..[4] = _time;
       renderPass.bindUniform(
         shader.getUniformSlot('PostFrameInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),

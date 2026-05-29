@@ -938,8 +938,8 @@ class _StressSceneState extends State<_StressScene> {
                           ),
                         ],
                         selected: {_importerMode},
-                        onSelectionChanged: (selection) =>
-                            _setImporterMode(selection.first),
+                        onSelectionChanged:
+                            (selection) => _setImporterMode(selection.first),
                       ),
                     ],
                   ),
@@ -1079,13 +1079,14 @@ class _EnvironmentMenu extends StatelessWidget {
         tooltip: 'Select environment',
         position: PopupMenuPosition.over,
         onSelected: onSelected,
-        itemBuilder: (context) => [
-          for (final environment in _environments)
-            PopupMenuItem<_Environment>(
-              value: environment,
-              child: Text(environment.title),
-            ),
-        ],
+        itemBuilder:
+            (context) => [
+              for (final environment in _environments)
+                PopupMenuItem<_Environment>(
+                  value: environment,
+                  child: Text(environment.title),
+                ),
+            ],
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -1100,18 +1101,18 @@ class _EnvironmentMenu extends StatelessWidget {
               const SizedBox(width: 6),
               loading
                   ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.arrow_drop_down,
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
                       color: Colors.white,
-                      size: 18,
                     ),
+                  )
+                  : const Icon(
+                    Icons.arrow_drop_down,
+                    color: Colors.white,
+                    size: 18,
+                  ),
             ],
           ),
         ),
@@ -1325,8 +1326,9 @@ Future<Node> _importTest(
   final gltfBytes = await _fetchResource(test.url, onChunk: onChunk);
   return Node.fromGltfBytes(
     gltfBytes,
-    resolveUri: (uri) =>
-        _fetchResource(baseUri.resolve(uri).toString(), onChunk: onChunk),
+    resolveUri:
+        (uri) =>
+            _fetchResource(baseUri.resolve(uri).toString(), onChunk: onChunk),
   );
 }
 
@@ -1344,9 +1346,10 @@ Future<Uint8List> _fetchResource(
   if (cached != null) {
     // With a known size, reject a suspiciously short (interrupted) cache
     // entry; otherwise just require it to be non-empty.
-    final usable = expectedSize == null
-        ? cached.isNotEmpty
-        : cached.lengthInBytes >= expectedSize * 0.95;
+    final usable =
+        expectedSize == null
+            ? cached.isNotEmpty
+            : cached.lengthInBytes >= expectedSize * 0.95;
     if (usable) {
       onChunk(cached.lengthInBytes);
       return cached;

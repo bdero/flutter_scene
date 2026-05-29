@@ -45,11 +45,12 @@ void main() {
     });
 
     test('addTriangle records indices and reports triangle count', () {
-      final builder = GeometryBuilder(deduplicate: false)
-        ..addVertex(Vector3(0, 0, 0))
-        ..addVertex(Vector3(1, 0, 0))
-        ..addVertex(Vector3(0, 1, 0))
-        ..addTriangle(0, 1, 2);
+      final builder =
+          GeometryBuilder(deduplicate: false)
+            ..addVertex(Vector3(0, 0, 0))
+            ..addVertex(Vector3(1, 0, 0))
+            ..addVertex(Vector3(0, 1, 0))
+            ..addTriangle(0, 1, 2);
       expect(builder.triangleCount, 1);
     });
 
@@ -59,12 +60,13 @@ void main() {
     });
 
     test('sticky attributes apply to subsequently added vertices', () {
-      final builder = GeometryBuilder(deduplicate: false)
-        ..color(Vector4(1, 0, 0, 1))
-        ..addVertex(Vector3(0, 0, 0))
-        ..color(Vector4(0, 1, 0, 1))
-        ..texCoord(Vector2(0.5, 0.5))
-        ..addVertex(Vector3(1, 0, 0));
+      final builder =
+          GeometryBuilder(deduplicate: false)
+            ..color(Vector4(1, 0, 0, 1))
+            ..addVertex(Vector3(0, 0, 0))
+            ..color(Vector4(0, 1, 0, 1))
+            ..texCoord(Vector2(0.5, 0.5))
+            ..addVertex(Vector3(1, 0, 0));
 
       final floats = Float32List.sublistView(builder.packVertices());
       // Vertex 0 color (floats 8..11) is the first sticky color.
@@ -75,11 +77,12 @@ void main() {
     });
 
     test('packVertices generates normals for an authored triangle', () {
-      final builder = GeometryBuilder(deduplicate: false)
-        ..addVertex(Vector3(0, 0, 0))
-        ..addVertex(Vector3(1, 0, 0))
-        ..addVertex(Vector3(0, 1, 0))
-        ..addTriangle(0, 1, 2);
+      final builder =
+          GeometryBuilder(deduplicate: false)
+            ..addVertex(Vector3(0, 0, 0))
+            ..addVertex(Vector3(1, 0, 0))
+            ..addVertex(Vector3(0, 1, 0))
+            ..addTriangle(0, 1, 2);
       final floats = Float32List.sublistView(builder.packVertices());
       // Vertex 0 normal (floats 3..5) is the generated face normal +Z.
       expect(floats[3], closeTo(0, 1e-6));
@@ -88,12 +91,13 @@ void main() {
     });
 
     test('authored normals override generation', () {
-      final builder = GeometryBuilder(deduplicate: false)
-        ..normal(Vector3(0, 1, 0))
-        ..addVertex(Vector3(0, 0, 0))
-        ..addVertex(Vector3(1, 0, 0))
-        ..addVertex(Vector3(0, 1, 0))
-        ..addTriangle(0, 1, 2);
+      final builder =
+          GeometryBuilder(deduplicate: false)
+            ..normal(Vector3(0, 1, 0))
+            ..addVertex(Vector3(0, 0, 0))
+            ..addVertex(Vector3(1, 0, 0))
+            ..addVertex(Vector3(0, 1, 0))
+            ..addTriangle(0, 1, 2);
       final floats = Float32List.sublistView(builder.packVertices());
       expect(floats.sublist(3, 6), [0, 1, 0]);
     });

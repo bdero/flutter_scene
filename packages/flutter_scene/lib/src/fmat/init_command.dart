@@ -3,8 +3,7 @@ import 'dart:io';
 const String hookStartMarker = '// flutter_scene:init:start';
 const String hookEndMarker = '// flutter_scene:init:end';
 
-const String _hookSnippet =
-    '''
+const String _hookSnippet = '''
 $hookStartMarker
     await buildMaterials(
       buildInput: input,
@@ -13,8 +12,7 @@ $hookStartMarker
     );
 $hookEndMarker''';
 
-const String generatedBuildHook =
-    '''
+const String generatedBuildHook = '''
 import 'package:flutter_scene/build_hooks.dart';
 import 'package:hooks/hooks.dart';
 
@@ -25,8 +23,7 @@ $_hookSnippet
 }
 ''';
 
-const String manualInstallInstructions =
-    '''
+const String manualInstallInstructions = '''
 Add this call to your existing hook/build.dart:
 
 $_hookSnippet

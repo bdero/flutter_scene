@@ -41,11 +41,12 @@ PerspectiveCamera _shadowCamera() => PerspectiveCamera(
 );
 
 Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
-  final material = PhysicallyBasedMaterial()
-    ..baseColorFactor = baseColor
-    ..metallicFactor = metallic
-    ..roughnessFactor = roughness
-    ..vertexColorWeight = 0.0;
+  final material =
+      PhysicallyBasedMaterial()
+        ..baseColorFactor = baseColor
+        ..metallicFactor = metallic
+        ..roughnessFactor = roughness
+        ..vertexColorWeight = 0.0;
   return Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material))
     ..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3);
 }
@@ -134,8 +135,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // the type-checked runtime parameters.
   SmokeScene('fmat_toon', () {
     final shader = _materialsLibrary!['FmatToon']!;
-    final metadata = (_materialsMetadata!['FmatToon'] as Map)
-        .cast<String, Object?>();
+    final metadata =
+        (_materialsMetadata!['FmatToon'] as Map).cast<String, Object?>();
     final material = PreprocessedMaterial(
       fragmentShader: shader,
       metadata: metadata,

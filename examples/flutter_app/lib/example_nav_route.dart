@@ -217,22 +217,26 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
       'DoorBack.R',
     ]) {
       final part = _carParts[name]!;
-      part.node.localTransform = part.startTransform.clone()
-        ..rotate(vm.Vector3(0, -1, 0), part.amount * pi / 2);
+      part.node.localTransform =
+          part.startTransform.clone()
+            ..rotate(vm.Vector3(0, -1, 0), part.amount * pi / 2);
     }
     final frunk = _carParts['Frunk']!;
-    frunk.node.localTransform = frunk.startTransform.clone()
-      ..rotate(vm.Vector3(0, 0, 1), frunk.amount * pi / 2);
+    frunk.node.localTransform =
+        frunk.startTransform.clone()
+          ..rotate(vm.Vector3(0, 0, 1), frunk.amount * pi / 2);
     final trunk = _carParts['Trunk']!;
-    trunk.node.localTransform = trunk.startTransform.clone()
-      ..rotate(vm.Vector3(0, 0, -1), trunk.amount * pi / 2);
+    trunk.node.localTransform =
+        trunk.startTransform.clone()
+          ..rotate(vm.Vector3(0, 0, -1), trunk.amount * pi / 2);
 
     // The spin slider sets a speed, accumulated into a rolling angle.
     _wheelRotation += _carParts['WheelBack.L']!.amount / 10;
     for (final name in const ['WheelBack.L', 'WheelBack.R']) {
       final wheel = _carParts[name]!;
-      wheel.node.localTransform = wheel.startTransform.clone()
-        ..rotate(vm.Vector3(0, 0, -1), _wheelRotation);
+      wheel.node.localTransform =
+          wheel.startTransform.clone()
+            ..rotate(vm.Vector3(0, 0, -1), _wheelRotation);
     }
     // The front wheels also steer about their vertical axis.
     final steer = _carParts['WheelFront.L']!.amount;
@@ -348,8 +352,9 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
                 open: _controlsOpen,
                 onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
                 parts: _carParts,
-                onControl: (key, value) =>
-                    setState(() => _carParts[key]!.amount = value),
+                onControl:
+                    (key, value) =>
+                        setState(() => _carParts[key]!.amount = value),
               ),
             ),
           Positioned(

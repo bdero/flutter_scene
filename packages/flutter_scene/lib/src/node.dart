@@ -627,9 +627,10 @@ base class Node implements SceneGraph {
       List<MeshPrimitive> meshPrimitives = [];
       for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
         Geometry geometry = Geometry.fromFlatbuffer(fbPrimitive);
-        Material material = fbPrimitive.material != null
-            ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
-            : UnlitMaterial();
+        Material material =
+            fbPrimitive.material != null
+                ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
+                : UnlitMaterial();
         meshPrimitives.add(MeshPrimitive(geometry, material));
       }
       final meshComponent = MeshComponent(

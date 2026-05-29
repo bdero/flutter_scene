@@ -9,13 +9,14 @@ import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 ///
 /// A `null` attribute is left to [MeshGeometry.fromArrays] to default or
 /// generate. Used internally to build the procedural primitives below.
-typedef PrimitiveArrays = ({
-  Float32List positions,
-  Float32List? normals,
-  Float32List? texCoords,
-  Float32List? colors,
-  List<int> indices,
-});
+typedef PrimitiveArrays =
+    ({
+      Float32List positions,
+      Float32List? normals,
+      Float32List? texCoords,
+      Float32List? colors,
+      List<int> indices,
+    });
 
 /// An axis-aligned box geometry spanning `-extents/2` to `+extents/2` on
 /// each axis.

@@ -97,9 +97,8 @@ abstract class Geometry {
     Uint8List vertices;
     bool isSkinned =
         fbPrimitive.vertices!.runtimeType == fb.SkinnedVertexBuffer;
-    int perVertexBytes = isSkinned
-        ? kSkinnedPerVertexSize
-        : kUnskinnedPerVertexSize;
+    int perVertexBytes =
+        isSkinned ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
 
     switch (fbPrimitive.vertices!.runtimeType) {
       case const (fb.UnskinnedVertexBuffer):
@@ -153,9 +152,8 @@ abstract class Geometry {
     // Unskinned primitives use the (sound) static AABB and sphere
     // from the flatbuffer, falling back to a position scan in
     // `uploadVertexData` when the importer didn't bake bounds.
-    final fbAabb = isSkinned
-        ? fbPrimitive.skinnedPoseUnionAabb
-        : fbPrimitive.boundsAabb;
+    final fbAabb =
+        isSkinned ? fbPrimitive.skinnedPoseUnionAabb : fbPrimitive.boundsAabb;
     if (fbAabb != null) {
       geometry._localBounds = vm.Aabb3.minMax(
         vm.Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),

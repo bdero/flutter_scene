@@ -181,9 +181,10 @@ abstract class ScenePath {
             tangents[i] - v1 * (2.0 / c1 * v1.dot(tangents[i]));
         final v2 = tangents[i + 1] - reflectedTan;
         final c2 = v2.dot(v2);
-        reference = c2 > 1e-12
-            ? reflectedRef - v2 * (2.0 / c2 * v2.dot(reflectedRef))
-            : reflectedRef;
+        reference =
+            c2 > 1e-12
+                ? reflectedRef - v2 * (2.0 / c2 * v2.dot(reflectedRef))
+                : reflectedRef;
       }
       // Re-orthonormalize against the next tangent.
       reference = reference - tangents[i + 1] * reference.dot(tangents[i + 1]);

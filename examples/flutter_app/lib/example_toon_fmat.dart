@@ -186,40 +186,44 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
                     value: bandCount,
                     min: 1,
                     max: 8,
-                    onChanged: (v) => setState(() {
-                      bandCount = v.roundToDouble();
-                      _refreshParameters(_toonMaterial!);
-                    }),
+                    onChanged:
+                        (v) => setState(() {
+                          bandCount = v.roundToDouble();
+                          _refreshParameters(_toonMaterial!);
+                        }),
                   ),
                   _SliderRow(
                     label: 'Rim strength',
                     value: rimStrength,
                     min: 0,
                     max: 2,
-                    onChanged: (v) => setState(() {
-                      rimStrength = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
+                    onChanged:
+                        (v) => setState(() {
+                          rimStrength = v;
+                          _refreshParameters(_toonMaterial!);
+                        }),
                   ),
                   _SliderRow(
                     label: 'Rim width',
                     value: rimWidth,
                     min: 0,
                     max: 1,
-                    onChanged: (v) => setState(() {
-                      rimWidth = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
+                    onChanged:
+                        (v) => setState(() {
+                          rimWidth = v;
+                          _refreshParameters(_toonMaterial!);
+                        }),
                   ),
                   _SliderRow(
                     label: 'Ambient',
                     value: ambient,
                     min: 0,
                     max: 1,
-                    onChanged: (v) => setState(() {
-                      ambient = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
+                    onChanged:
+                        (v) => setState(() {
+                          ambient = v;
+                          _refreshParameters(_toonMaterial!);
+                        }),
                   ),
                 ],
               ),

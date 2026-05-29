@@ -99,9 +99,10 @@ class PolylineGeometry extends MeshGeometry {
       throw ArgumentError('perVertexColor must have one entry per point');
     }
     var working = <Vector3>[for (final p in points) p.clone()];
-    var workingWidths = perVertexWidth != null
-        ? List<double>.of(perVertexWidth)
-        : List<double>.filled(inputCount, width);
+    var workingWidths =
+        perVertexWidth != null
+            ? List<double>.of(perVertexWidth)
+            : List<double>.filled(inputCount, width);
     var workingColors = <Vector4>[
       for (var i = 0; i < inputCount; i++)
         perVertexColor?[i] ?? Vector4(1.0, 1.0, 1.0, 1.0),
@@ -140,9 +141,10 @@ class PolylineGeometry extends MeshGeometry {
     //
     // Round dash caps put a disk at every dash boundary; otherwise the
     // disks are just the line's two round ends.
-    final diskPoints = (dash != null && dash.cap == PolylineCap.round)
-        ? dashCapIndices
-        : diskPointIndices(count, cap);
+    final diskPoints =
+        (dash != null && dash.cap == PolylineCap.round)
+            ? dashCapIndices
+            : diskPointIndices(count, cap);
     final stripVertexCount = count * 2;
     final vertexCount =
         stripVertexCount + diskPoints.length * (_diskSegments + 1);
@@ -603,9 +605,8 @@ Vector3 _towardCamera(Vector3 cameraPosition, Vector3 point) {
 }
 
 Vector3 _anyPerpendicular(Vector3 direction) {
-  final reference = direction.x.abs() < 0.9
-      ? Vector3(1.0, 0.0, 0.0)
-      : Vector3(0.0, 1.0, 0.0);
+  final reference =
+      direction.x.abs() < 0.9 ? Vector3(1.0, 0.0, 0.0) : Vector3(0.0, 1.0, 0.0);
   return direction.cross(reference).normalized();
 }
 

@@ -42,19 +42,19 @@ class _MyAppState extends State<MyApp> {
 
     examples = {
       'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
-      'Animation': (context) =>
-          ExampleAnimation(elapsedSeconds: elapsedSeconds),
+      'Animation':
+          (context) => ExampleAnimation(elapsedSeconds: elapsedSeconds),
       'Flutter Logo': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
       'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
-      'Instancing': (context) =>
-          ExampleInstancing(elapsedSeconds: elapsedSeconds),
-      'Navigation Route': (context) =>
-          ExampleNavRoute(elapsedSeconds: elapsedSeconds),
+      'Instancing':
+          (context) => ExampleInstancing(elapsedSeconds: elapsedSeconds),
+      'Navigation Route':
+          (context) => ExampleNavRoute(elapsedSeconds: elapsedSeconds),
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
-      'Toon (.fmat)': (context) =>
-          ExampleToonFmat(elapsedSeconds: elapsedSeconds),
-      'Stress Tests': (context) =>
-          ExampleStressTests(elapsedSeconds: elapsedSeconds),
+      'Toon (.fmat)':
+          (context) => ExampleToonFmat(elapsedSeconds: elapsedSeconds),
+      'Stress Tests':
+          (context) => ExampleStressTests(elapsedSeconds: elapsedSeconds),
     };
     selectedExample = examples.keys.first;
 
@@ -141,10 +141,11 @@ class _ExamplePicker extends StatelessWidget {
         initialValue: selected,
         onSelected: onSelected,
         tooltip: 'Switch example',
-        itemBuilder: (context) => [
-          for (final name in examples)
-            PopupMenuItem<String>(value: name, child: Text(name)),
-        ],
+        itemBuilder:
+            (context) => [
+              for (final name in examples)
+                PopupMenuItem<String>(value: name, child: Text(name)),
+            ],
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
@@ -396,11 +397,13 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           contentPadding: EdgeInsets.zero,
           title: const Text('After tone mapping'),
           value: effect.insertion == PostInsertion.afterTonemap,
-          onChanged: (value) => setState(() {
-            effect.insertion = value
-                ? PostInsertion.afterTonemap
-                : PostInsertion.beforeTonemap;
-          }),
+          onChanged:
+              (value) => setState(() {
+                effect.insertion =
+                    value
+                        ? PostInsertion.afterTonemap
+                        : PostInsertion.beforeTonemap;
+              }),
         ),
         _slider('Amplitude', exampleSettings.waveAmplitude, 0, 0.03, (v) {
           exampleSettings.waveAmplitude = v;

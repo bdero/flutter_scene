@@ -71,9 +71,9 @@ class ShadowEncoder {
       }
     }
     _renderPass.clearBindings();
-    final pipeline = _depthPipelineCache[item.geometry.vertexShader] ??= gpu
-        .gpuContext
-        .createRenderPipeline(item.geometry.vertexShader, _depthShader);
+    final pipeline =
+        _depthPipelineCache[item.geometry.vertexShader] ??= gpu.gpuContext
+            .createRenderPipeline(item.geometry.vertexShader, _depthShader);
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;

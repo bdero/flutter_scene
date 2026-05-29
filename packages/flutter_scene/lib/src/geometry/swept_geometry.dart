@@ -7,12 +7,13 @@ import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/scene_path.dart';
 
 /// Vertex attribute arrays produced by a swept-geometry generator.
-typedef SweptArrays = ({
-  Float32List positions,
-  Float32List normals,
-  Float32List texCoords,
-  List<int> indices,
-});
+typedef SweptArrays =
+    ({
+      Float32List positions,
+      Float32List normals,
+      Float32List texCoords,
+      List<int> indices,
+    });
 
 /// How a [RibbonGeometry] orients its strip across the path.
 enum RibbonAlignment {

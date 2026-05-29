@@ -32,9 +32,8 @@ BuiltGeometry buildGeometry({
     bufferViews: bufferViews,
     bufferData: bufferData,
   );
-  final Geometry geometry = packed.isSkinned
-      ? SkinnedGeometry()
-      : UnskinnedGeometry();
+  final Geometry geometry =
+      packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry();
   geometry.uploadVertexData(
     ByteData.sublistView(packed.vertexBytes),
     packed.vertexCount,

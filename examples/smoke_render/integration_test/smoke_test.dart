@@ -43,9 +43,8 @@ void main() {
               as RenderRepaintBoundary;
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
       final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
-      final rgba = (await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
-      ))!;
+      final rgba =
+          (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
 
       // Hand the PNG to the host driver (writes it outside the app sandbox).
       // Platform is distinguished by the Argos build-name, not the filename.
@@ -141,9 +140,8 @@ _frameStats(ByteData rgba, int w, int h) {
   }
   return (
     cornersClear: cornersClear,
-    centerNonClearFraction: centerTotal == 0
-        ? 0.0
-        : centerNonClear / centerTotal,
+    centerNonClearFraction:
+        centerTotal == 0 ? 0.0 : centerNonClear / centerTotal,
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );

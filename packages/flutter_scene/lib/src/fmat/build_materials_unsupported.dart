@@ -18,6 +18,7 @@ Never buildMaterials({
   List<String>? materials,
   String bundleName = 'materials',
   MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
-}) => throw UnsupportedError(
-  'buildMaterials runs at build time on native platforms only.',
-);
+}) =>
+    throw UnsupportedError(
+      'buildMaterials runs at build time on native platforms only.',
+    );

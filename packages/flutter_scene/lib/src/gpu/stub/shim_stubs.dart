@@ -5,9 +5,10 @@ part of '_gpu.dart';
 // or `dart.library.js_interop` (web path) - e.g. when analyzing in a
 // platform-neutral context.
 
-Never _stub() => throw UnimplementedError(
-  'flutter_gpu_shim is not implemented for this platform.',
-);
+Never _stub() =>
+    throw UnimplementedError(
+      'flutter_gpu_shim is not implemented for this platform.',
+    );
 
 base class GpuContext {
   GpuContext._() {
@@ -46,9 +47,10 @@ base class GpuContext {
   }) => _stub();
 }
 
-final GpuContext gpuContext = throw UnimplementedError(
-  'flutter_gpu_shim is not implemented for this platform.',
-);
+final GpuContext gpuContext =
+    throw UnimplementedError(
+      'flutter_gpu_shim is not implemented for this platform.',
+    );
 
 class BufferView {
   const BufferView(

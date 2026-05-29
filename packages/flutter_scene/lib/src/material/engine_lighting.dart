@@ -31,9 +31,10 @@ class EngineLightingUniforms {
     EnvironmentMap env,
   ) {
     final light = lighting.directionalLight;
-    final cascades = lighting.shadowMap == null
-        ? const <ShadowCascade>[]
-        : lighting.cascades;
+    final cascades =
+        lighting.shadowMap == null
+            ? const <ShadowCascade>[]
+            : lighting.cascades;
 
     // diffuse_sh0..8 at [8..43] (xyz used).
     final shCoefficients = env.diffuseSphericalHarmonics;

@@ -29,12 +29,10 @@ void importGltf(
   final workingDirectoryUri = Uri.directory(
     workingDirectory ?? Directory.current.path,
   );
-  inputGltfFilePath = workingDirectoryUri
-      .resolveUri(inputGltfFilePathUri)
-      .toFilePath();
-  outputModelFilePath = workingDirectoryUri
-      .resolveUri(outputModelFilePathUri)
-      .toFilePath();
+  inputGltfFilePath =
+      workingDirectoryUri.resolveUri(inputGltfFilePathUri).toFilePath();
+  outputModelFilePath =
+      workingDirectoryUri.resolveUri(outputModelFilePathUri).toFilePath();
 
   final inputBytes = File(inputGltfFilePath).readAsBytesSync();
   final container = parseGlb(inputBytes);

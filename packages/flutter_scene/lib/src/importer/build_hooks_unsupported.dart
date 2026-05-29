@@ -12,6 +12,7 @@ Never buildModels({
   required Object buildInput,
   required List<String> inputFilePaths,
   String outputDirectory = 'build/models/',
-}) => throw UnsupportedError(
-  'buildModels runs at build time on native platforms only.',
-);
+}) =>
+    throw UnsupportedError(
+      'buildModels runs at build time on native platforms only.',
+    );

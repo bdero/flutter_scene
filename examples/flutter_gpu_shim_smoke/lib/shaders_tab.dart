@@ -84,19 +84,21 @@ class _ShadersTabState extends State<ShadersTab> {
               isFragment: isFragment,
             );
         }
-        final stage = isFragment
-            ? web.WebGL2RenderingContext.FRAGMENT_SHADER
-            : web.WebGL2RenderingContext.VERTEX_SHADER;
+        final stage =
+            isFragment
+                ? web.WebGL2RenderingContext.FRAGMENT_SHADER
+                : web.WebGL2RenderingContext.VERTEX_SHADER;
 
         final compiled = _tryCompile(gl, stage, source);
         _results.add(
           _CompileResult(
             name: name,
-            stage: backend.stage == fb.ShaderStage.kFragment
-                ? 'fragment'
-                : (backend.stage == fb.ShaderStage.kVertex
-                      ? 'vertex'
-                      : 'compute'),
+            stage:
+                backend.stage == fb.ShaderStage.kFragment
+                    ? 'fragment'
+                    : (backend.stage == fb.ShaderStage.kVertex
+                        ? 'vertex'
+                        : 'compute'),
             ok: compiled.ok,
             log: compiled.log,
             source: source,
@@ -217,12 +219,13 @@ class _ShadersTabState extends State<ShadersTab> {
                         ),
                       ],
                       selected: {_mode},
-                      onSelectionChanged: _running
-                          ? null
-                          : (s) {
-                              setState(() => _mode = s.first);
-                              _runExperiment();
-                            },
+                      onSelectionChanged:
+                          _running
+                              ? null
+                              : (s) {
+                                setState(() => _mode = s.first);
+                                _runExperiment();
+                              },
                     ),
                   ],
                 ),
@@ -329,9 +332,8 @@ class _MonoBlock extends StatelessWidget {
           child: Text(
             body,
             maxLines: maxLines,
-            overflow: maxLines == null
-                ? TextOverflow.visible
-                : TextOverflow.ellipsis,
+            overflow:
+                maxLines == null ? TextOverflow.visible : TextOverflow.ellipsis,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
           ),
         ),

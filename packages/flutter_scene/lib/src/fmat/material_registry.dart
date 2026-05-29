@@ -141,8 +141,9 @@ final class FmatMaterialRegistry {
       bundleName: bundleName,
     );
     final index = resolution.index;
-    final shaderLibrary = _shaderLibraries[index.shaderBundleAssetKey] ??=
-        await _loadShaderLibrary(index.shaderBundleAssetKey);
+    final shaderLibrary =
+        _shaderLibraries[index.shaderBundleAssetKey] ??=
+            await _loadShaderLibrary(index.shaderBundleAssetKey);
     final shader = shaderLibrary[resolution.entry.entryName];
     if (shader == null) {
       throw StateError(
@@ -150,10 +151,13 @@ final class FmatMaterialRegistry {
         '${index.shaderBundleAssetKey}.',
       );
     }
-    final metadataByMaterial = _sidecars[index.sidecarAssetKey] ??=
-        await _loadSidecar(index.sidecarAssetKey);
-    final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
-        .cast<String, Object?>();
+    final metadataByMaterial =
+        _sidecars[index.sidecarAssetKey] ??= await _loadSidecar(
+          index.sidecarAssetKey,
+        );
+    final metadata =
+        (metadataByMaterial[resolution.entry.entryName] as Map)
+            .cast<String, Object?>();
     return PreprocessedMaterial(fragmentShader: shader, metadata: metadata);
   }
 

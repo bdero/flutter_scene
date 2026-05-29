@@ -156,8 +156,7 @@ fragment {
   });
 
   group('validation', () {
-    String wrap(String params, {String shadingModel = 'lit'}) =>
-        '''
+    String wrap(String params, {String shadingModel = 'lit'}) => '''
 material {
   name: "V",
   shading_model: $shadingModel,

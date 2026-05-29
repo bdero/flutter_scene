@@ -160,16 +160,17 @@ class _HdrTabState extends State<HdrTab> {
               child: SizedBox(
                 width: _size.toDouble(),
                 height: _size.toDouble(),
-                child: image != null
-                    ? RawImage(image: image, fit: BoxFit.fill)
-                    : _error != null
-                    ? SingleChildScrollView(
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red),
-                        ),
-                      )
-                    : const Center(child: CircularProgressIndicator()),
+                child:
+                    image != null
+                        ? RawImage(image: image, fit: BoxFit.fill)
+                        : _error != null
+                        ? SingleChildScrollView(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        )
+                        : const Center(child: CircularProgressIndicator()),
               ),
             ),
           ),
@@ -194,12 +195,13 @@ class _HdrTabState extends State<HdrTab> {
                         value: _msaa,
                         dense: true,
                         contentPadding: EdgeInsets.zero,
-                        onChanged: _rendering
-                            ? null
-                            : (v) {
-                                setState(() => _msaa = v);
-                                _render();
-                              },
+                        onChanged:
+                            _rendering
+                                ? null
+                                : (v) {
+                                  setState(() => _msaa = v);
+                                  _render();
+                                },
                       ),
                     ),
                     OutlinedButton(

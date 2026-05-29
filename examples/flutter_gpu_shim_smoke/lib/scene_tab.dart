@@ -32,11 +32,12 @@ class _SceneTabState extends State<SceneTab>
     Scene.initializeStaticResources()
         .then((_) {
           if (!mounted) return;
-          final material = PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.85, 0.30, 0.20, 1.0)
-            ..metallicFactor = 0.1
-            ..roughnessFactor = 0.45
-            ..vertexColorWeight = 0.0;
+          final material =
+              PhysicallyBasedMaterial()
+                ..baseColorFactor = vm.Vector4(0.85, 0.30, 0.20, 1.0)
+                ..metallicFactor = 0.1
+                ..roughnessFactor = 0.45
+                ..vertexColorWeight = 0.0;
           final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material);
           _scene.add(Node(mesh: mesh));
           setState(() => _ready = true);

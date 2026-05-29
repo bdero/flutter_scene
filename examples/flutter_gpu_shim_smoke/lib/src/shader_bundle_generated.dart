@@ -366,9 +366,8 @@ class ShaderInputObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset = _name == null
-        ? null
-        : fbBuilder.writeString(_name!);
+    final int? nameOffset =
+        _name == null ? null : fbBuilder.writeString(_name!);
     fbBuilder.startTable(9);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addUint64(1, _location);
@@ -520,9 +519,8 @@ class ShaderUniformStructFieldObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset = _name == null
-        ? null
-        : fbBuilder.writeString(_name!);
+    final int? nameOffset =
+        _name == null ? null : fbBuilder.writeString(_name!);
     fbBuilder.startTable(8);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addUint32(1, _type?.value);
@@ -652,14 +650,14 @@ class ShaderUniformStructObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset = _name == null
-        ? null
-        : fbBuilder.writeString(_name!);
-    final int? fieldsOffset = _fields == null
-        ? null
-        : fbBuilder.writeList(
-            _fields!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-          );
+    final int? nameOffset =
+        _name == null ? null : fbBuilder.writeString(_name!);
+    final int? fieldsOffset =
+        _fields == null
+            ? null
+            : fbBuilder.writeList(
+              _fields!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+            );
     fbBuilder.startTable(6);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addUint64(1, _extRes0);
@@ -765,9 +763,8 @@ class ShaderUniformTextureObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset = _name == null
-        ? null
-        : fbBuilder.writeString(_name!);
+    final int? nameOffset =
+        _name == null ? null : fbBuilder.writeString(_name!);
     fbBuilder.startTable(4);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addUint64(1, _extRes0);
@@ -899,31 +896,32 @@ class BackendShaderObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? entrypointOffset = _entrypoint == null
-        ? null
-        : fbBuilder.writeString(_entrypoint!);
-    final int? inputsOffset = _inputs == null
-        ? null
-        : fbBuilder.writeList(
-            _inputs!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-          );
-    final int? uniformStructsOffset = _uniformStructs == null
-        ? null
-        : fbBuilder.writeList(
-            _uniformStructs!
-                .map((b) => b.getOrCreateOffset(fbBuilder))
-                .toList(),
-          );
-    final int? uniformTexturesOffset = _uniformTextures == null
-        ? null
-        : fbBuilder.writeList(
-            _uniformTextures!
-                .map((b) => b.getOrCreateOffset(fbBuilder))
-                .toList(),
-          );
-    final int? shaderOffset = _shader == null
-        ? null
-        : fbBuilder.writeListUint8(_shader!);
+    final int? entrypointOffset =
+        _entrypoint == null ? null : fbBuilder.writeString(_entrypoint!);
+    final int? inputsOffset =
+        _inputs == null
+            ? null
+            : fbBuilder.writeList(
+              _inputs!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+            );
+    final int? uniformStructsOffset =
+        _uniformStructs == null
+            ? null
+            : fbBuilder.writeList(
+              _uniformStructs!
+                  .map((b) => b.getOrCreateOffset(fbBuilder))
+                  .toList(),
+            );
+    final int? uniformTexturesOffset =
+        _uniformTextures == null
+            ? null
+            : fbBuilder.writeList(
+              _uniformTextures!
+                  .map((b) => b.getOrCreateOffset(fbBuilder))
+                  .toList(),
+            );
+    final int? shaderOffset =
+        _shader == null ? null : fbBuilder.writeListUint8(_shader!);
     fbBuilder.startTable(6);
     fbBuilder.addInt8(0, _stage?.value);
     fbBuilder.addOffset(1, entrypointOffset);
@@ -1050,9 +1048,8 @@ class ShaderObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset = _name == null
-        ? null
-        : fbBuilder.writeString(_name!);
+    final int? nameOffset =
+        _name == null ? null : fbBuilder.writeString(_name!);
     final int? metalIosOffset = _metalIos?.getOrCreateOffset(fbBuilder);
     final int? metalDesktopOffset = _metalDesktop?.getOrCreateOffset(fbBuilder);
     final int? openglEsOffset = _openglEs?.getOrCreateOffset(fbBuilder);
@@ -1148,11 +1145,12 @@ class ShaderBundleObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? shadersOffset = _shaders == null
-        ? null
-        : fbBuilder.writeList(
-            _shaders!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-          );
+    final int? shadersOffset =
+        _shaders == null
+            ? null
+            : fbBuilder.writeList(
+              _shaders!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+            );
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, shadersOffset);
     fbBuilder.addUint32(1, _formatVersion);
