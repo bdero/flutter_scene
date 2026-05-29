@@ -79,21 +79,14 @@ jobs:
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   android_gles:
-    name: android_gles (Flutter acd5e1a)
+    name: android_gles (Flutter master)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      # Current Flutter master has a GLES Texture.overwrite raster-thread
-      # submission regression after flutter/flutter#185890. Pin Android GLES
-      # smoke goldens before that change until the upstream regression is fixed.
-      FLUTTER_REVISION: acd5e1a75af03247e82bf1cea8a63ae352c3d0b3
     steps:
       - uses: actions/checkout@v4
-      - name: Install pinned Flutter
-        run: |
-          git clone --filter=blob:none https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
-          git -C "$RUNNER_TEMP/flutter" checkout "$FLUTTER_REVISION"
-          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
       - name: Flutter and engine revision
         run: flutter --version
       - run: flutter config --enable-native-assets
@@ -143,7 +136,7 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (android_gles, Flutter acd5e1a). Run: $RUN_URL"
+          CONTENT="Smoke render failed (android_gles, Flutter master). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
