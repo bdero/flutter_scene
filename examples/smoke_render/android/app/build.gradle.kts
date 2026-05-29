@@ -24,6 +24,20 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["impellerBackend"] = "opengles"
+    }
+
+    flavorDimensions += "impellerBackend"
+
+    productFlavors {
+        create("gles") {
+            dimension = "impellerBackend"
+            manifestPlaceholders["impellerBackend"] = "opengles"
+        }
+        create("vulkan") {
+            dimension = "impellerBackend"
+            manifestPlaceholders["impellerBackend"] = "vulkan"
+        }
     }
 
     buildTypes {

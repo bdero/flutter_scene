@@ -1,17 +1,39 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
 
+const _expectedAndroidImpellerBackend = String.fromEnvironment(
+  'SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND',
+);
+const _androidManifestChannel = MethodChannel(
+  'dev.bdero.smoke_render/android_manifest',
+);
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final captures = <String, String>{};
+
+  if (_expectedAndroidImpellerBackend.isNotEmpty) {
+    testWidgets('Android requests the expected Impeller backend', (_) async {
+      expect(defaultTargetPlatform, TargetPlatform.android);
+      expect(kIsWeb, isFalse);
+
+      final backend = await _androidManifestChannel.invokeMethod<String>(
+        'getApplicationMetadataValue',
+        'io.flutter.embedding.android.ImpellerBackend',
+      );
+
+      expect(backend, _expectedAndroidImpellerBackend);
+    });
+  }
 
   for (final smoke in kSmokeScenes) {
     testWidgets('${smoke.id} renders a sane frame', (tester) async {

@@ -106,17 +106,21 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: >
-            flutter devices &&
-            adb shell svc power stayon true &&
-            (adb shell wm dismiss-keyguard || true) &&
-            cd examples/smoke_render &&
-            flutter drive
-            --driver=test_driver/integration_test.dart
-            --target=integration_test/smoke_test.dart
-            -d emulator-5554
-            --enable-impeller
-            --enable-flutter-gpu
+          script: |
+            set -euo pipefail
+            flutter devices
+            adb shell svc power stayon true
+            adb shell wm dismiss-keyguard || true
+            adb logcat -c
+            cd examples/smoke_render
+            flutter drive \
+              --flavor gles \
+              --driver=test_driver/integration_test.dart \
+              --target=integration_test/smoke_test.dart \
+              -d emulator-5554 \
+              --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=opengles \
+              --enable-impeller \
+              --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
@@ -137,6 +141,75 @@ jobs:
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           CONTENT="Smoke render failed (android_gles, Flutter master). Run: $RUN_URL"
+          [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
+
+  android_vulkan:
+    name: android_vulkan (Flutter master)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - name: Flutter and engine revision
+        run: flutter --version
+      - run: flutter config --enable-native-assets
+      - run: flutter pub get
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Render smoke scenes
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euo pipefail
+            flutter devices
+            adb shell getprop ro.hardware.vulkan || true
+            adb shell getprop ro.opengles.version || true
+            adb shell svc power stayon true
+            adb shell wm dismiss-keyguard || true
+            adb logcat -c
+            cd examples/smoke_render
+            flutter drive \
+              --flavor vulkan \
+              --driver=test_driver/integration_test.dart \
+              --target=integration_test/smoke_test.dart \
+              -d emulator-5554 \
+              --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=vulkan \
+              --enable-impeller \
+              --enable-flutter-gpu
+      - name: Upload to Argos
+        id: argos
+        if: ${{ !cancelled() }}
+        working-directory: examples/smoke_render
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+        run: |
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name android_vulkan 2>&1) || true
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          echo "build_url=$url" >> "$GITHUB_OUTPUT"
+      - name: Notify Discord on failure
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ARGOS_URL: ${{ steps.argos.outputs.build_url }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CONTENT="Smoke render failed (android_vulkan, Flutter master). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
