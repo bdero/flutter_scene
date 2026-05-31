@@ -89,3 +89,43 @@ external void bodyRotation(
   int handle,
   Pointer<Float> out,
 );
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_sphere')
+external int colliderSphere(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  double radius,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64)>(
+  symbol: 'fsr_collider_destroy',
+)
+external void colliderDestroy(Pointer<NativeWorld> world, int handle);

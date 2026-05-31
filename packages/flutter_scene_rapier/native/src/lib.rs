@@ -54,15 +54,31 @@ const BODY_KIND_FIXED: u8 = 0;
 const BODY_KIND_KINEMATIC: u8 = 1;
 const BODY_KIND_DYNAMIC: u8 = 2;
 
+fn index_to_raw(idx: rapier3d::data::arena::Index) -> u64 {
+    let (i, g) = idx.into_raw_parts();
+    ((g as u64) << 32) | (i as u64)
+}
+
+fn index_from_raw(raw: u64) -> rapier3d::data::arena::Index {
+    let i = raw as u32;
+    let g = (raw >> 32) as u32;
+    rapier3d::data::arena::Index::from_raw_parts(i, g)
+}
+
 fn handle_to_raw(h: RigidBodyHandle) -> u64 {
-    let (idx, gen) = h.0.into_raw_parts();
-    ((gen as u64) << 32) | (idx as u64)
+    index_to_raw(h.0)
 }
 
 fn handle_from_raw(raw: u64) -> RigidBodyHandle {
-    let idx = raw as u32;
-    let gen = (raw >> 32) as u32;
-    RigidBodyHandle(rapier3d::data::arena::Index::from_raw_parts(idx, gen))
+    RigidBodyHandle(index_from_raw(raw))
+}
+
+fn collider_to_raw(h: ColliderHandle) -> u64 {
+    index_to_raw(h.0)
+}
+
+fn collider_from_raw(raw: u64) -> ColliderHandle {
+    ColliderHandle(index_from_raw(raw))
 }
 
 /// Allocates a fresh [`World`] and returns an owning pointer. Caller
@@ -229,6 +245,63 @@ pub unsafe extern "C" fn fsr_body_rotation(
     }
 }
 
+/// Attaches a sphere collider to an existing body and returns its
+/// packed handle. The local pose is relative to the owning body.
+///
+/// # Safety
+/// `world` must be live. `body_handle` must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_sphere(
+    world: *mut World,
+    body_handle: u64,
+    radius: Real,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let translation = Vector::new(px, py, pz);
+    let rotation = Rotation::from_xyzw(qx, qy, qz, qw);
+    let pose = Pose::from_parts(translation, rotation);
+    let builder = ColliderBuilder::ball(radius)
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position_wrt_parent(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
+/// Removes a collider from the world.
+///
+/// # Safety
+/// `world` must be live. `raw` must be a handle previously returned by
+/// one of the `fsr_collider_*` constructors.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_destroy(world: *mut World, raw: u64) {
+    let w = &mut *world;
+    w.collider_set.remove(
+        collider_from_raw(raw),
+        &mut w.island_manager,
+        &mut w.rigid_body_set,
+        true,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,6 +347,59 @@ mod tests {
             fsr_body_translation(world, body, t.as_mut_ptr());
             assert!(t[1] < 9.0, "body should have fallen, y = {}", t[1]);
             fsr_body_destroy(world, body);
+            fsr_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn sphere_on_floor_settles() {
+        unsafe {
+            let world = fsr_world_new();
+            fsr_world_set_gravity(world, 0.0, -9.81, 0.0);
+
+            // Static floor (large box collider on a fixed body, but
+            // since this commit only ships sphere cooking, use a very
+            // wide sphere as a stand-in floor).
+            let floor_body = fsr_body_create(
+                world, BODY_KIND_FIXED, 0.0, -100.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                0.0,
+            );
+            fsr_collider_sphere(
+                world, floor_body, 100.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            );
+
+            // Dynamic sphere above the floor.
+            let ball_body = fsr_body_create(
+                world,
+                BODY_KIND_DYNAMIC,
+                0.0,
+                5.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            );
+            fsr_collider_sphere(
+                world, ball_body, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 1.0,
+            );
+
+            for _ in 0..240 {
+                fsr_world_step(world, 1.0 / 60.0);
+            }
+
+            let mut t = [0.0f32; 3];
+            fsr_body_translation(world, ball_body, t.as_mut_ptr());
+            // Ball at radius 0.5 resting on a sphere of radius 100
+            // centered at y=-100 sits at y ≈ 0.5.
+            assert!(
+                t[1] > 0.0 && t[1] < 1.0,
+                "ball should rest near y=0.5, got {}",
+                t[1]
+            );
             fsr_world_destroy(world);
         }
     }
