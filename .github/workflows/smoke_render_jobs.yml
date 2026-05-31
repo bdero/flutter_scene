@@ -146,16 +146,32 @@ jobs:
             (adb shell getprop ro.opengles.version || true) &&
             adb shell svc power stayon true &&
             (adb shell wm dismiss-keyguard || true) &&
+            mkdir -p examples/smoke_render/build/android-diagnostics &&
+            (adb devices -l > examples/smoke_render/build/android-diagnostics/adb_devices_before_${{ matrix.backend }}.txt 2>&1 || true) &&
+            (adb shell getprop > examples/smoke_render/build/android-diagnostics/getprop_${{ matrix.backend }}.txt 2>&1 || true) &&
+            (adb shell dumpsys SurfaceFlinger > examples/smoke_render/build/android-diagnostics/surfaceflinger_${{ matrix.backend }}.txt 2>&1 || true) &&
             adb logcat -c &&
+            (adb logcat -v time > examples/smoke_render/build/android-diagnostics/logcat_${{ matrix.backend }}.txt 2>&1 & echo $! > /tmp/smoke-logcat.pid) &&
             cd examples/smoke_render &&
-            flutter drive
+            (flutter drive
             --flavor ${{ matrix.backend }}
             --driver=test_driver/integration_test.dart
             --target=integration_test/smoke_test.dart
             -d emulator-5554
             --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
             --enable-impeller
-            --enable-flutter-gpu
+            --enable-flutter-gpu;
+            status=$?;
+            (adb devices -l > build/android-diagnostics/adb_devices_after_${{ matrix.backend }}.txt 2>&1 || true);
+            kill "$(cat /tmp/smoke-logcat.pid)" || true;
+            exit "$status")
+      - name: Upload Android diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-diagnostics-${{ inputs.argos_prefix }}android_${{ matrix.backend }}
+          path: examples/smoke_render/build/android-diagnostics
+          if-no-files-found: ignore
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
