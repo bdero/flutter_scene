@@ -178,6 +178,45 @@ void main() {
       );
     });
 
+    test(
+      'AABB overlap that is not actual overlap does not fire trigger',
+      () async {
+        final root = _bootWorld();
+        final world = root.getComponent<BasicPhysicsWorld>()!;
+
+        // Sphere trigger of radius 1 at origin. A second sphere whose
+        // AABB overlaps the trigger's AABB at the corners, but whose
+        // actual sphere does not. Center at (1.3, 1.3, 0): the AABBs
+        // (sphere shape produces an AABB enclosing the ball) overlap,
+        // but distance is sqrt(1.3^2 + 1.3^2) = 1.838 > sum of radii
+        // (1 + 0.5 = 1.5).
+        _attachStaticCollider(
+          root,
+          SphereShape(radius: 1),
+          Vector3.zero(),
+          isTrigger: true,
+        );
+        _attachStaticCollider(
+          root,
+          SphereShape(radius: 0.5),
+          Vector3(1.3, 1.3, 0),
+        );
+
+        final events = <CollisionEvent>[];
+        final sub = world.collisions.listen(events.add);
+
+        world.step(1.0 / 60.0);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          events,
+          isEmpty,
+          reason: 'exact sphere-sphere overlap should reject the corner case',
+        );
+
+        await sub.cancel();
+      },
+    );
+
     test('trigger entry and exit events fire on the right step', () async {
       final root = _bootWorld();
       final world = root.getComponent<BasicPhysicsWorld>()!;
