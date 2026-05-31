@@ -18,6 +18,15 @@ const Color kSmokeClear = Color(0xFFFF00FF); // magenta
 /// test to capture the rendered frame.
 final GlobalKey smokeSceneKey = GlobalKey();
 
+const int _shadowMapResolution = int.fromEnvironment(
+  'SMOKE_SHADOW_MAP_RESOLUTION',
+  defaultValue: 1024,
+);
+const int _shadowCascadeCount = int.fromEnvironment(
+  'SMOKE_SHADOW_CASCADE_COUNT',
+  defaultValue: 4,
+);
+
 /// A deterministic smoke scene: a builder that produces a [Scene] and the
 /// camera to view it from. No animation, no wall-clock input.
 class SmokeScene {
@@ -104,6 +113,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-0.4, -1.0, -0.35),
       castsShadow: true,
+      shadowMapResolution: _shadowMapResolution,
+      shadowCascadeCount: _shadowCascadeCount,
       shadowMaxDistance: 20.0,
     );
     // Ground plane (receiver), centered at the origin in the XZ plane.

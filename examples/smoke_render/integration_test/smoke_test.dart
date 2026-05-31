@@ -16,6 +16,7 @@ const _expectedAndroidImpellerBackend = String.fromEnvironment(
 const _androidManifestChannel = MethodChannel(
   'dev.bdero.smoke_render/android_manifest',
 );
+const _smokeSceneIds = String.fromEnvironment('SMOKE_SCENE_IDS');
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +36,12 @@ void main() {
     });
   }
 
-  for (final smoke in kSmokeScenes) {
+  final selectedSmokeScenes = _smokeSceneIds.isEmpty
+      ? kSmokeScenes
+      : kSmokeScenes
+            .where((smoke) => _smokeSceneIds.split(',').contains(smoke.id))
+            .toList(growable: false);
+  for (final smoke in selectedSmokeScenes) {
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
       // Let Flutter render one ordinary frame before touching flutter_scene.
       // Android GLES can race GPU context setup if Scene initialization uploads

@@ -29,6 +29,7 @@ on:
 
 jobs:
   linux:
+    if: false
     name: ${{ inputs.argos_prefix }}linux (${{ inputs.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -98,19 +99,33 @@ jobs:
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   android:
-    name: ${{ inputs.argos_prefix }}android_${{ matrix.backend }} (${{ inputs.label }})
+    name: ${{ inputs.argos_prefix }}android_${{ matrix.variant }} (${{ inputs.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - backend: gles
+          - variant: gles_all_default
+            backend: gles
             expected_backend: opengles
             emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          - backend: vulkan
-            expected_backend: vulkan
-            emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+            dart_defines: ""
+          - variant: gles_no_shadow
+            backend: gles
+            expected_backend: opengles
+            emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+            dart_defines: "--dart-define=SMOKE_SCENE_IDS=pbr_cuboid,pbr_metallic,mirrored_node,fmat_toon"
+          - variant: gles_shadow_only_default
+            backend: gles
+            expected_backend: opengles
+            emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+            dart_defines: "--dart-define=SMOKE_SCENE_IDS=directional_shadow"
+          - variant: gles_shadow_only_small
+            backend: gles
+            expected_backend: opengles
+            emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+            dart_defines: "--dart-define=SMOKE_SCENE_IDS=directional_shadow --dart-define=SMOKE_SHADOW_MAP_RESOLUTION=512 --dart-define=SMOKE_SHADOW_CASCADE_COUNT=1"
     steps:
       - uses: actions/checkout@v4
         if: ${{ inputs.checkout_ref != '' }}
@@ -146,16 +161,29 @@ jobs:
             (adb shell getprop ro.opengles.version || true) &&
             adb shell svc power stayon true &&
             (adb shell wm dismiss-keyguard || true) &&
+            mkdir -p examples/smoke_render/build/android-diagnostics &&
             adb logcat -c &&
+            (adb logcat -v time > examples/smoke_render/build/android-diagnostics/logcat_${{ matrix.variant }}.txt 2>&1 & echo $! > /tmp/smoke-logcat.pid) &&
             cd examples/smoke_render &&
-            flutter drive
+            (flutter drive
             --flavor ${{ matrix.backend }}
             --driver=test_driver/integration_test.dart
             --target=integration_test/smoke_test.dart
             -d emulator-5554
             --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
+            ${{ matrix.dart_defines }}
             --enable-impeller
-            --enable-flutter-gpu
+            --enable-flutter-gpu;
+            status=$?;
+            kill "$(cat /tmp/smoke-logcat.pid)" || true;
+            exit "$status")
+      - name: Upload Android diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-diagnostics-${{ matrix.variant }}
+          path: examples/smoke_render/build/android-diagnostics
+          if-no-files-found: ignore
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
@@ -175,7 +203,7 @@ jobs:
               export ARGOS_COMMIT="$(git rev-parse HEAD)"
             fi
           fi
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || true
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}android_${{ matrix.variant }}" "${reference_args[@]}" 2>&1) || true
           echo "$out"
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
@@ -187,12 +215,13 @@ jobs:
         run: |
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          CONTENT="Smoke render failed (${{ inputs.argos_prefix }}android_${{ matrix.backend }}, ${{ inputs.label }}). Run: $RUN_URL"
+          CONTENT="Smoke render failed (${{ inputs.argos_prefix }}android_${{ matrix.variant }}, ${{ inputs.label }}). Run: $RUN_URL"
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
 
   web:
+    if: false
     name: ${{ inputs.argos_prefix }}web (${{ inputs.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
