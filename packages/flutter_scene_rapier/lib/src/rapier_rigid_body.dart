@@ -80,6 +80,26 @@ class RapierRigidBody extends RigidBody {
     return world.readBodyRotation(handle);
   }
 
+  /// Reads the body's current linear velocity from the native side.
+  Vector3 readNativeLinearVelocity() {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) {
+      throw StateError('RapierRigidBody is not mounted.');
+    }
+    return world.readBodyLinearVelocity(handle);
+  }
+
+  /// Reads the body's current angular velocity from the native side.
+  Vector3 readNativeAngularVelocity() {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) {
+      throw StateError('RapierRigidBody is not mounted.');
+    }
+    return world.readBodyAngularVelocity(handle);
+  }
+
   @override
   void onMount() {
     final world = findAncestorRapierWorld(node);
@@ -172,15 +192,33 @@ class RapierRigidBody extends RigidBody {
 
   @override
   void applyForce(Vector3 force, {Vector3? atWorldPoint}) {
-    // Forwarded through the FFI in a later commit.
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) return;
+    world.applyBodyForce(handle, force, atWorldPoint: atWorldPoint);
   }
 
   @override
-  void applyImpulse(Vector3 impulse, {Vector3? atWorldPoint}) {}
+  void applyImpulse(Vector3 impulse, {Vector3? atWorldPoint}) {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) return;
+    world.applyBodyImpulse(handle, impulse, atWorldPoint: atWorldPoint);
+  }
 
   @override
-  void applyTorque(Vector3 torque) {}
+  void applyTorque(Vector3 torque) {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) return;
+    world.applyBodyTorque(handle, torque);
+  }
 
   @override
-  void applyAngularImpulse(Vector3 impulse) {}
+  void applyAngularImpulse(Vector3 impulse) {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) return;
+    world.applyBodyAngularImpulse(handle, impulse);
+  }
 }
