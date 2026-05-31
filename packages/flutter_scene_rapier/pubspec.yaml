@@ -19,10 +19,12 @@ environment:
   flutter: ">=3.29.0-1.0.pre.242"
 
 dependencies:
+  code_assets: ^1.2.0
   flutter:
     sdk: flutter
   flutter_scene:
     path: ../flutter_scene
+  hooks: ^2.0.0
   vector_math: ^2.1.4
 
 dev_dependencies:
