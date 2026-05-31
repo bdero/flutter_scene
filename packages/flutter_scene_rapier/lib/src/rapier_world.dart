@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -62,7 +63,12 @@ class RapierWorld extends PhysicsWorld {
       rotation.w,
       additionalMass,
     );
-    _bodies[handle] = _BodyRecord(node, type);
+    _bodies[handle] = _BodyRecord(
+      node,
+      type,
+      position.clone(),
+      rotation.clone(),
+    );
     return handle;
   }
 
@@ -559,26 +565,37 @@ class RapierWorld extends PhysicsWorld {
     final g = gravity;
     native.worldSetGravity(_handle, g.x, g.y, g.z);
     native.worldStep(_handle, fixedDt);
+    // Capture this step's pose for dynamic bodies so
+    // interpolateTransforms can lerp/slerp between substeps.
+    for (final entry in _bodies.entries) {
+      final r = entry.value;
+      if (r.type != BodyType.dynamic_) continue;
+      r.prevTranslation.setFrom(r.currTranslation);
+      r.prevRotation.setFrom(r.currRotation);
+      final t = readBodyTranslation(entry.key);
+      final rot = readBodyRotation(entry.key);
+      r.currTranslation.setFrom(t);
+      r.currRotation.setFrom(rot);
+    }
   }
 
   @override
   void interpolateTransforms(double alpha) {
-    // Snap each dynamic body's owning node to the body's current world
-    // pose. Proper alpha-based interpolation between previous and
-    // current step (slerp on rotation) is a follow-on refinement;
-    // snapping is sufficient for visible motion and the unit tests in
-    // this commit. Fixed and kinematic bodies are not touched: the
-    // user owns their node transforms.
+    // Blend each dynamic body's pose by alpha between the previous and
+    // current step (alpha == 0 snaps to previous, alpha == 1 snaps to
+    // current). Fixed and kinematic bodies are not touched; the user
+    // owns those node transforms.
+    final t = Vector3.zero();
     for (final entry in _bodies.entries) {
       final record = entry.value;
       if (record.type != BodyType.dynamic_) continue;
-      final translation = readBodyTranslation(entry.key);
-      final rotation = readBodyRotation(entry.key);
-      final worldPose = Matrix4.compose(
-        translation,
-        rotation,
-        Vector3(1, 1, 1),
-      );
+      t
+        ..setFrom(record.currTranslation)
+        ..sub(record.prevTranslation)
+        ..scale(alpha)
+        ..add(record.prevTranslation);
+      final rot = _slerp(record.prevRotation, record.currRotation, alpha);
+      final worldPose = Matrix4.compose(t, rot, Vector3(1, 1, 1));
       final parent = record.node.parent;
       if (parent == null) {
         record.node.localTransform = worldPose;
@@ -673,7 +690,64 @@ RapierWorld? findAncestorRapierWorld(Node start) {
 }
 
 class _BodyRecord {
-  _BodyRecord(this.node, this.type);
+  _BodyRecord(
+    this.node,
+    this.type,
+    Vector3 initialTranslation,
+    Quaternion initialRotation,
+  ) : prevTranslation = initialTranslation.clone(),
+      currTranslation = initialTranslation,
+      prevRotation = initialRotation.clone(),
+      currRotation = initialRotation;
+
   final Node node;
   final BodyType type;
+  // Pose after the previous physics step (or the initial pose, on the
+  // first step). Used by [RapierWorld.interpolateTransforms] to blend
+  // between substeps for smooth rendering.
+  final Vector3 prevTranslation;
+  final Quaternion prevRotation;
+  // Pose after the most recent physics step.
+  final Vector3 currTranslation;
+  final Quaternion currRotation;
+}
+
+/// Shortest-arc quaternion slerp between [a] and [b] by [t]. Falls
+/// back to normalized-lerp when the rotations are nearly identical.
+/// Inputs are not modified.
+Quaternion _slerp(Quaternion a, Quaternion b, double t) {
+  var bx = b.x;
+  var by = b.y;
+  var bz = b.z;
+  var bw = b.w;
+  var dot = a.x * bx + a.y * by + a.z * bz + a.w * bw;
+  if (dot < 0) {
+    bx = -bx;
+    by = -by;
+    bz = -bz;
+    bw = -bw;
+    dot = -dot;
+  }
+  if (dot > 0.9995) {
+    final r = Quaternion(
+      a.x + t * (bx - a.x),
+      a.y + t * (by - a.y),
+      a.z + t * (bz - a.z),
+      a.w + t * (bw - a.w),
+    );
+    r.normalize();
+    return r;
+  }
+  final theta0 = math.acos(dot.clamp(-1.0, 1.0));
+  final theta = theta0 * t;
+  final sinTheta = math.sin(theta);
+  final sinTheta0 = math.sin(theta0);
+  final s0 = math.cos(theta) - dot * sinTheta / sinTheta0;
+  final s1 = sinTheta / sinTheta0;
+  return Quaternion(
+    a.x * s0 + bx * s1,
+    a.y * s0 + by * s1,
+    a.z * s0 + bz * s1,
+    a.w * s0 + bw * s1,
+  );
 }
