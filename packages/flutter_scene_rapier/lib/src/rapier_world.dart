@@ -261,6 +261,26 @@ class RapierWorld extends PhysicsWorld {
     native.bodySetAdditionalMass(_handle, handle, additionalMass);
   }
 
+  /// Pushes the next-step pose for a kinematic body. Rapier integrates
+  /// from the current pose to this target during the next step.
+  void setBodyNextKinematicPose(
+    int handle,
+    Vector3 translation,
+    Quaternion rotation,
+  ) {
+    native.bodySetNextKinematicPose(
+      _handle,
+      handle,
+      translation.x,
+      translation.y,
+      translation.z,
+      rotation.x,
+      rotation.y,
+      rotation.z,
+      rotation.w,
+    );
+  }
+
   /// Packs [linear] and [angular] into a 6-bit lock field (translation
   /// XYZ in low bits, rotation XYZ in high bits, value 0 = locked) and
   /// pushes it to native.
