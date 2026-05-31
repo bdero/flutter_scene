@@ -118,7 +118,11 @@ pub unsafe extern "C" fn fsr_world_set_gravity(
     w.gravity = Vector::new(x, y, z);
 }
 
-/// Advances the simulation by exactly `dt` seconds.
+/// Advances the simulation by exactly `dt` seconds. After the step,
+/// resets every body's user-supplied force and torque so the abstract
+/// API's "force applied for one step" semantics hold: callers re-apply
+/// continuous forces each frame rather than seeing them accumulate
+/// across steps.
 ///
 /// # Safety
 /// `world` must be a live pointer returned by [`fsr_world_new`].
@@ -142,6 +146,10 @@ pub unsafe extern "C" fn fsr_world_step(world: *mut World, dt: Real) {
         &hooks,
         &events,
     );
+    for (_handle, body) in w.rigid_body_set.iter_mut() {
+        body.reset_forces(false);
+        body.reset_torques(false);
+    }
 }
 
 /// Inserts a rigid body into the world and returns its packed handle.
@@ -181,6 +189,14 @@ pub unsafe extern "C" fn fsr_body_create(
         builder = builder.additional_mass(additional_mass);
     }
     let handle = w.rigid_body_set.insert(builder);
+    // The insertion path leaves effective_inv_mass at its default
+    // (zero) until the first step touches the body. Recompute now so
+    // an apply_impulse called before the first step actually changes
+    // velocity. Same for any attached-collider mass recomputation that
+    // would otherwise wait until step.
+    if let Some(body) = w.rigid_body_set.get_mut(handle) {
+        body.recompute_mass_properties_from_colliders(&w.collider_set);
+    }
     handle_to_raw(handle)
 }
 
@@ -414,6 +430,143 @@ pub unsafe extern "C" fn fsr_collider_cylinder(
         &mut w.rigid_body_set,
     );
     collider_to_raw(handle)
+}
+
+/// Adds a continuous world-space force to the body for the duration of
+/// the current step. When `has_world_point != 0`, the force is applied
+/// at `(px, py, pz)` (creates a torque about the center of mass);
+/// otherwise it acts at the center of mass.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_apply_force(
+    world: *mut World,
+    raw: u64,
+    fx: Real,
+    fy: Real,
+    fz: Real,
+    has_world_point: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let force = Vector::new(fx, fy, fz);
+        if has_world_point != 0 {
+            body.add_force_at_point(force, Vector::new(px, py, pz), true);
+        } else {
+            body.add_force(force, true);
+        }
+    }
+}
+
+/// Applies an instantaneous impulse (change in momentum). Same shape
+/// as [`fsr_body_apply_force`].
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_apply_impulse(
+    world: *mut World,
+    raw: u64,
+    fx: Real,
+    fy: Real,
+    fz: Real,
+    has_world_point: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let impulse = Vector::new(fx, fy, fz);
+        if has_world_point != 0 {
+            body.apply_impulse_at_point(impulse, Vector::new(px, py, pz), true);
+        } else {
+            body.apply_impulse(impulse, true);
+        }
+    }
+}
+
+/// Adds a torque around the body's center of mass for the duration of
+/// the current step.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_apply_torque(
+    world: *mut World,
+    raw: u64,
+    tx: Real,
+    ty: Real,
+    tz: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.add_torque(Vector::new(tx, ty, tz), true);
+    }
+}
+
+/// Applies an instantaneous angular impulse (change in angular
+/// momentum) around the body's center of mass.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_apply_angular_impulse(
+    world: *mut World,
+    raw: u64,
+    tx: Real,
+    ty: Real,
+    tz: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.apply_torque_impulse(Vector::new(tx, ty, tz), true);
+    }
+}
+
+/// Writes the body's current linear velocity into `out` (3 floats).
+///
+/// # Safety
+/// `out` must point to at least three writable f32s; `world` must be
+/// live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_linear_velocity(
+    world: *const World,
+    raw: u64,
+    out: *mut Real,
+) {
+    let w = &*world;
+    if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
+        let v = body.linvel();
+        *out.add(0) = v.x;
+        *out.add(1) = v.y;
+        *out.add(2) = v.z;
+    }
+}
+
+/// Writes the body's current angular velocity (radians/sec, world axes)
+/// into `out` (3 floats).
+///
+/// # Safety
+/// `out` must point to at least three writable f32s; `world` must be
+/// live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_angular_velocity(
+    world: *const World,
+    raw: u64,
+    out: *mut Real,
+) {
+    let w = &*world;
+    if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
+        let v = body.angvel();
+        *out.add(0) = v.x;
+        *out.add(1) = v.y;
+        *out.add(2) = v.z;
+    }
 }
 
 /// Removes a collider from the world.

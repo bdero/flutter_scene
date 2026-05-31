@@ -215,6 +215,64 @@ class RapierWorld extends PhysicsWorld {
     );
   }
 
+  /// Reads the body's current linear velocity (world space).
+  Vector3 readBodyLinearVelocity(int handle) {
+    native.bodyLinearVelocity(_handle, handle, _readBuffer);
+    return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
+  }
+
+  /// Reads the body's current angular velocity (rad/sec, world axes).
+  Vector3 readBodyAngularVelocity(int handle) {
+    native.bodyAngularVelocity(_handle, handle, _readBuffer);
+    return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
+  }
+
+  /// Continuous force applied to a body for one step.
+  void applyBodyForce(int handle, Vector3 force, {Vector3? atWorldPoint}) {
+    final p = atWorldPoint;
+    native.bodyApplyForce(
+      _handle,
+      handle,
+      force.x,
+      force.y,
+      force.z,
+      p != null ? 1 : 0,
+      p?.x ?? 0,
+      p?.y ?? 0,
+      p?.z ?? 0,
+    );
+  }
+
+  /// Instantaneous impulse applied to a body.
+  void applyBodyImpulse(int handle, Vector3 impulse, {Vector3? atWorldPoint}) {
+    final p = atWorldPoint;
+    native.bodyApplyImpulse(
+      _handle,
+      handle,
+      impulse.x,
+      impulse.y,
+      impulse.z,
+      p != null ? 1 : 0,
+      p?.x ?? 0,
+      p?.y ?? 0,
+      p?.z ?? 0,
+    );
+  }
+
+  void applyBodyTorque(int handle, Vector3 torque) {
+    native.bodyApplyTorque(_handle, handle, torque.x, torque.y, torque.z);
+  }
+
+  void applyBodyAngularImpulse(int handle, Vector3 impulse) {
+    native.bodyApplyAngularImpulse(
+      _handle,
+      handle,
+      impulse.x,
+      impulse.y,
+      impulse.z,
+    );
+  }
+
   static int _bodyKindByte(BodyType type) {
     switch (type) {
       case BodyType.fixed:

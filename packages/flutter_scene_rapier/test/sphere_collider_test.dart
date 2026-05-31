@@ -108,18 +108,4 @@ void main() {
     root.add(node);
     expect(collider.mount, throwsStateError);
   });
-
-  test('non-sphere shapes throw UnimplementedError', () {
-    final root = _bootWorld();
-    final node = Node();
-    final rb = RapierRigidBody(type: BodyType.dynamic_);
-    node.addComponent(rb);
-    node.addComponent(
-      RapierCollider(shape: BoxShape(halfExtents: Vector3(1, 1, 1))),
-    );
-    root.add(node);
-    rb.mount();
-    final collider = node.getComponents<RapierCollider>().first;
-    expect(collider.mount, throwsUnimplementedError);
-  });
 }
