@@ -190,6 +190,40 @@ class RapierWorld extends PhysicsWorld {
     );
   }
 
+  void setColliderMaterial(int handle, PhysicsMaterial material) {
+    native.colliderSetMaterial(
+      _handle,
+      handle,
+      material.friction,
+      material.restitution,
+      material.density,
+    );
+  }
+
+  void setColliderCollisionGroups(int handle, int memberships, int filter) {
+    native.colliderSetCollisionGroups(_handle, handle, memberships, filter);
+  }
+
+  void setColliderSensor(int handle, bool isSensor) {
+    native.colliderSetSensor(_handle, handle, isSensor ? 1 : 0);
+  }
+
+  void setColliderLocalPose(int handle, Matrix4 localPose) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    native.colliderSetLocalPose(
+      _handle,
+      handle,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
+  }
+
   /// Removes a collider previously inserted by one of the
   /// `create*Collider` methods.
   void destroyCollider(int handle) {
