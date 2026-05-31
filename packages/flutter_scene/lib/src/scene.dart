@@ -11,6 +11,7 @@ import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
+import 'physics/physics_world.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
@@ -244,9 +245,66 @@ base class Scene implements SceneGraph {
   // when only [render] is called.
   int? _lastTickMillis;
 
+  // Unconsumed wall-clock time carried between frames so the fixed-step
+  // physics driver can take an integer number of steps per frame.
+  double _physicsAccumulator = 0;
+
   void _tick(double deltaSeconds) {
     _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
+    _stepPhysics(deltaSeconds);
     root.scenePrePass(deltaSeconds);
+  }
+
+  // Advances the active [PhysicsWorld] (if any) on a fixed timestep.
+  void _stepPhysics(double frameDt) {
+    final world = root.getComponent<PhysicsWorld>();
+    if (world == null) {
+      // Reset the accumulator so the first frame after a world is added
+      // does not consume stale wall-clock time.
+      _physicsAccumulator = 0;
+      return;
+    }
+    _physicsAccumulator = advancePhysics(
+      world: world,
+      fixedUpdateWalk: root.sceneFixedPass,
+      accumulator: _physicsAccumulator,
+      frameDt: frameDt,
+    );
+  }
+
+  /// Fixed-step substepping driver. Adds [frameDt] to [accumulator],
+  /// takes up to [PhysicsWorld.maxSubsteps] fixed steps to consume it
+  /// (walking [fixedUpdateWalk] then [world.step] each step), drops
+  /// leftover time when the renderer falls far behind, and finishes by
+  /// calling [world.interpolateTransforms] with the residual fraction.
+  ///
+  /// Returns the new accumulator value. Exposed as a static method so
+  /// the loop can be exercised without constructing a [Scene] (which
+  /// otherwise requires a live Flutter GPU context).
+  @visibleForTesting
+  static double advancePhysics({
+    required PhysicsWorld world,
+    required void Function(double fixedDt) fixedUpdateWalk,
+    required double accumulator,
+    required double frameDt,
+  }) {
+    accumulator += frameDt;
+    final fixed = world.fixedTimestep;
+    var steps = 0;
+    while (accumulator >= fixed && steps < world.maxSubsteps) {
+      fixedUpdateWalk(fixed);
+      world.step(fixed);
+      accumulator -= fixed;
+      steps++;
+    }
+    if (accumulator > fixed * world.maxSubsteps) {
+      // Drop unconsumed time to avoid spiralling when the renderer is
+      // running far behind the physics rate.
+      accumulator = 0;
+    }
+    final alpha = (accumulator / fixed).clamp(0.0, 1.0);
+    world.interpolateTransforms(alpha);
+    return accumulator;
   }
 
   /// Advances the scene by [deltaSeconds]: ticks every node's components
