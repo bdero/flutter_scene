@@ -36,3 +36,56 @@ external void worldSetGravity(
 
 @Native<Void Function(Pointer<NativeWorld>, Float)>(symbol: 'fsr_world_step')
 external void worldStep(Pointer<NativeWorld> world, double dt);
+
+/// Body kind bytes matching the constants in `native/src/lib.rs`.
+const int bodyKindFixed = 0;
+const int bodyKindKinematic = 1;
+const int bodyKindDynamic = 2;
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_body_create')
+external int bodyCreate(
+  Pointer<NativeWorld> world,
+  int kind,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+  double additionalMass,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64)>(symbol: 'fsr_body_destroy')
+external void bodyDestroy(Pointer<NativeWorld> world, int handle);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Pointer<Float>)>(
+  symbol: 'fsr_body_translation',
+)
+external void bodyTranslation(
+  Pointer<NativeWorld> world,
+  int handle,
+  Pointer<Float> out,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Pointer<Float>)>(
+  symbol: 'fsr_body_rotation',
+)
+external void bodyRotation(
+  Pointer<NativeWorld> world,
+  int handle,
+  Pointer<Float> out,
+);
