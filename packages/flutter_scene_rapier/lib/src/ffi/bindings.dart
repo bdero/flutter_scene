@@ -90,6 +90,96 @@ external void bodyRotation(
   Pointer<Float> out,
 );
 
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Pointer<Float>)>(
+  symbol: 'fsr_body_linear_velocity',
+)
+external void bodyLinearVelocity(
+  Pointer<NativeWorld> world,
+  int handle,
+  Pointer<Float> out,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Pointer<Float>)>(
+  symbol: 'fsr_body_angular_velocity',
+)
+external void bodyAngularVelocity(
+  Pointer<NativeWorld> world,
+  int handle,
+  Pointer<Float> out,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_body_apply_force')
+external void bodyApplyForce(
+  Pointer<NativeWorld> world,
+  int handle,
+  double fx,
+  double fy,
+  double fz,
+  int hasWorldPoint,
+  double px,
+  double py,
+  double pz,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_body_apply_impulse')
+external void bodyApplyImpulse(
+  Pointer<NativeWorld> world,
+  int handle,
+  double ix,
+  double iy,
+  double iz,
+  int hasWorldPoint,
+  double px,
+  double py,
+  double pz,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float)>(
+  symbol: 'fsr_body_apply_torque',
+)
+external void bodyApplyTorque(
+  Pointer<NativeWorld> world,
+  int handle,
+  double tx,
+  double ty,
+  double tz,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float)>(
+  symbol: 'fsr_body_apply_angular_impulse',
+)
+external void bodyApplyAngularImpulse(
+  Pointer<NativeWorld> world,
+  int handle,
+  double tx,
+  double ty,
+  double tz,
+);
+
 @Native<
   Uint64 Function(
     Pointer<NativeWorld>,
