@@ -641,6 +641,117 @@ pub unsafe extern "C" fn fsr_body_set_additional_mass(
     }
 }
 
+/// Locks or unlocks the body's translation and rotation axes. `locks`
+/// is a bitfield matching the constants on the Dart side:
+///   bit 0 = X translation, bit 1 = Y, bit 2 = Z,
+///   bit 3 = X rotation,    bit 4 = Y, bit 5 = Z.
+/// A set bit means that degree of freedom is locked.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_locked_axes(
+    world: *mut World,
+    raw: u64,
+    locks: u8,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let mut la = LockedAxes::empty();
+        if locks & 0b000_001 != 0 {
+            la |= LockedAxes::TRANSLATION_LOCKED_X;
+        }
+        if locks & 0b000_010 != 0 {
+            la |= LockedAxes::TRANSLATION_LOCKED_Y;
+        }
+        if locks & 0b000_100 != 0 {
+            la |= LockedAxes::TRANSLATION_LOCKED_Z;
+        }
+        if locks & 0b001_000 != 0 {
+            la |= LockedAxes::ROTATION_LOCKED_X;
+        }
+        if locks & 0b010_000 != 0 {
+            la |= LockedAxes::ROTATION_LOCKED_Y;
+        }
+        if locks & 0b100_000 != 0 {
+            la |= LockedAxes::ROTATION_LOCKED_Z;
+        }
+        body.set_locked_axes(la, true);
+    }
+}
+
+/// Sets the body's per-step gravity scale (1.0 = full, 0.0 = no
+/// gravity). Used to wire the abstract `useGravity` flag.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_gravity_scale(
+    world: *mut World,
+    raw: u64,
+    scale: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.set_gravity_scale(scale, true);
+    }
+}
+
+/// Enables or disables continuous collision detection on the body.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_ccd_enabled(
+    world: *mut World,
+    raw: u64,
+    enabled: u8,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.enable_ccd(enabled != 0);
+    }
+}
+
+/// Wakes a sleeping body. No-op for non-dynamic bodies.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_wake_up(world: *mut World, raw: u64) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.wake_up(true);
+    }
+}
+
+/// Puts a body to sleep immediately.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_sleep(world: *mut World, raw: u64) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.sleep();
+    }
+}
+
+/// Returns 1 when the body is currently sleeping, 0 otherwise. Returns
+/// 0 for stale handles.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_is_sleeping(world: *const World, raw: u64) -> u8 {
+    let w = &*world;
+    if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
+        body.is_sleeping() as u8
+    } else {
+        0
+    }
+}
+
 /// Writes the body's current angular velocity (radians/sec, world axes)
 /// into `out` (3 floats).
 ///
