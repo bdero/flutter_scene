@@ -87,19 +87,49 @@ class RapierCollider extends Collider {
     }
     _world = world;
     final shape = _shape;
-    if (shape is SphereShape) {
-      _handle = world.createSphereCollider(
-        bodyHandle: bodyHandle,
-        radius: shape.radius,
-        material: _material,
-        isTrigger: _isTrigger,
-        localPose: _localPose,
-      );
-    } else {
-      throw UnimplementedError(
-        'RapierCollider currently supports SphereShape only. Other shapes '
-        'land in subsequent Stage 4 commits.',
-      );
+    switch (shape) {
+      case SphereShape():
+        _handle = world.createSphereCollider(
+          bodyHandle: bodyHandle,
+          radius: shape.radius,
+          material: _material,
+          isTrigger: _isTrigger,
+          localPose: _localPose,
+        );
+      case BoxShape():
+        _handle = world.createBoxCollider(
+          bodyHandle: bodyHandle,
+          halfExtents: shape.halfExtents,
+          material: _material,
+          isTrigger: _isTrigger,
+          localPose: _localPose,
+        );
+      case CapsuleShape():
+        _handle = world.createCapsuleCollider(
+          bodyHandle: bodyHandle,
+          halfHeight: shape.halfHeight,
+          radius: shape.radius,
+          material: _material,
+          isTrigger: _isTrigger,
+          localPose: _localPose,
+        );
+      case CylinderShape():
+        _handle = world.createCylinderCollider(
+          bodyHandle: bodyHandle,
+          halfHeight: shape.halfHeight,
+          radius: shape.radius,
+          material: _material,
+          isTrigger: _isTrigger,
+          localPose: _localPose,
+        );
+      case ConvexHullShape() ||
+          TriMeshShape() ||
+          HeightFieldShape() ||
+          CompoundShape():
+        throw UnimplementedError(
+          'RapierCollider does not yet cook ${shape.runtimeType}. '
+          'Heavy shape cooking lands in a follow-on commit.',
+        );
     }
   }
 
