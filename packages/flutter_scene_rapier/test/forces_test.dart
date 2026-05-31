@@ -1,5 +1,5 @@
-// Stage 4 commit H: force / impulse application end to end through the
-// FFI. Each test runs in zero gravity to isolate the effect.
+// Force / impulse application end to end through the FFI. Each test
+// runs in zero gravity to isolate the effect.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

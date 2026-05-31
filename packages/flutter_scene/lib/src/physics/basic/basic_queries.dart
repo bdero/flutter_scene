@@ -2,9 +2,20 @@
 //
 // Ray vs sphere/box/capsule are exact. Ray vs convex hull, trimesh,
 // height field, and cylinder fall back to a world-space AABB
-// approximation: this is the Stage 2 "first cut" called for in the
-// design doc and is sufficient for picking and area queries against
-// small numbers of colliders.
+// approximation, which is conservative but sufficient for picking and
+// area queries against small collider counts.
+//
+// TODO(exact-cylinder): ray-vs-cylinder currently uses the AABB; the
+// cylindrical-side + cap-disc intersection is straightforward to
+// derive from the capsule code.
+// TODO(exact-mesh): ray-vs-convex-hull and ray-vs-trimesh use the
+// AABB; an exact implementation needs a per-collider BVH (or the
+// brute-force triangle loop for trimesh) for correctness.
+// TODO(exact-heightfield): ray-vs-heightfield can rasterize the cell
+// the ray enters and intersect against the two triangles per cell.
+// TODO(spatial-index): scene-wide queries iterate every collider; a
+// BVH over the cached AABBs would make raycast/overlap scale beyond
+// the small-collider-count regime.
 
 import 'dart:math' as math;
 import 'dart:typed_data';

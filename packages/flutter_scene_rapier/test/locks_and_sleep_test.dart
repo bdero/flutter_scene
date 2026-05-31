@@ -1,5 +1,5 @@
-// Stage 4 commit J: axis locks, gravity scale, CCD flag, and sleep API
-// round-trip through the native FFI.
+// Axis locks, gravity scale, CCD flag, and sleep API round-trip
+// through the native FFI.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

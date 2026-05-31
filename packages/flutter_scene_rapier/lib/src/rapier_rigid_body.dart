@@ -6,9 +6,15 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Registers itself with the nearest ancestor [RapierWorld] on mount
 /// and inserts a Rapier rigid body using the owning node's transform
-/// as the initial pose. Property reads route through the native world;
-/// property writes that don't yet have FFI wiring (force/impulse,
-/// damping, locks) are no-ops and land in subsequent commits.
+/// as the initial pose. Property reads route through the native world
+/// for live state (velocity, sleep flag); other properties are cached
+/// locally and pushed to the native body on every setter invocation.
+///
+/// TODO(inertia-tensor): [inertiaTensor] is stored locally but is not
+/// forwarded to Rapier. Setting a custom inertia tensor requires
+/// constructing a Rapier MassProperties with principal-axis
+/// diagonalization of the Matrix3, which is not yet wired up. For
+/// most cases inertia derived from collider density is sufficient.
 class RapierRigidBody extends RigidBody {
   RapierRigidBody({
     BodyType type = BodyType.dynamic_,

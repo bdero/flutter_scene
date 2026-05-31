@@ -1,6 +1,6 @@
-// Stage 4 commit G tests: box / capsule / cylinder collider cooking.
-// The headline test is the doc's acceptance criterion: a static box
-// floor stops a dynamic sphere falling under gravity.
+// Box, capsule, and cylinder collider cooking. The headline test
+// covers the core scenario for the backend: a static box floor stops
+// a dynamic sphere falling under gravity.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

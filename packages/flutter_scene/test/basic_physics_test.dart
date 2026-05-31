@@ -1,5 +1,5 @@
-// Stage 2 tests for the pure-Dart basic backend: intersection math,
-// query routing, body-type guard, and trigger event diffing.
+// Tests for the pure-Dart basic backend: intersection math, query
+// routing, body-type guard, and trigger event diffing.
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/physics/basic/basic_queries.dart';

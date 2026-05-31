@@ -1,5 +1,5 @@
-// Stage 4 commit F tests: sphere collider cooking through the native
-// FFI, sphere-on-sphere contact, and transform writeback through
+// Sphere collider cooking through the native FFI, sphere-on-sphere
+// contact, and transform writeback through
 // RapierWorld.interpolateTransforms.
 //
 // ignore_for_file: invalid_use_of_internal_member

@@ -13,8 +13,16 @@ import 'package:vector_math/vector_math.dart';
 /// The native simulation state lives behind a [Pointer]; this class
 /// allocates it on construction and releases it via a [Finalizer] when
 /// the Dart wrapper is collected. [step] forwards directly into
-/// Rapier's PhysicsPipeline. Body, collider, query, and event support
-/// land in subsequent commits.
+/// Rapier's PhysicsPipeline; [interpolateTransforms] lerps and slerps
+/// dynamic-body poses between substeps and writes them back to each
+/// owning [Node.localTransform].
+///
+/// TODO(scene-queries): [raycast], [raycastAll], [overlapSphere],
+/// [overlapBox], and [shapeCast] currently throw [UnimplementedError].
+/// Route them through Rapier's QueryPipeline.
+/// TODO(events): wire Rapier's narrow-phase contact and intersection
+/// events into [collisions] so [CollisionBegan] / [CollisionEnded] /
+/// [TriggerEntered] / [TriggerExited] actually fire.
 class RapierWorld extends PhysicsWorld {
   RapierWorld({Vector3? gravity}) : _handle = native.worldNew() {
     _finalizer.attach(this, _handle, detach: this);
@@ -33,8 +41,9 @@ class RapierWorld extends PhysicsWorld {
   // freed in onUnmount.
   late final Pointer<Float> _readBuffer = calloc<Float>(4);
 
-  /// The underlying native world pointer. Exposed for follow-on commits
-  /// that wire body and collider lifecycle through their own FFI calls.
+  /// The underlying native world pointer. Exposed so [RapierRigidBody]
+  /// and [RapierCollider] can pass it back into the FFI for body and
+  /// collider operations.
   Pointer<native.NativeWorld> get nativeHandle => _handle;
 
   // Tracks the Dart node + body type for each registered native body
@@ -617,7 +626,8 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    throw UnimplementedError('RapierWorld.raycast lands in Stage 5.');
+    // TODO(scene-queries): forward to Rapier's QueryPipeline.cast_ray.
+    throw UnimplementedError('RapierWorld.raycast is not yet implemented.');
   }
 
   @override
@@ -630,7 +640,9 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    throw UnimplementedError('RapierWorld.raycastAll lands in Stage 5.');
+    // TODO(scene-queries): forward to Rapier's
+    // QueryPipeline.intersections_with_ray.
+    throw UnimplementedError('RapierWorld.raycastAll is not yet implemented.');
   }
 
   @override
@@ -643,7 +655,11 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    throw UnimplementedError('RapierWorld.overlapSphere lands in Stage 5.');
+    // TODO(scene-queries): forward to Rapier's
+    // QueryPipeline.intersections_with_shape using SharedShape::ball.
+    throw UnimplementedError(
+      'RapierWorld.overlapSphere is not yet implemented.',
+    );
   }
 
   @override
@@ -657,7 +673,9 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    throw UnimplementedError('RapierWorld.overlapBox lands in Stage 5.');
+    // TODO(scene-queries): forward to Rapier's
+    // QueryPipeline.intersections_with_shape using SharedShape::cuboid.
+    throw UnimplementedError('RapierWorld.overlapBox is not yet implemented.');
   }
 
   @override
@@ -672,7 +690,8 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    throw UnimplementedError('RapierWorld.shapeCast lands in Stage 5.');
+    // TODO(scene-queries): forward to Rapier's QueryPipeline.cast_shape.
+    throw UnimplementedError('RapierWorld.shapeCast is not yet implemented.');
   }
 }
 

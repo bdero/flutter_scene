@@ -1,7 +1,7 @@
-// Stage 4 commit K: kinematic body transform sync. The user moves the
-// owning node each frame; fixedUpdate pushes the new pose to Rapier
-// via set_next_kinematic_position so dynamic bodies in contact are
-// pushed along.
+// Kinematic body transform sync. The user moves the owning node each
+// frame; fixedUpdate pushes the new pose to Rapier via
+// set_next_kinematic_position so dynamic bodies in contact are pushed
+// along.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

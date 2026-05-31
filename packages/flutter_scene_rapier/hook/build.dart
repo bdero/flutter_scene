@@ -6,10 +6,13 @@
 // resulting library as a code asset so it gets bundled with the host
 // app and loaded at runtime by the FFI bindings.
 //
-// Stage 3 scaffold limitation: this hook only builds for the host OS.
-// Cross-compilation to other targets requires the matching Rust target
-// triple to be installed via `rustup target add <triple>` and is
-// wired in a later stage.
+// TODO(cross-compile): this hook only builds for the host OS today.
+// Add the matching Rust target triples for iOS (aarch64-apple-ios,
+// aarch64-apple-ios-sim, x86_64-apple-ios), Android (aarch64-,
+// armv7-, x86_64-linux-android), Windows MSVC, and the Linux variants
+// so cross-OS builds work too. Each platform also needs its own
+// SDK / NDK / MSVC setup wired through the cargo invocation, plus the
+// `rustup target add <triple>` precondition handled or documented.
 
 import 'dart:io';
 
@@ -30,8 +33,8 @@ Future<void> _build(BuildInput input, BuildOutputBuilder output) async {
   if (code.targetOS != hostOS) {
     throw UnimplementedError(
       'flutter_scene_rapier currently only builds for the host OS '
-      '($hostOS). Cross-compilation to ${code.targetOS} lands in a future '
-      'stage of the physics rollout.',
+      '($hostOS). Cross-compilation to ${code.targetOS} is not yet wired '
+      'up; see the TODO at the top of this file.',
     );
   }
 
@@ -91,8 +94,8 @@ Future<void> _runCargo(Directory nativeDir, String targetTriple) async {
 }
 
 // Maps a (targetOS, targetArchitecture) to the matching Rust target
-// triple. Only the host-OS combinations are populated for now; the
-// cross-platform matrix expands in a follow-on stage.
+// triple. Only host-OS combinations are populated for now; see the
+// TODO at the top of this file for the cross-platform matrix.
 String? _rustTriple(OS os, Architecture arch) {
   if (os == OS.macOS) {
     if (arch == Architecture.arm64) return 'aarch64-apple-darwin';
