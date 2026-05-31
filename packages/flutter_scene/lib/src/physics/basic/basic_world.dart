@@ -96,6 +96,7 @@ class BasicPhysicsWorld extends PhysicsWorld {
     }
 
     final newPairs = <_Pair>{};
+    // Cache trigger AABBs once per step for the broad-phase prune.
     final triggerAabbs = <BasicCollider, Aabb3>{
       for (final t in triggers) t: shapeWorldAabb(t.shape, t.worldPose),
     };
@@ -103,8 +104,19 @@ class BasicPhysicsWorld extends PhysicsWorld {
       final aTrigger = triggerAabbs[trigger]!;
       for (final other in solids) {
         if (!_layerMatch(trigger, other)) continue;
+        // Broad-phase: prune by AABB first.
         final aOther = shapeWorldAabb(other.shape, other.worldPose);
         if (!_aabbOverlap(aTrigger, aOther)) continue;
+        // Narrow-phase: exact test for sphere/box pairs, AABB fallback
+        // for the rest.
+        if (!shapesOverlap(
+          trigger.shape,
+          trigger.worldPose,
+          other.shape,
+          other.worldPose,
+        )) {
+          continue;
+        }
         final pair = _Pair(trigger, other);
         newPairs.add(pair);
       }

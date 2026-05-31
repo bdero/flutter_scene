@@ -54,6 +54,53 @@ bool sphereOverlapsSphere(
   return (center - otherCenter).length2 <= sum * sum;
 }
 
+/// Whether two world-space shapes overlap. Sphere-sphere and
+/// sphere-OBB pairs use exact tests; every other pair falls back to a
+/// conservative AABB-vs-AABB test (no false negatives, occasional
+/// false positives at corners). Suitable for the trigger pair
+/// detector in [BasicPhysicsWorld].
+bool shapesOverlap(Shape a, Matrix4 ax, Shape b, Matrix4 bx) {
+  // Sphere vs Sphere.
+  if (a is SphereShape && b is SphereShape) {
+    return sphereOverlapsSphere(
+      ax.getTranslation(),
+      a.radius,
+      bx.getTranslation(),
+      b.radius,
+    );
+  }
+  // Sphere vs Box (either order).
+  if (a is SphereShape && b is BoxShape) {
+    return _sphereOverlapsObb(ax.getTranslation(), a.radius, b, bx);
+  }
+  if (a is BoxShape && b is SphereShape) {
+    return _sphereOverlapsObb(bx.getTranslation(), b.radius, a, ax);
+  }
+  // Fall back to AABB-vs-AABB for everything else.
+  final aabbA = shapeWorldAabb(a, ax);
+  final aabbB = shapeWorldAabb(b, bx);
+  return aabbA.min.x <= aabbB.max.x &&
+      aabbA.max.x >= aabbB.min.x &&
+      aabbA.min.y <= aabbB.max.y &&
+      aabbA.max.y >= aabbB.min.y &&
+      aabbA.min.z <= aabbB.max.z &&
+      aabbA.max.z >= aabbB.min.z;
+}
+
+bool _sphereOverlapsObb(
+  Vector3 worldCenter,
+  double radius,
+  BoxShape box,
+  Matrix4 boxWorld,
+) {
+  // Transform the sphere center into the box's local frame, then run
+  // a sphere-vs-AABB test on the box's local extents.
+  final inv = Matrix4.inverted(boxWorld);
+  final localCenter = inv.transformed3(worldCenter);
+  final aabb = Aabb3.minMax(-box.halfExtents, box.halfExtents.clone());
+  return sphereOverlapsAabb(localCenter, radius, aabb);
+}
+
 /// Closest hit of [ray] against [shape] under [worldXform], or null.
 ///
 /// [maxDistance] is in world units along the normalized ray direction.
