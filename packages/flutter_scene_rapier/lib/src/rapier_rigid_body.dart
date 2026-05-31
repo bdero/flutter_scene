@@ -115,6 +115,17 @@ class RapierRigidBody extends RigidBody {
       rotation: rotation,
       additionalMass: _mass ?? 0.0,
     );
+    // Push the configured initial state into native after creation so
+    // the body picks up non-default velocity/damping the user set on
+    // the component before mount.
+    world.setBodyLinearVelocity(_handle!, _linearVelocity, wakeUp: false);
+    world.setBodyAngularVelocity(_handle!, _angularVelocity, wakeUp: false);
+    if (_linearDamping != 0) {
+      world.setBodyLinearDamping(_handle!, _linearDamping);
+    }
+    if (_angularDamping != 0) {
+      world.setBodyAngularDamping(_handle!, _angularDamping);
+    }
   }
 
   @override
@@ -134,7 +145,13 @@ class RapierRigidBody extends RigidBody {
   @override
   double? get mass => _mass;
   @override
-  set mass(double? value) => _mass = value;
+  set mass(double? value) {
+    _mass = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) {
+      w.setBodyAdditionalMass(h, value ?? 0.0);
+    }
+  }
 
   @override
   Matrix3? get inertiaTensor => _inertiaTensor;
@@ -142,24 +159,50 @@ class RapierRigidBody extends RigidBody {
   set inertiaTensor(Matrix3? value) => _inertiaTensor = value;
 
   @override
-  Vector3 get linearVelocity => _linearVelocity;
-  @override
-  set linearVelocity(Vector3 value) => _linearVelocity = value;
+  Vector3 get linearVelocity {
+    final w = _world, h = _handle;
+    if (w != null && h != null) return w.readBodyLinearVelocity(h);
+    return _linearVelocity;
+  }
 
   @override
-  Vector3 get angularVelocity => _angularVelocity;
+  set linearVelocity(Vector3 value) {
+    _linearVelocity = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyLinearVelocity(h, value);
+  }
+
   @override
-  set angularVelocity(Vector3 value) => _angularVelocity = value;
+  Vector3 get angularVelocity {
+    final w = _world, h = _handle;
+    if (w != null && h != null) return w.readBodyAngularVelocity(h);
+    return _angularVelocity;
+  }
+
+  @override
+  set angularVelocity(Vector3 value) {
+    _angularVelocity = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyAngularVelocity(h, value);
+  }
 
   @override
   double get linearDamping => _linearDamping;
   @override
-  set linearDamping(double value) => _linearDamping = value;
+  set linearDamping(double value) {
+    _linearDamping = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyLinearDamping(h, value);
+  }
 
   @override
   double get angularDamping => _angularDamping;
   @override
-  set angularDamping(double value) => _angularDamping = value;
+  set angularDamping(double value) {
+    _angularDamping = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyAngularDamping(h, value);
+  }
 
   @override
   bool get useGravity => _useGravity;

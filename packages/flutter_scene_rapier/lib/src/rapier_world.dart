@@ -227,6 +227,40 @@ class RapierWorld extends PhysicsWorld {
     return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
   }
 
+  void setBodyLinearVelocity(int handle, Vector3 v, {bool wakeUp = true}) {
+    native.bodySetLinearVelocity(
+      _handle,
+      handle,
+      v.x,
+      v.y,
+      v.z,
+      wakeUp ? 1 : 0,
+    );
+  }
+
+  void setBodyAngularVelocity(int handle, Vector3 w, {bool wakeUp = true}) {
+    native.bodySetAngularVelocity(
+      _handle,
+      handle,
+      w.x,
+      w.y,
+      w.z,
+      wakeUp ? 1 : 0,
+    );
+  }
+
+  void setBodyLinearDamping(int handle, double damping) {
+    native.bodySetLinearDamping(_handle, handle, damping);
+  }
+
+  void setBodyAngularDamping(int handle, double damping) {
+    native.bodySetAngularDamping(_handle, handle, damping);
+  }
+
+  void setBodyAdditionalMass(int handle, double additionalMass) {
+    native.bodySetAdditionalMass(_handle, handle, additionalMass);
+  }
+
   /// Continuous force applied to a body for one step.
   void applyBodyForce(int handle, Vector3 force, {Vector3? atWorldPoint}) {
     final p = atWorldPoint;
