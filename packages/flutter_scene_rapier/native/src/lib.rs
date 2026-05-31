@@ -52,6 +52,7 @@ pub extern "C" fn fsr_proof_of_life() -> c_int {
 /// Body kinds matching the abstract `BodyType` on the Dart side.
 const BODY_KIND_FIXED: u8 = 0;
 const BODY_KIND_KINEMATIC: u8 = 1;
+#[allow(dead_code)]
 const BODY_KIND_DYNAMIC: u8 = 2;
 
 fn index_to_raw(idx: rapier3d::data::arena::Index) -> u64 {
@@ -293,7 +294,7 @@ pub unsafe extern "C" fn fsr_collider_sphere(
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
-        .position_wrt_parent(pose);
+        .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
         handle_from_raw(body_handle),
@@ -336,7 +337,7 @@ pub unsafe extern "C" fn fsr_collider_box(
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
-        .position_wrt_parent(pose);
+        .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
         handle_from_raw(body_handle),
@@ -380,7 +381,7 @@ pub unsafe extern "C" fn fsr_collider_capsule(
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
-        .position_wrt_parent(pose);
+        .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
         handle_from_raw(body_handle),
@@ -423,7 +424,7 @@ pub unsafe extern "C" fn fsr_collider_cylinder(
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
-        .position_wrt_parent(pose);
+        .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
         handle_from_raw(body_handle),
@@ -545,6 +546,98 @@ pub unsafe extern "C" fn fsr_body_linear_velocity(
         *out.add(0) = v.x;
         *out.add(1) = v.y;
         *out.add(2) = v.z;
+    }
+}
+
+/// Sets the body's linear velocity (world space). When `wake_up != 0`,
+/// the body wakes from any sleep state.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_linear_velocity(
+    world: *mut World,
+    raw: u64,
+    vx: Real,
+    vy: Real,
+    vz: Real,
+    wake_up: u8,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.set_linvel(Vector::new(vx, vy, vz), wake_up != 0);
+    }
+}
+
+/// Sets the body's angular velocity (world axes, radians/sec).
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_angular_velocity(
+    world: *mut World,
+    raw: u64,
+    wx: Real,
+    wy: Real,
+    wz: Real,
+    wake_up: u8,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.set_angvel(Vector::new(wx, wy, wz), wake_up != 0);
+    }
+}
+
+/// Sets the body's per-step linear velocity damping factor.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_linear_damping(
+    world: *mut World,
+    raw: u64,
+    damping: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.set_linear_damping(damping);
+    }
+}
+
+/// Sets the body's per-step angular velocity damping factor.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_angular_damping(
+    world: *mut World,
+    raw: u64,
+    damping: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        body.set_angular_damping(damping);
+    }
+}
+
+/// Sets the body's additional mass (added to the mass derived from
+/// the attached colliders). Triggers a mass-properties recompute so
+/// subsequent impulses use the new effective mass.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_additional_mass(
+    world: *mut World,
+    raw: u64,
+    additional_mass: Real,
+) {
+    let w = &mut *world;
+    let bodies = &mut w.rigid_body_set;
+    let colliders = &w.collider_set;
+    if let Some(body) = bodies.get_mut(handle_from_raw(raw)) {
+        body.set_additional_mass(additional_mass, true);
+        body.recompute_mass_properties_from_colliders(colliders);
     }
 }
 
