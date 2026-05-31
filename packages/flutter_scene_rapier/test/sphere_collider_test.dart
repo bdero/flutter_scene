@@ -54,7 +54,7 @@ void main() {
     expect(pos.y, lessThan(1.0));
   });
 
-  test('interpolateTransforms snaps node.localTransform to the body pose', () {
+  test('interpolateTransforms writes the body pose back to the node', () {
     final root = _bootWorld();
     final world = root.getComponent<RapierWorld>()!;
 
@@ -69,7 +69,9 @@ void main() {
     for (var i = 0; i < 30; i++) {
       world.step(1.0 / 60.0);
     }
-    world.interpolateTransforms(0);
+    // alpha=1 snaps to the current step's pose, which should match
+    // what the native side reports back.
+    world.interpolateTransforms(1.0);
 
     final pos = ball.localTransform.getTranslation();
     expect(pos.y, lessThan(10.0));
