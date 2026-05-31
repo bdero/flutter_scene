@@ -126,7 +126,14 @@ class RapierRigidBody extends RigidBody {
     if (_angularDamping != 0) {
       world.setBodyAngularDamping(_handle!, _angularDamping);
     }
+    world.setBodyGravityScale(_handle!, _useGravity ? 1.0 : 0.0);
+    if (_ccdEnabled) world.setBodyCcdEnabled(_handle!, true);
+    if (!_isFullyFree(_linearAxisLocks) || !_isFullyFree(_angularAxisLocks)) {
+      world.setBodyLockedAxes(_handle!, _linearAxisLocks, _angularAxisLocks);
+    }
   }
+
+  static bool _isFullyFree(Vector3 v) => v.x != 0 && v.y != 0 && v.z != 0;
 
   @override
   void onUnmount() {
@@ -207,31 +214,63 @@ class RapierRigidBody extends RigidBody {
   @override
   bool get useGravity => _useGravity;
   @override
-  set useGravity(bool value) => _useGravity = value;
+  set useGravity(bool value) {
+    _useGravity = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyGravityScale(h, value ? 1.0 : 0.0);
+  }
 
   @override
   bool get ccdEnabled => _ccdEnabled;
   @override
-  set ccdEnabled(bool value) => _ccdEnabled = value;
+  set ccdEnabled(bool value) {
+    _ccdEnabled = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyCcdEnabled(h, value);
+  }
 
   @override
   Vector3 get linearAxisLocks => _linearAxisLocks;
   @override
-  set linearAxisLocks(Vector3 value) => _linearAxisLocks = value;
+  set linearAxisLocks(Vector3 value) {
+    _linearAxisLocks = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) {
+      w.setBodyLockedAxes(h, _linearAxisLocks, _angularAxisLocks);
+    }
+  }
 
   @override
   Vector3 get angularAxisLocks => _angularAxisLocks;
   @override
-  set angularAxisLocks(Vector3 value) => _angularAxisLocks = value;
+  set angularAxisLocks(Vector3 value) {
+    _angularAxisLocks = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) {
+      w.setBodyLockedAxes(h, _linearAxisLocks, _angularAxisLocks);
+    }
+  }
 
   @override
-  bool get isSleeping => _sleeping;
+  bool get isSleeping {
+    final w = _world, h = _handle;
+    if (w != null && h != null) return w.isBodySleeping(h);
+    return _sleeping;
+  }
 
   @override
-  void wakeUp() => _sleeping = false;
+  void wakeUp() {
+    _sleeping = false;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.wakeBody(h);
+  }
 
   @override
-  void putToSleep() => _sleeping = true;
+  void putToSleep() {
+    _sleeping = true;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.sleepBody(h);
+  }
 
   @override
   void applyForce(Vector3 force, {Vector3? atWorldPoint}) {
