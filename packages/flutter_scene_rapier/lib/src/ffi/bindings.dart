@@ -442,6 +442,61 @@ external int colliderCylinder(
   double qw,
 );
 
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float)>(
+  symbol: 'fsr_collider_set_material',
+)
+external void colliderSetMaterial(
+  Pointer<NativeWorld> world,
+  int handle,
+  double friction,
+  double restitution,
+  double density,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Uint32, Uint32)>(
+  symbol: 'fsr_collider_set_collision_groups',
+)
+external void colliderSetCollisionGroups(
+  Pointer<NativeWorld> world,
+  int handle,
+  int memberships,
+  int filter,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Uint8)>(
+  symbol: 'fsr_collider_set_sensor',
+)
+external void colliderSetSensor(
+  Pointer<NativeWorld> world,
+  int handle,
+  int isSensor,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_set_local_pose')
+external void colliderSetLocalPose(
+  Pointer<NativeWorld> world,
+  int handle,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(
   symbol: 'fsr_collider_destroy',
 )
