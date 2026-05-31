@@ -55,6 +55,17 @@ abstract class Component {
   /// loaded. [deltaSeconds] is the elapsed time since the previous tick.
   void update(double deltaSeconds) {}
 
+  /// Called once per fixed physics step while the component is mounted,
+  /// [enabled], and loaded. [fixedDt] is the fixed timestep of the
+  /// surrounding [PhysicsWorld], not the frame interval.
+  ///
+  /// Runs before [update] for the same frame and may run several times
+  /// per frame when the renderer falls behind the physics rate. Most
+  /// components should not override this; it exists for behavior that
+  /// must advance on the physics clock (kinematic body controllers,
+  /// character motion drivers).
+  void fixedUpdate(double fixedDt) {}
+
   /// Called when the owning node leaves a live scene graph.
   void onUnmount() {}
 
@@ -98,6 +109,13 @@ abstract class Component {
   void tick(double deltaSeconds) {
     if (enabled && _mounted && _loaded) {
       update(deltaSeconds);
+    }
+  }
+
+  @internal
+  void fixedTick(double fixedDt) {
+    if (enabled && _mounted && _loaded) {
+      fixedUpdate(fixedDt);
     }
   }
 }
