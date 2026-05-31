@@ -1,11 +1,14 @@
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene_rapier/src/rapier_world.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// [RigidBody] backed by Rapier 3D.
 ///
-/// Stage 3 scaffold: property storage exists and the abstract surface
-/// compiles. Forwarding to Rapier's body interface (registration,
-/// velocity/force routing, transform writeback) lands in Stage 4.
+/// Registers itself with the nearest ancestor [RapierWorld] on mount
+/// and inserts a Rapier rigid body using the owning node's transform
+/// as the initial pose. Property reads route through the native world;
+/// property writes that don't yet have FFI wiring (force/impulse,
+/// damping, locks) are no-ops and land in subsequent commits.
 class RapierRigidBody extends RigidBody {
   RapierRigidBody({
     BodyType type = BodyType.dynamic_,
@@ -43,6 +46,66 @@ class RapierRigidBody extends RigidBody {
   Vector3 _linearAxisLocks;
   Vector3 _angularAxisLocks;
   bool _sleeping = false;
+
+  RapierWorld? _world;
+  int? _handle;
+
+  /// Native body handle once mounted, or null if no ancestor
+  /// [RapierWorld] was found. Exposed so colliders (added in a later
+  /// commit) can attach themselves to the right body.
+  int? get nativeHandle => _handle;
+
+  /// The owning [RapierWorld], available between [onMount] and
+  /// [onUnmount].
+  RapierWorld? get nativeWorld => _world;
+
+  /// Reads the body's current world translation from the native side.
+  /// Convenience helper for tests and debugging.
+  Vector3 readNativeTranslation() {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) {
+      throw StateError('RapierRigidBody is not mounted.');
+    }
+    return world.readBodyTranslation(handle);
+  }
+
+  /// Reads the body's current world rotation from the native side.
+  Quaternion readNativeRotation() {
+    final world = _world;
+    final handle = _handle;
+    if (world == null || handle == null) {
+      throw StateError('RapierRigidBody is not mounted.');
+    }
+    return world.readBodyRotation(handle);
+  }
+
+  @override
+  void onMount() {
+    final world = findAncestorRapierWorld(node);
+    if (world == null) return;
+    _world = world;
+    final transform = node.globalTransform;
+    final translation = transform.getTranslation();
+    final rotation = Quaternion.fromRotation(transform.getRotation());
+    _handle = world.createBody(
+      type: _type,
+      position: translation,
+      rotation: rotation,
+      additionalMass: _mass ?? 0.0,
+    );
+  }
+
+  @override
+  void onUnmount() {
+    final world = _world;
+    final handle = _handle;
+    if (world != null && handle != null) {
+      world.destroyBody(handle);
+    }
+    _world = null;
+    _handle = null;
+  }
 
   @override
   BodyType get type => _type;
@@ -108,7 +171,7 @@ class RapierRigidBody extends RigidBody {
 
   @override
   void applyForce(Vector3 force, {Vector3? atWorldPoint}) {
-    // Stage 4 forwards through the FFI bindings.
+    // Forwarded through the FFI in a later commit.
   }
 
   @override
