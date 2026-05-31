@@ -125,6 +125,119 @@ external int colliderSphere(
   double qw,
 );
 
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_box')
+external int colliderBox(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  double hx,
+  double hy,
+  double hz,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_capsule')
+external int colliderCapsule(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  double halfHeight,
+  double radius,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_cylinder')
+external int colliderCylinder(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  double halfHeight,
+  double radius,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(
   symbol: 'fsr_collider_destroy',
 )

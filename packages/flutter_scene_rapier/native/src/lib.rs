@@ -286,6 +286,136 @@ pub unsafe extern "C" fn fsr_collider_sphere(
     collider_to_raw(handle)
 }
 
+/// Attaches a cuboid (axis-aligned box) collider to an existing body.
+///
+/// # Safety
+/// `world` must be live. `body_handle` must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_box(
+    world: *mut World,
+    body_handle: u64,
+    hx: Real,
+    hy: Real,
+    hz: Real,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder = ColliderBuilder::cuboid(hx, hy, hz)
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position_wrt_parent(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
+/// Attaches a Y-axis capsule collider (cylinder segment plus two
+/// hemispheres) to an existing body. `half_height` is the half length
+/// of the cylindrical section, excluding the caps.
+///
+/// # Safety
+/// `world` must be live. `body_handle` must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_capsule(
+    world: *mut World,
+    body_handle: u64,
+    half_height: Real,
+    radius: Real,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder = ColliderBuilder::capsule_y(half_height, radius)
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position_wrt_parent(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
+/// Attaches a Y-axis cylinder collider to an existing body.
+/// `half_height` is half the total cylinder height.
+///
+/// # Safety
+/// `world` must be live. `body_handle` must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_cylinder(
+    world: *mut World,
+    body_handle: u64,
+    half_height: Real,
+    radius: Real,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder = ColliderBuilder::cylinder(half_height, radius)
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position_wrt_parent(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
 /// Removes a collider from the world.
 ///
 /// # Safety
@@ -347,6 +477,55 @@ mod tests {
             fsr_body_translation(world, body, t.as_mut_ptr());
             assert!(t[1] < 9.0, "body should have fallen, y = {}", t[1]);
             fsr_body_destroy(world, body);
+            fsr_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn sphere_on_box_floor_settles() {
+        unsafe {
+            let world = fsr_world_new();
+            fsr_world_set_gravity(world, 0.0, -9.81, 0.0);
+
+            // Static box floor: 50x0.5x50 centered just below the origin.
+            let floor = fsr_body_create(
+                world, BODY_KIND_FIXED, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 1.0,
+                0.0,
+            );
+            fsr_collider_box(
+                world, floor, 50.0, 0.5, 50.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 1.0,
+            );
+
+            let ball = fsr_body_create(
+                world,
+                BODY_KIND_DYNAMIC,
+                0.0,
+                5.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            );
+            fsr_collider_sphere(
+                world, ball, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 1.0,
+            );
+
+            for _ in 0..240 {
+                fsr_world_step(world, 1.0 / 60.0);
+            }
+
+            let mut t = [0.0f32; 3];
+            fsr_body_translation(world, ball, t.as_mut_ptr());
+            // Floor top is at y=0; ball of radius 0.5 settles at y ≈ 0.5.
+            assert!(
+                t[1] > 0.4 && t[1] < 0.7,
+                "ball should rest near y=0.5, got {}",
+                t[1]
+            );
             fsr_world_destroy(world);
         }
     }
