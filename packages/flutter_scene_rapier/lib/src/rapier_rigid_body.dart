@@ -89,6 +89,7 @@ class RapierRigidBody extends RigidBody {
     final translation = transform.getTranslation();
     final rotation = Quaternion.fromRotation(transform.getRotation());
     _handle = world.createBody(
+      node: node,
       type: _type,
       position: translation,
       rotation: rotation,
