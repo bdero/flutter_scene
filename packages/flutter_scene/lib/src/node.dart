@@ -974,4 +974,19 @@ base class Node implements SceneGraph {
       child.scenePrePass(deltaSeconds, _effectiveVisible);
     }
   }
+
+  /// Walks this node's subtree once per physics substep and dispatches
+  /// [Component.fixedTick] to every component.
+  ///
+  /// Called by [Scene]'s fixed-step driver inside its substepping loop,
+  /// before the physics world's step. Traversal order is parent before
+  /// children, matching [scenePrePass].
+  void sceneFixedPass(double fixedDt) {
+    for (int i = 0; i < _components.length; i++) {
+      _components[i].fixedTick(fixedDt);
+    }
+    for (final child in children) {
+      child.sceneFixedPass(fixedDt);
+    }
+  }
 }
