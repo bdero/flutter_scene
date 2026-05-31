@@ -273,6 +273,17 @@ class RapierRigidBody extends RigidBody {
   }
 
   @override
+  void fixedUpdate(double fixedDt) {
+    if (_type != BodyType.kinematic) return;
+    final w = _world, h = _handle;
+    if (w == null || h == null) return;
+    final transform = node.globalTransform;
+    final t = transform.getTranslation();
+    final r = Quaternion.fromRotation(transform.getRotation());
+    w.setBodyNextKinematicPose(h, t, r);
+  }
+
+  @override
   void applyForce(Vector3 force, {Vector3? atWorldPoint}) {
     final world = _world;
     final handle = _handle;

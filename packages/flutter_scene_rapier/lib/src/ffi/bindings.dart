@@ -109,6 +109,31 @@ external void bodyAngularVelocity(
 );
 
 @Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_body_set_next_kinematic_pose')
+external void bodySetNextKinematicPose(
+  Pointer<NativeWorld> world,
+  int handle,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
   Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float, Uint8)
 >(symbol: 'fsr_body_set_linear_velocity')
 external void bodySetLinearVelocity(
