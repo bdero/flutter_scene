@@ -35,15 +35,21 @@ class RapierWorld extends PhysicsWorld {
   /// that wire body and collider lifecycle through their own FFI calls.
   Pointer<native.NativeWorld> get nativeHandle => _handle;
 
+  // Tracks the Dart node + body type for each registered native body
+  // handle, so [interpolateTransforms] can write back dynamic poses
+  // and so collider creation can find its sibling body.
+  final Map<int, _BodyRecord> _bodies = {};
+
   /// Inserts a rigid body into the native world and returns its packed
   /// handle. Called from [RapierRigidBody.onMount].
   int createBody({
+    required Node node,
     required BodyType type,
     required Vector3 position,
     required Quaternion rotation,
     required double additionalMass,
   }) {
-    return native.bodyCreate(
+    final handle = native.bodyCreate(
       _handle,
       _bodyKindByte(type),
       position.x,
@@ -55,11 +61,49 @@ class RapierWorld extends PhysicsWorld {
       rotation.w,
       additionalMass,
     );
+    _bodies[handle] = _BodyRecord(node, type);
+    return handle;
   }
 
   /// Removes a rigid body previously inserted by [createBody].
   void destroyBody(int handle) {
+    _bodies.remove(handle);
     native.bodyDestroy(_handle, handle);
+  }
+
+  /// Cooks a sphere collider, attaches it to the rigid body identified
+  /// by [bodyHandle], and returns the collider's packed handle.
+  int createSphereCollider({
+    required int bodyHandle,
+    required double radius,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    return native.colliderSphere(
+      _handle,
+      bodyHandle,
+      radius,
+      material.friction,
+      material.restitution,
+      material.density,
+      isTrigger ? 1 : 0,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
+  }
+
+  /// Removes a collider previously inserted by one of the
+  /// [createSphereCollider]-style methods.
+  void destroyCollider(int handle) {
+    native.colliderDestroy(_handle, handle);
   }
 
   /// Reads the body's current world translation. Returns a fresh
@@ -118,7 +162,31 @@ class RapierWorld extends PhysicsWorld {
 
   @override
   void interpolateTransforms(double alpha) {
-    // Stage 4 commit F writes interpolated transforms back to nodes.
+    // Snap each dynamic body's owning node to the body's current world
+    // pose. Proper alpha-based interpolation between previous and
+    // current step (slerp on rotation) is a follow-on refinement;
+    // snapping is sufficient for visible motion and the unit tests in
+    // this commit. Fixed and kinematic bodies are not touched: the
+    // user owns their node transforms.
+    for (final entry in _bodies.entries) {
+      final record = entry.value;
+      if (record.type != BodyType.dynamic_) continue;
+      final translation = readBodyTranslation(entry.key);
+      final rotation = readBodyRotation(entry.key);
+      final worldPose = Matrix4.compose(
+        translation,
+        rotation,
+        Vector3(1, 1, 1),
+      );
+      final parent = record.node.parent;
+      if (parent == null) {
+        record.node.localTransform = worldPose;
+      } else {
+        final parentInverse = Matrix4.inverted(parent.globalTransform);
+        record.node.localTransform = parentInverse.multiplied(worldPose);
+      }
+      record.node.markTransformDirty();
+    }
   }
 
   @override
@@ -201,4 +269,10 @@ RapierWorld? findAncestorRapierWorld(Node start) {
     current = current.parent;
   }
   return null;
+}
+
+class _BodyRecord {
+  _BodyRecord(this.node, this.type);
+  final Node node;
+  final BodyType type;
 }
