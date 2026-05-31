@@ -35,12 +35,21 @@ Future<void> _build(BuildInput input, BuildOutputBuilder output) async {
     );
   }
 
+  final triple = _rustTriple(code.targetOS, code.targetArchitecture);
+  if (triple == null) {
+    throw UnimplementedError(
+      'No Rust target triple is wired up for '
+      '${code.targetOS}/${code.targetArchitecture}. Add it to '
+      'hook/build.dart and install the matching `rustup target add` first.',
+    );
+  }
+
   final nativeDir = Directory.fromUri(input.packageRoot.resolve('native/'));
-  await _runCargo(nativeDir);
+  await _runCargo(nativeDir, triple);
 
   final libFileName = code.targetOS.dylibFileName(_nativeLibraryName);
   final libUri = input.packageRoot.resolve(
-    'native/target/release/$libFileName',
+    'native/target/$triple/release/$libFileName',
   );
   final libFile = File.fromUri(libUri);
   if (!libFile.existsSync()) {
@@ -66,15 +75,35 @@ Future<void> _build(BuildInput input, BuildOutputBuilder output) async {
   ]);
 }
 
-Future<void> _runCargo(Directory nativeDir) async {
+Future<void> _runCargo(Directory nativeDir, String targetTriple) async {
   final result = await Process.run('cargo', [
     'build',
     '--release',
+    '--target',
+    targetTriple,
   ], workingDirectory: nativeDir.path);
   if (result.exitCode != 0) {
     throw Exception(
-      'cargo build failed (${result.exitCode}) in ${nativeDir.path}:\n'
-      '${result.stdout}\n${result.stderr}',
+      'cargo build --target $targetTriple failed (${result.exitCode}) in '
+      '${nativeDir.path}:\n${result.stdout}\n${result.stderr}',
     );
   }
+}
+
+// Maps a (targetOS, targetArchitecture) to the matching Rust target
+// triple. Only the host-OS combinations are populated for now; the
+// cross-platform matrix expands in a follow-on stage.
+String? _rustTriple(OS os, Architecture arch) {
+  if (os == OS.macOS) {
+    if (arch == Architecture.arm64) return 'aarch64-apple-darwin';
+    if (arch == Architecture.x64) return 'x86_64-apple-darwin';
+  }
+  if (os == OS.linux) {
+    if (arch == Architecture.x64) return 'x86_64-unknown-linux-gnu';
+    if (arch == Architecture.arm64) return 'aarch64-unknown-linux-gnu';
+  }
+  if (os == OS.windows) {
+    if (arch == Architecture.x64) return 'x86_64-pc-windows-msvc';
+  }
+  return null;
 }
