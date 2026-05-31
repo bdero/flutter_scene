@@ -1,6 +1,7 @@
-// Stage 3 smoke test: verifies that the Rapier-backed types satisfy
-// the flutter_scene abstract physics contract and that the scaffold
-// can be driven through the fixed-step substepping loop without error.
+// Smoke tests: the Rapier-backed types satisfy the flutter_scene
+// abstract physics contract, the world can be driven through the
+// fixed-step substepping loop without error, and the still-
+// unimplemented scene-query surface throws cleanly.
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
@@ -47,7 +48,7 @@ void main() {
     expect(collider.localPose, isA<Matrix4>());
   });
 
-  test('query methods throw UnimplementedError until Stage 5', () {
+  test('query methods throw UnimplementedError', () {
     final world = RapierWorld();
     expect(
       () =>

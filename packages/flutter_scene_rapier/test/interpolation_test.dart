@@ -1,5 +1,5 @@
-// Stage 4 commit N: interpolateTransforms blends between the previous
-// and current physics steps using the alpha residual.
+// interpolateTransforms blends between the previous and current
+// physics steps using the alpha residual.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

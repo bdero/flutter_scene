@@ -6,10 +6,20 @@
 /// then attach [RapierRigidBody] and [RapierCollider] components to
 /// nodes that should participate in the simulation.
 ///
-/// This is the Stage 3 scaffold: the classes exist and satisfy the
-/// abstract API, but the simulation step, scene queries, and event
-/// streams are not yet wired through to the native engine. Stages 4
-/// and 5 land that work.
+/// Body lifecycle, force / impulse application, the full Shape
+/// hierarchy, axis locks, sleeping, kinematic transform sync, and
+/// interpolated transform writeback all run through the native shim.
+///
+/// TODO(scene-queries): the abstract scene-query surface
+/// ([PhysicsWorld.raycast], [PhysicsWorld.overlapSphere], and the rest)
+/// still throws [UnimplementedError]; wire it through Rapier's
+/// QueryPipeline.
+/// TODO(events): emit [CollisionBegan] / [CollisionEnded] /
+/// [TriggerEntered] / [TriggerExited] on the [PhysicsWorld.collisions]
+/// stream via Rapier's narrow-phase events.
+/// TODO(joints): expose concrete subclasses of [FixedJoint],
+/// [SphericalJoint], [RevoluteJoint], [PrismaticJoint], and
+/// [GenericJoint] backed by Rapier's impulse-joint set.
 library;
 
 export 'src/rapier_collider.dart';

@@ -1,6 +1,6 @@
-// Stage 4 commit M: cooking the heavy shapes (convex hull, trimesh,
-// height field) and compound shapes (each child becomes its own
-// Rapier collider on the same body).
+// Cooking the heavy shapes (convex hull, trimesh, height field) and
+// compound shapes (each child becomes its own Rapier collider on the
+// same body).
 //
 // ignore_for_file: invalid_use_of_internal_member
 

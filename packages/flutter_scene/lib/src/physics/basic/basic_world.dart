@@ -260,8 +260,10 @@ class BasicPhysicsWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // Conservative AABB-of-OBB approximation. Adequate for Stage 2; a
-    // future revision could SAT-test the OBB against each collider.
+    // Conservative AABB-of-OBB approximation.
+    // TODO(exact-obb-overlap): SAT-test the probe OBB against each
+    // collider for exact results; the current AABB-of-OBB produces
+    // false positives at corners when the probe is rotated.
     final r = Matrix4.compose(center, rotation, Vector3(1, 1, 1));
     final probeAabb = shapeWorldAabb(BoxShape(halfExtents: halfExtents), r);
     final out = <OverlapHit>[];

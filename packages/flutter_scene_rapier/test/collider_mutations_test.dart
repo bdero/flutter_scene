@@ -1,6 +1,6 @@
-// Stage 4 commit L: collider runtime mutations. Material, layer, mask,
-// trigger flag, local pose, and shape changes all propagate to the
-// live Rapier collider.
+// Collider runtime mutations. Material, layer, mask, trigger flag,
+// local pose, and shape changes all propagate to the live Rapier
+// collider.
 //
 // ignore_for_file: invalid_use_of_internal_member
 
