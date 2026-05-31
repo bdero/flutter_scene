@@ -109,6 +109,57 @@ external void bodyAngularVelocity(
 );
 
 @Native<
+  Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float, Uint8)
+>(symbol: 'fsr_body_set_linear_velocity')
+external void bodySetLinearVelocity(
+  Pointer<NativeWorld> world,
+  int handle,
+  double vx,
+  double vy,
+  double vz,
+  int wakeUp,
+);
+
+@Native<
+  Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float, Uint8)
+>(symbol: 'fsr_body_set_angular_velocity')
+external void bodySetAngularVelocity(
+  Pointer<NativeWorld> world,
+  int handle,
+  double wx,
+  double wy,
+  double wz,
+  int wakeUp,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float)>(
+  symbol: 'fsr_body_set_linear_damping',
+)
+external void bodySetLinearDamping(
+  Pointer<NativeWorld> world,
+  int handle,
+  double damping,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float)>(
+  symbol: 'fsr_body_set_angular_damping',
+)
+external void bodySetAngularDamping(
+  Pointer<NativeWorld> world,
+  int handle,
+  double damping,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float)>(
+  symbol: 'fsr_body_set_additional_mass',
+)
+external void bodySetAdditionalMass(
+  Pointer<NativeWorld> world,
+  int handle,
+  double additionalMass,
+);
+
+@Native<
   Void Function(
     Pointer<NativeWorld>,
     Uint64,
