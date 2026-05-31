@@ -159,6 +159,44 @@ external void bodySetAdditionalMass(
   double additionalMass,
 );
 
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Uint8)>(
+  symbol: 'fsr_body_set_locked_axes',
+)
+external void bodySetLockedAxes(
+  Pointer<NativeWorld> world,
+  int handle,
+  int lockBits,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Float)>(
+  symbol: 'fsr_body_set_gravity_scale',
+)
+external void bodySetGravityScale(
+  Pointer<NativeWorld> world,
+  int handle,
+  double scale,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Uint8)>(
+  symbol: 'fsr_body_set_ccd_enabled',
+)
+external void bodySetCcdEnabled(
+  Pointer<NativeWorld> world,
+  int handle,
+  int enabled,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64)>(symbol: 'fsr_body_wake_up')
+external void bodyWakeUp(Pointer<NativeWorld> world, int handle);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64)>(symbol: 'fsr_body_sleep')
+external void bodySleep(Pointer<NativeWorld> world, int handle);
+
+@Native<Uint8 Function(Pointer<NativeWorld>, Uint64)>(
+  symbol: 'fsr_body_is_sleeping',
+)
+external int bodyIsSleeping(Pointer<NativeWorld> world, int handle);
+
 @Native<
   Void Function(
     Pointer<NativeWorld>,

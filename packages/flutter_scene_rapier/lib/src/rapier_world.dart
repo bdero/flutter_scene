@@ -261,6 +261,35 @@ class RapierWorld extends PhysicsWorld {
     native.bodySetAdditionalMass(_handle, handle, additionalMass);
   }
 
+  /// Packs [linear] and [angular] into a 6-bit lock field (translation
+  /// XYZ in low bits, rotation XYZ in high bits, value 0 = locked) and
+  /// pushes it to native.
+  void setBodyLockedAxes(int handle, Vector3 linear, Vector3 angular) {
+    var bits = 0;
+    if (linear.x == 0) bits |= 1;
+    if (linear.y == 0) bits |= 2;
+    if (linear.z == 0) bits |= 4;
+    if (angular.x == 0) bits |= 8;
+    if (angular.y == 0) bits |= 16;
+    if (angular.z == 0) bits |= 32;
+    native.bodySetLockedAxes(_handle, handle, bits);
+  }
+
+  void setBodyGravityScale(int handle, double scale) {
+    native.bodySetGravityScale(_handle, handle, scale);
+  }
+
+  void setBodyCcdEnabled(int handle, bool enabled) {
+    native.bodySetCcdEnabled(_handle, handle, enabled ? 1 : 0);
+  }
+
+  void wakeBody(int handle) => native.bodyWakeUp(_handle, handle);
+
+  void sleepBody(int handle) => native.bodySleep(_handle, handle);
+
+  bool isBodySleeping(int handle) =>
+      native.bodyIsSleeping(_handle, handle) != 0;
+
   /// Continuous force applied to a body for one step.
   void applyBodyForce(int handle, Vector3 force, {Vector3? atWorldPoint}) {
     final p = atWorldPoint;
