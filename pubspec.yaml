@@ -6,6 +6,7 @@ environment:
 
 workspace:
   - packages/flutter_scene
+  - packages/flutter_scene_rapier
   - examples/flutter_app
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render
