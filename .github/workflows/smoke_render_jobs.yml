@@ -140,24 +140,22 @@ jobs:
           profile: pixel_7
           disable-animations: true
           emulator-options: ${{ matrix.emulator_options }}
-          script: |
-            flutter devices
-            if [ "${{ matrix.backend }}" = "vulkan" ]; then
-              adb shell getprop ro.hardware.vulkan || true
-              adb shell getprop ro.opengles.version || true
-            fi
-            adb shell svc power stayon true
-            adb shell wm dismiss-keyguard || true
-            adb logcat -c
-            cd examples/smoke_render
-            flutter drive \
-              --flavor ${{ matrix.backend }} \
-              --driver=test_driver/integration_test.dart \
-              --target=integration_test/smoke_test.dart \
-              -d emulator-5554 \
-              --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }} \
-              --enable-impeller \
-              --enable-flutter-gpu
+          script: >
+            flutter devices &&
+            (adb shell getprop ro.hardware.vulkan || true) &&
+            (adb shell getprop ro.opengles.version || true) &&
+            adb shell svc power stayon true &&
+            (adb shell wm dismiss-keyguard || true) &&
+            adb logcat -c &&
+            cd examples/smoke_render &&
+            flutter drive
+            --flavor ${{ matrix.backend }}
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            -d emulator-5554
+            --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
+            --enable-impeller
+            --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() }}
