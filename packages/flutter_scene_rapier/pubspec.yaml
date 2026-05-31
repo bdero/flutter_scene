@@ -1,0 +1,30 @@
+name: flutter_scene_rapier
+description: Rapier 3D physics backend for flutter_scene. Implements the abstract physics contract from flutter_scene against Rapier via FFI.
+repository: https://github.com/bdero/flutter_scene
+homepage: https://github.com/bdero/flutter_scene
+version: 0.0.1-dev
+publish_to: none
+
+platforms:
+  macos:
+  ios:
+  android:
+  windows:
+  linux:
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.29.0-1.0.pre.242"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene:
+    path: ../flutter_scene
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  test: ^1.25.15
