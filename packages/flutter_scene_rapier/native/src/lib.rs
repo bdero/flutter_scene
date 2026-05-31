@@ -182,7 +182,10 @@ pub unsafe extern "C" fn fsr_body_create(
     let pose = Pose::from_parts(translation, rotation);
     let mut builder = match kind {
         BODY_KIND_FIXED => RigidBodyBuilder::fixed(),
-        BODY_KIND_KINEMATIC => RigidBodyBuilder::kinematic_velocity_based(),
+        // Position-based: the user moves the node each tick, the
+        // backend pushes the new pose with set_next_kinematic_position
+        // so Rapier derives a velocity that pushes dynamic bodies.
+        BODY_KIND_KINEMATIC => RigidBodyBuilder::kinematic_position_based(),
         _ => RigidBodyBuilder::dynamic(),
     }
     .pose(pose);
@@ -546,6 +549,34 @@ pub unsafe extern "C" fn fsr_body_linear_velocity(
         *out.add(0) = v.x;
         *out.add(1) = v.y;
         *out.add(2) = v.z;
+    }
+}
+
+/// Sets the next-step pose for a kinematic body. Rapier integrates
+/// the displacement from the body's current pose into a velocity so
+/// the body pushes dynamic bodies it contacts.
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_next_kinematic_pose(
+    world: *mut World,
+    raw: u64,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let pose = Pose::from_parts(
+            Vector::new(px, py, pz),
+            Rotation::from_xyzw(qx, qy, qz, qw),
+        );
+        body.set_next_kinematic_position(pose);
     }
 }
 
