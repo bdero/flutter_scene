@@ -1,5 +1,5 @@
-// Stage 4 commit I: property setters that push to native after mount,
-// reads that round-trip back through the FFI.
+// Property setters that push to native after mount, reads that
+// round-trip back through the FFI.
 //
 // ignore_for_file: invalid_use_of_internal_member
 

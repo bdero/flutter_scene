@@ -1,6 +1,7 @@
-// Stage 1 smoke tests for the physics abstraction: lifecycle of the new
-// fixedUpdate hook, traversal order of Node.sceneFixedPass, and the
-// fixed-step substepping driver itself.
+// Smoke tests for the physics abstraction: lifecycle of the
+// fixedUpdate hook on Component, traversal order of
+// Node.sceneFixedPass, and the fixed-step substepping driver
+// (Scene.advancePhysics).
 
 import 'dart:async';
 

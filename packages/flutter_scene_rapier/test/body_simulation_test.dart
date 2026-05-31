@@ -1,7 +1,7 @@
-// Stage 4 commit E tests: rigid body lifecycle and gravity integration
-// through the native FFI. Bodies are exercised without colliders, so
-// each test sets an additional mass explicitly (a body with no
-// colliders has zero mass otherwise and gravity has no effect).
+// Rigid body lifecycle and gravity integration through the native
+// FFI. Bodies are exercised without colliders, so each test sets an
+// additional mass explicitly (a body with no colliders has zero mass
+// otherwise and gravity has no effect).
 //
 // ignore_for_file: invalid_use_of_internal_member
 //
