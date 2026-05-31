@@ -116,7 +116,7 @@ Declare the outputs as assets in `pubspec.yaml` (a `.shaderbundle` plus a
 dependencies:
   flutter:
     sdk: flutter
-  flutter_scene: ^0.15.0
+  flutter_scene: ^0.15.1
   hooks: ^2.0.0
 
 flutter:

@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.15.1
+
 * Added a DataAssets-backed `.fmat` material workflow. `buildMaterials` can now
   auto-discover `materials/**/*.fmat`, register generated shader bundles,
   sidecars, and material indexes as DataAssets, and fail fast with setup
