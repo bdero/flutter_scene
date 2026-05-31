@@ -133,7 +133,6 @@ void main() {
 
   test('changing the shape rebuilds the collider', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
 
     final node = Node();
     final body = RapierRigidBody(type: BodyType.fixed);

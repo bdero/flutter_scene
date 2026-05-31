@@ -804,6 +804,192 @@ pub unsafe extern "C" fn fsr_body_angular_velocity(
     }
 }
 
+/// Attaches a convex hull collider built from `point_count` points
+/// (packed `xyz` floats). Returns `u64::MAX` when Rapier could not
+/// compute a valid hull from the input.
+///
+/// # Safety
+/// `points` must point to at least `point_count * 3` readable `Real`s;
+/// `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_convex_hull(
+    world: *mut World,
+    body_handle: u64,
+    points: *const Real,
+    point_count: usize,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let pts: Vec<Vector> = (0..point_count)
+        .map(|i| {
+            Vector::new(
+                *points.add(i * 3),
+                *points.add(i * 3 + 1),
+                *points.add(i * 3 + 2),
+            )
+        })
+        .collect();
+    let Some(builder) = ColliderBuilder::convex_hull(&pts) else {
+        return u64::MAX;
+    };
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder = builder
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
+/// Attaches a triangle mesh collider. Vertices are packed `xyz`
+/// floats; indices are packed `u32` triples per triangle. Returns
+/// `u64::MAX` when Rapier rejects the mesh.
+///
+/// # Safety
+/// `vertices` must point to at least `vertex_count * 3` readable
+/// `Real`s. `indices` must point to at least `triangle_count * 3`
+/// readable `u32`s. `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_trimesh(
+    world: *mut World,
+    body_handle: u64,
+    vertices: *const Real,
+    vertex_count: usize,
+    indices: *const u32,
+    triangle_count: usize,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let verts: Vec<Vector> = (0..vertex_count)
+        .map(|i| {
+            Vector::new(
+                *vertices.add(i * 3),
+                *vertices.add(i * 3 + 1),
+                *vertices.add(i * 3 + 2),
+            )
+        })
+        .collect();
+    let tris: Vec<[u32; 3]> = (0..triangle_count)
+        .map(|i| {
+            [
+                *indices.add(i * 3),
+                *indices.add(i * 3 + 1),
+                *indices.add(i * 3 + 2),
+            ]
+        })
+        .collect();
+    let Ok(builder) = ColliderBuilder::trimesh(verts, tris) else {
+        return u64::MAX;
+    };
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder = builder
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
+        .position(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
+/// Attaches a heightfield collider. `nrows` is the number of samples
+/// along Z, `ncols` is the number of samples along X. `heights` is
+/// row-major: `heights[z * ncols + x]` is the Y value at column `x`
+/// row `z`. The XZ extent is `(ncols-1) * scale_x` by
+/// `(nrows-1) * scale_z`, centered on the origin.
+///
+/// # Safety
+/// `heights` must point to at least `nrows * ncols` readable `Real`s;
+/// `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_heightfield(
+    world: *mut World,
+    body_handle: u64,
+    nrows: u32,
+    ncols: u32,
+    heights: *const Real,
+    scale_x: Real,
+    scale_y: Real,
+    scale_z: Real,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+    is_sensor: u8,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) -> u64 {
+    let w = &mut *world;
+    let n_rows = nrows as usize;
+    let n_cols = ncols as usize;
+    // Parry's Array2 is column-major (data[row + col * nrows]) while
+    // our input is row-major. Transpose into a fresh Vec.
+    let mut data: Vec<Real> = vec![0.0; n_rows * n_cols];
+    for z in 0..n_rows {
+        for x in 0..n_cols {
+            data[z + x * n_rows] = *heights.add(z * n_cols + x);
+        }
+    }
+    let array = Array2::new(n_rows, n_cols, data);
+    let pose = Pose::from_parts(
+        Vector::new(px, py, pz),
+        Rotation::from_xyzw(qx, qy, qz, qw),
+    );
+    let builder =
+        ColliderBuilder::heightfield(array, Vector::new(scale_x, scale_y, scale_z))
+            .friction(friction)
+            .restitution(restitution)
+            .density(density)
+            .sensor(is_sensor != 0)
+            .position(pose);
+    let handle = w.collider_set.insert_with_parent(
+        builder,
+        handle_from_raw(body_handle),
+        &mut w.rigid_body_set,
+    );
+    collider_to_raw(handle)
+}
+
 /// Updates a collider's friction, restitution, and density (mass
 /// recomputed lazily).
 ///

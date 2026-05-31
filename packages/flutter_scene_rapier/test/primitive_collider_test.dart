@@ -119,15 +119,4 @@ void main() {
     expect(pos.y, greaterThan(0.8));
     expect(pos.y, lessThan(1.3));
   });
-
-  test('heavy shapes still throw UnimplementedError', () {
-    final root = _bootWorld();
-    final node = Node();
-    node.addComponent(RapierRigidBody(type: BodyType.dynamic_));
-    final collider = RapierCollider(shape: CompoundShape(children: []));
-    node.addComponent(collider);
-    root.add(node);
-    node.getComponents<RapierRigidBody>().first.mount();
-    expect(collider.mount, throwsUnimplementedError);
-  });
 }

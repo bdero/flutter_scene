@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_scene/scene.dart';
@@ -222,6 +223,141 @@ class RapierWorld extends PhysicsWorld {
       r.z,
       r.w,
     );
+  }
+
+  /// Cooks a convex hull collider from packed `xyz` points. Returns
+  /// null when Rapier cannot construct a valid hull (degenerate or
+  /// near-coplanar point sets).
+  int? createConvexHullCollider({
+    required int bodyHandle,
+    required Float32List points,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    final ptr = calloc<Float>(points.length);
+    try {
+      for (var i = 0; i < points.length; i++) {
+        ptr[i] = points[i];
+      }
+      final handle = native.colliderConvexHull(
+        _handle,
+        bodyHandle,
+        ptr,
+        points.length ~/ 3,
+        material.friction,
+        material.restitution,
+        material.density,
+        isTrigger ? 1 : 0,
+        t.x,
+        t.y,
+        t.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+      );
+      if (handle == 0xFFFFFFFFFFFFFFFF) return null;
+      return handle;
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Cooks a triangle mesh collider. Returns null when Rapier rejects
+  /// the mesh (degenerate triangles, out-of-range indices, etc.).
+  int? createTriMeshCollider({
+    required int bodyHandle,
+    required Float32List vertices,
+    required Uint32List indices,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    final vPtr = calloc<Float>(vertices.length);
+    final iPtr = calloc<Uint32>(indices.length);
+    try {
+      for (var i = 0; i < vertices.length; i++) {
+        vPtr[i] = vertices[i];
+      }
+      for (var i = 0; i < indices.length; i++) {
+        iPtr[i] = indices[i];
+      }
+      final handle = native.colliderTriMesh(
+        _handle,
+        bodyHandle,
+        vPtr,
+        vertices.length ~/ 3,
+        iPtr,
+        indices.length ~/ 3,
+        material.friction,
+        material.restitution,
+        material.density,
+        isTrigger ? 1 : 0,
+        t.x,
+        t.y,
+        t.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+      );
+      if (handle == 0xFFFFFFFFFFFFFFFF) return null;
+      return handle;
+    } finally {
+      calloc.free(vPtr);
+      calloc.free(iPtr);
+    }
+  }
+
+  /// Cooks a heightfield collider. The Dart heights are row-major
+  /// (`heights[z * width + x]`); this method transposes into the
+  /// column-major layout Rapier wants.
+  int createHeightFieldCollider({
+    required int bodyHandle,
+    required int width,
+    required int depth,
+    required Float32List heights,
+    required Vector3 scale,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    final ptr = calloc<Float>(heights.length);
+    try {
+      for (var i = 0; i < heights.length; i++) {
+        ptr[i] = heights[i];
+      }
+      return native.colliderHeightField(
+        _handle,
+        bodyHandle,
+        depth, // nrows = Z dimension
+        width, // ncols = X dimension
+        ptr,
+        scale.x,
+        scale.y,
+        scale.z,
+        material.friction,
+        material.restitution,
+        material.density,
+        isTrigger ? 1 : 0,
+        t.x,
+        t.y,
+        t.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+      );
+    } finally {
+      calloc.free(ptr);
+    }
   }
 
   /// Removes a collider previously inserted by one of the
