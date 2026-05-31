@@ -5,15 +5,17 @@ import 'package:vector_math/vector_math.dart';
 
 /// [Collider] backed by Rapier 3D.
 ///
-/// Cooks its [shape] into a Rapier collider on mount and attaches it
-/// to the sibling [RapierRigidBody] on the same node. The collider's
-/// pose, friction, restitution, density, and trigger flag are passed
-/// through to the native side.
+/// Cooks its [shape] into one or more Rapier colliders on mount and
+/// attaches them to the sibling [RapierRigidBody] on the same node.
+/// Material, pose, layer, mask, and trigger flag pass through to the
+/// native side.
 ///
-/// Stage 4 commit F supports [SphereShape] only. The remaining
-/// primitive shapes (box, capsule, cylinder) and the heavy shapes
-/// (convex hull, trimesh, height field, compound) land in subsequent
-/// commits.
+/// All shape variants from the abstract API are supported:
+/// SphereShape, BoxShape, CapsuleShape, CylinderShape (Rapier
+/// primitives), ConvexHullShape, TriMeshShape, HeightFieldShape (cooked
+/// via Rapier's builders), and CompoundShape (each child is attached
+/// as its own Rapier collider on the same body, so a Dart compound
+/// produces multiple native handles).
 class RapierCollider extends Collider {
   RapierCollider({
     required Shape shape,
@@ -37,21 +39,26 @@ class RapierCollider extends Collider {
   Matrix4 _localPose;
 
   RapierWorld? _world;
-  int? _handle;
+  // One handle per Rapier collider this component owns. For primitive
+  // and heavy-mesh shapes this has length 1; for CompoundShape it has
+  // one entry per leaf primitive.
+  List<int> _handles = const [];
 
-  /// The native collider handle once mounted, or null when the
-  /// collider has no ancestor world or no sibling body.
-  int? get nativeHandle => _handle;
+  /// The first native handle this collider owns, or null when not
+  /// mounted. For compound shapes use [nativeHandles] to enumerate all.
+  int? get nativeHandle => _handles.isEmpty ? null : _handles.first;
+
+  /// Every Rapier collider handle this component owns. Always
+  /// non-empty between mount and unmount on a successful build;
+  /// returns an empty list when the collider could not be cooked
+  /// (degenerate convex hull, malformed trimesh) or before mount.
+  List<int> get nativeHandles => List.unmodifiable(_handles);
 
   @override
   Shape get shape => _shape;
   @override
   set shape(Shape value) {
     _shape = value;
-    // Re-cook by tearing down the old collider and inserting a fresh
-    // one with the same material/groups/pose; cheaper paths exist in
-    // Rapier (set_shape on a SharedShape) but a destroy/recreate
-    // keeps the cooking path identical to onMount.
     _rebuild();
   }
 
@@ -60,8 +67,11 @@ class RapierCollider extends Collider {
   @override
   set material(PhysicsMaterial value) {
     _material = value;
-    final w = _world, h = _handle;
-    if (w != null && h != null) w.setColliderMaterial(h, value);
+    final w = _world;
+    if (w == null) return;
+    for (final h in _handles) {
+      w.setColliderMaterial(h, value);
+    }
   }
 
   @override
@@ -85,8 +95,11 @@ class RapierCollider extends Collider {
   @override
   set isTrigger(bool value) {
     _isTrigger = value;
-    final w = _world, h = _handle;
-    if (w != null && h != null) w.setColliderSensor(h, value);
+    final w = _world;
+    if (w == null) return;
+    for (final h in _handles) {
+      w.setColliderSensor(h, value);
+    }
   }
 
   @override
@@ -94,22 +107,33 @@ class RapierCollider extends Collider {
   @override
   set localPose(Matrix4 value) {
     _localPose = value;
-    final w = _world, h = _handle;
-    if (w != null && h != null) w.setColliderLocalPose(h, value);
+    final w = _world;
+    if (w == null || _handles.isEmpty) return;
+    // For a compound, the localPose is the compound's offset; child
+    // poses are pre-composed at mount time. Re-cooking the whole
+    // collider keeps the children consistent.
+    if (_shape is CompoundShape) {
+      _rebuild();
+      return;
+    }
+    w.setColliderLocalPose(_handles.first, value);
   }
 
   void _pushCollisionGroups() {
-    final w = _world, h = _handle;
-    if (w != null && h != null) {
+    final w = _world;
+    if (w == null) return;
+    for (final h in _handles) {
       w.setColliderCollisionGroups(h, _collisionLayer, _collisionMask);
     }
   }
 
   void _rebuild() {
-    final w = _world, h = _handle;
-    if (w == null || h == null) return;
-    w.destroyCollider(h);
-    _handle = null;
+    final w = _world;
+    if (w == null) return;
+    for (final h in _handles) {
+      w.destroyCollider(h);
+    }
+    _handles = const [];
     onMount();
   }
 
@@ -126,70 +150,115 @@ class RapierCollider extends Collider {
       );
     }
     _world = world;
-    final shape = _shape;
+    _handles = _cookShape(_shape, _localPose, world, bodyHandle);
+
+    if (_collisionLayer != 0xFFFFFFFF || _collisionMask != 0xFFFFFFFF) {
+      for (final h in _handles) {
+        world.setColliderCollisionGroups(h, _collisionLayer, _collisionMask);
+      }
+    }
+  }
+
+  List<int> _cookShape(
+    Shape shape,
+    Matrix4 pose,
+    RapierWorld world,
+    int bodyHandle,
+  ) {
     switch (shape) {
       case SphereShape():
-        _handle = world.createSphereCollider(
-          bodyHandle: bodyHandle,
-          radius: shape.radius,
-          material: _material,
-          isTrigger: _isTrigger,
-          localPose: _localPose,
-        );
+        return [
+          world.createSphereCollider(
+            bodyHandle: bodyHandle,
+            radius: shape.radius,
+            material: _material,
+            isTrigger: _isTrigger,
+            localPose: pose,
+          ),
+        ];
       case BoxShape():
-        _handle = world.createBoxCollider(
-          bodyHandle: bodyHandle,
-          halfExtents: shape.halfExtents,
-          material: _material,
-          isTrigger: _isTrigger,
-          localPose: _localPose,
-        );
+        return [
+          world.createBoxCollider(
+            bodyHandle: bodyHandle,
+            halfExtents: shape.halfExtents,
+            material: _material,
+            isTrigger: _isTrigger,
+            localPose: pose,
+          ),
+        ];
       case CapsuleShape():
-        _handle = world.createCapsuleCollider(
-          bodyHandle: bodyHandle,
-          halfHeight: shape.halfHeight,
-          radius: shape.radius,
-          material: _material,
-          isTrigger: _isTrigger,
-          localPose: _localPose,
-        );
+        return [
+          world.createCapsuleCollider(
+            bodyHandle: bodyHandle,
+            halfHeight: shape.halfHeight,
+            radius: shape.radius,
+            material: _material,
+            isTrigger: _isTrigger,
+            localPose: pose,
+          ),
+        ];
       case CylinderShape():
-        _handle = world.createCylinderCollider(
+        return [
+          world.createCylinderCollider(
+            bodyHandle: bodyHandle,
+            halfHeight: shape.halfHeight,
+            radius: shape.radius,
+            material: _material,
+            isTrigger: _isTrigger,
+            localPose: pose,
+          ),
+        ];
+      case ConvexHullShape():
+        final h = world.createConvexHullCollider(
           bodyHandle: bodyHandle,
-          halfHeight: shape.halfHeight,
-          radius: shape.radius,
+          points: shape.points,
           material: _material,
           isTrigger: _isTrigger,
-          localPose: _localPose,
+          localPose: pose,
         );
-      case ConvexHullShape() ||
-          TriMeshShape() ||
-          HeightFieldShape() ||
-          CompoundShape():
-        throw UnimplementedError(
-          'RapierCollider does not yet cook ${shape.runtimeType}. '
-          'Heavy shape cooking lands in a follow-on commit.',
+        return h == null ? const [] : [h];
+      case TriMeshShape():
+        final h = world.createTriMeshCollider(
+          bodyHandle: bodyHandle,
+          vertices: shape.vertices,
+          indices: shape.indices,
+          material: _material,
+          isTrigger: _isTrigger,
+          localPose: pose,
         );
-    }
-    // Push non-default collision groups so the runtime grouping
-    // matches the configured layer/mask.
-    if (_collisionLayer != 0xFFFFFFFF || _collisionMask != 0xFFFFFFFF) {
-      world.setColliderCollisionGroups(
-        _handle!,
-        _collisionLayer,
-        _collisionMask,
-      );
+        return h == null ? const [] : [h];
+      case HeightFieldShape():
+        return [
+          world.createHeightFieldCollider(
+            bodyHandle: bodyHandle,
+            width: shape.width,
+            depth: shape.depth,
+            heights: shape.heights,
+            scale: shape.scale,
+            material: _material,
+            isTrigger: _isTrigger,
+            localPose: pose,
+          ),
+        ];
+      case CompoundShape():
+        final result = <int>[];
+        for (final child in shape.children) {
+          final childPose = pose.multiplied(child.localPose);
+          result.addAll(_cookShape(child.shape, childPose, world, bodyHandle));
+        }
+        return result;
     }
   }
 
   @override
   void onUnmount() {
     final world = _world;
-    final handle = _handle;
-    if (world != null && handle != null) {
-      world.destroyCollider(handle);
+    if (world != null) {
+      for (final h in _handles) {
+        world.destroyCollider(h);
+      }
     }
     _world = null;
-    _handle = null;
+    _handles = const [];
   }
 }

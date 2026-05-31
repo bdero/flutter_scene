@@ -442,6 +442,129 @@ external int colliderCylinder(
   double qw,
 );
 
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Pointer<Float>,
+    Size,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_convex_hull')
+external int colliderConvexHull(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  Pointer<Float> points,
+  int pointCount,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Pointer<Float>,
+    Size,
+    Pointer<Uint32>,
+    Size,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_trimesh')
+external int colliderTriMesh(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  Pointer<Float> vertices,
+  int vertexCount,
+  Pointer<Uint32> indices,
+  int triangleCount,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint32,
+    Uint32,
+    Pointer<Float>,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_collider_heightfield')
+external int colliderHeightField(
+  Pointer<NativeWorld> world,
+  int bodyHandle,
+  int nrows,
+  int ncols,
+  Pointer<Float> heights,
+  double scaleX,
+  double scaleY,
+  double scaleZ,
+  double friction,
+  double restitution,
+  double density,
+  int isSensor,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
 @Native<Void Function(Pointer<NativeWorld>, Uint64, Float, Float, Float)>(
   symbol: 'fsr_collider_set_material',
 )
