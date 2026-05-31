@@ -1,0 +1,19 @@
+[package]
+name = "flutter_scene_rapier_native"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Native shim for the flutter_scene_rapier Flutter package. Wraps rapier3d behind a thin C ABI."
+
+[lib]
+name = "flutter_scene_rapier_native"
+# staticlib: iOS and platforms that prefer static linkage.
+# cdylib:    Android, desktop dynamic linking via native_assets.
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+rapier3d = "0.32"
+
+[profile.release]
+lto = true
+codegen-units = 1
