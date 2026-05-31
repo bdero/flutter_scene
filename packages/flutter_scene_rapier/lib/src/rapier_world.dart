@@ -100,8 +100,98 @@ class RapierWorld extends PhysicsWorld {
     );
   }
 
+  /// Cooks a cuboid collider and attaches it to a rigid body.
+  int createBoxCollider({
+    required int bodyHandle,
+    required Vector3 halfExtents,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    return native.colliderBox(
+      _handle,
+      bodyHandle,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+      material.friction,
+      material.restitution,
+      material.density,
+      isTrigger ? 1 : 0,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
+  }
+
+  /// Cooks a Y-axis capsule collider and attaches it to a rigid body.
+  int createCapsuleCollider({
+    required int bodyHandle,
+    required double halfHeight,
+    required double radius,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    return native.colliderCapsule(
+      _handle,
+      bodyHandle,
+      halfHeight,
+      radius,
+      material.friction,
+      material.restitution,
+      material.density,
+      isTrigger ? 1 : 0,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
+  }
+
+  /// Cooks a Y-axis cylinder collider and attaches it to a rigid body.
+  int createCylinderCollider({
+    required int bodyHandle,
+    required double halfHeight,
+    required double radius,
+    required PhysicsMaterial material,
+    required bool isTrigger,
+    required Matrix4 localPose,
+  }) {
+    final t = localPose.getTranslation();
+    final r = Quaternion.fromRotation(localPose.getRotation());
+    return native.colliderCylinder(
+      _handle,
+      bodyHandle,
+      halfHeight,
+      radius,
+      material.friction,
+      material.restitution,
+      material.density,
+      isTrigger ? 1 : 0,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
+  }
+
   /// Removes a collider previously inserted by one of the
-  /// [createSphereCollider]-style methods.
+  /// `create*Collider` methods.
   void destroyCollider(int handle) {
     native.colliderDestroy(_handle, handle);
   }
