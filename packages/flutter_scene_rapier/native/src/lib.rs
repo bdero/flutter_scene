@@ -804,6 +804,93 @@ pub unsafe extern "C" fn fsr_body_angular_velocity(
     }
 }
 
+/// Updates a collider's friction, restitution, and density (mass
+/// recomputed lazily).
+///
+/// # Safety
+/// `world` must be live; `raw` must be a live collider handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_set_material(
+    world: *mut World,
+    raw: u64,
+    friction: Real,
+    restitution: Real,
+    density: Real,
+) {
+    let w = &mut *world;
+    if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
+        c.set_friction(friction);
+        c.set_restitution(restitution);
+        c.set_density(density);
+    }
+}
+
+/// Sets the collider's collision membership and filter as `u32`
+/// bitmasks. A pair interacts when each side's membership intersects
+/// the other side's filter.
+///
+/// # Safety
+/// `world` must be live; `raw` must be a live collider handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_set_collision_groups(
+    world: *mut World,
+    raw: u64,
+    memberships: u32,
+    filter: u32,
+) {
+    let w = &mut *world;
+    if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
+        c.set_collision_groups(InteractionGroups::new(
+            Group::from(memberships),
+            Group::from(filter),
+            InteractionTestMode::And,
+        ));
+    }
+}
+
+/// Flips the collider between solid (responds to contacts) and sensor
+/// (overlaps without contact response, fires events instead).
+///
+/// # Safety
+/// `world` must be live; `raw` must be a live collider handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_set_sensor(
+    world: *mut World,
+    raw: u64,
+    is_sensor: u8,
+) {
+    let w = &mut *world;
+    if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
+        c.set_sensor(is_sensor != 0);
+    }
+}
+
+/// Updates the collider's pose relative to its parent body.
+///
+/// # Safety
+/// `world` must be live; `raw` must be a live collider handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_collider_set_local_pose(
+    world: *mut World,
+    raw: u64,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) {
+    let w = &mut *world;
+    if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
+        let pose = Pose::from_parts(
+            Vector::new(px, py, pz),
+            Rotation::from_xyzw(qx, qy, qz, qw),
+        );
+        c.set_position_wrt_parent(pose);
+    }
+}
+
 /// Removes a collider from the world.
 ///
 /// # Safety

@@ -46,32 +46,72 @@ class RapierCollider extends Collider {
   @override
   Shape get shape => _shape;
   @override
-  set shape(Shape value) => _shape = value;
+  set shape(Shape value) {
+    _shape = value;
+    // Re-cook by tearing down the old collider and inserting a fresh
+    // one with the same material/groups/pose; cheaper paths exist in
+    // Rapier (set_shape on a SharedShape) but a destroy/recreate
+    // keeps the cooking path identical to onMount.
+    _rebuild();
+  }
 
   @override
   PhysicsMaterial get material => _material;
   @override
-  set material(PhysicsMaterial value) => _material = value;
+  set material(PhysicsMaterial value) {
+    _material = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setColliderMaterial(h, value);
+  }
 
   @override
   int get collisionLayer => _collisionLayer;
   @override
-  set collisionLayer(int value) => _collisionLayer = value;
+  set collisionLayer(int value) {
+    _collisionLayer = value;
+    _pushCollisionGroups();
+  }
 
   @override
   int get collisionMask => _collisionMask;
   @override
-  set collisionMask(int value) => _collisionMask = value;
+  set collisionMask(int value) {
+    _collisionMask = value;
+    _pushCollisionGroups();
+  }
 
   @override
   bool get isTrigger => _isTrigger;
   @override
-  set isTrigger(bool value) => _isTrigger = value;
+  set isTrigger(bool value) {
+    _isTrigger = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setColliderSensor(h, value);
+  }
 
   @override
   Matrix4 get localPose => _localPose;
   @override
-  set localPose(Matrix4 value) => _localPose = value;
+  set localPose(Matrix4 value) {
+    _localPose = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setColliderLocalPose(h, value);
+  }
+
+  void _pushCollisionGroups() {
+    final w = _world, h = _handle;
+    if (w != null && h != null) {
+      w.setColliderCollisionGroups(h, _collisionLayer, _collisionMask);
+    }
+  }
+
+  void _rebuild() {
+    final w = _world, h = _handle;
+    if (w == null || h == null) return;
+    w.destroyCollider(h);
+    _handle = null;
+    onMount();
+  }
 
   @override
   void onMount() {
@@ -130,6 +170,15 @@ class RapierCollider extends Collider {
           'RapierCollider does not yet cook ${shape.runtimeType}. '
           'Heavy shape cooking lands in a follow-on commit.',
         );
+    }
+    // Push non-default collision groups so the runtime grouping
+    // matches the configured layer/mask.
+    if (_collisionLayer != 0xFFFFFFFF || _collisionMask != 0xFFFFFFFF) {
+      world.setColliderCollisionGroups(
+        _handle!,
+        _collisionLayer,
+        _collisionMask,
+      );
     }
   }
 
