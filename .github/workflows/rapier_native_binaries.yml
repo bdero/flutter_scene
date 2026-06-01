@@ -122,6 +122,39 @@ jobs:
           path: dist/${{ env.LIB_NAME }}-${{ matrix.triple }}.${{ matrix.ext }}
           if-no-files-found: error
 
+  # The web target cannot use the code-asset matrix above (no dart:ffi on
+  # the web); it loads a WebAssembly build of the shim instead. Build and
+  # size-optimize it here so the artifact is available for shipping.
+  build-wasm:
+    name: Build wasm32
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install binaryen
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Build
+        working-directory: ${{ env.NATIVE_DIR }}
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Optimize
+        shell: bash
+        run: |
+          mkdir -p dist
+          wasm-opt -Oz \
+            "${NATIVE_DIR}/target/wasm32-unknown-unknown/release/${LIB_NAME}.wasm" \
+            -o "dist/${LIB_NAME}.wasm"
+          ls -l "dist/${LIB_NAME}.wasm"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm32-unknown-unknown
+          path: dist/${{ env.LIB_NAME }}.wasm
+          if-no-files-found: error
+
   release:
     name: Assemble manifest and release
     needs: build

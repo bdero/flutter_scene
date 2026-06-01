@@ -2,6 +2,8 @@ import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart' show Scene, PostInsertion;
+import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
+    show RapierWorld;
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
@@ -63,6 +65,10 @@ class _MyAppState extends State<MyApp> {
     _ready = Future.wait([
       Scene.initializeStaticResources(),
       loadExampleEffects(),
+      // The Physics example builds a RapierWorld in initState. On the web
+      // that needs the Rapier wasm module loaded first; this is a no-op on
+      // native targets.
+      RapierWorld.ensureInitialized(),
     ]);
 
     super.initState();
