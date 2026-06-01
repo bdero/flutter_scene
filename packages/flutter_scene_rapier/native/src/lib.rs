@@ -5,6 +5,7 @@
 //! world go through this surface; the Dart side never sees Rapier's
 //! Rust types directly.
 
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::parry;
 use rapier3d::prelude::*;
 use std::os::raw::c_int;
@@ -125,6 +126,23 @@ impl EventHandler for CollisionCollector {
         _total_force_magnitude: Real,
     ) {
     }
+}
+
+/// The corrected movement a kinematic character controller resolved for
+/// one `fsr_character_move` call. Same layout as the Dart-side struct in
+/// `lib/src/ffi/bindings.dart`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FsrCharacterMovement {
+    /// World-space translation to apply to the character this move.
+    pub tx: Real,
+    pub ty: Real,
+    pub tz: Real,
+    /// 1 when the character is touching the ground after the move.
+    pub grounded: u8,
+    /// 1 when the character is sliding down a slope steeper than the
+    /// configured slide angle.
+    pub sliding: u8,
 }
 
 /// Per-axis configuration for a generic (6DOF) joint. Same layout as the
@@ -2250,6 +2268,110 @@ pub unsafe extern "C" fn fsr_joint_update_generic(
 pub unsafe extern "C" fn fsr_joint_destroy(world: *mut World, raw: u64) {
     let w = &mut *world;
     w.impulse_joints.remove(joint_handle_from_raw(raw), true);
+}
+
+/// Resolves one kinematic-character move. Casts the character collider's
+/// shape from its current pose along `(dx, dy, dz)` against the world
+/// (excluding the character's own collider), applying move-and-slide,
+/// slope handling, optional autostep, and optional snap-to-ground, and
+/// writes the corrected movement into `out`. The caller applies the
+/// returned translation to the character itself. `snap_to_ground < 0`
+/// disables snapping; `autostep == 0` disables stepping.
+///
+/// # Safety
+/// `world` must be live; `collider` must be a live collider handle; `out`
+/// must point to a writable [`FsrCharacterMovement`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_character_move(
+    world: *mut World,
+    collider: u64,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    dt: Real,
+    up_x: Real,
+    up_y: Real,
+    up_z: Real,
+    offset: Real,
+    slide: u8,
+    max_slope_climb_angle: Real,
+    min_slope_slide_angle: Real,
+    snap_to_ground: Real,
+    autostep: u8,
+    autostep_max_height: Real,
+    autostep_min_width: Real,
+    autostep_include_dynamic: u8,
+    out: *mut FsrCharacterMovement,
+) {
+    let w = &*world;
+    let handle = collider_from_raw(collider);
+    let Some(c) = w.collider_set.get(handle) else {
+        *out = FsrCharacterMovement {
+            tx: 0.0,
+            ty: 0.0,
+            tz: 0.0,
+            grounded: 0,
+            sliding: 0,
+        };
+        return;
+    };
+    // Clone the shared shape (cheap Arc bump) and copy the pose so no
+    // borrow of the collider set outlives the query-pipeline build.
+    let shape = c.shared_shape().clone();
+    let pose = *c.position();
+
+    let controller = KinematicCharacterController {
+        up: Vector::new(up_x, up_y, up_z).normalize(),
+        offset: CharacterLength::Absolute(offset),
+        slide: slide != 0,
+        autostep: if autostep != 0 {
+            Some(CharacterAutostep {
+                max_height: CharacterLength::Absolute(autostep_max_height),
+                min_width: CharacterLength::Absolute(autostep_min_width),
+                include_dynamic_bodies: autostep_include_dynamic != 0,
+            })
+        } else {
+            None
+        },
+        max_slope_climb_angle,
+        min_slope_slide_angle,
+        snap_to_ground: if snap_to_ground >= 0.0 {
+            Some(CharacterLength::Absolute(snap_to_ground))
+        } else {
+            None
+        },
+        normal_nudge_factor: 1.0e-4,
+    };
+
+    let query_pipeline = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        QueryFilter::new().exclude_collider(handle),
+    );
+
+    let movement = controller.move_shape(
+        dt,
+        &query_pipeline,
+        shape.as_ref(),
+        &pose,
+        Vector::new(dx, dy, dz),
+        |_collision| {
+            // TODO(character-collisions): forward the per-hit
+            // CharacterCollision list so callers can react to what was
+            // hit, and apply impulses so the character pushes dynamic
+            // bodies it walks into.
+        },
+    );
+
+    *out = FsrCharacterMovement {
+        tx: movement.translation.x,
+        ty: movement.translation.y,
+        tz: movement.translation.z,
+        grounded: movement.grounded as u8,
+        sliding: movement.is_sliding_down_slope as u8,
+    };
 }
 
 #[cfg(test)]
