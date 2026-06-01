@@ -23,13 +23,52 @@ Vector3 triangleNormal(Float32List positions, List<int> indices, int triangle) {
 
 void main() {
   group('buildCuboidArrays', () {
-    test('produces eight colored corners and twelve triangles', () {
-      final arrays = buildCuboidArrays(Vector3(2, 2, 2));
-      expect(arrays.positions, hasLength(8 * 3));
-      expect(arrays.colors, hasLength(8 * 4));
-      expect(arrays.indices, hasLength(12 * 3));
-      // The first corner sits at -extents/2 on each axis.
-      expect(arrays.positions.sublist(0, 3), [-1, -1, -1]);
+    test(
+      'produces 24 per-face vertices, 12 triangles, flat outward normals',
+      () {
+        final arrays = buildCuboidArrays(Vector3(2, 2, 2));
+        expect(arrays.positions, hasLength(24 * 3));
+        expect(arrays.normals, hasLength(24 * 3));
+        expect(arrays.indices, hasLength(12 * 3));
+        // No vertex colors unless explicitly requested.
+        expect(arrays.colors, isNull);
+        // The first vertex sits at -extents/2 on each axis.
+        expect(arrays.positions.sublist(0, 3), [-1, -1, -1]);
+
+        // Each of the six faces shares one axis-aligned unit normal across its
+        // four vertices, and both its triangles are wound so the front face
+        // points opposite that normal (the engine's front-face convention),
+        // i.e. the stored normal faces outward.
+        final normals = arrays.normals!;
+        for (var f = 0; f < 6; f++) {
+          final base = f * 4;
+          final n = Vector3(
+            normals[base * 3],
+            normals[base * 3 + 1],
+            normals[base * 3 + 2],
+          );
+          expect(n.length, closeTo(1, 1e-6));
+          for (var i = 1; i < 4; i++) {
+            final v = base + i;
+            expect(normals[v * 3], n.x);
+            expect(normals[v * 3 + 1], n.y);
+            expect(normals[v * 3 + 2], n.z);
+          }
+          expect(
+            triangleNormal(arrays.positions, arrays.indices, f * 2).dot(n),
+            lessThan(0),
+          );
+          expect(
+            triangleNormal(arrays.positions, arrays.indices, f * 2 + 1).dot(n),
+            lessThan(0),
+          );
+        }
+      },
+    );
+
+    test('debugColors emits one color per vertex', () {
+      final arrays = buildCuboidArrays(Vector3(2, 2, 2), debugColors: true);
+      expect(arrays.colors, hasLength(24 * 4));
     });
   });
 
