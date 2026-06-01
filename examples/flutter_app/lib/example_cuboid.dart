@@ -34,7 +34,10 @@ class ExampleCuboidState extends State<ExampleCuboid> {
 
   @override
   void initState() {
-    final mesh = Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), UnlitMaterial());
+    final mesh = Mesh(
+      CuboidGeometry(vm.Vector3(1, 1, 1), debugColors: true),
+      UnlitMaterial(),
+    );
     // The camera orbits at 1 rad/s, so the spin rate is chosen to differ
     // from it; otherwise the cube would appear stationary relative to the
     // camera.

@@ -145,10 +145,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = color
       ..roughnessFactor = 0.45
-      ..metallicFactor = 0.0
-      // CuboidGeometry bakes per-corner debug vertex colors (including a
-      // black corner); ignore them so the base color shows cleanly.
-      ..vertexColorWeight = 0.0;
+      ..metallicFactor = 0.0;
     return Mesh(CuboidGeometry(size), material);
   }
 
