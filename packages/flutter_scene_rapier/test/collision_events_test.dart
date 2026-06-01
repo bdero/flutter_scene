@@ -72,6 +72,46 @@ void main() {
     await sub.cancel();
   });
 
+  test('CollisionBegan carries solved contact-manifold points', () async {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+
+    final events = <CollisionEvent>[];
+    final sub = world.collisions.listen(events.add);
+
+    _add(
+      root,
+      BoxShape(halfExtents: Vector3(10, 0.5, 10)),
+      Vector3(0, -0.5, 0),
+      BodyType.fixed,
+    );
+    _add(
+      root,
+      SphereShape(radius: 0.5),
+      Vector3(0, 3, 0),
+      BodyType.dynamic_,
+      mass: 1,
+    );
+
+    for (var i = 0; i < 120; i++) {
+      world.step(1.0 / 60.0);
+    }
+    await Future<void>.delayed(Duration.zero);
+
+    final began = events.whereType<CollisionBegan>().first;
+    expect(began.contacts, isNotEmpty);
+    final contact = began.contacts.first;
+    // The floor contact is essentially flat: a near-vertical unit normal,
+    // a point near the floor's top surface (y == 0), and touching shapes.
+    expect(contact.worldNormal.y.abs(), greaterThan(0.9));
+    expect(contact.worldPosition.y.abs(), lessThan(0.2));
+    expect(contact.separation.abs(), lessThan(0.2));
+    // The solver applied a non-zero normal impulse to arrest the fall.
+    expect(contact.impulse, greaterThan(0));
+
+    await sub.cancel();
+  });
+
   test('a body entering and leaving a trigger emits enter then exit', () async {
     final root = _boot(gravity: Vector3.zero());
     final world = root.getComponent<RapierWorld>()!;
