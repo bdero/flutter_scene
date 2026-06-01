@@ -237,6 +237,125 @@ external int worldShapeCastSphere(
   Pointer<FsrHit> out,
 );
 
+@Native<
+  Uint8 Function(
+    Pointer<NativeWorld>,
+    Float, // ox, oy, oz
+    Float,
+    Float,
+    Float, // qx, qy, qz, qw
+    Float,
+    Float,
+    Float,
+    Float, // hx, hy, hz
+    Float,
+    Float,
+    Float, // dx, dy, dz
+    Float,
+    Float,
+    Float, // distance
+    Uint8,
+    Pointer<FsrHit>,
+  )
+>(symbol: 'fsr_world_shape_cast_box')
+external int worldShapeCastBox(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+  double hx,
+  double hy,
+  double hz,
+  double dx,
+  double dy,
+  double dz,
+  double distance,
+  int filterFlags,
+  Pointer<FsrHit> out,
+);
+
+@Native<
+  Uint8 Function(
+    Pointer<NativeWorld>,
+    Float, // ox, oy, oz
+    Float,
+    Float,
+    Float, // qx, qy, qz, qw
+    Float,
+    Float,
+    Float,
+    Float, // halfHeight
+    Float, // radius
+    Float, // dx, dy, dz
+    Float,
+    Float,
+    Float, // distance
+    Uint8,
+    Pointer<FsrHit>,
+  )
+>(symbol: 'fsr_world_shape_cast_capsule')
+external int worldShapeCastCapsule(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+  double halfHeight,
+  double radius,
+  double dx,
+  double dy,
+  double dz,
+  double distance,
+  int filterFlags,
+  Pointer<FsrHit> out,
+);
+
+@Native<
+  Uint8 Function(
+    Pointer<NativeWorld>,
+    Float, // ox, oy, oz
+    Float,
+    Float,
+    Float, // qx, qy, qz, qw
+    Float,
+    Float,
+    Float,
+    Float, // halfHeight
+    Float, // radius
+    Float, // dx, dy, dz
+    Float,
+    Float,
+    Float, // distance
+    Uint8,
+    Pointer<FsrHit>,
+  )
+>(symbol: 'fsr_world_shape_cast_cylinder')
+external int worldShapeCastCylinder(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+  double halfHeight,
+  double radius,
+  double dx,
+  double dy,
+  double dz,
+  double distance,
+  int filterFlags,
+  Pointer<FsrHit> out,
+);
+
 @Native<Uint8 Function(Pointer<NativeWorld>, Size, Pointer<FsrHit>)>(
   symbol: 'fsr_world_query_result_at',
 )
