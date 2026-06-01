@@ -70,17 +70,26 @@ jobs:
         shell: bash
         run: echo "${{ matrix.linker_env }}=${{ matrix.linker }}" >> "$GITHUB_ENV"
 
-      - name: Install cargo-ndk
-        if: ${{ matrix.android_abi }}
-        run: cargo install cargo-ndk --locked
-
       - name: Build (Android)
         if: ${{ matrix.android_abi }}
         shell: bash
         working-directory: ${{ env.NATIVE_DIR }}
         run: |
-          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
-          cargo ndk -t ${{ matrix.android_abi }} -p ${{ env.ANDROID_API }} build --release
+          # Link with the NDK clang driver and tell it the ABI and API
+          # level through the clang target, matching the build hook.
+          ndk="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
+          host=$(ls "$ndk/toolchains/llvm/prebuilt" | head -1)
+          clang="$ndk/toolchains/llvm/prebuilt/$host/bin/clang"
+          triple="${{ matrix.triple }}"
+          if [ "$triple" = "armv7-linux-androideabi" ]; then
+            clang_target="armv7a-linux-androideabi"
+          else
+            clang_target="$triple"
+          fi
+          env_triple=$(echo "$triple" | tr 'a-z-' 'A-Z_')
+          export "CARGO_TARGET_${env_triple}_LINKER=$clang"
+          export "CARGO_TARGET_${env_triple}_RUSTFLAGS=-Clink-arg=--target=${clang_target}${ANDROID_API}"
+          cargo build --release --target "$triple"
 
       - name: Build (cargo)
         if: ${{ !matrix.android_abi }}
