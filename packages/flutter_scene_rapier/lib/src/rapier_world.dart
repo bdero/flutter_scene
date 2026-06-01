@@ -554,6 +554,141 @@ class RapierWorld extends PhysicsWorld {
   /// Removes a joint previously inserted by a `create*Joint` method.
   void destroyJoint(int handle) => native.jointDestroy(_handle, handle);
 
+  /// Reconfigures an existing fixed joint in place.
+  void updateFixedJoint(
+    int joint, {
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    required bool collisionsEnabled,
+  }) {
+    native.jointUpdateFixed(
+      _handle,
+      joint,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Reconfigures an existing spherical joint in place.
+  void updateSphericalJoint(
+    int joint, {
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    required bool collisionsEnabled,
+  }) {
+    native.jointUpdateSpherical(
+      _handle,
+      joint,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Reconfigures an existing revolute joint in place.
+  void updateRevoluteJoint(
+    int joint, {
+    required Vector3 axis,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    double? lowerLimit,
+    double? upperLimit,
+    double? motorTargetVelocity,
+    double? motorMaxForce,
+    required bool collisionsEnabled,
+  }) {
+    final hasLimits = lowerLimit != null && upperLimit != null;
+    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
+    native.jointUpdateRevolute(
+      _handle,
+      joint,
+      axis.x,
+      axis.y,
+      axis.z,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      hasLimits ? 1 : 0,
+      lowerLimit ?? 0,
+      upperLimit ?? 0,
+      hasMotor ? 1 : 0,
+      motorTargetVelocity ?? 0,
+      motorMaxForce ?? 0,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Reconfigures an existing prismatic joint in place.
+  void updatePrismaticJoint(
+    int joint, {
+    required Vector3 axis,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    double? lowerLimit,
+    double? upperLimit,
+    double? motorTargetVelocity,
+    double? motorMaxForce,
+    required bool collisionsEnabled,
+  }) {
+    final hasLimits = lowerLimit != null && upperLimit != null;
+    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
+    native.jointUpdatePrismatic(
+      _handle,
+      joint,
+      axis.x,
+      axis.y,
+      axis.z,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      hasLimits ? 1 : 0,
+      lowerLimit ?? 0,
+      upperLimit ?? 0,
+      hasMotor ? 1 : 0,
+      motorTargetVelocity ?? 0,
+      motorMaxForce ?? 0,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Creates a fixed body at the world origin to stand in as the static
+  /// side of a world-anchored joint, returning its native handle. It is
+  /// not registered for transform interpolation; the joint that owns it
+  /// releases it with [destroyJointAnchorBody].
+  int createJointAnchorBody() {
+    return native.bodyCreate(
+      _handle,
+      native.bodyKindFixed,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+    );
+  }
+
+  /// Releases a body created by [createJointAnchorBody].
+  void destroyJointAnchorBody(int handle) =>
+      native.bodyDestroy(_handle, handle);
+
   /// Reads the body's current world translation. Returns a fresh
   /// [Vector3]; the underlying scratch buffer is reused on each call,
   /// so do not hold a reference to it.

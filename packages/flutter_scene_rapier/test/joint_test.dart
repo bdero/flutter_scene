@@ -228,6 +228,76 @@ void main() {
     expect(p.z.abs(), lessThan(1e-3));
   });
 
+  test('a world-anchored fixed joint pins a body in place', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+
+    // A dynamic body that would fall under gravity, welded to the world
+    // (null otherNode) at its starting position. The B-side anchor is in
+    // world space because the implicit anchor sits at the origin.
+    final (node, body) = _body(
+      root,
+      Vector3(3, 5, 0),
+      BodyType.dynamic_,
+      mass: 1,
+    );
+    final joint = RapierFixedJoint(
+      localAnchorA: Vector3.zero(),
+      localAnchorB: Vector3(3, 5, 0),
+    );
+    node.addComponent(joint);
+    joint.mount();
+
+    for (var i = 0; i < 120; i++) {
+      world.step(1.0 / 60.0);
+    }
+
+    final p = body.readNativeTranslation();
+    // Held against gravity by the world anchor: it stays near (3, 5, 0).
+    expect(p.x, closeTo(3.0, 0.2));
+    expect(p.y, closeTo(5.0, 0.2));
+  });
+
+  test('setting a revolute motor after mount takes effect live', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+
+    final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
+    final (armNode, armBody) = _body(
+      root,
+      Vector3(2, 5, 0),
+      BodyType.dynamic_,
+      mass: 1,
+    );
+
+    // No motor at first: the arm just hangs and swings down.
+    final joint = RapierRevoluteJoint(
+      otherNode: hingeNode,
+      axis: Vector3(0, 0, 1),
+      localAnchorA: Vector3(-2, 0, 0),
+      localAnchorB: Vector3.zero(),
+    );
+    armNode.addComponent(joint);
+    joint.mount();
+    for (var i = 0; i < 60; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(armBody.readNativeTranslation().y, lessThan(5.0));
+
+    // Turn the motor on after mount; the change must reach the native
+    // joint and drive the arm above the hinge.
+    joint.motorTargetVelocity = 6.0;
+    joint.motorMaxForce = 1000.0;
+
+    var maxHeight = -double.infinity;
+    for (var i = 0; i < 180; i++) {
+      world.step(1.0 / 60.0);
+      final y = armBody.readNativeTranslation().y;
+      if (y > maxHeight) maxHeight = y;
+    }
+    expect(maxHeight, greaterThan(5.5));
+  });
+
   test('a joint without a sibling body throws', () {
     final root = _boot();
     final (otherNode, _) = _body(root, Vector3.zero(), BodyType.fixed);

@@ -1667,6 +1667,127 @@ fn joint_handle_from_raw(raw: u64) -> ImpulseJointHandle {
     ImpulseJointHandle(index_from_raw(raw))
 }
 
+// Builds a fixed joint (welds two bodies at the given local anchors).
+fn build_fixed_joint(
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) -> GenericJoint {
+    let mut joint: GenericJoint = FixedJointBuilder::new()
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz))
+        .build()
+        .into();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    joint
+}
+
+// Builds a spherical (ball-and-socket) joint.
+fn build_spherical_joint(
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) -> GenericJoint {
+    let mut joint: GenericJoint = SphericalJointBuilder::new()
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz))
+        .build()
+        .into();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    joint
+}
+
+// Builds a revolute (hinge) joint about a shared axis, with optional
+// angular limits and a velocity motor.
+#[allow(clippy::too_many_arguments)]
+fn build_revolute_joint(
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) -> GenericJoint {
+    let mut builder = RevoluteJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz));
+    if has_limits != 0 {
+        builder = builder.limits([lower, upper]);
+    }
+    if has_motor != 0 {
+        builder = builder
+            .motor_velocity(motor_target_velocity, 1.0e4)
+            .motor_max_force(motor_max_force);
+    }
+    let mut joint: GenericJoint = builder.build().into();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    joint
+}
+
+// Builds a prismatic (slider) joint along a shared axis, with optional
+// linear limits and a velocity motor.
+#[allow(clippy::too_many_arguments)]
+fn build_prismatic_joint(
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) -> GenericJoint {
+    let mut builder = PrismaticJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz));
+    if has_limits != 0 {
+        builder = builder.limits([lower, upper]);
+    }
+    if has_motor != 0 {
+        builder = builder
+            .motor_velocity(motor_target_velocity, 1.0e4)
+            .motor_max_force(motor_max_force);
+    }
+    let mut joint: GenericJoint = builder.build().into();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    joint
+}
+
+// Replaces the configuration of an existing joint in place, waking both
+// connected bodies. A missing handle is a silent no-op.
+unsafe fn update_joint(world: *mut World, raw: u64, data: GenericJoint) {
+    let w = &mut *world;
+    if let Some(joint) = w.impulse_joints.get_mut(joint_handle_from_raw(raw), true) {
+        joint.data = data;
+    }
+}
+
 /// Inserts a fixed joint welding two bodies together at the given local
 /// anchors. Returns the packed joint handle.
 ///
@@ -1687,11 +1808,7 @@ pub unsafe extern "C" fn fsr_joint_fixed(
     collisions_enabled: u8,
 ) -> u64 {
     let w = &mut *world;
-    let mut joint = FixedJointBuilder::new()
-        .local_anchor1(Vector::new(ax, ay, az))
-        .local_anchor2(Vector::new(bx, by, bz))
-        .build();
-    joint.set_contacts_enabled(collisions_enabled != 0);
+    let joint = build_fixed_joint(ax, ay, az, bx, by, bz, collisions_enabled);
     let handle = w.impulse_joints.insert(
         handle_from_raw(body_a),
         handle_from_raw(body_b),
@@ -1699,6 +1816,29 @@ pub unsafe extern "C" fn fsr_joint_fixed(
         true,
     );
     joint_handle_to_raw(handle)
+}
+
+/// Reconfigures a fixed joint in place.
+///
+/// # Safety
+/// `world` must be live; `joint` must be a live joint handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_update_fixed(
+    world: *mut World,
+    joint: u64,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) {
+    update_joint(
+        world,
+        joint,
+        build_fixed_joint(ax, ay, az, bx, by, bz, collisions_enabled),
+    );
 }
 
 /// Inserts a spherical (ball-and-socket) joint.
@@ -1720,11 +1860,7 @@ pub unsafe extern "C" fn fsr_joint_spherical(
     collisions_enabled: u8,
 ) -> u64 {
     let w = &mut *world;
-    let mut joint = SphericalJointBuilder::new()
-        .local_anchor1(Vector::new(ax, ay, az))
-        .local_anchor2(Vector::new(bx, by, bz))
-        .build();
-    joint.set_contacts_enabled(collisions_enabled != 0);
+    let joint = build_spherical_joint(ax, ay, az, bx, by, bz, collisions_enabled);
     let handle = w.impulse_joints.insert(
         handle_from_raw(body_a),
         handle_from_raw(body_b),
@@ -1732,6 +1868,29 @@ pub unsafe extern "C" fn fsr_joint_spherical(
         true,
     );
     joint_handle_to_raw(handle)
+}
+
+/// Reconfigures a spherical joint in place.
+///
+/// # Safety
+/// `world` must be live; `joint` must be a live joint handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_update_spherical(
+    world: *mut World,
+    joint: u64,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) {
+    update_joint(
+        world,
+        joint,
+        build_spherical_joint(ax, ay, az, bx, by, bz, collisions_enabled),
+    );
 }
 
 /// Inserts a revolute (hinge) joint about a shared axis, with optional
@@ -1764,19 +1923,24 @@ pub unsafe extern "C" fn fsr_joint_revolute(
     collisions_enabled: u8,
 ) -> u64 {
     let w = &mut *world;
-    let mut builder = RevoluteJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
-        .local_anchor1(Vector::new(ax, ay, az))
-        .local_anchor2(Vector::new(bx, by, bz));
-    if has_limits != 0 {
-        builder = builder.limits([lower, upper]);
-    }
-    if has_motor != 0 {
-        builder = builder
-            .motor_velocity(motor_target_velocity, 1.0e4)
-            .motor_max_force(motor_max_force);
-    }
-    let mut joint = builder.build();
-    joint.set_contacts_enabled(collisions_enabled != 0);
+    let joint = build_revolute_joint(
+        axis_x,
+        axis_y,
+        axis_z,
+        ax,
+        ay,
+        az,
+        bx,
+        by,
+        bz,
+        has_limits,
+        lower,
+        upper,
+        has_motor,
+        motor_target_velocity,
+        motor_max_force,
+        collisions_enabled,
+    );
     let handle = w.impulse_joints.insert(
         handle_from_raw(body_a),
         handle_from_raw(body_b),
@@ -1784,6 +1948,56 @@ pub unsafe extern "C" fn fsr_joint_revolute(
         true,
     );
     joint_handle_to_raw(handle)
+}
+
+/// Reconfigures a revolute joint in place.
+///
+/// # Safety
+/// `world` must be live; `joint` must be a live joint handle.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_joint_update_revolute(
+    world: *mut World,
+    joint: u64,
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) {
+    update_joint(
+        world,
+        joint,
+        build_revolute_joint(
+            axis_x,
+            axis_y,
+            axis_z,
+            ax,
+            ay,
+            az,
+            bx,
+            by,
+            bz,
+            has_limits,
+            lower,
+            upper,
+            has_motor,
+            motor_target_velocity,
+            motor_max_force,
+            collisions_enabled,
+        ),
+    );
 }
 
 /// Inserts a prismatic (slider) joint along a shared axis, with optional
@@ -1816,19 +2030,24 @@ pub unsafe extern "C" fn fsr_joint_prismatic(
     collisions_enabled: u8,
 ) -> u64 {
     let w = &mut *world;
-    let mut builder = PrismaticJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
-        .local_anchor1(Vector::new(ax, ay, az))
-        .local_anchor2(Vector::new(bx, by, bz));
-    if has_limits != 0 {
-        builder = builder.limits([lower, upper]);
-    }
-    if has_motor != 0 {
-        builder = builder
-            .motor_velocity(motor_target_velocity, 1.0e4)
-            .motor_max_force(motor_max_force);
-    }
-    let mut joint = builder.build();
-    joint.set_contacts_enabled(collisions_enabled != 0);
+    let joint = build_prismatic_joint(
+        axis_x,
+        axis_y,
+        axis_z,
+        ax,
+        ay,
+        az,
+        bx,
+        by,
+        bz,
+        has_limits,
+        lower,
+        upper,
+        has_motor,
+        motor_target_velocity,
+        motor_max_force,
+        collisions_enabled,
+    );
     let handle = w.impulse_joints.insert(
         handle_from_raw(body_a),
         handle_from_raw(body_b),
@@ -1836,6 +2055,56 @@ pub unsafe extern "C" fn fsr_joint_prismatic(
         true,
     );
     joint_handle_to_raw(handle)
+}
+
+/// Reconfigures a prismatic joint in place.
+///
+/// # Safety
+/// `world` must be live; `joint` must be a live joint handle.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_joint_update_prismatic(
+    world: *mut World,
+    joint: u64,
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) {
+    update_joint(
+        world,
+        joint,
+        build_prismatic_joint(
+            axis_x,
+            axis_y,
+            axis_z,
+            ax,
+            ay,
+            az,
+            bx,
+            by,
+            bz,
+            has_limits,
+            lower,
+            upper,
+            has_motor,
+            motor_target_velocity,
+            motor_max_force,
+            collisions_enabled,
+        ),
+    );
 }
 
 /// Removes a joint previously inserted by one of the `fsr_joint_*`

@@ -1120,6 +1120,142 @@ external int jointPrismatic(
   int collisionsEnabled,
 );
 
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_update_fixed')
+external void jointUpdateFixed(
+  Pointer<NativeWorld> world,
+  int joint,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int collisionsEnabled,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_update_spherical')
+external void jointUpdateSpherical(
+  Pointer<NativeWorld> world,
+  int joint,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int collisionsEnabled,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_update_revolute')
+external void jointUpdateRevolute(
+  Pointer<NativeWorld> world,
+  int joint,
+  double axisX,
+  double axisY,
+  double axisZ,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int hasLimits,
+  double lower,
+  double upper,
+  int hasMotor,
+  double motorTargetVelocity,
+  double motorMaxForce,
+  int collisionsEnabled,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_update_prismatic')
+external void jointUpdatePrismatic(
+  Pointer<NativeWorld> world,
+  int joint,
+  double axisX,
+  double axisY,
+  double axisZ,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int hasLimits,
+  double lower,
+  double upper,
+  int hasMotor,
+  double motorTargetVelocity,
+  double motorMaxForce,
+  int collisionsEnabled,
+);
+
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(
   symbol: 'fsr_joint_destroy',
 )
