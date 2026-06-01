@@ -194,10 +194,7 @@ pub unsafe extern "C" fn fsr_world_raycast(
     out: *mut FsrHit,
 ) -> u8 {
     let w = &mut *world;
-    let ray = parry::query::Ray::new(
-        Vector::new(ox, oy, oz),
-        Vector::new(dx, dy, dz).normalize(),
-    );
+    let ray = parry::query::Ray::new(Vector::new(ox, oy, oz), Vector::new(dx, dy, dz).normalize());
     let qp = w.broad_phase.as_query_pipeline(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
@@ -235,10 +232,7 @@ pub unsafe extern "C" fn fsr_world_raycast_all(
     filter_flags: u8,
 ) -> usize {
     let w = &mut *world;
-    let ray = parry::query::Ray::new(
-        Vector::new(ox, oy, oz),
-        Vector::new(dx, dy, dz).normalize(),
-    );
+    let ray = parry::query::Ray::new(Vector::new(ox, oy, oz), Vector::new(dx, dy, dz).normalize());
     w.query_hits.clear();
     let qp = w.broad_phase.as_query_pipeline(
         w.narrow_phase.query_dispatcher(),
@@ -251,8 +245,11 @@ pub unsafe extern "C" fn fsr_world_raycast_all(
         w.query_hits
             .push(make_hit(handle, hit.time_of_impact, point, hit.normal));
     }
-    w.query_hits
-        .sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(core::cmp::Ordering::Equal));
+    w.query_hits.sort_by(|a, b| {
+        a.distance
+            .partial_cmp(&b.distance)
+            .unwrap_or(core::cmp::Ordering::Equal)
+    });
     w.query_hits.len()
 }
 
@@ -446,12 +443,7 @@ pub unsafe extern "C" fn fsr_world_destroy(world: *mut World) {
 /// # Safety
 /// `world` must be a live pointer returned by [`fsr_world_new`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_world_set_gravity(
-    world: *mut World,
-    x: Real,
-    y: Real,
-    z: Real,
-) {
+pub unsafe extern "C" fn fsr_world_set_gravity(world: *mut World, x: Real, y: Real, z: Real) {
     let w = &mut *world;
     w.gravity = Vector::new(x, y, z);
 }
@@ -605,11 +597,7 @@ pub unsafe extern "C" fn fsr_body_destroy(world: *mut World, raw: u64) {
 /// `out` must point to at least three writable f32s. `world` must be
 /// live.
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_translation(
-    world: *const World,
-    raw: u64,
-    out: *mut Real,
-) {
+pub unsafe extern "C" fn fsr_body_translation(world: *const World, raw: u64, out: *mut Real) {
     let w = &*world;
     if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
         let t = body.translation();
@@ -626,11 +614,7 @@ pub unsafe extern "C" fn fsr_body_translation(
 /// `out` must point to at least four writable f32s. `world` must be
 /// live.
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_rotation(
-    world: *const World,
-    raw: u64,
-    out: *mut Real,
-) {
+pub unsafe extern "C" fn fsr_body_rotation(world: *const World, raw: u64, out: *mut Real) {
     let w = &*world;
     if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
         let r = body.rotation();
@@ -674,6 +658,7 @@ pub unsafe extern "C" fn fsr_collider_sphere(
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -708,16 +693,14 @@ pub unsafe extern "C" fn fsr_collider_box(
     qw: Real,
 ) -> u64 {
     let w = &mut *world;
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
     let builder = ColliderBuilder::cuboid(hx, hy, hz)
         .friction(friction)
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -753,16 +736,14 @@ pub unsafe extern "C" fn fsr_collider_capsule(
     qw: Real,
 ) -> u64 {
     let w = &mut *world;
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
     let builder = ColliderBuilder::capsule_y(half_height, radius)
         .friction(friction)
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -797,16 +778,14 @@ pub unsafe extern "C" fn fsr_collider_cylinder(
     qw: Real,
 ) -> u64 {
     let w = &mut *world;
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
     let builder = ColliderBuilder::cylinder(half_height, radius)
         .friction(friction)
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -918,11 +897,7 @@ pub unsafe extern "C" fn fsr_body_apply_angular_impulse(
 /// `out` must point to at least three writable f32s; `world` must be
 /// live.
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_linear_velocity(
-    world: *const World,
-    raw: u64,
-    out: *mut Real,
-) {
+pub unsafe extern "C" fn fsr_body_linear_velocity(world: *const World, raw: u64, out: *mut Real) {
     let w = &*world;
     if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
         let v = body.linvel();
@@ -952,10 +927,7 @@ pub unsafe extern "C" fn fsr_body_set_next_kinematic_pose(
 ) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
-        let pose = Pose::from_parts(
-            Vector::new(px, py, pz),
-            Rotation::from_xyzw(qx, qy, qz, qw),
-        );
+        let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
         body.set_next_kinematic_position(pose);
     }
 }
@@ -1004,11 +976,7 @@ pub unsafe extern "C" fn fsr_body_set_angular_velocity(
 /// # Safety
 /// `world` must be live; `raw` must come from [`fsr_body_create`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_set_linear_damping(
-    world: *mut World,
-    raw: u64,
-    damping: Real,
-) {
+pub unsafe extern "C" fn fsr_body_set_linear_damping(world: *mut World, raw: u64, damping: Real) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
         body.set_linear_damping(damping);
@@ -1020,11 +988,7 @@ pub unsafe extern "C" fn fsr_body_set_linear_damping(
 /// # Safety
 /// `world` must be live; `raw` must come from [`fsr_body_create`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_set_angular_damping(
-    world: *mut World,
-    raw: u64,
-    damping: Real,
-) {
+pub unsafe extern "C" fn fsr_body_set_angular_damping(world: *mut World, raw: u64, damping: Real) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
         body.set_angular_damping(damping);
@@ -1061,11 +1025,7 @@ pub unsafe extern "C" fn fsr_body_set_additional_mass(
 /// # Safety
 /// `world` must be live; `raw` must come from [`fsr_body_create`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_set_locked_axes(
-    world: *mut World,
-    raw: u64,
-    locks: u8,
-) {
+pub unsafe extern "C" fn fsr_body_set_locked_axes(world: *mut World, raw: u64, locks: u8) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
         let mut la = LockedAxes::empty();
@@ -1097,11 +1057,7 @@ pub unsafe extern "C" fn fsr_body_set_locked_axes(
 /// # Safety
 /// `world` must be live; `raw` must come from [`fsr_body_create`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_set_gravity_scale(
-    world: *mut World,
-    raw: u64,
-    scale: Real,
-) {
+pub unsafe extern "C" fn fsr_body_set_gravity_scale(world: *mut World, raw: u64, scale: Real) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
         body.set_gravity_scale(scale, true);
@@ -1113,11 +1069,7 @@ pub unsafe extern "C" fn fsr_body_set_gravity_scale(
 /// # Safety
 /// `world` must be live; `raw` must come from [`fsr_body_create`].
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_set_ccd_enabled(
-    world: *mut World,
-    raw: u64,
-    enabled: u8,
-) {
+pub unsafe extern "C" fn fsr_body_set_ccd_enabled(world: *mut World, raw: u64, enabled: u8) {
     let w = &mut *world;
     if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
         body.enable_ccd(enabled != 0);
@@ -1170,11 +1122,7 @@ pub unsafe extern "C" fn fsr_body_is_sleeping(world: *const World, raw: u64) -> 
 /// `out` must point to at least three writable f32s; `world` must be
 /// live.
 #[no_mangle]
-pub unsafe extern "C" fn fsr_body_angular_velocity(
-    world: *const World,
-    raw: u64,
-    out: *mut Real,
-) {
+pub unsafe extern "C" fn fsr_body_angular_velocity(world: *const World, raw: u64, out: *mut Real) {
     let w = &*world;
     if let Some(body) = w.rigid_body_set.get(handle_from_raw(raw)) {
         let v = body.angvel();
@@ -1222,16 +1170,14 @@ pub unsafe extern "C" fn fsr_collider_convex_hull(
     let Some(builder) = ColliderBuilder::convex_hull(&pts) else {
         return u64::MAX;
     };
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
     let builder = builder
         .friction(friction)
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -1291,16 +1237,14 @@ pub unsafe extern "C" fn fsr_collider_trimesh(
     let Ok(builder) = ColliderBuilder::trimesh(verts, tris) else {
         return u64::MAX;
     };
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
     let builder = builder
         .friction(friction)
         .restitution(restitution)
         .density(density)
         .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
+        .active_collision_types(ActiveCollisionTypes::all())
         .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
@@ -1353,18 +1297,15 @@ pub unsafe extern "C" fn fsr_collider_heightfield(
         }
     }
     let array = Array2::new(n_rows, n_cols, data);
-    let pose = Pose::from_parts(
-        Vector::new(px, py, pz),
-        Rotation::from_xyzw(qx, qy, qz, qw),
-    );
-    let builder =
-        ColliderBuilder::heightfield(array, Vector::new(scale_x, scale_y, scale_z))
-            .friction(friction)
-            .restitution(restitution)
-            .density(density)
-            .sensor(is_sensor != 0)
+    let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
+    let builder = ColliderBuilder::heightfield(array, Vector::new(scale_x, scale_y, scale_z))
+        .friction(friction)
+        .restitution(restitution)
+        .density(density)
+        .sensor(is_sensor != 0)
         .active_events(ActiveEvents::COLLISION_EVENTS)
-            .position(pose);
+        .active_collision_types(ActiveCollisionTypes::all())
+        .position(pose);
     let handle = w.collider_set.insert_with_parent(
         builder,
         handle_from_raw(body_handle),
@@ -1423,11 +1364,7 @@ pub unsafe extern "C" fn fsr_collider_set_collision_groups(
 /// # Safety
 /// `world` must be live; `raw` must be a live collider handle.
 #[no_mangle]
-pub unsafe extern "C" fn fsr_collider_set_sensor(
-    world: *mut World,
-    raw: u64,
-    is_sensor: u8,
-) {
+pub unsafe extern "C" fn fsr_collider_set_sensor(world: *mut World, raw: u64, is_sensor: u8) {
     let w = &mut *world;
     if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
         c.set_sensor(is_sensor != 0);
@@ -1452,10 +1389,7 @@ pub unsafe extern "C" fn fsr_collider_set_local_pose(
 ) {
     let w = &mut *world;
     if let Some(c) = w.collider_set.get_mut(collider_from_raw(raw)) {
-        let pose = Pose::from_parts(
-            Vector::new(px, py, pz),
-            Rotation::from_xyzw(qx, qy, qz, qw),
-        );
+        let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
         c.set_position_wrt_parent(pose);
     }
 }
@@ -1474,6 +1408,196 @@ pub unsafe extern "C" fn fsr_collider_destroy(world: *mut World, raw: u64) {
         &mut w.rigid_body_set,
         true,
     );
+}
+
+fn joint_handle_to_raw(h: ImpulseJointHandle) -> u64 {
+    index_to_raw(h.0)
+}
+
+fn joint_handle_from_raw(raw: u64) -> ImpulseJointHandle {
+    ImpulseJointHandle(index_from_raw(raw))
+}
+
+/// Inserts a fixed joint welding two bodies together at the given local
+/// anchors. Returns the packed joint handle.
+///
+/// # Safety
+/// `world` must be live; both body handles must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_fixed(
+    world: *mut World,
+    body_a: u64,
+    body_b: u64,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) -> u64 {
+    let w = &mut *world;
+    let mut joint = FixedJointBuilder::new()
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz))
+        .build();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    let handle = w.impulse_joints.insert(
+        handle_from_raw(body_a),
+        handle_from_raw(body_b),
+        joint,
+        true,
+    );
+    joint_handle_to_raw(handle)
+}
+
+/// Inserts a spherical (ball-and-socket) joint.
+///
+/// # Safety
+/// `world` must be live; both body handles must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_spherical(
+    world: *mut World,
+    body_a: u64,
+    body_b: u64,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    collisions_enabled: u8,
+) -> u64 {
+    let w = &mut *world;
+    let mut joint = SphericalJointBuilder::new()
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz))
+        .build();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    let handle = w.impulse_joints.insert(
+        handle_from_raw(body_a),
+        handle_from_raw(body_b),
+        joint,
+        true,
+    );
+    joint_handle_to_raw(handle)
+}
+
+/// Inserts a revolute (hinge) joint about a shared axis, with optional
+/// angular limits and a velocity motor.
+///
+/// # Safety
+/// `world` must be live; both body handles must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_joint_revolute(
+    world: *mut World,
+    body_a: u64,
+    body_b: u64,
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) -> u64 {
+    let w = &mut *world;
+    let mut builder = RevoluteJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz));
+    if has_limits != 0 {
+        builder = builder.limits([lower, upper]);
+    }
+    if has_motor != 0 {
+        builder = builder
+            .motor_velocity(motor_target_velocity, 1.0e4)
+            .motor_max_force(motor_max_force);
+    }
+    let mut joint = builder.build();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    let handle = w.impulse_joints.insert(
+        handle_from_raw(body_a),
+        handle_from_raw(body_b),
+        joint,
+        true,
+    );
+    joint_handle_to_raw(handle)
+}
+
+/// Inserts a prismatic (slider) joint along a shared axis, with optional
+/// linear limits and a velocity motor.
+///
+/// # Safety
+/// `world` must be live; both body handles must come from
+/// [`fsr_body_create`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_joint_prismatic(
+    world: *mut World,
+    body_a: u64,
+    body_b: u64,
+    axis_x: Real,
+    axis_y: Real,
+    axis_z: Real,
+    ax: Real,
+    ay: Real,
+    az: Real,
+    bx: Real,
+    by: Real,
+    bz: Real,
+    has_limits: u8,
+    lower: Real,
+    upper: Real,
+    has_motor: u8,
+    motor_target_velocity: Real,
+    motor_max_force: Real,
+    collisions_enabled: u8,
+) -> u64 {
+    let w = &mut *world;
+    let mut builder = PrismaticJointBuilder::new(Vector::new(axis_x, axis_y, axis_z))
+        .local_anchor1(Vector::new(ax, ay, az))
+        .local_anchor2(Vector::new(bx, by, bz));
+    if has_limits != 0 {
+        builder = builder.limits([lower, upper]);
+    }
+    if has_motor != 0 {
+        builder = builder
+            .motor_velocity(motor_target_velocity, 1.0e4)
+            .motor_max_force(motor_max_force);
+    }
+    let mut joint = builder.build();
+    joint.set_contacts_enabled(collisions_enabled != 0);
+    let handle = w.impulse_joints.insert(
+        handle_from_raw(body_a),
+        handle_from_raw(body_b),
+        joint,
+        true,
+    );
+    joint_handle_to_raw(handle)
+}
+
+/// Removes a joint previously inserted by one of the `fsr_joint_*`
+/// constructors.
+///
+/// # Safety
+/// `world` must be live; `raw` must be a live joint handle.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_destroy(world: *mut World, raw: u64) {
+    let w = &mut *world;
+    w.impulse_joints.remove(joint_handle_from_raw(raw), true);
 }
 
 #[cfg(test)]
@@ -1533,12 +1657,19 @@ mod tests {
 
             // Static box floor: 50x0.5x50 centered just below the origin.
             let floor = fsr_body_create(
-                world, BODY_KIND_FIXED, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 1.0,
+                world,
+                BODY_KIND_FIXED,
+                0.0,
+                -0.5,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
                 0.0,
             );
             fsr_collider_box(
-                world, floor, 50.0, 0.5, 50.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 0.0, 1.0,
+                world, floor, 50.0, 0.5, 50.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             );
 
             let ball = fsr_body_create(
@@ -1554,8 +1685,7 @@ mod tests {
                 0.0,
             );
             fsr_collider_sphere(
-                world, ball, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 1.0,
+                world, ball, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             );
 
             for _ in 0..240 {
@@ -1584,12 +1714,19 @@ mod tests {
             // since this commit only ships sphere cooking, use a very
             // wide sphere as a stand-in floor).
             let floor_body = fsr_body_create(
-                world, BODY_KIND_FIXED, 0.0, -100.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                world,
+                BODY_KIND_FIXED,
+                0.0,
+                -100.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
                 0.0,
             );
             fsr_collider_sphere(
-                world, floor_body, 100.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
+                world, floor_body, 100.0, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             );
 
             // Dynamic sphere above the floor.
@@ -1606,8 +1743,7 @@ mod tests {
                 0.0,
             );
             fsr_collider_sphere(
-                world, ball_body, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0,
-                0.0, 0.0, 1.0,
+                world, ball_body, 0.5, 0.5, 0.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             );
 
             for _ in 0..240 {

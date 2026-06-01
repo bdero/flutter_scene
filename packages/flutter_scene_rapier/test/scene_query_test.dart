@@ -18,6 +18,13 @@ Node _boot() {
 }
 
 // Attaches a fixed body + collider at [position] and returns the node.
+//
+// Steps the world once after mounting. Rapier builds its broad-phase
+// BVH during a step, and scene queries run against that BVH, so a query
+// only sees colliders that existed as of the most recent step. In a
+// real app the world steps every frame before queries run; these tests
+// step here so the freshly added collider is visible to the query that
+// follows. The world has zero gravity, so the static bodies do not move.
 Node _addStatic(
   Node root,
   Shape shape,
@@ -30,6 +37,7 @@ Node _addStatic(
   root.add(node);
   node.getComponents<RapierRigidBody>().first.mount();
   node.getComponents<RapierCollider>().first.mount();
+  root.getComponent<RapierWorld>()!.step(1.0 / 60.0);
   return node;
 }
 
@@ -114,11 +122,7 @@ void main() {
   test('overlapBox finds colliders within an oriented box', () {
     final root = _boot();
     final world = root.getComponent<RapierWorld>()!;
-    final inside = _addStatic(
-      root,
-      SphereShape(radius: 0.5),
-      Vector3(0, 2, 0),
-    );
+    final inside = _addStatic(root, SphereShape(radius: 0.5), Vector3(0, 2, 0));
     _addStatic(root, SphereShape(radius: 0.5), Vector3(0, 20, 0));
 
     final hits = world.overlapBox(
@@ -133,12 +137,7 @@ void main() {
   test('triggers are excluded unless includeTriggers is set', () {
     final root = _boot();
     final world = root.getComponent<RapierWorld>()!;
-    _addStatic(
-      root,
-      SphereShape(radius: 1),
-      Vector3(0, 0, 5),
-      isTrigger: true,
-    );
+    _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5), isTrigger: true);
 
     final ray = Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1));
     expect(world.raycast(ray), isNull);

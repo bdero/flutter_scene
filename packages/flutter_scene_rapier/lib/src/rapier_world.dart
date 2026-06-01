@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_rapier/src/ffi/bindings.dart' as native;
+import 'package:flutter_scene_rapier/src/rapier_collider.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// [PhysicsWorld] backed by Rapier 3D.
@@ -19,6 +20,12 @@ import 'package:vector_math/vector_math.dart';
 /// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run
 /// through Rapier's QueryPipeline. Contact and trigger lifecycle
 /// events are emitted on [collisions] after each step.
+///
+/// Scene queries run against the broad-phase acceleration structure
+/// Rapier rebuilds during [step], so they see colliders as of the most
+/// recent step. Apps that step every frame before querying never
+/// notice; a query issued before the first step (or against a collider
+/// added since the last step) will not see that collider.
 ///
 /// TODO(contact-points): [CollisionBegan] events carry an empty
 /// contact list; forward Rapier's contact manifold points.
@@ -415,6 +422,132 @@ class RapierWorld extends PhysicsWorld {
     native.colliderDestroy(_handle, handle);
   }
 
+  /// Welds [bodyA] and [bodyB] together at the given local anchors and
+  /// returns the joint handle. Called from [RapierFixedJoint].
+  int createFixedJoint({
+    required int bodyA,
+    required int bodyB,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    required bool collisionsEnabled,
+  }) {
+    return native.jointFixed(
+      _handle,
+      bodyA,
+      bodyB,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Inserts a ball-and-socket joint between [bodyA] and [bodyB].
+  int createSphericalJoint({
+    required int bodyA,
+    required int bodyB,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    required bool collisionsEnabled,
+  }) {
+    return native.jointSpherical(
+      _handle,
+      bodyA,
+      bodyB,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Inserts a hinge joint about [axis] between [bodyA] and [bodyB].
+  /// Null limit or motor values disable that feature.
+  int createRevoluteJoint({
+    required int bodyA,
+    required int bodyB,
+    required Vector3 axis,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    double? lowerLimit,
+    double? upperLimit,
+    double? motorTargetVelocity,
+    double? motorMaxForce,
+    required bool collisionsEnabled,
+  }) {
+    final hasLimits = lowerLimit != null && upperLimit != null;
+    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
+    return native.jointRevolute(
+      _handle,
+      bodyA,
+      bodyB,
+      axis.x,
+      axis.y,
+      axis.z,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      hasLimits ? 1 : 0,
+      lowerLimit ?? 0,
+      upperLimit ?? 0,
+      hasMotor ? 1 : 0,
+      motorTargetVelocity ?? 0,
+      motorMaxForce ?? 0,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Inserts a slider joint along [axis] between [bodyA] and [bodyB].
+  /// Null limit or motor values disable that feature.
+  int createPrismaticJoint({
+    required int bodyA,
+    required int bodyB,
+    required Vector3 axis,
+    required Vector3 anchorA,
+    required Vector3 anchorB,
+    double? lowerLimit,
+    double? upperLimit,
+    double? motorTargetVelocity,
+    double? motorMaxForce,
+    required bool collisionsEnabled,
+  }) {
+    final hasLimits = lowerLimit != null && upperLimit != null;
+    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
+    return native.jointPrismatic(
+      _handle,
+      bodyA,
+      bodyB,
+      axis.x,
+      axis.y,
+      axis.z,
+      anchorA.x,
+      anchorA.y,
+      anchorA.z,
+      anchorB.x,
+      anchorB.y,
+      anchorB.z,
+      hasLimits ? 1 : 0,
+      lowerLimit ?? 0,
+      upperLimit ?? 0,
+      hasMotor ? 1 : 0,
+      motorTargetVelocity ?? 0,
+      motorMaxForce ?? 0,
+      collisionsEnabled ? 1 : 0,
+    );
+  }
+
+  /// Removes a joint previously inserted by a `create*Joint` method.
+  void destroyJoint(int handle) => native.jointDestroy(_handle, handle);
+
   /// Reads the body's current world translation. Returns a fresh
   /// [Vector3]; the underlying scratch buffer is reused on each call,
   /// so do not hold a reference to it.
@@ -710,6 +843,56 @@ class RapierWorld extends PhysicsWorld {
     }
   }
 
+  // Packs the include* flags into the bitmask the native query filter
+  // expects.
+  int _filterFlags({
+    required bool includeFixed,
+    required bool includeKinematic,
+    required bool includeDynamic,
+    required bool includeTriggers,
+  }) {
+    var flags = 0;
+    if (includeFixed) flags |= native.queryIncludeFixed;
+    if (includeKinematic) flags |= native.queryIncludeKinematic;
+    if (includeDynamic) flags |= native.queryIncludeDynamic;
+    if (includeTriggers) flags |= native.queryIncludeSensors;
+    return flags;
+  }
+
+  // Builds a RaycastHit from the native scratch hit, resolving the
+  // collider handle back to its Dart wrapper. Returns null when the
+  // handle no longer maps to a live collider.
+  RaycastHit? _raycastHitFromBuffer() {
+    final hit = _hitBuffer.ref;
+    final collider = _collidersByHandle[hit.collider];
+    if (collider == null) return null;
+    return RaycastHit(
+      node: collider.node,
+      collider: collider,
+      worldPoint: Vector3(hit.px, hit.py, hit.pz),
+      worldNormal: Vector3(hit.nx, hit.ny, hit.nz),
+      distance: hit.distance,
+    );
+  }
+
+  // Reads [count] entries out of the native query buffer, mapping each
+  // to a result of type [T]. Entries whose collider handle no longer
+  // resolves to a live Dart collider are skipped.
+  List<T> _drainHits<T>(
+    int count,
+    T Function(RapierCollider collider, native.FsrHit hit) build,
+  ) {
+    final results = <T>[];
+    for (var i = 0; i < count; i++) {
+      if (native.worldQueryResultAt(_handle, i, _hitBuffer) == 0) continue;
+      final hit = _hitBuffer.ref;
+      final collider = _collidersByHandle[hit.collider];
+      if (collider == null) continue;
+      results.add(build(collider, hit));
+    }
+    return results;
+  }
+
   @override
   RaycastHit? raycast(
     Ray ray, {
@@ -720,8 +903,27 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(scene-queries): forward to Rapier's QueryPipeline.cast_ray.
-    throw UnimplementedError('RapierWorld.raycast is not yet implemented.');
+    final dir = ray.direction.normalized();
+    final hit = native.worldRaycast(
+      _handle,
+      ray.origin.x,
+      ray.origin.y,
+      ray.origin.z,
+      dir.x,
+      dir.y,
+      dir.z,
+      maxDistance.isFinite ? maxDistance : double.maxFinite,
+      1,
+      _filterFlags(
+        includeFixed: includeFixed,
+        includeKinematic: includeKinematic,
+        includeDynamic: includeDynamic,
+        includeTriggers: includeTriggers,
+      ),
+      _hitBuffer,
+    );
+    if (hit == 0) return null;
+    return _raycastHitFromBuffer();
   }
 
   @override
@@ -734,9 +936,33 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(scene-queries): forward to Rapier's
-    // QueryPipeline.intersections_with_ray.
-    throw UnimplementedError('RapierWorld.raycastAll is not yet implemented.');
+    final dir = ray.direction.normalized();
+    final count = native.worldRaycastAll(
+      _handle,
+      ray.origin.x,
+      ray.origin.y,
+      ray.origin.z,
+      dir.x,
+      dir.y,
+      dir.z,
+      maxDistance.isFinite ? maxDistance : double.maxFinite,
+      1,
+      _filterFlags(
+        includeFixed: includeFixed,
+        includeKinematic: includeKinematic,
+        includeDynamic: includeDynamic,
+        includeTriggers: includeTriggers,
+      ),
+    );
+    return _drainHits(count, (collider, hit) {
+      return RaycastHit(
+        node: collider.node,
+        collider: collider,
+        worldPoint: Vector3(hit.px, hit.py, hit.pz),
+        worldNormal: Vector3(hit.nx, hit.ny, hit.nz),
+        distance: hit.distance,
+      );
+    });
   }
 
   @override
@@ -749,10 +975,22 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(scene-queries): forward to Rapier's
-    // QueryPipeline.intersections_with_shape using SharedShape::ball.
-    throw UnimplementedError(
-      'RapierWorld.overlapSphere is not yet implemented.',
+    final count = native.worldOverlapSphere(
+      _handle,
+      center.x,
+      center.y,
+      center.z,
+      radius,
+      _filterFlags(
+        includeFixed: includeFixed,
+        includeKinematic: includeKinematic,
+        includeDynamic: includeDynamic,
+        includeTriggers: includeTriggers,
+      ),
+    );
+    return _drainHits(
+      count,
+      (collider, _) => OverlapHit(node: collider.node, collider: collider),
     );
   }
 
@@ -767,9 +1005,29 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(scene-queries): forward to Rapier's
-    // QueryPipeline.intersections_with_shape using SharedShape::cuboid.
-    throw UnimplementedError('RapierWorld.overlapBox is not yet implemented.');
+    final count = native.worldOverlapBox(
+      _handle,
+      center.x,
+      center.y,
+      center.z,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+      rotation.x,
+      rotation.y,
+      rotation.z,
+      rotation.w,
+      _filterFlags(
+        includeFixed: includeFixed,
+        includeKinematic: includeKinematic,
+        includeDynamic: includeDynamic,
+        includeTriggers: includeTriggers,
+      ),
+    );
+    return _drainHits(
+      count,
+      (collider, _) => OverlapHit(node: collider.node, collider: collider),
+    );
   }
 
   @override
@@ -784,8 +1042,45 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(scene-queries): forward to Rapier's QueryPipeline.cast_shape.
-    throw UnimplementedError('RapierWorld.shapeCast is not yet implemented.');
+    // TODO(shape-cast-shapes): only SphereShape is cooked for the cast
+    // probe today. Add box / capsule / cylinder probes by widening the
+    // native fsr_world_shape_cast_* surface.
+    if (shape is! SphereShape) {
+      throw UnsupportedError(
+        'RapierWorld.shapeCast currently supports SphereShape probes only.',
+      );
+    }
+    final origin = from.getTranslation();
+    final dir = direction.normalized();
+    final hit = native.worldShapeCastSphere(
+      _handle,
+      origin.x,
+      origin.y,
+      origin.z,
+      shape.radius,
+      dir.x,
+      dir.y,
+      dir.z,
+      distance,
+      _filterFlags(
+        includeFixed: includeFixed,
+        includeKinematic: includeKinematic,
+        includeDynamic: includeDynamic,
+        includeTriggers: includeTriggers,
+      ),
+      _hitBuffer,
+    );
+    if (hit == 0) return null;
+    final h = _hitBuffer.ref;
+    final collider = _collidersByHandle[h.collider];
+    if (collider == null) return null;
+    return ShapeCastHit(
+      node: collider.node,
+      collider: collider,
+      worldPoint: Vector3(h.px, h.py, h.pz),
+      worldNormal: Vector3(h.nx, h.ny, h.nz),
+      distance: h.distance,
+    );
   }
 }
 
