@@ -1,5 +1,15 @@
 ## Unreleased
 
+* Added optional screen-space ambient occlusion, configured per scene via
+  `Scene.ambientOcclusion` (off by default). It darkens the indirect
+  (image-based) lighting in creases and contact points for softer, more
+  grounded shading. The implementation is Scalable Ambient Obscurance,
+  evaluated from a camera depth prepass with no normal buffer and no compute,
+  so it works on every backend including the WebGL2 fallback. Settings cover
+  the radius, intensity, bias, sample count, an optional half-resolution mode
+  (on by default) for lower cost, and an optional specular occlusion term.
+  Requires a `PerspectiveCamera`.
+
 ## 0.15.1
 
 * Added a DataAssets-backed `.fmat` material workflow. `buildMaterials` can now
