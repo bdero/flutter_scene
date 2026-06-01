@@ -65,6 +65,14 @@ class RapierWorld extends PhysicsWorld {
   late final Pointer<native.FsrContactPoint> _contactBuffer =
       calloc<native.FsrContactPoint>();
 
+  // Reusable scratch for passing a generic joint's two local frames (14
+  // floats: anchor1, basis1 xyzw, anchor2, basis2 xyzw) and its six
+  // per-axis configs to the native side. Allocated once, freed in
+  // onUnmount.
+  late final Pointer<Float> _jointFramesBuffer = calloc<Float>(14);
+  late final Pointer<native.FsrJointAxis> _jointAxesBuffer =
+      calloc<native.FsrJointAxis>(6);
+
   /// The underlying native world pointer. Exposed so [RapierRigidBody]
   /// and [RapierCollider] can pass it back into the FFI for body and
   /// collider operations.
@@ -666,6 +674,93 @@ class RapierWorld extends PhysicsWorld {
     );
   }
 
+  /// Inserts a generic (6DOF) joint between [bodyA] and [bodyB]. [axes]
+  /// is the six per-axis configs in `JointAxis` order. Returns the joint
+  /// handle.
+  int createGenericJoint(
+    int bodyA,
+    int bodyB, {
+    required Vector3 anchorA,
+    required Quaternion basisA,
+    required Vector3 anchorB,
+    required Quaternion basisB,
+    required List<JointAxisConfig> axes,
+    required bool collisionsEnabled,
+  }) {
+    _fillGenericJointBuffers(anchorA, basisA, anchorB, basisB, axes);
+    return native.jointGeneric(
+      _handle,
+      bodyA,
+      bodyB,
+      _jointFramesBuffer,
+      collisionsEnabled ? 1 : 0,
+      _jointAxesBuffer,
+    );
+  }
+
+  /// Reconfigures an existing generic joint in place.
+  void updateGenericJoint(
+    int joint, {
+    required Vector3 anchorA,
+    required Quaternion basisA,
+    required Vector3 anchorB,
+    required Quaternion basisB,
+    required List<JointAxisConfig> axes,
+    required bool collisionsEnabled,
+  }) {
+    _fillGenericJointBuffers(anchorA, basisA, anchorB, basisB, axes);
+    native.jointUpdateGeneric(
+      _handle,
+      joint,
+      _jointFramesBuffer,
+      collisionsEnabled ? 1 : 0,
+      _jointAxesBuffer,
+    );
+  }
+
+  // Packs the two local frames and the six per-axis configs into the
+  // reusable native scratch buffers.
+  void _fillGenericJointBuffers(
+    Vector3 anchorA,
+    Quaternion basisA,
+    Vector3 anchorB,
+    Quaternion basisB,
+    List<JointAxisConfig> axes,
+  ) {
+    final f = _jointFramesBuffer;
+    f[0] = anchorA.x;
+    f[1] = anchorA.y;
+    f[2] = anchorA.z;
+    f[3] = basisA.x;
+    f[4] = basisA.y;
+    f[5] = basisA.z;
+    f[6] = basisA.w;
+    f[7] = anchorB.x;
+    f[8] = anchorB.y;
+    f[9] = anchorB.z;
+    f[10] = basisB.x;
+    f[11] = basisB.y;
+    f[12] = basisB.z;
+    f[13] = basisB.w;
+    for (var i = 0; i < 6; i++) {
+      final cfg = axes[i];
+      final motor = cfg.motor;
+      final a = _jointAxesBuffer[i];
+      // JointAxisMotion: locked=0, free=1, limited=2 (matches native).
+      a.motion = cfg.motion.index;
+      a.hasMotor = motor != null ? 1 : 0;
+      // JointMotorModel: acceleration=0, force=1 (matches native).
+      a.motorModel = motor?.model.index ?? 0;
+      a.lower = cfg.lowerLimit;
+      a.upper = cfg.upperLimit;
+      a.targetPos = motor?.targetPosition ?? 0;
+      a.targetVel = motor?.targetVelocity ?? 0;
+      a.stiffness = motor?.stiffness ?? 0;
+      a.damping = motor?.damping ?? 0;
+      a.maxForce = motor?.maxForce ?? double.infinity;
+    }
+  }
+
   /// Creates a fixed body at the world origin to stand in as the static
   /// side of a world-anchored joint, returning its native handle. It is
   /// not registered for transform interpolation; the joint that owns it
@@ -878,6 +973,8 @@ class RapierWorld extends PhysicsWorld {
     calloc.free(_hitBuffer);
     calloc.free(_eventBuffer);
     calloc.free(_contactBuffer);
+    calloc.free(_jointFramesBuffer);
+    calloc.free(_jointAxesBuffer);
   }
 
   // Drains the collision events Rapier generated during the last step
