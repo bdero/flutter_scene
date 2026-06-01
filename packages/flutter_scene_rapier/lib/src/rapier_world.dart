@@ -1,26 +1,24 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene_rapier/src/ffi/bindings.dart' as native;
+import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
+import 'package:flutter_scene_rapier/src/ffi/rapier_bindings_native.dart';
 import 'package:flutter_scene_rapier/src/rapier_collider.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// [PhysicsWorld] backed by Rapier 3D.
 ///
-/// The native simulation state lives behind a [Pointer]; this class
-/// allocates it on construction and releases it via a [Finalizer] when
-/// the Dart wrapper is collected. [step] forwards directly into
-/// Rapier's PhysicsPipeline; [interpolateTransforms] lerps and slerps
-/// dynamic-body poses between substeps and writes them back to each
-/// owning [Node.localTransform]. Scene queries ([raycast],
-/// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run
-/// through Rapier's QueryPipeline. Contact and trigger lifecycle
-/// events are emitted on [collisions] after each step, with
-/// [CollisionBegan] carrying the solved contact-manifold points.
+/// The simulation state lives in a [RapierBindings] backend, which owns
+/// the world and releases it on [onUnmount]. [step] forwards directly
+/// into Rapier's PhysicsPipeline; [interpolateTransforms] lerps and
+/// slerps dynamic-body poses between substeps and writes them back to
+/// each owning [Node.localTransform]. Scene queries ([raycast],
+/// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run through
+/// Rapier's QueryPipeline. Contact and trigger lifecycle events are
+/// emitted on [collisions] after each step, with [CollisionBegan]
+/// carrying the solved contact-manifold points.
 ///
 /// Scene queries run against the broad-phase acceleration structure
 /// Rapier rebuilds during [step], so they see colliders as of the most
@@ -30,68 +28,25 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// TODO(shape-cast-hulls): [shapeCast] accepts sphere / box / capsule /
 /// cylinder probes; convex-hull, trimesh, heightfield, and compound
-/// probes are not wired through the native surface yet.
+/// probes are not wired through the backend surface yet.
 class RapierWorld extends PhysicsWorld {
-  RapierWorld({Vector3? gravity}) : _handle = native.worldNew() {
-    _finalizer.attach(this, _handle, detach: this);
+  RapierWorld({Vector3? gravity}) : _bindings = NativeRapierBindings() {
     final g = gravity ?? this.gravity;
     if (gravity != null) this.gravity = g;
-    native.worldSetGravity(_handle, g.x, g.y, g.z);
+    _bindings.setGravity(g.x, g.y, g.z);
   }
 
-  static final Finalizer<Pointer<native.NativeWorld>> _finalizer =
-      Finalizer<Pointer<native.NativeWorld>>(native.worldDestroy);
+  final RapierBindings _bindings;
 
-  final Pointer<native.NativeWorld> _handle;
-
-  // Reusable 4-float scratch buffer for translation (uses 3) and
-  // rotation (uses 4) reads from the native side. Allocated once,
-  // freed in onUnmount.
-  late final Pointer<Float> _readBuffer = calloc<Float>(4);
-
-  // Reusable single-hit scratch for raycast / shapeCast results, and
-  // for reading multi-hit results out of the native query buffer one
-  // entry at a time. Allocated once, freed in onUnmount.
-  late final Pointer<native.FsrHit> _hitBuffer = calloc<native.FsrHit>();
-
-  // Reusable scratch for reading collision events out of the native
-  // per-step buffer one at a time. Allocated once, freed in onUnmount.
-  late final Pointer<native.FsrCollisionEvent> _eventBuffer =
-      calloc<native.FsrCollisionEvent>();
-
-  // Reusable scratch for reading a collision event's contact points out
-  // of the native per-step buffer one at a time. Allocated once, freed
-  // in onUnmount.
-  late final Pointer<native.FsrContactPoint> _contactBuffer =
-      calloc<native.FsrContactPoint>();
-
-  // Reusable scratch for passing a generic joint's two local frames (14
-  // floats: anchor1, basis1 xyzw, anchor2, basis2 xyzw) and its six
-  // per-axis configs to the native side. Allocated once, freed in
-  // onUnmount.
-  late final Pointer<Float> _jointFramesBuffer = calloc<Float>(14);
-  late final Pointer<native.FsrJointAxis> _jointAxesBuffer =
-      calloc<native.FsrJointAxis>(6);
-
-  // Reusable scratch for the result of a character-controller move.
-  // Allocated once, freed in onUnmount.
-  late final Pointer<native.FsrCharacterMovement> _characterBuffer =
-      calloc<native.FsrCharacterMovement>();
-
-  /// The underlying native world pointer. Exposed so [RapierRigidBody]
-  /// and [RapierCollider] can pass it back into the FFI for body and
-  /// collider operations.
-  Pointer<native.NativeWorld> get nativeHandle => _handle;
-
-  // Tracks the Dart node + body type for each registered native body
-  // handle, so [interpolateTransforms] can write back dynamic poses
-  // and so collider creation can find its sibling body.
+  // Tracks the Dart node + body type for each registered body handle, so
+  // [interpolateTransforms] can write back dynamic poses and so collider
+  // creation can find its sibling body.
   final Map<int, _BodyRecord> _bodies = {};
 
   // Reverse map from a Rapier collider handle to the owning Dart
   // [RapierCollider]. Populated when a collider is cooked and removed
   // when it's destroyed. Used by the scene-query routines to resolve
-  // native hits back to the right component.
+  // hits back to the right component.
   final Map<int, RapierCollider> _collidersByHandle = {};
 
   /// Records ownership of [handle] by [collider] so scene queries can
@@ -111,8 +66,8 @@ class RapierWorld extends PhysicsWorld {
   /// belongs to a body / collider this world did not register.
   RapierCollider? colliderFromHandle(int handle) => _collidersByHandle[handle];
 
-  /// Inserts a rigid body into the native world and returns its packed
-  /// handle. Called from [RapierRigidBody.onMount].
+  /// Inserts a rigid body into the world and returns its packed handle.
+  /// Called from [RapierRigidBody.onMount].
   int createBody({
     required Node node,
     required BodyType type,
@@ -120,8 +75,7 @@ class RapierWorld extends PhysicsWorld {
     required Quaternion rotation,
     required double additionalMass,
   }) {
-    final handle = native.bodyCreate(
-      _handle,
+    final handle = _bindings.createBody(
       _bodyKindByte(type),
       position.x,
       position.y,
@@ -144,7 +98,7 @@ class RapierWorld extends PhysicsWorld {
   /// Removes a rigid body previously inserted by [createBody].
   void destroyBody(int handle) {
     _bodies.remove(handle);
-    native.bodyDestroy(_handle, handle);
+    _bindings.destroyBody(handle);
   }
 
   /// Cooks a sphere collider, attaches it to the rigid body identified
@@ -158,14 +112,11 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    return native.colliderSphere(
-      _handle,
+    return _bindings.colliderSphere(
       bodyHandle,
       radius,
-      material.friction,
-      material.restitution,
-      material.density,
-      isTrigger ? 1 : 0,
+      material,
+      isTrigger,
       t.x,
       t.y,
       t.z,
@@ -186,16 +137,13 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    return native.colliderBox(
-      _handle,
+    return _bindings.colliderBox(
       bodyHandle,
       halfExtents.x,
       halfExtents.y,
       halfExtents.z,
-      material.friction,
-      material.restitution,
-      material.density,
-      isTrigger ? 1 : 0,
+      material,
+      isTrigger,
       t.x,
       t.y,
       t.z,
@@ -217,15 +165,12 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    return native.colliderCapsule(
-      _handle,
+    return _bindings.colliderCapsule(
       bodyHandle,
       halfHeight,
       radius,
-      material.friction,
-      material.restitution,
-      material.density,
-      isTrigger ? 1 : 0,
+      material,
+      isTrigger,
       t.x,
       t.y,
       t.z,
@@ -247,15 +192,12 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    return native.colliderCylinder(
-      _handle,
+    return _bindings.colliderCylinder(
       bodyHandle,
       halfHeight,
       radius,
-      material.friction,
-      material.restitution,
-      material.density,
-      isTrigger ? 1 : 0,
+      material,
+      isTrigger,
       t.x,
       t.y,
       t.z,
@@ -267,37 +209,21 @@ class RapierWorld extends PhysicsWorld {
   }
 
   void setColliderMaterial(int handle, PhysicsMaterial material) {
-    native.colliderSetMaterial(
-      _handle,
-      handle,
-      material.friction,
-      material.restitution,
-      material.density,
-    );
+    _bindings.setColliderMaterial(handle, material);
   }
 
   void setColliderCollisionGroups(int handle, int memberships, int filter) {
-    native.colliderSetCollisionGroups(_handle, handle, memberships, filter);
+    _bindings.setColliderCollisionGroups(handle, memberships, filter);
   }
 
   void setColliderSensor(int handle, bool isSensor) {
-    native.colliderSetSensor(_handle, handle, isSensor ? 1 : 0);
+    _bindings.setColliderSensor(handle, isSensor);
   }
 
   void setColliderLocalPose(int handle, Matrix4 localPose) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    native.colliderSetLocalPose(
-      _handle,
-      handle,
-      t.x,
-      t.y,
-      t.z,
-      r.x,
-      r.y,
-      r.z,
-      r.w,
-    );
+    _bindings.setColliderLocalPose(handle, t.x, t.y, t.z, r.x, r.y, r.z, r.w);
   }
 
   /// Cooks a convex hull collider from packed `xyz` points. Returns
@@ -312,33 +238,19 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    final ptr = calloc<Float>(points.length);
-    try {
-      for (var i = 0; i < points.length; i++) {
-        ptr[i] = points[i];
-      }
-      final handle = native.colliderConvexHull(
-        _handle,
-        bodyHandle,
-        ptr,
-        points.length ~/ 3,
-        material.friction,
-        material.restitution,
-        material.density,
-        isTrigger ? 1 : 0,
-        t.x,
-        t.y,
-        t.z,
-        r.x,
-        r.y,
-        r.z,
-        r.w,
-      );
-      if (handle == 0xFFFFFFFFFFFFFFFF) return null;
-      return handle;
-    } finally {
-      calloc.free(ptr);
-    }
+    return _bindings.colliderConvexHull(
+      bodyHandle,
+      points,
+      material,
+      isTrigger,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
   }
 
   /// Cooks a triangle mesh collider. Returns null when Rapier rejects
@@ -353,44 +265,24 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    final vPtr = calloc<Float>(vertices.length);
-    final iPtr = calloc<Uint32>(indices.length);
-    try {
-      for (var i = 0; i < vertices.length; i++) {
-        vPtr[i] = vertices[i];
-      }
-      for (var i = 0; i < indices.length; i++) {
-        iPtr[i] = indices[i];
-      }
-      final handle = native.colliderTriMesh(
-        _handle,
-        bodyHandle,
-        vPtr,
-        vertices.length ~/ 3,
-        iPtr,
-        indices.length ~/ 3,
-        material.friction,
-        material.restitution,
-        material.density,
-        isTrigger ? 1 : 0,
-        t.x,
-        t.y,
-        t.z,
-        r.x,
-        r.y,
-        r.z,
-        r.w,
-      );
-      if (handle == 0xFFFFFFFFFFFFFFFF) return null;
-      return handle;
-    } finally {
-      calloc.free(vPtr);
-      calloc.free(iPtr);
-    }
+    return _bindings.colliderTriMesh(
+      bodyHandle,
+      vertices,
+      indices,
+      material,
+      isTrigger,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
   }
 
   /// Cooks a heightfield collider. The Dart heights are row-major
-  /// (`heights[z * width + x]`); this method transposes into the
+  /// (`heights[z * width + x]`); the backend transposes into the
   /// column-major layout Rapier wants.
   int createHeightFieldCollider({
     required int bodyHandle,
@@ -404,41 +296,30 @@ class RapierWorld extends PhysicsWorld {
   }) {
     final t = localPose.getTranslation();
     final r = Quaternion.fromRotation(localPose.getRotation());
-    final ptr = calloc<Float>(heights.length);
-    try {
-      for (var i = 0; i < heights.length; i++) {
-        ptr[i] = heights[i];
-      }
-      return native.colliderHeightField(
-        _handle,
-        bodyHandle,
-        depth, // nrows = Z dimension
-        width, // ncols = X dimension
-        ptr,
-        scale.x,
-        scale.y,
-        scale.z,
-        material.friction,
-        material.restitution,
-        material.density,
-        isTrigger ? 1 : 0,
-        t.x,
-        t.y,
-        t.z,
-        r.x,
-        r.y,
-        r.z,
-        r.w,
-      );
-    } finally {
-      calloc.free(ptr);
-    }
+    return _bindings.colliderHeightField(
+      bodyHandle,
+      depth, // nrows = Z dimension
+      width, // ncols = X dimension
+      heights,
+      scale.x,
+      scale.y,
+      scale.z,
+      material,
+      isTrigger,
+      t.x,
+      t.y,
+      t.z,
+      r.x,
+      r.y,
+      r.z,
+      r.w,
+    );
   }
 
   /// Removes a collider previously inserted by one of the
   /// `create*Collider` methods.
   void destroyCollider(int handle) {
-    native.colliderDestroy(_handle, handle);
+    _bindings.destroyCollider(handle);
   }
 
   /// Welds [bodyA] and [bodyB] together at the given local anchors and
@@ -450,17 +331,12 @@ class RapierWorld extends PhysicsWorld {
     required Vector3 anchorB,
     required bool collisionsEnabled,
   }) {
-    return native.jointFixed(
-      _handle,
+    return _bindings.jointFixed(
       bodyA,
       bodyB,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      collisionsEnabled ? 1 : 0,
+      anchorA,
+      anchorB,
+      collisionsEnabled,
     );
   }
 
@@ -472,17 +348,12 @@ class RapierWorld extends PhysicsWorld {
     required Vector3 anchorB,
     required bool collisionsEnabled,
   }) {
-    return native.jointSpherical(
-      _handle,
+    return _bindings.jointSpherical(
       bodyA,
       bodyB,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      collisionsEnabled ? 1 : 0,
+      anchorA,
+      anchorB,
+      collisionsEnabled,
     );
   }
 
@@ -500,28 +371,17 @@ class RapierWorld extends PhysicsWorld {
     double? motorMaxForce,
     required bool collisionsEnabled,
   }) {
-    final hasLimits = lowerLimit != null && upperLimit != null;
-    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
-    return native.jointRevolute(
-      _handle,
+    return _bindings.jointRevolute(
       bodyA,
       bodyB,
-      axis.x,
-      axis.y,
-      axis.z,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      hasLimits ? 1 : 0,
-      lowerLimit ?? 0,
-      upperLimit ?? 0,
-      hasMotor ? 1 : 0,
-      motorTargetVelocity ?? 0,
-      motorMaxForce ?? 0,
-      collisionsEnabled ? 1 : 0,
+      axis,
+      anchorA,
+      anchorB,
+      lowerLimit,
+      upperLimit,
+      motorTargetVelocity,
+      motorMaxForce,
+      collisionsEnabled,
     );
   }
 
@@ -539,33 +399,22 @@ class RapierWorld extends PhysicsWorld {
     double? motorMaxForce,
     required bool collisionsEnabled,
   }) {
-    final hasLimits = lowerLimit != null && upperLimit != null;
-    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
-    return native.jointPrismatic(
-      _handle,
+    return _bindings.jointPrismatic(
       bodyA,
       bodyB,
-      axis.x,
-      axis.y,
-      axis.z,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      hasLimits ? 1 : 0,
-      lowerLimit ?? 0,
-      upperLimit ?? 0,
-      hasMotor ? 1 : 0,
-      motorTargetVelocity ?? 0,
-      motorMaxForce ?? 0,
-      collisionsEnabled ? 1 : 0,
+      axis,
+      anchorA,
+      anchorB,
+      lowerLimit,
+      upperLimit,
+      motorTargetVelocity,
+      motorMaxForce,
+      collisionsEnabled,
     );
   }
 
   /// Removes a joint previously inserted by a `create*Joint` method.
-  void destroyJoint(int handle) => native.jointDestroy(_handle, handle);
+  void destroyJoint(int handle) => _bindings.destroyJoint(handle);
 
   /// Reconfigures an existing fixed joint in place.
   void updateFixedJoint(
@@ -574,17 +423,7 @@ class RapierWorld extends PhysicsWorld {
     required Vector3 anchorB,
     required bool collisionsEnabled,
   }) {
-    native.jointUpdateFixed(
-      _handle,
-      joint,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      collisionsEnabled ? 1 : 0,
-    );
+    _bindings.jointUpdateFixed(joint, anchorA, anchorB, collisionsEnabled);
   }
 
   /// Reconfigures an existing spherical joint in place.
@@ -594,17 +433,7 @@ class RapierWorld extends PhysicsWorld {
     required Vector3 anchorB,
     required bool collisionsEnabled,
   }) {
-    native.jointUpdateSpherical(
-      _handle,
-      joint,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      collisionsEnabled ? 1 : 0,
-    );
+    _bindings.jointUpdateSpherical(joint, anchorA, anchorB, collisionsEnabled);
   }
 
   /// Reconfigures an existing revolute joint in place.
@@ -619,27 +448,16 @@ class RapierWorld extends PhysicsWorld {
     double? motorMaxForce,
     required bool collisionsEnabled,
   }) {
-    final hasLimits = lowerLimit != null && upperLimit != null;
-    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
-    native.jointUpdateRevolute(
-      _handle,
+    _bindings.jointUpdateRevolute(
       joint,
-      axis.x,
-      axis.y,
-      axis.z,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      hasLimits ? 1 : 0,
-      lowerLimit ?? 0,
-      upperLimit ?? 0,
-      hasMotor ? 1 : 0,
-      motorTargetVelocity ?? 0,
-      motorMaxForce ?? 0,
-      collisionsEnabled ? 1 : 0,
+      axis,
+      anchorA,
+      anchorB,
+      lowerLimit,
+      upperLimit,
+      motorTargetVelocity,
+      motorMaxForce,
+      collisionsEnabled,
     );
   }
 
@@ -655,27 +473,16 @@ class RapierWorld extends PhysicsWorld {
     double? motorMaxForce,
     required bool collisionsEnabled,
   }) {
-    final hasLimits = lowerLimit != null && upperLimit != null;
-    final hasMotor = motorTargetVelocity != null && motorMaxForce != null;
-    native.jointUpdatePrismatic(
-      _handle,
+    _bindings.jointUpdatePrismatic(
       joint,
-      axis.x,
-      axis.y,
-      axis.z,
-      anchorA.x,
-      anchorA.y,
-      anchorA.z,
-      anchorB.x,
-      anchorB.y,
-      anchorB.z,
-      hasLimits ? 1 : 0,
-      lowerLimit ?? 0,
-      upperLimit ?? 0,
-      hasMotor ? 1 : 0,
-      motorTargetVelocity ?? 0,
-      motorMaxForce ?? 0,
-      collisionsEnabled ? 1 : 0,
+      axis,
+      anchorA,
+      anchorB,
+      lowerLimit,
+      upperLimit,
+      motorTargetVelocity,
+      motorMaxForce,
+      collisionsEnabled,
     );
   }
 
@@ -692,14 +499,15 @@ class RapierWorld extends PhysicsWorld {
     required List<JointAxisConfig> axes,
     required bool collisionsEnabled,
   }) {
-    _fillGenericJointBuffers(anchorA, basisA, anchorB, basisB, axes);
-    return native.jointGeneric(
-      _handle,
+    return _bindings.jointGeneric(
       bodyA,
       bodyB,
-      _jointFramesBuffer,
-      collisionsEnabled ? 1 : 0,
-      _jointAxesBuffer,
+      anchorA,
+      basisA,
+      anchorB,
+      basisB,
+      axes,
+      collisionsEnabled,
     );
   }
 
@@ -713,57 +521,15 @@ class RapierWorld extends PhysicsWorld {
     required List<JointAxisConfig> axes,
     required bool collisionsEnabled,
   }) {
-    _fillGenericJointBuffers(anchorA, basisA, anchorB, basisB, axes);
-    native.jointUpdateGeneric(
-      _handle,
+    _bindings.jointUpdateGeneric(
       joint,
-      _jointFramesBuffer,
-      collisionsEnabled ? 1 : 0,
-      _jointAxesBuffer,
+      anchorA,
+      basisA,
+      anchorB,
+      basisB,
+      axes,
+      collisionsEnabled,
     );
-  }
-
-  // Packs the two local frames and the six per-axis configs into the
-  // reusable native scratch buffers.
-  void _fillGenericJointBuffers(
-    Vector3 anchorA,
-    Quaternion basisA,
-    Vector3 anchorB,
-    Quaternion basisB,
-    List<JointAxisConfig> axes,
-  ) {
-    final f = _jointFramesBuffer;
-    f[0] = anchorA.x;
-    f[1] = anchorA.y;
-    f[2] = anchorA.z;
-    f[3] = basisA.x;
-    f[4] = basisA.y;
-    f[5] = basisA.z;
-    f[6] = basisA.w;
-    f[7] = anchorB.x;
-    f[8] = anchorB.y;
-    f[9] = anchorB.z;
-    f[10] = basisB.x;
-    f[11] = basisB.y;
-    f[12] = basisB.z;
-    f[13] = basisB.w;
-    for (var i = 0; i < 6; i++) {
-      final cfg = axes[i];
-      final motor = cfg.motor;
-      final a = _jointAxesBuffer[i];
-      // JointAxisMotion: locked=0, free=1, limited=2 (matches native).
-      a.motion = cfg.motion.index;
-      a.hasMotor = motor != null ? 1 : 0;
-      // JointMotorModel: acceleration=0, force=1 (matches native).
-      a.motorModel = motor?.model.index ?? 0;
-      a.lower = cfg.lowerLimit;
-      a.upper = cfg.upperLimit;
-      a.targetPos = motor?.targetPosition ?? 0;
-      a.targetVel = motor?.targetVelocity ?? 0;
-      a.stiffness = motor?.stiffness ?? 0;
-      a.damping = motor?.damping ?? 0;
-      a.maxForce = motor?.maxForce ?? double.infinity;
-    }
   }
 
   /// Runs one kinematic-character move for the character whose shape is
@@ -771,7 +537,7 @@ class RapierWorld extends PhysicsWorld {
   /// translation to apply plus the grounded / sliding flags. Pass a null
   /// [snapToGround] to disable snapping and `autostep: false` to disable
   /// stepping.
-  ({Vector3 translation, bool grounded, bool slidingDownSlope}) moveCharacter(
+  CharacterMovement moveCharacter(
     int collider, {
     required Vector3 desiredTranslation,
     required double deltaSeconds,
@@ -786,8 +552,7 @@ class RapierWorld extends PhysicsWorld {
     required double autostepMinWidth,
     required bool autostepIncludeDynamicBodies,
   }) {
-    native.characterMove(
-      _handle,
+    return _bindings.moveCharacter(
       collider,
       desiredTranslation.x,
       desiredTranslation.y,
@@ -797,32 +562,24 @@ class RapierWorld extends PhysicsWorld {
       up.y,
       up.z,
       offset,
-      slide ? 1 : 0,
+      slide,
       maxSlopeClimbAngle,
       minSlopeSlideAngle,
       snapToGround ?? -1.0,
-      autostep ? 1 : 0,
+      autostep,
       autostepMaxHeight,
       autostepMinWidth,
-      autostepIncludeDynamicBodies ? 1 : 0,
-      _characterBuffer,
-    );
-    final m = _characterBuffer.ref;
-    return (
-      translation: Vector3(m.tx, m.ty, m.tz),
-      grounded: m.grounded != 0,
-      slidingDownSlope: m.sliding != 0,
+      autostepIncludeDynamicBodies,
     );
   }
 
   /// Creates a fixed body at the world origin to stand in as the static
-  /// side of a world-anchored joint, returning its native handle. It is
-  /// not registered for transform interpolation; the joint that owns it
+  /// side of a world-anchored joint, returning its handle. It is not
+  /// registered for transform interpolation; the joint that owns it
   /// releases it with [destroyJointAnchorBody].
   int createJointAnchorBody() {
-    return native.bodyCreate(
-      _handle,
-      native.bodyKindFixed,
+    return _bindings.createBody(
+      bodyKindFixed,
       0.0,
       0.0,
       0.0,
@@ -835,72 +592,40 @@ class RapierWorld extends PhysicsWorld {
   }
 
   /// Releases a body created by [createJointAnchorBody].
-  void destroyJointAnchorBody(int handle) =>
-      native.bodyDestroy(_handle, handle);
+  void destroyJointAnchorBody(int handle) => _bindings.destroyBody(handle);
 
-  /// Reads the body's current world translation. Returns a fresh
-  /// [Vector3]; the underlying scratch buffer is reused on each call,
-  /// so do not hold a reference to it.
-  Vector3 readBodyTranslation(int handle) {
-    native.bodyTranslation(_handle, handle, _readBuffer);
-    return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
-  }
+  /// Reads the body's current world translation.
+  Vector3 readBodyTranslation(int handle) => _bindings.bodyTranslation(handle);
 
   /// Reads the body's current world rotation as a unit quaternion.
-  Quaternion readBodyRotation(int handle) {
-    native.bodyRotation(_handle, handle, _readBuffer);
-    return Quaternion(
-      _readBuffer[0],
-      _readBuffer[1],
-      _readBuffer[2],
-      _readBuffer[3],
-    );
-  }
+  Quaternion readBodyRotation(int handle) => _bindings.bodyRotation(handle);
 
   /// Reads the body's current linear velocity (world space).
-  Vector3 readBodyLinearVelocity(int handle) {
-    native.bodyLinearVelocity(_handle, handle, _readBuffer);
-    return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
-  }
+  Vector3 readBodyLinearVelocity(int handle) =>
+      _bindings.bodyLinearVelocity(handle);
 
   /// Reads the body's current angular velocity (rad/sec, world axes).
-  Vector3 readBodyAngularVelocity(int handle) {
-    native.bodyAngularVelocity(_handle, handle, _readBuffer);
-    return Vector3(_readBuffer[0], _readBuffer[1], _readBuffer[2]);
-  }
+  Vector3 readBodyAngularVelocity(int handle) =>
+      _bindings.bodyAngularVelocity(handle);
 
   void setBodyLinearVelocity(int handle, Vector3 v, {bool wakeUp = true}) {
-    native.bodySetLinearVelocity(
-      _handle,
-      handle,
-      v.x,
-      v.y,
-      v.z,
-      wakeUp ? 1 : 0,
-    );
+    _bindings.setBodyLinearVelocity(handle, v.x, v.y, v.z, wakeUp);
   }
 
   void setBodyAngularVelocity(int handle, Vector3 w, {bool wakeUp = true}) {
-    native.bodySetAngularVelocity(
-      _handle,
-      handle,
-      w.x,
-      w.y,
-      w.z,
-      wakeUp ? 1 : 0,
-    );
+    _bindings.setBodyAngularVelocity(handle, w.x, w.y, w.z, wakeUp);
   }
 
   void setBodyLinearDamping(int handle, double damping) {
-    native.bodySetLinearDamping(_handle, handle, damping);
+    _bindings.setBodyLinearDamping(handle, damping);
   }
 
   void setBodyAngularDamping(int handle, double damping) {
-    native.bodySetAngularDamping(_handle, handle, damping);
+    _bindings.setBodyAngularDamping(handle, damping);
   }
 
   void setBodyAdditionalMass(int handle, double additionalMass) {
-    native.bodySetAdditionalMass(_handle, handle, additionalMass);
+    _bindings.setBodyAdditionalMass(handle, additionalMass);
   }
 
   /// Pushes the next-step pose for a kinematic body. Rapier integrates
@@ -910,8 +635,7 @@ class RapierWorld extends PhysicsWorld {
     Vector3 translation,
     Quaternion rotation,
   ) {
-    native.bodySetNextKinematicPose(
-      _handle,
+    _bindings.setBodyNextKinematicPose(
       handle,
       translation.x,
       translation.y,
@@ -925,7 +649,7 @@ class RapierWorld extends PhysicsWorld {
 
   /// Packs [linear] and [angular] into a 6-bit lock field (translation
   /// XYZ in low bits, rotation XYZ in high bits, value 0 = locked) and
-  /// pushes it to native.
+  /// pushes it to the backend.
   void setBodyLockedAxes(int handle, Vector3 linear, Vector3 angular) {
     var bits = 0;
     if (linear.x == 0) bits |= 1;
@@ -934,34 +658,32 @@ class RapierWorld extends PhysicsWorld {
     if (angular.x == 0) bits |= 8;
     if (angular.y == 0) bits |= 16;
     if (angular.z == 0) bits |= 32;
-    native.bodySetLockedAxes(_handle, handle, bits);
+    _bindings.setBodyLockedAxes(handle, bits);
   }
 
   void setBodyGravityScale(int handle, double scale) {
-    native.bodySetGravityScale(_handle, handle, scale);
+    _bindings.setBodyGravityScale(handle, scale);
   }
 
   void setBodyCcdEnabled(int handle, bool enabled) {
-    native.bodySetCcdEnabled(_handle, handle, enabled ? 1 : 0);
+    _bindings.setBodyCcdEnabled(handle, enabled);
   }
 
-  void wakeBody(int handle) => native.bodyWakeUp(_handle, handle);
+  void wakeBody(int handle) => _bindings.wakeBody(handle);
 
-  void sleepBody(int handle) => native.bodySleep(_handle, handle);
+  void sleepBody(int handle) => _bindings.sleepBody(handle);
 
-  bool isBodySleeping(int handle) =>
-      native.bodyIsSleeping(_handle, handle) != 0;
+  bool isBodySleeping(int handle) => _bindings.isBodySleeping(handle);
 
   /// Continuous force applied to a body for one step.
   void applyBodyForce(int handle, Vector3 force, {Vector3? atWorldPoint}) {
     final p = atWorldPoint;
-    native.bodyApplyForce(
-      _handle,
+    _bindings.applyBodyForce(
       handle,
       force.x,
       force.y,
       force.z,
-      p != null ? 1 : 0,
+      p != null,
       p?.x ?? 0,
       p?.y ?? 0,
       p?.z ?? 0,
@@ -971,13 +693,12 @@ class RapierWorld extends PhysicsWorld {
   /// Instantaneous impulse applied to a body.
   void applyBodyImpulse(int handle, Vector3 impulse, {Vector3? atWorldPoint}) {
     final p = atWorldPoint;
-    native.bodyApplyImpulse(
-      _handle,
+    _bindings.applyBodyImpulse(
       handle,
       impulse.x,
       impulse.y,
       impulse.z,
-      p != null ? 1 : 0,
+      p != null,
       p?.x ?? 0,
       p?.y ?? 0,
       p?.z ?? 0,
@@ -985,27 +706,21 @@ class RapierWorld extends PhysicsWorld {
   }
 
   void applyBodyTorque(int handle, Vector3 torque) {
-    native.bodyApplyTorque(_handle, handle, torque.x, torque.y, torque.z);
+    _bindings.applyBodyTorque(handle, torque.x, torque.y, torque.z);
   }
 
   void applyBodyAngularImpulse(int handle, Vector3 impulse) {
-    native.bodyApplyAngularImpulse(
-      _handle,
-      handle,
-      impulse.x,
-      impulse.y,
-      impulse.z,
-    );
+    _bindings.applyBodyAngularImpulse(handle, impulse.x, impulse.y, impulse.z);
   }
 
   static int _bodyKindByte(BodyType type) {
     switch (type) {
       case BodyType.fixed:
-        return native.bodyKindFixed;
+        return bodyKindFixed;
       case BodyType.kinematic:
-        return native.bodyKindKinematic;
+        return bodyKindKinematic;
       case BodyType.dynamic_:
-        return native.bodyKindDynamic;
+        return bodyKindDynamic;
     }
   }
 
@@ -1021,15 +736,7 @@ class RapierWorld extends PhysicsWorld {
   @override
   void onUnmount() {
     _events.close();
-    _finalizer.detach(this);
-    native.worldDestroy(_handle);
-    calloc.free(_readBuffer);
-    calloc.free(_hitBuffer);
-    calloc.free(_eventBuffer);
-    calloc.free(_contactBuffer);
-    calloc.free(_jointFramesBuffer);
-    calloc.free(_jointAxesBuffer);
-    calloc.free(_characterBuffer);
+    _bindings.dispose();
   }
 
   // Drains the collision events Rapier generated during the last step
@@ -1039,17 +746,15 @@ class RapierWorld extends PhysicsWorld {
   // [CollisionBegan] carries the solved contact-manifold points.
   void _drainCollisionEvents() {
     if (!_events.hasListener) return;
-    final count = native.worldCollisionEventCount(_handle);
+    final count = _bindings.collisionEventCount();
     for (var i = 0; i < count; i++) {
-      if (native.worldCollisionEventAt(_handle, i, _eventBuffer) == 0) {
-        continue;
-      }
-      final raw = _eventBuffer.ref;
+      final raw = _bindings.collisionEventAt(i);
+      if (raw == null) continue;
       final a = _collidersByHandle[raw.colliderA];
       final b = _collidersByHandle[raw.colliderB];
       if (a == null || b == null) continue;
-      final started = raw.started != 0;
-      final isTrigger = raw.sensor != 0;
+      final started = raw.started;
+      final isTrigger = raw.sensor;
       final CollisionEvent event;
       if (isTrigger) {
         event = started
@@ -1086,19 +791,17 @@ class RapierWorld extends PhysicsWorld {
   }
 
   // Reads [count] contact points starting at absolute index [start] from
-  // the most recent step's native contact buffer.
+  // the most recent step's contact buffer.
   List<ContactPoint> _readContacts(int start, int count) {
     if (count == 0) return const [];
     final contacts = <ContactPoint>[];
     for (var i = 0; i < count; i++) {
-      if (native.worldContactPointAt(_handle, start + i, _contactBuffer) == 0) {
-        continue;
-      }
-      final c = _contactBuffer.ref;
+      final c = _bindings.contactPointAt(start + i);
+      if (c == null) continue;
       contacts.add(
         ContactPoint(
-          worldPosition: Vector3(c.px, c.py, c.pz),
-          worldNormal: Vector3(c.nx, c.ny, c.nz),
+          worldPosition: c.position,
+          worldNormal: c.normal,
           impulse: c.impulse,
           separation: c.separation,
         ),
@@ -1110,8 +813,8 @@ class RapierWorld extends PhysicsWorld {
   @override
   void step(double fixedDt) {
     final g = gravity;
-    native.worldSetGravity(_handle, g.x, g.y, g.z);
-    native.worldStep(_handle, fixedDt);
+    _bindings.setGravity(g.x, g.y, g.z);
+    _bindings.step(fixedDt);
     // Capture this step's pose for dynamic bodies so
     // interpolateTransforms can lerp/slerp between substeps.
     for (final entry in _bodies.entries) {
@@ -1119,10 +822,8 @@ class RapierWorld extends PhysicsWorld {
       if (r.type != BodyType.dynamic_) continue;
       r.prevTranslation.setFrom(r.currTranslation);
       r.prevRotation.setFrom(r.currRotation);
-      final t = readBodyTranslation(entry.key);
-      final rot = readBodyRotation(entry.key);
-      r.currTranslation.setFrom(t);
-      r.currRotation.setFrom(rot);
+      r.currTranslation.setFrom(_bindings.bodyTranslation(entry.key));
+      r.currRotation.setFrom(_bindings.bodyRotation(entry.key));
     }
     _drainCollisionEvents();
   }
@@ -1155,8 +856,7 @@ class RapierWorld extends PhysicsWorld {
     }
   }
 
-  // Packs the include* flags into the bitmask the native query filter
-  // expects.
+  // Packs the include* flags into the bitmask the query filter expects.
   int _filterFlags({
     required bool includeFixed,
     required bool includeKinematic,
@@ -1164,45 +864,25 @@ class RapierWorld extends PhysicsWorld {
     required bool includeTriggers,
   }) {
     var flags = 0;
-    if (includeFixed) flags |= native.queryIncludeFixed;
-    if (includeKinematic) flags |= native.queryIncludeKinematic;
-    if (includeDynamic) flags |= native.queryIncludeDynamic;
-    if (includeTriggers) flags |= native.queryIncludeSensors;
+    if (includeFixed) flags |= queryIncludeFixed;
+    if (includeKinematic) flags |= queryIncludeKinematic;
+    if (includeDynamic) flags |= queryIncludeDynamic;
+    if (includeTriggers) flags |= queryIncludeSensors;
     return flags;
   }
 
-  // Builds a RaycastHit from the native scratch hit, resolving the
-  // collider handle back to its Dart wrapper. Returns null when the
-  // handle no longer maps to a live collider.
-  RaycastHit? _raycastHitFromBuffer() {
-    final hit = _hitBuffer.ref;
+  // Resolves a raw hit's collider handle to a RaycastHit, or null when
+  // the handle no longer maps to a live collider.
+  RaycastHit? _raycastHitFromRaw(RawHit hit) {
     final collider = _collidersByHandle[hit.collider];
     if (collider == null) return null;
     return RaycastHit(
       node: collider.node,
       collider: collider,
-      worldPoint: Vector3(hit.px, hit.py, hit.pz),
-      worldNormal: Vector3(hit.nx, hit.ny, hit.nz),
+      worldPoint: hit.point,
+      worldNormal: hit.normal,
       distance: hit.distance,
     );
-  }
-
-  // Reads [count] entries out of the native query buffer, mapping each
-  // to a result of type [T]. Entries whose collider handle no longer
-  // resolves to a live Dart collider are skipped.
-  List<T> _drainHits<T>(
-    int count,
-    T Function(RapierCollider collider, native.FsrHit hit) build,
-  ) {
-    final results = <T>[];
-    for (var i = 0; i < count; i++) {
-      if (native.worldQueryResultAt(_handle, i, _hitBuffer) == 0) continue;
-      final hit = _hitBuffer.ref;
-      final collider = _collidersByHandle[hit.collider];
-      if (collider == null) continue;
-      results.add(build(collider, hit));
-    }
-    return results;
   }
 
   @override
@@ -1216,8 +896,7 @@ class RapierWorld extends PhysicsWorld {
     bool includeTriggers = false,
   }) {
     final dir = ray.direction.normalized();
-    final hit = native.worldRaycast(
-      _handle,
+    final hit = _bindings.raycast(
       ray.origin.x,
       ray.origin.y,
       ray.origin.z,
@@ -1225,17 +904,15 @@ class RapierWorld extends PhysicsWorld {
       dir.y,
       dir.z,
       maxDistance.isFinite ? maxDistance : double.maxFinite,
-      1,
       _filterFlags(
         includeFixed: includeFixed,
         includeKinematic: includeKinematic,
         includeDynamic: includeDynamic,
         includeTriggers: includeTriggers,
       ),
-      _hitBuffer,
     );
-    if (hit == 0) return null;
-    return _raycastHitFromBuffer();
+    if (hit == null) return null;
+    return _raycastHitFromRaw(hit);
   }
 
   @override
@@ -1249,8 +926,7 @@ class RapierWorld extends PhysicsWorld {
     bool includeTriggers = false,
   }) {
     final dir = ray.direction.normalized();
-    final count = native.worldRaycastAll(
-      _handle,
+    final hits = _bindings.raycastAll(
       ray.origin.x,
       ray.origin.y,
       ray.origin.z,
@@ -1258,7 +934,6 @@ class RapierWorld extends PhysicsWorld {
       dir.y,
       dir.z,
       maxDistance.isFinite ? maxDistance : double.maxFinite,
-      1,
       _filterFlags(
         includeFixed: includeFixed,
         includeKinematic: includeKinematic,
@@ -1266,15 +941,12 @@ class RapierWorld extends PhysicsWorld {
         includeTriggers: includeTriggers,
       ),
     );
-    return _drainHits(count, (collider, hit) {
-      return RaycastHit(
-        node: collider.node,
-        collider: collider,
-        worldPoint: Vector3(hit.px, hit.py, hit.pz),
-        worldNormal: Vector3(hit.nx, hit.ny, hit.nz),
-        distance: hit.distance,
-      );
-    });
+    final results = <RaycastHit>[];
+    for (final hit in hits) {
+      final resolved = _raycastHitFromRaw(hit);
+      if (resolved != null) results.add(resolved);
+    }
+    return results;
   }
 
   @override
@@ -1287,8 +959,7 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    final count = native.worldOverlapSphere(
-      _handle,
+    final handles = _bindings.overlapSphere(
       center.x,
       center.y,
       center.z,
@@ -1300,10 +971,7 @@ class RapierWorld extends PhysicsWorld {
         includeTriggers: includeTriggers,
       ),
     );
-    return _drainHits(
-      count,
-      (collider, _) => OverlapHit(node: collider.node, collider: collider),
-    );
+    return _overlapHits(handles);
   }
 
   @override
@@ -1317,8 +985,7 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    final count = native.worldOverlapBox(
-      _handle,
+    final handles = _bindings.overlapBox(
       center.x,
       center.y,
       center.z,
@@ -1336,10 +1003,17 @@ class RapierWorld extends PhysicsWorld {
         includeTriggers: includeTriggers,
       ),
     );
-    return _drainHits(
-      count,
-      (collider, _) => OverlapHit(node: collider.node, collider: collider),
-    );
+    return _overlapHits(handles);
+  }
+
+  List<OverlapHit> _overlapHits(List<int> handles) {
+    final results = <OverlapHit>[];
+    for (final handle in handles) {
+      final collider = _collidersByHandle[handle];
+      if (collider == null) continue;
+      results.add(OverlapHit(node: collider.node, collider: collider));
+    }
+    return results;
   }
 
   @override
@@ -1364,10 +1038,9 @@ class RapierWorld extends PhysicsWorld {
     );
     // The probe's world rotation matters for every shape except the
     // rotation-invariant sphere.
-    final int hit;
+    final RawHit? hit;
     if (shape is SphereShape) {
-      hit = native.worldShapeCastSphere(
-        _handle,
+      hit = _bindings.shapeCastSphere(
         origin.x,
         origin.y,
         origin.z,
@@ -1377,12 +1050,10 @@ class RapierWorld extends PhysicsWorld {
         dir.z,
         distance,
         flags,
-        _hitBuffer,
       );
     } else if (shape is BoxShape) {
       final r = Quaternion.fromRotation(from.getRotation());
-      hit = native.worldShapeCastBox(
-        _handle,
+      hit = _bindings.shapeCastBox(
         origin.x,
         origin.y,
         origin.z,
@@ -1398,12 +1069,10 @@ class RapierWorld extends PhysicsWorld {
         dir.z,
         distance,
         flags,
-        _hitBuffer,
       );
     } else if (shape is CapsuleShape) {
       final r = Quaternion.fromRotation(from.getRotation());
-      hit = native.worldShapeCastCapsule(
-        _handle,
+      hit = _bindings.shapeCastCapsule(
         origin.x,
         origin.y,
         origin.z,
@@ -1418,12 +1087,10 @@ class RapierWorld extends PhysicsWorld {
         dir.z,
         distance,
         flags,
-        _hitBuffer,
       );
     } else if (shape is CylinderShape) {
       final r = Quaternion.fromRotation(from.getRotation());
-      hit = native.worldShapeCastCylinder(
-        _handle,
+      hit = _bindings.shapeCastCylinder(
         origin.x,
         origin.y,
         origin.z,
@@ -1438,26 +1105,24 @@ class RapierWorld extends PhysicsWorld {
         dir.z,
         distance,
         flags,
-        _hitBuffer,
       );
     } else {
       // TODO(shape-cast-hulls): convex-hull / trimesh / heightfield /
-      // compound cast probes are not wired through the native surface.
+      // compound cast probes are not wired through the backend surface.
       throw UnsupportedError(
         'RapierWorld.shapeCast supports sphere, box, capsule, and cylinder '
         'probes; ${shape.runtimeType} cannot be used as a cast probe.',
       );
     }
-    if (hit == 0) return null;
-    final h = _hitBuffer.ref;
-    final collider = _collidersByHandle[h.collider];
+    if (hit == null) return null;
+    final collider = _collidersByHandle[hit.collider];
     if (collider == null) return null;
     return ShapeCastHit(
       node: collider.node,
       collider: collider,
-      worldPoint: Vector3(h.px, h.py, h.pz),
-      worldNormal: Vector3(h.nx, h.ny, h.nz),
-      distance: h.distance,
+      worldPoint: hit.point,
+      worldNormal: hit.normal,
+      distance: hit.distance,
     );
   }
 }
