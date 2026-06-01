@@ -8,12 +8,10 @@
 ///
 /// Body lifecycle, force / impulse application, the full Shape
 /// hierarchy, axis locks, sleeping, kinematic transform sync,
-/// interpolated transform writeback, and scene queries (raycast,
-/// overlap, shape cast) all run through the native shim.
+/// interpolated transform writeback, scene queries (raycast, overlap,
+/// shape cast), and collision / trigger events all run through the
+/// native shim.
 ///
-/// TODO(events): emit [CollisionBegan] / [CollisionEnded] /
-/// [TriggerEntered] / [TriggerExited] on the [PhysicsWorld.collisions]
-/// stream via Rapier's narrow-phase events.
 /// TODO(joints): expose concrete subclasses of [FixedJoint],
 /// [SphericalJoint], [RevoluteJoint], [PrismaticJoint], and
 /// [GenericJoint] backed by Rapier's impulse-joint set.
