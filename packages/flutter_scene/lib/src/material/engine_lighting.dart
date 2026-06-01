@@ -16,11 +16,11 @@ import 'package:flutter_scene/src/material/material.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (624 bytes / 156 floats:
-  /// the trailing mat4 `environment_transform` ends at float 155, with three
-  /// floats of std140 padding before it). See the layout map in the
+  /// The float count of the full `FragInfo` block (640 bytes / 160 floats:
+  /// the mat4 `environment_transform` ends at float 155, followed by the
+  /// `ssao_params` vec4 at floats 156..159). See the layout map in the
   /// implementation.
-  static const fragInfoFloatCount = 156;
+  static const fragInfoFloatCount = 160;
 
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
@@ -78,6 +78,14 @@ class EngineLightingUniforms {
       fragInfo[142 + col * 4] = envTransform[col * 3 + 2];
     }
     fragInfo[155] = 1.0; // mat4 column 3 = (0, 0, 0, 1)
+    // ssao_params at [156..159]: occlusion enabled, specular occlusion
+    // enabled, and the reciprocal render-target size (for the gl_FragCoord
+    // to occlusion-UV mapping).
+    fragInfo[156] = lighting.ssaoMap != null ? 1.0 : 0.0;
+    fragInfo[157] = lighting.specularOcclusionMode;
+    final viewport = lighting.viewportSize;
+    fragInfo[158] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
+    fragInfo[159] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
   }
 
   /// Binds the engine image-based-lighting and shadow samplers
@@ -120,6 +128,20 @@ class EngineLightingUniforms {
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
         magFilter: gpu.MinMagFilter.nearest,
+      ),
+    );
+    // Screen-space ambient occlusion. Bilinear so a half-resolution
+    // occlusion buffer upsamples smoothly; a white placeholder makes the
+    // sample a no-op when occlusion is off. The shader gates it on
+    // ssao_params.x regardless.
+    pass.bindTexture(
+      shader.getUniformSlot('ssao_texture'),
+      Material.whitePlaceholder(lighting.ssaoMap),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
   }

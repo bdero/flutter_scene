@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
@@ -294,6 +295,9 @@ class Lighting {
     this.directionalLight,
     this.shadowMap,
     this.cascades = const [],
+    this.ssaoMap,
+    this.specularOcclusionMode = 0.0,
+    this.viewportSize = ui.Size.zero,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
@@ -318,4 +322,18 @@ class Lighting {
   /// The shadow cascades matching [shadowMap], near-to-far, or empty
   /// when there is no shadow map this frame.
   final List<ShadowCascade> cascades;
+
+  /// The screen-space ambient-occlusion texture for this frame (occlusion
+  /// factor in `.r`), or null when occlusion is off. When set, it modulates
+  /// indirect lighting in the shader.
+  final gpu.Texture? ssaoMap;
+
+  /// How indirect specular is occluded: `0` leaves it on the diffuse
+  /// occlusion factor, `1` derives a dedicated specular occlusion. Mirrors
+  /// `SpecularAmbientOcclusionMode.index`.
+  final double specularOcclusionMode;
+
+  /// The color-pass render-target size, used to map `gl_FragCoord` into the
+  /// occlusion texture's UV. Zero when occlusion is off.
+  final ui.Size viewportSize;
 }
