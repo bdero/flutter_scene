@@ -1,7 +1,7 @@
 // Smoke tests: the Rapier-backed types satisfy the flutter_scene
 // abstract physics contract, the world can be driven through the
-// fixed-step substepping loop without error, and the still-
-// unimplemented scene-query surface throws cleanly.
+// fixed-step substepping loop without error, and a query against an
+// empty world returns cleanly.
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
@@ -48,12 +48,11 @@ void main() {
     expect(collider.localPose, isA<Matrix4>());
   });
 
-  test('query methods throw UnimplementedError', () {
+  test('a raycast against an empty world returns null', () {
     final world = RapierWorld();
-    expect(
-      () =>
-          world.raycast(Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1))),
-      throwsUnimplementedError,
+    final hit = world.raycast(
+      Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1)),
     );
+    expect(hit, isNull);
   });
 }
