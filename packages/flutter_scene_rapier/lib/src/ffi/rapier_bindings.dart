@@ -79,9 +79,6 @@ typedef CharacterMovement = ({
   bool slidingDownSlope,
 });
 
-/// Sentinel a cooking call returns when Rapier rejects the shape.
-const int invalidHandle = 0xFFFFFFFFFFFFFFFF;
-
 /// The shim operations RapierWorld depends on. Each implementation owns
 /// the world it created and releases it (and any scratch) in [dispose].
 /// Handles are the shim's packed `u64` values; on the web they are
