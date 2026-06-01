@@ -157,7 +157,7 @@ jobs:
 
   release:
     name: Assemble manifest and release
-    needs: build
+    needs: [build, build-wasm]
     # Validation runs push a tag containing "citest" to exercise the full
     # build matrix on the runners without publishing a release.
     if: ${{ !contains(github.ref_name, 'citest') && !contains(inputs.tag, 'citest') }}
