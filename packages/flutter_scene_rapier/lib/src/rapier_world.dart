@@ -17,11 +17,11 @@ import 'package:vector_math/vector_math.dart';
 /// dynamic-body poses between substeps and writes them back to each
 /// owning [Node.localTransform]. Scene queries ([raycast],
 /// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run
-/// through Rapier's QueryPipeline.
+/// through Rapier's QueryPipeline. Contact and trigger lifecycle
+/// events are emitted on [collisions] after each step.
 ///
-/// TODO(events): wire Rapier's narrow-phase contact and intersection
-/// events into [collisions] so [CollisionBegan] / [CollisionEnded] /
-/// [TriggerEntered] / [TriggerExited] actually fire.
+/// TODO(contact-points): [CollisionBegan] events carry an empty
+/// contact list; forward Rapier's contact manifold points.
 /// TODO(shape-cast-shapes): [shapeCast] only accepts a [SphereShape]
 /// probe; widen the native surface to box / capsule / cylinder probes.
 class RapierWorld extends PhysicsWorld {
@@ -46,6 +46,11 @@ class RapierWorld extends PhysicsWorld {
   // for reading multi-hit results out of the native query buffer one
   // entry at a time. Allocated once, freed in onUnmount.
   late final Pointer<native.FsrHit> _hitBuffer = calloc<native.FsrHit>();
+
+  // Reusable scratch for reading collision events out of the native
+  // per-step buffer one at a time. Allocated once, freed in onUnmount.
+  late final Pointer<native.FsrCollisionEvent> _eventBuffer =
+      calloc<native.FsrCollisionEvent>();
 
   /// The underlying native world pointer. Exposed so [RapierRigidBody]
   /// and [RapierCollider] can pass it back into the FFI for body and
@@ -78,8 +83,7 @@ class RapierWorld extends PhysicsWorld {
   /// Looks up the Dart wrapper for a Rapier collider handle. Returns
   /// null when the handle is stale (the collider was just removed) or
   /// belongs to a body / collider this world did not register.
-  RapierCollider? colliderFromHandle(int handle) =>
-      _collidersByHandle[handle];
+  RapierCollider? colliderFromHandle(int handle) => _collidersByHandle[handle];
 
   /// Inserts a rigid body into the native world and returns its packed
   /// handle. Called from [RapierRigidBody.onMount].
@@ -598,6 +602,64 @@ class RapierWorld extends PhysicsWorld {
     native.worldDestroy(_handle);
     calloc.free(_readBuffer);
     calloc.free(_hitBuffer);
+    calloc.free(_eventBuffer);
+  }
+
+  // Drains the collision events Rapier generated during the last step
+  // and emits them on the [collisions] stream, resolving each collider
+  // handle back to its Dart wrapper. A pair involving a sensor maps to
+  // the trigger events; a solid pair maps to the collision events.
+  //
+  // TODO(contact-points): CollisionBegan carries an empty contact list.
+  // Pull the contact manifold out of Rapier's ContactPair (exposed via
+  // the EventHandler) and forward worldPosition / worldNormal /
+  // impulse / separation per point.
+  void _drainCollisionEvents() {
+    if (!_events.hasListener) return;
+    final count = native.worldCollisionEventCount(_handle);
+    for (var i = 0; i < count; i++) {
+      if (native.worldCollisionEventAt(_handle, i, _eventBuffer) == 0) {
+        continue;
+      }
+      final raw = _eventBuffer.ref;
+      final a = _collidersByHandle[raw.colliderA];
+      final b = _collidersByHandle[raw.colliderB];
+      if (a == null || b == null) continue;
+      final started = raw.started != 0;
+      final isTrigger = raw.sensor != 0;
+      final CollisionEvent event;
+      if (isTrigger) {
+        event = started
+            ? TriggerEntered(
+                nodeA: a.node,
+                nodeB: b.node,
+                colliderA: a,
+                colliderB: b,
+              )
+            : TriggerExited(
+                nodeA: a.node,
+                nodeB: b.node,
+                colliderA: a,
+                colliderB: b,
+              );
+      } else {
+        event = started
+            ? CollisionBegan(
+                nodeA: a.node,
+                nodeB: b.node,
+                colliderA: a,
+                colliderB: b,
+                contacts: const [],
+              )
+            : CollisionEnded(
+                nodeA: a.node,
+                nodeB: b.node,
+                colliderA: a,
+                colliderB: b,
+              );
+      }
+      _events.add(event);
+    }
   }
 
   @override
@@ -617,6 +679,7 @@ class RapierWorld extends PhysicsWorld {
       r.currTranslation.setFrom(t);
       r.currRotation.setFrom(rot);
     }
+    _drainCollisionEvents();
   }
 
   @override
