@@ -34,6 +34,11 @@ class _MyAppState extends State<MyApp> {
   Map<String, WidgetBuilder> examples = {};
   late final Future<void> _ready;
 
+  // The Rapier wasm module (~1 MB on the web) loads in the background as
+  // soon as the app starts, but only the Physics example waits on it, so
+  // the other examples are not delayed by it. A no-op on native.
+  final Future<void> _physicsReady = RapierWorld.ensureInitialized();
+
   @override
   void initState() {
     ticker = Ticker((elapsed) {
@@ -56,7 +61,18 @@ class _MyAppState extends State<MyApp> {
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
       'Toon (.fmat)': (context) =>
           ExampleToonFmat(elapsedSeconds: elapsedSeconds),
-      'Physics': (context) => ExamplePhysics(elapsedSeconds: elapsedSeconds),
+      'Physics': (context) => FutureBuilder<void>(
+        // The Rapier backend needs its wasm module loaded before a world
+        // can be built on the web; wait on it here so only this example
+        // pays the cost.
+        future: _physicsReady,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return ExamplePhysics(elapsedSeconds: elapsedSeconds);
+        },
+      ),
       'Stress Tests': (context) =>
           ExampleStressTests(elapsedSeconds: elapsedSeconds),
     };
@@ -65,10 +81,6 @@ class _MyAppState extends State<MyApp> {
     _ready = Future.wait([
       Scene.initializeStaticResources(),
       loadExampleEffects(),
-      // The Physics example builds a RapierWorld in initState. On the web
-      // that needs the Rapier wasm module loaded first; this is a no-op on
-      // native targets.
-      RapierWorld.ensureInitialized(),
     ]);
 
     super.initState();
