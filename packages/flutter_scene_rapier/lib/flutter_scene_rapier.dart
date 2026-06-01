@@ -7,13 +7,10 @@
 /// nodes that should participate in the simulation.
 ///
 /// Body lifecycle, force / impulse application, the full Shape
-/// hierarchy, axis locks, sleeping, kinematic transform sync, and
-/// interpolated transform writeback all run through the native shim.
+/// hierarchy, axis locks, sleeping, kinematic transform sync,
+/// interpolated transform writeback, and scene queries (raycast,
+/// overlap, shape cast) all run through the native shim.
 ///
-/// TODO(scene-queries): the abstract scene-query surface
-/// ([PhysicsWorld.raycast], [PhysicsWorld.overlapSphere], and the rest)
-/// still throws [UnimplementedError]; wire it through Rapier's
-/// QueryPipeline.
 /// TODO(events): emit [CollisionBegan] / [CollisionEnded] /
 /// [TriggerEntered] / [TriggerExited] on the [PhysicsWorld.collisions]
 /// stream via Rapier's narrow-phase events.

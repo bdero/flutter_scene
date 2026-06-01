@@ -13,6 +13,34 @@ import 'dart:ffi';
 /// allocated by [worldNew] and must be released with [worldDestroy].
 final class NativeWorld extends Opaque {}
 
+/// One hit returned by a scene query. Layout must match `FsrHit` in
+/// `native/src/lib.rs`.
+final class FsrHit extends Struct {
+  @Uint64()
+  external int collider;
+  @Float()
+  external double distance;
+  @Float()
+  external double px;
+  @Float()
+  external double py;
+  @Float()
+  external double pz;
+  @Float()
+  external double nx;
+  @Float()
+  external double ny;
+  @Float()
+  external double nz;
+}
+
+/// Bitmask flags for the `filter_flags` parameter on the scene-query
+/// FFI entry points. Match the constants in `native/src/lib.rs`.
+const int queryIncludeFixed = 1;
+const int queryIncludeKinematic = 2;
+const int queryIncludeDynamic = 4;
+const int queryIncludeSensors = 8;
+
 /// Returns the sentinel value (42) hardcoded in the native shim.
 /// Smoke test for verifying that the dynamic library loaded.
 @Native<Int Function()>(symbol: 'fsr_proof_of_life')
@@ -36,6 +64,143 @@ external void worldSetGravity(
 
 @Native<Void Function(Pointer<NativeWorld>, Float)>(symbol: 'fsr_world_step')
 external void worldStep(Pointer<NativeWorld> world, double dt);
+
+@Native<
+  Uint8 Function(
+    Pointer<NativeWorld>,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Uint8,
+    Pointer<FsrHit>,
+  )
+>(symbol: 'fsr_world_raycast')
+external int worldRaycast(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double dx,
+  double dy,
+  double dz,
+  double maxDistance,
+  int solid,
+  int filterFlags,
+  Pointer<FsrHit> out,
+);
+
+@Native<
+  Size Function(
+    Pointer<NativeWorld>,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Uint8,
+  )
+>(symbol: 'fsr_world_raycast_all')
+external int worldRaycastAll(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double dx,
+  double dy,
+  double dz,
+  double maxDistance,
+  int solid,
+  int filterFlags,
+);
+
+@Native<Size Function(Pointer<NativeWorld>, Float, Float, Float, Float, Uint8)>(
+  symbol: 'fsr_world_overlap_sphere',
+)
+external int worldOverlapSphere(
+  Pointer<NativeWorld> world,
+  double cx,
+  double cy,
+  double cz,
+  double radius,
+  int filterFlags,
+);
+
+@Native<
+  Size Function(
+    Pointer<NativeWorld>,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_world_overlap_box')
+external int worldOverlapBox(
+  Pointer<NativeWorld> world,
+  double cx,
+  double cy,
+  double cz,
+  double hx,
+  double hy,
+  double hz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+  int filterFlags,
+);
+
+@Native<
+  Uint8 Function(
+    Pointer<NativeWorld>,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Pointer<FsrHit>,
+  )
+>(symbol: 'fsr_world_shape_cast_sphere')
+external int worldShapeCastSphere(
+  Pointer<NativeWorld> world,
+  double ox,
+  double oy,
+  double oz,
+  double radius,
+  double dx,
+  double dy,
+  double dz,
+  double distance,
+  int filterFlags,
+  Pointer<FsrHit> out,
+);
+
+@Native<Uint8 Function(Pointer<NativeWorld>, Size, Pointer<FsrHit>)>(
+  symbol: 'fsr_world_query_result_at',
+)
+external int worldQueryResultAt(
+  Pointer<NativeWorld> world,
+  int index,
+  Pointer<FsrHit> out,
+);
 
 /// Body kind bytes matching the constants in `native/src/lib.rs`.
 const int bodyKindFixed = 0;

@@ -5,6 +5,7 @@
 //! world go through this surface; the Dart side never sees Rapier's
 //! Rust types directly.
 
+use rapier3d::parry;
 use rapier3d::prelude::*;
 use std::os::raw::c_int;
 
@@ -22,6 +23,64 @@ pub struct World {
     physics_pipeline: PhysicsPipeline,
     integration_parameters: IntegrationParameters,
     gravity: Vector,
+    /// Last query's hit list. Variable-length results are written here
+    /// by the raycast / overlap / shape-cast entry points; the Dart
+    /// side then reads them out via [`fsr_world_query_result_at`].
+    query_hits: Vec<FsrHit>,
+}
+
+/// One hit returned by a scene query. Same layout as the Dart-side
+/// struct in `lib/src/ffi/bindings.dart`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FsrHit {
+    pub collider: u64,
+    pub distance: Real,
+    pub px: Real,
+    pub py: Real,
+    pub pz: Real,
+    pub nx: Real,
+    pub ny: Real,
+    pub nz: Real,
+}
+
+/// Filter bits for scene queries. Matches the constants on the Dart
+/// side.
+const QUERY_INCLUDE_FIXED: u8 = 1;
+const QUERY_INCLUDE_KINEMATIC: u8 = 2;
+const QUERY_INCLUDE_DYNAMIC: u8 = 4;
+const QUERY_INCLUDE_SENSORS: u8 = 8;
+
+fn query_filter(flags: u8) -> QueryFilter<'static> {
+    let mut qf = QueryFilterFlags::empty();
+    if flags & QUERY_INCLUDE_FIXED == 0 {
+        qf |= QueryFilterFlags::EXCLUDE_FIXED;
+    }
+    if flags & QUERY_INCLUDE_KINEMATIC == 0 {
+        qf |= QueryFilterFlags::EXCLUDE_KINEMATIC;
+    }
+    if flags & QUERY_INCLUDE_DYNAMIC == 0 {
+        qf |= QueryFilterFlags::EXCLUDE_DYNAMIC;
+    }
+    if flags & QUERY_INCLUDE_SENSORS == 0 {
+        qf |= QueryFilterFlags::EXCLUDE_SENSORS;
+    }
+    let mut filter = QueryFilter::new();
+    filter.flags = qf;
+    filter
+}
+
+fn make_hit(handle: ColliderHandle, distance: Real, point: Vector, normal: Vector) -> FsrHit {
+    FsrHit {
+        collider: collider_to_raw(handle),
+        distance,
+        px: point.x,
+        py: point.y,
+        pz: point.z,
+        nx: normal.x,
+        ny: normal.y,
+        nz: normal.z,
+    }
 }
 
 impl Default for World {
@@ -38,6 +97,7 @@ impl Default for World {
             physics_pipeline: PhysicsPipeline::new(),
             integration_parameters: IntegrationParameters::default(),
             gravity: Vector::new(0.0, -9.81, 0.0),
+            query_hits: Vec::new(),
         }
     }
 }
@@ -47,6 +107,219 @@ impl Default for World {
 #[no_mangle]
 pub extern "C" fn fsr_proof_of_life() -> c_int {
     42
+}
+
+/// Casts a ray and returns the closest hit, if any. `solid` controls
+/// whether the ray starting inside a shape registers a hit at the
+/// origin.
+///
+/// # Safety
+/// `world` must be live. `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_raycast(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    max_distance: Real,
+    solid: u8,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let w = &mut *world;
+    let ray = parry::query::Ray::new(
+        Vector::new(ox, oy, oz),
+        Vector::new(dx, dy, dz).normalize(),
+    );
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    let Some((handle, hit)) = qp.cast_ray_and_get_normal(&ray, max_distance, solid != 0) else {
+        return 0;
+    };
+    let point = ray.point_at(hit.time_of_impact);
+    *out = make_hit(handle, hit.time_of_impact, point, hit.normal);
+    1
+}
+
+/// Casts a ray and collects every hit along its path. Results are
+/// stashed in the world's internal buffer and read out via
+/// [`fsr_world_query_result_at`].
+///
+/// Returns the number of hits collected. The buffer is invalidated on
+/// the next scene-query call.
+///
+/// # Safety
+/// `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_raycast_all(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    max_distance: Real,
+    solid: u8,
+    filter_flags: u8,
+) -> usize {
+    let w = &mut *world;
+    let ray = parry::query::Ray::new(
+        Vector::new(ox, oy, oz),
+        Vector::new(dx, dy, dz).normalize(),
+    );
+    w.query_hits.clear();
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    for (handle, _, hit) in qp.intersect_ray(ray, max_distance, solid != 0) {
+        let point = ray.point_at(hit.time_of_impact);
+        w.query_hits
+            .push(make_hit(handle, hit.time_of_impact, point, hit.normal));
+    }
+    w.query_hits
+        .sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(core::cmp::Ordering::Equal));
+    w.query_hits.len()
+}
+
+/// Collects every collider intersecting a probe ball. Results land in
+/// the same buffer as [`fsr_world_raycast_all`]. `distance` and the
+/// hit normal are zero for overlap queries.
+///
+/// # Safety
+/// `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_overlap_sphere(
+    world: *mut World,
+    cx: Real,
+    cy: Real,
+    cz: Real,
+    radius: Real,
+    filter_flags: u8,
+) -> usize {
+    let w = &mut *world;
+    w.query_hits.clear();
+    let pose = Pose::from_parts(Vector::new(cx, cy, cz), Rotation::IDENTITY);
+    let shape = parry::shape::Ball::new(radius);
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    for (handle, _) in qp.intersect_shape(pose, &shape) {
+        w.query_hits
+            .push(make_hit(handle, 0.0, Vector::ZERO, Vector::ZERO));
+    }
+    w.query_hits.len()
+}
+
+/// Collects every collider intersecting an oriented box. Same result
+/// semantics as [`fsr_world_overlap_sphere`].
+///
+/// # Safety
+/// `world` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_overlap_box(
+    world: *mut World,
+    cx: Real,
+    cy: Real,
+    cz: Real,
+    hx: Real,
+    hy: Real,
+    hz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+    filter_flags: u8,
+) -> usize {
+    let w = &mut *world;
+    w.query_hits.clear();
+    let pose = Pose::from_parts(Vector::new(cx, cy, cz), Rotation::from_xyzw(qx, qy, qz, qw));
+    let shape = parry::shape::Cuboid::new(Vector::new(hx, hy, hz));
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    for (handle, _) in qp.intersect_shape(pose, &shape) {
+        w.query_hits
+            .push(make_hit(handle, 0.0, Vector::ZERO, Vector::ZERO));
+    }
+    w.query_hits.len()
+}
+
+/// Sweeps a sphere along a direction and returns the closest collider
+/// it would contact.
+///
+/// # Safety
+/// `world` must be live. `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_shape_cast_sphere(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    radius: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    distance: Real,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let w = &mut *world;
+    let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::IDENTITY);
+    let dir = Vector::new(dx, dy, dz);
+    let shape = parry::shape::Ball::new(radius);
+    let options = parry::query::ShapeCastOptions {
+        max_time_of_impact: distance,
+        target_distance: 0.0,
+        stop_at_penetration: true,
+        compute_impact_geometry_on_penetration: true,
+    };
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    let Some((handle, hit)) = qp.cast_shape(&pose, dir, &shape, options) else {
+        return 0;
+    };
+    *out = make_hit(handle, hit.time_of_impact, hit.witness1, hit.normal1);
+    1
+}
+
+/// Copies the i-th entry of the last multi-hit query into `out`.
+/// Returns 0 if `index` is out of range.
+///
+/// # Safety
+/// `world` must be live; `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_query_result_at(
+    world: *const World,
+    index: usize,
+    out: *mut FsrHit,
+) -> u8 {
+    let w = &*world;
+    let Some(hit) = w.query_hits.get(index) else {
+        return 0;
+    };
+    *out = *hit;
+    1
 }
 
 /// Body kinds matching the abstract `BodyType` on the Dart side.
