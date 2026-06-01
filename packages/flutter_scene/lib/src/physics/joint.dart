@@ -91,12 +91,124 @@ abstract class PrismaticJoint extends Joint {
   set motorMaxForce(double? value);
 }
 
-/// A generic six-degree-of-freedom joint. Backends expose per-axis
-/// locks, limits, and motors through their concrete subclass.
+/// One of the six degrees of freedom a [GenericJoint] constrains. The
+/// linear axes are translations along, and the angular axes rotations
+/// about, the joint frame's local X / Y / Z (oriented by the joint's
+/// local bases on each body).
+enum JointAxis { linearX, linearY, linearZ, angularX, angularY, angularZ }
+
+/// How a [JointMotor] turns its drive parameters into a force.
+enum JointMotorModel {
+  /// Treat [JointMotor.stiffness] and [JointMotor.damping] as target
+  /// accelerations, so the response is independent of the connected
+  /// bodies' masses. The usual choice.
+  acceleration,
+
+  /// Treat the drive parameters as raw forces.
+  force,
+}
+
+/// A spring-damper drive on a single [GenericJoint] axis.
+///
+/// The motor pulls the axis toward [targetPosition] with spring constant
+/// [stiffness] and toward [targetVelocity] with [damping], applying at
+/// most [maxForce] (a force on a linear axis, a torque on an angular
+/// one). Leave [stiffness] at 0 for a pure velocity drive; set it for a
+/// positional spring (a soft constraint).
+class JointMotor {
+  /// Rest position the spring pulls toward: meters on a linear axis,
+  /// radians on an angular one.
+  final double targetPosition;
+
+  /// Velocity the damper drives toward: meters per second or radians per
+  /// second.
+  final double targetVelocity;
+
+  /// Spring constant pulling the axis toward [targetPosition].
+  final double stiffness;
+
+  /// Damping constant pulling the axis toward [targetVelocity].
+  final double damping;
+
+  /// Maximum force (linear axis) or torque (angular axis) the motor may
+  /// apply. [double.infinity] leaves it unlimited.
+  final double maxForce;
+
+  /// How the drive parameters are interpreted.
+  final JointMotorModel model;
+
+  const JointMotor({
+    this.targetPosition = 0,
+    this.targetVelocity = 0,
+    this.stiffness = 0,
+    this.damping = 0,
+    this.maxForce = double.infinity,
+    this.model = JointMotorModel.acceleration,
+  });
+}
+
+/// Whether a [GenericJoint] axis is locked, free, or limited.
+enum JointAxisMotion { locked, free, limited }
+
+/// The configuration of one of a [GenericJoint]'s six axes.
+///
+/// [motion] sets whether the axis is rigidly locked, free, or confined to
+/// a band. [lowerLimit] / [upperLimit] apply only when [motion] is
+/// [JointAxisMotion.limited]. An optional [motor] drives the axis.
+class JointAxisConfig {
+  final JointAxisMotion motion;
+  final double lowerLimit;
+  final double upperLimit;
+  final JointMotor? motor;
+
+  /// The axis is rigidly fixed (no relative motion along it).
+  const JointAxisConfig.locked()
+    : motion = JointAxisMotion.locked,
+      lowerLimit = 0,
+      upperLimit = 0,
+      motor = null;
+
+  /// The axis moves freely, optionally driven by [motor].
+  const JointAxisConfig.free({this.motor})
+    : motion = JointAxisMotion.free,
+      lowerLimit = 0,
+      upperLimit = 0;
+
+  /// The axis is confined to [lower] .. [upper] (meters on a linear axis,
+  /// radians on an angular one), optionally driven by [motor].
+  const JointAxisConfig.limited(double lower, double upper, {this.motor})
+    : motion = JointAxisMotion.limited,
+      lowerLimit = lower,
+      upperLimit = upper;
+}
+
+/// A fully configurable six-degree-of-freedom joint.
+///
+/// The joint defines a local reference frame on each body ([localAnchorA]
+/// / [localBasisA] and [localAnchorB] / [localBasisB]); the six axes are
+/// expressed in that frame. Each axis is independently locked, free, or
+/// limited and may carry a spring-damper [JointMotor]. This is the most
+/// general joint: the fixed, spherical, revolute, and prismatic joints
+/// are all special cases. Pass a null [otherNode] to anchor to the world.
 abstract class GenericJoint extends Joint {
   Vector3 get localAnchorA;
   set localAnchorA(Vector3 value);
 
   Vector3 get localAnchorB;
   set localAnchorB(Vector3 value);
+
+  /// Orientation of the joint's reference frame on this node's body.
+  Quaternion get localBasisA;
+  set localBasisA(Quaternion value);
+
+  /// Orientation of the joint's reference frame on the other body.
+  Quaternion get localBasisB;
+  set localBasisB(Quaternion value);
+
+  /// The current configuration of [axis].
+  JointAxisConfig configForAxis(JointAxis axis);
+
+  /// Replaces the configuration of [axis]. Takes effect immediately while
+  /// the joint is mounted.
+  void setAxisConfig(JointAxis axis, JointAxisConfig config);
 }

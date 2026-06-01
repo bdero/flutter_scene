@@ -10,11 +10,8 @@
 /// hierarchy, axis locks, sleeping, kinematic transform sync,
 /// interpolated transform writeback, scene queries (raycast, overlap,
 /// shape cast), collision / trigger events, and the fixed, spherical,
-/// revolute, and prismatic joints all run through the native shim.
-///
-/// TODO(generic-joint): expose a concrete [GenericJoint] (6DOF) once
-/// the abstract surface grows enough per-axis configuration to drive
-/// Rapier's generic joint meaningfully.
+/// revolute, prismatic, and generic (6DOF) joints all run through the
+/// native shim.
 library;
 
 export 'src/rapier_collider.dart';

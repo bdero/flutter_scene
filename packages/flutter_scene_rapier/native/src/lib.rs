@@ -127,6 +127,28 @@ impl EventHandler for CollisionCollector {
     }
 }
 
+/// Per-axis configuration for a generic (6DOF) joint. Same layout as the
+/// Dart-side struct in `lib/src/ffi/bindings.dart`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FsrJointAxis {
+    /// 0 locked, 1 free, 2 limited.
+    pub motion: u8,
+    /// 1 when a motor is configured on this axis.
+    pub has_motor: u8,
+    /// 0 acceleration-based, 1 force-based.
+    pub motor_model: u8,
+    /// Limit band, used when `motion == 2`.
+    pub lower: Real,
+    pub upper: Real,
+    /// Motor drive parameters, used when `has_motor != 0`.
+    pub target_pos: Real,
+    pub target_vel: Real,
+    pub stiffness: Real,
+    pub damping: Real,
+    pub max_force: Real,
+}
+
 /// One hit returned by a scene query. Same layout as the Dart-side
 /// struct in `lib/src/ffi/bindings.dart`.
 #[repr(C)]
@@ -2105,6 +2127,118 @@ pub unsafe extern "C" fn fsr_joint_update_prismatic(
             collisions_enabled,
         ),
     );
+}
+
+// Builds a generic (6DOF) joint from two local frames and the per-axis
+// configuration. `frames` holds 14 reals: anchor1 (3), basis1 quaternion
+// xyzw (4), anchor2 (3), basis2 quaternion xyzw (4). `axes` points at six
+// [`FsrJointAxis`] entries in LinX, LinY, LinZ, AngX, AngY, AngZ order.
+//
+// # Safety
+// `frames` must point at 14 reals; `axes` at six `FsrJointAxis`.
+unsafe fn build_generic_joint(
+    frames: *const Real,
+    collisions_enabled: u8,
+    axes: *const FsrJointAxis,
+) -> GenericJoint {
+    let f = std::slice::from_raw_parts(frames, 14);
+    let frame1 = Pose::from_parts(
+        Vector::new(f[0], f[1], f[2]),
+        Rotation::from_xyzw(f[3], f[4], f[5], f[6]),
+    );
+    let frame2 = Pose::from_parts(
+        Vector::new(f[7], f[8], f[9]),
+        Rotation::from_xyzw(f[10], f[11], f[12], f[13]),
+    );
+    let cfgs = std::slice::from_raw_parts(axes, 6);
+
+    let mut joint = GenericJoint::new(JointAxesMask::empty());
+    joint.set_local_frame1(frame1);
+    joint.set_local_frame2(frame2);
+    joint.set_contacts_enabled(collisions_enabled != 0);
+
+    const ALL_AXES: [JointAxis; 6] = [
+        JointAxis::LinX,
+        JointAxis::LinY,
+        JointAxis::LinZ,
+        JointAxis::AngX,
+        JointAxis::AngY,
+        JointAxis::AngZ,
+    ];
+    let mut locked = JointAxesMask::empty();
+    for (i, cfg) in cfgs.iter().enumerate() {
+        let axis = ALL_AXES[i];
+        match cfg.motion {
+            // 0 locked, 1 free, 2 limited.
+            0 => locked |= axis.into(),
+            2 => {
+                joint.set_limits(axis, [cfg.lower, cfg.upper]);
+            }
+            _ => {}
+        }
+        if cfg.has_motor != 0 {
+            let model = if cfg.motor_model == 0 {
+                MotorModel::AccelerationBased
+            } else {
+                MotorModel::ForceBased
+            };
+            joint.set_motor_model(axis, model);
+            joint.set_motor(
+                axis,
+                cfg.target_pos,
+                cfg.target_vel,
+                cfg.stiffness,
+                cfg.damping,
+            );
+            joint.set_motor_max_force(axis, cfg.max_force);
+        }
+    }
+    joint.lock_axes(locked);
+    joint
+}
+
+/// Inserts a fully configurable generic (6DOF) joint. See
+/// [`build_generic_joint`] for the `frames` and `axes` layout.
+///
+/// # Safety
+/// `world` must be live; both body handles must come from
+/// [`fsr_body_create`]; `frames` and `axes` must be valid as documented
+/// on [`build_generic_joint`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_generic(
+    world: *mut World,
+    body_a: u64,
+    body_b: u64,
+    frames: *const Real,
+    collisions_enabled: u8,
+    axes: *const FsrJointAxis,
+) -> u64 {
+    let joint = build_generic_joint(frames, collisions_enabled, axes);
+    let w = &mut *world;
+    let handle = w.impulse_joints.insert(
+        handle_from_raw(body_a),
+        handle_from_raw(body_b),
+        joint,
+        true,
+    );
+    joint_handle_to_raw(handle)
+}
+
+/// Reconfigures a generic joint in place.
+///
+/// # Safety
+/// `world` must be live; `joint` must be a live joint handle; `frames`
+/// and `axes` must be valid as documented on [`build_generic_joint`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_joint_update_generic(
+    world: *mut World,
+    joint: u64,
+    frames: *const Real,
+    collisions_enabled: u8,
+    axes: *const FsrJointAxis,
+) {
+    let data = build_generic_joint(frames, collisions_enabled, axes);
+    update_joint(world, joint, data);
 }
 
 /// Removes a joint previously inserted by one of the `fsr_joint_*`

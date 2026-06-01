@@ -537,3 +537,132 @@ class RapierPrismaticJoint extends PrismaticJoint with _RapierJointMixin {
   @override
   void onUnmount() => _destroyJoint();
 }
+
+/// [GenericJoint] backed by Rapier. A fully configurable six-degree-of-
+/// freedom joint: each of the six axes (defined in the joint frames set
+/// by the local anchors and bases) is independently locked, free, or
+/// limited, and may carry a spring-damper [JointMotor]. Pass a null
+/// [otherNode] to anchor to the world.
+class RapierGenericJoint extends GenericJoint with _RapierJointMixin {
+  RapierGenericJoint({
+    Node? otherNode,
+    Vector3? localAnchorA,
+    Vector3? localAnchorB,
+    Quaternion? localBasisA,
+    Quaternion? localBasisB,
+    Map<JointAxis, JointAxisConfig>? axes,
+    bool collisionsEnabled = false,
+  }) : _otherNode = otherNode,
+       _localAnchorA = localAnchorA ?? Vector3.zero(),
+       _localAnchorB = localAnchorB ?? Vector3.zero(),
+       _localBasisA = localBasisA ?? Quaternion.identity(),
+       _localBasisB = localBasisB ?? Quaternion.identity(),
+       _axes = _buildAxisList(axes),
+       _collisionsEnabled = collisionsEnabled;
+
+  // Fills a fixed six-entry list (indexed by JointAxis.index) from the
+  // optional per-axis overrides, defaulting every axis to free.
+  static List<JointAxisConfig> _buildAxisList(
+    Map<JointAxis, JointAxisConfig>? axes,
+  ) {
+    final list = List<JointAxisConfig>.filled(6, const JointAxisConfig.free());
+    if (axes != null) {
+      for (final entry in axes.entries) {
+        list[entry.key.index] = entry.value;
+      }
+    }
+    return list;
+  }
+
+  final Node? _otherNode;
+  Vector3 _localAnchorA;
+  Vector3 _localAnchorB;
+  Quaternion _localBasisA;
+  Quaternion _localBasisB;
+  final List<JointAxisConfig> _axes;
+  bool _collisionsEnabled;
+
+  @override
+  Node? get otherNode => _otherNode;
+
+  @override
+  Vector3 get localAnchorA => _localAnchorA;
+  @override
+  set localAnchorA(Vector3 value) {
+    _localAnchorA = value;
+    _applyIfMounted();
+  }
+
+  @override
+  Vector3 get localAnchorB => _localAnchorB;
+  @override
+  set localAnchorB(Vector3 value) {
+    _localAnchorB = value;
+    _applyIfMounted();
+  }
+
+  @override
+  Quaternion get localBasisA => _localBasisA;
+  @override
+  set localBasisA(Quaternion value) {
+    _localBasisA = value;
+    _applyIfMounted();
+  }
+
+  @override
+  Quaternion get localBasisB => _localBasisB;
+  @override
+  set localBasisB(Quaternion value) {
+    _localBasisB = value;
+    _applyIfMounted();
+  }
+
+  @override
+  JointAxisConfig configForAxis(JointAxis axis) => _axes[axis.index];
+
+  @override
+  void setAxisConfig(JointAxis axis, JointAxisConfig config) {
+    _axes[axis.index] = config;
+    _applyIfMounted();
+  }
+
+  @override
+  bool get collisionsEnabled => _collisionsEnabled;
+  @override
+  set collisionsEnabled(bool value) {
+    _collisionsEnabled = value;
+    _applyIfMounted();
+  }
+
+  @override
+  void onMount() {
+    _insertJoint(
+      (world, bodyA, bodyB) => world.createGenericJoint(
+        bodyA,
+        bodyB,
+        anchorA: _localAnchorA,
+        basisA: _localBasisA,
+        anchorB: _localAnchorB,
+        basisB: _localBasisB,
+        axes: _axes,
+        collisionsEnabled: _collisionsEnabled,
+      ),
+    );
+  }
+
+  @override
+  void _applyToNative(RapierWorld world, int handle) {
+    world.updateGenericJoint(
+      handle,
+      anchorA: _localAnchorA,
+      basisA: _localBasisA,
+      anchorB: _localAnchorB,
+      basisB: _localBasisB,
+      axes: _axes,
+      collisionsEnabled: _collisionsEnabled,
+    );
+  }
+
+  @override
+  void onUnmount() => _destroyJoint();
+}
