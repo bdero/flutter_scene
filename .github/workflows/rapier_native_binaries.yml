@@ -41,15 +41,19 @@ jobs:
         include:
           # macOS
           - { runner: macos-latest, triple: aarch64-apple-darwin, ext: dylib }
-          - { runner: macos-latest, triple: x86_64-apple-darwin, ext: dylib }
-          # iOS (device + simulators)
+          # iOS (device + arm64 simulator)
           - { runner: macos-latest, triple: aarch64-apple-ios, ext: dylib, ios_deploy: '13.0' }
           - { runner: macos-latest, triple: aarch64-apple-ios-sim, ext: dylib, ios_deploy: '13.0' }
-          - { runner: macos-latest, triple: x86_64-apple-ios, ext: dylib, ios_deploy: '13.0' }
+          # The x86_64-apple targets (Intel Macs, Intel-Mac iOS simulator)
+          # are intentionally omitted: cross-compiling x86_64 on the
+          # Apple-Silicon macos-latest runner reliably hangs (it builds fine
+          # on an Intel host). Consumers on those targets fall back to the
+          # build hook's cargo source build. Re-add with a working runner or
+          # toolchain fix.
           # Linux
           - { runner: ubuntu-latest, triple: x86_64-unknown-linux-gnu, ext: so }
           - { runner: ubuntu-latest, triple: aarch64-unknown-linux-gnu, ext: so, apt: gcc-aarch64-linux-gnu, linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER, linker: aarch64-linux-gnu-gcc }
-          # Android (built through cargo-ndk)
+          # Android (built with the NDK clang as the linker)
           - { runner: ubuntu-latest, triple: aarch64-linux-android, ext: so, android_abi: arm64-v8a }
           - { runner: ubuntu-latest, triple: armv7-linux-androideabi, ext: so, android_abi: armeabi-v7a }
           - { runner: ubuntu-latest, triple: x86_64-linux-android, ext: so, android_abi: x86_64 }
