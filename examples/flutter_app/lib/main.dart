@@ -1,7 +1,8 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter_scene/scene.dart' show Scene, PostInsertion;
+import 'package:flutter_scene/scene.dart'
+    show Scene, PostInsertion, SpecularAmbientOcclusionMode;
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
@@ -230,7 +231,11 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: [_buildPostProcessing()],
+                    children: [
+                      _buildDirectionalLight(),
+                      _buildAmbientOcclusion(),
+                      _buildPostProcessing(),
+                    ],
                   ),
                 ),
               ),
@@ -253,6 +258,88 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _buildVignette(),
         _buildFilmGrain(),
         _buildCustomEffect(),
+      ],
+    );
+  }
+
+  Widget _buildDirectionalLight() {
+    final settings = exampleSettings;
+    return ExpansionTile(
+      title: const Text('Directional light'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.directionalLightEnabled,
+          onChanged: (value) =>
+              setState(() => settings.directionalLightEnabled = value),
+        ),
+        _slider('Azimuth', settings.lightAzimuthDegrees, 0, 360, (v) {
+          settings.lightAzimuthDegrees = v;
+        }),
+        _slider('Elevation', settings.lightElevationDegrees, 0, 90, (v) {
+          settings.lightElevationDegrees = v;
+        }),
+        _slider('Intensity', settings.lightIntensity, 0, 10, (v) {
+          settings.lightIntensity = v;
+        }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Casts shadow'),
+          value: settings.lightCastsShadow,
+          onChanged: (value) =>
+              setState(() => settings.lightCastsShadow = value),
+        ),
+        _slider('Softness', settings.shadowSoftness, 0, 0.3, (v) {
+          settings.shadowSoftness = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildAmbientOcclusion() {
+    final settings = exampleSettings.ambientOcclusion;
+    return ExpansionTile(
+      title: const Text('Ambient occlusion'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Radius', settings.radius, 0.05, 2, (v) {
+          settings.radius = v;
+        }),
+        _slider('Intensity', settings.intensity, 0, 3, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Bias', settings.bias, 0, 0.1, (v) {
+          settings.bias = v;
+        }),
+        _slider('Samples', settings.sampleCount.toDouble(), 4, 32, (v) {
+          settings.sampleCount = v.round();
+        }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Half resolution'),
+          value: settings.halfResolution,
+          onChanged: (value) => setState(() => settings.halfResolution = value),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Specular occlusion'),
+          value: settings.specularMode == SpecularAmbientOcclusionMode.simple,
+          onChanged: (value) => setState(() {
+            settings.specularMode = value
+                ? SpecularAmbientOcclusionMode.simple
+                : SpecularAmbientOcclusionMode.none;
+          }),
+        ),
       ],
     );
   }

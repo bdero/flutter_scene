@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// Post-processing settings shared by every example.
 ///
@@ -22,6 +25,28 @@ class ExampleSettings {
 
   /// Bloom shared across the examples.
   final BloomSettings bloom = BloomSettings();
+
+  /// Screen-space ambient occlusion shared across the examples.
+  final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
+
+  /// Whether the shared directional light is attached to the scene.
+  bool directionalLightEnabled = true;
+
+  /// Compass angle of the directional light, in degrees, around the up axis.
+  double lightAzimuthDegrees = 35.0;
+
+  /// Height of the directional light above the horizon, in degrees. `90`
+  /// points straight down.
+  double lightElevationDegrees = 55.0;
+
+  /// Directional light intensity.
+  double lightIntensity = 3.0;
+
+  /// Whether the directional light casts (cascaded) shadows.
+  bool lightCastsShadow = true;
+
+  /// World-space radius of the shadow penumbra. `0` is a hard edge.
+  double shadowSoftness = 0.08;
 
   /// A custom, user-authored effect, built by [loadExampleEffects]. Null
   /// until the example shader bundle finishes loading.
@@ -62,6 +87,36 @@ class ExampleSettings {
     sceneBloom.threshold = bloom.threshold;
     sceneBloom.intensity = bloom.intensity;
     sceneBloom.scatter = bloom.scatter;
+
+    final ao = scene.ambientOcclusion;
+    ao.enabled = ambientOcclusion.enabled;
+    ao.radius = ambientOcclusion.radius;
+    ao.intensity = ambientOcclusion.intensity;
+    ao.bias = ambientOcclusion.bias;
+    ao.sampleCount = ambientOcclusion.sampleCount;
+    ao.halfResolution = ambientOcclusion.halfResolution;
+    ao.specularMode = ambientOcclusion.specularMode;
+
+    if (directionalLightEnabled) {
+      // Derive the travel direction from azimuth/elevation: elevation lifts
+      // the light above the horizon (90 degrees points straight down).
+      final azimuth = lightAzimuthDegrees * math.pi / 180.0;
+      final elevation = lightElevationDegrees * math.pi / 180.0;
+      final horizontal = math.cos(elevation);
+      final direction = Vector3(
+        horizontal * math.cos(azimuth),
+        -math.sin(elevation),
+        horizontal * math.sin(azimuth),
+      );
+      final light = scene.directionalLight ?? DirectionalLight();
+      light.direction = direction;
+      light.intensity = lightIntensity;
+      light.castsShadow = lightCastsShadow;
+      light.shadowSoftness = shadowSoftness;
+      scene.directionalLight = light;
+    } else {
+      scene.directionalLight = null;
+    }
 
     final wave = waveEffect;
     if (wave != null) {
