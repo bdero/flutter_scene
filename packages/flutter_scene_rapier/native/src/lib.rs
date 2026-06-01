@@ -2374,9 +2374,64 @@ pub unsafe extern "C" fn fsr_character_move(
     };
 }
 
+/// Allocates `size` bytes in this module's memory and returns a pointer
+/// to them. Paired with [`fsr_free`]. A caller on the far side of the C
+/// ABI uses this to obtain scratch buffers for passing structs in and
+/// out, since it cannot allocate inside this module's memory on its own.
+/// Returns null for a zero size or on allocation failure.
+#[no_mangle]
+pub extern "C" fn fsr_alloc(size: usize) -> *mut u8 {
+    if size == 0 {
+        return std::ptr::null_mut();
+    }
+    // 16 bytes covers the alignment of every f32/u32/u64 scratch field
+    // marshalled across this boundary.
+    match std::alloc::Layout::from_size_align(size, 16) {
+        Ok(layout) => unsafe { std::alloc::alloc(layout) },
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Frees a buffer returned by [`fsr_alloc`]. `size` must match the value
+/// passed to the allocation.
+///
+/// # Safety
+///
+/// `ptr` must have come from [`fsr_alloc`] with the same `size` and must
+/// not have been freed already.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_free(ptr: *mut u8, size: usize) {
+    if ptr.is_null() || size == 0 {
+        return;
+    }
+    if let Ok(layout) = std::alloc::Layout::from_size_align(size, 16) {
+        std::alloc::dealloc(ptr, layout);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alloc_returns_usable_memory_and_free_releases_it() {
+        let size = 12; // three f32 scratch slots
+        let ptr = fsr_alloc(size);
+        assert!(!ptr.is_null());
+        unsafe {
+            let floats = ptr as *mut f32;
+            *floats.add(0) = 1.5;
+            *floats.add(1) = -2.0;
+            *floats.add(2) = 3.25;
+            assert_eq!(*floats.add(0), 1.5);
+            assert_eq!(*floats.add(1), -2.0);
+            assert_eq!(*floats.add(2), 3.25);
+            fsr_free(ptr, size);
+        }
+        // A zero-size request yields null and freeing null is a no-op.
+        assert!(fsr_alloc(0).is_null());
+        unsafe { fsr_free(std::ptr::null_mut(), 0) };
+    }
 
     #[test]
     fn world_steps_without_panicking() {
