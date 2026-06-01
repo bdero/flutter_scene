@@ -6,7 +6,9 @@ name: flutter_scene_rapier native binaries
 # consumers do not need a Rust toolchain.
 #
 # Triggers on a flutter_scene_rapier-* tag push, or run manually with a
-# tag input to (re)build a release's binaries.
+# tag input to (re)build a release's binaries. A tag whose name contains
+# "citest" builds the whole matrix on the runners but skips the release
+# step, so the cross-builds can be validated without publishing anything.
 
 on:
   push:
@@ -111,6 +113,9 @@ jobs:
   release:
     name: Assemble manifest and release
     needs: build
+    # Validation runs push a tag containing "citest" to exercise the full
+    # build matrix on the runners without publishing a release.
+    if: ${{ !contains(github.ref_name, 'citest') && !contains(inputs.tag, 'citest') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
