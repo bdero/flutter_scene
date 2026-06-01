@@ -15,14 +15,15 @@ import 'package:vector_math/vector_math.dart';
 /// the Dart wrapper is collected. [step] forwards directly into
 /// Rapier's PhysicsPipeline; [interpolateTransforms] lerps and slerps
 /// dynamic-body poses between substeps and writes them back to each
-/// owning [Node.localTransform].
+/// owning [Node.localTransform]. Scene queries ([raycast],
+/// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run
+/// through Rapier's QueryPipeline.
 ///
-/// TODO(scene-queries): [raycast], [raycastAll], [overlapSphere],
-/// [overlapBox], and [shapeCast] currently throw [UnimplementedError].
-/// Route them through Rapier's QueryPipeline.
 /// TODO(events): wire Rapier's narrow-phase contact and intersection
 /// events into [collisions] so [CollisionBegan] / [CollisionEnded] /
 /// [TriggerEntered] / [TriggerExited] actually fire.
+/// TODO(shape-cast-shapes): [shapeCast] only accepts a [SphereShape]
+/// probe; widen the native surface to box / capsule / cylinder probes.
 class RapierWorld extends PhysicsWorld {
   RapierWorld({Vector3? gravity}) : _handle = native.worldNew() {
     _finalizer.attach(this, _handle, detach: this);
@@ -41,6 +42,11 @@ class RapierWorld extends PhysicsWorld {
   // freed in onUnmount.
   late final Pointer<Float> _readBuffer = calloc<Float>(4);
 
+  // Reusable single-hit scratch for raycast / shapeCast results, and
+  // for reading multi-hit results out of the native query buffer one
+  // entry at a time. Allocated once, freed in onUnmount.
+  late final Pointer<native.FsrHit> _hitBuffer = calloc<native.FsrHit>();
+
   /// The underlying native world pointer. Exposed so [RapierRigidBody]
   /// and [RapierCollider] can pass it back into the FFI for body and
   /// collider operations.
@@ -50,6 +56,30 @@ class RapierWorld extends PhysicsWorld {
   // handle, so [interpolateTransforms] can write back dynamic poses
   // and so collider creation can find its sibling body.
   final Map<int, _BodyRecord> _bodies = {};
+
+  // Reverse map from a Rapier collider handle to the owning Dart
+  // [RapierCollider]. Populated when a collider is cooked and removed
+  // when it's destroyed. Used by the scene-query routines to resolve
+  // native hits back to the right component.
+  final Map<int, RapierCollider> _collidersByHandle = {};
+
+  /// Records ownership of [handle] by [collider] so scene queries can
+  /// resolve hits back to the owning component. Called from
+  /// [RapierCollider.onMount] after each successful cook; the matching
+  /// [forgetCollider] runs on unmount or rebuild.
+  void rememberCollider(int handle, RapierCollider collider) {
+    _collidersByHandle[handle] = collider;
+  }
+
+  void forgetCollider(int handle) {
+    _collidersByHandle.remove(handle);
+  }
+
+  /// Looks up the Dart wrapper for a Rapier collider handle. Returns
+  /// null when the handle is stale (the collider was just removed) or
+  /// belongs to a body / collider this world did not register.
+  RapierCollider? colliderFromHandle(int handle) =>
+      _collidersByHandle[handle];
 
   /// Inserts a rigid body into the native world and returns its packed
   /// handle. Called from [RapierRigidBody.onMount].
@@ -567,6 +597,7 @@ class RapierWorld extends PhysicsWorld {
     _finalizer.detach(this);
     native.worldDestroy(_handle);
     calloc.free(_readBuffer);
+    calloc.free(_hitBuffer);
   }
 
   @override

@@ -131,6 +131,7 @@ class RapierCollider extends Collider {
     final w = _world;
     if (w == null) return;
     for (final h in _handles) {
+      w.forgetCollider(h);
       w.destroyCollider(h);
     }
     _handles = const [];
@@ -151,6 +152,10 @@ class RapierCollider extends Collider {
     }
     _world = world;
     _handles = _cookShape(_shape, _localPose, world, bodyHandle);
+
+    for (final h in _handles) {
+      world.rememberCollider(h, this);
+    }
 
     if (_collisionLayer != 0xFFFFFFFF || _collisionMask != 0xFFFFFFFF) {
       for (final h in _handles) {
@@ -255,6 +260,7 @@ class RapierCollider extends Collider {
     final world = _world;
     if (world != null) {
       for (final h in _handles) {
+        world.forgetCollider(h);
         world.destroyCollider(h);
       }
     }
