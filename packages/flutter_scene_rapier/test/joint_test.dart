@@ -83,8 +83,8 @@ void main() {
     final joint = RapierRevoluteJoint(
       otherNode: hingeNode,
       axis: Vector3(0, 0, 1),
-      localAnchorA: Vector3.zero(),
-      localAnchorB: Vector3(-2, 0, 0),
+      localAnchorA: Vector3(-2, 0, 0),
+      localAnchorB: Vector3.zero(),
     );
     armNode.addComponent(joint);
     joint.mount();
@@ -121,8 +121,8 @@ void main() {
       final joint = RapierRevoluteJoint(
         otherNode: hingeNode,
         axis: Vector3(0, 0, 1),
-        localAnchorA: Vector3.zero(),
-        localAnchorB: Vector3(-2, 0, 0),
+        localAnchorA: Vector3(-2, 0, 0),
+        localAnchorB: Vector3.zero(),
         lowerLimit: lower,
         upperLimit: upper,
       );
@@ -165,8 +165,8 @@ void main() {
     final joint = RapierRevoluteJoint(
       otherNode: hingeNode,
       axis: Vector3(0, 0, 1),
-      localAnchorA: Vector3.zero(),
-      localAnchorB: Vector3(-2, 0, 0),
+      localAnchorA: Vector3(-2, 0, 0),
+      localAnchorB: Vector3.zero(),
       motorTargetVelocity: 6.0,
       motorMaxForce: 1000.0,
     );
