@@ -9,14 +9,15 @@
 /// Body lifecycle, force / impulse application, the full Shape
 /// hierarchy, axis locks, sleeping, kinematic transform sync,
 /// interpolated transform writeback, scene queries (raycast, overlap,
-/// shape cast), and collision / trigger events all run through the
-/// native shim.
+/// shape cast), collision / trigger events, and the fixed, spherical,
+/// revolute, and prismatic joints all run through the native shim.
 ///
-/// TODO(joints): expose concrete subclasses of [FixedJoint],
-/// [SphericalJoint], [RevoluteJoint], [PrismaticJoint], and
-/// [GenericJoint] backed by Rapier's impulse-joint set.
+/// TODO(generic-joint): expose a concrete [GenericJoint] (6DOF) once
+/// the abstract surface grows enough per-axis configuration to drive
+/// Rapier's generic joint meaningfully.
 library;
 
 export 'src/rapier_collider.dart';
+export 'src/rapier_joint.dart';
 export 'src/rapier_rigid_body.dart';
 export 'src/rapier_world.dart';

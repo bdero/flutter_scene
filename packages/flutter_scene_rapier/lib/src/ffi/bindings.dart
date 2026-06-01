@@ -816,3 +816,152 @@ external void colliderSetLocalPose(
   symbol: 'fsr_collider_destroy',
 )
 external void colliderDestroy(Pointer<NativeWorld> world, int handle);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_fixed')
+external int jointFixed(
+  Pointer<NativeWorld> world,
+  int bodyA,
+  int bodyB,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int collisionsEnabled,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_spherical')
+external int jointSpherical(
+  Pointer<NativeWorld> world,
+  int bodyA,
+  int bodyB,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int collisionsEnabled,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_revolute')
+external int jointRevolute(
+  Pointer<NativeWorld> world,
+  int bodyA,
+  int bodyB,
+  double axisX,
+  double axisY,
+  double axisZ,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int hasLimits,
+  double lower,
+  double upper,
+  int hasMotor,
+  double motorTargetVelocity,
+  double motorMaxForce,
+  int collisionsEnabled,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+    Float,
+    Float,
+    Uint8,
+  )
+>(symbol: 'fsr_joint_prismatic')
+external int jointPrismatic(
+  Pointer<NativeWorld> world,
+  int bodyA,
+  int bodyB,
+  double axisX,
+  double axisY,
+  double axisZ,
+  double ax,
+  double ay,
+  double az,
+  double bx,
+  double by,
+  double bz,
+  int hasLimits,
+  double lower,
+  double upper,
+  int hasMotor,
+  double motorTargetVelocity,
+  double motorMaxForce,
+  int collisionsEnabled,
+);
+
+@Native<Void Function(Pointer<NativeWorld>, Uint64)>(
+  symbol: 'fsr_joint_destroy',
+)
+external void jointDestroy(Pointer<NativeWorld> world, int handle);
