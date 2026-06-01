@@ -13,6 +13,25 @@ import 'dart:ffi';
 /// allocated by [worldNew] and must be released with [worldDestroy].
 final class NativeWorld extends Opaque {}
 
+/// The corrected movement from a `characterMove` call. Layout must match
+/// `FsrCharacterMovement` in `native/src/lib.rs`.
+final class FsrCharacterMovement extends Struct {
+  @Float()
+  external double tx;
+  @Float()
+  external double ty;
+  @Float()
+  external double tz;
+
+  /// 1 when the character is touching the ground after the move.
+  @Uint8()
+  external int grounded;
+
+  /// 1 when the character is sliding down a too-steep slope.
+  @Uint8()
+  external int sliding;
+}
+
 /// Per-axis configuration for a generic (6DOF) joint. Layout must match
 /// `FsrJointAxis` in `native/src/lib.rs`.
 final class FsrJointAxis extends Struct {
@@ -1327,3 +1346,48 @@ external void jointUpdateGeneric(
   symbol: 'fsr_joint_destroy',
 )
 external void jointDestroy(Pointer<NativeWorld> world, int handle);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64, // collider
+    Float, // dx, dy, dz
+    Float,
+    Float,
+    Float, // dt
+    Float, // upX, upY, upZ
+    Float,
+    Float,
+    Float, // offset
+    Uint8, // slide
+    Float, // maxSlopeClimbAngle
+    Float, // minSlopeSlideAngle
+    Float, // snapToGround (< 0 disables)
+    Uint8, // autostep
+    Float, // autostepMaxHeight
+    Float, // autostepMinWidth
+    Uint8, // autostepIncludeDynamic
+    Pointer<FsrCharacterMovement>,
+  )
+>(symbol: 'fsr_character_move')
+external void characterMove(
+  Pointer<NativeWorld> world,
+  int collider,
+  double dx,
+  double dy,
+  double dz,
+  double dt,
+  double upX,
+  double upY,
+  double upZ,
+  double offset,
+  int slide,
+  double maxSlopeClimbAngle,
+  double minSlopeSlideAngle,
+  double snapToGround,
+  int autostep,
+  double autostepMaxHeight,
+  double autostepMinWidth,
+  int autostepIncludeDynamic,
+  Pointer<FsrCharacterMovement> out,
+);
