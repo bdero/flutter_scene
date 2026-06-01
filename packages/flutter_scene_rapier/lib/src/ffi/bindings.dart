@@ -52,6 +52,37 @@ final class FsrCollisionEvent extends Struct {
   external int started;
   @Uint8()
   external int sensor;
+
+  /// Index of this event's first contact point in the world's flat
+  /// contact-point buffer (see [worldContactPointAt]). Only solid
+  /// `started` events carry contacts; otherwise [contactCount] is 0.
+  @Uint32()
+  external int contactStart;
+
+  /// Number of contact points belonging to this event.
+  @Uint32()
+  external int contactCount;
+}
+
+/// One contact-manifold point on a solid collision event. Layout must
+/// match `FsrContactPoint` in `native/src/lib.rs`.
+final class FsrContactPoint extends Struct {
+  @Float()
+  external double px;
+  @Float()
+  external double py;
+  @Float()
+  external double pz;
+  @Float()
+  external double nx;
+  @Float()
+  external double ny;
+  @Float()
+  external double nz;
+  @Float()
+  external double impulse;
+  @Float()
+  external double separation;
 }
 
 /// Returns the sentinel value (42) hardcoded in the native shim.
@@ -227,6 +258,15 @@ external int worldCollisionEventAt(
   Pointer<NativeWorld> world,
   int index,
   Pointer<FsrCollisionEvent> out,
+);
+
+@Native<Uint8 Function(Pointer<NativeWorld>, Size, Pointer<FsrContactPoint>)>(
+  symbol: 'fsr_world_contact_point_at',
+)
+external int worldContactPointAt(
+  Pointer<NativeWorld> world,
+  int index,
+  Pointer<FsrContactPoint> out,
 );
 
 /// Body kind bytes matching the constants in `native/src/lib.rs`.

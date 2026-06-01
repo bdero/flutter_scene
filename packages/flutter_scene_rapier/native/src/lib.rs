@@ -33,6 +33,11 @@ pub struct World {
     /// collector after [`fsr_world_step`] returns. Read by the Dart
     /// side via [`fsr_world_collision_event_at`].
     collision_events: Vec<FsrCollisionEvent>,
+    /// Flat buffer of contact points for the most recent step's solid
+    /// `started` events. Each event owns the slice
+    /// `[contact_start, contact_start + contact_count)`; read by the Dart
+    /// side via [`fsr_world_contact_point_at`].
+    contact_points: Vec<FsrContactPoint>,
 }
 
 /// A collision start/stop event. Same layout as the Dart-side struct
@@ -47,6 +52,33 @@ pub struct FsrCollisionEvent {
     /// 1 when at least one collider in the pair is a sensor (trigger),
     /// 0 for a solid contact.
     pub sensor: u8,
+    /// Index of this event's first contact point in the world's flat
+    /// contact-point buffer, read via [`fsr_world_contact_point_at`].
+    /// Only solid `started` events carry contacts; everything else has
+    /// `contact_count == 0`.
+    pub contact_start: u32,
+    /// Number of contact points belonging to this event.
+    pub contact_count: u32,
+}
+
+/// One contact-manifold point on a solid [`FsrCollisionEvent`]. Same
+/// layout as the Dart-side struct in `lib/src/ffi/bindings.dart`.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct FsrContactPoint {
+    /// World-space contact position (on collider A's surface).
+    pub px: Real,
+    pub py: Real,
+    pub pz: Real,
+    /// World-space contact normal, pointing from collider A into B.
+    pub nx: Real,
+    pub ny: Real,
+    pub nz: Real,
+    /// Normal impulse the solver applied at this contact this step.
+    pub impulse: Real,
+    /// Gap along the normal: positive when separated, negative when the
+    /// shapes interpenetrate.
+    pub separation: Real,
 }
 
 /// Thread-safe sink that Rapier writes collision events into during a
@@ -71,11 +103,15 @@ impl EventHandler for CollisionCollector {
         };
         let sensor = flags.contains(CollisionEventFlags::SENSOR) as u8;
         if let Ok(mut events) = self.events.lock() {
+            // Contact points are resolved after the step, once the solver
+            // has filled in impulses; leave the range empty here.
             events.push(FsrCollisionEvent {
                 collider_a: collider_to_raw(a),
                 collider_b: collider_to_raw(b),
                 started,
                 sensor,
+                contact_start: 0,
+                contact_count: 0,
             });
         }
     }
@@ -162,6 +198,7 @@ impl Default for World {
             query_hits: Vec::new(),
             collision_collector: CollisionCollector::default(),
             collision_events: Vec::new(),
+            contact_points: Vec::new(),
         }
     }
 }
@@ -484,10 +521,60 @@ pub unsafe extern "C" fn fsr_world_step(world: *mut World, dt: Real) {
         body.reset_torques(false);
     }
     // Move the step's events out of the collector so the Dart side can
-    // read them without holding the lock.
+    // read them without holding the lock. For each solid `started` event,
+    // resolve its contact manifold now: the solver has run, so the per-
+    // point impulses are populated. Trigger and `stopped` events carry no
+    // contacts.
     w.collision_events.clear();
-    if let Ok(mut events) = w.collision_collector.events.lock() {
-        w.collision_events.append(&mut events);
+    w.contact_points.clear();
+    if let Ok(mut collected) = w.collision_collector.events.lock() {
+        for mut event in collected.drain(..) {
+            if event.started == 1 && event.sensor == 0 {
+                let ca = collider_from_raw(event.collider_a);
+                let cb = collider_from_raw(event.collider_b);
+                if let Some(pair) = w.narrow_phase.contact_pair(ca, cb) {
+                    let start = w.contact_points.len() as u32;
+                    // The manifold normal points from collider1 toward
+                    // collider2; flip it when the pair's ordering is the
+                    // reverse of this event's (A, B) so the reported normal
+                    // always points from A into B.
+                    let flip = pair.collider1 != ca;
+                    if let Some(c1) = w.collider_set.get(pair.collider1) {
+                        let pos1 = *c1.position();
+                        for manifold in &pair.manifolds {
+                            let mut normal = manifold.data.normal;
+                            if flip {
+                                normal = -normal;
+                            }
+                            // TODO(compound-subshape): subshape_pos1 places
+                            // a compound child's contact correctly; plain
+                            // colliders leave it None (identity).
+                            let to_world =
+                                pos1 * manifold.subshape_pos1.unwrap_or_else(Pose::identity);
+                            for point in &manifold.points {
+                                // local_p1 is a point in collider A's frame;
+                                // rotate then translate it into world space.
+                                let world =
+                                    to_world.rotation * point.local_p1 + to_world.translation;
+                                w.contact_points.push(FsrContactPoint {
+                                    px: world.x,
+                                    py: world.y,
+                                    pz: world.z,
+                                    nx: normal.x,
+                                    ny: normal.y,
+                                    nz: normal.z,
+                                    impulse: point.data.impulse,
+                                    separation: point.dist,
+                                });
+                            }
+                        }
+                    }
+                    event.contact_start = start;
+                    event.contact_count = w.contact_points.len() as u32 - start;
+                }
+            }
+            w.collision_events.push(event);
+        }
     }
 }
 
@@ -518,6 +605,28 @@ pub unsafe extern "C" fn fsr_world_collision_event_at(
         return 0;
     };
     *out = *event;
+    1
+}
+
+/// Copies the contact point at absolute `index` in the most recent
+/// step's flat contact-point buffer into `out`. An event's contacts
+/// occupy `[contact_start, contact_start + contact_count)`. Returns 0 if
+/// `index` is out of range.
+///
+/// # Safety
+/// `world` must be live; `out` must point to a writable
+/// [`FsrContactPoint`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_contact_point_at(
+    world: *const World,
+    index: usize,
+    out: *mut FsrContactPoint,
+) -> u8 {
+    let w = &*world;
+    let Some(point) = w.contact_points.get(index) else {
+        return 0;
+    };
+    *out = *point;
     1
 }
 

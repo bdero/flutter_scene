@@ -19,7 +19,8 @@ import 'package:vector_math/vector_math.dart';
 /// owning [Node.localTransform]. Scene queries ([raycast],
 /// [raycastAll], [overlapSphere], [overlapBox], [shapeCast]) run
 /// through Rapier's QueryPipeline. Contact and trigger lifecycle
-/// events are emitted on [collisions] after each step.
+/// events are emitted on [collisions] after each step, with
+/// [CollisionBegan] carrying the solved contact-manifold points.
 ///
 /// Scene queries run against the broad-phase acceleration structure
 /// Rapier rebuilds during [step], so they see colliders as of the most
@@ -27,8 +28,6 @@ import 'package:vector_math/vector_math.dart';
 /// notice; a query issued before the first step (or against a collider
 /// added since the last step) will not see that collider.
 ///
-/// TODO(contact-points): [CollisionBegan] events carry an empty
-/// contact list; forward Rapier's contact manifold points.
 /// TODO(shape-cast-shapes): [shapeCast] only accepts a [SphereShape]
 /// probe; widen the native surface to box / capsule / cylinder probes.
 class RapierWorld extends PhysicsWorld {
@@ -58,6 +57,12 @@ class RapierWorld extends PhysicsWorld {
   // per-step buffer one at a time. Allocated once, freed in onUnmount.
   late final Pointer<native.FsrCollisionEvent> _eventBuffer =
       calloc<native.FsrCollisionEvent>();
+
+  // Reusable scratch for reading a collision event's contact points out
+  // of the native per-step buffer one at a time. Allocated once, freed
+  // in onUnmount.
+  late final Pointer<native.FsrContactPoint> _contactBuffer =
+      calloc<native.FsrContactPoint>();
 
   /// The underlying native world pointer. Exposed so [RapierRigidBody]
   /// and [RapierCollider] can pass it back into the FFI for body and
@@ -736,17 +741,14 @@ class RapierWorld extends PhysicsWorld {
     calloc.free(_readBuffer);
     calloc.free(_hitBuffer);
     calloc.free(_eventBuffer);
+    calloc.free(_contactBuffer);
   }
 
   // Drains the collision events Rapier generated during the last step
   // and emits them on the [collisions] stream, resolving each collider
   // handle back to its Dart wrapper. A pair involving a sensor maps to
-  // the trigger events; a solid pair maps to the collision events.
-  //
-  // TODO(contact-points): CollisionBegan carries an empty contact list.
-  // Pull the contact manifold out of Rapier's ContactPair (exposed via
-  // the EventHandler) and forward worldPosition / worldNormal /
-  // impulse / separation per point.
+  // the trigger events; a solid pair maps to the collision events, whose
+  // [CollisionBegan] carries the solved contact-manifold points.
   void _drainCollisionEvents() {
     if (!_events.hasListener) return;
     final count = native.worldCollisionEventCount(_handle);
@@ -782,7 +784,7 @@ class RapierWorld extends PhysicsWorld {
                 nodeB: b.node,
                 colliderA: a,
                 colliderB: b,
-                contacts: const [],
+                contacts: _readContacts(raw.contactStart, raw.contactCount),
               )
             : CollisionEnded(
                 nodeA: a.node,
@@ -793,6 +795,28 @@ class RapierWorld extends PhysicsWorld {
       }
       _events.add(event);
     }
+  }
+
+  // Reads [count] contact points starting at absolute index [start] from
+  // the most recent step's native contact buffer.
+  List<ContactPoint> _readContacts(int start, int count) {
+    if (count == 0) return const [];
+    final contacts = <ContactPoint>[];
+    for (var i = 0; i < count; i++) {
+      if (native.worldContactPointAt(_handle, start + i, _contactBuffer) == 0) {
+        continue;
+      }
+      final c = _contactBuffer.ref;
+      contacts.add(
+        ContactPoint(
+          worldPosition: Vector3(c.px, c.py, c.pz),
+          worldNormal: Vector3(c.nx, c.ny, c.nz),
+          impulse: c.impulse,
+          separation: c.separation,
+        ),
+      );
+    }
+    return contacts;
   }
 
   @override
