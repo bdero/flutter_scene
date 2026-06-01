@@ -18,14 +18,18 @@ typedef PrimitiveArrays = ({
 });
 
 /// An axis-aligned box geometry spanning `-extents/2` to `+extents/2` on
-/// each axis.
+/// each axis, with flat per-face normals.
 ///
-/// Useful as a quick placeholder or for debugging. Each corner carries a
-/// distinct vertex color, which can be visualized with an unlit material.
+/// Pass `debugColors: true` to give each corner a distinct vertex color
+/// (visualized with an unlit material, as in the Cuboid example). It is off
+/// by default so a lit material renders the box in its own base color rather
+/// than tinted by the debug colors.
 class CuboidGeometry extends MeshGeometry {
   /// Builds a cuboid sized to [extents].
-  factory CuboidGeometry(Vector3 extents) =>
-      CuboidGeometry._(buildCuboidArrays(extents));
+  ///
+  /// When [debugColors] is true each corner carries a distinct vertex color.
+  factory CuboidGeometry(Vector3 extents, {bool debugColors = false}) =>
+      CuboidGeometry._(buildCuboidArrays(extents, debugColors: debugColors));
 
   CuboidGeometry._(PrimitiveArrays arrays)
     : super.fromArrays(
@@ -101,9 +105,9 @@ class SphereGeometry extends MeshGeometry {
 ///
 /// Each face is emitted as its own four vertices carrying that face's flat
 /// outward normal, so the box shades (and receives shadows) with crisp,
-/// flat faces. The eight corner debug colors are preserved per vertex, so an
-/// unlit material still shows the distinct-corner visualization.
-PrimitiveArrays buildCuboidArrays(Vector3 extents) {
+/// flat faces. When [debugColors] is true each vertex also carries its
+/// corner's distinct debug color; otherwise no vertex colors are emitted.
+PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
   final e = extents * 0.5;
   final corners = <Vector3>[
     Vector3(-e.x, -e.y, -e.z),
@@ -145,7 +149,7 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents) {
   final positions = Float32List(24 * 3);
   final normals = Float32List(24 * 3);
   final texCoords = Float32List(24 * 2);
-  final colors = Float32List(24 * 4);
+  final colors = debugColors ? Float32List(24 * 4) : null;
   final indices = <int>[];
   for (var f = 0; f < faces.length; f++) {
     final (cornerIndices, normal) = faces[f];
@@ -161,11 +165,13 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents) {
       normals[v * 3 + 2] = normal[2].toDouble();
       texCoords[v * 2] = faceUvs[i][0];
       texCoords[v * 2 + 1] = faceUvs[i][1];
-      final color = cornerColors[cornerIndices[i]];
-      colors[v * 4] = color[0];
-      colors[v * 4 + 1] = color[1];
-      colors[v * 4 + 2] = color[2];
-      colors[v * 4 + 3] = color[3];
+      if (colors != null) {
+        final color = cornerColors[cornerIndices[i]];
+        colors[v * 4] = color[0];
+        colors[v * 4 + 1] = color[1];
+        colors[v * 4 + 2] = color[2];
+        colors[v * 4 + 3] = color[3];
+      }
     }
     // Two triangles matching the original winding: (a, b, d) and (d, b, c).
     indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
