@@ -41,6 +41,19 @@ const int queryIncludeKinematic = 2;
 const int queryIncludeDynamic = 4;
 const int queryIncludeSensors = 8;
 
+/// One collision start/stop event. Layout must match
+/// `FsrCollisionEvent` in `native/src/lib.rs`.
+final class FsrCollisionEvent extends Struct {
+  @Uint64()
+  external int colliderA;
+  @Uint64()
+  external int colliderB;
+  @Uint8()
+  external int started;
+  @Uint8()
+  external int sensor;
+}
+
 /// Returns the sentinel value (42) hardcoded in the native shim.
 /// Smoke test for verifying that the dynamic library loaded.
 @Native<Int Function()>(symbol: 'fsr_proof_of_life')
@@ -200,6 +213,20 @@ external int worldQueryResultAt(
   Pointer<NativeWorld> world,
   int index,
   Pointer<FsrHit> out,
+);
+
+@Native<Size Function(Pointer<NativeWorld>)>(
+  symbol: 'fsr_world_collision_event_count',
+)
+external int worldCollisionEventCount(Pointer<NativeWorld> world);
+
+@Native<Uint8 Function(Pointer<NativeWorld>, Size, Pointer<FsrCollisionEvent>)>(
+  symbol: 'fsr_world_collision_event_at',
+)
+external int worldCollisionEventAt(
+  Pointer<NativeWorld> world,
+  int index,
+  Pointer<FsrCollisionEvent> out,
 );
 
 /// Body kind bytes matching the constants in `native/src/lib.rs`.
