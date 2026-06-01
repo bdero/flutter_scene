@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
-import 'package:flutter_scene_rapier/src/ffi/rapier_bindings_native.dart';
+import 'package:flutter_scene_rapier/src/ffi/rapier_bindings_factory.dart';
 import 'package:flutter_scene_rapier/src/rapier_collider.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -30,11 +30,20 @@ import 'package:vector_math/vector_math.dart';
 /// cylinder probes; convex-hull, trimesh, heightfield, and compound
 /// probes are not wired through the backend surface yet.
 class RapierWorld extends PhysicsWorld {
-  RapierWorld({Vector3? gravity}) : _bindings = NativeRapierBindings() {
+  RapierWorld({Vector3? gravity}) : _bindings = createRapierBindings() {
     final g = gravity ?? this.gravity;
     if (gravity != null) this.gravity = g;
     _bindings.setGravity(g.x, g.y, g.z);
   }
+
+  /// Prepares the Rapier backend so a [RapierWorld] can be constructed.
+  ///
+  /// On native targets this returns immediately. On the web it loads and
+  /// instantiates the shim's WebAssembly module, which is asynchronous,
+  /// so await it once during startup before creating any [RapierWorld]
+  /// (alongside the rest of your scene initialization). Calling it again
+  /// is cheap.
+  static Future<void> ensureInitialized() => ensureRapierReady();
 
   final RapierBindings _bindings;
 

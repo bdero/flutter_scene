@@ -11,6 +11,7 @@ platforms:
   android:
   windows:
   linux:
+  web:
 
 resolution: workspace
 

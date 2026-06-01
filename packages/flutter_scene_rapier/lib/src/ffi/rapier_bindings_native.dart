@@ -11,6 +11,11 @@ import 'package:flutter_scene_rapier/src/ffi/bindings.dart' as native;
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:vector_math/vector_math.dart';
 
+/// Sentinel a cooking call returns when Rapier rejects the shape (the
+/// shim's `u64::MAX`). Native only; this literal cannot exist in a
+/// web-compiled file, and the web backend detects rejection differently.
+const int _invalidHandle = 0xFFFFFFFFFFFFFFFF;
+
 /// A [RapierBindings] backed by the native shim over dart:ffi.
 class NativeRapierBindings extends RapierBindings {
   NativeRapierBindings() : _handle = native.worldNew() {
@@ -402,7 +407,7 @@ class NativeRapierBindings extends RapierBindings {
         rz,
         rw,
       );
-      return handle == invalidHandle ? null : handle;
+      return handle == _invalidHandle ? null : handle;
     } finally {
       calloc.free(ptr);
     }
@@ -451,7 +456,7 @@ class NativeRapierBindings extends RapierBindings {
         rz,
         rw,
       );
-      return handle == invalidHandle ? null : handle;
+      return handle == _invalidHandle ? null : handle;
     } finally {
       calloc.free(vPtr);
       calloc.free(iPtr);
