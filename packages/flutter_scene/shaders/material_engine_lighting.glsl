@@ -64,9 +64,18 @@ uniform FragInfo {
   // backend mis-reads a std140 mat3 uniform (padded vec3 columns), which
   // collapsed env_normal/env_reflection to a constant on GLES.
   mat4 environment_transform;
+  // Screen-space ambient occlusion controls. x: occlusion enabled (sampled
+  // from ssao_texture when > 0.5). y: specular occlusion enabled. zw:
+  // reciprocal of the render-target size, to turn gl_FragCoord into the
+  // occlusion-texture UV.
+  vec4 ssao_params;
 }
 frag_info;
 
 uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
 uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
+// Screen-space ambient occlusion (occlusion factor in .r). A white
+// placeholder is bound when occlusion is disabled, so the sample is a
+// no-op; frag_info.ssao_params.x gates it regardless.
+uniform sampler2D ssao_texture;

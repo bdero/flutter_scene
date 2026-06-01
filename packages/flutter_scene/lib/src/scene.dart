@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3;
+import 'ambient_occlusion.dart';
 import 'camera.dart';
 import 'light.dart';
 import 'material/environment.dart';
@@ -14,11 +15,13 @@ import 'node.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
+import 'render/depth_prepass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
+import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'shaders.dart';
 import 'surface.dart';
@@ -211,6 +214,12 @@ base class Scene implements SceneGraph {
   /// effect is off by default.
   final PostProcessSettings postProcess = PostProcessSettings();
 
+  /// Screen-space ambient occlusion settings. Off by default; set
+  /// [AmbientOcclusionSettings.enabled] to turn it on. Requires a
+  /// [PerspectiveCamera] (the occlusion is reconstructed from the camera's
+  /// perspective depth); it is skipped for other camera types.
+  final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
+
   @override
   void add(Node child) {
     root.add(child);
@@ -359,6 +368,38 @@ base class Scene implements SceneGraph {
         ),
       );
     }
+    // Ambient occlusion is reconstructed from a camera depth prepass, so it
+    // needs a perspective camera (other camera types render without it).
+    if (ambientOcclusion.enabled && camera is PerspectiveCamera) {
+      // The whole occlusion chain (depth prepass, occlusion, blur) runs at one
+      // resolution so depth is sampled 1:1; sampling a full-resolution depth
+      // from the half-resolution occlusion pass would alias on fine geometry.
+      final aoDimensions = ambientOcclusionTargetSize(
+        pixelSize,
+        ambientOcclusion,
+      );
+      graph.addPass(
+        DepthPrepass(
+          camera: camera,
+          renderScene: renderScene,
+          dimensions: aoDimensions,
+          cameraForward: (camera.target - camera.position).normalized(),
+          farDepth: camera.fovFar,
+        ),
+      );
+      graph.addPass(
+        SsaoPass(
+          dimensions: pixelSize,
+          settings: ambientOcclusion,
+          fovRadiansY: camera.fovRadiansY,
+          near: camera.fovNear,
+          far: camera.fovFar,
+        ),
+      );
+      graph.addPass(
+        SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
+      );
+    }
     graph.addPass(
       ScenePass(
         camera: camera,
@@ -370,6 +411,7 @@ base class Scene implements SceneGraph {
         enableMsaa: enableMsaa,
         directionalLight: light,
         cascades: cascades,
+        specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
       ),
     );
     // Split custom effects by where they run in the chain.

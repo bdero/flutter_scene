@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
+import 'package:flutter_scene/src/render/ssao_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 
 /// Render-graph blackboard key for the current scene-color texture.
@@ -34,6 +35,7 @@ class ScenePass extends RenderGraphPass {
     required bool enableMsaa,
     DirectionalLight? directionalLight,
     List<ShadowCascade> cascades = const [],
+    double specularOcclusionMode = 0.0,
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -42,7 +44,8 @@ class ScenePass extends RenderGraphPass {
        _environmentTransform = environmentTransform,
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
-       _cascades = cascades;
+       _cascades = cascades,
+       _specularOcclusionMode = specularOcclusionMode;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -53,6 +56,7 @@ class ScenePass extends RenderGraphPass {
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final List<ShadowCascade> _cascades;
+  final double _specularOcclusionMode;
 
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
@@ -109,6 +113,9 @@ class ScenePass extends RenderGraphPass {
     final shadowMap = context.blackboard.get<gpu.Texture>(
       kShadowMapBlackboardKey,
     );
+    final ssaoMap = context.blackboard.get<gpu.Texture>(
+      kSsaoTextureBlackboardKey,
+    );
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentIntensity: _environmentIntensity,
@@ -116,6 +123,9 @@ class ScenePass extends RenderGraphPass {
       directionalLight: _directionalLight,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,
+      ssaoMap: ssaoMap,
+      specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
+      viewportSize: _dimensions,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();

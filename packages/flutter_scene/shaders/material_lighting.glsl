@@ -168,6 +168,19 @@ float SampleShadow(vec3 world_pos, vec3 n) {
   return 1.0;
 }
 
+// Empirical specular occlusion derived from the diffuse occlusion factor,
+// the view angle, and roughness (Lagarde and de Rousiers 2014, "Physically
+// Based Rendering" course notes). Rough surfaces are returned unchanged;
+// smoother surfaces lose indirect specular at normal incidence. Applied
+// only to indirect specular.
+float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
+                               float roughness) {
+  return clamp(
+      pow(n_dot_v + occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 +
+          occlusion,
+      0.0, 1.0);
+}
+
 // Lights a surface described by `material` and returns the final fragment
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
 // the material contract; a material's Surface() function fills `material` and
@@ -178,7 +191,20 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 normal = material.normal;
   float metallic = material.metallic;
   float roughness = material.roughness;
+
+  // Diffuse occlusion: the material's (baked) occlusion modulated by the
+  // screen-space ambient occlusion when it is enabled. Occlusion only ever
+  // affects indirect lighting, never the analytic direct light below.
   float occlusion = material.occlusion;
+  if (frag_info.ssao_params.x > 0.5) {
+    vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
+    // TODO(flutter_scene): the occlusion target is stored top-down like the
+    // other render-to-texture targets, which matches gl_FragCoord here. If a
+    // backend reports gl_FragCoord with a flipped origin, this sample needs
+    // screen_uv.y = 1.0 - screen_uv.y; verify against the depth prepass on
+    // each backend.
+    occlusion *= texture(ssao_texture, screen_uv).r;
+  }
 
   vec3 camera_normal = normalize(v_viewvector);
 
@@ -223,7 +249,15 @@ vec4 EvaluateLighting(MaterialInputs material) {
 
   vec3 indirect_specular = FssEss * prefiltered_color;
   vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
-  vec3 ambient = (indirect_diffuse + indirect_specular) * occlusion;
+  // Occluding indirect specular with the diffuse factor over-darkens glossy
+  // reflections, so derive a dedicated specular occlusion when it is
+  // enabled; otherwise the specular lobe uses the same occlusion (the
+  // historical behavior).
+  float specular_occlusion = frag_info.ssao_params.y > 0.5
+      ? ComputeSpecularOcclusion(n_dot_v, occlusion, roughness)
+      : occlusion;
+  vec3 ambient =
+      indirect_diffuse * occlusion + indirect_specular * specular_occlusion;
 
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
   // ambient term).

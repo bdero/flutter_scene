@@ -19,6 +19,18 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_depth_only.frag"
     },
+    "LinearDepthFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_linear_depth.frag"
+    },
+    "SsaoFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_ssao.frag"
+    },
+    "SsaoBlurFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_ssao_blur.frag"
+    },
     "FullscreenVertex": {
         "type": "vertex",
         "file": "shaders/flutter_scene_fullscreen.vert"
