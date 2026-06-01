@@ -4,6 +4,8 @@
 //
 // ignore_for_file: invalid_use_of_internal_member
 
+import 'dart:typed_data';
+
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:test/test.dart';
@@ -175,12 +177,82 @@ void main() {
     expect(hit.distance, closeTo(7.5, 0.1));
   });
 
-  test('shapeCast rejects non-sphere probes', () {
+  test('shapeCast sweeps a box and finds the first contact', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+    final target = _addStatic(
+      root,
+      BoxShape(halfExtents: Vector3(2, 2, 2)),
+      Vector3(0, 0, 10),
+    );
+
+    final hit = world.shapeCast(
+      BoxShape(halfExtents: Vector3(0.5, 0.5, 0.5)),
+      Matrix4.translation(Vector3.zero()),
+      Vector3(0, 0, 1),
+      100,
+    );
+    expect(hit, isNotNull);
+    expect(identical(hit!.node, target), isTrue);
+    // Target front face at z=8; probe half-depth 0.5 contacts at ~7.5.
+    expect(hit.distance, closeTo(7.5, 0.1));
+  });
+
+  test('shapeCast sweeps a capsule and finds the first contact', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+    final target = _addStatic(
+      root,
+      BoxShape(halfExtents: Vector3(2, 2, 2)),
+      Vector3(0, 0, 10),
+    );
+
+    final hit = world.shapeCast(
+      CapsuleShape(radius: 0.5, halfHeight: 0.5),
+      Matrix4.translation(Vector3.zero()),
+      Vector3(0, 0, 1),
+      100,
+    );
+    expect(hit, isNotNull);
+    expect(identical(hit!.node, target), isTrue);
+    // Target front face at z=8; capsule radius 0.5 contacts at ~7.5.
+    expect(hit.distance, closeTo(7.5, 0.1));
+  });
+
+  test('shapeCast sweeps a cylinder and finds the first contact', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+    final target = _addStatic(
+      root,
+      BoxShape(halfExtents: Vector3(2, 2, 2)),
+      Vector3(0, 0, 10),
+    );
+
+    final hit = world.shapeCast(
+      CylinderShape(radius: 0.5, halfHeight: 0.5),
+      Matrix4.translation(Vector3.zero()),
+      Vector3(0, 0, 1),
+      100,
+    );
+    expect(hit, isNotNull);
+    expect(identical(hit!.node, target), isTrue);
+    // Cylinder's flat side faces the sweep; its radius contacts at ~7.5.
+    expect(hit.distance, closeTo(7.5, 0.1));
+  });
+
+  test('shapeCast rejects an unsupported probe shape', () {
     final root = _boot();
     final world = root.getComponent<RapierWorld>()!;
     expect(
       () => world.shapeCast(
-        BoxShape(halfExtents: Vector3(1, 1, 1)),
+        ConvexHullShape(
+          points: Float32List.fromList(<double>[
+            0, 0, 0, //
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+          ]),
+        ),
         Matrix4.identity(),
         Vector3(0, 0, 1),
         10,

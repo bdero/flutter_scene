@@ -359,6 +359,41 @@ pub unsafe extern "C" fn fsr_world_overlap_box(
     w.query_hits.len()
 }
 
+/// Sweeps `shape` from `pose` along `dir` for at most `distance` and
+/// writes the closest contact into `out`. Shared by every
+/// `fsr_world_shape_cast_*` entry point.
+///
+/// # Safety
+/// `world` must be live; `out` must point to a writable [`FsrHit`].
+unsafe fn shape_cast_impl(
+    world: *mut World,
+    pose: Pose,
+    dir: Vector,
+    shape: &dyn parry::shape::Shape,
+    distance: Real,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let w = &mut *world;
+    let options = parry::query::ShapeCastOptions {
+        max_time_of_impact: distance,
+        target_distance: 0.0,
+        stop_at_penetration: true,
+        compute_impact_geometry_on_penetration: true,
+    };
+    let qp = w.broad_phase.as_query_pipeline(
+        w.narrow_phase.query_dispatcher(),
+        &w.rigid_body_set,
+        &w.collider_set,
+        query_filter(filter_flags),
+    );
+    let Some((handle, hit)) = qp.cast_shape(&pose, dir, shape, options) else {
+        return 0;
+    };
+    *out = make_hit(handle, hit.time_of_impact, hit.witness1, hit.normal1);
+    1
+}
+
 /// Sweeps a sphere along a direction and returns the closest collider
 /// it would contact.
 ///
@@ -378,27 +413,132 @@ pub unsafe extern "C" fn fsr_world_shape_cast_sphere(
     filter_flags: u8,
     out: *mut FsrHit,
 ) -> u8 {
-    let w = &mut *world;
+    // A sphere is rotation-invariant, so the probe pose carries no
+    // rotation.
     let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::IDENTITY);
-    let dir = Vector::new(dx, dy, dz);
     let shape = parry::shape::Ball::new(radius);
-    let options = parry::query::ShapeCastOptions {
-        max_time_of_impact: distance,
-        target_distance: 0.0,
-        stop_at_penetration: true,
-        compute_impact_geometry_on_penetration: true,
-    };
-    let qp = w.broad_phase.as_query_pipeline(
-        w.narrow_phase.query_dispatcher(),
-        &w.rigid_body_set,
-        &w.collider_set,
-        query_filter(filter_flags),
-    );
-    let Some((handle, hit)) = qp.cast_shape(&pose, dir, &shape, options) else {
-        return 0;
-    };
-    *out = make_hit(handle, hit.time_of_impact, hit.witness1, hit.normal1);
-    1
+    shape_cast_impl(
+        world,
+        pose,
+        Vector::new(dx, dy, dz),
+        &shape,
+        distance,
+        filter_flags,
+        out,
+    )
+}
+
+/// Sweeps an oriented box along a direction. `(qx, qy, qz, qw)` is the
+/// probe's world rotation.
+///
+/// # Safety
+/// `world` must be live. `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_world_shape_cast_box(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+    hx: Real,
+    hy: Real,
+    hz: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    distance: Real,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
+    let shape = parry::shape::Cuboid::new(Vector::new(hx, hy, hz));
+    shape_cast_impl(
+        world,
+        pose,
+        Vector::new(dx, dy, dz),
+        &shape,
+        distance,
+        filter_flags,
+        out,
+    )
+}
+
+/// Sweeps an oriented Y-axis capsule along a direction.
+///
+/// # Safety
+/// `world` must be live. `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_world_shape_cast_capsule(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+    half_height: Real,
+    radius: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    distance: Real,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
+    let shape = parry::shape::Capsule::new_y(half_height, radius);
+    shape_cast_impl(
+        world,
+        pose,
+        Vector::new(dx, dy, dz),
+        &shape,
+        distance,
+        filter_flags,
+        out,
+    )
+}
+
+/// Sweeps an oriented Y-axis cylinder along a direction.
+///
+/// # Safety
+/// `world` must be live. `out` must point to a writable [`FsrHit`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn fsr_world_shape_cast_cylinder(
+    world: *mut World,
+    ox: Real,
+    oy: Real,
+    oz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+    half_height: Real,
+    radius: Real,
+    dx: Real,
+    dy: Real,
+    dz: Real,
+    distance: Real,
+    filter_flags: u8,
+    out: *mut FsrHit,
+) -> u8 {
+    let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
+    let shape = parry::shape::Cylinder::new(half_height, radius);
+    shape_cast_impl(
+        world,
+        pose,
+        Vector::new(dx, dy, dz),
+        &shape,
+        distance,
+        filter_flags,
+        out,
+    )
 }
 
 /// Copies the i-th entry of the last multi-hit query into `out`.

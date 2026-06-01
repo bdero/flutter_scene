@@ -28,8 +28,9 @@ import 'package:vector_math/vector_math.dart';
 /// notice; a query issued before the first step (or against a collider
 /// added since the last step) will not see that collider.
 ///
-/// TODO(shape-cast-shapes): [shapeCast] only accepts a [SphereShape]
-/// probe; widen the native surface to box / capsule / cylinder probes.
+/// TODO(shape-cast-hulls): [shapeCast] accepts sphere / box / capsule /
+/// cylinder probes; convex-hull, trimesh, heightfield, and compound
+/// probes are not wired through the native surface yet.
 class RapierWorld extends PhysicsWorld {
   RapierWorld({Vector3? gravity}) : _handle = native.worldNew() {
     _finalizer.attach(this, _handle, detach: this);
@@ -1066,34 +1067,100 @@ class RapierWorld extends PhysicsWorld {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // TODO(shape-cast-shapes): only SphereShape is cooked for the cast
-    // probe today. Add box / capsule / cylinder probes by widening the
-    // native fsr_world_shape_cast_* surface.
-    if (shape is! SphereShape) {
-      throw UnsupportedError(
-        'RapierWorld.shapeCast currently supports SphereShape probes only.',
-      );
-    }
     final origin = from.getTranslation();
     final dir = direction.normalized();
-    final hit = native.worldShapeCastSphere(
-      _handle,
-      origin.x,
-      origin.y,
-      origin.z,
-      shape.radius,
-      dir.x,
-      dir.y,
-      dir.z,
-      distance,
-      _filterFlags(
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeDynamic: includeDynamic,
-        includeTriggers: includeTriggers,
-      ),
-      _hitBuffer,
+    final flags = _filterFlags(
+      includeFixed: includeFixed,
+      includeKinematic: includeKinematic,
+      includeDynamic: includeDynamic,
+      includeTriggers: includeTriggers,
     );
+    // The probe's world rotation matters for every shape except the
+    // rotation-invariant sphere.
+    final int hit;
+    if (shape is SphereShape) {
+      hit = native.worldShapeCastSphere(
+        _handle,
+        origin.x,
+        origin.y,
+        origin.z,
+        shape.radius,
+        dir.x,
+        dir.y,
+        dir.z,
+        distance,
+        flags,
+        _hitBuffer,
+      );
+    } else if (shape is BoxShape) {
+      final r = Quaternion.fromRotation(from.getRotation());
+      hit = native.worldShapeCastBox(
+        _handle,
+        origin.x,
+        origin.y,
+        origin.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+        shape.halfExtents.x,
+        shape.halfExtents.y,
+        shape.halfExtents.z,
+        dir.x,
+        dir.y,
+        dir.z,
+        distance,
+        flags,
+        _hitBuffer,
+      );
+    } else if (shape is CapsuleShape) {
+      final r = Quaternion.fromRotation(from.getRotation());
+      hit = native.worldShapeCastCapsule(
+        _handle,
+        origin.x,
+        origin.y,
+        origin.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+        shape.halfHeight,
+        shape.radius,
+        dir.x,
+        dir.y,
+        dir.z,
+        distance,
+        flags,
+        _hitBuffer,
+      );
+    } else if (shape is CylinderShape) {
+      final r = Quaternion.fromRotation(from.getRotation());
+      hit = native.worldShapeCastCylinder(
+        _handle,
+        origin.x,
+        origin.y,
+        origin.z,
+        r.x,
+        r.y,
+        r.z,
+        r.w,
+        shape.halfHeight,
+        shape.radius,
+        dir.x,
+        dir.y,
+        dir.z,
+        distance,
+        flags,
+        _hitBuffer,
+      );
+    } else {
+      // TODO(shape-cast-hulls): convex-hull / trimesh / heightfield /
+      // compound cast probes are not wired through the native surface.
+      throw UnsupportedError(
+        'RapierWorld.shapeCast supports sphere, box, capsule, and cylinder '
+        'probes; ${shape.runtimeType} cannot be used as a cast probe.',
+      );
+    }
     if (hit == 0) return null;
     final h = _hitBuffer.ref;
     final collider = _collidersByHandle[h.collider];
