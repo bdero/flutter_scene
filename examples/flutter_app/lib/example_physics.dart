@@ -61,23 +61,40 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   // the pair is the ball (the other node) and recolor it.
   Node? _triggerNode;
 
+  // How many balls are currently inside the trigger, so its highlight
+  // clears only once the last one leaves.
+  int _ballsInTrigger = 0;
+
   // Ball albedo when idle and while overlapping the trigger volume.
   static final vm.Vector4 _ballColor = vm.Vector4(0.95, 0.78, 0.16, 1);
   static final vm.Vector4 _ballHighlightColor = vm.Vector4(0.1, 1.0, 0.95, 1);
+
+  // Trigger albedo when idle and while at least one ball is inside it.
+  static final vm.Vector4 _triggerColor = vm.Vector4(0.2, 0.9, 0.6, 0.25);
+  static final vm.Vector4 _triggerHighlightColor = vm.Vector4(
+    1.0,
+    0.55,
+    0.1,
+    0.5,
+  );
 
   @override
   void initState() {
     super.initState();
 
-    // A key light that casts shadows, plus a touch of exposure, for
-    // readable depth and punchy color. The default studio environment
-    // still provides ambient fill.
+    // A key light that casts shadows across the playfield. The default
+    // shadow distance (150) targets large outdoor scenes; pulling it in to
+    // 25 concentrates the cascades on this compact playfield so the cast
+    // shadows stay crisp.
     scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(-0.5, -1.0, -0.35),
-      intensity: 4.5,
+      direction: vm.Vector3(-0.6, -1.0, -0.45),
+      intensity: 3.0,
       castsShadow: true,
+      shadowMaxDistance: 25.0,
     );
-    scene.exposure = 1.4;
+    // Dial the ambient fill back so the cast shadows read clearly instead of
+    // being washed out by the bright studio environment.
+    scene.environmentIntensity = 0.6;
 
     world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
     scene.root.addComponent(world);
@@ -88,8 +105,14 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       } else if (event is TriggerEntered) {
         _triggerCount++;
         _recolorOther(event, _ballHighlightColor);
+        _ballsInTrigger++;
+        _setNodeColor(_triggerNode, _triggerHighlightColor);
       } else if (event is TriggerExited) {
         _recolorOther(event, _ballColor);
+        _ballsInTrigger = (_ballsInTrigger - 1).clamp(0, 1 << 30);
+        if (_ballsInTrigger == 0) {
+          _setNodeColor(_triggerNode, _triggerColor);
+        }
       }
     });
 
@@ -102,10 +125,15 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   // Recolors whichever node in a trigger event pair is not the trigger
   // volume (the overlapping ball), so an overlap is visible at a glance.
   void _recolorOther(CollisionEvent event, vm.Vector4 color) {
-    final ball = identical(event.nodeA, _triggerNode)
-        ? event.nodeB
-        : event.nodeA;
-    final material = ball.mesh?.primitives.first.material;
+    _setNodeColor(
+      identical(event.nodeA, _triggerNode) ? event.nodeB : event.nodeA,
+      color,
+    );
+  }
+
+  // Sets a node's base color, if it carries a physically based mesh.
+  void _setNodeColor(Node? node, vm.Vector4 color) {
+    final material = node?.mesh?.primitives.first.material;
     if (material is PhysicallyBasedMaterial) {
       material.baseColorFactor = color;
     }
@@ -117,7 +145,10 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = color
       ..roughnessFactor = 0.45
-      ..metallicFactor = 0.0;
+      ..metallicFactor = 0.0
+      // CuboidGeometry bakes per-corner debug vertex colors (including a
+      // black corner); ignore them so the base color shows cleanly.
+      ..vertexColorWeight = 0.0;
     return Mesh(CuboidGeometry(size), material);
   }
 
@@ -157,7 +188,8 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _addBody(
       position: vm.Vector3(0, -0.5, 0),
       type: BodyType.fixed,
-      mesh: _boxMesh(vm.Vector3(40, 1, 40), vm.Vector4(0.30, 0.33, 0.38, 1)),
+      // A light, fairly matte floor so cast shadows are easy to read.
+      mesh: _boxMesh(vm.Vector3(40, 1, 40), vm.Vector4(0.62, 0.64, 0.68, 1)),
       shape: BoxShape(halfExtents: vm.Vector3(20, 0.5, 20)),
       // Some restitution so projectiles bounce off the floor.
       material: const PhysicsMaterial(friction: 0.8, restitution: 0.6),
@@ -243,9 +275,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     // pass through it bump the trigger counter and get recolored while
     // overlapping, via the collisions stream.
     _triggerNode = _addBody(
-      position: vm.Vector3(0, 3, 7),
+      position: vm.Vector3(0, 3, 5),
       type: BodyType.fixed,
-      mesh: _boxMesh(vm.Vector3(4, 4, 0.3), vm.Vector4(0.2, 0.9, 0.6, 0.25)),
+      mesh: _boxMesh(vm.Vector3(4, 4, 0.3), _triggerColor),
       shape: BoxShape(halfExtents: vm.Vector3(2, 2, 0.15)),
       isTrigger: true,
     );
@@ -307,6 +339,10 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildStack();
     _collisionCount = 0;
     _triggerCount = 0;
+    // Removing balls mid-overlap fires no exit events, so clear the
+    // trigger highlight state by hand.
+    _ballsInTrigger = 0;
+    _setNodeColor(_triggerNode, _triggerColor);
   }
 
   // --- Build --------------------------------------------------------------
@@ -346,12 +382,17 @@ class _PhysicsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // A gentle orbit so the stack reads as three-dimensional. The same
-    // camera is stashed on the state so taps aim at what is on screen.
+    // A gentle orbit, kept close so the stack fills the frame and its cast
+    // shadows read clearly. The same camera is stashed on the state so taps
+    // aim at what is on screen.
     final angle = elapsedSeconds * 0.15;
     final camera = PerspectiveCamera(
-      position: vm.Vector3(math.sin(angle) * 12, 7, math.cos(angle) * 12 + 2),
-      target: vm.Vector3(0, 1.5, 1),
+      position: vm.Vector3(
+        math.sin(angle) * 8.5,
+        5,
+        math.cos(angle) * 8.5 + 1.5,
+      ),
+      target: vm.Vector3(0, 1.6, 1.5),
     );
     state._lastCamera = camera;
     state._lastViewport = size;
