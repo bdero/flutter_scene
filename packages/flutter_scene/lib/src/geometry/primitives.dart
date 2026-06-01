@@ -98,49 +98,81 @@ class SphereGeometry extends MeshGeometry {
 }
 
 /// Generates the vertex arrays for a [CuboidGeometry] sized to [extents].
+///
+/// Each face is emitted as its own four vertices carrying that face's flat
+/// outward normal, so the box shades (and receives shadows) with crisp,
+/// flat faces. The eight corner debug colors are preserved per vertex, so an
+/// unlit material still shows the distinct-corner visualization.
 PrimitiveArrays buildCuboidArrays(Vector3 extents) {
   final e = extents * 0.5;
-  final positions = Float32List.fromList(<double>[
-    -e.x, -e.y, -e.z, //
-    e.x, -e.y, -e.z, //
-    e.x, e.y, -e.z, //
-    -e.x, e.y, -e.z, //
-    -e.x, -e.y, e.z, //
-    e.x, -e.y, e.z, //
-    e.x, e.y, e.z, //
-    -e.x, e.y, e.z, //
-  ]);
-  final texCoords = Float32List.fromList(<double>[
-    0, 0, //
-    1, 0, //
-    1, 1, //
-    0, 1, //
-    0, 0, //
-    1, 0, //
-    1, 1, //
-    0, 1, //
-  ]);
-  final colors = Float32List.fromList(<double>[
-    1, 0, 0, 1, //
-    0, 1, 0, 1, //
-    0, 0, 1, 1, //
-    0, 0, 0, 1, //
-    0, 1, 1, 1, //
-    1, 0, 1, 1, //
-    1, 1, 0, 1, //
-    1, 1, 1, 1, //
-  ]);
-  const indices = <int>[
-    0, 1, 3, 3, 1, 2, //
-    1, 5, 2, 2, 5, 6, //
-    5, 4, 6, 6, 4, 7, //
-    4, 0, 7, 7, 0, 3, //
-    3, 2, 7, 7, 2, 6, //
-    4, 5, 0, 0, 5, 1, //
+  final corners = <Vector3>[
+    Vector3(-e.x, -e.y, -e.z),
+    Vector3(e.x, -e.y, -e.z),
+    Vector3(e.x, e.y, -e.z),
+    Vector3(-e.x, e.y, -e.z),
+    Vector3(-e.x, -e.y, e.z),
+    Vector3(e.x, -e.y, e.z),
+    Vector3(e.x, e.y, e.z),
+    Vector3(-e.x, e.y, e.z),
   ];
+  const cornerColors = <List<double>>[
+    [1, 0, 0, 1],
+    [0, 1, 0, 1],
+    [0, 0, 1, 1],
+    [0, 0, 0, 1],
+    [0, 1, 1, 1],
+    [1, 0, 1, 1],
+    [1, 1, 0, 1],
+    [1, 1, 1, 1],
+  ];
+  // Each face: its four corner indices wound (a, b, c, d) so the outward
+  // normal follows the engine's front-face convention, plus that normal.
+  const faces = <(List<int>, List<double>)>[
+    ([0, 1, 2, 3], [0, 0, -1]), // -Z
+    ([1, 5, 6, 2], [1, 0, 0]), //  +X
+    ([5, 4, 7, 6], [0, 0, 1]), //  +Z
+    ([4, 0, 3, 7], [-1, 0, 0]), // -X
+    ([3, 2, 6, 7], [0, 1, 0]), //  +Y
+    ([4, 5, 1, 0], [0, -1, 0]), // -Y
+  ];
+  const faceUvs = <List<double>>[
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+  ];
+
+  final positions = Float32List(24 * 3);
+  final normals = Float32List(24 * 3);
+  final texCoords = Float32List(24 * 2);
+  final colors = Float32List(24 * 4);
+  final indices = <int>[];
+  for (var f = 0; f < faces.length; f++) {
+    final (cornerIndices, normal) = faces[f];
+    final base = f * 4;
+    for (var i = 0; i < 4; i++) {
+      final v = base + i;
+      final corner = corners[cornerIndices[i]];
+      positions[v * 3] = corner.x;
+      positions[v * 3 + 1] = corner.y;
+      positions[v * 3 + 2] = corner.z;
+      normals[v * 3] = normal[0].toDouble();
+      normals[v * 3 + 1] = normal[1].toDouble();
+      normals[v * 3 + 2] = normal[2].toDouble();
+      texCoords[v * 2] = faceUvs[i][0];
+      texCoords[v * 2 + 1] = faceUvs[i][1];
+      final color = cornerColors[cornerIndices[i]];
+      colors[v * 4] = color[0];
+      colors[v * 4 + 1] = color[1];
+      colors[v * 4 + 2] = color[2];
+      colors[v * 4 + 3] = color[3];
+    }
+    // Two triangles matching the original winding: (a, b, d) and (d, b, c).
+    indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
+  }
   return (
     positions: positions,
-    normals: null,
+    normals: normals,
     texCoords: texCoords,
     colors: colors,
     indices: indices,
