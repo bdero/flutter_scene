@@ -13,6 +13,37 @@ import 'dart:ffi';
 /// allocated by [worldNew] and must be released with [worldDestroy].
 final class NativeWorld extends Opaque {}
 
+/// Per-axis configuration for a generic (6DOF) joint. Layout must match
+/// `FsrJointAxis` in `native/src/lib.rs`.
+final class FsrJointAxis extends Struct {
+  /// 0 locked, 1 free, 2 limited.
+  @Uint8()
+  external int motion;
+
+  /// 1 when a motor is configured on this axis.
+  @Uint8()
+  external int hasMotor;
+
+  /// 0 acceleration-based, 1 force-based.
+  @Uint8()
+  external int motorModel;
+
+  @Float()
+  external double lower;
+  @Float()
+  external double upper;
+  @Float()
+  external double targetPos;
+  @Float()
+  external double targetVel;
+  @Float()
+  external double stiffness;
+  @Float()
+  external double damping;
+  @Float()
+  external double maxForce;
+}
+
 /// One hit returned by a scene query. Layout must match `FsrHit` in
 /// `native/src/lib.rs`.
 final class FsrHit extends Struct {
@@ -1254,6 +1285,42 @@ external void jointUpdatePrismatic(
   double motorTargetVelocity,
   double motorMaxForce,
   int collisionsEnabled,
+);
+
+@Native<
+  Uint64 Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Uint64,
+    Pointer<Float>,
+    Uint8,
+    Pointer<FsrJointAxis>,
+  )
+>(symbol: 'fsr_joint_generic')
+external int jointGeneric(
+  Pointer<NativeWorld> world,
+  int bodyA,
+  int bodyB,
+  Pointer<Float> frames,
+  int collisionsEnabled,
+  Pointer<FsrJointAxis> axes,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Pointer<Float>,
+    Uint8,
+    Pointer<FsrJointAxis>,
+  )
+>(symbol: 'fsr_joint_update_generic')
+external void jointUpdateGeneric(
+  Pointer<NativeWorld> world,
+  int joint,
+  Pointer<Float> frames,
+  int collisionsEnabled,
+  Pointer<FsrJointAxis> axes,
 );
 
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(

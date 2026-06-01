@@ -298,6 +298,92 @@ void main() {
     expect(maxHeight, greaterThan(5.5));
   });
 
+  test('a generic joint spring motor holds the arm against gravity', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+
+    final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
+    final (armNode, armBody) = _body(
+      root,
+      Vector3(2, 5, 0),
+      BodyType.dynamic_,
+      mass: 1,
+    );
+
+    // A hinge about Z (all axes locked except angular-Z) with a stiff
+    // positional spring toward its zero (horizontal) angle. The spring
+    // should hold the arm near horizontal rather than letting gravity
+    // swing it down.
+    final joint = RapierGenericJoint(
+      otherNode: hingeNode,
+      localAnchorA: Vector3(-2, 0, 0),
+      localAnchorB: Vector3.zero(),
+      axes: {
+        JointAxis.linearX: const JointAxisConfig.locked(),
+        JointAxis.linearY: const JointAxisConfig.locked(),
+        JointAxis.linearZ: const JointAxisConfig.locked(),
+        JointAxis.angularX: const JointAxisConfig.locked(),
+        JointAxis.angularY: const JointAxisConfig.locked(),
+        JointAxis.angularZ: const JointAxisConfig.free(
+          motor: JointMotor(
+            targetPosition: 0,
+            stiffness: 2000,
+            damping: 100,
+            maxForce: 100000,
+          ),
+        ),
+      },
+    );
+    armNode.addComponent(joint);
+    joint.mount();
+
+    for (var i = 0; i < 180; i++) {
+      world.step(1.0 / 60.0);
+    }
+
+    final p = armBody.readNativeTranslation();
+    // Held near its horizontal start by the spring, still at radius ~2.
+    expect(p.y, greaterThan(4.6));
+    expect((p - Vector3(0, 5, 0)).length, closeTo(2.0, 0.2));
+  });
+
+  test('setAxisConfig frees a locked axis live', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+
+    final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
+    final (armNode, armBody) = _body(
+      root,
+      Vector3(2, 5, 0),
+      BodyType.dynamic_,
+      mass: 1,
+    );
+
+    // Every axis locked: the arm is welded horizontal and stays put.
+    final joint = RapierGenericJoint(
+      otherNode: hingeNode,
+      localAnchorA: Vector3(-2, 0, 0),
+      localAnchorB: Vector3.zero(),
+      axes: {
+        for (final axis in JointAxis.values)
+          axis: const JointAxisConfig.locked(),
+      },
+    );
+    armNode.addComponent(joint);
+    joint.mount();
+    for (var i = 0; i < 60; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(armBody.readNativeTranslation().y, closeTo(5.0, 0.2));
+
+    // Free the hinge axis after mount: the arm should now swing down.
+    joint.setAxisConfig(JointAxis.angularZ, const JointAxisConfig.free());
+    for (var i = 0; i < 150; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(armBody.readNativeTranslation().y, lessThan(4.3));
+  });
+
   test('a joint without a sibling body throws', () {
     final root = _boot();
     final (otherNode, _) = _body(root, Vector3.zero(), BodyType.fixed);
