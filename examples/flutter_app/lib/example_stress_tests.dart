@@ -493,8 +493,8 @@ class _StressSceneState extends State<_StressScene> {
   @override
   void initState() {
     super.initState();
-    // No analytic light: these scenes are lit purely by the image-based
-    // environment, so the environment menu is what's being evaluated.
+    // Lighting (the directional key light and shadows) is driven by the
+    // shared settings panel via ExampleSettings.applyTo.
     unawaited(_load());
   }
 

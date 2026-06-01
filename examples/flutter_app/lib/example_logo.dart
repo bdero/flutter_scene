@@ -20,13 +20,8 @@ class ExampleLogoState extends State<ExampleLogo> {
 
   @override
   void initState() {
-    // A warm key light (with shadows) on top of the default IBL environment.
-    scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(0.4, -1.0, 0.3),
-      color: vm.Vector3(1.0, 0.97, 0.9),
-      intensity: 3.0,
-      castsShadow: true,
-    );
+    // The directional key light and shadows are driven by the shared settings
+    // panel via ExampleSettings.applyTo.
 
     // A simple ground plane to catch the logo's shadow.
     final ground = Node(

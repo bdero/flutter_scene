@@ -97,14 +97,8 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
 
   @override
   void initState() {
-    // A directional "sun" that lights the scene and casts cascaded
-    // shadows. The shadow distance is kept tight to this scene so the
-    // near cascade stays high-resolution under the car.
-    scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(-0.45, -1.0, -0.35),
-      castsShadow: true,
-      shadowMaxDistance: 60.0,
-    );
+    // The directional "sun" and its cascaded shadows are driven by the shared
+    // settings panel via ExampleSettings.applyTo.
 
     // The ground. A lit material, so it receives the car's shadow.
     scene.add(
