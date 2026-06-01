@@ -56,7 +56,12 @@ class MeshComponent extends Component {
   }
 
   void _unregisterRenderItems() {
-    if (isMounted) {
+    // Guard on attachment, not mount state: [Component.unmount] clears
+    // the mounted flag before invoking [onUnmount], so checking
+    // isMounted here would skip removal during teardown and leave the
+    // render items in the scene forever. The owning node's render scene
+    // is still reachable until after every component has unmounted.
+    if (isAttached) {
       final renderScene = node.internalRenderScene;
       if (renderScene != null) {
         for (final item in _renderItems) {
