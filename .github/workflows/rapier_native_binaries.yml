@@ -31,6 +31,9 @@ jobs:
   build:
     name: Build ${{ matrix.triple }}
     runs-on: ${{ matrix.runner }}
+    # A healthy build is 1-2 minutes; this aborts a hung runner rather
+    # than letting it occupy the job for hours.
+    timeout-minutes: 20
     continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
