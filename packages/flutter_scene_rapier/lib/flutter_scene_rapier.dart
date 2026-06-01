@@ -9,11 +9,12 @@
 /// Body lifecycle, force / impulse application, the full Shape
 /// hierarchy, axis locks, sleeping, kinematic transform sync,
 /// interpolated transform writeback, scene queries (raycast, overlap,
-/// shape cast), collision / trigger events, and the fixed, spherical,
-/// revolute, prismatic, and generic (6DOF) joints all run through the
-/// native shim.
+/// shape cast), collision / trigger events, the fixed, spherical,
+/// revolute, prismatic, and generic (6DOF) joints, and a kinematic
+/// character controller all run through the native shim.
 library;
 
+export 'src/rapier_character_controller.dart';
 export 'src/rapier_collider.dart';
 export 'src/rapier_joint.dart';
 export 'src/rapier_rigid_body.dart';

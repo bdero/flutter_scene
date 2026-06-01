@@ -73,6 +73,11 @@ class RapierWorld extends PhysicsWorld {
   late final Pointer<native.FsrJointAxis> _jointAxesBuffer =
       calloc<native.FsrJointAxis>(6);
 
+  // Reusable scratch for the result of a character-controller move.
+  // Allocated once, freed in onUnmount.
+  late final Pointer<native.FsrCharacterMovement> _characterBuffer =
+      calloc<native.FsrCharacterMovement>();
+
   /// The underlying native world pointer. Exposed so [RapierRigidBody]
   /// and [RapierCollider] can pass it back into the FFI for body and
   /// collider operations.
@@ -761,6 +766,55 @@ class RapierWorld extends PhysicsWorld {
     }
   }
 
+  /// Runs one kinematic-character move for the character whose shape is
+  /// the collider [collider]. Returns the corrected world-space
+  /// translation to apply plus the grounded / sliding flags. Pass a null
+  /// [snapToGround] to disable snapping and `autostep: false` to disable
+  /// stepping.
+  ({Vector3 translation, bool grounded, bool slidingDownSlope}) moveCharacter(
+    int collider, {
+    required Vector3 desiredTranslation,
+    required double deltaSeconds,
+    required Vector3 up,
+    required double offset,
+    required bool slide,
+    required double maxSlopeClimbAngle,
+    required double minSlopeSlideAngle,
+    required double? snapToGround,
+    required bool autostep,
+    required double autostepMaxHeight,
+    required double autostepMinWidth,
+    required bool autostepIncludeDynamicBodies,
+  }) {
+    native.characterMove(
+      _handle,
+      collider,
+      desiredTranslation.x,
+      desiredTranslation.y,
+      desiredTranslation.z,
+      deltaSeconds,
+      up.x,
+      up.y,
+      up.z,
+      offset,
+      slide ? 1 : 0,
+      maxSlopeClimbAngle,
+      minSlopeSlideAngle,
+      snapToGround ?? -1.0,
+      autostep ? 1 : 0,
+      autostepMaxHeight,
+      autostepMinWidth,
+      autostepIncludeDynamicBodies ? 1 : 0,
+      _characterBuffer,
+    );
+    final m = _characterBuffer.ref;
+    return (
+      translation: Vector3(m.tx, m.ty, m.tz),
+      grounded: m.grounded != 0,
+      slidingDownSlope: m.sliding != 0,
+    );
+  }
+
   /// Creates a fixed body at the world origin to stand in as the static
   /// side of a world-anchored joint, returning its native handle. It is
   /// not registered for transform interpolation; the joint that owns it
@@ -975,6 +1029,7 @@ class RapierWorld extends PhysicsWorld {
     calloc.free(_contactBuffer);
     calloc.free(_jointFramesBuffer);
     calloc.free(_jointAxesBuffer);
+    calloc.free(_characterBuffer);
   }
 
   // Drains the collision events Rapier generated during the last step
