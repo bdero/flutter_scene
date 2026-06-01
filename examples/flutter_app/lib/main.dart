@@ -8,6 +8,7 @@ import 'example_cuboid.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
+import 'example_physics.dart';
 import 'example_settings.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
@@ -53,6 +54,7 @@ class _MyAppState extends State<MyApp> {
       'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
       'Toon (.fmat)': (context) =>
           ExampleToonFmat(elapsedSeconds: elapsedSeconds),
+      'Physics': (context) => ExamplePhysics(elapsedSeconds: elapsedSeconds),
       'Stress Tests': (context) =>
           ExampleStressTests(elapsedSeconds: elapsedSeconds),
     };
