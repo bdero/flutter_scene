@@ -692,6 +692,15 @@ base class Node implements SceneGraph {
     _mount(scene.renderScene);
   }
 
+  /// Mounts this subtree into [renderScene] without a full [Scene].
+  ///
+  /// [Scene] construction touches the GPU context, which is unavailable
+  /// in unit tests, so this seam lets render-lifecycle tests exercise
+  /// the mount / unmount path (and the [RenderItem] registration it
+  /// drives) against a bare [RenderScene].
+  @visibleForTesting
+  void debugMountInto(RenderScene renderScene) => _mount(renderScene);
+
   @override
   void add(Node child) {
     if (child._parent != null) {
