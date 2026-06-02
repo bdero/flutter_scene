@@ -16,7 +16,7 @@
 /// $wasmFileName` resolves to the matching release asset. Set this to the
 /// URL `wrangler deploy` prints for the worker.
 const String wasmReleaseBaseUrl =
-    'https://flutter-scene-wasm.bdero.workers.dev';
+    'https://flutter-scene-wasm.x-eaa.workers.dev';
 
 /// The release tag the module is attached to, e.g.
 /// `flutter_scene_rapier-0.0.1`. Empty until the first release.
