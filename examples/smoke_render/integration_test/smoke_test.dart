@@ -110,15 +110,17 @@ void main() {
         greaterThan(20),
         reason: 'foreground is ~black; lighting or textures may have broken',
       );
-      // A loose backstop against a flat/uniform fill; coverage and foreground
-      // luma above are the primary blank detectors. Kept low because this
-      // metric is noisy (dominated by the anti-aliased clear/geometry edge)
-      // and software rasterizers (e.g. llvmpipe on the Linux CI) produce far
-      // fewer distinct values than hardware, especially for a low-roughness
-      // metallic surface reflecting a smooth environment.
+      // A loose backstop against a flat/uniform fill; corners, coverage, and
+      // foreground luma above are the primary blank detectors. Kept very low
+      // because this metric is noisy: it is dominated by the anti-aliased
+      // clear/geometry edge, software rasterizers (llvmpipe on the Linux CI,
+      // SwiftShader on web) produce far fewer distinct values than hardware,
+      // and a flat-shaded surface legitimately covers only a handful of values
+      // there (the toon material on a flat-normal cuboid renders ~12 distinct
+      // colors on the software rasterizers, versus far more on a real GPU).
       expect(
         stats.distinctColors,
-        greaterThan(24),
+        greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
     });
