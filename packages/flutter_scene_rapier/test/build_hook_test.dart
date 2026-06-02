@@ -16,93 +16,81 @@ import 'package:test/test.dart';
 import '../hook/build.dart' as build_hook;
 
 void main() {
-  test(
-    'build hook emits a code asset for the host OS',
-    () async {
-      if (!_haveCargo()) {
-        return;
-      }
+  test('build hook emits a code asset for the host OS', () async {
+    if (!_haveCargo()) {
+      return;
+    }
 
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        check: (input, output) {
-          final assets = output.assets.code;
-          expect(assets, hasLength(1));
-          final asset = assets.single;
-          expect(
-            asset.id,
-            'package:flutter_scene_rapier/flutter_scene_rapier_native',
-          );
-          expect(asset.linkMode, isA<DynamicLoadingBundled>());
-          expect(File.fromUri(asset.file!).existsSync(), isTrue);
-        },
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      check: (input, output) {
+        final assets = output.assets.code;
+        expect(assets, hasLength(1));
+        final asset = assets.single;
+        expect(
+          asset.id,
+          'package:flutter_scene_rapier/flutter_scene_rapier_native',
+        );
+        expect(asset.linkMode, isA<DynamicLoadingBundled>());
+        expect(File.fromUri(asset.file!).existsSync(), isTrue);
+      },
+    );
+  }, timeout: const Timeout(Duration(minutes: 10)));
 
-  test(
-    'build hook cross-builds an iOS device code asset',
-    () async {
-      if (!_haveCargo() || !Platform.isMacOS) {
-        return;
-      }
+  test('build hook cross-builds an iOS device code asset', () async {
+    if (!_haveCargo() || !Platform.isMacOS) {
+      return;
+    }
 
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.arm64,
-        targetIOSSdk: IOSSdk.iPhoneOS,
-        check: (input, output) {
-          final assets = output.assets.code;
-          expect(assets, hasLength(1));
-          final asset = assets.single;
-          expect(asset.linkMode, isA<DynamicLoadingBundled>());
-          final file = File.fromUri(asset.file!);
-          expect(file.existsSync(), isTrue);
-          // The emitted library must come from the iOS device target dir,
-          // not the host build, so a Mach-O for the device gets bundled.
-          expect(file.path, contains('aarch64-apple-ios'));
-        },
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.iOS,
+      targetArchitecture: Architecture.arm64,
+      targetIOSSdk: IOSSdk.iPhoneOS,
+      check: (input, output) {
+        final assets = output.assets.code;
+        expect(assets, hasLength(1));
+        final asset = assets.single;
+        expect(asset.linkMode, isA<DynamicLoadingBundled>());
+        final file = File.fromUri(asset.file!);
+        expect(file.existsSync(), isTrue);
+        // The emitted library must come from the iOS device target dir,
+        // not the host build, so a Mach-O for the device gets bundled.
+        expect(file.path, contains('aarch64-apple-ios'));
+      },
+    );
+  }, timeout: const Timeout(Duration(minutes: 10)));
 
-  test(
-    'build hook cross-builds an Android arm64 code asset',
-    () async {
-      final ndkClang = _findAndroidNdkClang();
-      if (!_haveCargo() || ndkClang == null) {
-        return;
-      }
+  test('build hook cross-builds an Android arm64 code asset', () async {
+    final ndkClang = _findAndroidNdkClang();
+    if (!_haveCargo() || ndkClang == null) {
+      return;
+    }
 
-      final binDir = File(ndkClang).parent;
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.android,
-        targetArchitecture: Architecture.arm64,
-        targetAndroidNdkApi: 30,
-        // The hook links with cCompiler.compiler; the linker / archiver
-        // are required by the config but unused on the Android path.
-        cCompiler: CCompilerConfig(
-          compiler: Uri.file(ndkClang),
-          linker: Uri.file(ndkClang),
-          archiver: Uri.file('${binDir.path}/llvm-ar'),
-        ),
-        check: (input, output) {
-          final assets = output.assets.code;
-          expect(assets, hasLength(1));
-          final asset = assets.single;
-          expect(asset.linkMode, isA<DynamicLoadingBundled>());
-          final file = File.fromUri(asset.file!);
-          expect(file.existsSync(), isTrue);
-          expect(file.path, contains('aarch64-linux-android'));
-        },
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    final binDir = File(ndkClang).parent;
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.android,
+      targetArchitecture: Architecture.arm64,
+      targetAndroidNdkApi: 30,
+      // The hook links with cCompiler.compiler; the linker / archiver
+      // are required by the config but unused on the Android path.
+      cCompiler: CCompilerConfig(
+        compiler: Uri.file(ndkClang),
+        linker: Uri.file(ndkClang),
+        archiver: Uri.file('${binDir.path}/llvm-ar'),
+      ),
+      check: (input, output) {
+        final assets = output.assets.code;
+        expect(assets, hasLength(1));
+        final asset = assets.single;
+        expect(asset.linkMode, isA<DynamicLoadingBundled>());
+        final file = File.fromUri(asset.file!);
+        expect(file.existsSync(), isTrue);
+        expect(file.path, contains('aarch64-linux-android'));
+      },
+    );
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }
 
 bool _haveCargo() {
