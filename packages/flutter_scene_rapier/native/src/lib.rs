@@ -5,7 +5,9 @@
 //! world go through this surface; the Dart side never sees Rapier's
 //! Rust types directly.
 
-use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
+use rapier3d::control::{
+    CharacterAutostep, CharacterCollision, CharacterLength, KinematicCharacterController,
+};
 use rapier3d::parry;
 use rapier3d::prelude::*;
 use std::os::raw::c_int;
@@ -2309,9 +2311,12 @@ pub unsafe extern "C" fn fsr_character_move(
     autostep_max_height: Real,
     autostep_min_width: Real,
     autostep_include_dynamic: u8,
+    // Effective mass of the character used when transferring momentum to
+    // dynamic bodies it pushes into. Zero disables pushing.
+    character_mass: Real,
     out: *mut FsrCharacterMovement,
 ) {
-    let w = &*world;
+    let w = &mut *world;
     let handle = collider_from_raw(collider);
     let Some(c) = w.collider_set.get(handle) else {
         *out = FsrCharacterMovement {
@@ -2354,26 +2359,50 @@ pub unsafe extern "C" fn fsr_character_move(
         normal_nudge_factor: 1.0e-4,
     };
 
-    let query_pipeline = w.broad_phase.as_query_pipeline(
-        w.narrow_phase.query_dispatcher(),
-        &w.rigid_body_set,
-        &w.collider_set,
-        QueryFilter::new().exclude_collider(handle),
-    );
+    // Solid obstacles only: sensors (trigger volumes) are skipped so the
+    // character passes through them while the simulation still reports the
+    // overlap as a trigger event.
+    let filter = QueryFilter::new()
+        .exclude_sensors()
+        .exclude_collider(handle);
 
-    let movement = controller.move_shape(
-        dt,
-        &query_pipeline,
-        shape.as_ref(),
-        &pose,
-        Vector::new(dx, dy, dz),
-        |_collision| {
-            // TODO(character-collisions): forward the per-hit
-            // CharacterCollision list so callers can react to what was
-            // hit, and apply impulses so the character pushes dynamic
-            // bodies it walks into.
-        },
-    );
+    // Collect the per-hit collisions so dynamic bodies can be pushed after
+    // the move is resolved.
+    let mut collisions: Vec<CharacterCollision> = Vec::new();
+    let movement = {
+        let query_pipeline = w.broad_phase.as_query_pipeline(
+            w.narrow_phase.query_dispatcher(),
+            &w.rigid_body_set,
+            &w.collider_set,
+            filter,
+        );
+        controller.move_shape(
+            dt,
+            &query_pipeline,
+            shape.as_ref(),
+            &pose,
+            Vector::new(dx, dy, dz),
+            |collision| collisions.push(collision),
+        )
+    };
+
+    // Transfer momentum into the dynamic bodies the character ran into, so
+    // they topple and slide instead of acting as immovable walls.
+    if character_mass > 0.0 && !collisions.is_empty() {
+        let mut query_pipeline = w.broad_phase.as_query_pipeline_mut(
+            w.narrow_phase.query_dispatcher(),
+            &mut w.rigid_body_set,
+            &mut w.collider_set,
+            filter,
+        );
+        controller.solve_character_collision_impulses(
+            dt,
+            &mut query_pipeline,
+            shape.as_ref(),
+            character_mass,
+            collisions.iter(),
+        );
+    }
 
     *out = FsrCharacterMovement {
         tx: movement.translation.x,

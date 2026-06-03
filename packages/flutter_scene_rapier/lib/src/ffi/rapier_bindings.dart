@@ -503,5 +503,6 @@ abstract class RapierBindings {
     double autostepMaxHeight,
     double autostepMinWidth,
     bool autostepIncludeDynamicBodies,
+    double characterMass,
   );
 }
