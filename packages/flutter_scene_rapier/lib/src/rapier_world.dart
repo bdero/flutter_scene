@@ -570,6 +570,7 @@ class RapierWorld extends PhysicsWorld {
     required double autostepMaxHeight,
     required double autostepMinWidth,
     required bool autostepIncludeDynamicBodies,
+    required double characterMass,
   }) {
     return _bindings.moveCharacter(
       collider,
@@ -592,6 +593,7 @@ class RapierWorld extends PhysicsWorld {
       autostepMaxHeight,
       autostepMinWidth,
       autostepIncludeDynamicBodies,
+      characterMass,
     );
   }
 

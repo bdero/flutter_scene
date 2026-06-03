@@ -1370,6 +1370,7 @@ external void jointDestroy(Pointer<NativeWorld> world, int handle);
     Float, // autostepMaxHeight
     Float, // autostepMinWidth
     Uint8, // autostepIncludeDynamic
+    Float, // characterMass (0 disables pushing dynamic bodies)
     Pointer<FsrCharacterMovement>,
   )
 >(symbol: 'fsr_character_move')
@@ -1395,5 +1396,6 @@ external void characterMove(
   double autostepMaxHeight,
   double autostepMinWidth,
   int autostepIncludeDynamic,
+  double characterMass,
   Pointer<FsrCharacterMovement> out,
 );

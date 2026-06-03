@@ -53,6 +53,7 @@ class RapierKinematicCharacterController extends Component {
     this.autostepMaxHeight = 0.3,
     this.autostepMinWidth = 0.1,
     this.autostepIncludeDynamicBodies = true,
+    this.mass = 0.0,
   }) : up = up ?? Vector3(0, 1, 0);
 
   /// The "up" direction used to find the floor and measure slope angles.
@@ -90,6 +91,13 @@ class RapierKinematicCharacterController extends Component {
 
   /// Whether autostep also steps over dynamic bodies.
   bool autostepIncludeDynamicBodies;
+
+  /// Effective mass of the character used to push dynamic bodies it walks
+  /// into, in the same units as rigid-body mass. The transferred impulse
+  /// scales with `mass * bodyMass / (mass + bodyMass)`, so larger values
+  /// shove bodies harder. The default of `0` leaves dynamic bodies
+  /// undisturbed (the character slides along them like a wall).
+  double mass;
 
   RapierWorld? _world;
   RapierCollider? _collider;
@@ -148,6 +156,7 @@ class RapierKinematicCharacterController extends Component {
       autostepMaxHeight: autostepMaxHeight,
       autostepMinWidth: autostepMinWidth,
       autostepIncludeDynamicBodies: autostepIncludeDynamicBodies,
+      characterMass: mass,
     );
     // Apply the corrected world-space translation to the node. Writing
     // the global transform keeps it correct for nested nodes; the

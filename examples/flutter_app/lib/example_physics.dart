@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 // flutter_scene's physics BoxShape clashes with Flutter's painting
@@ -39,6 +40,17 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     lookHeight: 1.3,
   );
   late final CharacterController _character;
+  Node? _characterNode;
+
+  // A translucent trigger volume Dash can walk into. While Dash is inside,
+  // the box glows and a vignette closes in around the view.
+  late final Node _triggerNode;
+  late final PhysicallyBasedMaterial _triggerMaterial;
+  StreamSubscription<CollisionEvent>? _collisionSub;
+  bool _inTrigger = false;
+  // Eased 0..1 follows [_inTrigger]; drives the box glow and the vignette.
+  double _triggerGlow = 0.0;
+  double _vignette = 0.0;
 
   static final vm.Vector3 _spawn = vm.Vector3(0, 1.2, 0);
 
@@ -66,7 +78,33 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildStaircase();
     _buildPlatforms();
     _buildStack();
+    _buildTrigger();
     _spawnCharacter();
+
+    // React to Dash entering / leaving the trigger volume. Subscribing
+    // adds a listener, which is what makes the world drain its events.
+    _collisionSub = world.collisions.listen(_onCollision);
+  }
+
+  @override
+  void dispose() {
+    _collisionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onCollision(CollisionEvent event) {
+    // Only the character crossing our trigger volume matters; ignore the
+    // dynamic boxes and any other pair.
+    final involvesTrigger =
+        event.nodeA == _triggerNode || event.nodeB == _triggerNode;
+    final involvesCharacter =
+        event.nodeA == _characterNode || event.nodeB == _characterNode;
+    if (!involvesTrigger || !involvesCharacter) return;
+    if (event is TriggerEntered) {
+      _inTrigger = true;
+    } else if (event is TriggerExited) {
+      _inTrigger = false;
+    }
   }
 
   // --- Scene construction ---------------------------------------------------
@@ -191,6 +229,59 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     }
   }
 
+  // Idle (cool, faint) and active (warm, brighter) tints the trigger box
+  // lerps between as Dash enters. Alpha keeps the box translucent.
+  static final vm.Vector4 _triggerIdleColor = vm.Vector4(
+    0.30,
+    0.65,
+    0.95,
+    0.20,
+  );
+  static final vm.Vector4 _triggerActiveColor = vm.Vector4(
+    0.98,
+    0.45,
+    0.22,
+    0.42,
+  );
+  static final vm.Vector4 _triggerIdleEmissive = vm.Vector4(
+    0.02,
+    0.05,
+    0.09,
+    1.0,
+  );
+  static final vm.Vector4 _triggerActiveEmissive = vm.Vector4(
+    0.70,
+    0.22,
+    0.05,
+    1.0,
+  );
+
+  // A translucent box wired up as a Rapier sensor (trigger). It has a
+  // fixed body and a sensor collider, so it reports overlaps without
+  // pushing anything around.
+  void _buildTrigger() {
+    final half = vm.Vector3(2.2, 1.4, 2.2);
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = _triggerIdleColor.clone()
+      ..emissiveFactor = _triggerIdleEmissive.clone()
+      ..roughnessFactor = 0.25
+      ..metallicFactor = 0.0
+      ..alphaMode = AlphaMode.blend;
+    _triggerMaterial = material;
+
+    final center = vm.Vector3(5.0, half.y, 7.0);
+    final node = Node(
+      mesh: Mesh(CuboidGeometry(half * 2.0), material),
+      localTransform: vm.Matrix4.translation(center),
+    );
+    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(
+      RapierCollider(shape: BoxShape(halfExtents: half), isTrigger: true),
+    );
+    _triggerNode = node;
+    scene.add(node);
+  }
+
   void _spawnCharacter() {
     final node = Node(localTransform: vm.Matrix4.translation(_spawn));
     node.addComponent(RapierRigidBody(type: BodyType.kinematic));
@@ -211,6 +302,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         autostepMinWidth: 0.2,
         snapToGround: 0.5,
         maxSlopeClimbAngle: math.pi / 3,
+        // Give Dash enough heft to shove the 1 kg stack boxes around and
+        // topple them instead of treating them as immovable walls.
+        mass: 3.0,
       ),
     );
     _character = CharacterController(
@@ -224,6 +318,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       modelYawOffset: math.pi,
     );
     node.addComponent(_character);
+    _characterNode = node;
     scene.add(node);
   }
 
@@ -284,13 +379,55 @@ class _PlaygroundPainter extends CustomPainter {
     state.scene.update(dt);
     state._camera.follow(state._character.footPosition, dt);
 
+    // Ease the glow / vignette toward whether Dash is inside the trigger,
+    // and push the eased color onto the box material.
+    final target = state._inTrigger ? 1.0 : 0.0;
+    final k = 1.0 - math.exp(-6.0 * dt);
+    state._triggerGlow += (target - state._triggerGlow) * k;
+    state._vignette += (target - state._vignette) * k;
+    final glow = state._triggerGlow;
+    state._triggerMaterial
+      ..baseColorFactor = _lerpV4(
+        ExamplePhysicsState._triggerIdleColor,
+        ExamplePhysicsState._triggerActiveColor,
+        glow,
+      )
+      ..emissiveFactor = _lerpV4(
+        ExamplePhysicsState._triggerIdleEmissive,
+        ExamplePhysicsState._triggerActiveEmissive,
+        glow,
+      );
+
     exampleSettings.applyTo(state.scene);
     state.scene.render(
       state._camera.camera,
       canvas,
       viewport: Offset.zero & size,
     );
+
+    _paintVignette(canvas, size, state._vignette);
   }
+
+  // Darkens the edges of the frame, fading in with [t] (0..1).
+  static void _paintVignette(Canvas canvas, Size size, double t) {
+    if (t <= 0.001) return;
+    final rect = Offset.zero & size;
+    final maxAlpha = (0.72 * t).clamp(0.0, 1.0);
+    final shader = RadialGradient(
+      center: Alignment.center,
+      radius: 0.9,
+      colors: [const Color(0x00000000), Color.fromRGBO(0, 0, 0, maxAlpha)],
+      stops: const [0.5, 1.0],
+    ).createShader(rect);
+    canvas.drawRect(rect, Paint()..shader = shader);
+  }
+
+  static vm.Vector4 _lerpV4(vm.Vector4 a, vm.Vector4 b, double t) => vm.Vector4(
+    a.x + (b.x - a.x) * t,
+    a.y + (b.y - a.y) * t,
+    a.z + (b.z - a.z) * t,
+    a.w + (b.w - a.w) * t,
+  );
 
   @override
   bool shouldRepaint(covariant _PlaygroundPainter oldDelegate) => true;

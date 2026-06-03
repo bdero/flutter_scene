@@ -1176,6 +1176,7 @@ class NativeRapierBindings extends RapierBindings {
     double autostepMaxHeight,
     double autostepMinWidth,
     bool autostepIncludeDynamicBodies,
+    double characterMass,
   ) {
     native.characterMove(
       _handle,
@@ -1199,6 +1200,7 @@ class NativeRapierBindings extends RapierBindings {
       autostepMaxHeight,
       autostepMinWidth,
       autostepIncludeDynamicBodies ? 1 : 0,
+      characterMass,
       _characterBuffer,
     );
     final m = _characterBuffer.ref;

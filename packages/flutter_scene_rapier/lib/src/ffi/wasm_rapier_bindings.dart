@@ -1300,6 +1300,7 @@ class WasmRapierBindings extends RapierBindings {
     double autostepMaxHeight,
     double autostepMinWidth,
     bool autostepIncludeDynamicBodies,
+    double characterMass,
   ) {
     _invoke('fsr_character_move', [
       _w,
@@ -1323,6 +1324,7 @@ class WasmRapierBindings extends RapierBindings {
       _f(autostepMaxHeight),
       _f(autostepMinWidth),
       _b(autostepIncludeDynamicBodies),
+      _f(characterMass),
       _i(_characterScratch),
     ]);
     return (
