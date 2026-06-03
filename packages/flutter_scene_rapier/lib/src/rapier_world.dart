@@ -75,6 +75,15 @@ class RapierWorld extends PhysicsWorld {
   /// belongs to a body / collider this world did not register.
   RapierCollider? colliderFromHandle(int handle) => _collidersByHandle[handle];
 
+  double _interpolationAlpha = 0.0;
+
+  /// The residual fraction in `[0, 1]` of the last [interpolateTransforms]
+  /// call: how far the renderer is between the previous and current fixed
+  /// steps. Kinematic bodies the engine does not interpolate (for example
+  /// a character driven by [RapierKinematicCharacterController]) can read
+  /// this to smooth their own rendering between steps.
+  double get interpolationAlpha => _interpolationAlpha;
+
   /// Inserts a rigid body into the world and returns its packed handle.
   /// Called from [RapierRigidBody.onMount].
   int createBody({
@@ -548,6 +557,7 @@ class RapierWorld extends PhysicsWorld {
   /// stepping.
   CharacterMovement moveCharacter(
     int collider, {
+    required Vector3 position,
     required Vector3 desiredTranslation,
     required double deltaSeconds,
     required Vector3 up,
@@ -563,6 +573,9 @@ class RapierWorld extends PhysicsWorld {
   }) {
     return _bindings.moveCharacter(
       collider,
+      position.x,
+      position.y,
+      position.z,
       desiredTranslation.x,
       desiredTranslation.y,
       desiredTranslation.z,
@@ -839,6 +852,7 @@ class RapierWorld extends PhysicsWorld {
 
   @override
   void interpolateTransforms(double alpha) {
+    _interpolationAlpha = alpha;
     // Blend each dynamic body's pose by alpha between the previous and
     // current step (alpha == 0 snaps to previous, alpha == 1 snaps to
     // current). Fixed and kinematic bodies are not touched; the user

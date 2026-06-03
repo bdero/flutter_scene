@@ -484,6 +484,9 @@ abstract class RapierBindings {
   // Character controller.
   CharacterMovement moveCharacter(
     int collider,
+    double cx,
+    double cy,
+    double cz,
     double dtx,
     double dty,
     double dtz,

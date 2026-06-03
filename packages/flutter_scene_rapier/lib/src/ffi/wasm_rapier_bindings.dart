@@ -1281,6 +1281,9 @@ class WasmRapierBindings extends RapierBindings {
   @override
   CharacterMovement moveCharacter(
     int collider,
+    double cx,
+    double cy,
+    double cz,
     double dtx,
     double dty,
     double dtz,
@@ -1301,6 +1304,9 @@ class WasmRapierBindings extends RapierBindings {
     _invoke('fsr_character_move', [
       _w,
       _h(collider),
+      _f(cx),
+      _f(cy),
+      _f(cz),
       _f(dtx),
       _f(dty),
       _f(dtz),
