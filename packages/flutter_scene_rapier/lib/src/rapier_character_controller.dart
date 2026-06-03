@@ -132,6 +132,10 @@ class RapierKinematicCharacterController extends Component {
     }
     final result = world.moveCharacter(
       handle,
+      // Cast from this node's authoritative world position, not the
+      // collider's simulated pose (which lags by a step, and by a lot
+      // right after a teleport).
+      position: node.globalTransform.getTranslation(),
       desiredTranslation: desiredTranslation,
       deltaSeconds: deltaSeconds ?? world.fixedTimestep,
       up: up,

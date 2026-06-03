@@ -2286,6 +2286,13 @@ pub unsafe extern "C" fn fsr_joint_destroy(world: *mut World, raw: u64) {
 pub unsafe extern "C" fn fsr_character_move(
     world: *mut World,
     collider: u64,
+    // The character's current world position. The cast starts here rather
+    // than from the collider's pose in the simulation, which lags the
+    // caller's authoritative transform by a step (and by a lot right after
+    // a teleport) and would otherwise make the character sink or jitter.
+    cx: Real,
+    cy: Real,
+    cz: Real,
     dx: Real,
     dy: Real,
     dz: Real,
@@ -2319,7 +2326,10 @@ pub unsafe extern "C" fn fsr_character_move(
     // Clone the shared shape (cheap Arc bump) and copy the pose so no
     // borrow of the collider set outlives the query-pipeline build.
     let shape = c.shared_shape().clone();
-    let pose = *c.position();
+    // Authoritative position from the caller, keeping the collider's
+    // current rotation (irrelevant for a symmetric capsule, correct for
+    // anything else).
+    let pose = Pose::from_parts(Vector::new(cx, cy, cz), c.position().rotation);
 
     let controller = KinematicCharacterController {
         up: Vector::new(up_x, up_y, up_z).normalize(),

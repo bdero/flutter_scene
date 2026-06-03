@@ -1157,6 +1157,9 @@ class NativeRapierBindings extends RapierBindings {
   @override
   CharacterMovement moveCharacter(
     int collider,
+    double cx,
+    double cy,
+    double cz,
     double dtx,
     double dty,
     double dtz,
@@ -1177,6 +1180,9 @@ class NativeRapierBindings extends RapierBindings {
     native.characterMove(
       _handle,
       collider,
+      cx,
+      cy,
+      cz,
       dtx,
       dty,
       dtz,

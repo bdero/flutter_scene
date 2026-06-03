@@ -1351,6 +1351,9 @@ external void jointDestroy(Pointer<NativeWorld> world, int handle);
   Void Function(
     Pointer<NativeWorld>,
     Uint64, // collider
+    Float, // cx, cy, cz (authoritative character position)
+    Float,
+    Float,
     Float, // dx, dy, dz
     Float,
     Float,
@@ -1373,6 +1376,9 @@ external void jointDestroy(Pointer<NativeWorld> world, int handle);
 external void characterMove(
   Pointer<NativeWorld> world,
   int collider,
+  double cx,
+  double cy,
+  double cz,
   double dx,
   double dy,
   double dz,

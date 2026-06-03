@@ -1,31 +1,26 @@
-import 'dart:collection';
 import 'dart:math' as math;
 
 // flutter_scene's physics BoxShape clashes with Flutter's painting
 // BoxShape, and flutter_scene's Material class clashes with the Flutter
-// Material widget. This example uses the physics BoxShape and the
-// Flutter Material widget, so each conflicting name is hidden from the
-// other import.
+// Material widget. This example uses the physics BoxShape and the Flutter
+// Material widget, so each conflicting name is hidden from the other
+// import.
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'character/character_controller.dart';
+import 'character/character_controls.dart';
+import 'character/character_input.dart';
+import 'character/third_person_camera.dart';
 import 'example_settings.dart';
 
-/// A physics sandbox driven by the native Rapier backend.
-///
-/// Demonstrates the whole pluggable-physics surface end to end:
-///
-///  * dynamic rigid bodies with box and sphere colliders (the stack and
-///    the projectiles),
-///  * a fixed ground plane,
-///  * a revolute-joint pendulum that the projectiles can knock around,
-///  * a trigger volume that counts bodies passing through it,
-///  * scene queries (each tap raycasts from the camera to aim), and
-///  * collision / trigger events surfaced in the on-screen overlay.
-///
-/// Tap the scene to launch a ball from the camera toward the tap point.
+/// A third-person physics playground. Drive Dash with WASD / arrow keys
+/// (or the on-screen joystick) and jump with space (or the button). Dash
+/// is a Rapier kinematic character: it walks and slides along the world,
+/// autosteps low ledges, climbs the staircase, and can jump onto the
+/// platforms and the dynamic box stack.
 class ExamplePhysics extends StatefulWidget {
   const ExamplePhysics({super.key, this.elapsedSeconds = 0});
   final double elapsedSeconds;
@@ -38,381 +33,272 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   final Scene scene = Scene();
   late final RapierWorld world;
 
-  // Live counters surfaced in the overlay. The widget rebuilds every
-  // frame (the parent ticker drives it), so the listener mutates these
-  // directly and the next build reads them; no per-event setState.
-  int _collisionCount = 0;
-  int _triggerCount = 0;
-
-  // Projectiles, oldest first, so the count can be capped by retiring
-  // the oldest ball when a new one is launched.
-  final Queue<Node> _balls = Queue<Node>();
-  static const int _maxBalls = 24;
-
-  // The boxes making up the stack, tracked so a reset can rebuild them.
-  final List<Node> _stack = [];
-
-  // Camera and viewport captured during the last paint, so a tap can
-  // reconstruct the picking ray against the exact view that was shown.
-  PerspectiveCamera? _lastCamera;
-  Size _lastViewport = Size.zero;
-
-  // The trigger volume's node, so trigger events can tell which side of
-  // the pair is the ball (the other node) and recolor it.
-  Node? _triggerNode;
-
-  // How many balls are currently inside the trigger, so its highlight
-  // clears only once the last one leaves.
-  int _ballsInTrigger = 0;
-
-  // Ball albedo when idle and while overlapping the trigger volume.
-  static final vm.Vector4 _ballColor = vm.Vector4(0.95, 0.78, 0.16, 1);
-  static final vm.Vector4 _ballHighlightColor = vm.Vector4(0.1, 1.0, 0.95, 1);
-
-  // Trigger albedo when idle and while at least one ball is inside it.
-  static final vm.Vector4 _triggerColor = vm.Vector4(0.2, 0.9, 0.6, 0.25);
-  static final vm.Vector4 _triggerHighlightColor = vm.Vector4(
-    1.0,
-    0.55,
-    0.1,
-    0.5,
+  final CharacterInput _input = CharacterInput();
+  final ThirdPersonCamera _camera = ThirdPersonCamera(
+    distance: 9.0,
+    lookHeight: 1.3,
   );
+  late final CharacterController _character;
+
+  static final vm.Vector3 _spawn = vm.Vector3(0, 1.2, 0);
+
+  double _lastElapsed = 0;
 
   @override
   void initState() {
     super.initState();
 
-    // A key light that casts shadows across the playfield. The default
-    // shadow distance (150) targets large outdoor scenes; pulling it in to
-    // 25 concentrates the cascades on this compact playfield so the cast
-    // shadows stay crisp.
+    // A key light that casts shadows across the playfield. Pull the shadow
+    // distance in from the default (150) so the cascades concentrate on
+    // this compact playground and the cast shadows stay crisp.
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-0.6, -1.0, -0.45),
       intensity: 3.0,
       castsShadow: true,
-      shadowMaxDistance: 25.0,
+      shadowMaxDistance: 35.0,
     );
-    // Dial the ambient fill back so the cast shadows read clearly instead of
-    // being washed out by the bright studio environment.
     scene.environmentIntensity = 0.6;
 
     world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
     scene.root.addComponent(world);
 
-    world.collisions.listen((event) {
-      if (event is CollisionBegan) {
-        _collisionCount++;
-      } else if (event is TriggerEntered) {
-        _triggerCount++;
-        _recolorOther(event, _ballHighlightColor);
-        _ballsInTrigger++;
-        _setNodeColor(_triggerNode, _triggerHighlightColor);
-      } else if (event is TriggerExited) {
-        _recolorOther(event, _ballColor);
-        _ballsInTrigger = (_ballsInTrigger - 1).clamp(0, 1 << 30);
-        if (_ballsInTrigger == 0) {
-          _setNodeColor(_triggerNode, _triggerColor);
-        }
-      }
-    });
-
     _buildGround();
+    _buildStaircase();
+    _buildPlatforms();
     _buildStack();
-    _buildPendulum();
-    _buildTriggerZone();
+    _spawnCharacter();
   }
 
-  // Recolors whichever node in a trigger event pair is not the trigger
-  // volume (the overlapping ball), so an overlap is visible at a glance.
-  void _recolorOther(CollisionEvent event, vm.Vector4 color) {
-    _setNodeColor(
-      identical(event.nodeA, _triggerNode) ? event.nodeB : event.nodeA,
-      color,
-    );
-  }
-
-  // Sets a node's base color, if it carries a physically based mesh.
-  void _setNodeColor(Node? node, vm.Vector4 color) {
-    final material = node?.mesh?.primitives.first.material;
-    if (material is PhysicallyBasedMaterial) {
-      material.baseColorFactor = color;
-    }
-  }
-
-  // --- Scene construction -------------------------------------------------
+  // --- Scene construction ---------------------------------------------------
 
   Mesh _boxMesh(vm.Vector3 size, vm.Vector4 color) {
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = color
-      ..roughnessFactor = 0.45
+      ..roughnessFactor = 0.5
       ..metallicFactor = 0.0;
     return Mesh(CuboidGeometry(size), material);
   }
 
-  Mesh _sphereMesh(double radius, vm.Vector4 color) {
-    final material = PhysicallyBasedMaterial()
-      ..baseColorFactor = color
-      ..roughnessFactor = 0.25
-      ..metallicFactor = 0.2;
-    return Mesh(SphereGeometry(radius: radius), material);
-  }
-
-  /// Adds a node carrying a body and a single collider, in the order
-  /// the backend requires (body before collider), and inserts it into
-  /// the scene so both components mount.
+  /// Adds a node carrying a body and a single collider, in the order the
+  /// backend requires (body before collider), and inserts it into the
+  /// scene so both components mount.
   Node _addBody({
     required vm.Vector3 position,
     required BodyType type,
     required Mesh mesh,
     required Shape shape,
+    vm.Quaternion? rotation,
     double? mass,
-    bool isTrigger = false,
     PhysicsMaterial material = PhysicsMaterial.defaultMaterial,
   }) {
-    final node = Node(
-      mesh: mesh,
-      localTransform: vm.Matrix4.translation(position),
-    );
+    final transform = rotation == null
+        ? vm.Matrix4.translation(position)
+        : vm.Matrix4.compose(position, rotation, vm.Vector3.all(1.0));
+    final node = Node(mesh: mesh, localTransform: transform);
     node.addComponent(RapierRigidBody(type: type, mass: mass));
-    node.addComponent(
-      RapierCollider(shape: shape, material: material, isTrigger: isTrigger),
-    );
+    node.addComponent(RapierCollider(shape: shape, material: material));
     scene.add(node);
     return node;
   }
 
-  void _buildGround() {
+  void _addStaticBox(
+    vm.Vector3 center,
+    vm.Vector3 halfExtents,
+    vm.Vector4 color, {
+    vm.Quaternion? rotation,
+  }) {
     _addBody(
-      position: vm.Vector3(0, -0.5, 0),
+      position: center,
       type: BodyType.fixed,
-      // A light, fairly matte floor so cast shadows are easy to read.
-      mesh: _boxMesh(vm.Vector3(40, 1, 40), vm.Vector4(0.62, 0.64, 0.68, 1)),
-      shape: BoxShape(halfExtents: vm.Vector3(20, 0.5, 20)),
-      // Some restitution so projectiles bounce off the floor.
-      material: const PhysicsMaterial(friction: 0.8, restitution: 0.6),
+      mesh: _boxMesh(halfExtents * 2.0, color),
+      shape: BoxShape(halfExtents: halfExtents),
+      rotation: rotation,
+      material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
     );
   }
 
+  void _buildGround() {
+    _addStaticBox(
+      vm.Vector3(0, -0.5, 0),
+      vm.Vector3(24, 0.5, 24),
+      vm.Vector4(0.60, 0.63, 0.68, 1),
+    );
+  }
+
+  // A run of short steps (auto-stepped) rising to a tall ledge that has to
+  // be jumped, off to one side of the spawn.
+  void _buildStaircase() {
+    final color = vm.Vector4(0.86, 0.72, 0.42, 1);
+    for (var i = 0; i < 4; i++) {
+      final height = 0.3 * (i + 1);
+      _addStaticBox(
+        vm.Vector3(8.0 + i * 1.4, height / 2, -4.0),
+        vm.Vector3(0.7, height / 2, 2.0),
+        color,
+      );
+    }
+    // A tall block at the top of the stairs that must be jumped onto.
+    _addStaticBox(
+      vm.Vector3(14.5, 1.0, -4.0),
+      vm.Vector3(1.6, 1.0, 2.0),
+      vm.Vector4(0.80, 0.55, 0.30, 1),
+    );
+  }
+
+  // A couple of raised platforms (one reached by jumping) and a ramp.
+  void _buildPlatforms() {
+    _addStaticBox(
+      vm.Vector3(-8.0, 0.75, 4.0),
+      vm.Vector3(2.5, 0.75, 2.5),
+      vm.Vector4(0.35, 0.55, 0.85, 1),
+    );
+    _addStaticBox(
+      vm.Vector3(-8.0, 2.0, -1.0),
+      vm.Vector3(2.0, 0.4, 2.0),
+      vm.Vector4(0.45, 0.65, 0.92, 1),
+    );
+    // A ramp the character can walk up.
+    _addStaticBox(
+      vm.Vector3(0, 0.9, 10.0),
+      vm.Vector3(3.0, 0.25, 3.0),
+      vm.Vector4(0.55, 0.78, 0.55, 1),
+      rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), 0.32),
+    );
+  }
+
+  // A 3-2-1 pyramid of dynamic boxes Dash can clamber onto.
   void _buildStack() {
-    // A 4-3-2-1 pyramid of unit boxes centered on the origin. Colors are
-    // saturated linear values so the lit result reads as vibrant.
     const spacing = 1.04;
     final palette = <vm.Vector4>[
-      vm.Vector4(0.90, 0.10, 0.12, 1),
-      vm.Vector4(0.98, 0.55, 0.05, 1),
-      vm.Vector4(0.05, 0.45, 0.90, 1),
-      vm.Vector4(0.10, 0.70, 0.25, 1),
+      vm.Vector4(0.90, 0.20, 0.22, 1),
+      vm.Vector4(0.98, 0.62, 0.10, 1),
+      vm.Vector4(0.20, 0.72, 0.35, 1),
     ];
-    for (var row = 0; row < 4; row++) {
-      final count = 4 - row;
+    for (var row = 0; row < 3; row++) {
+      final count = 3 - row;
       final y = 0.5 + row * 1.0;
       final startX = -(count - 1) / 2 * spacing;
       for (var i = 0; i < count; i++) {
-        final node = _addBody(
-          position: vm.Vector3(startX + i * spacing, y, 0),
+        _addBody(
+          position: vm.Vector3(startX + i * spacing, y, -10.0),
           type: BodyType.dynamic_,
-          mesh: _boxMesh(vm.Vector3(1, 1, 1), palette[row % palette.length]),
-          shape: BoxShape(halfExtents: vm.Vector3(0.5, 0.5, 0.5)),
-          mass: 1,
+          mesh: _boxMesh(vm.Vector3.all(1.0), palette[row]),
+          shape: BoxShape(halfExtents: vm.Vector3.all(0.5)),
+          mass: 1.0,
+          material: const PhysicsMaterial(friction: 0.8, restitution: 0.0),
         );
-        _stack.add(node);
       }
     }
   }
 
-  void _buildPendulum() {
-    // A fixed anchor with a dynamic bob hanging from a revolute hinge.
-    // The hinge axis is +Z, so the bob swings in the XY plane and can be
-    // batted around by projectiles coming from the camera.
-    final pivot = vm.Vector3(-5, 5.5, 0);
-    const armLength = 2.5;
-
-    final anchorNode = _addBody(
-      position: pivot,
-      type: BodyType.fixed,
-      mesh: _boxMesh(vm.Vector3(0.4, 0.4, 0.4), vm.Vector4(0.55, 0.55, 0.6, 1)),
-      shape: BoxShape(halfExtents: vm.Vector3(0.2, 0.2, 0.2)),
-    );
-
-    // The bob hangs [armLength] below the pivot. The swing radius lives
-    // on the bob's own anchor (pointing from the bob center up to the
-    // pivot); the anchor body's anchor sits at its center. With the
-    // offset on the wrong anchor the bob's center would be pinned at the
-    // pivot and could only spin in place, which is why it looked absent.
-    final bobNode = _addBody(
-      position: pivot + vm.Vector3(0, -armLength, 0),
-      type: BodyType.dynamic_,
-      mesh: _boxMesh(
-        vm.Vector3(0.8, 0.8, 0.8),
-        vm.Vector4(0.80, 0.15, 0.65, 1),
+  void _spawnCharacter() {
+    final node = Node(localTransform: vm.Matrix4.translation(_spawn));
+    node.addComponent(RapierRigidBody(type: BodyType.kinematic));
+    node.addComponent(
+      RapierCollider(
+        shape: const CapsuleShape(radius: 0.45, halfHeight: 0.45),
+        material: const PhysicsMaterial(friction: 0.0),
       ),
-      shape: BoxShape(halfExtents: vm.Vector3(0.4, 0.4, 0.4)),
-      mass: 2,
     );
-
-    final joint = RapierRevoluteJoint(
-      otherNode: anchorNode,
-      axis: vm.Vector3(0, 0, 1),
-      localAnchorA: vm.Vector3(0, armLength, 0),
-      localAnchorB: vm.Vector3.zero(),
+    node.addComponent(
+      RapierKinematicCharacterController(
+        // A larger skin gap than the default keeps the capsule from
+        // catching on box edges and depenetrates a hard landing instead
+        // of leaving the feet sunk in the floor.
+        offset: 0.08,
+        autostep: true,
+        autostepMaxHeight: 0.45,
+        autostepMinWidth: 0.2,
+        snapToGround: 0.5,
+        maxSlopeClimbAngle: math.pi / 3,
+      ),
     );
-    bobNode.addComponent(joint);
-
-    // A sideways nudge so the pendulum is visibly swinging on load,
-    // rather than hanging dead-still at the bottom of its arc.
-    bobNode.getComponent<RapierRigidBody>()!.linearVelocity = vm.Vector3(
-      4,
-      0,
-      0,
+    _character = CharacterController(
+      input: _input,
+      camera: _camera,
+      footOffset: 0.9,
+      // Drop the model slightly so the feet plant on the ground instead of
+      // floating above it by the capsule's skin gap.
+      modelHeightOffset: -0.05,
+      modelScale: 1.0,
+      modelYawOffset: math.pi,
     );
+    node.addComponent(_character);
+    scene.add(node);
   }
 
-  void _buildTriggerZone() {
-    // A translucent "goal" volume floating above the ground. Bodies that
-    // pass through it bump the trigger counter and get recolored while
-    // overlapping, via the collisions stream.
-    _triggerNode = _addBody(
-      position: vm.Vector3(0, 3, 5),
-      type: BodyType.fixed,
-      mesh: _boxMesh(vm.Vector3(4, 4, 0.3), _triggerColor),
-      shape: BoxShape(halfExtents: vm.Vector3(2, 2, 0.15)),
-      isTrigger: true,
-    );
-  }
+  void _reset() => _character.teleport(_spawn);
 
-  // --- Interaction --------------------------------------------------------
-
-  void _launchBall(Offset localPosition) {
-    final camera = _lastCamera;
-    if (camera == null || _lastViewport.isEmpty) return;
-
-    final dir = _rayDirection(camera, localPosition, _lastViewport);
-    final origin = camera.position + dir * 1.5;
-
-    final node = _addBody(
-      position: origin,
-      type: BodyType.dynamic_,
-      mesh: _sphereMesh(0.35, _ballColor),
-      shape: SphereShape(radius: 0.35),
-      mass: 1.5,
-      // Bouncy: combined with the floor's restitution this gives a
-      // lively rebound.
-      material: const PhysicsMaterial(friction: 0.4, restitution: 0.8),
-    );
-
-    final body = node.getComponent<RapierRigidBody>()!;
-    body.applyImpulse(dir * 42.0);
-
-    _balls.addLast(node);
-    if (_balls.length > _maxBalls) {
-      scene.remove(_balls.removeFirst());
-    }
-  }
-
-  // Reconstructs the world-space ray through a screen point, matching the
-  // basis PerspectiveCamera builds for its view transform.
-  vm.Vector3 _rayDirection(PerspectiveCamera camera, Offset point, Size size) {
-    final forward = (camera.target - camera.position).normalized();
-    final right = camera.up.cross(forward).normalized();
-    final up = forward.cross(right).normalized();
-
-    final ndcX = (2 * point.dx / size.width) - 1;
-    final ndcY = 1 - (2 * point.dy / size.height);
-    final tanY = math.tan(camera.fovRadiansY * 0.5);
-    final tanX = tanY * (size.width / size.height);
-
-    return (forward + right * (ndcX * tanX) + up * (ndcY * tanY)).normalized();
-  }
-
-  void _reset() {
-    for (final node in _balls) {
-      scene.remove(node);
-    }
-    _balls.clear();
-    for (final node in _stack) {
-      scene.remove(node);
-    }
-    _stack.clear();
-    _buildStack();
-    _collisionCount = 0;
-    _triggerCount = 0;
-    // Removing balls mid-overlap fires no exit events, so clear the
-    // trigger highlight state by hand.
-    _ballsInTrigger = 0;
-    _setNodeColor(_triggerNode, _triggerColor);
-  }
-
-  // --- Build --------------------------------------------------------------
+  // --- Build ----------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (details) => _launchBall(details.localPosition),
+        CharacterControls(
+          input: _input,
           child: CustomPaint(
-            painter: _PhysicsPainter(this, widget.elapsedSeconds),
+            painter: _PlaygroundPainter(this, widget.elapsedSeconds),
             child: const SizedBox.expand(),
           ),
         ),
         Positioned(
           left: 8,
-          bottom: 8,
-          child: _Overlay(
-            balls: _balls.length,
-            collisions: _collisionCount,
-            triggers: _triggerCount,
-            onReset: () => setState(_reset),
-          ),
+          top: 8,
+          child: _HintCard(onReset: () => setState(_reset)),
         ),
       ],
     );
   }
 }
 
-class _PhysicsPainter extends CustomPainter {
-  _PhysicsPainter(this.state, this.elapsedSeconds);
+class _PlaygroundPainter extends CustomPainter {
+  _PlaygroundPainter(this.state, this.elapsedSeconds);
 
   final ExamplePhysicsState state;
   final double elapsedSeconds;
 
+  static const double _dragYawPerPixel = 0.006;
+  static const double _dragPitchPerPixel = 0.005;
+  static const double _keyYawRate = 2.2;
+  static const double _keyPitchRate = 1.6;
+
   @override
   void paint(Canvas canvas, Size size) {
-    // A gentle orbit, kept close so the stack fills the frame and its cast
-    // shadows read clearly. The same camera is stashed on the state so taps
-    // aim at what is on screen.
-    final angle = elapsedSeconds * 0.15;
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(
-        math.sin(angle) * 8.5,
-        5,
-        math.cos(angle) * 8.5 + 1.5,
-      ),
-      target: vm.Vector3(0, 1.6, 1.5),
+    // Frame delta. Clamp so a long first frame (or a tab regaining focus)
+    // does not snap the camera or take a huge physics step.
+    final dt = (elapsedSeconds - state._lastElapsed).clamp(0.0, 0.05);
+    state._lastElapsed = elapsedSeconds;
+
+    // Orbit the camera from a drag (pixels) and held arrow keys (rate).
+    final input = state._input;
+    final drag = input.lookDelta.clone();
+    input.lookDelta.setZero();
+    state._camera.orbit(
+      drag.x * _dragYawPerPixel + input.lookRate.x * _keyYawRate * dt,
+      drag.y * _dragPitchPerPixel - input.lookRate.y * _keyPitchRate * dt,
     );
-    state._lastCamera = camera;
-    state._lastViewport = size;
+
+    // Advance physics + per-frame component updates with the ticker delta,
+    // then follow the character's now-current interpolated pose.
+    state.scene.update(dt);
+    state._camera.follow(state._character.footPosition, dt);
 
     exampleSettings.applyTo(state.scene);
-    state.scene.render(camera, canvas, viewport: Offset.zero & size);
+    state.scene.render(
+      state._camera.camera,
+      canvas,
+      viewport: Offset.zero & size,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _PhysicsPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _PlaygroundPainter oldDelegate) => true;
 }
 
-class _Overlay extends StatelessWidget {
-  const _Overlay({
-    required this.balls,
-    required this.collisions,
-    required this.triggers,
-    required this.onReset,
-  });
+class _HintCard extends StatelessWidget {
+  const _HintCard({required this.onReset});
 
-  final int balls;
-  final int collisions;
-  final int triggers;
   final VoidCallback onReset;
 
   @override
@@ -431,15 +317,12 @@ class _Overlay extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Tap to launch a ball', style: textStyle),
-            const SizedBox(height: 4),
-            Text('Balls: $balls', style: textStyle),
-            Text('Collisions: $collisions', style: textStyle),
-            Text('Trigger hits: $triggers', style: textStyle),
-            const SizedBox(height: 4),
+            Text('Move: WASD / arrows or joystick', style: textStyle),
+            Text('Jump: space or the button', style: textStyle),
+            const SizedBox(height: 6),
             FilledButton.tonal(
               onPressed: onReset,
-              child: const Text('Reset stack'),
+              child: const Text('Respawn'),
             ),
           ],
         ),
