@@ -212,6 +212,10 @@ class WasmRapierBindings extends RapierBindings {
   );
 
   @override
+  void setBodyKind(int handle, int kind) =>
+      _invoke('fsr_body_set_kind', [_w, _h(handle), _i(kind)]);
+
+  @override
   void setBodyNextKinematicPose(
     int handle,
     double px,

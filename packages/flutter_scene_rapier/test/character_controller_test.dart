@@ -179,6 +179,40 @@ void main() {
     expect(box.globalTransform.getTranslation().x, closeTo(startX, 0.02));
   });
 
+  test('parking a kinematic platform as fixed frees a stuck rider', () {
+    final root = _boot();
+    final world = root.getComponent<RapierWorld>()!;
+    // A wide kinematic platform (like the lift), parked (zero velocity).
+    final platformNode = Node(
+      localTransform: Matrix4.translation(Vector3(0, 0, 0)),
+    );
+    final platformBody = RapierRigidBody(type: BodyType.kinematic);
+    platformNode.addComponent(platformBody);
+    platformNode.addComponent(
+      RapierCollider(shape: BoxShape(halfExtents: Vector3(5, 0.5, 5))),
+    );
+    root.add(platformNode);
+    platformBody.mount();
+    platformNode.getComponents<RapierCollider>().first.mount();
+
+    // Character standing on the platform (top y == 0.5).
+    final (_, controller) = _addCharacter(root, Vector3(0, 1.3, 0));
+    world.step(1.0 / 60.0);
+
+    // On a stopped kinematic platform the controller's kinematic-platform
+    // friction cancels the rider's horizontal input.
+    final stuck = controller.move(Vector3(0.2, 0, 0));
+
+    // Parking the platform as a fixed body removes that friction path, so
+    // the same move now goes through.
+    platformBody.type = BodyType.fixed;
+    world.step(1.0 / 60.0);
+    final freed = controller.move(Vector3(0.2, 0, 0));
+
+    expect(stuck.translation.x, lessThan(0.05));
+    expect(freed.translation.x, greaterThan(0.15));
+  });
+
   test('move throws without a collider on the node', () {
     final root = _boot();
     final (_, controller) = _addCharacter(

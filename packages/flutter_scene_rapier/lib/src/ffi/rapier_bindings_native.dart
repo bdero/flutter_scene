@@ -148,6 +148,10 @@ class NativeRapierBindings extends RapierBindings {
       native.bodySetAdditionalMass(_handle, handle, additionalMass);
 
   @override
+  void setBodyKind(int handle, int kind) =>
+      native.bodySetKind(_handle, handle, kind);
+
+  @override
   void setBodyNextKinematicPose(
     int handle,
     double px,

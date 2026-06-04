@@ -1223,6 +1223,26 @@ pub unsafe extern "C" fn fsr_body_set_next_kinematic_pose(
     }
 }
 
+/// Changes a body's kind (fixed / kinematic / dynamic) at runtime. Used to
+/// park a moving kinematic platform as fixed when it stops, so a kinematic
+/// character standing on it is not stuck by the controller's
+/// kinematic-platform friction (which cancels input on a stopped platform).
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_kind(world: *mut World, raw: u64, kind: u8) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let body_type = match kind {
+            BODY_KIND_FIXED => RigidBodyType::Fixed,
+            BODY_KIND_KINEMATIC => RigidBodyType::KinematicPositionBased,
+            _ => RigidBodyType::Dynamic,
+        };
+        body.set_body_type(body_type, true);
+    }
+}
+
 /// Sets the body's linear velocity (world space). When `wake_up != 0`,
 /// the body wakes from any sleep state.
 ///
