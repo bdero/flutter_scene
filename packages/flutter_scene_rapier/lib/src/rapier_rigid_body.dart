@@ -40,7 +40,7 @@ class RapierRigidBody extends RigidBody {
        _linearAxisLocks = linearAxisLocks ?? Vector3(1, 1, 1),
        _angularAxisLocks = angularAxisLocks ?? Vector3(1, 1, 1);
 
-  final BodyType _type;
+  BodyType _type;
   double? _mass;
   Matrix3? _inertiaTensor;
   Vector3 _linearVelocity;
@@ -154,6 +154,17 @@ class RapierRigidBody extends RigidBody {
 
   @override
   BodyType get type => _type;
+
+  /// Changes the body's [BodyType] at runtime (Rapier-specific). Useful to
+  /// park a moving kinematic platform as fixed when it stops, so a
+  /// kinematic character standing on it is not held in place by the
+  /// controller's kinematic-platform friction.
+  set type(BodyType value) {
+    if (_type == value) return;
+    _type = value;
+    final w = _world, h = _handle;
+    if (w != null && h != null) w.setBodyKind(h, value);
+  }
 
   @override
   double? get mass => _mass;

@@ -615,6 +615,11 @@ external void bodySetCcdEnabled(
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(symbol: 'fsr_body_wake_up')
 external void bodyWakeUp(Pointer<NativeWorld> world, int handle);
 
+@Native<Void Function(Pointer<NativeWorld>, Uint64, Uint8)>(
+  symbol: 'fsr_body_set_kind',
+)
+external void bodySetKind(Pointer<NativeWorld> world, int body, int kind);
+
 @Native<Void Function(Pointer<NativeWorld>, Uint64)>(symbol: 'fsr_body_sleep')
 external void bodySleep(Pointer<NativeWorld> world, int handle);
 

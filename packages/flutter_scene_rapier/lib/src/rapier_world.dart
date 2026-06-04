@@ -671,6 +671,11 @@ class RapierWorld extends PhysicsWorld {
     );
   }
 
+  /// Changes a body's [BodyType] at runtime.
+  void setBodyKind(int handle, BodyType type) {
+    _bindings.setBodyKind(handle, _bodyKindByte(type));
+  }
+
   /// Packs [linear] and [angular] into a 6-bit lock field (translation
   /// XYZ in low bits, rotation XYZ in high bits, value 0 = locked) and
   /// pushes it to the backend.

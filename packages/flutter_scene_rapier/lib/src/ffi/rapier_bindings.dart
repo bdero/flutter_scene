@@ -122,6 +122,7 @@ abstract class RapierBindings {
   void setBodyLinearDamping(int handle, double damping);
   void setBodyAngularDamping(int handle, double damping);
   void setBodyAdditionalMass(int handle, double additionalMass);
+  void setBodyKind(int handle, int kind);
   void setBodyNextKinematicPose(
     int handle,
     double px,
