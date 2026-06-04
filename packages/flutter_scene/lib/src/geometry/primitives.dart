@@ -41,6 +41,28 @@ class CuboidGeometry extends MeshGeometry {
       );
 }
 
+/// A triangular-prism wedge (a ramp), centered on the origin in X and Z
+/// with its base on the `y = 0` plane.
+///
+/// The size is `(width X, height Y, run Z)`. The sloped top face rises
+/// linearly from height `0` at the `-Z` edge to height `Y` at the `+Z`
+/// edge, so the slope angle is `atan(Y / Z)`. Normals are flat per face.
+/// Useful as a ramp the character walks up.
+class WedgeGeometry extends MeshGeometry {
+  /// Builds a wedge sized to [size] = `(width, height, run)`.
+  factory WedgeGeometry(Vector3 size) =>
+      WedgeGeometry._(buildWedgeArrays(size));
+
+  WedgeGeometry._(PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        colors: arrays.colors,
+        indices: arrays.indices,
+      );
+}
+
 /// A flat rectangular grid in the XZ plane, centered on the origin, with
 /// its surface facing `+Y`.
 ///
@@ -186,6 +208,65 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
 }
 
 /// Generates the vertex arrays for a [PlaneGeometry].
+/// Builds the vertex arrays for a [WedgeGeometry] of `(width, height,
+/// run)` [size]. Flat per-face normals; faces are wound to match the
+/// engine's front-face convention (as [buildCuboidArrays] does).
+PrimitiveArrays buildWedgeArrays(Vector3 size) {
+  final hx = size.x / 2;
+  final hz = size.z / 2;
+  final y = size.y;
+  final l0 = Vector3(-hx, 0, -hz); // low edge (y = 0), -Z
+  final l1 = Vector3(hx, 0, -hz);
+  final b0 = Vector3(-hx, 0, hz); // back-bottom, +Z
+  final b1 = Vector3(hx, 0, hz);
+  final t0 = Vector3(-hx, y, hz); // back-top, +Z
+  final t1 = Vector3(hx, y, hz);
+  // Slope faces up and toward the low (-Z) edge.
+  final slopeN = Vector3(0, size.z, -size.y).normalized();
+
+  final positions = <double>[];
+  final normals = <double>[];
+  final texCoords = <double>[];
+  final indices = <int>[];
+
+  void addVert(Vector3 p, Vector3 n, double u, double v) {
+    positions.addAll([p.x, p.y, p.z]);
+    normals.addAll([n.x, n.y, n.z]);
+    texCoords.addAll([u, v]);
+  }
+
+  void addQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 n) {
+    final base = positions.length ~/ 3;
+    addVert(a, n, 0, 0);
+    addVert(b, n, 1, 0);
+    addVert(c, n, 1, 1);
+    addVert(d, n, 0, 1);
+    indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
+  }
+
+  void addTri(Vector3 a, Vector3 b, Vector3 c, Vector3 n) {
+    final base = positions.length ~/ 3;
+    addVert(a, n, 0, 0);
+    addVert(b, n, 1, 0);
+    addVert(c, n, 0, 1);
+    indices.addAll([base, base + 1, base + 2]);
+  }
+
+  addQuad(l0, l1, t1, t0, slopeN); // sloped top
+  addQuad(l0, b0, b1, l1, Vector3(0, -1, 0)); // bottom
+  addQuad(b0, t0, t1, b1, Vector3(0, 0, 1)); // vertical back
+  addTri(l0, t0, b0, Vector3(-1, 0, 0)); // left side
+  addTri(l1, b1, t1, Vector3(1, 0, 0)); // right side
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
 PrimitiveArrays buildPlaneArrays({
   required double width,
   required double depth,
