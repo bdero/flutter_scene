@@ -59,6 +59,8 @@ class CharacterController extends Component {
     this.modelScale = 1.0,
     this.modelYawOffset = 0.0,
     this.turnStiffness = 16.0,
+    this.fallAnimationMinHeight = 1.0,
+    this.shoveStrength = 0.08,
   });
 
   /// Where movement intent comes from.
@@ -105,6 +107,19 @@ class CharacterController extends Component {
   /// How quickly the model turns toward its movement direction.
   final double turnStiffness;
 
+  /// Minimum drop below the feet, in world units, for walking off a ledge
+  /// to start the falling animation. Small step-downs below this stay in
+  /// the grounded locomotion and play no jump pose.
+  final double fallAnimationMinHeight;
+
+  /// Per-step impulse magnitude used to shove dynamic bodies Dash runs
+  /// into, in the direction of travel. The kinematic controller's built-in
+  /// push barely moves light, jointed bodies (banners, ropes) when
+  /// grounded, so this gives them a direct nudge. A fixed impulse moves
+  /// light bodies a lot and heavy ones little, so it leaves the box stack
+  /// and bridge feeling the same. Zero disables it.
+  final double shoveStrength;
+
   RapierKinematicCharacterController? _mover;
   RapierWorld? _world;
   Node? _pivot;
@@ -133,9 +148,16 @@ class CharacterController extends Component {
   // clip dominates and then fades the locomotion back in.
   _JumpState _jumpState = _JumpState.none;
   double _landingCooldown = 0.0;
+  // Eased 0..1 weight of the airborne (JumpStart) pose, so leaving the
+  // ground blends into the falling animation over a short window instead
+  // of snapping to it.
+  double _airborneBlend = 0.0;
 
   /// How long the landing overlay lasts, seconds.
   static const double _landingDuration = 0.4;
+
+  /// Easing rate for [_airborneBlend]; ~1/rate seconds to transition.
+  static const double _airborneBlendRate = 12.0;
 
   /// The character's current world position (capsule centre).
   Vector3 get position => node.globalTransform.getTranslation();
@@ -154,6 +176,7 @@ class CharacterController extends Component {
     _verticalVelocity = 0.0;
     _jumpState = _JumpState.none;
     _landingCooldown = 0.0;
+    _airborneBlend = 0.0;
     _prevCenter.setFrom(worldPosition);
     _currCenter.setFrom(worldPosition);
     _interpCenter.setFrom(worldPosition);
@@ -270,8 +293,17 @@ class CharacterController extends Component {
         }
         break;
       case _JumpState.none:
+        // Walked off a high ledge: play the airborne pose, the same as a
+        // jump's descent. Small step-downs stay grounded and are ignored.
+        if (!_grounded && _groundClearance() > fallAnimationMinHeight) {
+          _jumpState = _JumpState.falling;
+          _clips['JumpStart']?.seek(0.0);
+        }
         break;
     }
+
+    // Nudge dynamic bodies Dash is running into.
+    _shoveNearbyBodies();
 
     // Face the direction of travel.
     final horizontalSpeed = _horizontalVelocity.length;
@@ -303,7 +335,7 @@ class CharacterController extends Component {
     _displayYaw += _shortestAngle(_displayYaw, _facingYaw) * blend;
     _applyPivot();
 
-    _blendAnimations();
+    _blendAnimations(dt);
   }
 
   void _enterLanding() {
@@ -311,6 +343,55 @@ class CharacterController extends Component {
     _landingCooldown = _landingDuration;
     // Replay the (non-looping) JumpLand clip from frame zero.
     _clips['JumpLand']?.seek(0.0);
+  }
+
+  // Distance from Dash's feet straight down to the nearest ground, or
+  // infinity over a void. Kinematic bodies (Dash's own capsule, moving
+  // platforms) are skipped so the ray does not hit the character itself.
+  double _groundClearance() {
+    final world = _world;
+    if (world == null) return 0.0;
+    final origin = node.globalTransform.getTranslation();
+    final hit = world.raycast(
+      Ray.originDirection(origin, Vector3(0.0, -1.0, 0.0)),
+      maxDistance: 60.0,
+      includeKinematic: false,
+    );
+    if (hit == null) return double.infinity;
+    return hit.distance - footOffset;
+  }
+
+  // Shoves dynamic bodies just ahead of Dash in his direction of travel.
+  // A direct nudge so light, jointed props (banners, ropes) react to him
+  // on the ground, where the controller's own push is too weak.
+  void _shoveNearbyBodies() {
+    final world = _world;
+    if (world == null || shoveStrength <= 0.0) return;
+    final speed = _horizontalVelocity.length;
+    if (speed < 0.6) return;
+    final center = node.globalTransform.getTranslation();
+    final dir = _horizontalVelocity.normalized();
+    final speedFraction = (speed / maxSpeed).clamp(0.0, 1.0);
+    final hits = world.overlapSphere(
+      center,
+      0.9,
+      includeFixed: false,
+      includeKinematic: false,
+      includeDynamic: true,
+      includeTriggers: false,
+    );
+    for (final hit in hits) {
+      if (hit.node == node) continue;
+      final body = hit.node.getComponent<RapierRigidBody>();
+      if (body == null) continue;
+      // Only push bodies ahead of him, so passing alongside one does not
+      // fling it.
+      final toBody = hit.node.globalTransform.getTranslation()
+        ..sub(center)
+        ..y = 0.0;
+      if (toBody.dot(dir) <= 0.0) continue;
+      body.applyImpulse(dir * (shoveStrength * speedFraction));
+    }
   }
 
   void _applyPivot() {
@@ -329,7 +410,7 @@ class CharacterController extends Component {
     );
   }
 
-  void _blendAnimations() {
+  void _blendAnimations(double dt) {
     final speedFraction = (_horizontalVelocity.length / maxSpeed).clamp(
       0.0,
       1.0,
@@ -338,6 +419,13 @@ class CharacterController extends Component {
     final airborne =
         _jumpState == _JumpState.jumping || _jumpState == _JumpState.falling;
     final landing = _jumpState == _JumpState.landing;
+
+    // Ease the airborne pose in/out so entering the air (a jump or walking
+    // off a ledge) transitions into the falling animation instead of
+    // snapping straight to it.
+    _airborneBlend +=
+        ((airborne ? 1.0 : 0.0) - _airborneBlend) *
+        (1.0 - math.exp(-_airborneBlendRate * dt));
 
     // Grounded locomotion plays at full weight except during the landing
     // window, when it is suppressed (so JumpLand dominates) and then ramps
@@ -367,10 +455,11 @@ class CharacterController extends Component {
     _setWeight('Walk', groundedWeight * walk);
     _setWeight('Run', groundedWeight * run);
 
-    // JumpStart holds the takeoff/falling pose for the whole airborne phase;
-    // JumpLand is a brief, heavily weighted overlay on touchdown. Drive each
-    // clip's `playing` so the one-shots advance only while they are active.
-    _setClip('JumpStart', airborne ? 1.0 : 0.0, airborne);
+    // JumpStart holds the takeoff/falling pose for the whole airborne phase,
+    // eased in/out via [_airborneBlend]; JumpLand is a brief, heavily
+    // weighted overlay on touchdown. Drive each clip's `playing` so the
+    // one-shots advance while active (and while the airborne pose fades).
+    _setClip('JumpStart', _airborneBlend, airborne || _airborneBlend > 0.01);
     _setClip('JumpLand', landingWeight, landing);
   }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 // flutter_scene's physics BoxShape clashes with Flutter's painting
 // BoxShape, and flutter_scene's Material class clashes with the Flutter
@@ -52,6 +53,32 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   double _triggerGlow = 0.0;
   double _vignette = 0.0;
 
+  // A kinematic lift: it rides up while Dash stands on its pressure-plate
+  // deck (a sensor) and descends when he steps off. Driven each frame from
+  // [_elevatorOccupied] in the painter.
+  Node? _elevatorNode;
+  RapierRigidBody? _elevatorBody;
+  bool _elevatorOccupied = false;
+  double _elevatorY = _elevatorBottomY;
+  // Keeps the lift parked at the top briefly after Dash steps off, so it
+  // does not drop out from under him the instant he reaches the edge.
+  double _elevatorDwell = 0.0;
+
+  static const double _elevatorX = 16.0;
+  static const double _elevatorZ = 10.0;
+  static const double _elevatorBottomY = 0.2;
+  static const double _elevatorTopY = 3.1;
+  static const double _elevatorLiftSpeed = 1.8;
+  static const double _elevatorDwellMax = 1.2;
+
+  // A kinematic bar that sweeps a horizontal circle, rotated by code each
+  // frame. Kinematic (not a dynamic motor) so it shoves the kinematic
+  // character aside instead of stalling against his infinite mass.
+  Node? _spinnerNode;
+  double _spinnerAngle = 0.0;
+  static final vm.Vector3 _spinnerCenter = vm.Vector3(-10, 0.7, -10);
+  static const double _spinnerSpeed = 1.4; // rad/s
+
   static final vm.Vector3 _spawn = vm.Vector3(0, 1.2, 0);
 
   double _lastElapsed = 0;
@@ -77,8 +104,15 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildGround();
     _buildStaircase();
     _buildPlatforms();
+    _buildSlopes();
     _buildStack();
     _buildTrigger();
+    _buildSpinner();
+    _buildBridge();
+    _buildElevator();
+    _buildSeesaw();
+    _buildCurtain();
+    _buildRopes();
     _spawnCharacter();
 
     // React to Dash entering / leaving the trigger volume. Subscribing
@@ -93,17 +127,22 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   }
 
   void _onCollision(CollisionEvent event) {
-    // Only the character crossing our trigger volume matters; ignore the
-    // dynamic boxes and any other pair.
-    final involvesTrigger =
-        event.nodeA == _triggerNode || event.nodeB == _triggerNode;
+    // Only the character entering / leaving our sensor volumes matters;
+    // ignore solid contacts (the dynamic boxes, the lift deck) and any
+    // pair that does not involve Dash.
+    final character = _characterNode;
+    if (character == null) return;
+    if (event is! TriggerEntered && event is! TriggerExited) return;
     final involvesCharacter =
-        event.nodeA == _characterNode || event.nodeB == _characterNode;
-    if (!involvesTrigger || !involvesCharacter) return;
-    if (event is TriggerEntered) {
-      _inTrigger = true;
-    } else if (event is TriggerExited) {
-      _inTrigger = false;
+        event.nodeA == character || event.nodeB == character;
+    if (!involvesCharacter) return;
+    final entered = event is TriggerEntered;
+    final other = event.nodeA == character ? event.nodeB : event.nodeA;
+    if (other == _triggerNode) {
+      _inTrigger = entered;
+    } else if (other == _elevatorNode) {
+      // The lift's pressure-plate sensor: ride up while occupied.
+      _elevatorOccupied = entered;
     }
   }
 
@@ -195,13 +234,51 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       vm.Vector3(2.0, 0.4, 2.0),
       vm.Vector4(0.45, 0.65, 0.92, 1),
     );
-    // A ramp the character can walk up.
-    _addStaticBox(
-      vm.Vector3(0, 0.9, 10.0),
-      vm.Vector3(3.0, 0.25, 3.0),
-      vm.Vector4(0.55, 0.78, 0.55, 1),
-      rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), 0.32),
-    );
+  }
+
+  // A row of wedge ramps at increasing angles, from nearly flat to nearly
+  // vertical, to test how the character controller handles slopes. The
+  // shallow ones are walkable; the steep ones (past the controller's
+  // max-climb angle) block Dash.
+  void _buildSlopes() {
+    const z = 12.0, width = 2.4, height = 2.0;
+    const anglesDeg = [15.0, 30.0, 45.0, 60.0, 70.0, 80.0];
+    for (var i = 0; i < anglesDeg.length; i++) {
+      final angle = anglesDeg[i] * math.pi / 180.0;
+      final run = height / math.tan(angle); // depth Z
+      final x = (i - (anglesDeg.length - 1) / 2) * 3.6;
+      final size = vm.Vector3(width, height, run);
+      final material = PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(0.34, (0.45 + 0.07 * i), 0.40, 1)
+        ..roughnessFactor = 0.6
+        ..metallicFactor = 0.0;
+      final node = Node(
+        mesh: Mesh(WedgeGeometry(size), material),
+        localTransform: vm.Matrix4.translation(vm.Vector3(x, 0, z)),
+      );
+      node.addComponent(RapierRigidBody(type: BodyType.fixed));
+      node.addComponent(
+        RapierCollider(
+          shape: ConvexHullShape(points: _wedgePoints(width, height, run)),
+          material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
+        ),
+      );
+      scene.add(node);
+    }
+  }
+
+  // The six corner points of a wedge (matching [WedgeGeometry]), as a flat
+  // x,y,z list, for a convex-hull collider.
+  Float32List _wedgePoints(double width, double height, double run) {
+    final hx = width / 2, hz = run / 2;
+    return Float32List.fromList([
+      -hx, 0, -hz, //
+      hx, 0, -hz,
+      -hx, 0, hz,
+      hx, 0, hz,
+      -hx, height, hz,
+      hx, height, hz,
+    ]);
   }
 
   // A 3-2-1 pyramid of dynamic boxes Dash can clamber onto.
@@ -269,7 +346,8 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       ..alphaMode = AlphaMode.blend;
     _triggerMaterial = material;
 
-    final center = vm.Vector3(5.0, half.y, 7.0);
+    // Clear of the green ramp (centred at z = 10, reaching back to z = 7).
+    final center = vm.Vector3(6.5, half.y, 3.5);
     final node = Node(
       mesh: Mesh(CuboidGeometry(half * 2.0), material),
       localTransform: vm.Matrix4.translation(center),
@@ -280,6 +358,446 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     );
     _triggerNode = node;
     scene.add(node);
+  }
+
+  // A bar that sweeps in a horizontal circle, driven by a revolute joint
+  // with a velocity motor anchored to the world. Dash gets shoved if he
+  // stands in its path; the bar sweeps low enough to jump over.
+  void _buildSpinner() {
+    // A decorative hub post just below the bar (no collider, so it never
+    // intersects the sweeping bar).
+    scene.add(
+      Node(
+        mesh: _boxMesh(
+          vm.Vector3(0.6, 0.46, 0.6),
+          vm.Vector4(0.40, 0.40, 0.46, 1),
+        ),
+        localTransform: vm.Matrix4.translation(vm.Vector3(-10, 0.23, -10)),
+      ),
+    );
+    final arm = Node(
+      mesh: _boxMesh(
+        vm.Vector3(6.0, 0.45, 0.45),
+        vm.Vector4(0.88, 0.22, 0.26, 1),
+      ),
+      localTransform: vm.Matrix4.translation(_spinnerCenter),
+    );
+    arm.addComponent(RapierRigidBody(type: BodyType.kinematic));
+    arm.addComponent(
+      RapierCollider(
+        shape: BoxShape(halfExtents: vm.Vector3(3.0, 0.225, 0.225)),
+        material: const PhysicsMaterial(friction: 0.4, restitution: 0.0),
+      ),
+    );
+    scene.add(arm);
+    _spinnerNode = arm;
+  }
+
+  // A wobbly plank bridge: a chain of dynamic planks hinged end-to-end by
+  // revolute joints, slung between two fixed towers. A short stair climbs
+  // up to one end; stepping off the far end is a real fall.
+  void _buildBridge() {
+    const bx = -16.0;
+    const topY = 1.6;
+    const halfW = 1.6; // half-width across the bridge (X)
+    const towerHalfY = 0.8;
+    const towerHalfZ = 1.2;
+    const aZ = 6.0; // near tower (stair side)
+    const bZ = -6.0; // far tower (fall-off side)
+    final towerColor = vm.Vector4(0.58, 0.52, 0.45, 1);
+    final plankColor = vm.Vector4(0.62, 0.45, 0.30, 1);
+    const towerYCenter = topY - towerHalfY;
+
+    final towerA = _addBody(
+      position: vm.Vector3(bx, towerYCenter, aZ),
+      type: BodyType.fixed,
+      mesh: _boxMesh(
+        vm.Vector3(halfW * 2, towerHalfY * 2, towerHalfZ * 2),
+        towerColor,
+      ),
+      shape: BoxShape(halfExtents: vm.Vector3(halfW, towerHalfY, towerHalfZ)),
+      material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
+    );
+    final towerB = _addBody(
+      position: vm.Vector3(bx, towerYCenter, bZ),
+      type: BodyType.fixed,
+      mesh: _boxMesh(
+        vm.Vector3(halfW * 2, towerHalfY * 2, towerHalfZ * 2),
+        towerColor,
+      ),
+      shape: BoxShape(halfExtents: vm.Vector3(halfW, towerHalfY, towerHalfZ)),
+      material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
+    );
+
+    // A short stair climbing up to the near tower from the +Z side: the
+    // tallest step sits against the tower and they get shorter heading out
+    // to the ground, so Dash walks up them toward the bridge.
+    const nSteps = 3;
+    for (var i = 0; i < nSteps; i++) {
+      final h = topY * (i + 1) / nSteps; // i == nSteps-1 is the tallest
+      _addStaticBox(
+        vm.Vector3(bx, h / 2, aZ + towerHalfZ + 0.7 + (nSteps - 1 - i) * 1.2),
+        vm.Vector3(halfW, h / 2, 0.7),
+        towerColor,
+      );
+    }
+
+    // Hang the planks along a shallow circular arc. The arc is longer than
+    // the straight gap between the towers, so the chain has real slack and
+    // keeps a visible sag; placing each plank on the arc (oriented along
+    // it, with its length matching the arc segment) means the joints start
+    // satisfied, so it settles gently instead of snapping taut.
+    final spanStart = aZ - towerHalfZ; // inner face of tower A (+Z end)
+    final spanEnd = bZ + towerHalfZ; // inner face of tower B (-Z end)
+    const nPlanks = 12;
+    const plankHalfY = 0.07;
+    // Deep enough that the chain is meaningfully longer than the gap, so it
+    // genuinely curves down between the towers.
+    const sagDepth = 1.7;
+
+    final chord = spanStart - spanEnd;
+    final zMid = (spanStart + spanEnd) / 2;
+    final radius = (chord * chord / 4 + sagDepth * sagDepth) / (2 * sagDepth);
+    final phi = math.asin((chord / 2) / radius); // arc half-angle
+    final yArcCenter = topY - plankHalfY + radius * math.cos(phi);
+    final segLen = 2 * radius * math.sin(phi / nPlanks);
+    final plankHalfZ = segLen / 2 - 0.02;
+
+    // Boundary point j (j == 0 at tower A, j == nPlanks at tower B).
+    vm.Vector3 boundary(int j) {
+      final a = phi - 2 * phi * (j / nPlanks);
+      return vm.Vector3(
+        bx,
+        yArcCenter - radius * math.cos(a),
+        zMid + radius * math.sin(a),
+      );
+    }
+
+    final planks = <Node>[];
+    for (var i = 0; i < nPlanks; i++) {
+      final p0 = boundary(i);
+      final p1 = boundary(i + 1);
+      final center = (p0 + p1)..scale(0.5);
+      final dy = p1.y - p0.y;
+      final dz = p1.z - p0.z;
+      // Rotate about X so the plank's local +Z runs from p0 toward p1.
+      final rot = vm.Quaternion.axisAngle(
+        vm.Vector3(1, 0, 0),
+        math.atan2(-dy, dz),
+      );
+      final node = Node(
+        mesh: _boxMesh(
+          vm.Vector3(halfW * 2, plankHalfY * 2, plankHalfZ * 2),
+          plankColor,
+        ),
+        localTransform: vm.Matrix4.compose(center, rot, vm.Vector3.all(1.0)),
+      );
+      node.addComponent(
+        RapierRigidBody(
+          type: BodyType.dynamic_,
+          mass: 0.9,
+          // A little damping so the bridge settles instead of jiggling
+          // like Jell-O, without making it feel stiff.
+          linearDamping: 0.4,
+          angularDamping: 0.6,
+        ),
+      );
+      node.addComponent(
+        RapierCollider(
+          shape: BoxShape(
+            halfExtents: vm.Vector3(halfW, plankHalfY, plankHalfZ),
+          ),
+          material: const PhysicsMaterial(friction: 0.95, restitution: 0.0),
+        ),
+      );
+      scene.add(node);
+      planks.add(node);
+    }
+
+    // Hinge axis runs across the bridge (X), so planks fold up and down.
+    // A plank's local -Z end is its tower-A side, +Z end its tower-B side.
+    final axis = vm.Vector3(1, 0, 0);
+    planks.first.addComponent(
+      RapierRevoluteJoint(
+        otherNode: towerA,
+        axis: axis,
+        localAnchorA: vm.Vector3(0, 0, -plankHalfZ),
+        localAnchorB: vm.Vector3(0, towerHalfY, -towerHalfZ),
+      ),
+    );
+    for (var i = 1; i < nPlanks; i++) {
+      planks[i].addComponent(
+        RapierRevoluteJoint(
+          otherNode: planks[i - 1],
+          axis: axis,
+          localAnchorA: vm.Vector3(0, 0, -plankHalfZ),
+          localAnchorB: vm.Vector3(0, 0, plankHalfZ),
+        ),
+      );
+    }
+    planks.last.addComponent(
+      RapierRevoluteJoint(
+        otherNode: towerB,
+        axis: axis,
+        localAnchorA: vm.Vector3(0, 0, plankHalfZ),
+        localAnchorB: vm.Vector3(0, towerHalfY, towerHalfZ),
+      ),
+    );
+  }
+
+  // A kinematic lift driven by a pressure-plate sensor on its own deck.
+  // Standing on it raises it; stepping off lowers it (see the painter,
+  // which eases [_elevatorY] toward the occupied target each frame). At the
+  // top it meets a lookout platform Dash can step onto (and fall off).
+  void _buildElevator() {
+    final deckHalf = vm.Vector3(1.8, 0.2, 1.8);
+    final deck = Node(
+      mesh: _boxMesh(deckHalf * 2.0, vm.Vector4(0.45, 0.50, 0.56, 1)),
+      localTransform: vm.Matrix4.translation(
+        vm.Vector3(_elevatorX, _elevatorBottomY, _elevatorZ),
+      ),
+    );
+    final body = RapierRigidBody(type: BodyType.kinematic);
+    deck.addComponent(body);
+    _elevatorBody = body;
+    deck.addComponent(
+      RapierCollider(
+        shape: BoxShape(halfExtents: deckHalf),
+        material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
+      ),
+    );
+    // The pressure plate: a sensor sitting just above the deck. Dash
+    // standing here counts as occupying the lift.
+    deck.addComponent(
+      RapierCollider(
+        shape: BoxShape(
+          halfExtents: vm.Vector3(deckHalf.x * 0.9, 0.5, deckHalf.z * 0.9),
+        ),
+        isTrigger: true,
+        localPose: vm.Matrix4.translation(vm.Vector3(0, deckHalf.y + 0.5, 0)),
+      ),
+    );
+    scene.add(deck);
+    _elevatorNode = deck;
+
+    // Lookout platform flush with the lift at the top, just past it.
+    final lookoutTop = _elevatorTopY + deckHalf.y;
+    const lookoutHalfY = 1.0;
+    _addStaticBox(
+      vm.Vector3(_elevatorX, lookoutTop - lookoutHalfY, _elevatorZ + 3.4),
+      vm.Vector3(1.8, lookoutHalfY, 1.6),
+      vm.Vector4(0.50, 0.55, 0.50, 1),
+    );
+  }
+
+  // A plank balanced on a free revolute hinge with a heavy ball resting on
+  // it: the ball rolls to the low side and rocks the seesaw, and Dash can
+  // shove the ball (or bump the plank ends) to tip it the other way.
+  void _buildSeesaw() {
+    const sx = 6.0, sz = -14.0; // open ground, far +x / -z
+    const plankHalfZ = 3.2; // plank runs along Z
+    const plankHalfX = 1.3;
+    const plankHalfY = 0.12;
+    const pivotY = 0.9;
+
+    final plank = Node(
+      mesh: _boxMesh(
+        vm.Vector3(plankHalfX * 2, plankHalfY * 2, plankHalfZ * 2),
+        vm.Vector4(0.70, 0.62, 0.40, 1),
+      ),
+      localTransform: vm.Matrix4.translation(vm.Vector3(sx, pivotY, sz)),
+    );
+    plank.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: 2.0));
+    plank.addComponent(
+      RapierCollider(
+        shape: BoxShape(
+          halfExtents: vm.Vector3(plankHalfX, plankHalfY, plankHalfZ),
+        ),
+        material: const PhysicsMaterial(friction: 0.8, restitution: 0.0),
+      ),
+    );
+    scene.add(plank);
+    // World-anchored hinge across the plank (X axis), with limits so it
+    // tips but never flips over.
+    plank.addComponent(
+      RapierRevoluteJoint(
+        axis: vm.Vector3(1, 0, 0),
+        localAnchorA: vm.Vector3.zero(),
+        localAnchorB: vm.Vector3(sx, pivotY, sz),
+        lowerLimit: -0.42,
+        upperLimit: 0.42,
+      ),
+    );
+
+    // A heavy ball resting near one end to start it tipped and rolling.
+    final ball = Node(
+      mesh: Mesh(
+        SphereGeometry(radius: 0.5),
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = vm.Vector4(0.85, 0.85, 0.90, 1)
+          ..roughnessFactor = 0.3
+          ..metallicFactor = 0.1,
+      ),
+      localTransform: vm.Matrix4.translation(
+        vm.Vector3(sx, pivotY + 0.7, sz - 2.0),
+      ),
+    );
+    ball.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: 3.0));
+    ball.addComponent(
+      RapierCollider(
+        shape: const SphereShape(radius: 0.5),
+        material: const PhysicsMaterial(friction: 0.6, restitution: 0.1),
+      ),
+    );
+    scene.add(ball);
+
+    // Low fixed fulcrum, purely visual. Kept short and narrow so its top
+    // sits below the plank's underside (no z-fighting with the plank).
+    scene.add(
+      Node(
+        mesh: _boxMesh(
+          vm.Vector3(1.0, 0.6, 0.8),
+          vm.Vector4(0.40, 0.40, 0.46, 1),
+        ),
+        localTransform: vm.Matrix4.translation(vm.Vector3(sx, 0.3, sz)),
+      ),
+    );
+  }
+
+  // A curtain of hanging cloth-like banners: several adjacent vertical
+  // strips, each a chain of slats hinged about the horizontal width axis
+  // and anchored to the world at the top. Dash parts them as he runs
+  // through; they swing back and settle (lightly damped, like the bridge).
+  void _buildCurtain() {
+    const cx = 0.0, cz = -6.0, topY = 3.0;
+    const nStrips = 5, nSlats = 4;
+    const stripW = 0.5, slatHalfY = 0.25, slatHalfZ = 0.03;
+    const pitch = stripW + 0.04;
+    final color = vm.Vector4(0.85, 0.33, 0.42, 1);
+
+    // Decorative top rail the banners hang from.
+    scene.add(
+      Node(
+        mesh: _boxMesh(
+          vm.Vector3(nStrips * pitch + 0.3, 0.12, 0.2),
+          vm.Vector4(0.40, 0.40, 0.46, 1),
+        ),
+        localTransform: vm.Matrix4.translation(vm.Vector3(cx, topY + 0.06, cz)),
+      ),
+    );
+
+    final axis = vm.Vector3(1, 0, 0);
+    for (var s = 0; s < nStrips; s++) {
+      final x = cx + (s - (nStrips - 1) / 2) * pitch;
+      Node? prev;
+      for (var i = 0; i < nSlats; i++) {
+        final y = topY - slatHalfY - i * (slatHalfY * 2);
+        final node = Node(
+          mesh: _boxMesh(
+            vm.Vector3(stripW, slatHalfY * 2, slatHalfZ * 2),
+            color,
+          ),
+          localTransform: vm.Matrix4.translation(vm.Vector3(x, y, cz)),
+        );
+        node.addComponent(
+          RapierRigidBody(
+            type: BodyType.dynamic_,
+            // Light and fairly damped so the banners flutter and settle
+            // quickly rather than swinging like heavy slabs.
+            mass: 0.2,
+            linearDamping: 0.9,
+            angularDamping: 1.8,
+          ),
+        );
+        node.addComponent(
+          RapierCollider(
+            shape: BoxShape(
+              halfExtents: vm.Vector3(stripW / 2, slatHalfY, slatHalfZ),
+            ),
+            material: const PhysicsMaterial(friction: 0.6, restitution: 0.0),
+          ),
+        );
+        scene.add(node);
+        node.addComponent(
+          i == 0
+              ? RapierRevoluteJoint(
+                  axis: axis,
+                  localAnchorA: vm.Vector3(0, slatHalfY, 0),
+                  localAnchorB: vm.Vector3(x, topY, cz),
+                )
+              : RapierRevoluteJoint(
+                  otherNode: prev,
+                  axis: axis,
+                  localAnchorA: vm.Vector3(0, slatHalfY, 0),
+                  localAnchorB: vm.Vector3(0, -slatHalfY, 0),
+                ),
+        );
+        prev = node;
+      }
+    }
+  }
+
+  // A cluster of free-swinging rope columns: chains of beads linked by
+  // spherical joints, anchored to the world at the top. Dash runs through
+  // and they swing out of the way.
+  void _buildRopes() {
+    const topY = 3.0, nBeads = 7, spacing = 0.34, beadR = 0.16;
+    const halfSpacing = spacing / 2;
+    // Just behind the banner curtain (which is at z = -6), spread across
+    // the same width so Dash hits the banners first, then the ropes.
+    final anchors = <vm.Vector3>[
+      for (final x in [-1.4, -0.7, 0.0, 0.7, 1.4]) vm.Vector3(x, topY, -7.6),
+    ];
+    // Shared geometry / material across every bead.
+    final beadGeometry = SphereGeometry(radius: beadR);
+    final beadMaterial = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.55, 0.50, 0.42, 1)
+      ..roughnessFactor = 0.5
+      ..metallicFactor = 0.0;
+
+    for (final anchor in anchors) {
+      Node? prev;
+      for (var i = 0; i < nBeads; i++) {
+        final y = topY - halfSpacing - i * spacing;
+        final node = Node(
+          mesh: Mesh(beadGeometry, beadMaterial),
+          localTransform: vm.Matrix4.translation(
+            vm.Vector3(anchor.x, y, anchor.z),
+          ),
+        );
+        node.addComponent(
+          RapierRigidBody(
+            type: BodyType.dynamic_,
+            // Light and fairly damped: reacts readily to Dash but settles
+            // quickly with small swings, like a lightweight dangling cord
+            // rather than a heavy slow pendulum.
+            mass: 0.1,
+            linearDamping: 0.9,
+            angularDamping: 1.8,
+          ),
+        );
+        node.addComponent(
+          RapierCollider(
+            shape: const SphereShape(radius: beadR),
+            material: const PhysicsMaterial(friction: 0.5, restitution: 0.05),
+          ),
+        );
+        scene.add(node);
+        node.addComponent(
+          i == 0
+              ? RapierSphericalJoint(
+                  localAnchorA: vm.Vector3(0, halfSpacing, 0),
+                  localAnchorB: anchor.clone(),
+                )
+              : RapierSphericalJoint(
+                  otherNode: prev,
+                  localAnchorA: vm.Vector3(0, halfSpacing, 0),
+                  localAnchorB: vm.Vector3(0, -halfSpacing, 0),
+                ),
+        );
+        prev = node;
+      }
+    }
   }
 
   void _spawnCharacter() {
@@ -324,6 +842,54 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   void _reset() => _character.teleport(_spawn);
 
+  // Drives the code-animated kinematic bodies (the lift and the spinner)
+  // each frame before the scene updates, so their new poses are carried
+  // into the physics step (and so they carry / shove Dash).
+  void _driveKinematics(double dt) {
+    final elevator = _elevatorNode;
+    final elevatorBody = _elevatorBody;
+    if (elevator != null && elevatorBody != null) {
+      // Refresh the dwell while occupied; once empty, hold at the top until
+      // it runs out so Dash can step off cleanly instead of being dropped.
+      if (_elevatorOccupied) {
+        _elevatorDwell = _elevatorDwellMax;
+      } else if (_elevatorDwell > 0.0) {
+        _elevatorDwell = math.max(0.0, _elevatorDwell - dt);
+      }
+      final goUp = _elevatorOccupied || _elevatorDwell > 0.0;
+      final target = goUp ? _elevatorTopY : _elevatorBottomY;
+      if ((target - _elevatorY).abs() > 1e-4) {
+        // Moving: drive it as a kinematic body so it carries Dash.
+        elevatorBody.type = BodyType.kinematic;
+        final step = _elevatorLiftSpeed * dt;
+        if ((target - _elevatorY).abs() <= step) {
+          _elevatorY = target;
+        } else {
+          _elevatorY += target > _elevatorY ? step : -step;
+        }
+        elevator.localTransform = vm.Matrix4.translation(
+          vm.Vector3(_elevatorX, _elevatorY, _elevatorZ),
+        );
+      } else {
+        // Parked: switch to a fixed body. A stopped kinematic platform
+        // pins a kinematic character standing on it (the controller's
+        // kinematic-platform friction cancels his input); a fixed body
+        // does not, so Dash can walk off freely.
+        elevatorBody.type = BodyType.fixed;
+      }
+    }
+
+    final spinner = _spinnerNode;
+    if (spinner != null) {
+      _spinnerAngle += _spinnerSpeed * dt;
+      spinner.localTransform = vm.Matrix4.compose(
+        _spinnerCenter,
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _spinnerAngle),
+        vm.Vector3.all(1.0),
+      );
+    }
+  }
+
   // --- Build ----------------------------------------------------------------
 
   @override
@@ -337,10 +903,16 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
             child: const SizedBox.expand(),
           ),
         ),
+        // Top-centre, clear of the example picker (top-left) and the
+        // settings sidebar (top-right).
         Positioned(
-          left: 8,
           top: 8,
-          child: _HintCard(onReset: () => setState(_reset)),
+          left: 0,
+          right: 0,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: _HintCard(onReset: () => setState(_reset)),
+          ),
         ),
       ],
     );
@@ -376,6 +948,7 @@ class _PlaygroundPainter extends CustomPainter {
 
     // Advance physics + per-frame component updates with the ticker delta,
     // then follow the character's now-current interpolated pose.
+    state._driveKinematics(dt);
     state.scene.update(dt);
     state._camera.follow(state._character.footPosition, dt);
 
