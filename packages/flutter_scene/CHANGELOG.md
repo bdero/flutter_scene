@@ -1,5 +1,11 @@
-## Unreleased
+## 0.16.0
 
+* Added an abstract physics contract so a physics engine can drive scene
+  nodes: rigid bodies, colliders and shapes, joints, physics materials,
+  scene queries (raycast, shape cast, overlap), and a collision/trigger
+  event stream, plus a minimal built-in `Basic` kinematic world. A full
+  engine backend is provided by the `flutter_scene_rapier` package.
+* Added `WedgeGeometry`, a triangular-prism ramp primitive.
 * Added optional screen-space ambient occlusion, configured per scene via
   `Scene.ambientOcclusion` (off by default). It darkens the indirect
   (image-based) lighting in creases and contact points for softer, more
