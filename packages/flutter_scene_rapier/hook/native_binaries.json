@@ -1,0 +1,51 @@
+{
+  "version": "0.1.0",
+  "base_url": "https://github.com/bdero/flutter_scene/releases/download",
+  "tag": "flutter_scene_rapier-0.1.0",
+  "binaries": {
+    "aarch64-apple-darwin": {
+      "file": "flutter_scene_rapier_native-aarch64-apple-darwin.dylib",
+      "sha256": "f659ebd032ec533728fd00daf4b8be074170071bb22d654ee074cbe653c1aa27"
+    },
+    "aarch64-apple-ios": {
+      "file": "flutter_scene_rapier_native-aarch64-apple-ios.dylib",
+      "sha256": "df96447d43cd203d7569c31d37d2a3f064e73852fee8bbe5bdee583e954a2aec"
+    },
+    "aarch64-apple-ios-sim": {
+      "file": "flutter_scene_rapier_native-aarch64-apple-ios-sim.dylib",
+      "sha256": "24cb260414c3c090c6f2c628c66239ae8e8e488ccd2e4138e7a1870a8c3a2a8b"
+    },
+    "aarch64-linux-android": {
+      "file": "flutter_scene_rapier_native-aarch64-linux-android.so",
+      "sha256": "8f3371127250187d0cbd9b70277a6d1aef845117701fc05c1b29f8af04ead4eb"
+    },
+    "aarch64-pc-windows-msvc": {
+      "file": "flutter_scene_rapier_native-aarch64-pc-windows-msvc.dll",
+      "sha256": "b97fcce3827ada980aecb7671927f611fc725fbb083a9583dd389c4347c4fb0d"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "flutter_scene_rapier_native-aarch64-unknown-linux-gnu.so",
+      "sha256": "925f5f5e573c454040d210922cff4ead2601a0ca889402fd895eec1ab38ab567"
+    },
+    "armv7-linux-androideabi": {
+      "file": "flutter_scene_rapier_native-armv7-linux-androideabi.so",
+      "sha256": "4c6a8760ec8841479d6a7324fe7d76a8739cb2f51ed4a652e6fd1cd086029d4c"
+    },
+    "wasm32-unknown-unknown": {
+      "file": "flutter_scene_rapier_native.wasm",
+      "sha256": "f586c5e4fa25d81c9368d591e639e2b134dea270c01967941bec0cd64ae7bb8d"
+    },
+    "x86_64-linux-android": {
+      "file": "flutter_scene_rapier_native-x86_64-linux-android.so",
+      "sha256": "90a0e7d61906cbf240ccd725fd2d04ec8a229bd8d9d5c57c1d2f8ea1b4c9d77a"
+    },
+    "x86_64-pc-windows-msvc": {
+      "file": "flutter_scene_rapier_native-x86_64-pc-windows-msvc.dll",
+      "sha256": "c61d9f5b937524d56e4386a2d809462aa77a64c374dad186a6d7ce949cda2729"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "file": "flutter_scene_rapier_native-x86_64-unknown-linux-gnu.so",
+      "sha256": "6799bdf6950edcf2267bbd689ef8029d8dda672fdc548d6bc9dc74deb1a540af"
+    }
+  }
+}
