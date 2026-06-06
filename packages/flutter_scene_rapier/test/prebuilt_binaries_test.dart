@@ -5,9 +5,8 @@
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter_scene_rapier/src/prebuilt_binaries.dart';
 import 'package:test/test.dart';
-
-import '../hook/prebuilt_binaries.dart';
 
 void main() {
   group('NativeBinaryManifest.parse', () {

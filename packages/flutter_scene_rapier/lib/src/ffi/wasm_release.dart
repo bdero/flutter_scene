@@ -1,7 +1,7 @@
 // Points the web backend at the WebAssembly build of the shim attached
 // to the matching GitHub release. The release workflow uploads the
 // module and its checksum; the release step fills these in (the same way
-// hook/native_binaries.json is filled in for the native libraries), so
+// native_binaries.json is filled in for the native libraries), so
 // the published package downloads exactly its own release's module.
 //
 // Empty [wasmReleaseTag] / [wasmSha256] mean no release has been cut yet.

@@ -10,7 +10,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
-/// Parsed contents of hook/native_binaries.json: where the prebuilt
+/// Parsed contents of native_binaries.json: where the prebuilt
 /// libraries for a release live and their expected checksums.
 class NativeBinaryManifest {
   NativeBinaryManifest({

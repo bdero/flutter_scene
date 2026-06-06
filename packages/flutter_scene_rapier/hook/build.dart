@@ -7,7 +7,7 @@
 //
 // The library is obtained one of two ways, in this order:
 //
-//   1. Prebuilt download. If hook/native_binaries.json lists the target's
+//   1. Prebuilt download. If native_binaries.json lists the target's
 //      Rust triple, the matching library is downloaded from the package's
 //      release, checksum-verified, cached, and emitted. Consumers do not
 //      need a Rust toolchain on this path.
@@ -28,9 +28,8 @@
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:flutter_scene_rapier/src/prebuilt_binaries.dart';
 import 'package:hooks/hooks.dart';
-
-import 'prebuilt_binaries.dart';
 
 const _nativeLibraryName = 'flutter_scene_rapier_native';
 const _buildFromSourceEnv = 'FLUTTER_SCENE_RAPIER_BUILD_FROM_SOURCE';
@@ -77,7 +76,7 @@ Future<Uri> _resolveLibrary(
   final forceSource = Platform.environment[_buildFromSourceEnv] == '1';
 
   final manifestFile = File.fromUri(
-    input.packageRoot.resolve('hook/native_binaries.json'),
+    input.packageRoot.resolve('native_binaries.json'),
   );
 
   if (!forceSource && manifestFile.existsSync()) {
