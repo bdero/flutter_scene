@@ -407,8 +407,9 @@ class EmbeddedImageT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? bytesOffset =
-        bytes == null ? null : fbBuilder.writeListUint8(bytes!);
+    final int? bytesOffset = bytes == null
+        ? null
+        : fbBuilder.writeListUint8(bytes!);
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, bytesOffset);
     fbBuilder.addUint8(1, componentCount);
@@ -493,8 +494,9 @@ class EmbeddedImageObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? bytesOffset =
-        _bytes == null ? null : fbBuilder.writeListUint8(_bytes!);
+    final int? bytesOffset = _bytes == null
+        ? null
+        : fbBuilder.writeListUint8(_bytes!);
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, bytesOffset);
     fbBuilder.addUint8(1, _componentCount);
@@ -1607,8 +1609,9 @@ class UnskinnedVertexBufferT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        vertices == null ? null : fbBuilder.writeListUint8(vertices!);
+    final int? verticesOffset = vertices == null
+        ? null
+        : fbBuilder.writeListUint8(vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, vertexCount);
@@ -1665,8 +1668,9 @@ class UnskinnedVertexBufferObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        _vertices == null ? null : fbBuilder.writeListUint8(_vertices!);
+    final int? verticesOffset = _vertices == null
+        ? null
+        : fbBuilder.writeListUint8(_vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, _vertexCount);
@@ -1853,8 +1857,9 @@ class SkinnedVertexBufferT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        vertices == null ? null : fbBuilder.writeListUint8(vertices!);
+    final int? verticesOffset = vertices == null
+        ? null
+        : fbBuilder.writeListUint8(vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, vertexCount);
@@ -1910,8 +1915,9 @@ class SkinnedVertexBufferObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? verticesOffset =
-        _vertices == null ? null : fbBuilder.writeListUint8(_vertices!);
+    final int? verticesOffset = _vertices == null
+        ? null
+        : fbBuilder.writeListUint8(_vertices!);
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, verticesOffset);
     fbBuilder.addUint32(1, _vertexCount);
@@ -1974,8 +1980,9 @@ class IndicesT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? dataOffset =
-        data == null ? null : fbBuilder.writeListUint8(data!);
+    final int? dataOffset = data == null
+        ? null
+        : fbBuilder.writeListUint8(data!);
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, dataOffset);
     fbBuilder.addUint32(1, count);
@@ -2039,8 +2046,9 @@ class IndicesObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? dataOffset =
-        _data == null ? null : fbBuilder.writeListUint8(_data!);
+    final int? dataOffset = _data == null
+        ? null
+        : fbBuilder.writeListUint8(_data!);
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, dataOffset);
     fbBuilder.addUint32(1, _count);
@@ -2408,8 +2416,9 @@ class TranslationKeyframesObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2515,8 +2524,9 @@ class RotationKeyframesObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2622,8 +2632,9 @@ class ScaleKeyframesObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? valuesOffset =
-        _values == null ? null : fbBuilder.writeListOfStructs(_values!);
+    final int? valuesOffset = _values == null
+        ? null
+        : fbBuilder.writeListOfStructs(_values!);
     fbBuilder.startTable(1);
     fbBuilder.addOffset(0, valuesOffset);
     return fbBuilder.endTable();
@@ -2705,8 +2716,9 @@ class ChannelT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? timelineOffset =
-        timeline == null ? null : fbBuilder.writeListFloat32(timeline!);
+    final int? timelineOffset = timeline == null
+        ? null
+        : fbBuilder.writeListFloat32(timeline!);
     final int? keyframesOffset = keyframes?.pack(fbBuilder);
     fbBuilder.startTable(4);
     fbBuilder.addInt32(0, node);
@@ -2783,8 +2795,9 @@ class ChannelObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? timelineOffset =
-        _timeline == null ? null : fbBuilder.writeListFloat32(_timeline!);
+    final int? timelineOffset = _timeline == null
+        ? null
+        : fbBuilder.writeListFloat32(_timeline!);
     final int? keyframesOffset = _keyframes?.getOrCreateOffset(fbBuilder);
     fbBuilder.startTable(4);
     fbBuilder.addInt32(0, _node);
@@ -2846,12 +2859,9 @@ class AnimationT implements fb.Packable {
   @override
   int pack(fb.Builder fbBuilder) {
     final int? nameOffset = name == null ? null : fbBuilder.writeString(name!);
-    final int? channelsOffset =
-        channels == null
-            ? null
-            : fbBuilder.writeList(
-              channels!.map((b) => b.pack(fbBuilder)).toList(),
-            );
+    final int? channelsOffset = channels == null
+        ? null
+        : fbBuilder.writeList(channels!.map((b) => b.pack(fbBuilder)).toList());
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addOffset(1, channelsOffset);
@@ -2907,14 +2917,14 @@ class AnimationObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset =
-        _name == null ? null : fbBuilder.writeString(_name!);
-    final int? channelsOffset =
-        _channels == null
-            ? null
-            : fbBuilder.writeList(
-              _channels!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-            );
+    final int? nameOffset = _name == null
+        ? null
+        : fbBuilder.writeString(_name!);
+    final int? channelsOffset = _channels == null
+        ? null
+        : fbBuilder.writeList(
+            _channels!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(2);
     fbBuilder.addOffset(0, nameOffset);
     fbBuilder.addOffset(1, channelsOffset);
@@ -2983,8 +2993,9 @@ class SkinT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? jointsOffset =
-        joints == null ? null : fbBuilder.writeListInt32(joints!);
+    final int? jointsOffset = joints == null
+        ? null
+        : fbBuilder.writeListInt32(joints!);
     int? inverseBindMatricesOffset;
     if (inverseBindMatrices != null) {
       for (var e in inverseBindMatrices!) {
@@ -3059,12 +3070,12 @@ class SkinObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? jointsOffset =
-        _joints == null ? null : fbBuilder.writeListInt32(_joints!);
-    final int? inverseBindMatricesOffset =
-        _inverseBindMatrices == null
-            ? null
-            : fbBuilder.writeListOfStructs(_inverseBindMatrices!);
+    final int? jointsOffset = _joints == null
+        ? null
+        : fbBuilder.writeListInt32(_joints!);
+    final int? inverseBindMatricesOffset = _inverseBindMatrices == null
+        ? null
+        : fbBuilder.writeListOfStructs(_inverseBindMatrices!);
     fbBuilder.startTable(3);
     fbBuilder.addOffset(0, jointsOffset);
     fbBuilder.addOffset(1, inverseBindMatricesOffset);
@@ -3424,14 +3435,14 @@ class NodeT implements fb.Packable {
   @override
   int pack(fb.Builder fbBuilder) {
     final int? nameOffset = name == null ? null : fbBuilder.writeString(name!);
-    final int? childrenOffset =
-        children == null ? null : fbBuilder.writeListInt32(children!);
-    final int? meshPrimitivesOffset =
-        meshPrimitives == null
-            ? null
-            : fbBuilder.writeList(
-              meshPrimitives!.map((b) => b.pack(fbBuilder)).toList(),
-            );
+    final int? childrenOffset = children == null
+        ? null
+        : fbBuilder.writeListInt32(children!);
+    final int? meshPrimitivesOffset = meshPrimitives == null
+        ? null
+        : fbBuilder.writeList(
+            meshPrimitives!.map((b) => b.pack(fbBuilder)).toList(),
+          );
     final int? skinOffset = skin?.pack(fbBuilder);
     fbBuilder.startTable(6);
     fbBuilder.addOffset(0, nameOffset);
@@ -3529,18 +3540,19 @@ class NodeObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? nameOffset =
-        _name == null ? null : fbBuilder.writeString(_name!);
-    final int? childrenOffset =
-        _children == null ? null : fbBuilder.writeListInt32(_children!);
-    final int? meshPrimitivesOffset =
-        _meshPrimitives == null
-            ? null
-            : fbBuilder.writeList(
-              _meshPrimitives!
-                  .map((b) => b.getOrCreateOffset(fbBuilder))
-                  .toList(),
-            );
+    final int? nameOffset = _name == null
+        ? null
+        : fbBuilder.writeString(_name!);
+    final int? childrenOffset = _children == null
+        ? null
+        : fbBuilder.writeListInt32(_children!);
+    final int? meshPrimitivesOffset = _meshPrimitives == null
+        ? null
+        : fbBuilder.writeList(
+            _meshPrimitives!
+                .map((b) => b.getOrCreateOffset(fbBuilder))
+                .toList(),
+          );
     final int? skinOffset = _skin?.getOrCreateOffset(fbBuilder);
     fbBuilder.startTable(6);
     fbBuilder.addOffset(0, nameOffset);
@@ -3630,26 +3642,20 @@ class SceneT implements fb.Packable {
 
   @override
   int pack(fb.Builder fbBuilder) {
-    final int? childrenOffset =
-        children == null ? null : fbBuilder.writeListInt32(children!);
-    final int? nodesOffset =
-        nodes == null
-            ? null
-            : fbBuilder.writeList(
-              nodes!.map((b) => b.pack(fbBuilder)).toList(),
-            );
-    final int? texturesOffset =
-        textures == null
-            ? null
-            : fbBuilder.writeList(
-              textures!.map((b) => b.pack(fbBuilder)).toList(),
-            );
-    final int? animationsOffset =
-        animations == null
-            ? null
-            : fbBuilder.writeList(
-              animations!.map((b) => b.pack(fbBuilder)).toList(),
-            );
+    final int? childrenOffset = children == null
+        ? null
+        : fbBuilder.writeListInt32(children!);
+    final int? nodesOffset = nodes == null
+        ? null
+        : fbBuilder.writeList(nodes!.map((b) => b.pack(fbBuilder)).toList());
+    final int? texturesOffset = textures == null
+        ? null
+        : fbBuilder.writeList(textures!.map((b) => b.pack(fbBuilder)).toList());
+    final int? animationsOffset = animations == null
+        ? null
+        : fbBuilder.writeList(
+            animations!.map((b) => b.pack(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, childrenOffset);
     if (transform != null) {
@@ -3735,26 +3741,24 @@ class SceneObjectBuilder extends fb.ObjectBuilder {
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    final int? childrenOffset =
-        _children == null ? null : fbBuilder.writeListInt32(_children!);
-    final int? nodesOffset =
-        _nodes == null
-            ? null
-            : fbBuilder.writeList(
-              _nodes!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-            );
-    final int? texturesOffset =
-        _textures == null
-            ? null
-            : fbBuilder.writeList(
-              _textures!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-            );
-    final int? animationsOffset =
-        _animations == null
-            ? null
-            : fbBuilder.writeList(
-              _animations!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
-            );
+    final int? childrenOffset = _children == null
+        ? null
+        : fbBuilder.writeListInt32(_children!);
+    final int? nodesOffset = _nodes == null
+        ? null
+        : fbBuilder.writeList(
+            _nodes!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
+    final int? texturesOffset = _textures == null
+        ? null
+        : fbBuilder.writeList(
+            _textures!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
+    final int? animationsOffset = _animations == null
+        ? null
+        : fbBuilder.writeList(
+            _animations!.map((b) => b.getOrCreateOffset(fbBuilder)).toList(),
+          );
     fbBuilder.startTable(5);
     fbBuilder.addOffset(0, childrenOffset);
     if (_transform != null) {

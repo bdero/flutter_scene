@@ -1027,13 +1027,13 @@ class ListReader<E> extends Reader<List<E>> {
     return lazy
         ? _FbGenericList<E>(_elementReader, bc, listOffset)
         : List<E>.generate(
-          bc.buffer.getUint32(listOffset, Endian.little),
-          (int index) => _elementReader.read(
-            bc,
-            listOffset + size + _elementReader.size * index,
-          ),
-          growable: true,
-        );
+            bc.buffer.getUint32(listOffset, Endian.little),
+            (int index) => _elementReader.read(
+              bc,
+              listOffset + size + _elementReader.size * index,
+            ),
+            growable: true,
+          );
   }
 }
 
