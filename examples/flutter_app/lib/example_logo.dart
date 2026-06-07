@@ -14,12 +14,21 @@ class ExampleLogo extends StatefulWidget {
   ExampleLogoState createState() => ExampleLogoState();
 }
 
-class ExampleLogoState extends State<ExampleLogo> {
+class ExampleLogoState extends State<ExampleLogo>
+    with SceneModelReloadMixin<ExampleLogo> {
   Scene scene = Scene();
   bool loaded = false;
 
   @override
-  void initState() {
+  List<String> get reloadableModelSources => const [
+    'assets_src/flutter_logo_baked.glb',
+  ];
+
+  @override
+  Future<void> buildScene() async {
+    // Idempotent: safe to call again when the model changes on hot reload.
+    scene.removeAll();
+
     // The directional key light and shadows are driven by the shared settings
     // panel via ExampleSettings.applyTo.
 
@@ -36,22 +45,18 @@ class ExampleLogoState extends State<ExampleLogo> {
     ground.localTransform = vm.Matrix4.translation(vm.Vector3(0.0, -1.0, 0.0));
     scene.add(ground);
 
-    final modelLoaded = loadModel('assets_src/flutter_logo_baked.glb').then((
-      value,
-    ) {
-      value.name = 'FlutterLogo';
-      scene.add(value);
-      debugPrint('Model loaded: ${value.name}');
-    });
+    final value = await loadModel('assets_src/flutter_logo_baked.glb');
+    value.name = 'FlutterLogo';
+    scene.add(value);
+    debugPrint('Model loaded: ${value.name}');
 
-    Future.wait([modelLoaded]).then((_) {
-      debugPrint('Scene loaded.');
-      setState(() {
-        loaded = true;
-      });
+    debugPrint('Scene loaded.');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      loaded = true;
     });
-
-    super.initState();
   }
 
   @override

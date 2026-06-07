@@ -22,7 +22,8 @@ class NodeState {
   double amount = 0;
 }
 
-class ExampleCarState extends State<ExampleCar> {
+class ExampleCarState extends State<ExampleCar>
+    with SceneModelReloadMixin<ExampleCar> {
   Scene scene = Scene();
   bool loaded = false;
 
@@ -31,44 +32,48 @@ class ExampleCarState extends State<ExampleCar> {
   Map<String, NodeState> nodes = {};
 
   @override
-  void initState() {
-    final modelLoaded = loadModel('assets_src/fcar.glb').then((value) {
-      value.name = 'Car';
-      scene.add(value);
-      debugPrint('Model loaded: ${value.name}');
+  List<String> get reloadableModelSources => const ['assets_src/fcar.glb'];
 
-      for (final doorName in [
-        'DoorFront.L',
-        'DoorFront.R',
-        'DoorBack.L',
-        'DoorBack.R',
-        'Frunk',
-        'Trunk',
-        'WheelFront.L',
-        'WheelFront.R',
-        'WheelBack.L',
-        'WheelBack.R',
-      ]) {
-        final door = value.getChildByNamePath([doorName])!;
-        nodes[doorName] = NodeState(door, door.localTransform.clone());
-      }
-    });
+  @override
+  Future<void> buildScene() async {
+    // Idempotent: safe to call again when the model changes on hot reload.
+    scene.removeAll();
+    nodes.clear();
 
-    EnvironmentMap.fromAssets(
+    final value = await loadModel('assets_src/fcar.glb');
+    value.name = 'Car';
+    scene.add(value);
+    debugPrint('Model loaded: ${value.name}');
+
+    for (final doorName in [
+      'DoorFront.L',
+      'DoorFront.R',
+      'DoorBack.L',
+      'DoorBack.R',
+      'Frunk',
+      'Trunk',
+      'WheelFront.L',
+      'WheelFront.R',
+      'WheelBack.L',
+      'WheelBack.R',
+    ]) {
+      final door = value.getChildByNamePath([doorName])!;
+      nodes[doorName] = NodeState(door, door.localTransform.clone());
+    }
+
+    final environment = await EnvironmentMap.fromAssets(
       radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-    ).then((environment) {
-      scene.environment = environment;
-      scene.exposure = 2.5;
-    });
+    );
+    scene.environment = environment;
+    scene.exposure = 2.5;
 
-    Future.wait([modelLoaded]).then((_) {
-      debugPrint('Scene loaded.');
-      setState(() {
-        loaded = true;
-      });
+    debugPrint('Scene loaded.');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      loaded = true;
     });
-
-    super.initState();
   }
 
   @override

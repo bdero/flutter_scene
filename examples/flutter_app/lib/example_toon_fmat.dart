@@ -32,7 +32,8 @@ class ExampleToonFmat extends StatefulWidget {
   State<ExampleToonFmat> createState() => _ExampleToonFmatState();
 }
 
-class _ExampleToonFmatState extends State<ExampleToonFmat> {
+class _ExampleToonFmatState extends State<ExampleToonFmat>
+    with SceneModelReloadMixin<ExampleToonFmat> {
   Scene scene = Scene();
   bool loaded = false;
 
@@ -55,12 +56,15 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
   PreprocessedMaterial? _toonMaterial;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  List<String> get reloadableModelSources => const ['assets_src/dash.glb'];
 
-  Future<void> _load() async {
+  @override
+  Future<void> buildScene() async {
+    // Clear previously loaded content so this is safe to call again when the
+    // model (or its source GLB) changes on hot reload.
+    scene.removeAll();
+    _dashGroup.removeAll();
+
     // Load the .fmat bundle and its parameter sidecar that buildMaterials
     // produces. Use the async loader: shader bundles can't be read
     // synchronously on web (gpu.ShaderLibrary.fromAsset throws there).

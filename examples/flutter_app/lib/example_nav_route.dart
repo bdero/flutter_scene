@@ -28,7 +28,8 @@ class ExampleNavRoute extends StatefulWidget {
   ExampleNavRouteState createState() => ExampleNavRouteState();
 }
 
-class ExampleNavRouteState extends State<ExampleNavRoute> {
+class ExampleNavRouteState extends State<ExampleNavRoute>
+    with SceneModelReloadMixin<ExampleNavRoute> {
   final Scene scene = Scene();
 
   // The waypoints of the closed loop. The track runs through them in
@@ -96,7 +97,16 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   final _FreeCamState _freeCam = _FreeCamState();
 
   @override
-  void initState() {
+  List<String> get reloadableModelSources => const ['assets_src/fcar.glb'];
+
+  @override
+  Future<void> buildScene() async {
+    // Idempotent: safe to call again when the model changes on hot reload.
+    scene.removeAll();
+    _carParts.clear();
+    _carPartsReady = false;
+    carNode = null;
+
     // The directional "sun" and its cascaded shadows are driven by the shared
     // settings panel via ExampleSettings.applyTo.
 
@@ -121,32 +131,29 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
 
     // The example car drives the loop. It is wrapped in a parent node so
     // its imported transform is left intact, and scaled from its bounds.
-    loadModel('assets_src/fcar.glb').then((carRoot) {
-      carRoot.name = 'Car';
-      final parent = Node()..add(carRoot);
-      scene.add(parent);
-      final bounds = parent.combinedLocalBounds;
-      if (bounds != null) {
-        final extent = bounds.max - bounds.min;
-        final longest = [extent.x, extent.y, extent.z].reduce(max);
-        carScale = longest > 0 ? 2.5 / longest : 1.0;
-        carLift = -bounds.min.y * carScale;
+    final carRoot = await loadModel('assets_src/fcar.glb');
+    carRoot.name = 'Car';
+    final parent = Node()..add(carRoot);
+    scene.add(parent);
+    final bounds = parent.combinedLocalBounds;
+    if (bounds != null) {
+      final extent = bounds.max - bounds.min;
+      final longest = [extent.x, extent.y, extent.z].reduce(max);
+      carScale = longest > 0 ? 2.5 / longest : 1.0;
+      carLift = -bounds.min.y * carScale;
+    }
+
+    // Capture the doors and wheels so the controls submenu can pose
+    // them; each part remembers its imported transform to pose from.
+    for (final name in _carPartNames) {
+      final node = carRoot.getChildByNamePath([name]);
+      if (node != null) {
+        _carParts[name] = _CarPart(node, node.localTransform.clone());
       }
+    }
+    _carPartsReady = _carParts.length == _carPartNames.length;
 
-      // Capture the doors and wheels so the controls submenu can pose
-      // them; each part remembers its imported transform to pose from.
-      for (final name in _carPartNames) {
-        final node = carRoot.getChildByNamePath([name]);
-        if (node != null) {
-          _carParts[name] = _CarPart(node, node.localTransform.clone());
-        }
-      }
-      _carPartsReady = _carParts.length == _carPartNames.length;
-
-      if (mounted) setState(() => carNode = parent);
-    });
-
-    super.initState();
+    if (mounted) setState(() => carNode = parent);
   }
 
   // Adds the road's surface ribbon plus its edge and center marking
