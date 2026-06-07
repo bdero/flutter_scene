@@ -919,6 +919,10 @@ base class Node implements SceneGraph {
   Node _cloneAndCollectSkins(bool recursive, List<Skin> clonedSkins) {
     Node result = Node(name: name, localTransform: localTransform, mesh: mesh);
     result.isJoint = isJoint;
+    // Preserve the coordinate-convention flag so a cloned scene root's
+    // handedness flip is still excluded from winding parity (otherwise the
+    // clone renders with reversed cull winding: see-through, inverted geometry).
+    result.excludeFromWindingParity = excludeFromWindingParity;
     result._animations.addAll(_animations);
     if (recursive) {
       for (var child in children) {
