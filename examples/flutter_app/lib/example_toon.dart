@@ -27,7 +27,8 @@ class ExampleToon extends StatefulWidget {
   State<ExampleToon> createState() => _ExampleToonState();
 }
 
-class _ExampleToonState extends State<ExampleToon> {
+class _ExampleToonState extends State<ExampleToon>
+    with SceneModelReloadMixin<ExampleToon> {
   Scene scene = Scene();
   bool loaded = false;
 
@@ -49,12 +50,15 @@ class _ExampleToonState extends State<ExampleToon> {
   ShaderMaterial? _toonMaterial;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  List<String> get reloadableModelSources => const ['assets_src/dash.glb'];
 
-  Future<void> _load() async {
+  @override
+  Future<void> buildScene() async {
+    // Clear previously loaded content so this is safe to call again when the
+    // model (or its source GLB) changes on hot reload.
+    scene.removeAll();
+    _dashGroup.removeAll();
+
     // Load the toon shader bundle the example app's build hook produces.
     // Use the async loader: shader bundles can't be read synchronously on
     // web (gpu.ShaderLibrary.fromAsset throws there).
