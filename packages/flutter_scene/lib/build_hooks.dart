@@ -29,7 +29,7 @@ library;
 // package WASM-compatible. Build hooks only ever run on the native host.
 export 'src/importer/build_hooks.dart'
     if (dart.library.js_interop) 'src/importer/build_hooks_unsupported.dart'
-    show buildModels;
+    show ModelAssetMode, buildModels;
 export 'src/fmat/build_materials.dart'
     if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
     show MaterialAssetMode, buildMaterials;
