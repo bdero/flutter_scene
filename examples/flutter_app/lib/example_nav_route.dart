@@ -21,8 +21,7 @@ const double _markingHeight = 0.05;
 /// Exercises the dynamic geometry API: [PlaneGeometry], [CatmullRomPath],
 /// [RibbonGeometry], and [PolylineGeometry] (solid and dashed).
 class ExampleNavRoute extends StatefulWidget {
-  const ExampleNavRoute({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleNavRoute({super.key});
 
   @override
   ExampleNavRouteState createState() => ExampleNavRouteState();
@@ -95,6 +94,15 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
   // toggling it on does not jump the view.
   bool _freeCamera = false;
   final _FreeCamState _freeCam = _FreeCamState();
+
+  // Total elapsed seconds, updated each frame from SceneView's tick.
+  double _elapsedSeconds = 0;
+  // The camera computed each frame by the frame updater and returned to
+  // SceneView. Seeded with a sensible default for the first frame.
+  Camera _camera = PerspectiveCamera(
+    position: vm.Vector3(0, 12, 30),
+    target: vm.Vector3(0, 0, 0),
+  );
 
   @override
   List<String> get reloadableModelSources => const ['assets_src/fcar.glb'];
@@ -257,7 +265,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
     setState(() {
       _freeCamera = !_freeCamera;
       _freeCam.heldKeys.clear();
-      _freeCam.lastElapsed = widget.elapsedSeconds;
+      _freeCam.lastElapsed = _elapsedSeconds;
       if (!_freeCamera) {
         _followCam.anchorPosition = null;
         _followCam.anchorDirection = null;
@@ -291,8 +299,8 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
 
   // Advances the free camera by the held movement keys, once per frame.
   void _moveFreeCamera() {
-    final dt = (widget.elapsedSeconds - _freeCam.lastElapsed).clamp(0.0, 0.1);
-    _freeCam.lastElapsed = widget.elapsedSeconds;
+    final dt = (_elapsedSeconds - _freeCam.lastElapsed).clamp(0.0, 0.1);
+    _freeCam.lastElapsed = _elapsedSeconds;
     const speed = 20.0;
     final keys = _freeCam.heldKeys;
     final forward = _freeCam.forward;
@@ -317,8 +325,6 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
 
   @override
   Widget build(BuildContext context) {
-    _applyCarParts();
-    if (_freeCamera) _moveFreeCamera();
     return Focus(
       autofocus: true,
       onKeyEvent: _onFreeCameraKey,
@@ -328,21 +334,37 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
           Positioned.fill(
             child: GestureDetector(
               onPanUpdate: _freeCamera ? _onFreeCameraLook : null,
-              child: CustomPaint(
-                painter: _NavRoutePainter(
-                  scene: scene,
-                  road: mainRoad,
-                  markings: markings,
-                  carNode: carNode,
-                  carScale: carScale,
-                  carLift: carLift,
-                  followCam: _followCam,
-                  freeCamera: _freeCamera,
-                  freeCam: _freeCam,
-                  navNode: _navNode,
-                  navMaterial: _navMaterial,
-                  elapsedSeconds: widget.elapsedSeconds,
-                ),
+              // LayoutBuilder gives the per-frame frame updater the viewport
+              // size it needs to lay out the camera-facing marking lines.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.biggest;
+                  return SceneView(
+                    scene,
+                    cameraBuilder: (elapsed) => _camera,
+                    onTick: (elapsed, deltaSeconds) {
+                      _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                      _applyCarParts();
+                      if (_freeCamera) _moveFreeCamera();
+                      _camera = _NavRouteFrame(
+                        scene: scene,
+                        road: mainRoad,
+                        markings: markings,
+                        carNode: carNode,
+                        carScale: carScale,
+                        carLift: carLift,
+                        followCam: _followCam,
+                        freeCamera: _freeCamera,
+                        freeCam: _freeCam,
+                        navNode: _navNode,
+                        navMaterial: _navMaterial,
+                        elapsedSeconds: _elapsedSeconds,
+                        size: size,
+                      ).update();
+                      exampleSettings.applyTo(scene);
+                    },
+                  );
+                },
               ),
             ),
           ),
@@ -494,8 +516,11 @@ class _FreeCamState {
       vm.Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch));
 }
 
-class _NavRoutePainter extends CustomPainter {
-  _NavRoutePainter({
+// Computes the camera and updates the scene (car pose, route line, camera-
+// facing marking lines) for one frame. SceneView issues the render; this only
+// mutates the scene and returns the camera to render with.
+class _NavRouteFrame {
+  _NavRouteFrame({
     required this.scene,
     required this.road,
     required this.markings,
@@ -508,6 +533,7 @@ class _NavRoutePainter extends CustomPainter {
     required this.navNode,
     required this.navMaterial,
     required this.elapsedSeconds,
+    required this.size,
   });
 
   final Scene scene;
@@ -522,9 +548,9 @@ class _NavRoutePainter extends CustomPainter {
   final Node navNode;
   final UnlitMaterial navMaterial;
   final double elapsedSeconds;
+  final Size size;
 
-  @override
-  void paint(Canvas canvas, Size size) {
+  PerspectiveCamera update() {
     // The car's pose on the loop. Distance runs backward along the path
     // so the car travels counterclockwise, and its lane is the
     // centerline shifted to the opposite side. Querying the smooth
@@ -579,8 +605,7 @@ class _NavRoutePainter extends CustomPainter {
             ..scaleByDouble(carScale, carScale, carScale, 1.0);
     }
 
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
+    return camera;
   }
 
   // A chase camera that eases along behind the car and looks down at it
@@ -627,9 +652,6 @@ class _NavRoutePainter extends CustomPainter {
       target: anchor + vm.Vector3(0.0, lookLift + 2, 0.0),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // The car node names the controls submenu poses.

@@ -20,8 +20,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 
 class ExampleToon extends StatefulWidget {
-  const ExampleToon({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleToon({super.key});
 
   @override
   State<ExampleToon> createState() => _ExampleToonState();
@@ -162,21 +161,31 @@ class _ExampleToonState extends State<ExampleToon>
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Rotate Dash in place. Keeping the camera fixed and the world-
-    // space light direction constant means the toon bands stay
-    // anchored to the viewer's perspective: the bright side of Dash
-    // sweeps around her body as she turns, the way a real character
-    // under a stable spotlight would look.
-    _dashGroup.localTransform = vm.Matrix4.rotationY(
-      widget.elapsedSeconds * 0.6,
-    );
-    _dashGroup.markBoundsDirty();
-
     return Stack(
       children: [
-        SizedBox.expand(
-          child: CustomPaint(
-            painter: _ScenePainter(scene, widget.elapsedSeconds),
+        Positioned.fill(
+          // Camera is fixed so the toon shader's world-space light stays
+          // stable from the viewer's perspective. Dash spins in place
+          // instead (see the onTick below). Distance matches the animation
+          // example.
+          child: SceneView(
+            scene,
+            camera: PerspectiveCamera(
+              position: vm.Vector3(0, 2, -6),
+              target: vm.Vector3(0, 1.5, 0),
+            ),
+            onTick: (elapsed, deltaSeconds) {
+              // Rotate Dash in place. Keeping the camera fixed and the
+              // world-space light direction constant means the toon bands
+              // stay anchored to the viewer's perspective: the bright side
+              // sweeps around her body as she turns, the way a real
+              // character under a stable spotlight would look.
+              _dashGroup.localTransform = vm.Matrix4.rotationY(
+                elapsed.inMicroseconds / 1e6 * 0.6,
+              );
+              _dashGroup.markBoundsDirty();
+              exampleSettings.applyTo(scene);
+            },
           ),
         ),
         Positioned(
@@ -271,27 +280,4 @@ class _SliderRow extends StatelessWidget {
       ],
     );
   }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Camera is fixed so the toon shader's world-space light stays
-    // stable from the viewer's perspective. Dash spins in place
-    // instead (see `_ExampleToonState.build`). Distance matches the
-    // animation example.
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(0, 2, -6),
-      target: vm.Vector3(0, 1.5, 0),
-    );
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

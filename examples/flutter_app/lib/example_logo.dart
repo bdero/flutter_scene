@@ -7,8 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 
 class ExampleLogo extends StatefulWidget {
-  const ExampleLogo({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleLogo({super.key});
 
   @override
   ExampleLogoState createState() => ExampleLogoState();
@@ -76,26 +75,16 @@ class ExampleLogoState extends State<ExampleLogo>
       return const Center(child: CircularProgressIndicator());
     }
 
-    return CustomPaint(painter: _ScenePainter(scene, widget.elapsedSeconds));
-  }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(sin(elapsedTime) * 5, 2, cos(elapsedTime) * 5),
-      target: vm.Vector3(0, 0, 0),
+    return SceneView(
+      scene,
+      cameraBuilder: (elapsed) {
+        final t = elapsed.inMicroseconds / 1e6;
+        return PerspectiveCamera(
+          position: vm.Vector3(sin(t) * 5, 2, cos(t) * 5),
+          target: vm.Vector3(0, 0, 0),
+        );
+      },
+      onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
     );
-
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

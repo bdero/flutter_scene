@@ -1,6 +1,5 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart'
     show Scene, PostInsertion, SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
@@ -29,8 +28,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  late Ticker ticker;
-  double elapsedSeconds = 0;
   String selectedExample = '';
   Map<String, WidgetBuilder> examples = {};
   late final Future<void> _ready;
@@ -42,26 +39,17 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void initState() {
-    ticker = Ticker((elapsed) {
-      setState(() {
-        elapsedSeconds = elapsed.inMilliseconds.toDouble() / 1000;
-      });
-    });
-    ticker.start();
-
+    // Each example owns its own per-frame loop through SceneView, so there
+    // is no app-level ticker here.
     examples = {
-      'Car': (context) => ExampleCar(elapsedSeconds: elapsedSeconds),
-      'Animation': (context) =>
-          ExampleAnimation(elapsedSeconds: elapsedSeconds),
-      'Flutter Logo': (context) => ExampleLogo(elapsedSeconds: elapsedSeconds),
-      'Cuboid': (context) => ExampleCuboid(elapsedSeconds: elapsedSeconds),
-      'Instancing': (context) =>
-          ExampleInstancing(elapsedSeconds: elapsedSeconds),
-      'Navigation Route': (context) =>
-          ExampleNavRoute(elapsedSeconds: elapsedSeconds),
-      'Toon': (context) => ExampleToon(elapsedSeconds: elapsedSeconds),
-      'Toon (.fmat)': (context) =>
-          ExampleToonFmat(elapsedSeconds: elapsedSeconds),
+      'Car': (context) => const ExampleCar(),
+      'Animation': (context) => const ExampleAnimation(),
+      'Flutter Logo': (context) => const ExampleLogo(),
+      'Cuboid': (context) => const ExampleCuboid(),
+      'Instancing': (context) => const ExampleInstancing(),
+      'Navigation Route': (context) => const ExampleNavRoute(),
+      'Toon': (context) => const ExampleToon(),
+      'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Physics': (context) => FutureBuilder<void>(
         // The Rapier backend needs its wasm module loaded before a world
         // can be built on the web; wait on it here so only this example
@@ -71,11 +59,10 @@ class _MyAppState extends State<MyApp> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          return ExamplePhysics(elapsedSeconds: elapsedSeconds);
+          return const ExamplePhysics();
         },
       ),
-      'Stress Tests': (context) =>
-          ExampleStressTests(elapsedSeconds: elapsedSeconds),
+      'Stress Tests': (context) => const ExampleStressTests(),
     };
     selectedExample = examples.keys.first;
 
@@ -117,11 +104,7 @@ class _MyAppState extends State<MyApp> {
                     examples: examples.keys.toList(growable: false),
                     selected: selectedExample,
                     onSelected: (next) {
-                      setState(() {
-                        ticker.stop();
-                        ticker.start();
-                        selectedExample = next;
-                      });
+                      setState(() => selectedExample = next);
                     },
                   ),
                 ),
