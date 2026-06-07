@@ -6,6 +6,7 @@ void main(List<String> args) {
   build(args, (config, output) async {
     buildModels(
       buildInput: config,
+      buildOutput: output,
       inputFilePaths: [
         '../assets_src/two_triangles.glb',
         '../assets_src/flutter_logo_baked.glb',
