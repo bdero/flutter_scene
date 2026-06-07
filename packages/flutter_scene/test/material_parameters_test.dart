@@ -125,4 +125,106 @@ void main() {
       expect(() => _params()['detail'] = 5, throwsArgumentError);
     });
   });
+
+  group('updateFromLayout (hot-reload refresh)', () {
+    test('an unset parameter takes the new default', () {
+      final p = _params();
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+        },
+        defaults: {'gloss': 0.5},
+      );
+      expect(p.rawBlock.getFloat32(16, Endian.host), 0.5);
+    });
+
+    test(
+      'an explicitly-set parameter keeps its value over the new default',
+      () {
+        final p = _params();
+        p.setFloat('gloss', 0.25); // user override
+        p.updateFromLayout(
+          blockName: 'MaterialParams',
+          blockSizeBytes: 64,
+          parameters: {
+            'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+          },
+          defaults: {'gloss': 0.9}, // edited default is ignored for an override
+        );
+        expect(p.rawBlock.getFloat32(16, Endian.host), 0.25);
+      },
+    );
+
+    test('preserves an overridden value at a changed offset', () {
+      final p = _params();
+      p.setInt('steps', 7); // user override at old offset 20
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'steps': (type: FmatType.int_, offset: 40, sourceColor: false),
+        },
+      );
+      expect(p.rawBlock.getInt32(40, Endian.host), 7);
+    });
+
+    test('a newly added parameter gets its default', () {
+      final p = _params();
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+          'sheen': (type: FmatType.float_, offset: 20, sourceColor: false),
+        },
+        defaults: {'sheen': 0.3},
+      );
+      expect(p.parameterNames, containsAll(['gloss', 'sheen']));
+      expect(p.rawBlock.getFloat32(20, Endian.host), closeTo(0.3, 1e-6));
+    });
+
+    test('a removed parameter is dropped', () {
+      final p = _params();
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+        },
+      );
+      expect(p.parameterNames, ['gloss']);
+      expect(() => p.setVec4('tint', Vector4.zero()), throwsArgumentError);
+    });
+
+    test('a type change drops the old value and takes the new default', () {
+      final p = _params();
+      p.setFloat('gloss', 0.25); // overridden as float
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          // same name, now an int
+          'gloss': (type: FmatType.int_, offset: 16, sourceColor: false),
+        },
+        defaults: {'gloss': 4},
+      );
+      expect(p.rawBlock.getInt32(16, Endian.host), 4);
+    });
+
+    test('updates sampler names', () {
+      final p = _params();
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+        },
+        samplers: {'albedo': FmatHintKind.defaultWhite},
+      );
+      expect(p.samplerNames, ['albedo']);
+      expect(p.parameterNames, ['gloss']);
+    });
+  });
 }

@@ -32,7 +32,7 @@ class PreprocessedMaterial extends Material {
   PreprocessedMaterial({
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,
-  }) : shadingModel = _parseShadingModel(metadata['shading_model']),
+  }) : _shadingModel = _parseShadingModel(metadata['shading_model']),
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
@@ -44,10 +44,29 @@ class PreprocessedMaterial extends Material {
 
   /// Whether the engine runs its lighting ([FmatShadingModel.lit]) or the
   /// shader's color is output directly ([FmatShadingModel.unlit]).
-  final FmatShadingModel shadingModel;
+  FmatShadingModel get shadingModel => _shadingModel;
 
-  final FmatBlending _blending;
-  final FmatCulling _culling;
+  FmatShadingModel _shadingModel;
+  FmatBlending _blending;
+  FmatCulling _culling;
+
+  /// Re-reads the render state and parameters from a regenerated [fragmentShader]
+  /// and sidecar [metadata] (a hot-reloaded `.fmat`), in place.
+  ///
+  /// Updates culling, blending, shading model, and the parameter layout without
+  /// replacing the material instance, so every primitive already using it picks
+  /// up the change. Explicitly-set parameter values are preserved; see
+  /// [MaterialParameters.updateFromMetadata].
+  void updateFromMetadata(
+    gpu.Shader fragmentShader,
+    Map<String, Object?> metadata,
+  ) {
+    _shadingModel = _parseShadingModel(metadata['shading_model']);
+    _blending = _parseBlending(metadata['blending']);
+    _culling = _parseCulling(metadata['culling']);
+    setFragmentShader(fragmentShader);
+    parameters.updateFromMetadata(fragmentShader, metadata);
+  }
 
   /// Per-material image-based-lighting environment, overriding the scene-wide
   /// environment when set. Only used for [FmatShadingModel.lit] materials.
