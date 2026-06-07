@@ -3,6 +3,7 @@ part of '_gpu.dart';
 base class ShaderLibrary {
   ShaderLibrary._();
   static ShaderLibrary? fromAsset(String assetName) => _stub();
+  static void reinitialize(String assetKey) => _stub();
   Shader? operator [](String shaderName) => _stub();
 }
 
