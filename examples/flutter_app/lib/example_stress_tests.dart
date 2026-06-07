@@ -352,8 +352,7 @@ const _environments = <_Environment>[
 }
 
 class ExampleStressTests extends StatefulWidget {
-  const ExampleStressTests({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleStressTests({super.key});
 
   @override
   State<ExampleStressTests> createState() => _ExampleStressTestsState();
@@ -376,12 +375,7 @@ class _ExampleStressTestsState extends State<ExampleStressTests> {
     if (active == null) {
       return _CatalogList(onOpen: _open);
     }
-    return _StressScene(
-      key: ValueKey(active.id),
-      test: active,
-      elapsedSeconds: widget.elapsedSeconds,
-      onBack: _back,
-    );
+    return _StressScene(key: ValueKey(active.id), test: active, onBack: _back);
   }
 }
 
@@ -425,15 +419,9 @@ class _CatalogList extends StatelessWidget {
 }
 
 class _StressScene extends StatefulWidget {
-  const _StressScene({
-    super.key,
-    required this.test,
-    required this.elapsedSeconds,
-    required this.onBack,
-  });
+  const _StressScene({super.key, required this.test, required this.onBack});
 
   final _StressTest test;
-  final double elapsedSeconds;
   final VoidCallback onBack;
 
   @override
@@ -460,7 +448,6 @@ class _StressSceneState extends State<_StressScene> {
   // Currently-held movement keys (read each frame). Mouse delta is
   // applied immediately on drag.
   final Set<LogicalKeyboardKey> _pressed = {};
-  double _lastUpdateSeconds = 0;
 
   // Load state. `null` total means the server didn't send a Content-Length
   // — the screen still shows downloaded bytes so users see motion.
@@ -811,12 +798,11 @@ class _StressSceneState extends State<_StressScene> {
     });
   }
 
-  // Integrates camera position from currently-held keys. Called from
-  // build() so the parent ticker drives it; dt is clamped to keep a
-  // dropped frame or focus pause from teleporting the camera.
-  void _updateCamera() {
-    final dt = (widget.elapsedSeconds - _lastUpdateSeconds).clamp(0.0, 0.1);
-    _lastUpdateSeconds = widget.elapsedSeconds;
+  // Integrates camera position from currently-held keys. Called each frame
+  // from SceneView's tick; dt is clamped to keep a dropped frame or focus
+  // pause from teleporting the camera.
+  void _updateCamera(double deltaSeconds) {
+    final dt = deltaSeconds.clamp(0.0, 0.1);
     if (_pressed.isEmpty) return;
     var velocity = vm.Vector3.zero();
     if (_pressed.contains(LogicalKeyboardKey.keyW)) velocity += _forward();
@@ -842,7 +828,6 @@ class _StressSceneState extends State<_StressScene> {
 
   @override
   Widget build(BuildContext context) {
-    if (_ready) _updateCamera();
     return Stack(
       children: [
         if (_ready)
@@ -856,14 +841,16 @@ class _StressSceneState extends State<_StressScene> {
                 behavior: HitTestBehavior.opaque,
                 onPanDown: (_) => _focusNode.requestFocus(),
                 onPanUpdate: _onPanUpdate,
-                child: SizedBox.expand(
-                  child: CustomPaint(
-                    painter: _ScenePainter(
-                      _scene,
-                      position: _camPos,
-                      target: _camPos + _forward(),
-                    ),
+                child: SceneView(
+                  _scene,
+                  cameraBuilder: (elapsed) => PerspectiveCamera(
+                    position: _camPos,
+                    target: _camPos + _forward(),
                   ),
+                  onTick: (elapsed, deltaSeconds) {
+                    _updateCamera(deltaSeconds);
+                    exampleSettings.applyTo(_scene);
+                  },
                 ),
               ),
             ),
@@ -1270,24 +1257,6 @@ class _LabeledSlider extends StatelessWidget {
       ],
     );
   }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, {required this.position, required this.target});
-
-  final Scene scene;
-  final vm.Vector3 position;
-  final vm.Vector3 target;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final camera = PerspectiveCamera(position: position, target: target);
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // Downloads (and caches) the model for `test` and imports it.

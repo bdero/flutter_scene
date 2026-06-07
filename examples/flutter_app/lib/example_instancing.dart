@@ -7,8 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 
 class ExampleInstancing extends StatefulWidget {
-  const ExampleInstancing({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleInstancing({super.key});
 
   @override
   ExampleInstancingState createState() => ExampleInstancingState();
@@ -22,7 +21,7 @@ class ExampleInstancingState extends State<ExampleInstancing> {
     // A single InstancedMesh draws a whole grid of cubes: one geometry,
     // one material, and one render item shared by every instance.
     final instancedMesh = InstancedMesh(
-      geometry: CuboidGeometry(vm.Vector3(0.6, 0.6, 0.6)),
+      geometry: CuboidGeometry(vm.Vector3(0.6, 0.6, 0.6), debugColors: true),
       material: UnlitMaterial(),
     );
     const halfExtent = 7;
@@ -40,30 +39,16 @@ class ExampleInstancingState extends State<ExampleInstancing> {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _ScenePainter(scene, widget.elapsedSeconds));
-  }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(
-        sin(elapsedTime * 0.3) * 18,
-        12,
-        cos(elapsedTime * 0.3) * 18,
-      ),
-      target: vm.Vector3(0, 0, 0),
+    return SceneView(
+      scene,
+      cameraBuilder: (elapsed) {
+        final t = elapsed.inMicroseconds / 1e6;
+        return PerspectiveCamera(
+          position: vm.Vector3(sin(t * 0.3) * 18, 12, cos(t * 0.3) * 18),
+          target: vm.Vector3(0, 0, 0),
+        );
+      },
+      onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
     );
-
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

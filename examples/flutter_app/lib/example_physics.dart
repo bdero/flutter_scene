@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 // flutter_scene's physics BoxShape clashes with Flutter's painting
 // BoxShape, and flutter_scene's Material class clashes with the Flutter
 // Material widget. This example uses the physics BoxShape and the Flutter
 // Material widget, so each conflicting name is hidden from the other
 // import.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
@@ -24,8 +24,7 @@ import 'example_settings.dart';
 /// autosteps low ledges, climbs the staircase, and can jump onto the
 /// platforms and the dynamic box stack.
 class ExamplePhysics extends StatefulWidget {
-  const ExamplePhysics({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExamplePhysics({super.key});
 
   @override
   ExamplePhysicsState createState() => ExamplePhysicsState();
@@ -81,7 +80,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   static final vm.Vector3 _spawn = vm.Vector3(0, 1.2, 0);
 
-  double _lastElapsed = 0;
+  // Drives the 2D vignette overlay painted on top of the scene; updated each
+  // frame from [_vignette] so the overlay repaints without rebuilding.
+  final ValueNotifier<double> _vignetteListenable = ValueNotifier<double>(0.0);
 
   @override
   void initState() {
@@ -123,6 +124,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   @override
   void dispose() {
     _collisionSub?.cancel();
+    _vignetteListenable.dispose();
     super.dispose();
   }
 
@@ -892,15 +894,70 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   // --- Build ----------------------------------------------------------------
 
+  static const double _dragYawPerPixel = 0.006;
+  static const double _dragPitchPerPixel = 0.005;
+  static const double _keyYawRate = 2.2;
+  static const double _keyPitchRate = 1.6;
+
+  // Advances the camera, physics, and trigger easing each frame. SceneView
+  // supplies the frame delta; clamp it so a long first frame (or a tab
+  // regaining focus) does not snap the camera or take a huge physics step.
+  void _onTick(Duration elapsed, double deltaSeconds) {
+    final dt = deltaSeconds.clamp(0.0, 0.05);
+
+    // Orbit the camera from a drag (pixels) and held arrow keys (rate).
+    final drag = _input.lookDelta.clone();
+    _input.lookDelta.setZero();
+    _camera.orbit(
+      drag.x * _dragYawPerPixel + _input.lookRate.x * _keyYawRate * dt,
+      drag.y * _dragPitchPerPixel - _input.lookRate.y * _keyPitchRate * dt,
+    );
+
+    // Advance physics + per-frame component updates with the ticker delta,
+    // then follow the character's now-current interpolated pose.
+    _driveKinematics(dt);
+    scene.update(dt);
+    _camera.follow(_character.footPosition, dt);
+
+    // Ease the glow / vignette toward whether Dash is inside the trigger,
+    // and push the eased color onto the box material.
+    final target = _inTrigger ? 1.0 : 0.0;
+    final k = 1.0 - math.exp(-6.0 * dt);
+    _triggerGlow += (target - _triggerGlow) * k;
+    _vignette += (target - _vignette) * k;
+    _vignetteListenable.value = _vignette;
+    final glow = _triggerGlow;
+    _triggerMaterial
+      ..baseColorFactor = _lerpV4(
+        ExamplePhysicsState._triggerIdleColor,
+        ExamplePhysicsState._triggerActiveColor,
+        glow,
+      )
+      ..emissiveFactor = _lerpV4(
+        ExamplePhysicsState._triggerIdleEmissive,
+        ExamplePhysicsState._triggerActiveEmissive,
+        glow,
+      );
+
+    exampleSettings.applyTo(scene);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         CharacterControls(
           input: _input,
-          child: CustomPaint(
-            painter: _PlaygroundPainter(this, widget.elapsedSeconds),
-            child: const SizedBox.expand(),
+          child: SceneView(
+            scene,
+            cameraBuilder: (elapsed) => _camera.camera,
+            onTick: _onTick,
+          ),
+        ),
+        // The trigger vignette, composited on top of the rendered scene.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(painter: _VignettePainter(_vignetteListenable)),
           ),
         ),
         // Top-centre, clear of the example picker (top-left) and the
@@ -919,73 +976,25 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   }
 }
 
-class _PlaygroundPainter extends CustomPainter {
-  _PlaygroundPainter(this.state, this.elapsedSeconds);
+vm.Vector4 _lerpV4(vm.Vector4 a, vm.Vector4 b, double t) => vm.Vector4(
+  a.x + (b.x - a.x) * t,
+  a.y + (b.y - a.y) * t,
+  a.z + (b.z - a.z) * t,
+  a.w + (b.w - a.w) * t,
+);
 
-  final ExamplePhysicsState state;
-  final double elapsedSeconds;
+/// Darkens the edges of the frame, fading in with the listenable value (0..1).
+class _VignettePainter extends CustomPainter {
+  _VignettePainter(this.t) : super(repaint: t);
 
-  static const double _dragYawPerPixel = 0.006;
-  static const double _dragPitchPerPixel = 0.005;
-  static const double _keyYawRate = 2.2;
-  static const double _keyPitchRate = 1.6;
+  final ValueListenable<double> t;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Frame delta. Clamp so a long first frame (or a tab regaining focus)
-    // does not snap the camera or take a huge physics step.
-    final dt = (elapsedSeconds - state._lastElapsed).clamp(0.0, 0.05);
-    state._lastElapsed = elapsedSeconds;
-
-    // Orbit the camera from a drag (pixels) and held arrow keys (rate).
-    final input = state._input;
-    final drag = input.lookDelta.clone();
-    input.lookDelta.setZero();
-    state._camera.orbit(
-      drag.x * _dragYawPerPixel + input.lookRate.x * _keyYawRate * dt,
-      drag.y * _dragPitchPerPixel - input.lookRate.y * _keyPitchRate * dt,
-    );
-
-    // Advance physics + per-frame component updates with the ticker delta,
-    // then follow the character's now-current interpolated pose.
-    state._driveKinematics(dt);
-    state.scene.update(dt);
-    state._camera.follow(state._character.footPosition, dt);
-
-    // Ease the glow / vignette toward whether Dash is inside the trigger,
-    // and push the eased color onto the box material.
-    final target = state._inTrigger ? 1.0 : 0.0;
-    final k = 1.0 - math.exp(-6.0 * dt);
-    state._triggerGlow += (target - state._triggerGlow) * k;
-    state._vignette += (target - state._vignette) * k;
-    final glow = state._triggerGlow;
-    state._triggerMaterial
-      ..baseColorFactor = _lerpV4(
-        ExamplePhysicsState._triggerIdleColor,
-        ExamplePhysicsState._triggerActiveColor,
-        glow,
-      )
-      ..emissiveFactor = _lerpV4(
-        ExamplePhysicsState._triggerIdleEmissive,
-        ExamplePhysicsState._triggerActiveEmissive,
-        glow,
-      );
-
-    exampleSettings.applyTo(state.scene);
-    state.scene.render(
-      state._camera.camera,
-      canvas,
-      viewport: Offset.zero & size,
-    );
-
-    _paintVignette(canvas, size, state._vignette);
-  }
-
-  // Darkens the edges of the frame, fading in with [t] (0..1).
-  static void _paintVignette(Canvas canvas, Size size, double t) {
-    if (t <= 0.001) return;
+    final amount = t.value;
+    if (amount <= 0.001) return;
     final rect = Offset.zero & size;
-    final maxAlpha = (0.72 * t).clamp(0.0, 1.0);
+    final maxAlpha = (0.72 * amount).clamp(0.0, 1.0);
     final shader = RadialGradient(
       center: Alignment.center,
       radius: 0.9,
@@ -995,15 +1004,8 @@ class _PlaygroundPainter extends CustomPainter {
     canvas.drawRect(rect, Paint()..shader = shader);
   }
 
-  static vm.Vector4 _lerpV4(vm.Vector4 a, vm.Vector4 b, double t) => vm.Vector4(
-    a.x + (b.x - a.x) * t,
-    a.y + (b.y - a.y) * t,
-    a.z + (b.z - a.z) * t,
-    a.w + (b.w - a.w) * t,
-  );
-
   @override
-  bool shouldRepaint(covariant _PlaygroundPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _VignettePainter oldDelegate) => true;
 }
 
 class _HintCard extends StatelessWidget {

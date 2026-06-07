@@ -7,8 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 
 class ExampleAnimation extends StatefulWidget {
-  const ExampleAnimation({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleAnimation({super.key});
 
   @override
   ExampleAnimationState createState() => ExampleAnimationState();
@@ -82,9 +81,22 @@ class ExampleAnimationState extends State<ExampleAnimation>
     }
     return Stack(
       children: [
-        SizedBox.expand(
-          child: CustomPaint(
-            painter: _ScenePainter(scene, widget.elapsedSeconds),
+        Positioned.fill(
+          child: SceneView(
+            scene,
+            cameraBuilder: (elapsed) {
+              final rotationAmount = elapsed.inMicroseconds / 1e6 * 0.5;
+              const distance = 6.0;
+              return PerspectiveCamera(
+                position: vm.Vector3(
+                  sin(rotationAmount) * distance,
+                  2,
+                  cos(rotationAmount) * distance,
+                ),
+                target: vm.Vector3(0, 1.5, 0),
+              );
+            },
+            onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
           ),
         ),
         // Door open slider
@@ -99,7 +111,7 @@ class ExampleAnimationState extends State<ExampleAnimation>
                     Slider(
                       value: clip!.weight,
                       onChanged: (value) {
-                        clip.weight = value;
+                        setState(() => clip.weight = value);
                       },
                     ),
                 ],
@@ -112,9 +124,11 @@ class ExampleAnimationState extends State<ExampleAnimation>
                     max: 2,
                     value: walkClip!.playbackTimeScale,
                     onChanged: (value) {
-                      idleClip!.playbackTimeScale = value;
-                      walkClip!.playbackTimeScale = value;
-                      runClip!.playbackTimeScale = value;
+                      setState(() {
+                        idleClip!.playbackTimeScale = value;
+                        walkClip!.playbackTimeScale = value;
+                        runClip!.playbackTimeScale = value;
+                      });
                     },
                   ),
                 ],
@@ -124,30 +138,4 @@ class ExampleAnimationState extends State<ExampleAnimation>
       ],
     );
   }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    double rotationAmount = elapsedTime * 0.5;
-    const double distance = 6;
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(
-        sin(rotationAmount) * distance,
-        2,
-        cos(rotationAmount) * distance,
-      ),
-      target: vm.Vector3(0, 1.5, 0),
-    );
-
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

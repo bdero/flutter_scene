@@ -7,8 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 
 class ExampleCar extends StatefulWidget {
-  const ExampleCar({super.key, this.elapsedSeconds = 0});
-  final double elapsedSeconds;
+  const ExampleCar({super.key});
 
   @override
   ExampleCarState createState() => ExampleCarState();
@@ -95,31 +94,28 @@ class ExampleCarState extends State<ExampleCar>
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Rotate the wheels at a given speed.
-    final wheelSpeed = nodes['WheelBack.L']!.amount;
-    wheelRotation += wheelSpeed / 10;
-
-    for (final wheelName in ['WheelBack.L', 'WheelBack.R']) {
-      final wheel = nodes[wheelName]!;
-      wheel.node.localTransform = wheel.startTransform.clone()
-        ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
-    }
-
-    final wheelTurn = nodes['WheelFront.L']!.amount;
-
-    for (final wheelName in ['WheelFront.L', 'WheelFront.R']) {
-      final wheel = nodes[wheelName]!;
-      wheel.node.localTransform =
-          wheel.startTransform.clone() *
-          vm.Matrix4.rotationY(-wheelTurn / 2) *
-          vm.Matrix4.rotationZ(-wheelRotation);
-    }
-
     return Stack(
       children: [
-        SizedBox.expand(
-          child: CustomPaint(
-            painter: _ScenePainter(scene, widget.elapsedSeconds),
+        Positioned.fill(
+          child: SceneView(
+            scene,
+            cameraBuilder: (elapsed) {
+              final rotationAmount = elapsed.inMicroseconds / 1e6 * 0.2;
+              return PerspectiveCamera(
+                position:
+                    vm.Vector3(
+                      sin(rotationAmount) * 5,
+                      2,
+                      cos(rotationAmount) * 5,
+                    ) *
+                    2,
+                target: vm.Vector3(0, 0, 0),
+              );
+            },
+            onTick: (elapsed, deltaSeconds) {
+              _updateWheels();
+              exampleSettings.applyTo(scene);
+            },
           ),
         ),
         // Door open slider
@@ -138,10 +134,12 @@ class ExampleCarState extends State<ExampleCar>
                   Slider(
                     value: nodes[doorName]!.amount,
                     onChanged: (value) {
-                      final door = nodes[doorName]!;
-                      door.node.localTransform = door.startTransform.clone()
-                        ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
-                      door.amount = value;
+                      setState(() {
+                        final door = nodes[doorName]!;
+                        door.node.localTransform = door.startTransform.clone()
+                          ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
+                        door.amount = value;
+                      });
                     },
                   ),
               ],
@@ -152,25 +150,29 @@ class ExampleCarState extends State<ExampleCar>
                 Slider(
                   value: nodes['Frunk']!.amount,
                   onChanged: (value) {
-                    final door = nodes['Frunk']!;
-                    door.node.localTransform = door.startTransform.clone()
-                      ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
-                    door.amount = value;
+                    setState(() {
+                      final door = nodes['Frunk']!;
+                      door.node.localTransform = door.startTransform.clone()
+                        ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
+                      door.amount = value;
+                    });
                   },
                 ),
                 Slider(
                   value: nodes['Trunk']!.amount,
                   onChanged: (value) {
-                    final door = nodes['Trunk']!;
-                    door.node.localTransform = door.startTransform.clone()
-                      ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
-                    door.amount = value;
+                    setState(() {
+                      final door = nodes['Trunk']!;
+                      door.node.localTransform = door.startTransform.clone()
+                        ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
+                      door.amount = value;
+                    });
                   },
                 ),
                 Slider(
                   value: nodes['WheelBack.L']!.amount,
                   onChanged: (value) {
-                    nodes['WheelBack.L']!.amount = value;
+                    setState(() => nodes['WheelBack.L']!.amount = value);
                   },
                 ),
                 Slider(
@@ -178,7 +180,7 @@ class ExampleCarState extends State<ExampleCar>
                   max: 1,
                   value: nodes['WheelFront.L']!.amount,
                   onChanged: (value) {
-                    nodes['WheelFront.L']!.amount = value;
+                    setState(() => nodes['WheelFront.L']!.amount = value);
                   },
                 ),
               ],
@@ -188,26 +190,26 @@ class ExampleCarState extends State<ExampleCar>
       ],
     );
   }
-}
 
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene, this.elapsedTime);
-  Scene scene;
-  double elapsedTime;
+  // Advances the wheel spin/steer each frame from the slider-driven amounts.
+  void _updateWheels() {
+    final wheelSpeed = nodes['WheelBack.L']!.amount;
+    wheelRotation += wheelSpeed / 10;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    double rotationAmount = elapsedTime * 0.2;
-    final camera = PerspectiveCamera(
-      position:
-          vm.Vector3(sin(rotationAmount) * 5, 2, cos(rotationAmount) * 5) * 2,
-      target: vm.Vector3(0, 0, 0),
-    );
+    for (final wheelName in ['WheelBack.L', 'WheelBack.R']) {
+      final wheel = nodes[wheelName]!;
+      wheel.node.localTransform = wheel.startTransform.clone()
+        ..rotate(vm.Vector3(0, 0, -1), wheelRotation);
+    }
 
-    exampleSettings.applyTo(scene);
-    scene.render(camera, canvas, viewport: Offset.zero & size);
+    final wheelTurn = nodes['WheelFront.L']!.amount;
+
+    for (final wheelName in ['WheelFront.L', 'WheelFront.R']) {
+      final wheel = nodes[wheelName]!;
+      wheel.node.localTransform =
+          wheel.startTransform.clone() *
+          vm.Matrix4.rotationY(-wheelTurn / 2) *
+          vm.Matrix4.rotationZ(-wheelRotation);
+    }
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
