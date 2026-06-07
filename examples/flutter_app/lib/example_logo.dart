@@ -13,26 +13,24 @@ class ExampleLogo extends StatefulWidget {
   ExampleLogoState createState() => ExampleLogoState();
 }
 
-class ExampleLogoState extends State<ExampleLogo>
-    with SceneModelReloadMixin<ExampleLogo> {
+class ExampleLogoState extends State<ExampleLogo> {
   Scene scene = Scene();
   bool loaded = false;
 
   @override
-  List<String> get reloadableModelSources => const [
-    'assets_src/flutter_logo_baked.glb',
-  ];
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  @override
-  Future<void> buildScene() async {
-    // Load first, then swap synchronously, so the current scene stays valid
-    // during the async load when this runs on hot reload.
+  Future<void> _load() async {
+    // The model hot reloads in place: loadModel swaps a re-exported GLB into
+    // this node automatically, and the logo holds only the root, so no reload
+    // callback is needed.
     final value = await loadModel('assets_src/flutter_logo_baked.glb');
     if (!mounted) {
       return;
     }
-
-    scene.removeAll();
 
     // The directional key light and shadows are driven by the shared settings
     // panel via ExampleSettings.applyTo.

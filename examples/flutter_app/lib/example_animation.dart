@@ -13,8 +13,7 @@ class ExampleAnimation extends StatefulWidget {
   ExampleAnimationState createState() => ExampleAnimationState();
 }
 
-class ExampleAnimationState extends State<ExampleAnimation>
-    with SceneModelReloadMixin<ExampleAnimation> {
+class ExampleAnimationState extends State<ExampleAnimation> {
   Scene scene = Scene();
   bool loaded = false;
   AnimationClip? idleClip;
@@ -22,18 +21,19 @@ class ExampleAnimationState extends State<ExampleAnimation>
   AnimationClip? walkClip;
 
   @override
-  List<String> get reloadableModelSources => const ['assets_src/dash.glb'];
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  @override
-  Future<void> buildScene() async {
-    // Load first, then swap synchronously, so the current model stays valid
-    // during the async load when this runs on hot reload.
+  Future<void> _load() async {
+    // The model hot reloads in place. The clips below are held by reference and
+    // re-bound automatically across a reload (their playback state and the
+    // slider bindings survive), so no reload callback is needed.
     final modelNode = await loadModel('assets_src/dash.glb');
     if (!mounted) {
       return;
     }
-
-    scene.removeAll();
 
     for (final animation in modelNode.parsedAnimations) {
       debugPrint('Animation: ${animation.name}');
