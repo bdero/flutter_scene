@@ -23,13 +23,15 @@ void main(List<String> args) {
       manifestFileName: 'shaders/example.shaderbundle.json',
     );
     // Compile the .fmat custom material into its own bundle plus a parameter
-    // sidecar, consumed by the "Toon (.fmat)" example through
-    // PreprocessedMaterial. Produces build/shaderbundles/materials.shaderbundle
-    // and materials.fmat.json (both listed as assets in pubspec.yaml).
+    // sidecar, consumed by the "Toon (.fmat)" example through loadFmatMaterial.
+    // dataAssetsIfAvailable registers the bundle, sidecar, and index as
+    // DataAssets (so the material resolves by source path and hot reloads),
+    // falling back to the legacy build/shaderbundles/* files otherwise.
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
       materials: ['materials/toon.fmat'],
+      assetMode: MaterialAssetMode.dataAssetsIfAvailable,
     );
   });
 }
