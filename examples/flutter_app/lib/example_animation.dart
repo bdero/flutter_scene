@@ -14,7 +14,8 @@ class ExampleAnimation extends StatefulWidget {
   ExampleAnimationState createState() => ExampleAnimationState();
 }
 
-class ExampleAnimationState extends State<ExampleAnimation> {
+class ExampleAnimationState extends State<ExampleAnimation>
+    with SceneModelReloadMixin<ExampleAnimation> {
   Scene scene = Scene();
   bool loaded = false;
   AnimationClip? idleClip;
@@ -22,38 +23,42 @@ class ExampleAnimationState extends State<ExampleAnimation> {
   AnimationClip? walkClip;
 
   @override
-  void initState() {
-    final dashModel = loadModel('assets_src/dash.glb').then((modelNode) {
-      for (final animation in modelNode.parsedAnimations) {
-        debugPrint('Animation: ${animation.name}');
-      }
+  List<String> get reloadableModelSources => const ['assets_src/dash.glb'];
 
-      scene.add(modelNode);
+  @override
+  Future<void> buildScene() async {
+    // Idempotent: safe to call again when the model changes on hot reload.
+    scene.removeAll();
 
-      idleClip =
-          modelNode.createAnimationClip(modelNode.findAnimationByName('Idle')!)
-            ..loop = true
-            ..play();
-      walkClip =
-          modelNode.createAnimationClip(modelNode.findAnimationByName('Walk')!)
-            ..loop = true
-            ..weight = 0
-            ..play();
-      runClip =
-          modelNode.createAnimationClip(modelNode.findAnimationByName('Run')!)
-            ..loop = true
-            ..weight = 0
-            ..play();
+    final modelNode = await loadModel('assets_src/dash.glb');
+    for (final animation in modelNode.parsedAnimations) {
+      debugPrint('Animation: ${animation.name}');
+    }
+
+    scene.add(modelNode);
+
+    idleClip =
+        modelNode.createAnimationClip(modelNode.findAnimationByName('Idle')!)
+          ..loop = true
+          ..play();
+    walkClip =
+        modelNode.createAnimationClip(modelNode.findAnimationByName('Walk')!)
+          ..loop = true
+          ..weight = 0
+          ..play();
+    runClip =
+        modelNode.createAnimationClip(modelNode.findAnimationByName('Run')!)
+          ..loop = true
+          ..weight = 0
+          ..play();
+
+    debugPrint('Scene loaded.');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      loaded = true;
     });
-
-    Future.wait([dashModel]).then((_) {
-      debugPrint('Scene loaded.');
-      setState(() {
-        loaded = true;
-      });
-    });
-
-    super.initState();
   }
 
   @override
