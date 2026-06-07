@@ -917,7 +917,13 @@ base class Node implements SceneGraph {
   }
 
   Node _cloneAndCollectSkins(bool recursive, List<Skin> clonedSkins) {
-    Node result = Node(name: name, localTransform: localTransform, mesh: mesh);
+    // Clone the mesh wrapper so each instance owns its primitives (and can be
+    // reskinned independently); the geometry and materials stay shared.
+    Node result = Node(
+      name: name,
+      localTransform: localTransform,
+      mesh: mesh?.clone(),
+    );
     result.isJoint = isJoint;
     // Preserve the coordinate-convention flag so a cloned scene root's
     // handedness flip is still excluded from winding parity (otherwise the

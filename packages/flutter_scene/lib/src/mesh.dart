@@ -40,6 +40,19 @@ base class Mesh {
   /// [MeshPrimitive] pairs a separate [Geometry] with its own [Material].
   Mesh.primitives({required this.primitives});
 
+  /// Returns a shallow copy: a new [Mesh] with new [MeshPrimitive]s that
+  /// reuse this mesh's [Geometry] and [Material] instances.
+  ///
+  /// The heavy GPU resources (geometry buffers, textures) stay shared, but
+  /// the new primitives are independent slots, so reassigning a clone's
+  /// `primitive.material` does not affect the original or sibling clones.
+  /// Used by [Node.clone] so model instances can be reskinned per instance.
+  Mesh clone() => Mesh.primitives(
+    primitives: [
+      for (final p in primitives) MeshPrimitive(p.geometry, p.material),
+    ],
+  );
+
   /// The list of [MeshPrimitive] objects that make up the [Geometry] and [Material] of the 3D model.
   final List<MeshPrimitive> primitives;
 
