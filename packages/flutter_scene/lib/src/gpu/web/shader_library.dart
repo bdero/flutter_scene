@@ -31,6 +31,13 @@ base class ShaderLibrary {
     );
   }
 
+  /// Mirrors flutter_gpu's in-place shader hot reload on native. The web
+  /// backend compiles its own GLSL, so reloading would mean re-fetching and
+  /// recompiling the bundle (an async operation); for now this is a no-op so
+  /// the shim surface matches. Web shader hot reload is not yet supported.
+  // TODO(web-shader-reload): re-fetch and recompile the bundle in place.
+  static void reinitialize(String assetKey) {}
+
   /// Load and compile a `.shaderbundle` asset.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
     final data = await rootBundle.load(assetName);

@@ -176,6 +176,7 @@ final class FmatMaterialRegistry {
     HotReloadCoordinator.instance.registerMaterial(
       material,
       sidecarAssetKey: index.sidecarAssetKey,
+      shaderBundleAssetKey: index.shaderBundleAssetKey,
       entryName: resolution.entry.entryName,
     );
     return material;
