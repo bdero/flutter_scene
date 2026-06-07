@@ -101,11 +101,17 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
 
   @override
   Future<void> buildScene() async {
-    // Idempotent: safe to call again when the model changes on hot reload.
+    // Load the model first, then swap the scene in synchronously. This runs on
+    // hot reload too, so the current scene must stay valid during the async
+    // load; only the final swap clears and rebuilds.
+    final carRoot = await loadModel('assets_src/fcar.glb');
+    if (!mounted) {
+      return;
+    }
+
     scene.removeAll();
     _carParts.clear();
     _carPartsReady = false;
-    carNode = null;
 
     // The directional "sun" and its cascaded shadows are driven by the shared
     // settings panel via ExampleSettings.applyTo.
@@ -131,7 +137,6 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
 
     // The example car drives the loop. It is wrapped in a parent node so
     // its imported transform is left intact, and scaled from its bounds.
-    final carRoot = await loadModel('assets_src/fcar.glb');
     carRoot.name = 'Car';
     final parent = Node()..add(carRoot);
     scene.add(parent);
@@ -153,7 +158,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
     }
     _carPartsReady = _carParts.length == _carPartNames.length;
 
-    if (mounted) setState(() => carNode = parent);
+    setState(() => carNode = parent);
   }
 
   // Adds the road's surface ribbon plus its edge and center marking

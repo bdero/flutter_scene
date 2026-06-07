@@ -27,10 +27,15 @@ class ExampleAnimationState extends State<ExampleAnimation>
 
   @override
   Future<void> buildScene() async {
-    // Idempotent: safe to call again when the model changes on hot reload.
+    // Load first, then swap synchronously, so the current model stays valid
+    // during the async load when this runs on hot reload.
+    final modelNode = await loadModel('assets_src/dash.glb');
+    if (!mounted) {
+      return;
+    }
+
     scene.removeAll();
 
-    final modelNode = await loadModel('assets_src/dash.glb');
     for (final animation in modelNode.parsedAnimations) {
       debugPrint('Animation: ${animation.name}');
     }

@@ -60,10 +60,9 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
 
   @override
   Future<void> buildScene() async {
-    // Clear previously loaded content so this is safe to call again when the
-    // model (or its source GLB) changes on hot reload.
-    scene.removeAll();
-    _dashGroup.removeAll();
+    // Load the bundle, sidecar, and model first, then swap synchronously. This
+    // also runs on hot reload, so the current scene must stay valid during the
+    // async load; only the final swap clears and rebuilds.
 
     // Load the .fmat bundle and its parameter sidecar that buildMaterials
     // produces. Use the async loader: shader bundles can't be read
@@ -85,6 +84,9 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
     final toonMetadata = (metadata['FmatToon'] as Map).cast<String, Object?>();
 
     final dash = await loadModel('assets_src/dash.glb');
+    if (!mounted) {
+      return;
+    }
     dash.name = 'Dash';
 
     // Build one PreprocessedMaterial; every skinned primitive on the model
@@ -96,7 +98,6 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
       metadata: toonMetadata,
     );
     _refreshParameters(material);
-    _toonMaterial = material;
 
     _applyMaterialToAllPrimitives(dash, material);
 
@@ -107,10 +108,13 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
       ..loop = true
       ..play();
 
+    // Swap in the freshly loaded content.
+    scene.removeAll();
+    _dashGroup.removeAll();
+    _toonMaterial = material;
     _dashGroup.add(dash);
     scene.add(_dashGroup);
     scene.exposure = 1.5;
-    if (!mounted) return;
     setState(() {
       loaded = true;
     });

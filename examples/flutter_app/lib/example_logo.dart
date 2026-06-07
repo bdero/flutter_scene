@@ -26,7 +26,13 @@ class ExampleLogoState extends State<ExampleLogo>
 
   @override
   Future<void> buildScene() async {
-    // Idempotent: safe to call again when the model changes on hot reload.
+    // Load first, then swap synchronously, so the current scene stays valid
+    // during the async load when this runs on hot reload.
+    final value = await loadModel('assets_src/flutter_logo_baked.glb');
+    if (!mounted) {
+      return;
+    }
+
     scene.removeAll();
 
     // The directional key light and shadows are driven by the shared settings
@@ -45,15 +51,11 @@ class ExampleLogoState extends State<ExampleLogo>
     ground.localTransform = vm.Matrix4.translation(vm.Vector3(0.0, -1.0, 0.0));
     scene.add(ground);
 
-    final value = await loadModel('assets_src/flutter_logo_baked.glb');
     value.name = 'FlutterLogo';
     scene.add(value);
     debugPrint('Model loaded: ${value.name}');
 
     debugPrint('Scene loaded.');
-    if (!mounted) {
-      return;
-    }
     setState(() {
       loaded = true;
     });
