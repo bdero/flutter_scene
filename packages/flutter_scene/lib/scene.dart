@@ -77,4 +77,6 @@ export 'src/scene.dart';
 export 'src/shaders.dart';
 export 'src/skin.dart';
 export 'src/surface.dart';
+export 'src/widgets/scene_view.dart'
+    show SceneCameraBuilder, SceneScope, SceneTickCallback, SceneView;
 export 'src/tone_mapping.dart';
