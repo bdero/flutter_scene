@@ -950,6 +950,35 @@ base class Node implements SceneGraph {
     return result;
   }
 
+  /// Replaces this node's contents (children, mesh, skin, and parsed
+  /// animations) with a fresh clone of [template], in place, while preserving
+  /// this node's identity, [localTransform], [name], parent, and
+  /// [excludeFromWindingParity].
+  ///
+  /// Used by model hot reload: a re-imported model template is swapped into the
+  /// live node the app already added to the scene, so the app does not rebuild
+  /// the scene or re-`add` anything. Any [AnimationClip]s created on this node
+  /// keep playing and re-bind to the new subtree by node name.
+  ///
+  /// References the app holds to *inner* nodes of the old subtree become stale
+  /// after this; hold the model root (the node this is called on) and re-resolve
+  /// descendants by name if needed.
+  void reloadFromTemplate(Node template) {
+    final fresh = template.clone();
+    removeAll();
+    for (final child in List<Node>.of(fresh.children)) {
+      fresh.remove(child);
+      add(child);
+    }
+    mesh = fresh.mesh;
+    skin = fresh.skin;
+    _animations
+      ..clear()
+      ..addAll(fresh._animations);
+    _animationPlayer?.rebind(this, animations: _animations);
+    markBoundsDirty();
+  }
+
   /// Detaches this node from its parent in the scene graph.
   ///
   /// Once detached, this node is removed from its parent's list of children, effectively
