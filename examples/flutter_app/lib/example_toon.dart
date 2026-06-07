@@ -54,10 +54,9 @@ class _ExampleToonState extends State<ExampleToon>
 
   @override
   Future<void> buildScene() async {
-    // Clear previously loaded content so this is safe to call again when the
-    // model (or its source GLB) changes on hot reload.
-    scene.removeAll();
-    _dashGroup.removeAll();
+    // Load the shader bundle and model first, then swap synchronously. This
+    // also runs on hot reload, so the current scene must stay valid during the
+    // async load; only the final swap clears and rebuilds.
 
     // Load the toon shader bundle the example app's build hook produces.
     // Use the async loader: shader bundles can't be read synchronously on
@@ -74,6 +73,9 @@ class _ExampleToonState extends State<ExampleToon>
     }
 
     final dash = await loadModel('assets_src/dash.glb');
+    if (!mounted) {
+      return;
+    }
     dash.name = 'Dash';
 
     // Build one ShaderMaterial; every skinned primitive on the model
@@ -86,7 +88,6 @@ class _ExampleToonState extends State<ExampleToon>
       'base_color_texture',
       Material.getWhitePlaceholderTexture(),
     );
-    _toonMaterial = material;
 
     _applyMaterialToAllPrimitives(dash, material);
 
@@ -97,10 +98,13 @@ class _ExampleToonState extends State<ExampleToon>
       ..loop = true
       ..play();
 
+    // Swap in the freshly loaded content.
+    scene.removeAll();
+    _dashGroup.removeAll();
+    _toonMaterial = material;
     _dashGroup.add(dash);
     scene.add(_dashGroup);
     scene.exposure = 1.5;
-    if (!mounted) return;
     setState(() {
       loaded = true;
     });

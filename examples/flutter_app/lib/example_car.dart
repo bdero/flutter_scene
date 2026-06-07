@@ -36,11 +36,21 @@ class ExampleCarState extends State<ExampleCar>
 
   @override
   Future<void> buildScene() async {
-    // Idempotent: safe to call again when the model changes on hot reload.
+    // Load everything first, then swap it in synchronously. This method also
+    // runs on hot reload, so the currently rendered model must stay valid (and
+    // `nodes` populated) throughout the async load; only the final swap clears
+    // and rebuilds, with no async gap in between.
+    final value = await loadModel('assets_src/fcar.glb');
+    final environment = await EnvironmentMap.fromAssets(
+      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+    );
+    if (!mounted) {
+      return;
+    }
+
     scene.removeAll();
     nodes.clear();
 
-    final value = await loadModel('assets_src/fcar.glb');
     value.name = 'Car';
     scene.add(value);
     debugPrint('Model loaded: ${value.name}');
@@ -61,16 +71,10 @@ class ExampleCarState extends State<ExampleCar>
       nodes[doorName] = NodeState(door, door.localTransform.clone());
     }
 
-    final environment = await EnvironmentMap.fromAssets(
-      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
-    );
     scene.environment = environment;
     scene.exposure = 2.5;
 
     debugPrint('Scene loaded.');
-    if (!mounted) {
-      return;
-    }
     setState(() {
       loaded = true;
     });
