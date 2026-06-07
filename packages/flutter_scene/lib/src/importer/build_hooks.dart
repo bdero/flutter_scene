@@ -29,8 +29,11 @@ const String _dataAssetsUnavailableMessage =
     'channel build or use ModelAssetMode.legacyOnly and list the generated '
     '`build/models/*.model` files in `flutter.assets`.';
 
-/// Returns the DataAsset name for a generated `.model` output.
-String modelDataAssetName(String fileName) => 'flutter_scene/model/$fileName';
+/// Returns the DataAsset name for a generated `.model` output, where
+/// [relativeModelPath] is the source path relative to the package root with its
+/// extension swapped to `.model` (for example `assets/vehicles/car.model`).
+String modelDataAssetName(String relativeModelPath) =>
+    'flutter_scene/model/$relativeModelPath';
 
 /// Returns the Flutter asset-bundle key for a model DataAsset.
 String modelFlutterAssetKey({required String package, required String name}) =>
@@ -39,9 +42,11 @@ String modelFlutterAssetKey({required String package, required String name}) =>
 /// Returns the Flutter asset-bundle key for a generated `.model` DataAsset.
 String modelFlutterAssetKeyFor({
   required String package,
-  required String fileName,
-}) =>
-    modelFlutterAssetKey(package: package, name: modelDataAssetName(fileName));
+  required String relativeModelPath,
+}) => modelFlutterAssetKey(
+  package: package,
+  name: modelDataAssetName(relativeModelPath),
+);
 
 /// Discovers `.glb` source files below the package's `assets/` directory,
 /// returned as paths relative to [packageRoot] in stable (sorted) order.
@@ -118,20 +123,29 @@ void buildModels({
     return;
   }
 
-  final outDir = Directory.fromUri(packageRoot.resolve(outputDirectory));
-  outDir.createSync(recursive: true);
+  final modelsRoot = packageRoot.resolve(outputDirectory);
 
   for (final inputFilePath in inputs) {
-    String outputFileName = Uri(path: inputFilePath).pathSegments.last;
-    if (!outputFileName.endsWith('.glb')) {
+    if (!inputFilePath.endsWith('.glb')) {
       throw Exception(
         'Input file must be a .glb file. Given file path: $inputFilePath',
       );
     }
-    outputFileName =
-        '${outputFileName.substring(0, outputFileName.lastIndexOf('.'))}.model';
+    if (inputFilePath.startsWith('../') || inputFilePath.contains('/../')) {
+      throw Exception(
+        'Model source must be inside the package: $inputFilePath. Place it '
+        'under the package (for example in assets/), using a symlink if needed.',
+      );
+    }
 
-    final outputModelUri = outDir.uri.resolve(outputFileName);
+    // Key models by their full path relative to the package root (extension
+    // swapped to .model), so two models with the same file name in different
+    // directories do not collide.
+    final relativeModelPath =
+        '${inputFilePath.substring(0, inputFilePath.length - '.glb'.length)}.model';
+    final outputModelUri = modelsRoot.resolve(relativeModelPath);
+    Directory.fromUri(outputModelUri.resolve('.')).createSync(recursive: true);
+
     importGltf(
       inputFilePath,
       outputModelUri.toFilePath(),
@@ -146,7 +160,7 @@ void buildModels({
       buildOutput.assets.data.add(
         DataAsset(
           package: buildInput.packageName,
-          name: modelDataAssetName(outputFileName),
+          name: modelDataAssetName(relativeModelPath),
           file: outputModelUri,
         ),
       );

@@ -69,7 +69,7 @@ class _ExampleToonState extends State<ExampleToon> {
       );
     }
 
-    final dash = await Node.fromAsset('build/models/dash.model');
+    final dash = await loadModel('assets_src/dash.glb');
     dash.name = 'Dash';
 
     // Build one ShaderMaterial; every skinned primitive on the model

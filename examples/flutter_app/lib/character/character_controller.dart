@@ -48,7 +48,7 @@ class CharacterController extends Component {
   CharacterController({
     required this.input,
     required this.camera,
-    this.modelAsset = 'build/models/dash.model',
+    this.modelSource = 'assets_src/dash.glb',
     this.maxSpeed = 7.0,
     this.acceleration = 40.0,
     this.deceleration = 30.0,
@@ -69,7 +69,7 @@ class CharacterController extends Component {
   /// The follow camera, used as the basis for camera-relative movement.
   final ThirdPersonCamera camera;
 
-  final String modelAsset;
+  final String modelSource;
 
   /// Top horizontal speed, m/s.
   final double maxSpeed;
@@ -184,7 +184,7 @@ class CharacterController extends Component {
 
   @override
   Future<void> onLoad() async {
-    final model = await Node.fromAsset(modelAsset);
+    final model = await loadModel(modelSource);
     final pivot = Node()..add(model);
     node.add(pivot);
     _pivot = pivot;

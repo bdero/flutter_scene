@@ -7,12 +7,15 @@ void main(List<String> args) {
     buildModels(
       buildInput: config,
       buildOutput: output,
+      // Reference the shared corpus through the in-package `assets_src` symlink
+      // so each model is keyed by a path relative to the package root.
       inputFilePaths: [
-        '../assets_src/two_triangles.glb',
-        '../assets_src/flutter_logo_baked.glb',
-        '../assets_src/dash.glb',
-        '../assets_src/fcar.glb',
+        'assets_src/two_triangles.glb',
+        'assets_src/flutter_logo_baked.glb',
+        'assets_src/dash.glb',
+        'assets_src/fcar.glb',
       ],
+      assetMode: ModelAssetMode.dataAssetsIfAvailable,
     );
     await buildShaderBundleJson(
       buildInput: config,
