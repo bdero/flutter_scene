@@ -41,9 +41,8 @@ export 'src/material/shader_material.dart';
 export 'src/material/unlit_material.dart';
 export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial;
+export 'src/hot_reload/hot_reload_coordinator.dart' show ModelReloadCallback;
 export 'src/importer/model_registry.dart' show ModelRegistry, loadModel;
-export 'src/importer/model_reload.dart'
-    show ModelReloadTracker, SceneModelReloadMixin;
 
 export 'src/ambient_occlusion.dart';
 export 'src/asset_helpers.dart';

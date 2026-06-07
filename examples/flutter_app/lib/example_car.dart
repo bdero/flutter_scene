@@ -21,8 +21,7 @@ class NodeState {
   double amount = 0;
 }
 
-class ExampleCarState extends State<ExampleCar>
-    with SceneModelReloadMixin<ExampleCar> {
+class ExampleCarState extends State<ExampleCar> {
   Scene scene = Scene();
   bool loaded = false;
 
@@ -30,16 +29,42 @@ class ExampleCarState extends State<ExampleCar>
 
   Map<String, NodeState> nodes = {};
 
-  @override
-  List<String> get reloadableModelSources => const ['assets_src/fcar.glb'];
+  // All posable car parts, and the subset driven by the door/lid sliders
+  // (the rest are wheels, posed each frame by _updateWheels).
+  static const List<String> _partNames = [
+    'DoorFront.L',
+    'DoorFront.R',
+    'DoorBack.L',
+    'DoorBack.R',
+    'Frunk',
+    'Trunk',
+    'WheelFront.L',
+    'WheelFront.R',
+    'WheelBack.L',
+    'WheelBack.R',
+  ];
+  static const List<String> _doorNames = [
+    'DoorFront.L',
+    'DoorFront.R',
+    'DoorBack.L',
+    'DoorBack.R',
+    'Frunk',
+    'Trunk',
+  ];
 
   @override
-  Future<void> buildScene() async {
-    // Load everything first, then swap it in synchronously. This method also
-    // runs on hot reload, so the currently rendered model must stay valid (and
-    // `nodes` populated) throughout the async load; only the final swap clears
-    // and rebuilds, with no async gap in between.
-    final value = await loadModel('assets_src/fcar.glb');
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // The model hot reloads in place; onReload re-grabs the door/wheel nodes
+    // (preserving slider positions) since the swap replaces the node instances.
+    final value = await loadModel(
+      'assets_src/fcar.glb',
+      onReload: _onCarReloaded,
+    );
     final environment = await EnvironmentMap.fromAssets(
       radianceImagePath: 'assets/little_paris_eiffel_tower.png',
     );
@@ -47,36 +72,49 @@ class ExampleCarState extends State<ExampleCar>
       return;
     }
 
-    scene.removeAll();
-    nodes.clear();
-
     value.name = 'Car';
     scene.add(value);
-    debugPrint('Model loaded: ${value.name}');
-
-    for (final doorName in [
-      'DoorFront.L',
-      'DoorFront.R',
-      'DoorBack.L',
-      'DoorBack.R',
-      'Frunk',
-      'Trunk',
-      'WheelFront.L',
-      'WheelFront.R',
-      'WheelBack.L',
-      'WheelBack.R',
-    ]) {
-      final door = value.getChildByNamePath([doorName])!;
-      nodes[doorName] = NodeState(door, door.localTransform.clone());
-    }
+    _grabNodes(value);
 
     scene.environment = environment;
     scene.exposure = 2.5;
 
-    debugPrint('Scene loaded.');
     setState(() {
       loaded = true;
     });
+  }
+
+  void _onCarReloaded(Node car) {
+    _grabNodes(car);
+    if (mounted) setState(() {});
+  }
+
+  // (Re-)resolves the posable car parts by name, preserving each part's
+  // current slider amount, and re-applies the door/lid poses (wheels re-pose
+  // each frame in _updateWheels).
+  void _grabNodes(Node car) {
+    for (final name in _partNames) {
+      final node = car.getChildByNamePath([name])!;
+      final amount = nodes[name]?.amount ?? 0.0;
+      nodes[name] = NodeState(node, node.localTransform.clone())
+        ..amount = amount;
+    }
+    for (final name in _doorNames) {
+      _applyDoorPose(name, nodes[name]!.amount);
+    }
+  }
+
+  // Opens a door/lid to [amount] (0..1) about its hinge axis.
+  void _applyDoorPose(String name, double amount) {
+    final state = nodes[name]!;
+    final axis = switch (name) {
+      'Frunk' => vm.Vector3(0, 0, 1),
+      'Trunk' => vm.Vector3(0, 0, -1),
+      _ => vm.Vector3(0, -1, 0),
+    };
+    state.amount = amount;
+    state.node.localTransform = state.startTransform.clone()
+      ..rotate(axis, amount * pi / 2);
   }
 
   @override
@@ -134,12 +172,7 @@ class ExampleCarState extends State<ExampleCar>
                   Slider(
                     value: nodes[doorName]!.amount,
                     onChanged: (value) {
-                      setState(() {
-                        final door = nodes[doorName]!;
-                        door.node.localTransform = door.startTransform.clone()
-                          ..rotate(vm.Vector3(0, -1, 0), value * pi / 2);
-                        door.amount = value;
-                      });
+                      setState(() => _applyDoorPose(doorName, value));
                     },
                   ),
               ],
@@ -150,23 +183,13 @@ class ExampleCarState extends State<ExampleCar>
                 Slider(
                   value: nodes['Frunk']!.amount,
                   onChanged: (value) {
-                    setState(() {
-                      final door = nodes['Frunk']!;
-                      door.node.localTransform = door.startTransform.clone()
-                        ..rotate(vm.Vector3(0, 0, 1), value * pi / 2);
-                      door.amount = value;
-                    });
+                    setState(() => _applyDoorPose('Frunk', value));
                   },
                 ),
                 Slider(
                   value: nodes['Trunk']!.amount,
                   onChanged: (value) {
-                    setState(() {
-                      final door = nodes['Trunk']!;
-                      door.node.localTransform = door.startTransform.clone()
-                        ..rotate(vm.Vector3(0, 0, -1), value * pi / 2);
-                      door.amount = value;
-                    });
+                    setState(() => _applyDoorPose('Trunk', value));
                   },
                 ),
                 Slider(

@@ -27,8 +27,7 @@ class ExampleToonFmat extends StatefulWidget {
   State<ExampleToonFmat> createState() => _ExampleToonFmatState();
 }
 
-class _ExampleToonFmatState extends State<ExampleToonFmat>
-    with SceneModelReloadMixin<ExampleToonFmat> {
+class _ExampleToonFmatState extends State<ExampleToonFmat> {
   Scene scene = Scene();
   bool loaded = false;
 
@@ -51,21 +50,24 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
   PreprocessedMaterial? _toonMaterial;
 
   @override
-  List<String> get reloadableModelSources => const ['assets_src/dash.glb'];
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  @override
-  Future<void> buildScene() async {
-    // Load the material and model first, then swap synchronously. This also
-    // runs on model hot reload, so the current scene must stay valid during the
-    // async load; only the final swap clears and rebuilds.
-
+  Future<void> _load() async {
     // Load the .fmat material through the registry: it resolves the generated
     // shader bundle and parameter sidecar by source path and registers the
     // material for in-place hot reload, so editing materials/toon.fmat (culling,
-    // defaults, etc.) updates it live without a restart.
+    // GLSL body, defaults, etc.) updates it live without a restart.
     final material = await loadFmatMaterial('materials/toon.fmat');
 
-    final dash = await loadModel('assets_src/dash.glb');
+    // The model hot reloads in place; onReload re-applies the material to the
+    // freshly swapped-in primitives.
+    final dash = await loadModel(
+      'assets_src/dash.glb',
+      onReload: _reapplyMaterial,
+    );
     if (!mounted) {
       return;
     }
@@ -75,26 +77,32 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
     // tweaks are reflected everywhere. The base_color_texture sampler is
     // declared with a `default_white` hint, so it falls back to a white
     // placeholder when unset (no manual bind needed).
+    _toonMaterial = material;
     _refreshParameters(material);
     _applyMaterialToAllPrimitives(dash, material);
 
-    // Start the Walk animation looping. Dash walks in place, so the
-    // root transform doesn't drift; we drive the visible rotation
-    // via `_dashGroup.localTransform` in build() instead.
+    // Start the Walk animation looping. Dash walks in place, so the root
+    // transform doesn't drift; the visible rotation is driven via
+    // `_dashGroup.localTransform` in build(). The clip re-binds across a model
+    // reload, so it keeps playing.
     dash.createAnimationClip(dash.findAnimationByName('Walk')!)
       ..loop = true
       ..play();
 
-    // Swap in the freshly loaded content.
-    scene.removeAll();
-    _dashGroup.removeAll();
-    _toonMaterial = material;
     _dashGroup.add(dash);
     scene.add(_dashGroup);
     scene.exposure = 1.5;
     setState(() {
       loaded = true;
     });
+  }
+
+  /// Re-applies the toon material to [dash]'s primitives after a hot reload
+  /// swaps in fresh ones. (Editing the `.fmat` itself reloads the material in
+  /// place separately, via loadFmatMaterial's registration.)
+  void _reapplyMaterial(Node dash) {
+    final material = _toonMaterial;
+    if (material != null) _applyMaterialToAllPrimitives(dash, material);
   }
 
   @override

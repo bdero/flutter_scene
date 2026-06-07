@@ -27,8 +27,7 @@ class ExampleNavRoute extends StatefulWidget {
   ExampleNavRouteState createState() => ExampleNavRouteState();
 }
 
-class ExampleNavRouteState extends State<ExampleNavRoute>
-    with SceneModelReloadMixin<ExampleNavRoute> {
+class ExampleNavRouteState extends State<ExampleNavRoute> {
   final Scene scene = Scene();
 
   // The waypoints of the closed loop. The track runs through them in
@@ -105,21 +104,22 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
   );
 
   @override
-  List<String> get reloadableModelSources => const ['assets_src/fcar.glb'];
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  @override
-  Future<void> buildScene() async {
-    // Load the model first, then swap the scene in synchronously. This runs on
-    // hot reload too, so the current scene must stay valid during the async
-    // load; only the final swap clears and rebuilds.
-    final carRoot = await loadModel('assets_src/fcar.glb');
+  Future<void> _load() async {
+    // The model hot reloads in place; onReload re-grabs the car parts (the swap
+    // replaces the inner node instances). _applyCarParts re-poses them each
+    // frame, so only the references need refreshing.
+    final carRoot = await loadModel(
+      'assets_src/fcar.glb',
+      onReload: _grabCarParts,
+    );
     if (!mounted) {
       return;
     }
-
-    scene.removeAll();
-    _carParts.clear();
-    _carPartsReady = false;
 
     // The directional "sun" and its cascaded shadows are driven by the shared
     // settings panel via ExampleSettings.applyTo.
@@ -156,17 +156,26 @@ class ExampleNavRouteState extends State<ExampleNavRoute>
       carLift = -bounds.min.y * carScale;
     }
 
-    // Capture the doors and wheels so the controls submenu can pose
-    // them; each part remembers its imported transform to pose from.
+    // Capture the doors and wheels so the controls submenu can pose them.
+    _grabCarParts(carRoot);
+
+    setState(() => carNode = parent);
+  }
+
+  // (Re-)resolves the posable car parts by name, preserving each part's current
+  // slider amount. Each part remembers its imported transform to pose from;
+  // _applyCarParts re-poses them every frame. Also used as the model reload
+  // callback, since a reload swaps the inner node instances.
+  void _grabCarParts(Node carRoot) {
     for (final name in _carPartNames) {
       final node = carRoot.getChildByNamePath([name]);
       if (node != null) {
-        _carParts[name] = _CarPart(node, node.localTransform.clone());
+        final amount = _carParts[name]?.amount ?? 0.0;
+        _carParts[name] = _CarPart(node, node.localTransform.clone())
+          ..amount = amount;
       }
     }
     _carPartsReady = _carParts.length == _carPartNames.length;
-
-    setState(() => carNode = parent);
   }
 
   // Adds the road's surface ribbon plus its edge and center marking

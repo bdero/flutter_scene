@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
 
 const String _modelAssetMarker = 'flutter_scene/model/';
@@ -108,8 +109,25 @@ final class ModelRegistry {
   }
 
   /// Loads the model whose source is [sourcePath] as a [Node].
-  Future<Node> loadModel(String sourcePath, {String? package}) {
-    return Node.fromAsset(resolveKey(sourcePath, package: package));
+  ///
+  /// Pass [onReload] to be notified after a hot reload swaps this model's
+  /// content in place (to re-apply materials or re-grab inner nodes); see
+  /// [ModelReloadCallback].
+  Future<Node> loadModel(
+    String sourcePath, {
+    String? package,
+    ModelReloadCallback? onReload,
+  }) async {
+    final key = resolveKey(sourcePath, package: package);
+    final node = await Node.fromAsset(key);
+    // Track for in-place hot reload: a re-exported model swaps into this node
+    // without rebuilding the scene. Debug-only.
+    HotReloadCoordinator.instance.registerModel(
+      node,
+      assetKey: key,
+      onReload: onReload,
+    );
+    return node;
   }
 
   static Future<List<String>> _loadAssetManifestKeys(AssetBundle bundle) async {
@@ -136,11 +154,14 @@ String _modelId(String sourcePath) {
 ///
 /// Pass [package] to disambiguate when the same source path is provided by more
 /// than one package.
+/// Pass [onReload] to be notified after a hot reload swaps this model's content
+/// in place; see [ModelReloadCallback].
 Future<Node> loadModel(
   String sourcePath, {
   String? package,
   AssetBundle? bundle,
+  ModelReloadCallback? onReload,
 }) async {
   final registry = await ModelRegistry.load(bundle: bundle);
-  return registry.loadModel(sourcePath, package: package);
+  return registry.loadModel(sourcePath, package: package, onReload: onReload);
 }
