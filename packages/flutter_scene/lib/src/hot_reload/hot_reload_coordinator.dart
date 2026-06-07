@@ -97,6 +97,10 @@ class HotReloadCoordinator {
         // engine, so reflection offsets stay correct either way.
         try {
           material.updateFromMetadata(material.fragmentShader, meta);
+          debugPrint(
+            'flutter_scene: hot-reloaded .fmat material "${r.entryName}" '
+            '(culling: ${meta['culling']}, blending: ${meta['blending']})',
+          );
         } catch (_) {
           // A transient bundle/metadata mismatch mid-reload; the next reload
           // (with consistent assets) refreshes it.
