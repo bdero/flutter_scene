@@ -75,12 +75,13 @@ index as DataAssets. This path requires a Flutter toolchain with Dart DataAssets
 support; while the feature is experimental, that means a supported Flutter
 master build with `enable-dart-data-assets` enabled.
 
-Then load the material by name:
+Then load the material by its source path (relative to the package root, so
+two materials that share a `name` in different directories do not collide):
 
 ```dart
 import 'package:flutter_scene/scene.dart';
 
-final toon = await loadFmatMaterial('Toon');
+final toon = await loadFmatMaterial('materials/toon.fmat');
 toon.parameters
   ..setColor('base_color', const Color(0xFFE0A030))
   ..setInt('band_count', 4)
@@ -90,7 +91,9 @@ node.mesh!.primitives[0].material = toon;
 ```
 
 No generated files need to be listed in `flutter.assets` for the DataAssets
-workflow.
+workflow. Materials loaded this way **hot reload**: render the scene with a
+`SceneView` and editing `materials/toon.fmat` updates the running app in place
+(see [Hot reload](#hot-reload)).
 
 For the legacy workflow, compile it from your app's `hook/build.dart`:
 
@@ -406,16 +409,37 @@ encoder-controlled. See [issue #22][issue22].
 
 ---
 
+# Hot reload
+
+A `.fmat` material loaded with `loadFmatMaterial` (the DataAssets workflow) hot
+reloads in place. Render the scene through a `SceneView`; on hot reload it asks
+the framework's hot-reload coordinator to refresh any `.fmat` whose source
+changed. Every part of a `.fmat` reloads with no app-side code and no restart:
+
+- **Render state** (`culling`, `blending`, `shading_model`) and **parameter
+  defaults** — re-read from the regenerated sidecar and applied to the live
+  material. A value you set at runtime (`setColor`, etc.) is preserved; an
+  unset parameter takes the edited default.
+- **The GLSL body** (`Surface()`) — the changed `.shaderbundle` is reloaded in
+  place via `ShaderLibrary.reinitialize` and the affected render pipelines are
+  rebuilt, so a shader edit shows up live.
+
+Requirements: the DataAssets workflow (`dart run flutter_scene:init` +
+`--enable-dart-data-assets`), so the build hook re-runs on a `.fmat` edit and
+re-syncs the regenerated assets; and a `SceneView` (or its `reassemble` hook)
+displaying the scene. A `.fmat` edit re-runs the build hook, so the reload takes
+a moment while the shader recompiles. Hot reload is debug-only and tree-shaken
+from release builds. (`ShaderMaterial`, the raw escape hatch below, does not
+participate; it carries no sidecar.)
+
+---
+
 # Current state and what's next
 
-The `.fmat` format, its preprocessor, the `buildMaterials` hook, and
-`PreprocessedMaterial` are implemented. Remaining and in-flight work, tracked in
-[issue #22][issue22]:
+The `.fmat` format, its preprocessor, the `buildMaterials` hook,
+`PreprocessedMaterial`, and hot reload are implemented. Remaining and in-flight
+work, tracked in [issue #22][issue22]:
 
-- **Hot reload.** Today you restart to pick up a shader edit (the build hook
-  reruns on a restart when an input changes). The Flutter GPU shader hot-reload
-  chain is landing upstream (flutter/flutter#186346); once it rolls into the
-  Flutter SDK, editing a `.fmat` will hot reload in place with no app changes.
 - **The `light()` hook** for a custom per-light BRDF (toon banding inside the
   engine light loop) is not implemented; use `unlit` for fully custom shading
   for now.

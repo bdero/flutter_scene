@@ -26,6 +26,12 @@ Future<void> main(List<String> args) async {
     );
     stdout.writeln('');
     stdout.writeln('  flutter config --enable-dart-data-assets');
+    stdout.writeln('');
+    stdout.writeln(
+      'Then load materials by source path with loadFmatMaterial and render with '
+      'SceneView; editing a .fmat hot reloads in place. To load and hot reload '
+      '.glb models the same way (loadModel), also call buildModels in the hook.',
+    );
   }
   if (result.status == InitHookStatus.needsManualInstall) {
     exitCode = 1;

@@ -1,7 +1,7 @@
 # Flutter Scene example
 
-A minimal scene: load a glTF model and draw it with a `PerspectiveCamera`
-inside a `CustomPainter`.
+A minimal scene: load a glTF model and display it with a `PerspectiveCamera`
+through `SceneView`.
 
 ```dart
 import 'package:flutter/material.dart';
@@ -23,7 +23,7 @@ class _ModelViewState extends State<ModelView> {
     super.initState();
     // Static resources (shader bundle, BRDF LUT) load asynchronously.
     Scene.initializeStaticResources().then((_) async {
-      final model = await Node.fromAsset('assets/model.glb');
+      final model = await Node.fromGlbAsset('assets/model.glb');
       scene.add(model);
       if (mounted) setState(() => ready = true);
     });
@@ -32,28 +32,25 @@ class _ModelViewState extends State<ModelView> {
   @override
   Widget build(BuildContext context) {
     if (!ready) return const Center(child: CircularProgressIndicator());
-    return CustomPaint(painter: _ScenePainter(scene), child: const SizedBox.expand());
-  }
-}
-
-class _ScenePainter extends CustomPainter {
-  _ScenePainter(this.scene);
-  final Scene scene;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final camera = PerspectiveCamera(
-      position: vm.Vector3(0, 2, 5),
-      target: vm.Vector3(0, 0, 0),
+    // SceneView renders the scene and drives its per-frame loop; no
+    // hand-written CustomPainter is needed.
+    return SceneView(
+      scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 2, 5),
+        target: vm.Vector3(0, 0, 0),
+      ),
     );
-    scene.render(camera, canvas, viewport: Offset.zero & size);
   }
-
-  @override
-  bool shouldRepaint(covariant _ScenePainter oldDelegate) => true;
 }
 ```
 
-For a full, runnable app exercising materials, skinning/animation, custom
-shaders, and more, see
+For an animated camera, pass `cameraBuilder: (elapsed) => ...` instead of a
+fixed `camera`.
+
+To preprocess models offline and hot reload them (and `.fmat` materials) in
+place, load by source path with `loadModel` / `loadFmatMaterial` and a
+DataAssets build hook. For a full runnable app exercising materials,
+skinning/animation, custom shaders, and hot reload, see
 [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app).
+```
