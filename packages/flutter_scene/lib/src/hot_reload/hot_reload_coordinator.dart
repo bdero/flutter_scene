@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
+import 'package:flutter_scene/src/scene_encoder.dart';
 
 /// Coordinates in-place asset hot reload (debug only).
 ///
@@ -102,6 +103,16 @@ class HotReloadCoordinator {
         // so the next pipeline build uses the new code. The material's existing
         // Shader objects keep their identity.
         gpu.ShaderLibrary.reinitialize(key);
+        // The Shader objects kept their identity, so the pipeline cache (keyed
+        // by the shader pair) still points at pipelines built from the old
+        // code. Evict the affected ones so the next draw rebuilds them.
+        final affected = <gpu.Shader>{};
+        for (final r in _materials) {
+          if (r.shaderBundleAssetKey != key) continue;
+          final m = r.material.target;
+          if (m != null) affected.add(m.fragmentShader);
+        }
+        evictPipelinesForShaders(affected);
         debugPrint('flutter_scene: hot-reloaded shader bundle "$key"');
       } catch (_) {
         // The running engine may predate in-place shader reload, or the bytes
