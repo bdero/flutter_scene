@@ -95,7 +95,12 @@ class HotReloadCoordinator {
         // (culling, blending, defaults) leaves the shader unchanged, and a
         // GLSL edit reloads the shader in place (preserving identity) via the
         // engine, so reflection offsets stay correct either way.
-        material.updateFromMetadata(material.fragmentShader, meta);
+        try {
+          material.updateFromMetadata(material.fragmentShader, meta);
+        } catch (_) {
+          // A transient bundle/metadata mismatch mid-reload; the next reload
+          // (with consistent assets) refreshes it.
+        }
       }
     }
   }
