@@ -18,7 +18,7 @@ class _ChannelBinding {
 /// [AnimationPlayer] that normalizes their weights when the sum exceeds
 /// `1`.
 class AnimationClip {
-  final Animation _animation;
+  Animation _animation;
   final List<_ChannelBinding> _bindings = [];
 
   double _playbackTime = 0;
@@ -139,6 +139,22 @@ class AnimationClip {
       _playbackTime =
           _animation.endTime - (_playbackTime.abs() % _animation.endTime);
     }
+  }
+
+  /// Re-resolves this clip's channel bindings against [newTarget] (matching
+  /// nodes by name), keeping all playback state ([playbackTime], [weight],
+  /// [playing], etc.). Pass [animation] to swap in a reloaded version of the
+  /// same animation (e.g. edited curves from a hot-reloaded model); the
+  /// playback head is clamped to the new end time.
+  ///
+  /// Used by model hot reload after a subtree is swapped in place; the channel
+  /// targets resolve by name, so they re-attach to the new nodes.
+  void rebind(Node newTarget, {Animation? animation}) {
+    if (animation != null) {
+      _animation = animation;
+      _playbackTime = clampDouble(_playbackTime, 0, _animation.endTime);
+    }
+    _bindToTarget(newTarget);
   }
 
   void _bindToTarget(Node target) {

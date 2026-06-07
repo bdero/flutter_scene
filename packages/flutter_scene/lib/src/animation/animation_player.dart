@@ -42,6 +42,27 @@ class AnimationPlayer {
     return _clips[name];
   }
 
+  /// Re-binds every registered clip to the swapped-in subtree rooted at
+  /// [newRoot] and rebuilds the bind-pose table from the new nodes' current
+  /// transforms. Each clip keeps its playback state; its animation is refreshed
+  /// from [animations] by name when a match exists (so reloaded curves take
+  /// effect) and left as-is otherwise.
+  ///
+  /// Used by model hot reload ([Node.reloadFromTemplate]) after a subtree is
+  /// replaced in place.
+  void rebind(Node newRoot, {List<Animation> animations = const []}) {
+    final byName = <String, Animation>{for (final a in animations) a.name: a};
+    _targetTransforms.clear();
+    for (final clip in _clips.values) {
+      clip.rebind(newRoot, animation: byName[clip._animation.name]);
+      for (final binding in clip._bindings) {
+        _targetTransforms[binding.node] = AnimationTransforms(
+          bindPose: DecomposedTransform.fromMatrix(binding.node.localTransform),
+        );
+      }
+    }
+  }
+
   /// Advances all registered clips by [deltaSeconds] and applies their
   /// blended result to the bound nodes.
   ///
