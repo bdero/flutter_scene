@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene/src/importer/importer.dart';
+import 'package:flutter_scene/src/importer/model_cache.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -461,10 +462,23 @@ base class Node implements SceneGraph {
   /// ```dart
   /// final node = await Node.fromAsset('path/to/asset.model');
   /// ```
-  static Future<Node> fromAsset(String assetPath) async {
-    final buffer = await rootBundle.load(assetPath);
-    return fromFlatbuffer(buffer);
+  /// The imported model is cached by [assetPath]: it is parsed and uploaded to
+  /// the GPU once, and each call returns a fresh [clone] sharing those GPU
+  /// resources. Use [evictModelCache] to drop a cached import (for example to
+  /// pick up a changed asset on hot reload).
+  static Future<Node> fromAsset(String assetPath) {
+    return _modelCache.load(assetPath, () async {
+      final buffer = await rootBundle.load(assetPath);
+      return fromFlatbuffer(buffer);
+    });
   }
+
+  static final ModelImportCache _modelCache = ModelImportCache();
+
+  /// Evicts [assetPath] (or the entire model cache when null) so the next
+  /// [fromAsset] re-reads and re-imports it.
+  static void evictModelCache([String? assetPath]) =>
+      _modelCache.evict(assetPath);
 
   /// Load a glTF binary (GLB) model directly from raw bytes.
   ///
