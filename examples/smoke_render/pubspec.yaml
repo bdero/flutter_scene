@@ -13,7 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu_shaders: ^0.5.0
-  flutter_scene: ^0.16.0
+  flutter_scene: ^0.17.0
   hooks: ^2.0.0
   vector_math: ^2.1.4
 

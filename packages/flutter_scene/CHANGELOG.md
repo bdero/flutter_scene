@@ -1,3 +1,29 @@
+## 0.17.0
+
+* Added `SceneView`, a widget that renders a `Scene` and drives its per-frame
+  loop, so apps no longer write their own `CustomPainter`. It takes a fixed
+  `camera` or a `cameraBuilder(elapsed)` and exposes the scene to descendants
+  through `SceneScope`.
+* Added debug-mode hot reload for assets, driven by `SceneView`. Editing a
+  `.fmat` updates the running scene in place (culling, blending, shading model,
+  and parameter defaults, plus the GLSL body) with no app code, and re-exporting
+  a `.glb` swaps the model in place while preserving its transform and animation
+  playback. Load materials and models by source path (`loadFmatMaterial`,
+  `loadModel`) to participate; `loadModel` takes an optional `onReload` callback
+  for re-applying per-instance customizations after a model is swapped in.
+* Added DataAssets-backed GLB model import: `buildModels` can auto-discover
+  `assets/**/*.glb` and register the generated `.model` files as DataAssets, and
+  `loadModel` / `ModelRegistry` load them by source path. Requires Dart data
+  assets (`flutter config --enable-dart-data-assets`). Imported models are
+  cached, so repeated loads are cheap (`Node.fromAsset` returns a clone).
+* Added `Node.reloadFromTemplate`, `AnimationClip.rebind` / `AnimationPlayer.rebind`
+  (in-place model reload with animation re-binding), and `Mesh.clone` so cloned
+  model instances get independent materials.
+* **Breaking:** `loadFmatMaterial` now resolves a material by its `.fmat` source
+  path (for example `materials/toon.fmat`) instead of by material name, so
+  materials that share a name in different directories no longer collide.
+* Building `.fmat` materials and models now requires `flutter_gpu_shaders` 0.5.0.
+
 ## 0.16.0
 
 * Added an abstract physics contract so a physics engine can drive scene
