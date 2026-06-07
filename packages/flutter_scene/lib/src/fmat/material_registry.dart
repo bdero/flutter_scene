@@ -59,6 +59,10 @@ final class FmatMaterialIndexEntry {
 }
 
 /// Resolves and loads `.fmat` materials registered through DataAssets.
+///
+/// Materials are keyed by their `.fmat` source path relative to the owning
+/// package's root, so two materials that share a name in different directories
+/// do not collide.
 final class FmatMaterialRegistry {
   FmatMaterialRegistry._(this._bundle, this._indexes);
 
@@ -91,12 +95,18 @@ final class FmatMaterialRegistry {
       assetKey.contains(_indexAssetPrefix) &&
       assetKey.endsWith(_indexAssetSuffix);
 
-  /// Resolves [materialName] to exactly one generated bundle/index entry.
+  /// Resolves [sourcePath] (the `.fmat` source path relative to the owning
+  /// package's root, with or without the `.fmat` extension) to exactly one
+  /// generated bundle/index entry.
+  ///
+  /// Keying by source path (rather than material name) means two materials that
+  /// share a name in different directories do not collide.
   FmatMaterialResolution resolve(
-    String materialName, {
+    String sourcePath, {
     String? package,
     String? bundleName,
   }) {
+    final id = _materialId(sourcePath);
     final matches = <FmatMaterialResolution>[];
     for (final index in _indexes) {
       if (package != null && index.package != package) {
@@ -105,16 +115,18 @@ final class FmatMaterialRegistry {
       if (bundleName != null && index.bundleName != bundleName) {
         continue;
       }
-      final entry = index.materials[materialName];
-      if (entry != null) {
-        matches.add(FmatMaterialResolution(index: index, entry: entry));
+      for (final entry in index.materials.values) {
+        final source = entry.source;
+        if (source != null && _materialId(source) == id) {
+          matches.add(FmatMaterialResolution(index: index, entry: entry));
+        }
       }
     }
     if (matches.isEmpty) {
       throw StateError(
-        'No DataAssets-backed .fmat material named "$materialName" was found. '
-        'Run `dart run flutter_scene:init`, enable Dart data assets on a '
-        'supported Flutter master build, and rebuild the app.',
+        'No DataAssets-backed .fmat material for source "$sourcePath" was '
+        'found. Run `dart run flutter_scene:init`, enable Dart data assets on '
+        'a supported Flutter master build, and rebuild the app.',
       );
     }
     if (matches.length > 1) {
@@ -122,21 +134,21 @@ final class FmatMaterialRegistry {
           .map((match) => '${match.index.package}/${match.index.bundleName}')
           .join(', ');
       throw StateError(
-        'Multiple DataAssets-backed .fmat materials named "$materialName" were '
-        'found: $choices. Pass package and/or bundleName to disambiguate.',
+        'Multiple DataAssets-backed .fmat materials for source "$sourcePath" '
+        'were found: $choices. Pass package and/or bundleName to disambiguate.',
       );
     }
     return matches.single;
   }
 
-  /// Loads [materialName] as a [PreprocessedMaterial].
+  /// Loads the material whose source is [sourcePath] as a [PreprocessedMaterial].
   Future<PreprocessedMaterial> loadMaterial(
-    String materialName, {
+    String sourcePath, {
     String? package,
     String? bundleName,
   }) async {
     final resolution = resolve(
-      materialName,
+      sourcePath,
       package: package,
       bundleName: bundleName,
     );
@@ -176,20 +188,29 @@ final class FmatMaterialRegistry {
   }
 }
 
-/// Loads a DataAssets-backed `.fmat` material by material name.
+/// Loads a DataAssets-backed `.fmat` material by its source path relative to
+/// the owning package's root (for example `materials/toon.fmat`).
+///
+/// Pass [package] and/or [bundleName] to disambiguate when the same source path
+/// is provided by more than one bundle.
 Future<PreprocessedMaterial> loadFmatMaterial(
-  String materialName, {
+  String sourcePath, {
   String? package,
   String? bundleName,
   AssetBundle? bundle,
 }) async {
   final registry = await FmatMaterialRegistry.load(bundle: bundle);
   return registry.loadMaterial(
-    materialName,
+    sourcePath,
     package: package,
     bundleName: bundleName,
   );
 }
+
+/// Normalizes a `.fmat` source path for keying (drops a trailing `.fmat`).
+String _materialId(String sourcePath) => sourcePath.endsWith('.fmat')
+    ? sourcePath.substring(0, sourcePath.length - '.fmat'.length)
+    : sourcePath;
 
 /// The resolved bundle/index entry for one material name.
 final class FmatMaterialResolution {

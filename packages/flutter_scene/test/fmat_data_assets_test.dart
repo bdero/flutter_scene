@@ -73,7 +73,7 @@ void main() {
   });
 
   group('FmatMaterialRegistry', () {
-    test('loads indexes and resolves a material by name', () async {
+    test('resolves a material by source path, ignoring extension', () async {
       final registry = await FmatMaterialRegistry.load(
         bundle: _JsonAssetBundle({
           'packages/example_app/flutter_scene/fmat/materials/materials.index.json':
@@ -85,17 +85,34 @@ void main() {
         ],
       );
 
-      final resolution = registry.resolve('FmatToon');
-      expect(resolution.index.package, 'example_app');
-      expect(resolution.index.bundleName, 'materials');
-      expect(resolution.index.shaderBundleAssetKey, 'shader.key');
-      expect(resolution.index.sidecarAssetKey, 'sidecar.key');
-      expect(resolution.entry.entryName, 'FmatToon');
-      expect(resolution.entry.source, 'materials/toon.fmat');
+      for (final query in ['materials/toon.fmat', 'materials/toon']) {
+        final resolution = registry.resolve(query);
+        expect(resolution.index.package, 'example_app');
+        expect(resolution.index.bundleName, 'materials');
+        expect(resolution.index.shaderBundleAssetKey, 'shader.key');
+        expect(resolution.index.sidecarAssetKey, 'sidecar.key');
+        expect(resolution.entry.entryName, 'FmatToon');
+        expect(resolution.entry.source, 'materials/toon.fmat');
+      }
+    });
+
+    test('same material name in different directories does not collide', () async {
+      final registry = await FmatMaterialRegistry.load(
+        bundle: _JsonAssetBundle({
+          'packages/example_app/flutter_scene/fmat/materials/materials.index.json':
+              _twoMaterialIndexJson(),
+        }),
+        assetKeys: const [
+          'packages/example_app/flutter_scene/fmat/materials/materials.index.json',
+        ],
+      );
+
+      expect(registry.resolve('a/toon.fmat').entry.entryName, 'Toon');
+      expect(registry.resolve('b/toon.fmat').entry.entryName, 'ToonB');
     });
 
     test(
-      'requires package or bundle disambiguation for duplicate names',
+      'requires package or bundle disambiguation for duplicate source paths',
       () async {
         final registry = await FmatMaterialRegistry.load(
           bundle: _JsonAssetBundle({
@@ -111,7 +128,7 @@ void main() {
         );
 
         expect(
-          () => registry.resolve('FmatToon'),
+          () => registry.resolve('materials/toon.fmat'),
           throwsA(
             isA<StateError>().having(
               (error) => error.message,
@@ -120,11 +137,28 @@ void main() {
             ),
           ),
         );
-        expect(registry.resolve('FmatToon', package: 'b').index.package, 'b');
+        expect(
+          registry.resolve('materials/toon.fmat', package: 'b').index.package,
+          'b',
+        );
       },
     );
   });
 }
+
+// An index whose two materials share the entry-name-keyed map but live at
+// different source paths (and have distinct entry names).
+String _twoMaterialIndexJson() => jsonEncode({
+  'schema': 1,
+  'package': 'example_app',
+  'bundleName': 'materials',
+  'shaderBundleAssetKey': 'shader.key',
+  'sidecarAssetKey': 'sidecar.key',
+  'materials': {
+    'Toon': {'entryName': 'Toon', 'source': 'a/toon.fmat'},
+    'ToonB': {'entryName': 'ToonB', 'source': 'b/toon.fmat'},
+  },
+});
 
 BuildInput _buildInput({required bool buildDataAssets}) {
   final temp = Directory.systemTemp.createTempSync('flutter_scene_build_input');
