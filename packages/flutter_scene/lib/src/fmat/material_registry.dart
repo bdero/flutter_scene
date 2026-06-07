@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 
 const String _indexAssetSuffix = '.index.json';
@@ -166,7 +167,18 @@ final class FmatMaterialRegistry {
         await _loadSidecar(index.sidecarAssetKey);
     final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
         .cast<String, Object?>();
-    return PreprocessedMaterial(fragmentShader: shader, metadata: metadata);
+    final material = PreprocessedMaterial(
+      fragmentShader: shader,
+      metadata: metadata,
+    );
+    // Track for in-place hot reload: a `.fmat` edit refreshes this material
+    // from its regenerated sidecar without rebuilding the scene. Debug-only.
+    HotReloadCoordinator.instance.registerMaterial(
+      material,
+      sidecarAssetKey: index.sidecarAssetKey,
+      entryName: resolution.entry.entryName,
+    );
+    return material;
   }
 
   static Future<List<String>> _loadAssetManifestKeys(AssetBundle bundle) async {

@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/scene.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
@@ -146,12 +147,9 @@ class _SceneViewState extends State<SceneView>
   @override
   void reassemble() {
     super.reassemble();
-    // Debug-only: hot reload. The asset-refresh coordinator is wired in a
-    // later change; for now just ensure the next frame repaints so any changes
-    // already applied to the scene are shown.
-    // TODO(hot-reload): call HotReloadCoordinator.instance.onReassemble() here
-    // once the live-instance registry lands, so changed models/materials
-    // refresh in place without an app-level mixin.
+    // Debug-only hot reload: refresh changed .fmat materials in place, then
+    // repaint so the change shows without restarting or app-side wiring.
+    HotReloadCoordinator.instance.onReassemble();
     _repaint.notify();
   }
 

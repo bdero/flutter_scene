@@ -14,11 +14,7 @@
 //      type-checked and the std140 offsets come from shader reflection, so
 //      there is no manual packing and a wrong-typed value throws.
 
-import 'dart:convert';
-
 import 'package:flutter/material.dart' hide Material;
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -59,28 +55,15 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
 
   @override
   Future<void> buildScene() async {
-    // Load the bundle, sidecar, and model first, then swap synchronously. This
-    // also runs on hot reload, so the current scene must stay valid during the
+    // Load the material and model first, then swap synchronously. This also
+    // runs on model hot reload, so the current scene must stay valid during the
     // async load; only the final swap clears and rebuilds.
 
-    // Load the .fmat bundle and its parameter sidecar that buildMaterials
-    // produces. Use the async loader: shader bundles can't be read
-    // synchronously on web (gpu.ShaderLibrary.fromAsset throws there).
-    final shaderLibrary = await gpu.loadShaderLibraryAsync(
-      'build/shaderbundles/materials.shaderbundle',
-    );
-    final toonShader = shaderLibrary?['FmatToon'];
-    if (toonShader == null) {
-      throw StateError(
-        'FmatToon shader missing from materials.shaderbundle. The build hook '
-        'should have produced it; rerun `flutter run` with a clean build.',
-      );
-    }
-    final sidecar = await rootBundle.loadString(
-      'build/shaderbundles/materials.fmat.json',
-    );
-    final metadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
-    final toonMetadata = (metadata['FmatToon'] as Map).cast<String, Object?>();
+    // Load the .fmat material through the registry: it resolves the generated
+    // shader bundle and parameter sidecar by source path and registers the
+    // material for in-place hot reload, so editing materials/toon.fmat (culling,
+    // defaults, etc.) updates it live without a restart.
+    final material = await loadFmatMaterial('materials/toon.fmat');
 
     final dash = await loadModel('assets_src/dash.glb');
     if (!mounted) {
@@ -88,16 +71,11 @@ class _ExampleToonFmatState extends State<ExampleToonFmat>
     }
     dash.name = 'Dash';
 
-    // Build one PreprocessedMaterial; every skinned primitive on the model
-    // shares it so parameter tweaks are reflected everywhere. The
-    // base_color_texture sampler is declared with a `default_white` hint, so
-    // it falls back to a white placeholder when unset (no manual bind needed).
-    final material = PreprocessedMaterial(
-      fragmentShader: toonShader,
-      metadata: toonMetadata,
-    );
+    // Every skinned primitive on the model shares one material, so parameter
+    // tweaks are reflected everywhere. The base_color_texture sampler is
+    // declared with a `default_white` hint, so it falls back to a white
+    // placeholder when unset (no manual bind needed).
     _refreshParameters(material);
-
     _applyMaterialToAllPrimitives(dash, material);
 
     // Start the Walk animation looping. Dash walks in place, so the
