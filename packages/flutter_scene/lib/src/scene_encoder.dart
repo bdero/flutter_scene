@@ -55,6 +55,21 @@ gpu.RenderPipeline _resolvePipeline(
       .createRenderPipeline(vertexShader, fragmentShader);
 }
 
+/// Drops cached pipelines that use any of [shaders] (as vertex or fragment) so
+/// the next draw rebuilds them.
+///
+/// Used after an in-place shader hot reload: `ShaderLibrary.reinitialize`
+/// reloads a [gpu.Shader]'s code while keeping its Dart identity, so the
+/// pipeline cache (keyed by the shader pair) would otherwise keep serving a
+/// pipeline built from the old code. Hidden from the public surface; called by
+/// the hot-reload coordinator.
+void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
+  if (shaders.isEmpty) return;
+  _pipelineCache.removeWhere(
+    (key, _) => shaders.contains(key.$1) || shaders.contains(key.$2),
+  );
+}
+
 /// Records draw calls for one frame's color pass into a single
 /// `gpu.RenderPass`.
 ///
