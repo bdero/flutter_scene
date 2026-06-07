@@ -23,9 +23,7 @@ class ExampleAnimationState extends State<ExampleAnimation> {
 
   @override
   void initState() {
-    final dashModel = Node.fromAsset('build/models/dash.model').then((
-      modelNode,
-    ) {
+    final dashModel = loadModel('assets_src/dash.glb').then((modelNode) {
       for (final animation in modelNode.parsedAnimations) {
         debugPrint('Animation: ${animation.name}');
       }

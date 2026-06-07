@@ -31,8 +31,9 @@ flutter:
 
   assets:
     - assets/little_paris_eiffel_tower.png
-    # Imported models.
-    - build/models/
+    # Imported models are registered as DataAssets by buildModels (loaded via
+    # loadModel); no pubspec entry is needed. Requires Dart data assets
+    # (flutter config --enable-dart-data-assets).
     # Source .glb files for the runtime importer demo.
     - assets_src/
     # Custom shader bundle for the raw-ShaderMaterial toon example.

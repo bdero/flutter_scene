@@ -80,7 +80,7 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
     final metadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
     final toonMetadata = (metadata['FmatToon'] as Map).cast<String, Object?>();
 
-    final dash = await Node.fromAsset('build/models/dash.model');
+    final dash = await loadModel('assets_src/dash.glb');
     dash.name = 'Dash';
 
     // Build one PreprocessedMaterial; every skinned primitive on the model

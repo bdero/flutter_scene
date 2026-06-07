@@ -32,7 +32,7 @@ class ExampleCarState extends State<ExampleCar> {
 
   @override
   void initState() {
-    final loadModel = Node.fromAsset('build/models/fcar.model').then((value) {
+    final modelLoaded = loadModel('assets_src/fcar.glb').then((value) {
       value.name = 'Car';
       scene.add(value);
       debugPrint('Model loaded: ${value.name}');
@@ -61,7 +61,7 @@ class ExampleCarState extends State<ExampleCar> {
       scene.exposure = 2.5;
     });
 
-    Future.wait([loadModel]).then((_) {
+    Future.wait([modelLoaded]).then((_) {
       debugPrint('Scene loaded.');
       setState(() {
         loaded = true;

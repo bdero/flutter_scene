@@ -9,12 +9,15 @@ void main() {
   group('model DataAsset helpers', () {
     test('compute stable DataAsset names and Flutter asset keys', () {
       expect(
-        modelDataAssetName('dash.model'),
-        'flutter_scene/model/dash.model',
+        modelDataAssetName('assets/vehicles/car.model'),
+        'flutter_scene/model/assets/vehicles/car.model',
       );
       expect(
-        modelFlutterAssetKeyFor(package: 'example_app', fileName: 'dash.model'),
-        'packages/example_app/flutter_scene/model/dash.model',
+        modelFlutterAssetKeyFor(
+          package: 'example_app',
+          relativeModelPath: 'assets/vehicles/car.model',
+        ),
+        'packages/example_app/flutter_scene/model/assets/vehicles/car.model',
       );
     });
   });
@@ -105,21 +108,24 @@ void main() {
           assetMode: ModelAssetMode.dataAssetsIfAvailable,
         );
 
-        // The .model was written.
+        // The .model was written under a path mirroring the source.
         expect(
           File.fromUri(
-            temp.uri.resolve('build/models/two_triangles.model'),
+            temp.uri.resolve('build/models/assets/two_triangles.model'),
           ).existsSync(),
           isTrue,
         );
 
         final output = outputBuilder.build();
 
-        // A DataAsset was emitted with the expected package and name.
+        // A DataAsset was emitted, keyed by the full source-relative path.
         final data = output.assets.data;
         expect(data, hasLength(1));
         expect(data.single.package, 'example_app');
-        expect(data.single.name, 'flutter_scene/model/two_triangles.model');
+        expect(
+          data.single.name,
+          'flutter_scene/model/assets/two_triangles.model',
+        );
 
         // The source GLB was declared as a dependency (so hot reload retriggers).
         expect(output.dependencies, contains(glbUri));

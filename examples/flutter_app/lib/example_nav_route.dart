@@ -121,7 +121,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
 
     // The example car drives the loop. It is wrapped in a parent node so
     // its imported transform is left intact, and scaled from its bounds.
-    Node.fromAsset('build/models/fcar.model').then((carRoot) {
+    loadModel('assets_src/fcar.glb').then((carRoot) {
       carRoot.name = 'Car';
       final parent = Node()..add(carRoot);
       scene.add(parent);
