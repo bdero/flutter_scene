@@ -58,8 +58,9 @@ class ExampleAnimationState extends State<ExampleAnimation> {
 
   @override
   void dispose() {
-    // Technically this isn't necessary, since `Node.fromAsset` doesn't perform
-    // a caching import.
+    // Optional: the scene is dropped with this State. `Node.fromAsset` caches
+    // the imported model template (shared across clones), so its GPU resources
+    // persist for the session regardless.
     scene.removeAll();
     super.dispose();
   }
