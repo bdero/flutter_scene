@@ -4,9 +4,10 @@ import '../fscene/binary/fsceneb.dart';
 import '../fscene/compose/compose.dart';
 import '../fscene/realize/component_codec.dart';
 import '../fscene/realize/realize.dart';
+import '../fscene/reload/reload.dart';
 import '../fscene/scene_document.dart';
+import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
-import 'model_cache.dart';
 
 const String _sceneAssetMarker = 'flutter_scene/scene/';
 const String _sceneAssetSuffix = '.fsceneb';
@@ -58,11 +59,6 @@ final class SceneRegistry {
   SceneRegistry._(this._entries);
 
   final List<SceneEntry> _entries;
-
-  // A node-template cache (the same one [ModelRegistry] uses for `.model`):
-  // the first load of a key realizes the scene and caches the template; every
-  // load returns a fresh [Node.clone] sharing the GPU resources.
-  static final ModelImportCache _cache = ModelImportCache();
 
   /// Loads the registry by scanning the asset manifest for `.fsceneb`
   /// DataAssets.
@@ -122,16 +118,16 @@ final class SceneRegistry {
     String? package,
     AssetBundle? bundle,
     FsceneComponentRegistry? registry,
-  }) {
+  }) async {
     final key = resolveKey(sourcePath, package: package);
     final assetBundle = bundle ?? rootBundle;
-    // TODO(fscene): register for content hot reload (re-import on source
-    // change) once scene hot reload lands, mirroring loadModel.
-    return _cache.load(key, () async {
+
+    // Re-reads the host document and expands any prefab instances, resolving
+    // each referenced prefab by source path against this same registry. Run on
+    // load and again on each hot reload.
+    Future<SceneDocument> readComposed() async {
       final document = await _readDocument(key, assetBundle);
-      // Expand any prefab instances, resolving each referenced prefab by its
-      // source path against this same registry.
-      final composed = document.nodes.values.any((n) => n.instance != null)
+      return document.nodes.values.any((n) => n.instance != null)
           ? await composeSceneAsync(
               document,
               load: (ref) => _readDocument(
@@ -140,15 +136,38 @@ final class SceneRegistry {
               ),
             )
           : document;
-      return realizeSceneAsync(
-        composed,
-        registry: registry,
-        bundle: assetBundle,
-      );
-    });
+    }
+
+    var current = await readComposed();
+    final root = await realizeSceneAsync(
+      current,
+      registry: registry,
+      bundle: assetBundle,
+    );
+
+    // Patch the live graph in place when the scene's `.fsceneb` changes (debug
+    // only; a no-op registration in release).
+    HotReloadCoordinator.instance.registerScene(
+      root,
+      assetKey: key,
+      onReload: () async {
+        final next = await readComposed();
+        await reloadScene(
+          root,
+          current,
+          next,
+          registry: registry,
+          bundle: assetBundle,
+        );
+        current = next;
+      },
+    );
+    return root;
   }
 
   Future<SceneDocument> _readDocument(String key, AssetBundle bundle) async {
+    // Evict so a hot reload re-reads the changed asset.
+    bundle.evict(key);
     final data = await bundle.load(key);
     return readFsceneb(
       data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),

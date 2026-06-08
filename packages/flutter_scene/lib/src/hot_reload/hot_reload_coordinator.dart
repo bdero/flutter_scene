@@ -43,12 +43,14 @@ class HotReloadCoordinator {
 
   final List<_MaterialRegistration> _materials = <_MaterialRegistration>[];
   final List<_ModelRegistration> _models = <_ModelRegistration>[];
+  final List<_SceneRegistration> _scenes = <_SceneRegistration>[];
 
-  /// Content hash of each sidecar / shader bundle / model asset last seen, to
-  /// skip unchanged assets.
+  /// Content hash of each sidecar / shader bundle / model / scene asset last
+  /// seen, to skip unchanged assets.
   final Map<String, int> _sidecarHashes = <String, int>{};
   final Map<String, int> _shaderBundleHashes = <String, int>{};
   final Map<String, int> _modelHashes = <String, int>{};
+  final Map<String, int> _sceneHashes = <String, int>{};
 
   bool _refreshing = false;
 
@@ -87,6 +89,23 @@ class HotReloadCoordinator {
     );
   }
 
+  /// Registers a scene [root] loaded from the `.fsceneb` asset [assetKey]. On
+  /// hot reload, when that asset's content changes, [onReload] is invoked to
+  /// re-read the document and patch the live graph in place (see `loadScene`).
+  /// The closure owns the re-read / re-compose / diff / patch; the coordinator
+  /// only detects the content change and drops the registration once [root] is
+  /// collected. No-op outside debug.
+  void registerScene(
+    Node root, {
+    required String assetKey,
+    required Future<void> Function() onReload,
+  }) {
+    if (!kDebugMode) return;
+    _scenes.add(
+      _SceneRegistration(WeakReference<Node>(root), assetKey, onReload),
+    );
+  }
+
   /// Called by every mounted `SceneView` on hot reload. Refreshes changed
   /// assets once per reload (callers while a refresh is already in flight are
   /// ignored). No-op outside debug.
@@ -100,11 +119,44 @@ class HotReloadCoordinator {
   Future<void> _refresh() async {
     _materials.removeWhere((r) => r.material.target == null);
     _models.removeWhere((r) => r.node.target == null);
-    if (_materials.isEmpty && _models.isEmpty) return;
+    _scenes.removeWhere((r) => r.root.target == null);
+    if (_materials.isEmpty && _models.isEmpty && _scenes.isEmpty) return;
 
     await _reinitializeChangedShaderBundles();
     await _refreshChangedSidecars();
     await _refreshChangedModels();
+    await _refreshChangedScenes();
+  }
+
+  /// Re-reads any changed `.fsceneb` scene asset and patches the live graph in
+  /// place via each registration's reload closure.
+  Future<void> _refreshChangedScenes() async {
+    if (_scenes.isEmpty) return;
+    final keys = <String>{for (final r in _scenes) r.assetKey};
+    for (final key in keys) {
+      rootBundle.evict(key);
+      List<int> bytes;
+      try {
+        final data = await rootBundle.load(key);
+        bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } catch (_) {
+        continue; // not available this reload; try again next time
+      }
+      final hash = _fnv1aBytes(bytes);
+      if (_sceneHashes[key] == hash) continue; // unchanged
+      _sceneHashes[key] = hash;
+
+      for (final r in _scenes) {
+        if (r.assetKey != key) continue;
+        if (r.root.target == null) continue;
+        try {
+          await r.onReload();
+        } catch (e) {
+          debugPrint('flutter_scene: scene reload failed for "$key": $e');
+        }
+      }
+      debugPrint('flutter_scene: hot-reloaded scene "$key"');
+    }
   }
 
   /// Reloads the GLSL of any changed `.shaderbundle` in place. Done before the
@@ -269,4 +321,12 @@ class _ModelRegistration {
   final WeakReference<Node> node;
   final String assetKey;
   final ModelReloadCallback? onReload;
+}
+
+class _SceneRegistration {
+  _SceneRegistration(this.root, this.assetKey, this.onReload);
+
+  final WeakReference<Node> root;
+  final String assetKey;
+  final Future<void> Function() onReload;
 }
