@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
+import 'package:flutter_scene/src/render/render_layers.dart';
 
 /// One drawable primitive in the flat render layer.
 ///
@@ -27,6 +28,11 @@ class RenderItem {
 
   /// Mirrors the owning node's frustum-cull opt-in, refreshed each frame.
   bool frustumCulled = true;
+
+  /// The owning node's render layers (a 32-bit bitmask), refreshed each
+  /// frame. A render pass skips this item when its view's layer mask does
+  /// not intersect (`layers & layerMask == 0`).
+  int layers = kRenderLayerAll;
 
   /// Whether the owning node's transform reverses triangle winding (a mirror
   /// up the chain). Refreshed each frame; the encoder flips cull winding when

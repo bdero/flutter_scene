@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
+import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
@@ -57,6 +58,14 @@ base class Node implements SceneGraph {
   /// computable bounds) are treated as always visible regardless of
   /// this flag.
   bool frustumCulled = true;
+
+  /// The render layers this node occupies, a 32-bit bitmask. A
+  /// [RenderView] renders this node's mesh only when its
+  /// [RenderView.layerMask] intersects these layers
+  /// (`layers & layerMask != 0`). Defaults to [kRenderLayerDefault]
+  /// (layer 0). Each node carries its own layers; the value is not
+  /// inherited by children.
+  int layers = kRenderLayerDefault;
 
   Matrix4 _localTransform;
 

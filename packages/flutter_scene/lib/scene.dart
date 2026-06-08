@@ -54,6 +54,8 @@ export 'src/components/instanced_mesh_component.dart';
 export 'src/components/mesh_component.dart';
 export 'src/instanced_mesh.dart';
 export 'src/light.dart';
+export 'src/render/render_layers.dart';
+export 'src/render_view.dart';
 export 'src/math_extensions.dart';
 export 'src/mesh.dart';
 export 'src/node.dart';

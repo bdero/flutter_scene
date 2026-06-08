@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
@@ -40,17 +41,20 @@ class DepthPrepass extends RenderGraphPass {
     required ui.Size dimensions,
     required Vector3 cameraForward,
     required double farDepth,
+    int layerMask = kRenderLayerAll,
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _cameraForward = cameraForward,
-       _farDepth = farDepth;
+       _farDepth = farDepth,
+       _layerMask = layerMask;
 
   final Camera _camera;
   final RenderScene _renderScene;
   final ui.Size _dimensions;
   final Vector3 _cameraForward;
   final double _farDepth;
+  final int _layerMask;
 
   @override
   String get name => 'DepthPrepass';
@@ -103,6 +107,7 @@ class DepthPrepass extends RenderGraphPass {
       _camera.getViewTransform(_dimensions),
       _camera.position,
       _cameraForward,
+      _layerMask,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
     commandBuffer.submit();
@@ -125,6 +130,7 @@ class _DepthPrepassEncoder {
     this._cameraTransform,
     this._cameraPosition,
     Vector3 cameraForward,
+    this._layerMask,
   ) {
     frustum = Frustum.matrix(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
@@ -146,6 +152,7 @@ class _DepthPrepassEncoder {
   final gpu.HostBuffer _transientsBuffer;
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
+  final int _layerMask;
   late final Float32List _depthInfo;
 
   static final gpu.Shader _depthShader =
@@ -166,6 +173,7 @@ class _DepthPrepassEncoder {
   /// contribution), or culled by the camera frustum.
   void submit(RenderItem item) {
     if (!item.visible) return;
+    if ((item.layers & _layerMask) == 0) return;
     if (!item.material.isOpaque()) return;
     if (item.frustumCulled) {
       final bounds = item.cullBounds;

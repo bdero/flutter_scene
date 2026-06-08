@@ -94,10 +94,12 @@ class MeshComponent extends Component {
 
     final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
+    final layers = node.layers;
     for (final item in _renderItems) {
       item.visible = true;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
+      item.layers = layers;
       item.worldTransform.setFrom(worldTransform);
       item.windingFlipped = windingFlipped;
 
