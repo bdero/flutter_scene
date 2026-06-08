@@ -71,6 +71,12 @@ Node _realizeWith(
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};
   for (final spec in document.nodes.values) {
+    if (spec.instance != null) {
+      debugPrint(
+        'fscene: node ${spec.id} is an unexpanded prefab instance; run '
+        'composeScene (or load via loadScene) before realizing',
+      );
+    }
     nodes[spec.id] = Node(
       name: spec.name,
       localTransform: spec.transform.toMatrix4(),

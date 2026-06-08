@@ -203,4 +203,56 @@ void main() {
     final composed = composeScene(host, resolve: _resolveTo(cyclic));
     expect(composed.nodes.values.where((n) => n.instance != null), isEmpty);
   });
+
+  test('composeSceneAsync loads referenced prefabs transitively, once '
+      'each', () async {
+    final inner = SceneDocument()..createNode(name: 'gear', root: true);
+    final outer = SceneDocument();
+    final machine = outer.createNode(name: 'machine', root: true);
+    final innerInstance = outer.createNode(name: 'innerInstance');
+    innerInstance.instance = PrefabInstanceSpec(
+      source: const AssetRef('inner'),
+    );
+    machine.children.add(innerInstance.id);
+
+    final host = SceneDocument();
+    host.createNode(name: 'top', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('outer'),
+    );
+
+    final docs = {'inner': inner, 'outer': outer};
+    final loads = <String>[];
+    final composed = await composeSceneAsync(
+      host,
+      load: (ref) async {
+        loads.add(ref.key);
+        return docs[ref.key]!;
+      },
+    );
+
+    expect(composed.nodes.values.where((n) => n.instance != null), isEmpty);
+    expect(composed.rootNodes.single.name, 'top');
+    expect(loads, unorderedEquals(['outer', 'inner']));
+  });
+
+  test('composeSceneAsync loads a shared prefab source only once', () async {
+    final prefab = SceneDocument()..createNode(name: 'p', root: true);
+    final host = SceneDocument();
+    host.createNode(name: 'a', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+    host.createNode(name: 'b', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+
+    var loads = 0;
+    await composeSceneAsync(
+      host,
+      load: (_) async {
+        loads++;
+        return prefab;
+      },
+    );
+    expect(loads, 1);
+  });
 }

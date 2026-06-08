@@ -1,7 +1,10 @@
 import 'package:flutter/services.dart';
 
+import '../fscene/binary/fsceneb.dart';
+import '../fscene/compose/compose.dart';
 import '../fscene/realize/component_codec.dart';
-import '../fscene/realize/loader.dart';
+import '../fscene/realize/realize.dart';
+import '../fscene/scene_document.dart';
 import '../node.dart';
 import 'model_cache.dart';
 
@@ -125,13 +128,31 @@ final class SceneRegistry {
     // TODO(fscene): register for content hot reload (re-import on source
     // change) once scene hot reload lands, mirroring loadModel.
     return _cache.load(key, () async {
-      final data = await assetBundle.load(key);
-      return loadFscenebBytesAsync(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      final document = await _readDocument(key, assetBundle);
+      // Expand any prefab instances, resolving each referenced prefab by its
+      // source path against this same registry.
+      final composed = document.nodes.values.any((n) => n.instance != null)
+          ? await composeSceneAsync(
+              document,
+              load: (ref) => _readDocument(
+                resolveKey(ref.key, package: package),
+                assetBundle,
+              ),
+            )
+          : document;
+      return realizeSceneAsync(
+        composed,
         registry: registry,
         bundle: assetBundle,
       );
     });
+  }
+
+  Future<SceneDocument> _readDocument(String key, AssetBundle bundle) async {
+    final data = await bundle.load(key);
+    return readFsceneb(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
   }
 
   static Future<List<String>> _loadAssetManifestKeys(AssetBundle bundle) async {

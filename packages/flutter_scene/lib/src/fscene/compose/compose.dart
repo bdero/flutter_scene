@@ -18,12 +18,16 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
 /// Resolves a prefab [AssetRef] to its (uncomposed) [SceneDocument].
 typedef PrefabResolver = SceneDocument Function(AssetRef ref);
+
+/// Asynchronously loads a prefab [AssetRef]'s (uncomposed) [SceneDocument].
+typedef AsyncPrefabLoader = Future<SceneDocument> Function(AssetRef ref);
 
 /// Expands every prefab instance in [document], returning a new document with
 /// no instance nodes. A document with no instances is returned unchanged.
@@ -35,6 +39,41 @@ SceneDocument composeScene(
   SceneDocument document, {
   required PrefabResolver resolve,
 }) => _compose(document, resolve, <String>{});
+
+/// Loads every prefab document [document] references (transitively, breadth
+/// first, each source loaded once) via [load], then composes synchronously.
+///
+/// The async counterpart of [composeScene]: the asset loaders call this so a
+/// scene that references prefab files by source path is expanded before
+/// realizing. A reference that fails to load throws.
+Future<SceneDocument> composeSceneAsync(
+  SceneDocument document, {
+  required AsyncPrefabLoader load,
+}) async {
+  final loaded = <String, SceneDocument>{};
+  final queue = [..._prefabRefs(document)];
+  while (queue.isNotEmpty) {
+    final ref = queue.removeLast();
+    if (loaded.containsKey(ref.key)) continue;
+    final prefab = await load(ref);
+    loaded[ref.key] = prefab;
+    queue.addAll(_prefabRefs(prefab));
+  }
+  return composeScene(
+    document,
+    resolve: (ref) {
+      final prefab = loaded[ref.key];
+      if (prefab == null) {
+        throw FsceneFormatException('Unresolved prefab "${ref.key}"');
+      }
+      return prefab;
+    },
+  );
+}
+
+Iterable<AssetRef> _prefabRefs(SceneDocument doc) => doc.nodes.values
+    .where((node) => node.instance != null)
+    .map((node) => node.instance!.source);
 
 SceneDocument _compose(
   SceneDocument document,
