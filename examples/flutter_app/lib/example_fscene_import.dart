@@ -1,20 +1,14 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/importer/in_memory_import.dart'
-    show importGlbToFscenebBytes;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
-/// Imports a real `.glb` at runtime through the glTF -> `.fsceneb` importer,
-/// then realizes and renders it. The geometry is packed exactly as the
-/// `.model` path packs it, but it travels through the `.fscene` pipeline:
-/// glTF -> SceneDocument -> binary container -> live node graph.
+/// Loads a `.fsceneb` scene by source path through [loadScene]. The build hook
+/// (`buildScenes`) imported `assets_src/fcar.glb` into a `.fsceneb` DataAsset;
+/// this resolves and realizes it, the `.fscene` analog of `loadModel`.
 class ExampleFsceneImport extends StatefulWidget {
   const ExampleFsceneImport({super.key});
 
@@ -33,11 +27,7 @@ class _ExampleFsceneImportState extends State<ExampleFsceneImport> {
   }
 
   Future<void> _load() async {
-    final glb = await rootBundle.load('assets_src/fcar.glb');
-    final container = importGlbToFscenebBytes(
-      glb.buffer.asUint8List(glb.offsetInBytes, glb.lengthInBytes),
-    );
-    final car = loadFscenebBytes(container)..name = 'Car';
+    final car = (await loadScene('assets_src/fcar.glb'))..name = 'Car';
     final environment = await EnvironmentMap.fromAssets(
       radianceImagePath: 'assets/little_paris_eiffel_tower.png',
     );
