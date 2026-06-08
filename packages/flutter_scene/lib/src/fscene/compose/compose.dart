@@ -71,16 +71,20 @@ Future<SceneDocument> composeSceneAsync(
   );
 }
 
-Iterable<AssetRef> _prefabRefs(SceneDocument doc) => doc.nodes.values
-    .where((node) => node.instance != null)
-    .map((node) => node.instance!.source);
+Iterable<AssetRef> _prefabRefs(SceneDocument doc) =>
+    doc.nodes.values.where(_isEager).map((node) => node.instance!.source);
+
+bool _isEager(NodeSpec node) =>
+    node.instance != null && node.instance!.load == LoadPolicy.eager;
 
 SceneDocument _compose(
   SceneDocument document,
   PrefabResolver resolve,
   Set<String> visiting,
 ) {
-  if (document.nodes.values.every((node) => node.instance == null)) {
+  // Only eager instances are expanded here; lazy instances pass through as
+  // placeholders for the streaming layer to load on demand.
+  if (!document.nodes.values.any(_isEager)) {
     return document;
   }
 
@@ -114,8 +118,7 @@ SceneDocument _compose(
   }
   out.roots.addAll(document.roots);
 
-  for (final instance
-      in out.nodes.values.where((node) => node.instance != null).toList()) {
+  for (final instance in out.nodes.values.where(_isEager).toList()) {
     _expandInstance(out, instance, resolve, visiting);
   }
   return out;
