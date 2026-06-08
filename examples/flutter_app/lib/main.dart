@@ -12,6 +12,7 @@ import 'example_logo.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_settings.dart';
+import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
@@ -62,6 +63,7 @@ class _MyAppState extends State<MyApp> {
           return const ExamplePhysics();
         },
       ),
+      'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
     selectedExample = examples.keys.first;

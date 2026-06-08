@@ -25,6 +25,7 @@ import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
+import 'render_view.dart';
 import 'shaders.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
@@ -353,13 +354,14 @@ base class Scene implements SceneGraph {
     _tickedThisFrame = true;
   }
 
-  /// Renders the current state of this [Scene] onto the given [ui.Canvas] using the specified [Camera].
+  /// Renders [camera]'s view of this scene onto [canvas].
   ///
-  /// The [Camera] provides the perspective from which the scene is viewed, and the [ui.Canvas]
-  /// is the drawing surface onto which this [Scene] will be rendered.
+  /// The [Camera] provides the perspective from which the scene is viewed,
+  /// and the [ui.Canvas] is the drawing surface onto which this [Scene] is
+  /// rendered.
   ///
-  /// Optionally, a [ui.Rect] can be provided to define a viewport, limiting the rendering area on the canvas.
-  /// If no [ui.Rect] is specified, the entire canvas will be rendered.
+  /// Optionally, a [ui.Rect] [viewport] limits the rendering area on the
+  /// canvas. If none is specified, the entire canvas is rendered.
   ///
   /// [pixelRatio] is the multiplier from logical to physical pixels used
   /// when allocating the offscreen render target. Defaults to the
@@ -367,10 +369,45 @@ base class Scene implements SceneGraph {
   /// so the scene is rasterized at the same density Flutter is
   /// compositing the surrounding UI at. Pass a smaller value to trade
   /// fidelity for performance, or a larger one for supersampling.
+  ///
+  /// This is the single-view convenience over [renderViews].
   void render(
     Camera camera,
     ui.Canvas canvas, {
     ui.Rect? viewport,
+    double? pixelRatio,
+  }) {
+    renderViews(
+      [RenderView(camera: camera)],
+      canvas,
+      region: viewport,
+      pixelRatio: pixelRatio,
+    );
+  }
+
+  /// Renders a list of [views] of this scene onto [canvas].
+  ///
+  /// Each [RenderView] binds a camera to a normalized sub-rectangle of
+  /// [region] (its [RenderView.viewport]), a [RenderView.layerMask], and a
+  /// compositing [RenderView.order]; views are drawn lowest-order first.
+  /// This is how split-screen and picture-in-picture are rendered. [render]
+  /// is the single-view convenience over this.
+  ///
+  /// Each view renders into its own offscreen target (its own swapchain
+  /// texture and transient texture pool), so simultaneous views never share
+  /// a render target within a frame.
+  ///
+  /// [region] is the canvas rectangle the views subdivide; it defaults to
+  /// the canvas clip bounds. [pixelRatio] is the logical-to-physical
+  /// multiplier for the offscreen render targets (defaults to the view's
+  /// device pixel ratio).
+  ///
+  /// The scene is advanced once per call (a single per-frame tick), then
+  /// every view is rendered from that shared scene state.
+  void renderViews(
+    List<RenderView> views,
+    ui.Canvas canvas, {
+    ui.Rect? region,
     double? pixelRatio,
   }) {
     if (!_readyToRender) {
@@ -381,31 +418,17 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    final drawArea = viewport ?? canvas.getLocalClipBounds();
-    if (drawArea.isEmpty) {
+    final drawArea = region ?? canvas.getLocalClipBounds();
+    if (drawArea.isEmpty || views.isEmpty) {
       return;
     }
 
-    // Allocate the offscreen render target at physical-pixel resolution so
-    // the rasterized 3D content matches Flutter's framebuffer density.
-    // Without this, the texture is sized in logical pixels and the
-    // framebuffer compositor upscales it (visible as pixelation on
-    // high-DPI devices). See: https://github.com/bdero/flutter_scene/issues/60
     final dpr =
         pixelRatio ??
         ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ??
         1.0;
-    final pixelSize = ui.Size(
-      (drawArea.width * dpr).ceilToDouble(),
-      (drawArea.height * dpr).ceilToDouble(),
-    );
 
-    final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
-    final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
-      pixelSize,
-    );
-
-    // Resolve the IBL environment up front (before building the render
+    // Resolve the IBL environment up front (before building any render
     // graph): the default is built lazily here on first use, which submits
     // a one-time prefilter pass that must not be nested inside the frame's
     // render passes. Doing this in the constructor instead would break the
@@ -414,18 +437,107 @@ base class Scene implements SceneGraph {
     final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
 
     // Reuse one host buffer across frames; reset() cycles it to the next
-    // frame's backing storage.
+    // frame's backing storage. Shared by every view this frame.
     final transientsBuffer = _transientsBuffer ??= gpu.gpuContext
         .createHostBuffer();
     transientsBuffer.reset();
 
+    // Advance the scene once per frame (not once per view): tick components
+    // and animations and refresh the flat render list before the passes
+    // iterate it. Skipped when update() already ran the tick this frame.
+    if (!_tickedThisFrame) {
+      final nowMillis = DateTime.now().millisecondsSinceEpoch;
+      final lastMillis = _lastTickMillis ?? nowMillis;
+      _tick((nowMillis - lastMillis) / 1000.0);
+    }
+    _tickedThisFrame = false;
+
+    // Rebuild the spatial culling structure once if the pre-pass changed the
+    // scene, before the views' render passes query it.
+    renderScene.rebuildIfDirty();
+
     // The renderer shades a single directional light: the first one
     // registered in the graph (the [directionalLight] convenience, or a
-    // [DirectionalLightComponent] attached to any node). Its travel
-    // direction comes from the owning node's world transform.
+    // [DirectionalLightComponent] attached to any node).
     final lightComponent = renderScene.directionalLights.isEmpty
         ? null
         : renderScene.directionalLights.first;
+
+    // Composite lower-order views first.
+    final ordered = views.length == 1
+        ? views
+        : (List<RenderView>.of(views)
+            ..sort((a, b) => a.order.compareTo(b.order)));
+
+    for (var i = 0; i < ordered.length; i++) {
+      final view = ordered[i];
+      final viewArea = _viewDrawArea(drawArea, view.viewport);
+      if (viewArea.isEmpty) {
+        continue;
+      }
+      _renderViewToCanvas(
+        view: view,
+        canvas: canvas,
+        drawArea: viewArea,
+        dpr: dpr,
+        viewIndex: i,
+        environmentMap: environmentMap,
+        transientsBuffer: transientsBuffer,
+        lightComponent: lightComponent,
+      );
+    }
+  }
+
+  // Maps a view's normalized viewport rectangle (0..1) into a canvas
+  // sub-rectangle of [area]; a null viewport fills [area].
+  ui.Rect _viewDrawArea(ui.Rect area, ui.Rect? viewport) {
+    if (viewport == null) return area;
+    return ui.Rect.fromLTWH(
+      area.left + viewport.left * area.width,
+      area.top + viewport.top * area.height,
+      viewport.width * area.width,
+      viewport.height * area.height,
+    );
+  }
+
+  // Renders one [view] into [drawArea] on [canvas], using that view's own
+  // swapchain texture and transient texture pool (so simultaneous views in a
+  // frame do not share render targets). The per-frame work (tick, spatial
+  // rebuild, environment resolve, host-buffer reset) is done once by the
+  // caller; this builds and submits one view's render graph and composites
+  // the result.
+  void _renderViewToCanvas({
+    required RenderView view,
+    required ui.Canvas canvas,
+    required ui.Rect drawArea,
+    required double dpr,
+    required int viewIndex,
+    required EnvironmentMap environmentMap,
+    required gpu.HostBuffer transientsBuffer,
+    required DirectionalLightComponent? lightComponent,
+  }) {
+    final camera = view.camera;
+
+    // Allocate the offscreen render target at physical-pixel resolution so
+    // the rasterized 3D content matches Flutter's framebuffer density.
+    // Without this, the texture is sized in logical pixels and the
+    // framebuffer compositor upscales it (visible as pixelation on
+    // high-DPI devices). See: https://github.com/bdero/flutter_scene/issues/60
+    final pixelSize = ui.Size(
+      (drawArea.width * dpr).ceilToDouble(),
+      (drawArea.height * dpr).ceilToDouble(),
+    );
+    if (pixelSize.width < 1 || pixelSize.height < 1) {
+      return;
+    }
+
+    final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
+    final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
+      pixelSize,
+      viewIndex,
+    );
+    final pool = surface.transientTexturePool(viewIndex);
+
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
     // Cascaded shadows fit the camera frustum, so they require a
@@ -440,20 +552,6 @@ base class Scene implements SceneGraph {
             lightDirection,
           )
         : const <ShadowCascade>[];
-
-    // Walk the graph once to tick components and animations and refresh
-    // the flat render list before the passes iterate it. Skipped when
-    // update() already ran the tick for this frame.
-    if (!_tickedThisFrame) {
-      final nowMillis = DateTime.now().millisecondsSinceEpoch;
-      final lastMillis = _lastTickMillis ?? nowMillis;
-      _tick((nowMillis - lastMillis) / 1000.0);
-    }
-    _tickedThisFrame = false;
-
-    // Rebuild the spatial culling structure if the pre-pass changed the
-    // scene, before the render passes query it.
-    renderScene.rebuildIfDirty();
 
     final graph = RenderGraph();
     if (cascades.isNotEmpty) {
@@ -483,6 +581,7 @@ base class Scene implements SceneGraph {
           dimensions: aoDimensions,
           cameraForward: camera.forward,
           farDepth: perspective.far,
+          layerMask: view.layerMask,
         ),
       );
       graph.addPass(
@@ -511,6 +610,7 @@ base class Scene implements SceneGraph {
         directionalLightDirection: lightDirection,
         cascades: cascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
+        layerMask: view.layerMask,
       ),
     );
     // Split custom effects by where they run in the chain.
@@ -527,7 +627,6 @@ base class Scene implements SceneGraph {
       }
     }
 
-    final pool = surface.transientTexturePool;
     final width = pixelSize.width.toInt();
     final height = pixelSize.height.toInt();
     final postTime =
@@ -611,10 +710,7 @@ base class Scene implements SceneGraph {
       );
     }
 
-    graph.execute(
-      transientsBuffer: transientsBuffer,
-      texturePool: surface.transientTexturePool,
-    );
+    graph.execute(transientsBuffer: transientsBuffer, texturePool: pool);
 
     final image = swapchainColor.asImage();
     final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
