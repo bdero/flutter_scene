@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -36,13 +37,17 @@ class ResourceRealizer {
   final Map<LocalId, gpu.Texture> _textures = {};
 
   /// The live geometry for resource [id], realized and memoized on first use.
-  Geometry geometry(LocalId id) => _geometries[id] ??= _buildGeometry(id);
+  /// The result is stamped with its origin so the serializer can recover it.
+  Geometry geometry(LocalId id) =>
+      _geometries[id] ??= tagResourceOrigin(_buildGeometry(id), document, id);
 
   /// The live material for resource [id], realized and memoized on first use.
-  Material material(LocalId id) => _materials[id] ??= _buildMaterial(id);
+  Material material(LocalId id) =>
+      _materials[id] ??= tagResourceOrigin(_buildMaterial(id), document, id);
 
   /// The live texture for resource [id], realized and memoized on first use.
-  gpu.Texture texture(LocalId id) => _textures[id] ??= _buildTexture(id);
+  gpu.Texture texture(LocalId id) =>
+      _textures[id] ??= tagResourceOrigin(_buildTexture(id), document, id);
 
   Geometry _buildGeometry(LocalId id) {
     final res = document.resource(id);
