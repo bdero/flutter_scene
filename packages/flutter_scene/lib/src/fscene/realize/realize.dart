@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
+import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -81,6 +82,11 @@ Node realizeScene(SceneDocument document, {FsceneComponentRegistry? registry}) {
     }
     root.add(node);
   }
+
+  // Bind skins and attach animations now that every node exists under the
+  // root (animations resolve their targets by node name within the tree).
+  realizeSkinsAndAnimations(document, root, nodes);
+
   return root;
 }
 

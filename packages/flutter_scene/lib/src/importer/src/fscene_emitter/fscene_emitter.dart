@@ -12,8 +12,8 @@
 /// isolate. Ids are derived deterministically from the binary chunk, so
 /// re-importing the same asset yields an identical document.
 ///
-// TODO(fscene): emit skins and animations (inverse-bind-matrix and keyframe
-// payloads); bake node-level / skinned pose-union bounds for subtree culling.
+// TODO(fscene): bake node-level / skinned pose-union bounds for subtree
+// culling (the realizer treats absent bounds as always-visible meanwhile).
 library;
 
 import 'dart:math' show Random;
@@ -27,6 +27,7 @@ import '../../../fscene/binary/fsceneb.dart';
 import '../../../fscene/property_value.dart';
 import '../../../fscene/scene_document.dart';
 import '../../../fscene/specs.dart';
+import '../gltf/accessor.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
 
@@ -90,6 +91,13 @@ SceneDocument buildSceneDocument(GltfDocument doc, Uint8List bufferData) {
     meshPairs[meshIndex] = pairs;
   }
 
+  // Skins (joints reference nodes by id; inverse-bind matrices ride in a
+  // payload chunk).
+  final skinIds = [
+    for (final skin in doc.skins)
+      _buildSkin(document, skin, doc, bufferData, nodeIds),
+  ];
+
   // Nodes.
   for (var i = 0; i < doc.nodes.length; i++) {
     final node = doc.nodes[i];
@@ -108,7 +116,9 @@ SceneDocument buildSceneDocument(GltfDocument doc, Uint8List bufferData) {
             if (c >= 0 && c < nodeIds.length) nodeIds[c],
         ],
         components: components,
-        // TODO(fscene): bind node.skin once skins are emitted (P4b).
+        skin: (node.skin != null && node.skin! < skinIds.length)
+            ? skinIds[node.skin!]
+            : null,
       ),
     );
   }
@@ -121,7 +131,162 @@ SceneDocument buildSceneDocument(GltfDocument doc, Uint8List bufferData) {
     }
   }
 
+  // Animations (one keyframe timeline/value payload per channel).
+  for (final animation in doc.animations) {
+    _buildAnimation(document, animation, doc, bufferData, nodeIds);
+  }
+
   return document;
+}
+
+LocalId _buildSkin(
+  SceneDocument document,
+  GltfSkin skin,
+  GltfDocument doc,
+  Uint8List bufferData,
+  List<LocalId> nodeIds,
+) {
+  final Float32List matrices;
+  if (skin.inverseBindMatrices != null) {
+    final accessor = doc.accessors[skin.inverseBindMatrices!];
+    matrices = readAccessorAsFloat32(
+      accessor,
+      doc.bufferViews[accessor.bufferView!],
+      bufferData,
+    );
+  } else {
+    // Spec default: identity per joint, column-major.
+    matrices = Float32List(skin.joints.length * 16);
+    for (var i = 0; i < skin.joints.length; i++) {
+      matrices[i * 16 + 0] = 1.0;
+      matrices[i * 16 + 5] = 1.0;
+      matrices[i * 16 + 10] = 1.0;
+      matrices[i * 16 + 15] = 1.0;
+    }
+  }
+  final payload = _floatPayload(document, matrices, PayloadEncoding.matrices);
+  return document
+      .addSkin(
+        SkinSpec(
+          document.newId(),
+          joints: [
+            for (final j in skin.joints)
+              if (j >= 0 && j < nodeIds.length) nodeIds[j],
+          ],
+          inverseBindMatrices: payload,
+          skeleton: (skin.skeleton != null && skin.skeleton! < nodeIds.length)
+              ? nodeIds[skin.skeleton!]
+              : null,
+        ),
+      )
+      .id;
+}
+
+void _buildAnimation(
+  SceneDocument document,
+  GltfAnimation animation,
+  GltfDocument doc,
+  Uint8List bufferData,
+  List<LocalId> nodeIds,
+) {
+  final channels = <AnimationChannelSpec>[];
+  for (final channel in animation.channels) {
+    final target = channel.targetNode;
+    if (target == null || target < 0 || target >= nodeIds.length) continue;
+    if (channel.sampler < 0 || channel.sampler >= animation.samplers.length) {
+      continue;
+    }
+    final property = switch (channel.targetPath) {
+      'translation' => AnimationProperty.translation,
+      'rotation' => AnimationProperty.rotation,
+      'scale' => AnimationProperty.scale,
+      _ => null, // 'weights' (morph targets) and unknowns
+    };
+    if (property == null) continue;
+
+    final sampler = animation.samplers[channel.sampler];
+    final inputAccessor = doc.accessors[sampler.input];
+    final outputAccessor = doc.accessors[sampler.output];
+    final times = readAccessorAsFloat32(
+      inputAccessor,
+      doc.bufferViews[inputAccessor.bufferView!],
+      bufferData,
+    );
+    final values = readAccessorAsFloat32(
+      outputAccessor,
+      doc.bufferViews[outputAccessor.bufferView!],
+      bufferData,
+    );
+    final componentCount = property == AnimationProperty.rotation ? 4 : 3;
+    final keyframes = _stripCubicTangents(
+      values,
+      componentCount,
+      sampler.interpolation == 'CUBICSPLINE',
+    );
+
+    channels.add(
+      AnimationChannelSpec(
+        target: nodeIds[target],
+        targetName: resolveGltfNodeName(doc.nodes[target].name, target),
+        property: property,
+        timeline: _floatPayload(
+          document,
+          Float32List.fromList(times),
+          PayloadEncoding.floats,
+        ),
+        keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
+      ),
+    );
+  }
+  if (channels.isEmpty) return;
+  document.addAnimation(
+    AnimationSpec(
+      document.newId(),
+      name: animation.name ?? '',
+      channels: channels,
+    ),
+  );
+}
+
+// Reduces a CUBICSPLINE sampler's [in-tangent, value, out-tangent] groups to
+// just the keyframe values, so the stored timeline is plain LINEAR keyframes
+// (the runtime treats both paths' values the same way). Non-cubic data is
+// copied through.
+Float32List _stripCubicTangents(
+  Float32List values,
+  int componentCount,
+  bool isCubic,
+) {
+  if (!isCubic) return Float32List.fromList(values);
+  final stride = componentCount * 3;
+  final out = <double>[];
+  for (var i = 0; i + stride <= values.length; i += stride) {
+    for (var c = 0; c < componentCount; c++) {
+      out.add(values[i + componentCount + c]);
+    }
+  }
+  return Float32List.fromList(out);
+}
+
+LocalId _floatPayload(
+  SceneDocument document,
+  Float32List floats,
+  PayloadEncoding encoding,
+) {
+  final bytes = floats.buffer.asUint8List(
+    floats.offsetInBytes,
+    floats.lengthInBytes,
+  );
+  return document
+      .addPayload(
+        PayloadSpec(
+          document.newId(),
+          encoding: encoding,
+          length: bytes.length,
+          bytes: bytes,
+        ),
+      )
+      .id;
 }
 
 ComponentSpec _meshComponent(List<(LocalId, LocalId)> pairs) {

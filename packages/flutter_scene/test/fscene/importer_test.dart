@@ -87,6 +87,33 @@ void main() {
       });
     }
 
+    test('emits skins and animations for a skinned, animated model', () {
+      final path = _resolve('examples/assets_src/dash.glb');
+      if (!File(path).existsSync()) {
+        // ignore: avoid_print
+        print('Test data missing ($path) - skipping.');
+        return;
+      }
+      final document = importGlbToSceneDocument(File(path).readAsBytesSync());
+      expect(document.skins, isNotEmpty);
+      expect(document.animations, isNotEmpty);
+
+      // Every skin references an inverse-bind-matrices payload with bytes.
+      for (final skin in document.skins.values) {
+        expect(skin.joints, isNotEmpty);
+        final payload = document.payload(skin.inverseBindMatrices);
+        expect(payload?.encoding, PayloadEncoding.matrices);
+        expect(payload?.bytes, isNotNull);
+      }
+      // Every channel references timeline + keyframe payloads with bytes.
+      final channels = document.animations.values.expand((a) => a.channels);
+      expect(channels, isNotEmpty);
+      for (final channel in channels) {
+        expect(document.payload(channel.timeline)?.bytes, isNotNull);
+        expect(document.payload(channel.keyframes)?.bytes, isNotNull);
+      }
+    });
+
     test('declares right-handed glTF coordinates and a generator', () {
       final path = _resolve('examples/assets_src/fcar.glb');
       if (!File(path).existsSync()) {
