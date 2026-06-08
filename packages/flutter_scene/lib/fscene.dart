@@ -25,6 +25,8 @@ export 'src/fscene/json/fscene_json.dart'
         FsceneUnsupportedFeatureException;
 export 'src/fscene/property_value.dart';
 export 'src/fscene/realize/builtin_codecs.dart';
+export 'src/fscene/reload/diff.dart' show diffScene, SceneDiff, NodeChange;
+export 'src/fscene/reload/reload.dart' show reloadScene;
 export 'src/fscene/realize/component_codec.dart';
 export 'src/fscene/realize/loader.dart';
 export 'src/fscene/realize/property_read.dart';
