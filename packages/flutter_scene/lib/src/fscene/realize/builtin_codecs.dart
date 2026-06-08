@@ -1,20 +1,61 @@
+import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
+import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/mesh.dart';
 
-/// Registers the component codecs the format ships with (directional light,
-/// camera) into [registry].
+/// Registers the component codecs the format ships with (mesh, directional
+/// light, camera) into [registry].
 void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
   registry
+    ..register(MeshCodec())
     ..register(DirectionalLightCodec())
     ..register(CameraCodec());
+}
+
+/// Codec for [MeshComponent]. Realizes a mesh from `geometry` and `material`
+/// resource references via the context's resource realizer.
+// TODO(fscene): serialize meshes back to resources. A live geometry is opaque
+// GPU buffers, so this needs a tracked source resource id or payload
+// extraction (alongside the binary package format).
+class MeshCodec extends ComponentCodec {
+  @override
+  String get type => 'mesh';
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final realizer = context.resources;
+    if (realizer == null) {
+      debugPrint('fscene: mesh component skipped (no resource realizer)');
+      return null;
+    }
+    final geometry = spec.properties['geometry'];
+    final material = spec.properties['material'];
+    if (geometry is! ResourceRefValue || material is! ResourceRefValue) {
+      debugPrint('fscene: mesh component missing geometry/material references');
+      return null;
+    }
+    return MeshComponent(
+      Mesh(realizer.geometry(geometry.id), realizer.material(material.id)),
+    );
+  }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (component is MeshComponent) {
+      debugPrint('fscene: mesh serialization is not implemented yet');
+    }
+    return null;
+  }
 }
 
 /// Codec for [DirectionalLightComponent]: serializes the light's parameters,

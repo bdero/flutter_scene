@@ -215,10 +215,11 @@ Map<String, dynamic> _encodeStage(StageMetadata s) => {
 
 Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
   switch (r) {
-    case GeometryResource(:final payload, :final bounds):
+    case GeometryResource(:final payload, :final procedural, :final bounds):
       return {
         'kind': 'geometry',
-        'payload': idKey(payload),
+        if (payload != null) 'payload': idKey(payload),
+        if (procedural != null) 'procedural': _encodeProcedural(procedural),
         if (bounds != null)
           'bounds': {
             'min': [bounds.min.x, bounds.min.y, bounds.min.z],
@@ -509,7 +510,14 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
     case 'geometry':
       return GeometryResource(
         id,
-        payload: LocalId.parse(json['payload'] as String),
+        payload: json['payload'] != null
+            ? LocalId.parse(json['payload'] as String)
+            : null,
+        procedural: json['procedural'] != null
+            ? _decodeProcedural(
+                Map<String, dynamic>.from(json['procedural'] as Map),
+              )
+            : null,
         bounds: _decodeBounds(json['bounds']),
       );
     case 'texture':
@@ -529,6 +537,60 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
       );
     default:
       throw FsceneFormatException('Unknown resource kind: $kind');
+  }
+}
+
+Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
+  CuboidGeometrySpec(:final extents, :final debugColors) => {
+    'shape': 'cuboid',
+    'extents': [extents.x, extents.y, extents.z],
+    if (debugColors) 'debugColors': true,
+  },
+  PlaneGeometrySpec(
+    :final width,
+    :final depth,
+    :final segmentsX,
+    :final segmentsZ,
+  ) =>
+    {
+      'shape': 'plane',
+      'width': width,
+      'depth': depth,
+      'segmentsX': segmentsX,
+      'segmentsZ': segmentsZ,
+    },
+  SphereGeometrySpec(:final radius, :final segments, :final rings) => {
+    'shape': 'sphere',
+    'radius': radius,
+    'segments': segments,
+    'rings': rings,
+  },
+};
+
+ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
+  final shape = json['shape'] as String;
+  switch (shape) {
+    case 'cuboid':
+      final e = json['extents'] as List;
+      return CuboidGeometrySpec(
+        extents: Vector3(_d(e[0]), _d(e[1]), _d(e[2])),
+        debugColors: json['debugColors'] as bool? ?? false,
+      );
+    case 'plane':
+      return PlaneGeometrySpec(
+        width: _d(json['width'] ?? 1.0),
+        depth: _d(json['depth'] ?? 1.0),
+        segmentsX: json['segmentsX'] as int? ?? 1,
+        segmentsZ: json['segmentsZ'] as int? ?? 1,
+      );
+    case 'sphere':
+      return SphereGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        segments: json['segments'] as int? ?? 32,
+        rings: json['rings'] as int? ?? 16,
+      );
+    default:
+      throw FsceneFormatException('Unknown procedural geometry shape: $shape');
   }
 }
 

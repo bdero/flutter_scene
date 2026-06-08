@@ -1,19 +1,23 @@
-import 'package:vector_math/vector_math.dart';
-
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
 /// Context handed to a [ComponentCodec] when realizing a [ComponentSpec] into
-/// a live [Component]. Carries the source [document] so a codec can resolve
-/// referenced resources or nodes.
+/// a live [Component]. Carries the source [document] and a [resources]
+/// realizer so a codec (for example a mesh) can resolve referenced geometry
+/// and materials.
 class RealizeContext {
-  /// Creates a realize context over [document].
-  RealizeContext(this.document);
+  /// Creates a realize context over [document], optionally with a [resources]
+  /// realizer.
+  RealizeContext(this.document, {this.resources});
 
   /// The document being realized.
   final SceneDocument document;
+
+  /// Realizes referenced geometry/material resources, or null when resource
+  /// realization is unavailable (a codec needing it should return null).
+  final ResourceRealizer? resources;
 }
 
 /// Context handed to a [ComponentCodec] when serializing a live [Component]
@@ -38,8 +42,10 @@ abstract class ComponentCodec {
   /// `directionalLight`).
   String get type;
 
-  /// Builds a live component from [spec].
-  Component realize(ComponentSpec spec, RealizeContext context);
+  /// Builds a live component from [spec], or returns null when it cannot be
+  /// realized in the given context (for example a mesh with no resource
+  /// realizer).
+  Component? realize(ComponentSpec spec, RealizeContext context);
 
   /// Serializes [component] to a [ComponentSpec], or returns null if this
   /// codec does not handle that component instance.
@@ -74,50 +80,4 @@ class FsceneComponentRegistry {
     }
     return null;
   }
-}
-
-/// Reads a `double` property, accepting an int too, or returns [fallback].
-double readDouble(
-  Map<String, PropertyValue> props,
-  String key,
-  double fallback,
-) {
-  final v = props[key];
-  return switch (v) {
-    DoubleValue(:final value) => value,
-    IntValue(:final value) => value.toDouble(),
-    _ => fallback,
-  };
-}
-
-/// Reads an `int` property, or returns [fallback].
-int readInt(Map<String, PropertyValue> props, String key, int fallback) {
-  final v = props[key];
-  return v is IntValue ? v.value : fallback;
-}
-
-/// Reads a `bool` property, or returns [fallback].
-bool readBool(Map<String, PropertyValue> props, String key, bool fallback) {
-  final v = props[key];
-  return v is BoolValue ? v.value : fallback;
-}
-
-/// Reads a [Vector3] property, or returns [fallback].
-Vector3 readVec3(
-  Map<String, PropertyValue> props,
-  String key,
-  Vector3 fallback,
-) {
-  final v = props[key];
-  return v is Vec3Value ? v.value.clone() : fallback.clone();
-}
-
-/// Reads a string property, or returns [fallback].
-String readString(
-  Map<String, PropertyValue> props,
-  String key,
-  String fallback,
-) {
-  final v = props[key];
-  return v is StringValue ? v.value : fallback;
 }
