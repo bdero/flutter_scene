@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/lazy_subtree.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
@@ -72,17 +73,25 @@ Node _realizeWith(
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};
   for (final spec in document.nodes.values) {
-    if (spec.instance != null) {
-      debugPrint(
-        'fscene: node ${spec.id} is an unexpanded prefab instance; run '
-        'composeScene (or load via loadScene) before realizing',
-      );
-    }
-    nodes[spec.id] = tagNodeId(
+    final node = tagNodeId(
       Node(name: spec.name, localTransform: spec.transform.toMatrix4())
         ..layers = spec.layers,
       spec.id,
     );
+    final instance = spec.instance;
+    if (instance != null) {
+      if (instance.load == LoadPolicy.lazy) {
+        // A streamed placeholder: its prefab content loads later via
+        // loadSubtree.
+        tagLazyInstance(node, instance);
+      } else {
+        debugPrint(
+          'fscene: node ${spec.id} is an unexpanded eager prefab instance; '
+          'run composeScene (or load via loadScene) before realizing',
+        );
+      }
+    }
+    nodes[spec.id] = node;
   }
 
   // Second pass: wire children and realize components now that every node

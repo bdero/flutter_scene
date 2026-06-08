@@ -34,3 +34,5 @@ export 'src/fscene/realize/realize.dart';
 export 'src/fscene/realize/resource_realizer.dart';
 export 'src/fscene/scene_document.dart';
 export 'src/fscene/specs.dart';
+export 'src/fscene/stream/stream.dart'
+    show loadSubtree, unloadSubtree, isLazySubtree, isSubtreeLoaded;
