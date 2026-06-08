@@ -41,6 +41,49 @@ String encodeBase32(Uint8List bytes) {
   return out.toString();
 }
 
+// The 5-bit value of a base32 character, normalizing case and the Crockford
+// ambiguous letters (I, L -> 1; O -> 0). Throws on an invalid character.
+int _base32Value(int code) {
+  var c = code;
+  if (c >= 0x61 && c <= 0x7A) c -= 0x20; // a-z -> A-Z
+  if (c == 0x49 || c == 0x4C) c = 0x31; // I, L -> 1
+  if (c == 0x4F) c = 0x30; // O -> 0
+  final idx = _base32Alphabet.indexOf(String.fromCharCode(c));
+  if (idx < 0) {
+    throw FormatException(
+      'Invalid base32 character: ${String.fromCharCode(code)}',
+    );
+  }
+  return idx;
+}
+
+/// Decodes a Crockford base32 [token] to bytes (most significant bit first),
+/// the inverse of [encodeBase32]. Case-insensitive; trailing bits that do not
+/// fill a byte are dropped. Throws a [FormatException] on an invalid
+/// character.
+Uint8List decodeBase32(String token) {
+  final out = <int>[];
+  var buffer = 0;
+  var bits = 0;
+  for (final code in token.codeUnits) {
+    buffer = (buffer << 5) | _base32Value(code);
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      out.add((buffer >> bits) & 0xFF);
+      buffer &= (1 << bits) - 1;
+    }
+  }
+  return Uint8List.fromList(out);
+}
+
+// Strips a leading readability prefix (everything up to and including the
+// last ':') from an id token, so `n:ABC` and `ABC` both parse.
+String _stripIdPrefix(String token) {
+  final colon = token.lastIndexOf(':');
+  return colon < 0 ? token : token.substring(colon + 1);
+}
+
 // A uniformly random 32-bit value, assembled from two 16-bit draws to stay
 // within `Random.nextInt`'s range and web-safe integer bounds.
 int _random32(Random random) =>
@@ -70,6 +113,17 @@ class DocumentId {
     b[6] = (b[6] & 0x0F) | 0x40; // version 4
     b[8] = (b[8] & 0x3F) | 0x80; // variant 1
     return DocumentId(b);
+  }
+
+  /// Parses a document id from its base32 [token] (the inverse of
+  /// [toToken]). Throws a [FormatException] if it does not decode to 16
+  /// bytes.
+  factory DocumentId.parse(String token) {
+    final bytes = decodeBase32(_stripIdPrefix(token));
+    if (bytes.length != 16) {
+      throw FormatException('A DocumentId token decodes to 16 bytes: $token');
+    }
+    return DocumentId(bytes);
   }
 
   /// The canonical text form: 26-character Crockford base32.
@@ -104,6 +158,21 @@ class LocalId {
   /// Wraps an explicit [session] salt and [index] counter. Prefer
   /// [IdAllocator.mint] to allocate fresh ids.
   const LocalId(this.session, this.index);
+
+  /// Parses a local id from its [token] (the inverse of [toToken]), ignoring
+  /// any leading readability prefix (`n:`, `geo:`, ...). Throws a
+  /// [FormatException] if it does not decode to 8 bytes.
+  factory LocalId.parse(String token) {
+    final bytes = decodeBase32(_stripIdPrefix(token));
+    if (bytes.length != 8) {
+      throw FormatException('A LocalId token decodes to 8 bytes: $token');
+    }
+    final view = ByteData.view(bytes.buffer, bytes.offsetInBytes, 8);
+    return LocalId(
+      view.getUint32(0, Endian.big),
+      view.getUint32(4, Endian.big),
+    );
+  }
 
   /// The 32-bit session salt of the minting allocator.
   final int session;
