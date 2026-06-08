@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'gltf.dart';
 import 'src/fb_emitter/model_emitter.dart';
+import 'src/fscene_emitter/fscene_emitter.dart';
 
 /// Converts a single glTF binary at [inputGltfFilePath] to a Flutter
 /// Scene `.model` file at [outputModelFilePath].
@@ -41,6 +42,37 @@ void importGltf(
   final doc = parseGltfJson(container.json);
   final outputBytes = emitModel(doc, container.binaryChunk);
   final outputFile = File(outputModelFilePath);
+  outputFile.parent.createSync(recursive: true);
+  outputFile.writeAsBytesSync(outputBytes);
+}
+
+/// Converts a single glTF binary at [inputGltfFilePath] to a flutter_scene
+/// `.fsceneb` package at [outputFscenebFilePath].
+///
+/// The `.fscene` counterpart of [importGltf]. Both paths can be relative; they
+/// are resolved against [workingDirectory] (defaulting to the caller's current
+/// directory). Pure Dart, no native binary; geometry is packed exactly as the
+/// `.model` path packs it.
+void importGltfToFsceneb(
+  String inputGltfFilePath,
+  String outputFscenebFilePath, {
+  String? workingDirectory,
+}) {
+  final workingDirectoryUri = Uri.directory(
+    workingDirectory ?? Directory.current.path,
+  );
+  inputGltfFilePath = workingDirectoryUri
+      .resolveUri(Uri.file(inputGltfFilePath))
+      .toFilePath();
+  outputFscenebFilePath = workingDirectoryUri
+      .resolveUri(Uri.file(outputFscenebFilePath))
+      .toFilePath();
+
+  final inputBytes = File(inputGltfFilePath).readAsBytesSync();
+  final container = parseGlb(inputBytes);
+  final doc = parseGltfJson(container.json);
+  final outputBytes = emitFsceneb(doc, container.binaryChunk);
+  final outputFile = File(outputFscenebFilePath);
   outputFile.parent.createSync(recursive: true);
   outputFile.writeAsBytesSync(outputBytes);
 }

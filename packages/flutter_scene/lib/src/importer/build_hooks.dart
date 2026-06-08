@@ -35,6 +35,12 @@ const String _dataAssetsUnavailableMessage =
 String modelDataAssetName(String relativeModelPath) =>
     'flutter_scene/model/$relativeModelPath';
 
+/// Returns the DataAsset name for a generated `.fsceneb` output, where
+/// [relativeScenePath] is the source path relative to the package root with its
+/// extension swapped to `.fsceneb` (for example `assets/level.fsceneb`).
+String sceneDataAssetName(String relativeScenePath) =>
+    'flutter_scene/scene/$relativeScenePath';
+
 /// Returns the Flutter asset-bundle key for a model DataAsset.
 String modelFlutterAssetKey({required String package, required String name}) =>
     'packages/$package/$name';
@@ -171,6 +177,80 @@ void buildModels({
           package: buildInput.packageName,
           name: modelDataAssetName(relativeModelPath),
           file: outputModelUri,
+        ),
+      );
+    }
+  }
+}
+
+/// Converts glTF (`.glb`) source assets to flutter_scene's `.fsceneb` package
+/// format, the `.fscene` counterpart of [buildModels].
+///
+/// Call this from a consuming app's `hook/build.dart` alongside (or instead of)
+/// [buildModels]; load the result by source path with `loadScene`. Behaves like
+/// [buildModels]: when [inputFilePaths] is omitted, every `.glb` under
+/// [discoveryRoot] is discovered; each generated `.fsceneb` is written under
+/// [outputDirectory] and, in a DataAssets mode, registered as a DataAsset (key
+/// `packages/<package>/flutter_scene/scene/<name>.fsceneb`); the source `.glb`
+/// is declared as a build dependency.
+void buildScenes({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  List<String>? inputFilePaths,
+  String outputDirectory = 'build/scenes/',
+  String discoveryRoot = 'assets/',
+  ModelAssetMode assetMode = ModelAssetMode.legacyOnly,
+}) {
+  final dataAssetsAvailable = buildInput.config.buildDataAssets;
+  if (assetMode == ModelAssetMode.dataAssetsRequired && !dataAssetsAvailable) {
+    throw UnsupportedError(_dataAssetsUnavailableMessage);
+  }
+  final emitDataAssets =
+      assetMode != ModelAssetMode.legacyOnly && dataAssetsAvailable;
+
+  final packageRoot = buildInput.packageRoot;
+  final inputs =
+      inputFilePaths ??
+      discoverGlbModels(packageRoot, discoveryRoot: discoveryRoot);
+  if (inputs.isEmpty) {
+    return;
+  }
+
+  final scenesRoot = packageRoot.resolve(outputDirectory);
+
+  for (final inputFilePath in inputs) {
+    if (!inputFilePath.endsWith('.glb')) {
+      throw Exception(
+        'Input file must be a .glb file. Given file path: $inputFilePath',
+      );
+    }
+    if (inputFilePath.startsWith('../') || inputFilePath.contains('/../')) {
+      throw Exception(
+        'Scene source must be inside the package: $inputFilePath. Place it '
+        'under the package (for example in assets/), using a symlink if needed.',
+      );
+    }
+
+    final relativeScenePath =
+        '${inputFilePath.substring(0, inputFilePath.length - '.glb'.length)}'
+        '.fsceneb';
+    final outputSceneUri = scenesRoot.resolve(relativeScenePath);
+    Directory.fromUri(outputSceneUri.resolve('.')).createSync(recursive: true);
+
+    importGltfToFsceneb(
+      inputFilePath,
+      outputSceneUri.toFilePath(),
+      workingDirectory: packageRoot.toFilePath(),
+    );
+
+    buildOutput.dependencies.add(packageRoot.resolve(inputFilePath));
+
+    if (emitDataAssets) {
+      buildOutput.assets.data.add(
+        DataAsset(
+          package: buildInput.packageName,
+          name: sceneDataAssetName(relativeScenePath),
+          file: outputSceneUri,
         ),
       );
     }

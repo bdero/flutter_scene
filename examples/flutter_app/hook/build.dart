@@ -4,17 +4,26 @@ import 'package:flutter_scene/build_hooks.dart';
 
 void main(List<String> args) {
   build(args, (config, output) async {
+    // Reference the shared corpus through the in-package `assets_src` symlink
+    // so each asset is keyed by a path relative to the package root.
+    const corpus = [
+      'assets_src/two_triangles.glb',
+      'assets_src/flutter_logo_baked.glb',
+      'assets_src/dash.glb',
+      'assets_src/fcar.glb',
+    ];
     buildModels(
       buildInput: config,
       buildOutput: output,
-      // Reference the shared corpus through the in-package `assets_src` symlink
-      // so each model is keyed by a path relative to the package root.
-      inputFilePaths: [
-        'assets_src/two_triangles.glb',
-        'assets_src/flutter_logo_baked.glb',
-        'assets_src/dash.glb',
-        'assets_src/fcar.glb',
-      ],
+      inputFilePaths: corpus,
+      assetMode: ModelAssetMode.dataAssetsIfAvailable,
+    );
+    // The same corpus as `.fsceneb` packages, loaded by source path through
+    // loadScene (the "fscene (import)" example).
+    buildScenes(
+      buildInput: config,
+      buildOutput: output,
+      inputFilePaths: corpus,
       assetMode: ModelAssetMode.dataAssetsIfAvailable,
     );
     await buildShaderBundleJson(

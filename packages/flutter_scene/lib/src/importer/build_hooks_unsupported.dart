@@ -20,3 +20,16 @@ Never buildModels({
 }) => throw UnsupportedError(
   'buildModels runs at build time on native platforms only.',
 );
+
+/// Throws on web/wasm; see the library doc above. The `.fscene` counterpart of
+/// [buildModels].
+Never buildScenes({
+  required Object buildInput,
+  required Object buildOutput,
+  List<String>? inputFilePaths,
+  String outputDirectory = 'build/scenes/',
+  String discoveryRoot = 'assets/',
+  ModelAssetMode assetMode = ModelAssetMode.legacyOnly,
+}) => throw UnsupportedError(
+  'buildScenes runs at build time on native platforms only.',
+);
