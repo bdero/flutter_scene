@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/fscene.dart';
@@ -170,7 +171,61 @@ SceneDocument _buildDocument() {
     ],
   );
 
+  // A textured cube: its material samples a checkerboard image carried as an
+  // rgba8 payload chunk (the shape an imported texture takes). Unlit so the
+  // pattern reads directly.
+  final checker = _checkerTexture(doc);
+  final tiles = doc.addResource(
+    MaterialResource(
+      doc.newId(),
+      type: 'unlit',
+      properties: {'baseColorTexture': ResourceRefValue(checker.id)},
+    ),
+  );
+  doc.createNode(
+    name: 'texturedCube',
+    root: true,
+    transform: TrsTransform(translation: vm.Vector3(0, 0.5, 3.6)),
+    components: [
+      ComponentSpec(
+        'mesh',
+        properties: {
+          'geometry': ResourceRefValue(cubeGeometry.id),
+          'material': ResourceRefValue(tiles.id),
+        },
+      ),
+    ],
+  );
+
   return doc;
+}
+
+/// Builds a high-contrast checkerboard as an rgba8 image payload referenced by
+/// a [TextureResource], the way an imported texture is carried.
+TextureResource _checkerTexture(SceneDocument doc) {
+  const size = 16;
+  final pixels = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      final lit = ((x ~/ 2) + (y ~/ 2)).isEven;
+      pixels[i] = lit ? 235 : 25;
+      pixels[i + 1] = lit ? 235 : 25;
+      pixels[i + 2] = lit ? 235 : 25;
+      pixels[i + 3] = 255;
+    }
+  }
+  final payload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'rgba8',
+      width: size,
+      height: size,
+      bytes: pixels,
+    ),
+  );
+  return doc.addResource(TextureResource(doc.newId(), payload: payload.id));
 }
 
 /// Builds a cuboid as payload-backed geometry: the interleaved vertex buffer

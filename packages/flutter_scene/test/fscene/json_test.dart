@@ -51,6 +51,19 @@ SceneDocument _sampleDocument() {
       bounds: BoundsSpec(min: Vector3(-1, -1, -1), max: Vector3(1, 1, 1)),
     ),
   );
+  final imagePayload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'rgba8',
+      width: 2,
+      height: 2,
+      length: 16,
+    ),
+  );
+  final albedo = doc.addResource(
+    TextureResource(doc.newId(), payload: imagePayload.id),
+  );
   final mat = doc.addResource(
     MaterialResource(
       doc.newId(),
@@ -58,6 +71,7 @@ SceneDocument _sampleDocument() {
       properties: {
         'baseColor': const ColorValue(1, 0.5, 0.25, 1),
         'metallic': const DoubleValue(0.0),
+        'baseColorTexture': ResourceRefValue(albedo.id),
       },
     ),
   );
