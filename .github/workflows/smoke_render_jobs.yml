@@ -21,6 +21,14 @@ on:
         required: false
         type: string
         default: ""
+      upload_argos_on_push:
+        description: >
+          Upload rendered frames to Argos on push events. Set false to save
+          Argos quota on master-push runs; pull-request, scheduled (nightly),
+          and manual runs always upload regardless.
+        required: false
+        type: boolean
+        default: true
     secrets:
       ARGOS_TOKEN:
         required: false
@@ -67,7 +75,7 @@ jobs:
           -d linux --enable-impeller --enable-flutter-gpu
       - name: Upload to Argos
         id: argos
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
         working-directory: examples/smoke_render
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
@@ -174,7 +182,7 @@ jobs:
           if-no-files-found: ignore
       - name: Upload to Argos
         id: argos
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
         working-directory: examples/smoke_render
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
@@ -237,7 +245,7 @@ jobs:
             -d web-server --browser-name=chrome --headless --driver-port=4444
       - name: Upload to Argos
         id: argos
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
         working-directory: examples/smoke_render
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}

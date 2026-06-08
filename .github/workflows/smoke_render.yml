@@ -3,9 +3,11 @@ name: smoke render
 # Renders a small set of deterministic scenes against the latest Flutter master
 # and uploads the frames to Argos for visual diffing. Catches rendering
 # regressions (black screen / nothing drawn / unlit) that crash tests miss.
-# Runs on pull requests and pushes to master, so Argos diffs each PR against
-# the master baseline, plus manually and daily. Notifies Discord when a
-# non-PR run fails.
+# Runs on pull requests, manually, and daily, uploading to Argos so each PR
+# diffs against the nightly master baseline. Also runs on pushes to master, but
+# those render without uploading to Argos (the smoke tests still guard against
+# crashes; skipping the upload keeps the Argos quota for PRs and the nightly
+# baseline). Notifies Discord when a non-PR run fails.
 
 on:
   workflow_dispatch:
@@ -27,4 +29,7 @@ jobs:
     with:
       flutter_channel: master
       label: Flutter master
+      # Render (run the smoke tests) on master pushes, but don't upload to
+      # Argos; PRs and the nightly schedule still upload.
+      upload_argos_on_push: false
     secrets: inherit
