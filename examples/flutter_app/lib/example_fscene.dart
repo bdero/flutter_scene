@@ -3,14 +3,21 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/geometry/primitives.dart'
+    show buildCuboidArrays;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
-/// Builds a scene as an `.fscene` document in code, writes it to `.fscene`
-/// text, reads it back, and realizes it into a live node graph. This
-/// exercises the full round-trip: document model -> JSON -> live scene, with
-/// procedural geometry, parameter materials, and a directional light.
+/// Builds a scene as an `.fscene` document in code, writes it to a `.fsceneb`
+/// binary container, reads it back, and realizes it into a live node graph.
+/// This exercises the full round-trip: document model -> binary package ->
+/// live scene, with procedural geometry, a payload-backed mesh (interleaved
+/// vertex/index chunks, the shape an imported model takes), parameter
+/// materials, and a directional light.
 class ExampleFscene extends StatefulWidget {
   const ExampleFscene({super.key});
 
@@ -24,8 +31,8 @@ class _ExampleFsceneState extends State<ExampleFscene> {
   @override
   void initState() {
     super.initState();
-    final text = writeFscene(_buildDocument());
-    scene.add(loadFsceneString(text));
+    final bytes = writeFsceneb(_buildDocument());
+    scene.add(loadFscenebBytes(bytes));
   }
 
   @override
@@ -134,5 +141,68 @@ SceneDocument _buildDocument() {
     );
   }
 
+  // A payload-backed mesh: its geometry lives in binary vertex/index chunks
+  // (the same interleaved layout an imported model produces) rather than a
+  // procedural descriptor. It rides above the ring so it is easy to pick out.
+  final green = doc.addResource(
+    MaterialResource(
+      doc.newId(),
+      type: 'physicallyBased',
+      properties: {
+        'baseColor': const ColorValue(0.2, 0.8, 0.3, 1.0),
+        'roughness': const DoubleValue(0.5),
+      },
+    ),
+  );
+  final payloadCube = _payloadCuboid(doc, vm.Vector3(1.4, 1.4, 1.4));
+  doc.createNode(
+    name: 'payloadCube',
+    root: true,
+    transform: TrsTransform(translation: vm.Vector3(0, 1.6, 0)),
+    components: [
+      ComponentSpec(
+        'mesh',
+        properties: {
+          'geometry': ResourceRefValue(payloadCube.id),
+          'material': ResourceRefValue(green.id),
+        },
+      ),
+    ],
+  );
+
   return doc;
+}
+
+/// Builds a cuboid as payload-backed geometry: the interleaved vertex buffer
+/// and index buffer are packed into binary chunks and referenced by a
+/// [GeometryResource], the way the importer will emit imported meshes.
+GeometryResource _payloadCuboid(SceneDocument doc, vm.Vector3 extents) {
+  final arrays = buildCuboidArrays(extents);
+  final vertexBytes = InterleavedLayoutAdapter.packUnskinned(
+    positions: arrays.positions,
+    vertexCount: arrays.positions.length ~/ 3,
+    normals: arrays.normals,
+    texCoords: arrays.texCoords,
+  );
+  final packedIndices = InterleavedLayoutAdapter.packIndices(arrays.indices);
+
+  final vertices = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.vertexBuffer,
+      layout: 'unskinned',
+      bytes: vertexBytes,
+    ),
+  );
+  final indices = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.indexBuffer,
+      format: packedIndices.is32Bit ? 'uint32' : 'uint16',
+      bytes: packedIndices.bytes,
+    ),
+  );
+  return doc.addResource(
+    GeometryResource(doc.newId(), vertices: vertices.id, indices: indices.id),
+  );
 }

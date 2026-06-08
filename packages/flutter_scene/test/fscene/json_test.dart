@@ -35,10 +35,19 @@ SceneDocument _sampleDocument() {
       length: 480,
     ),
   );
+  final indexPayload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.indexBuffer,
+      format: 'uint16',
+      length: 36,
+    ),
+  );
   final geo = doc.addResource(
     GeometryResource(
       doc.newId(),
-      payload: payload.id,
+      vertices: payload.id,
+      indices: indexPayload.id,
       bounds: BoundsSpec(min: Vector3(-1, -1, -1), max: Vector3(1, 1, 1)),
     ),
   );

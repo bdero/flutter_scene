@@ -26,9 +26,9 @@ FsceneComponentRegistry defaultComponentRegistry() {
 /// [registry] (the built-ins by default); a component whose type has no codec
 /// is skipped with a debug warning.
 ///
-/// Mesh components are realized from procedural geometry and parameter
-/// materials. Payload-backed geometry and image textures are not yet realized
-/// (they need the binary package format); see [ResourceRealizer].
+/// Mesh components are realized from procedural or payload-backed geometry and
+/// parameter materials; payload chunks come from a `.fsceneb` container. Image
+/// textures are not yet realized; see [ResourceRealizer].
 Node realizeScene(SceneDocument document, {FsceneComponentRegistry? registry}) {
   final reg = registry ?? defaultComponentRegistry();
   final context = RealizeContext(

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
@@ -8,6 +9,8 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
@@ -16,12 +19,11 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 /// [Material] objects, memoizing each so a resource shared by many nodes is
 /// realized once.
 ///
-/// Procedural geometry and parameter-only materials are realized here.
-/// Payload-backed geometry, image textures, and `fmat` materials are the
-/// renderer-facing seams the loader fills as those payloads become
-/// available.
-// TODO(fscene): realize payload-backed geometry, image textures (async asset
-// or embedded payload), and fmat materials.
+/// Procedural and payload-backed geometry, and parameter-only materials, are
+/// realized here. Image textures and `fmat` materials are the renderer-facing
+/// seams still to fill.
+// TODO(fscene): realize image textures (async asset or embedded payload) and
+// fmat materials.
 class ResourceRealizer {
   /// Creates a realizer over [document].
   ResourceRealizer(this.document);
@@ -45,9 +47,77 @@ class ResourceRealizer {
     }
     final procedural = res.procedural;
     if (procedural != null) return _buildProcedural(procedural);
-    throw UnimplementedError(
-      'Payload-backed geometry needs the binary package format',
+    return _buildPayloadGeometry(res);
+  }
+
+  /// Builds a live geometry from a resource's payload chunks, mirroring the
+  /// `.model` import path: the interleaved vertex bytes and optional index
+  /// bytes are uploaded straight into a GPU buffer.
+  Geometry _buildPayloadGeometry(GeometryResource res) {
+    final vertexId = res.vertices;
+    if (vertexId == null) {
+      throw FsceneFormatException(
+        'Geometry ${res.id} has neither a procedural descriptor nor a vertex '
+        'payload',
+      );
+    }
+    final vertexBytes = _payloadBytes(vertexId, 'vertex');
+    final vertexPayload = document.payload(vertexId)!;
+    final skinned = vertexPayload.layout == 'skinned';
+    final perVertexBytes = skinned
+        ? kSkinnedPerVertexSize
+        : kUnskinnedPerVertexSize;
+    final vertexCount = vertexBytes.lengthInBytes ~/ perVertexBytes;
+    final geometry = skinned ? SkinnedGeometry() : UnskinnedGeometry();
+
+    ByteData? indexBytes;
+    var indexType = gpu.IndexType.int16;
+    final indexId = res.indices;
+    if (indexId != null) {
+      indexBytes = ByteData.sublistView(_payloadBytes(indexId, 'index'));
+      indexType = document.payload(indexId)!.format == 'uint32'
+          ? gpu.IndexType.int32
+          : gpu.IndexType.int16;
+    }
+
+    // Set baked bounds before upload so the position scan is skipped; without
+    // bounds, uploadVertexData scans unskinned positions (and leaves skinned
+    // geometry unbounded, matching the importer).
+    final bounds = res.bounds;
+    if (bounds != null) {
+      final aabb = Aabb3.minMax(bounds.min.clone(), bounds.max.clone());
+      geometry.setLocalBounds(aabb, _circumscribedSphere(aabb));
+    }
+
+    geometry.uploadVertexData(
+      ByteData.sublistView(vertexBytes),
+      vertexCount,
+      indexBytes,
+      indexType: indexType,
     );
+    return geometry;
+  }
+
+  Uint8List _payloadBytes(LocalId id, String role) {
+    final payload = document.payload(id);
+    if (payload == null) {
+      throw FsceneFormatException(
+        'Geometry references missing $role payload $id',
+      );
+    }
+    final bytes = payload.bytes;
+    if (bytes == null) {
+      throw FsceneFormatException(
+        'The $role payload $id has no bytes; load the document from a '
+        '.fsceneb container so its chunks are attached',
+      );
+    }
+    return bytes;
+  }
+
+  static Sphere _circumscribedSphere(Aabb3 aabb) {
+    final center = (aabb.min + aabb.max)..scale(0.5);
+    return Sphere.centerRadius(center, (aabb.max - aabb.min).length * 0.5);
   }
 
   Geometry _buildProcedural(ProceduralGeometry p) => switch (p) {

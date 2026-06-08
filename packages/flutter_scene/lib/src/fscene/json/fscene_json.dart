@@ -215,10 +215,16 @@ Map<String, dynamic> _encodeStage(StageMetadata s) => {
 
 Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
   switch (r) {
-    case GeometryResource(:final payload, :final procedural, :final bounds):
+    case GeometryResource(
+      :final vertices,
+      :final indices,
+      :final procedural,
+      :final bounds,
+    ):
       return {
         'kind': 'geometry',
-        if (payload != null) 'payload': idKey(payload),
+        if (vertices != null) 'vertices': idKey(vertices),
+        if (indices != null) 'indices': idKey(indices),
         if (procedural != null) 'procedural': _encodeProcedural(procedural),
         if (bounds != null)
           'bounds': {
@@ -510,8 +516,11 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
     case 'geometry':
       return GeometryResource(
         id,
-        payload: json['payload'] != null
-            ? LocalId.parse(json['payload'] as String)
+        vertices: json['vertices'] != null
+            ? LocalId.parse(json['vertices'] as String)
+            : null,
+        indices: json['indices'] != null
+            ? LocalId.parse(json['indices'] as String)
             : null,
         procedural: json['procedural'] != null
             ? _decodeProcedural(
