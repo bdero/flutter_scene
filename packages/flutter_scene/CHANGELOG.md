@@ -17,7 +17,8 @@
   assets (`flutter config --enable-dart-data-assets`). Imported models are
   cached, so repeated loads are cheap (`Node.fromAsset` returns a clone). The
   `dart run flutter_scene:init` hook now wires up both `buildModels` and
-  `buildMaterials`.
+  `buildMaterials`. Both accept a `discoveryRoot` to auto-discover under a
+  directory other than `assets/`, or an explicit list to bypass discovery.
 * Added `Node.reloadFromTemplate`, `AnimationClip.rebind` / `AnimationPlayer.rebind`
   (in-place model reload with animation re-binding), and `Mesh.clone` so cloned
   model instances get independent materials.

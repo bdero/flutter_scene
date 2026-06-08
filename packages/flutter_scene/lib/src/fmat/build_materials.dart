@@ -51,17 +51,21 @@ String fmatFlutterAssetKeyFor({
   name: fmatDataAssetName(bundleName, fileName),
 );
 
-/// Discovers `.fmat` material sources under the package's `assets/` directory
-/// (matching [discoverGlbModels] for models), returned as paths relative to the
+/// Discovers `.fmat` material sources under [discoveryRoot] (default `assets/`,
+/// matching [discoverGlbModels] for models), returned as paths relative to the
 /// package root. Used when [buildMaterials] is called without an explicit list.
-List<String> discoverFmatMaterials(Uri packageRoot) {
-  final assetsDirectory = Directory.fromUri(packageRoot.resolve('assets/'));
-  if (!assetsDirectory.existsSync()) {
+List<String> discoverFmatMaterials(
+  Uri packageRoot, {
+  String discoveryRoot = 'assets/',
+}) {
+  final dir = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
+  final searchDirectory = Directory.fromUri(packageRoot.resolve(dir));
+  if (!searchDirectory.existsSync()) {
     return const [];
   }
   final rootPath = packageRoot.toFilePath(windows: false);
   final materials =
-      assetsDirectory
+      searchDirectory
           .listSync(recursive: true, followLinks: false)
           .whereType<File>()
           .where((file) => file.path.endsWith('.fmat'))
@@ -112,8 +116,10 @@ const _frameworkShaderFiles = <String>[
 /// ```
 ///
 /// Each path in [materials] is resolved relative to the package root. If
-/// [materials] is omitted, `assets/**/*.fmat` is discovered automatically
-/// (the same `assets/` root [buildModels] discovers `.glb` models under).
+/// [materials] is omitted, `.fmat` files under [discoveryRoot] (default
+/// `assets/`, the same root [buildModels] discovers `.glb` models under) are
+/// discovered automatically; set [discoveryRoot] to search a different
+/// directory.
 /// The produced bundle is written to
 /// `build/shaderbundles/[bundleName].shaderbundle` (one fragment entry per
 /// material, named by the material's `name`), and the combined parameter
@@ -131,6 +137,7 @@ Future<void> buildMaterials({
   required BuildOutputBuilder buildOutput,
   List<String>? materials,
   String bundleName = 'materials',
+  String discoveryRoot = 'assets/',
   MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
 }) async {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
@@ -140,7 +147,9 @@ Future<void> buildMaterials({
   }
 
   final packageRoot = buildInput.packageRoot;
-  final materialPaths = materials ?? discoverFmatMaterials(packageRoot);
+  final materialPaths =
+      materials ??
+      discoverFmatMaterials(packageRoot, discoveryRoot: discoveryRoot);
   if (materialPaths.isEmpty) {
     return;
   }

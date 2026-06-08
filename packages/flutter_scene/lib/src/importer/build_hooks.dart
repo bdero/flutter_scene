@@ -48,16 +48,21 @@ String modelFlutterAssetKeyFor({
   name: modelDataAssetName(relativeModelPath),
 );
 
-/// Discovers `.glb` source files below the package's `assets/` directory,
-/// returned as paths relative to [packageRoot] in stable (sorted) order.
-List<String> discoverGlbModels(Uri packageRoot) {
-  final assetsDirectory = Directory.fromUri(packageRoot.resolve('assets/'));
-  if (!assetsDirectory.existsSync()) {
+/// Discovers `.glb` source files below [discoveryRoot] (default `assets/`,
+/// relative to [packageRoot]), returned as paths relative to [packageRoot] in
+/// stable (sorted) order.
+List<String> discoverGlbModels(
+  Uri packageRoot, {
+  String discoveryRoot = 'assets/',
+}) {
+  final dir = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
+  final searchDirectory = Directory.fromUri(packageRoot.resolve(dir));
+  if (!searchDirectory.existsSync()) {
     return const [];
   }
   final rootPath = packageRoot.toFilePath(windows: false);
   final models =
-      assetsDirectory
+      searchDirectory
           .listSync(recursive: true, followLinks: false)
           .whereType<File>()
           .where((file) => file.path.endsWith('.glb'))
@@ -91,10 +96,11 @@ List<String> discoverGlbModels(Uri packageRoot) {
 /// }
 /// ```
 ///
-/// If [inputFilePaths] is omitted, every `.glb` under the package's `assets/`
-/// directory is discovered automatically. Each path is resolved relative to the
-/// package root and must end in `.glb`. Conversion runs in-process (no
-/// subprocess, no native binary).
+/// If [inputFilePaths] is omitted, every `.glb` under [discoveryRoot] (default
+/// `assets/`, relative to the package root) is discovered automatically; set
+/// [discoveryRoot] to search a different directory. Each path is resolved
+/// relative to the package root and must end in `.glb`. Conversion runs
+/// in-process (no subprocess, no native binary).
 ///
 /// Each generated `.model` is written to `[outputDirectory]/<name>.model`, and
 /// the corresponding source `.glb` is declared as a build dependency so that
@@ -108,6 +114,7 @@ void buildModels({
   required BuildOutputBuilder buildOutput,
   List<String>? inputFilePaths,
   String outputDirectory = 'build/models/',
+  String discoveryRoot = 'assets/',
   ModelAssetMode assetMode = ModelAssetMode.legacyOnly,
 }) {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
@@ -118,7 +125,9 @@ void buildModels({
       assetMode != ModelAssetMode.legacyOnly && dataAssetsAvailable;
 
   final packageRoot = buildInput.packageRoot;
-  final inputs = inputFilePaths ?? discoverGlbModels(packageRoot);
+  final inputs =
+      inputFilePaths ??
+      discoverGlbModels(packageRoot, discoveryRoot: discoveryRoot);
   if (inputs.isEmpty) {
     return;
   }
