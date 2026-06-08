@@ -106,10 +106,15 @@ class DirectionalLight {
   /// frustum, so the cascade's projection size stays constant as the
   /// camera rotates; the projection is then texel-snapped so shadow
   /// edges do not shimmer.
+  ///
+  /// [worldDirection] is the light's world-space travel direction. When
+  /// omitted it falls back to [direction] (the light's own field), which
+  /// is correct for a light placed without a node transform.
   List<ShadowCascade> computeCascades(
     PerspectiveCamera camera,
-    double aspectRatio,
-  ) {
+    double aspectRatio, [
+    Vector3? worldDirection,
+  ]) {
     final count = shadowCascadeCount.clamp(1, 4);
     final near = camera.fovNear;
     final far = shadowMaxDistance;
@@ -134,10 +139,11 @@ class DirectionalLight {
     final tanV = math.tan(camera.fovRadiansY * 0.5);
     final tanH = tanV * aspectRatio;
 
-    final lightLength = direction.length;
+    final effectiveDirection = worldDirection ?? direction;
+    final lightLength = effectiveDirection.length;
     final lightDir = lightLength == 0.0
         ? Vector3(0.0, -1.0, 0.0)
-        : direction * (1.0 / lightLength);
+        : effectiveDirection * (1.0 / lightLength);
 
     final cascades = <ShadowCascade>[];
     for (var c = 0; c < count; c++) {
@@ -293,6 +299,7 @@ class Lighting {
     this.environmentIntensity = 1.0,
     Matrix3? environmentTransform,
     this.directionalLight,
+    this.directionalLightDirection,
     this.shadowMap,
     this.cascades = const [],
     this.ssaoMap,
@@ -313,6 +320,11 @@ class Lighting {
 
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;
+
+  /// The world-space travel direction of [directionalLight], derived from
+  /// the light node's transform. Null when there is no directional light;
+  /// consumers fall back to [DirectionalLight.direction] in that case.
+  final Vector3? directionalLightDirection;
 
   /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
   /// cascade tiles as a horizontal strip) for [directionalLight], or

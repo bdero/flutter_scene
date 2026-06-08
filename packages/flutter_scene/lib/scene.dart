@@ -48,6 +48,7 @@ export 'src/ambient_occlusion.dart';
 export 'src/asset_helpers.dart';
 export 'src/camera.dart';
 export 'src/components/component.dart';
+export 'src/components/directional_light_component.dart';
 export 'src/components/instanced_mesh_component.dart';
 export 'src/components/mesh_component.dart';
 export 'src/instanced_mesh.dart';
