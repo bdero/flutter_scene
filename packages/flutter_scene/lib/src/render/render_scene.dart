@@ -1,5 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -107,6 +108,23 @@ class RenderItem {
 class RenderScene {
   /// Every registered render item, in no particular order.
   final List<RenderItem> items = [];
+
+  /// The directional lights contributed by mounted
+  /// [DirectionalLightComponent]s, in registration order. The renderer
+  /// currently shades the first; the rest are collected for future
+  /// multi-light support.
+  final List<DirectionalLightComponent> directionalLights = [];
+
+  /// Registers [light] as an active directional light. Called by a
+  /// [DirectionalLightComponent] when its owning node mounts.
+  void addDirectionalLight(DirectionalLightComponent light) {
+    directionalLights.add(light);
+  }
+
+  /// Unregisters [light]. Called when its owning node unmounts.
+  void removeDirectionalLight(DirectionalLightComponent light) {
+    directionalLights.remove(light);
+  }
 
   Bvh _bvh = Bvh.build([]);
   final List<RenderItem> _alwaysVisible = [];

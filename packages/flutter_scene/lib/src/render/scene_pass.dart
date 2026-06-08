@@ -34,6 +34,7 @@ class ScenePass extends RenderGraphPass {
     Matrix3? environmentTransform,
     required bool enableMsaa,
     DirectionalLight? directionalLight,
+    Vector3? directionalLightDirection,
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
   }) : _camera = camera,
@@ -44,6 +45,7 @@ class ScenePass extends RenderGraphPass {
        _environmentTransform = environmentTransform,
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
+       _directionalLightDirection = directionalLightDirection,
        _cascades = cascades,
        _specularOcclusionMode = specularOcclusionMode;
 
@@ -55,6 +57,7 @@ class ScenePass extends RenderGraphPass {
   final Matrix3? _environmentTransform;
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
+  final Vector3? _directionalLightDirection;
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
 
@@ -121,6 +124,7 @@ class ScenePass extends RenderGraphPass {
       environmentIntensity: _environmentIntensity,
       environmentTransform: _environmentTransform,
       directionalLight: _directionalLight,
+      directionalLightDirection: _directionalLightDirection,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,

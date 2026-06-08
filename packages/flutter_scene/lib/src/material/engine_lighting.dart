@@ -44,9 +44,12 @@ class EngineLightingUniforms {
     }
     // directional_light_direction [44..47], directional_light_color [48..51].
     if (light != null) {
-      fragInfo[44] = light.direction.x;
-      fragInfo[45] = light.direction.y;
-      fragInfo[46] = light.direction.z;
+      // The world-space direction comes from the light node's transform;
+      // fall back to the light's own field for a node-less light.
+      final direction = lighting.directionalLightDirection ?? light.direction;
+      fragInfo[44] = direction.x;
+      fragInfo[45] = direction.y;
+      fragInfo[46] = direction.z;
       fragInfo[48] = light.color.x * light.intensity;
       fragInfo[49] = light.color.y * light.intensity;
       fragInfo[50] = light.color.z * light.intensity;

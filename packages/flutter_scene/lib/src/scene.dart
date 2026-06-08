@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3;
 import 'ambient_occlusion.dart';
 import 'camera.dart';
+import 'components/directional_light_component.dart';
 import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
@@ -198,9 +199,33 @@ base class Scene implements SceneGraph {
   /// sampled. Identity (the default) leaves the environment unrotated.
   Matrix3 environmentTransform = Matrix3.identity();
 
-  /// Optional analytic directional light (e.g. a sun) layered on top of
+  // The component backing the [directionalLight] convenience: a single
+  // light attached to [root]. Null when no scene-level light is set.
+  DirectionalLightComponent? _directionalLightComponent;
+
+  /// A single analytic directional light (e.g. a sun) layered on top of
   /// the image-based lighting. Null (the default) means IBL only.
-  DirectionalLight? directionalLight;
+  ///
+  /// This is a convenience over attaching a [DirectionalLightComponent] to
+  /// a node: the light is attached to [root] (so its direction is the
+  /// light's own [DirectionalLight.direction], unaffected by any node
+  /// transform). For lights that should move or aim with a node, attach a
+  /// [DirectionalLightComponent] to that node instead. The renderer shades
+  /// the first directional light it finds in the graph.
+  DirectionalLight? get directionalLight => _directionalLightComponent?.light;
+
+  set directionalLight(DirectionalLight? value) {
+    final existing = _directionalLightComponent;
+    if (existing != null) {
+      root.removeComponent(existing);
+      _directionalLightComponent = null;
+    }
+    if (value != null) {
+      final component = DirectionalLightComponent(value);
+      root.addComponent(component);
+      _directionalLightComponent = component;
+    }
+  }
 
   /// Linear exposure multiplier applied to the HDR scene color before
   /// tone mapping. `1.0` (the default) is neutral; see
@@ -394,12 +419,24 @@ base class Scene implements SceneGraph {
         .createHostBuffer();
     transientsBuffer.reset();
 
-    final light = directionalLight;
+    // The renderer shades a single directional light: the first one
+    // registered in the graph (the [directionalLight] convenience, or a
+    // [DirectionalLightComponent] attached to any node). Its travel
+    // direction comes from the owning node's world transform.
+    final lightComponent = renderScene.directionalLights.isEmpty
+        ? null
+        : renderScene.directionalLights.first;
+    final light = lightComponent?.light;
+    final lightDirection = lightComponent?.worldDirection;
     // Cascaded shadows fit the camera frustum, so they require a
     // perspective camera; other camera types render without shadows.
     final cascades =
         light != null && light.castsShadow && camera is PerspectiveCamera
-        ? light.computeCascades(camera, pixelSize.width / pixelSize.height)
+        ? light.computeCascades(
+            camera,
+            pixelSize.width / pixelSize.height,
+            lightDirection,
+          )
         : const <ShadowCascade>[];
 
     // Walk the graph once to tick components and animations and refresh
@@ -468,6 +505,7 @@ base class Scene implements SceneGraph {
         environmentTransform: environmentTransform,
         enableMsaa: enableMsaa,
         directionalLight: light,
+        directionalLightDirection: lightDirection,
         cascades: cascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
       ),
