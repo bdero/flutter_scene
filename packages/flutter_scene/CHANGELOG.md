@@ -15,7 +15,9 @@
   `assets/**/*.glb` and register the generated `.model` files as DataAssets, and
   `loadModel` / `ModelRegistry` load them by source path. Requires Dart data
   assets (`flutter config --enable-dart-data-assets`). Imported models are
-  cached, so repeated loads are cheap (`Node.fromAsset` returns a clone).
+  cached, so repeated loads are cheap (`Node.fromAsset` returns a clone). The
+  `dart run flutter_scene:init` hook now wires up both `buildModels` and
+  `buildMaterials`.
 * Added `Node.reloadFromTemplate`, `AnimationClip.rebind` / `AnimationPlayer.rebind`
   (in-place model reload with animation re-binding), and `Mesh.clone` so cloned
   model instances get independent materials.
