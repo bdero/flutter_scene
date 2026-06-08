@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
@@ -77,10 +78,11 @@ Node _realizeWith(
         'composeScene (or load via loadScene) before realizing',
       );
     }
-    nodes[spec.id] = Node(
-      name: spec.name,
-      localTransform: spec.transform.toMatrix4(),
-    )..layers = spec.layers;
+    nodes[spec.id] = tagNodeId(
+      Node(name: spec.name, localTransform: spec.transform.toMatrix4())
+        ..layers = spec.layers,
+      spec.id,
+    );
   }
 
   // Second pass: wire children and realize components now that every node
