@@ -8,6 +8,7 @@ import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_fscene.dart';
+import 'example_fscene_import.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
@@ -65,6 +66,7 @@ class _MyAppState extends State<MyApp> {
         },
       ),
       'fscene': (context) => const ExampleFscene(),
+      'fscene (import)': (context) => const ExampleFsceneImport(),
       'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };

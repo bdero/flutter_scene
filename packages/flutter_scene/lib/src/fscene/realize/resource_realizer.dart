@@ -230,8 +230,15 @@ class ResourceRealizer {
     if (base != null) m.baseColorFactor = base;
     final baseColorTexture = _textureRef(p, 'baseColorTexture');
     if (baseColorTexture != null) m.baseColorTexture = baseColorTexture;
+    m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
     return m;
   }
+
+  AlphaMode _alphaMode(String name) => switch (name) {
+    'mask' => AlphaMode.mask,
+    'blend' => AlphaMode.blend,
+    _ => AlphaMode.opaque,
+  };
 
   PhysicallyBasedMaterial _pbr(Map<String, PropertyValue> p) {
     final m = PhysicallyBasedMaterial();
@@ -258,6 +265,10 @@ class ResourceRealizer {
     if (occlusionTexture != null) m.occlusionTexture = occlusionTexture;
     final emissiveTexture = _textureRef(p, 'emissiveTexture');
     if (emissiveTexture != null) m.emissiveTexture = emissiveTexture;
+    m.normalScale = readDouble(p, 'normalScale', m.normalScale);
+    m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
+    m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
+    m.alphaCutoff = readDouble(p, 'alphaCutoff', m.alphaCutoff);
     return m;
   }
 }
