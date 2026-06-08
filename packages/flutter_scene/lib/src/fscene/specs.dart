@@ -484,14 +484,18 @@ enum UpAxis {
   z,
 }
 
-/// The handedness a document was authored in. Drives the scene-root mirror
-/// the importers apply, kept as metadata rather than a literal node
-/// transform.
+/// The chirality of the coordinate system a document's positions and geometry
+/// are expressed in. Drives the scene-root mirror the realizer applies, kept
+/// as metadata rather than a literal node transform.
 enum Handedness {
-  /// Left-handed.
+  /// The engine's native, left-handed space (`+Z` into the screen). Content
+  /// authored in code or an editor against the runtime is already in this
+  /// space, so the realizer applies no mirror. This is the default.
   left,
 
-  /// Right-handed (the glTF convention).
+  /// Right-handed (the glTF convention, `+Z` out of the screen). The importer
+  /// declares this; the realizer mirrors `scale(1, 1, -1)` to convert it to
+  /// the engine's space.
   right,
 }
 
@@ -527,7 +531,7 @@ class StageMetadata {
   /// Creates stage metadata with the documented defaults.
   StageMetadata({
     this.upAxis = UpAxis.y,
-    this.handedness = Handedness.right,
+    this.handedness = Handedness.left,
     this.unitsPerMeter = 1.0,
     this.environment = const StudioEnvironment(),
     this.environmentIntensity = 1.0,
