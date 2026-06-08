@@ -6,7 +6,7 @@ void main(List<String> args) {
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
-      materials: ['materials/toon.fmat'],
+      materials: ['assets/toon.fmat'],
     );
   });
 }

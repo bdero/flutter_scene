@@ -21,9 +21,12 @@
 * Added `Node.reloadFromTemplate`, `AnimationClip.rebind` / `AnimationPlayer.rebind`
   (in-place model reload with animation re-binding), and `Mesh.clone` so cloned
   model instances get independent materials.
-* **Breaking:** `loadFmatMaterial` now resolves a material by its `.fmat` source
-  path (for example `materials/toon.fmat`) instead of by material name, so
-  materials that share a name in different directories no longer collide.
+* **Breaking:** `.fmat` materials are now auto-discovered under `assets/`
+  (matching where `.glb` models are discovered) instead of `materials/`, and
+  `loadFmatMaterial` resolves a material by its `.fmat` source path (for example
+  `assets/toon.fmat`) instead of by material name, so materials that share a name
+  in different directories no longer collide. Move `.fmat` files under `assets/`,
+  or pass an explicit list to `buildMaterials`.
 * Building `.fmat` materials and models now requires `flutter_gpu_shaders` 0.5.0.
 
 ## 0.16.0

@@ -25,22 +25,22 @@ void main() {
       );
     });
 
-    test('discovers .fmat files below materials directory in stable order', () {
+    test('discovers .fmat files below assets directory in stable order', () {
       final temp = Directory.systemTemp.createTempSync('fmat_discovery');
       try {
-        File.fromUri(temp.uri.resolve('materials/z.fmat'))
+        File.fromUri(temp.uri.resolve('assets/z.fmat'))
           ..createSync(recursive: true)
           ..writeAsStringSync('z');
-        File.fromUri(temp.uri.resolve('materials/nested/a.fmat'))
+        File.fromUri(temp.uri.resolve('assets/nested/a.fmat'))
           ..createSync(recursive: true)
           ..writeAsStringSync('a');
-        File.fromUri(temp.uri.resolve('materials/ignore.txt'))
+        File.fromUri(temp.uri.resolve('assets/ignore.txt'))
           ..createSync(recursive: true)
           ..writeAsStringSync('ignore');
 
         expect(discoverFmatMaterials(temp.uri), [
-          'materials/nested/a.fmat',
-          'materials/z.fmat',
+          'assets/nested/a.fmat',
+          'assets/z.fmat',
         ]);
       } finally {
         temp.deleteSync(recursive: true);

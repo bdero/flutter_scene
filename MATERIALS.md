@@ -31,7 +31,7 @@ Author a material. A `.fmat` file has two blocks: a `material { }` metadata
 block and a `fragment { }` GLSL block.
 
 ```
-// materials/toon.fmat
+// assets/toon.fmat
 material {
   name: "Toon",
   shading_model: unlit,
@@ -69,7 +69,7 @@ dart run flutter_scene:init
 flutter config --enable-dart-data-assets
 ```
 
-The generated hook auto-discovers `materials/**/*.fmat`, compiles the materials,
+The generated hook auto-discovers `assets/**/*.fmat`, compiles the materials,
 and registers the generated `.shaderbundle`, `.fmat.json` sidecar, and runtime
 index as DataAssets. This path requires a Flutter toolchain with Dart DataAssets
 support; while the feature is experimental, that means a supported Flutter
@@ -81,7 +81,7 @@ two materials that share a `name` in different directories do not collide):
 ```dart
 import 'package:flutter_scene/scene.dart';
 
-final toon = await loadFmatMaterial('materials/toon.fmat');
+final toon = await loadFmatMaterial('assets/toon.fmat');
 toon.parameters
   ..setColor('base_color', const Color(0xFFE0A030))
   ..setInt('band_count', 4)
@@ -92,7 +92,7 @@ node.mesh!.primitives[0].material = toon;
 
 No generated files need to be listed in `flutter.assets` for the DataAssets
 workflow. Materials loaded this way **hot reload**: render the scene with a
-`SceneView` and editing `materials/toon.fmat` updates the running app in place
+`SceneView` and editing `assets/toon.fmat` updates the running app in place
 (see [Hot reload](#hot-reload)).
 
 For the legacy workflow, compile it from your app's `hook/build.dart`:
@@ -106,7 +106,7 @@ void main(List<String> args) {
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
-      materials: ['materials/toon.fmat'],
+      materials: ['assets/toon.fmat'],
     );
   });
 }
@@ -284,7 +284,7 @@ under `build/shaderbundles/`:
 - `<bundleName>.fmat.json` — the parameter sidecar the runtime needs.
 
 `bundleName` defaults to `materials`. If `materials` is omitted,
-`buildMaterials` discovers `materials/**/*.fmat` automatically.
+`buildMaterials` discovers `assets/**/*.fmat` automatically.
 
 The default `MaterialAssetMode.legacyOnly` preserves the historical behavior:
 list the `.shaderbundle` and `.fmat.json` files as assets. With
@@ -486,7 +486,7 @@ garbage on some backends).
 
 # See also
 
-- `examples/smoke_render/materials/toon.fmat` and the `fmat_toon` scene in
+- `examples/smoke_render/assets/toon.fmat` and the `fmat_toon` scene in
   `examples/smoke_render/lib/smoke_scenes.dart`: a worked `.fmat` material
   rendered through `PreprocessedMaterial`.
 - `examples/flutter_app/lib/example_toon.dart`: the raw-`ShaderMaterial` toon.
