@@ -198,7 +198,14 @@ abstract class Material {
     gpu.HostBuffer transientsBuffer,
     Lighting lighting,
   ) {
-    pass.setCullMode(doubleSided ? gpu.CullMode.none : gpu.CullMode.backFace);
+    // Double-sided is honored only for opaque materials. A translucent
+    // material is always back-face culled: drawing both sides would blend the
+    // overlapping front and back surfaces in triangle-index order rather than
+    // depth order (the translucent pass has no per-fragment sorting), which
+    // seams thick double-sided glass. Single-sided draws just the outer
+    // surface, matching the legacy `.model` path.
+    final cullBackFace = !doubleSided || !isOpaque();
+    pass.setCullMode(cullBackFace ? gpu.CullMode.backFace : gpu.CullMode.none);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
