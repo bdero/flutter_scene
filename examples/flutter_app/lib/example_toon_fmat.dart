@@ -5,7 +5,7 @@
 //
 // Demonstrates the `.fmat` workflow end-to-end:
 //   1. Declare typed parameters and a small `Surface()` function in
-//      materials/toon.fmat (no hand-packed std140 uniform block).
+//      assets/toon.fmat (no hand-packed std140 uniform block).
 //   2. Compile it offline with the `buildMaterials` build hook into
 //      `build/shaderbundles/materials.shaderbundle` plus a parameter sidecar
 //      `materials.fmat.json`.
@@ -58,9 +58,9 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
   Future<void> _load() async {
     // Load the .fmat material through the registry: it resolves the generated
     // shader bundle and parameter sidecar by source path and registers the
-    // material for in-place hot reload, so editing materials/toon.fmat (culling,
+    // material for in-place hot reload, so editing assets/toon.fmat (culling,
     // GLSL body, defaults, etc.) updates it live without a restart.
-    final material = await loadFmatMaterial('materials/toon.fmat');
+    final material = await loadFmatMaterial('assets/toon.fmat');
 
     // The model hot reloads in place; onReload re-applies the material to the
     // freshly swapped-in primitives.

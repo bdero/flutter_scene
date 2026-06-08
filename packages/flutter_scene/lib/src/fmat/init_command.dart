@@ -13,8 +13,9 @@ $hookStartMarker
       buildOutput: output,
       assetMode: ModelAssetMode.dataAssetsRequired,
     );
-    // Compile .fmat materials under materials/ as DataAssets, loadable by
-    // source path with loadFmatMaterial (and hot-reloadable).
+    // Compile .fmat materials under assets/ as DataAssets, loadable by source
+    // path with loadFmatMaterial (and hot-reloadable). A no-op when there are
+    // no materials.
     await buildMaterials(
       buildInput: input,
       buildOutput: output,
