@@ -3,25 +3,80 @@ import 'dart:ui' as ui;
 
 import 'package:vector_math/vector_math.dart';
 
-/// Base class for camera implementations passed to [Scene.render].
+/// A lens projection that maps view-space coordinates into clip space.
 ///
-/// A camera owns the transform that converts world-space coordinates into
-/// clip-space coordinates for a given render target size. Subclasses
-/// configure projection and view conventions; [PerspectiveCamera] is the
-/// built-in option, but applications can subclass [Camera] to implement
-/// orthographic or other custom projections.
+/// The projection is the half of a camera that does not depend on where the
+/// camera is or what it looks at, only on the lens (field of view, clip
+/// planes) and the render target's aspect ratio. Pair one with a view (a
+/// [Camera]'s [Camera.getViewMatrix]) to form a full view-projection
+/// transform. [PerspectiveProjection] is the built-in option; applications
+/// can implement [CameraProjection] for orthographic or other projections.
+abstract class CameraProjection {
+  /// Returns the projection matrix for a render target of the given
+  /// [aspectRatio] (width / height).
+  Matrix4 getProjectionMatrix(double aspectRatio);
+}
+
+/// A standard pinhole perspective projection.
+class PerspectiveProjection extends CameraProjection {
+  /// Creates a [PerspectiveProjection] with a vertical field of view
+  /// [fovRadiansY] and a [near]/[far] clip range.
+  PerspectiveProjection({
+    this.fovRadiansY = 45 * degrees2Radians,
+    this.near = 0.1,
+    this.far = 1000.0,
+  });
+
+  /// Vertical field of view, in radians. The horizontal field of view is
+  /// derived from the render target's aspect ratio at draw time.
+  double fovRadiansY;
+
+  /// Distance to the near clipping plane. Geometry closer is clipped away.
+  double near;
+
+  /// Distance to the far clipping plane. Must be greater than [near].
+  double far;
+
+  @override
+  Matrix4 getProjectionMatrix(double aspectRatio) =>
+      _matrix4Perspective(fovRadiansY, aspectRatio, near, far);
+}
+
+/// A view onto a scene: a world-space eye [position] and orientation paired
+/// with a lens [projection], used by [Scene.render] to map the scene into
+/// clip space.
+///
+/// A camera separates its *view* (where it is and which way it looks, from
+/// [getViewMatrix]) from its *projection* (the lens, a [CameraProjection]).
+/// [PerspectiveCamera] is the built-in free camera, positioned by
+/// eye/target/up. Attach a [CameraComponent] to a [Node] to drive the view
+/// from that node's transform instead.
 abstract class Camera {
-  /// The world-space position of the camera. Used by materials for
-  /// view-dependent shading (e.g. specular reflections).
+  /// The world-space position of the camera (the eye point). Used by
+  /// materials for view-dependent shading (e.g. specular reflections).
   Vector3 get position;
+
+  /// The world-space direction the camera looks along (unit length).
+  Vector3 get forward;
+
+  /// The world-space up direction used to orient the camera around
+  /// [forward].
+  Vector3 get up;
+
+  /// The lens projection paired with this camera's view.
+  CameraProjection get projection;
+
+  /// Returns the world-to-view transform (the view matrix), independent of
+  /// the render target size.
+  Matrix4 getViewMatrix();
 
   /// Returns the combined projection-and-view transform for a render target
   /// of the given [dimensions].
   ///
-  /// Called once per [Scene.render] call. Implementations may read
-  /// [dimensions] (typically to compute aspect ratio) and any subclass
-  /// configuration to build the matrix.
-  Matrix4 getViewTransform(ui.Size dimensions);
+  /// Called once per [Scene.render] call.
+  Matrix4 getViewTransform(ui.Size dimensions) =>
+      projection.getProjectionMatrix(dimensions.width / dimensions.height) *
+      getViewMatrix();
 
   /// Returns the view frustum (six normalized clip planes) for a render
   /// target of the given [dimensions].
@@ -129,6 +184,7 @@ class PerspectiveCamera extends Camera {
 
   /// World-space "up" direction used to orient the camera around the
   /// view vector. Typically `Vector3(0, 1, 0)`.
+  @override
   Vector3 up;
 
   /// Distance to the near clipping plane. Geometry closer than this is
@@ -140,13 +196,15 @@ class PerspectiveCamera extends Camera {
   double fovFar;
 
   @override
-  Matrix4 getViewTransform(ui.Size dimensions) {
-    return _matrix4Perspective(
-          fovRadiansY,
-          dimensions.width / dimensions.height,
-          fovNear,
-          fovFar,
-        ) *
-        _matrix4LookAt(position, target, up);
-  }
+  CameraProjection get projection => PerspectiveProjection(
+    fovRadiansY: fovRadiansY,
+    near: fovNear,
+    far: fovFar,
+  );
+
+  @override
+  Vector3 get forward => (target - position).normalized();
+
+  @override
+  Matrix4 getViewMatrix() => _matrix4LookAt(position, target, up);
 }

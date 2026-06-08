@@ -47,6 +47,7 @@ export 'src/importer/model_registry.dart' show ModelRegistry, loadModel;
 export 'src/ambient_occlusion.dart';
 export 'src/asset_helpers.dart';
 export 'src/camera.dart';
+export 'src/components/camera_component.dart';
 export 'src/components/component.dart';
 export 'src/components/directional_light_component.dart';
 export 'src/components/instanced_mesh_component.dart';
