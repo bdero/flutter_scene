@@ -33,12 +33,23 @@ Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
 ///
 /// Uses `dart:ui`'s built-in image codecs (PNG, JPEG, etc.). Throws if
 /// the asset is not present in the bundle or cannot be decoded.
-Future<ui.Image> imageFromAsset(String assetPath) async {
+Future<ui.Image> imageFromAsset(String assetPath, {AssetBundle? bundle}) async {
   // Load resource from the asset bundle. Throws exception if the asset couldn't
   // be found in the bundle.
-  final buffer = await rootBundle.loadBuffer(assetPath);
+  final buffer = await (bundle ?? rootBundle).loadBuffer(assetPath);
 
   // Decode the image.
+  final codec = await ui.instantiateImageCodecFromBuffer(buffer);
+  final frame = await codec.getNextFrame();
+  return frame.image;
+}
+
+/// Decodes an encoded image (PNG, JPEG, etc.) from raw [bytes].
+///
+/// Uses `dart:ui`'s built-in image codecs. Throws if the bytes can't be
+/// decoded as an image.
+Future<ui.Image> imageFromBytes(Uint8List bytes) async {
+  final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
   final codec = await ui.instantiateImageCodecFromBuffer(buffer);
   final frame = await codec.getNextFrame();
   return frame.image;
