@@ -263,20 +263,32 @@ class SphereGeometrySpec extends ProceduralGeometry {
 /// content) or a [procedural] descriptor (a runtime primitive). Exactly one
 /// source is set. Carries optional local [bounds].
 class GeometryResource extends ResourceSpec {
-  /// Creates a geometry resource from a [payload] chunk or a [procedural]
-  /// descriptor.
-  GeometryResource(super.id, {this.payload, this.procedural, this.bounds})
-    : assert(
-        (payload == null) != (procedural == null),
-        'A geometry has exactly one source: a payload or a procedural '
-        'descriptor',
-      );
+  /// Creates a geometry resource from payload chunks (a [vertices] buffer and
+  /// optional [indices] buffer) or a [procedural] descriptor.
+  GeometryResource(
+    super.id, {
+    this.vertices,
+    this.indices,
+    this.procedural,
+    this.bounds,
+  }) : assert(
+         (vertices == null) != (procedural == null),
+         'A geometry has exactly one source: a vertex payload or a procedural '
+         'descriptor',
+       );
 
-  /// The binary chunk holding this geometry's vertex/index buffers, or null
-  /// when [procedural] is set.
-  final LocalId? payload;
+  /// The binary chunk holding this geometry's interleaved vertex buffer, or
+  /// null when [procedural] is set. The vertex `layout` (`unskinned` /
+  /// `skinned`) lives on the referenced payload.
+  final LocalId? vertices;
 
-  /// The procedural descriptor, or null when [payload] is set.
+  /// The binary chunk holding this geometry's index buffer, or null for a
+  /// non-indexed payload geometry (always null when [procedural] is set). The
+  /// element width (`uint16` / `uint32`) lives on the referenced payload's
+  /// `format`.
+  final LocalId? indices;
+
+  /// The procedural descriptor, or null when [vertices] is set.
   final ProceduralGeometry? procedural;
 
   /// The geometry's local-space bounds, when known.

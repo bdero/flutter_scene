@@ -179,7 +179,7 @@ void main() {
         PayloadSpec(doc.newId(), encoding: PayloadEncoding.vertexBuffer),
       );
       final GeometryResource geo = doc.addResource(
-        GeometryResource(doc.newId(), payload: payload.id),
+        GeometryResource(doc.newId(), vertices: payload.id),
       );
       expect(doc.resource(geo.id), same(geo));
       expect(doc.payload(payload.id), same(payload));
@@ -193,7 +193,7 @@ void main() {
       );
       doc.createNode();
       doc.addResource(
-        GeometryResource(const LocalId(22, 5), payload: const LocalId(22, 6)),
+        GeometryResource(const LocalId(22, 5), vertices: const LocalId(22, 6)),
       );
       expect(doc.usedSessions(), containsAll(<int>{11, 22}));
     });
