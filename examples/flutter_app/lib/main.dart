@@ -7,6 +7,7 @@ import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
+import 'example_fscene.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
@@ -63,6 +64,7 @@ class _MyAppState extends State<MyApp> {
           return const ExamplePhysics();
         },
       ),
+      'fscene': (context) => const ExampleFscene(),
       'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };

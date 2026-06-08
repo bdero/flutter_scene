@@ -226,4 +226,43 @@ void main() {
       );
     });
   });
+
+  group('procedural geometry', () {
+    test('cuboid/plane/sphere resources round-trip through JSON', () {
+      final doc = SceneDocument(
+        documentId: DocumentId.generate(Random(1)),
+        allocator: IdAllocator(session: 2),
+      );
+      doc.createNode(name: 'root', root: true);
+      final cuboid = doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: CuboidGeometrySpec(
+            extents: Vector3(2, 1, 0.5),
+            debugColors: true,
+          ),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: PlaneGeometrySpec(width: 4, depth: 4, segmentsZ: 3),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: SphereGeometrySpec(radius: 0.7, segments: 12, rings: 6),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      expect(back.resources, hasLength(3));
+      final shape =
+          (back.resource(cuboid.id) as GeometryResource).procedural
+              as CuboidGeometrySpec;
+      expect(shape.extents, Vector3(2, 1, 0.5));
+      expect(shape.debugColors, isTrue);
+    });
+  });
 }

@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -25,14 +26,15 @@ FsceneComponentRegistry defaultComponentRegistry() {
 /// [registry] (the built-ins by default); a component whose type has no codec
 /// is skipped with a debug warning.
 ///
-/// Mesh and other resource-backed components are not realized here yet (they
-/// need the geometry/texture payloads); that is the renderer-facing seam the
-/// loader will fill.
-// TODO(fscene): realize mesh components from geometry/material/texture
-// resources once payloads are loaded (P5) and a resource realizer is wired.
+/// Mesh components are realized from procedural geometry and parameter
+/// materials. Payload-backed geometry and image textures are not yet realized
+/// (they need the binary package format); see [ResourceRealizer].
 Node realizeScene(SceneDocument document, {FsceneComponentRegistry? registry}) {
   final reg = registry ?? defaultComponentRegistry();
-  final context = RealizeContext(document);
+  final context = RealizeContext(
+    document,
+    resources: ResourceRealizer(document),
+  );
 
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};

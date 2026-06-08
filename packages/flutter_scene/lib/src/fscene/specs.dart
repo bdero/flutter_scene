@@ -203,14 +203,81 @@ sealed class ResourceSpec {
   final LocalId id;
 }
 
-/// Mesh geometry: vertex/index data held in a binary [payload] chunk, plus
-/// optional local [bounds].
-class GeometryResource extends ResourceSpec {
-  /// Creates a geometry resource backed by the [payload] chunk.
-  GeometryResource(super.id, {required this.payload, this.bounds});
+/// A procedural geometry the runtime builds from parameters (rather than from
+/// baked vertex buffers). Compact and editable; no payload needed.
+sealed class ProceduralGeometry {
+  const ProceduralGeometry();
+}
 
-  /// The binary chunk holding this geometry's vertex/index buffers.
-  final LocalId payload;
+/// A box of the given [extents], optionally with per-corner debug colors.
+class CuboidGeometrySpec extends ProceduralGeometry {
+  /// Creates a cuboid spec.
+  CuboidGeometrySpec({required this.extents, this.debugColors = false});
+
+  /// The box dimensions.
+  final Vector3 extents;
+
+  /// Whether each corner carries a distinct debug color.
+  final bool debugColors;
+}
+
+/// A flat plane in the XZ plane.
+class PlaneGeometrySpec extends ProceduralGeometry {
+  /// Creates a plane spec.
+  PlaneGeometrySpec({
+    this.width = 1.0,
+    this.depth = 1.0,
+    this.segmentsX = 1,
+    this.segmentsZ = 1,
+  });
+
+  /// Size along X.
+  final double width;
+
+  /// Size along Z.
+  final double depth;
+
+  /// Grid subdivisions along X.
+  final int segmentsX;
+
+  /// Grid subdivisions along Z.
+  final int segmentsZ;
+}
+
+/// A UV sphere.
+class SphereGeometrySpec extends ProceduralGeometry {
+  /// Creates a sphere spec.
+  SphereGeometrySpec({this.radius = 0.5, this.segments = 32, this.rings = 16});
+
+  /// The sphere radius.
+  final double radius;
+
+  /// Divisions around the equator.
+  final int segments;
+
+  /// Divisions from pole to pole.
+  final int rings;
+}
+
+/// Mesh geometry, sourced either from a binary [payload] chunk (imported
+/// content) or a [procedural] descriptor (a runtime primitive). Exactly one
+/// source is set. Carries optional local [bounds].
+class GeometryResource extends ResourceSpec {
+  /// Creates a geometry resource from a [payload] chunk or a [procedural]
+  /// descriptor.
+  GeometryResource(super.id, {this.payload, this.procedural, this.bounds})
+    : assert(
+        (payload == null) != (procedural == null),
+        'A geometry has exactly one source: a payload or a procedural '
+        'descriptor',
+      );
+
+  /// The binary chunk holding this geometry's vertex/index buffers, or null
+  /// when [procedural] is set.
+  final LocalId? payload;
+
+  /// The procedural descriptor, or null when [payload] is set.
+  final ProceduralGeometry? procedural;
 
   /// The geometry's local-space bounds, when known.
   final BoundsSpec? bounds;
