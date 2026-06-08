@@ -22,7 +22,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 /// view distance. The penumbra is a soft Poisson-disk PCF kernel of
 /// radius [shadowSoftness], and shadowing fades back to lit at the far
 /// edge over [shadowFadeRange]. Cascaded shadows require the scene to
-/// render with a [PerspectiveCamera].
+/// render with a perspective projection.
 class DirectionalLight {
   /// Creates a [DirectionalLight].
   ///
@@ -111,12 +111,14 @@ class DirectionalLight {
   /// omitted it falls back to [direction] (the light's own field), which
   /// is correct for a light placed without a node transform.
   List<ShadowCascade> computeCascades(
-    PerspectiveCamera camera,
+    Camera camera,
     double aspectRatio, [
     Vector3? worldDirection,
   ]) {
+    // Cascades fit the camera frustum, which is perspective-specific.
+    final perspective = camera.projection as PerspectiveProjection;
     final count = shadowCascadeCount.clamp(1, 4);
-    final near = camera.fovNear;
+    final near = perspective.near;
     final far = shadowMaxDistance;
 
     // Practical split scheme: a blend of logarithmic and uniform
@@ -133,10 +135,10 @@ class DirectionalLight {
     }
 
     // Camera basis and field-of-view tangents.
-    final forward = (camera.target - camera.position).normalized();
+    final forward = camera.forward;
     final right = camera.up.cross(forward).normalized();
     final up = forward.cross(right).normalized();
-    final tanV = math.tan(camera.fovRadiansY * 0.5);
+    final tanV = math.tan(perspective.fovRadiansY * 0.5);
     final tanH = tanV * aspectRatio;
 
     final effectiveDirection = worldDirection ?? direction;

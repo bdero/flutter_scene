@@ -429,9 +429,11 @@ base class Scene implements SceneGraph {
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
     // Cascaded shadows fit the camera frustum, so they require a
-    // perspective camera; other camera types render without shadows.
+    // perspective projection; other projections render without shadows.
     final cascades =
-        light != null && light.castsShadow && camera is PerspectiveCamera
+        light != null &&
+            light.castsShadow &&
+            camera.projection is PerspectiveProjection
         ? light.computeCascades(
             camera,
             pixelSize.width / pixelSize.height,
@@ -464,8 +466,9 @@ base class Scene implements SceneGraph {
       );
     }
     // Ambient occlusion is reconstructed from a camera depth prepass, so it
-    // needs a perspective camera (other camera types render without it).
-    if (ambientOcclusion.enabled && camera is PerspectiveCamera) {
+    // needs a perspective projection (others render without it).
+    final perspective = camera.projection;
+    if (ambientOcclusion.enabled && perspective is PerspectiveProjection) {
       // The whole occlusion chain (depth prepass, occlusion, blur) runs at one
       // resolution so depth is sampled 1:1; sampling a full-resolution depth
       // from the half-resolution occlusion pass would alias on fine geometry.
@@ -478,17 +481,17 @@ base class Scene implements SceneGraph {
           camera: camera,
           renderScene: renderScene,
           dimensions: aoDimensions,
-          cameraForward: (camera.target - camera.position).normalized(),
-          farDepth: camera.fovFar,
+          cameraForward: camera.forward,
+          farDepth: perspective.far,
         ),
       );
       graph.addPass(
         SsaoPass(
           dimensions: pixelSize,
           settings: ambientOcclusion,
-          fovRadiansY: camera.fovRadiansY,
-          near: camera.fovNear,
-          far: camera.fovFar,
+          fovRadiansY: perspective.fovRadiansY,
+          near: perspective.near,
+          far: perspective.far,
         ),
       );
       graph.addPass(
