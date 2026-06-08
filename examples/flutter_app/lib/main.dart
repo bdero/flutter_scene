@@ -10,6 +10,7 @@ import 'example_cuboid.dart';
 import 'example_fscene.dart';
 import 'example_fscene_animated.dart';
 import 'example_fscene_import.dart';
+import 'example_fscene_prefab.dart';
 import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
@@ -69,6 +70,7 @@ class _MyAppState extends State<MyApp> {
       'fscene': (context) => const ExampleFscene(),
       'fscene (import)': (context) => const ExampleFsceneImport(),
       'fscene (animated)': (context) => const ExampleFsceneAnimated(),
+      'fscene (prefab)': (context) => const ExampleFscenePrefab(),
       'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
