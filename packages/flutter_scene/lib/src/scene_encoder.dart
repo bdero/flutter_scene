@@ -104,6 +104,7 @@ base class SceneEncoder {
     this._camera,
     ui.Size dimensions,
     this._lighting,
+    this._layerMask,
   ) : _renderPass = renderPass,
       _transientsBuffer = transientsBuffer {
     _cameraTransform = _camera.getViewTransform(dimensions);
@@ -117,6 +118,7 @@ base class SceneEncoder {
 
   final Camera _camera;
   final Lighting _lighting;
+  final int _layerMask;
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
@@ -146,6 +148,7 @@ base class SceneEncoder {
   /// instance so each can be depth-sorted independently.
   void submit(RenderItem item) {
     if (!item.visible) return;
+    if ((item.layers & _layerMask) == 0) return;
     if (item.frustumCulled) {
       final bounds = item.cullBounds;
       if (bounds != null) {

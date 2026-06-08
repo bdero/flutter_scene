@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/render/ssao_pass.dart';
@@ -37,7 +38,9 @@ class ScenePass extends RenderGraphPass {
     Vector3? directionalLightDirection,
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
+    int layerMask = kRenderLayerAll,
   }) : _camera = camera,
+       _layerMask = layerMask,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _environmentMap = environmentMap,
@@ -58,6 +61,7 @@ class ScenePass extends RenderGraphPass {
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final Vector3? _directionalLightDirection;
+  final int _layerMask;
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
 
@@ -140,6 +144,7 @@ class ScenePass extends RenderGraphPass {
       _camera,
       _dimensions,
       lighting,
+      _layerMask,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
     encoder.flush();

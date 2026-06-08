@@ -50,6 +50,7 @@ class InstancedMeshComponent extends Component {
     final frustumCulled = node.frustumCulled;
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
     item.frustumCulled = frustumCulled;
+    item.layers = node.layers;
     item.worldTransform.setFrom(node.globalTransform);
     item.windingFlipped = node.windingFlipped;
     item.instanceTransforms = instancedMesh.instances;
