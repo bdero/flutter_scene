@@ -47,6 +47,24 @@ void main() {
       }
     });
 
+    test('honors a custom discoveryRoot', () {
+      final temp = Directory.systemTemp.createTempSync('fmat_discovery_root');
+      try {
+        File.fromUri(temp.uri.resolve('shaders/toon.fmat'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('toon');
+        File.fromUri(temp.uri.resolve('assets/ignored.fmat'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('ignored');
+
+        expect(discoverFmatMaterials(temp.uri, discoveryRoot: 'shaders'), [
+          'shaders/toon.fmat',
+        ]);
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+    });
+
     test(
       'required DataAssets mode fails before legacy fallback work',
       () async {

@@ -53,6 +53,28 @@ void main() {
         temp.deleteSync(recursive: true);
       }
     });
+
+    test('honors a custom discoveryRoot', () {
+      final temp = Directory.systemTemp.createTempSync('glb_discovery_root');
+      try {
+        File.fromUri(temp.uri.resolve('models/car.glb'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('car');
+        File.fromUri(temp.uri.resolve('assets/ignored.glb'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('ignored');
+
+        // With (or without) a trailing slash, only the custom root is searched.
+        expect(discoverGlbModels(temp.uri, discoveryRoot: 'models'), [
+          'models/car.glb',
+        ]);
+        expect(discoverGlbModels(temp.uri, discoveryRoot: 'models/'), [
+          'models/car.glb',
+        ]);
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+    });
   });
 
   test('required DataAssets mode fails before doing build work', () {

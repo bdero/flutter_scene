@@ -284,7 +284,8 @@ under `build/shaderbundles/`:
 - `<bundleName>.fmat.json` — the parameter sidecar the runtime needs.
 
 `bundleName` defaults to `materials`. If `materials` is omitted,
-`buildMaterials` discovers `assets/**/*.fmat` automatically.
+`buildMaterials` discovers `assets/**/*.fmat` automatically; pass
+`discoveryRoot` to search a directory other than `assets/`.
 
 The default `MaterialAssetMode.legacyOnly` preserves the historical behavior:
 list the `.shaderbundle` and `.fmat.json` files as assets. With
