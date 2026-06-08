@@ -126,9 +126,10 @@ final class SceneRegistry {
     // change) once scene hot reload lands, mirroring loadModel.
     return _cache.load(key, () async {
       final data = await assetBundle.load(key);
-      return loadFscenebBytes(
+      return loadFscenebBytesAsync(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
         registry: registry,
+        bundle: assetBundle,
       );
     });
   }

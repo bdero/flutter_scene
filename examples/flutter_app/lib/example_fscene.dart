@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
@@ -17,11 +18,11 @@ import 'example_settings.dart';
 /// whole format pipeline both ways: document -> `.fsceneb` -> live graph
 /// (realize), then live graph -> document (serialize) -> `.fsceneb` -> live
 /// graph again. The twice-realized scene is what renders, so anything that
-/// fails to survive serialization (payload geometry, textures, materials,
-/// the light) would visibly drop out. It exercises procedural geometry, a
-/// payload-backed mesh (interleaved vertex/index chunks, the shape an imported
-/// model takes), an image-payload texture, parameter materials, and a
-/// directional light.
+/// fails to survive serialization would visibly drop out. It exercises
+/// procedural geometry, a payload-backed mesh, parameter materials, a
+/// directional light, and the asynchronously-loaded resources: an embedded
+/// `rgba8` texture, an external image-asset texture, an encoded (PNG) image
+/// payload, and an `fmat` custom material.
 class ExampleFscene extends StatefulWidget {
   const ExampleFscene({super.key});
 
@@ -35,11 +36,27 @@ class _ExampleFsceneState extends State<ExampleFscene> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // An encoded image to carry as a PNG payload chunk (decoded at load).
+    final pano = await rootBundle.load('assets/little_paris_eiffel_tower.png');
+    final pngBytes = pano.buffer.asUint8List(
+      pano.offsetInBytes,
+      pano.lengthInBytes,
+    );
+
     // Realize the authored document, serialize the live graph back to a
     // document, then realize that. What renders is the round-tripped scene.
-    final realized = loadFscenebBytes(writeFsceneb(_buildDocument()));
+    // The async loader preloads external assets, encoded payloads, and fmat
+    // materials before realizing.
+    final realized = await loadFscenebBytesAsync(
+      writeFsceneb(_buildDocument(pngBytes)),
+    );
     final roundTripped = serializeScene(realized);
-    scene.add(loadFscenebBytes(writeFsceneb(roundTripped)));
+    if (!mounted) return;
+    scene.add(await loadFscenebBytesAsync(writeFsceneb(roundTripped)));
   }
 
   @override
@@ -49,8 +66,8 @@ class _ExampleFsceneState extends State<ExampleFscene> {
       cameraBuilder: (elapsed) {
         final t = elapsed.inMicroseconds / 1e6;
         return PerspectiveCamera(
-          position: vm.Vector3(sin(t) * 6, 3, cos(t) * 6),
-          target: vm.Vector3(0, 0, 0),
+          position: vm.Vector3(sin(t) * 10, 5, cos(t) * 10),
+          target: vm.Vector3(0, 1.5, 0),
         );
       },
       onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
@@ -58,7 +75,7 @@ class _ExampleFsceneState extends State<ExampleFscene> {
   }
 }
 
-SceneDocument _buildDocument() {
+SceneDocument _buildDocument(Uint8List pngBytes) {
   final doc = SceneDocument();
 
   // A sun, pitched down toward the scene.
@@ -203,7 +220,99 @@ SceneDocument _buildDocument() {
     ],
   );
 
+  // A row of asynchronously-loaded resources above the ring.
+  // 1. An external image-asset texture (referenced by path, not embedded).
+  final assetTexture = doc.addResource(
+    TextureResource(
+      doc.newId(),
+      asset: const AssetRef('assets/little_paris_eiffel_tower.png'),
+    ),
+  );
+  _meshNode(
+    doc,
+    name: 'assetTextureCube',
+    position: vm.Vector3(-3, 3, 0),
+    geometry: cubeGeometry.id,
+    material: doc
+        .addResource(
+          MaterialResource(
+            doc.newId(),
+            type: 'unlit',
+            properties: {'baseColorTexture': ResourceRefValue(assetTexture.id)},
+          ),
+        )
+        .id,
+  );
+
+  // 2. The same image as an encoded (PNG) payload chunk, decoded at load.
+  final pngPayload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'png',
+      bytes: pngBytes,
+    ),
+  );
+  final pngTexture = doc.addResource(
+    TextureResource(doc.newId(), payload: pngPayload.id),
+  );
+  _meshNode(
+    doc,
+    name: 'encodedTextureCube',
+    position: vm.Vector3(0, 3, 0),
+    geometry: cubeGeometry.id,
+    material: doc
+        .addResource(
+          MaterialResource(
+            doc.newId(),
+            type: 'unlit',
+            properties: {'baseColorTexture': ResourceRefValue(pngTexture.id)},
+          ),
+        )
+        .id,
+  );
+
+  // 3. An `fmat` custom material, loaded by source path.
+  _meshNode(
+    doc,
+    name: 'fmatCube',
+    position: vm.Vector3(3, 3, 0),
+    geometry: cubeGeometry.id,
+    material: doc
+        .addResource(
+          MaterialResource(
+            doc.newId(),
+            type: 'fmat',
+            asset: const AssetRef('assets/toon.fmat'),
+          ),
+        )
+        .id,
+  );
+
   return doc;
+}
+
+void _meshNode(
+  SceneDocument doc, {
+  required String name,
+  required vm.Vector3 position,
+  required LocalId geometry,
+  required LocalId material,
+}) {
+  doc.createNode(
+    name: name,
+    root: true,
+    transform: TrsTransform(translation: position),
+    components: [
+      ComponentSpec(
+        'mesh',
+        properties: {
+          'geometry': ResourceRefValue(geometry),
+          'material': ResourceRefValue(material),
+        },
+      ),
+    ],
+  );
 }
 
 /// Builds a high-contrast checkerboard as an rgba8 image payload referenced by

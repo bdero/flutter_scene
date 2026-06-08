@@ -287,5 +287,45 @@ void main() {
       expect(shape.extents, Vector3(2, 1, 0.5));
       expect(shape.debugColors, isTrue);
     });
+
+    test('fmat materials and external/encoded textures round-trip', () {
+      final doc = SceneDocument();
+      final assetTexture = doc.addResource(
+        TextureResource(doc.newId(), asset: const AssetRef('assets/x.png')),
+      );
+      final pngPayload = doc.addPayload(
+        PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.image,
+          format: 'png',
+          length: 4,
+        ),
+      );
+      final encodedTexture = doc.addResource(
+        TextureResource(doc.newId(), payload: pngPayload.id),
+      );
+      final fmat = doc.addResource(
+        MaterialResource(
+          doc.newId(),
+          type: 'fmat',
+          asset: const AssetRef('materials/toon.fmat'),
+          properties: {'baseColorTexture': ResourceRefValue(assetTexture.id)},
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      expect(
+        (back.resource(assetTexture.id) as TextureResource).asset?.key,
+        'assets/x.png',
+      );
+      expect(
+        (back.resource(encodedTexture.id) as TextureResource).payload,
+        pngPayload.id,
+      );
+      expect(back.payload(pngPayload.id)?.format, 'png');
+      final material = back.resource(fmat.id) as MaterialResource;
+      expect(material.type, 'fmat');
+      expect(material.asset?.key, 'materials/toon.fmat');
+    });
   });
 }

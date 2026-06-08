@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show AssetBundle;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
@@ -28,14 +29,44 @@ FsceneComponentRegistry defaultComponentRegistry() {
 /// is skipped with a debug warning.
 ///
 /// Mesh components are realized from procedural or payload-backed geometry and
-/// parameter materials; payload chunks come from a `.fsceneb` container. Image
-/// textures are not yet realized; see [ResourceRealizer].
+/// parameter materials; embedded `rgba8` textures realize here too. External
+/// image assets, encoded image payloads, and `fmat` materials need
+/// [realizeSceneAsync] (which preloads them); the synchronous path falls back
+/// to placeholders. See [ResourceRealizer].
 Node realizeScene(SceneDocument document, {FsceneComponentRegistry? registry}) {
-  final reg = registry ?? defaultComponentRegistry();
-  final context = RealizeContext(
+  return _realizeWith(
     document,
-    resources: ResourceRealizer(document),
+    registry ?? defaultComponentRegistry(),
+    ResourceRealizer(document),
   );
+}
+
+/// Realizes [document] into a live [Node] graph, first asynchronously loading
+/// any external image assets, encoded image payloads, and `fmat` materials it
+/// references (from [bundle], default `rootBundle`).
+///
+/// Use this (over [realizeScene]) when a document may reference such
+/// resources; the `.fscene` / `.fsceneb` asset loaders do.
+Future<Node> realizeSceneAsync(
+  SceneDocument document, {
+  FsceneComponentRegistry? registry,
+  AssetBundle? bundle,
+}) async {
+  final resources = ResourceRealizer(document, bundle: bundle);
+  await resources.preload();
+  return _realizeWith(
+    document,
+    registry ?? defaultComponentRegistry(),
+    resources,
+  );
+}
+
+Node _realizeWith(
+  SceneDocument document,
+  FsceneComponentRegistry reg,
+  ResourceRealizer resources,
+) {
+  final context = RealizeContext(document, resources: resources);
 
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};
