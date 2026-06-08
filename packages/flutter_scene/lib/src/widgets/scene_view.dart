@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/render_view.dart';
 import 'package:flutter_scene/src/scene.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
@@ -11,6 +12,12 @@ import 'package:flutter_scene/src/scene.dart';
 /// orbiting view); pass a fixed [SceneView.camera] instead when the camera does
 /// not change over time.
 typedef SceneCameraBuilder = Camera Function(Duration elapsed);
+
+/// Builds the list of [RenderView]s to render for the current frame from the
+/// [elapsed] time since the view started ticking. Use this for multi-view
+/// rendering (split-screen, picture-in-picture); pass a single
+/// [SceneView.camera] or [SceneView.cameraBuilder] for one view.
+typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 
 /// Called once per frame with the total [elapsed] time and the [deltaSeconds]
 /// since the previous tick. Drive per-frame app logic here, or advance the
@@ -56,29 +63,40 @@ typedef SceneTickCallback =
 class SceneView extends StatefulWidget {
   /// Renders [scene], driving a repaint each frame.
   ///
-  /// Exactly one of [camera] or [cameraBuilder] must be provided.
+  /// Exactly one of [camera], [cameraBuilder], or [viewsBuilder] must be
+  /// provided.
   const SceneView(
     this.scene, {
     super.key,
     this.camera,
     this.cameraBuilder,
+    this.viewsBuilder,
     this.autoTick = true,
     this.pixelRatio,
     this.onTick,
   }) : assert(
-         (camera == null) != (cameraBuilder == null),
-         'Provide exactly one of camera or cameraBuilder.',
+         (camera != null ? 1 : 0) +
+                 (cameraBuilder != null ? 1 : 0) +
+                 (viewsBuilder != null ? 1 : 0) ==
+             1,
+         'Provide exactly one of camera, cameraBuilder, or viewsBuilder.',
        );
 
   /// The scene to render. Owned and mutated by the application.
   final Scene scene;
 
-  /// A fixed camera. Mutually exclusive with [cameraBuilder].
+  /// A fixed camera. Mutually exclusive with [cameraBuilder] and
+  /// [viewsBuilder].
   final Camera? camera;
 
   /// Builds the camera each frame from the elapsed time. Mutually exclusive
-  /// with [camera].
+  /// with [camera] and [viewsBuilder].
   final SceneCameraBuilder? cameraBuilder;
+
+  /// Builds the list of views to render each frame (split-screen,
+  /// picture-in-picture). Mutually exclusive with [camera] and
+  /// [cameraBuilder].
+  final SceneViewsBuilder? viewsBuilder;
 
   /// Whether to drive a repaint every frame with an internal [Ticker].
   ///
@@ -144,6 +162,8 @@ class _SceneViewState extends State<SceneView>
   Camera _cameraForFrame() =>
       widget.camera ?? widget.cameraBuilder!(_elapsed.value);
 
+  List<RenderView> _viewsForFrame() => widget.viewsBuilder!(_elapsed.value);
+
   @override
   void reassemble() {
     super.reassemble();
@@ -174,7 +194,8 @@ class _SceneViewState extends State<SceneView>
         size: Size.infinite,
         painter: _ScenePainter(
           scene: widget.scene,
-          cameraForFrame: _cameraForFrame,
+          cameraForFrame: widget.viewsBuilder == null ? _cameraForFrame : null,
+          viewsForFrame: widget.viewsBuilder == null ? null : _viewsForFrame,
           pixelRatio: widget.pixelRatio,
           repaint: _repaint,
         ),
@@ -187,28 +208,41 @@ class _ScenePainter extends CustomPainter {
   _ScenePainter({
     required this.scene,
     required this.cameraForFrame,
+    required this.viewsForFrame,
     required this.pixelRatio,
     required Listenable repaint,
   }) : super(repaint: repaint);
 
   final Scene scene;
-  final Camera Function() cameraForFrame;
+  final Camera Function()? cameraForFrame;
+  final List<RenderView> Function()? viewsForFrame;
   final double? pixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
-    scene.render(
-      cameraForFrame(),
-      canvas,
-      viewport: Offset.zero & size,
-      pixelRatio: pixelRatio,
-    );
+    final views = viewsForFrame;
+    if (views != null) {
+      scene.renderViews(
+        views(),
+        canvas,
+        region: Offset.zero & size,
+        pixelRatio: pixelRatio,
+      );
+    } else {
+      scene.render(
+        cameraForFrame!(),
+        canvas,
+        viewport: Offset.zero & size,
+        pixelRatio: pixelRatio,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _ScenePainter oldDelegate) =>
       scene != oldDelegate.scene ||
       cameraForFrame != oldDelegate.cameraForFrame ||
+      viewsForFrame != oldDelegate.viewsForFrame ||
       pixelRatio != oldDelegate.pixelRatio;
 }
 
