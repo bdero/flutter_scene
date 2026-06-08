@@ -13,12 +13,15 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
-/// Builds a scene as an `.fscene` document in code, writes it to a `.fsceneb`
-/// binary container, reads it back, and realizes it into a live node graph.
-/// This exercises the full round-trip: document model -> binary package ->
-/// live scene, with procedural geometry, a payload-backed mesh (interleaved
-/// vertex/index chunks, the shape an imported model takes), parameter
-/// materials, and a directional light.
+/// Builds a scene as an `.fscene` document in code and runs it through the
+/// whole format pipeline both ways: document -> `.fsceneb` -> live graph
+/// (realize), then live graph -> document (serialize) -> `.fsceneb` -> live
+/// graph again. The twice-realized scene is what renders, so anything that
+/// fails to survive serialization (payload geometry, textures, materials,
+/// the light) would visibly drop out. It exercises procedural geometry, a
+/// payload-backed mesh (interleaved vertex/index chunks, the shape an imported
+/// model takes), an image-payload texture, parameter materials, and a
+/// directional light.
 class ExampleFscene extends StatefulWidget {
   const ExampleFscene({super.key});
 
@@ -32,8 +35,11 @@ class _ExampleFsceneState extends State<ExampleFscene> {
   @override
   void initState() {
     super.initState();
-    final bytes = writeFsceneb(_buildDocument());
-    scene.add(loadFscenebBytes(bytes));
+    // Realize the authored document, serialize the live graph back to a
+    // document, then realize that. What renders is the round-tripped scene.
+    final realized = loadFscenebBytes(writeFsceneb(_buildDocument()));
+    final roundTripped = serializeScene(realized);
+    scene.add(loadFscenebBytes(writeFsceneb(roundTripped)));
   }
 
   @override

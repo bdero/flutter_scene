@@ -6,9 +6,13 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
+import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
+import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/mesh.dart';
@@ -22,11 +26,13 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(CameraCodec());
 }
 
-/// Codec for [MeshComponent]. Realizes a mesh from `geometry` and `material`
-/// resource references via the context's resource realizer.
-// TODO(fscene): serialize meshes back to resources. A live geometry is opaque
-// GPU buffers, so this needs a tracked source resource id or payload
-// extraction (alongside the binary package format).
+/// Codec for [MeshComponent]. Realizes a mesh from geometry/material resource
+/// references through the context's resource realizer, and serializes a mesh
+/// back by recovering the resources it was realized from.
+///
+/// A single primitive is carried as `geometry` and `material` references; a
+/// multi-primitive mesh uses a `primitives` list of `{geometry, material}`
+/// entries.
 class MeshCodec extends ComponentCodec {
   @override
   String get type => 'mesh';
@@ -38,23 +44,101 @@ class MeshCodec extends ComponentCodec {
       debugPrint('fscene: mesh component skipped (no resource realizer)');
       return null;
     }
-    final geometry = spec.properties['geometry'];
-    final material = spec.properties['material'];
-    if (geometry is! ResourceRefValue || material is! ResourceRefValue) {
-      debugPrint('fscene: mesh component missing geometry/material references');
+    final pairs = _primitivePairs(spec);
+    if (pairs.isEmpty) {
+      debugPrint('fscene: mesh component has no geometry/material references');
       return null;
     }
     return MeshComponent(
-      Mesh(realizer.geometry(geometry.id), realizer.material(material.id)),
+      Mesh.primitives(
+        primitives: [
+          for (final (geometryId, materialId) in pairs)
+            MeshPrimitive(
+              realizer.geometry(geometryId),
+              realizer.material(materialId),
+            ),
+        ],
+      ),
     );
   }
 
   @override
   ComponentSpec? serialize(Component component, SerializeContext context) {
-    if (component is MeshComponent) {
-      debugPrint('fscene: mesh serialization is not implemented yet');
+    if (component is! MeshComponent) return null;
+    final dest = context.document;
+    final pairs = <(LocalId, LocalId)>[];
+    for (final primitive in component.mesh.primitives) {
+      final geometryId = _serializeResource(primitive.geometry, dest);
+      final materialId = _serializeResource(primitive.material, dest);
+      if (geometryId == null || materialId == null) {
+        debugPrint(
+          'fscene: mesh primitive not serialized; its geometry or material '
+          'was not produced by the realizer',
+        );
+        continue;
+      }
+      pairs.add((geometryId, materialId));
+    }
+    if (pairs.isEmpty) return null;
+    if (pairs.length == 1) {
+      return ComponentSpec(
+        type,
+        properties: {
+          'geometry': ResourceRefValue(pairs.first.$1),
+          'material': ResourceRefValue(pairs.first.$2),
+        },
+      );
+    }
+    return ComponentSpec(
+      type,
+      properties: {
+        'primitives': ListValue([
+          for (final (geometryId, materialId) in pairs)
+            MapValue({
+              'geometry': ResourceRefValue(geometryId),
+              'material': ResourceRefValue(materialId),
+            }),
+        ]),
+      },
+    );
+  }
+
+  // Reads the mesh's primitive references, accepting both the single-primitive
+  // shorthand (`geometry`/`material`) and the `primitives` list.
+  List<(LocalId, LocalId)> _primitivePairs(ComponentSpec spec) {
+    final primitives = spec.properties['primitives'];
+    if (primitives is ListValue) {
+      final out = <(LocalId, LocalId)>[];
+      for (final entry in primitives.values) {
+        if (entry is MapValue) {
+          final pair = _pair(entry.values);
+          if (pair != null) out.add(pair);
+        }
+      }
+      return out;
+    }
+    final pair = _pair(spec.properties);
+    return pair == null ? const [] : [pair];
+  }
+
+  (LocalId, LocalId)? _pair(Map<String, PropertyValue> props) {
+    final geometry = props['geometry'];
+    final material = props['material'];
+    if (geometry is ResourceRefValue && material is ResourceRefValue) {
+      return (geometry.id, material.id);
     }
     return null;
+  }
+
+  // Recovers the source resource a live geometry or material was realized from
+  // and copies it into [dest], returning its id. Returns null for an object the
+  // realizer did not produce.
+  // TODO(fscene): serialize hand-built geometry/materials (re-pack a
+  // MeshGeometry's CPU streams; read back material factor fields).
+  LocalId? _serializeResource(Object live, SceneDocument dest) {
+    final origin = resourceOrigin(live);
+    if (origin == null) return null;
+    return copyResourceInto(dest, origin.document, origin.resourceId);
   }
 }
 
