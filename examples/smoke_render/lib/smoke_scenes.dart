@@ -101,10 +101,16 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // and the lit material's shadow sampling, which the other scenes don't.
   SmokeScene('directional_shadow', () {
     final scene = Scene();
-    scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(-0.4, -1.0, -0.35),
-      castsShadow: true,
-      shadowMaxDistance: 20.0,
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(
+            direction: vm.Vector3(-0.4, -1.0, -0.35),
+            castsShadow: true,
+            shadowMaxDistance: 20.0,
+          ),
+        ),
+      ),
     );
     // Ground plane (receiver), centered at the origin in the XZ plane.
     scene.add(

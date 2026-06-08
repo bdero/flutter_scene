@@ -91,11 +91,15 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     // A key light that casts shadows across the playfield. Pull the shadow
     // distance in from the default (150) so the cascades concentrate on
     // this compact playground and the cast shadows stay crisp.
-    scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(-0.6, -1.0, -0.45),
-      intensity: 3.0,
-      castsShadow: true,
-      shadowMaxDistance: 35.0,
+    scene.root.addComponent(
+      DirectionalLightComponent(
+        DirectionalLight(
+          direction: vm.Vector3(-0.6, -1.0, -0.45),
+          intensity: 3.0,
+          castsShadow: true,
+          shadowMaxDistance: 35.0,
+        ),
+      ),
     );
     scene.environmentIntensity = 0.6;
 
