@@ -66,5 +66,9 @@
     "CubeToEquirectFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_cube_to_equirect.frag"
+    },
+    "ShProjectFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_sh_project.frag"
     }
 }
