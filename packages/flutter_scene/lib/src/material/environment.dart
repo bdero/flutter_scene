@@ -207,7 +207,10 @@ base class EnvironmentMap {
     const twoPi = 2.0 * math.pi;
     for (var py = 0; py < height; py++) {
       final v = (py + 0.5) / height;
-      final latitude = (v - 0.5) * math.pi; // asin(dirY)
+      // Row 0 (the top of the image) is the up hemisphere (+y), matching the
+      // standard equirect convention loaded images use and the way the
+      // prefilter and SH projection sample the source.
+      final latitude = (0.5 - v) * math.pi; // asin(dirY)
       final cosLat = math.cos(latitude);
       final dirY = math.sin(latitude);
       for (var px = 0; px < width; px++) {
@@ -363,7 +366,12 @@ base class EnvironmentMap {
       final cosLat = math.cos(latitude);
       final dirY = math.sin(latitude);
       final weightRow = cosLat * cellSolidAngle;
-      final py = (v * height).floor().clamp(0, height - 1);
+      // The source equirect stores +y (up) at the top of the image (row 0),
+      // but increasing v here maps to increasing latitude (up). Flip the row
+      // lookup so the up hemisphere reads the top of the image, matching the
+      // prefilter's source sampling; otherwise the diffuse irradiance is
+      // vertically inverted relative to the specular radiance.
+      final py = ((1.0 - v) * height).floor().clamp(0, height - 1);
 
       for (var i = 0; i < numPhi; i++) {
         final u = (i + 0.5) / numPhi;

@@ -22,8 +22,16 @@ out vec4 frag_color;
 
 // Samples the source environment as linear radiance. An sRGB source is
 // linearized; an HDR source (source_is_linear) already is linear.
+//
+// The source equirect image stores +y (up, the north pole) at the top of the
+// image (texture V = 0), but SphericalToEquirectangular maps up to V = 1, so
+// the source V is flipped here. Without this the prefiltered atlas (and the
+// image-based lighting that samples it) comes out vertically inverted: the up
+// hemisphere reads the ground and vice versa.
 vec3 SampleSourceRadiance(vec3 direction) {
-  vec3 c = SampleEnvironmentTexture(source_equirect, direction);
+  vec2 uv = SphericalToEquirectangular(direction);
+  uv.y = 1.0 - uv.y;
+  vec3 c = texture(source_equirect, uv).rgb;
   return prefilter_info.source_is_linear > 0.5 ? c : SRGBToLinear(c);
 }
 
