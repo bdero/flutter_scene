@@ -27,6 +27,7 @@ import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'render_view.dart';
 import 'shaders.dart';
+import 'sky_environment.dart';
 import 'skybox.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
@@ -209,6 +210,15 @@ base class Scene implements SceneGraph {
   /// (optionally blurred), but the two can be set independently. The engine
   /// draws the skybox behind all geometry; you do not place any geometry.
   Skybox? skybox;
+
+  /// Drives [environment] from a sky on a refresh policy, or null (the
+  /// default) to leave [environment] caller-managed.
+  ///
+  /// While set, the binding owns [environment]: the sky is baked into the
+  /// image-based lighting when the binding is assigned, then re-baked per
+  /// [SkyEnvironment.refresh] (manually invalidated, on an interval, or every
+  /// frame). Setting it back to null keeps the last baked environment.
+  SkyEnvironment? skyEnvironment;
 
   // The component backing the [directionalLight] convenience: a single
   // light attached to [root]. Null when no scene-level light is set.
@@ -437,6 +447,17 @@ base class Scene implements SceneGraph {
         pixelRatio ??
         ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ??
         1.0;
+
+    // Re-bake the sky-driven environment when its refresh policy says one is
+    // due. The bake submits its own passes, so like the lazy default-prefilter
+    // below it must run before this frame's render graph is built.
+    final skyEnv = skyEnvironment;
+    if (skyEnv != null) {
+      final baked = skyEnv.bakeIfDue(DateTime.now());
+      if (baked != null) {
+        environment = baked;
+      }
+    }
 
     // Resolve the IBL environment up front (before building any render
     // graph): the default is built lazily here on first use, which submits
