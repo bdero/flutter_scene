@@ -60,15 +60,25 @@ base class EnvironmentMap {
   /// Wraps an already-built prefiltered-radiance atlas.
   ///
   /// [prefilteredRadiance] must be a roughness-band atlas as produced by
-  /// [prefilterEquirectRadiance]. [diffuseSphericalHarmonics], if given,
-  /// must be [kDiffuseShCoefficientCount] RGB coefficients (with the
-  /// Lambertian convolution and `1/pi` already folded in, as
-  /// [computeDiffuseSphericalHarmonics] returns); when omitted the diffuse
+  /// [prefilterEquirectRadiance]. The diffuse term comes from
+  /// [diffuseSphericalHarmonics] ([kDiffuseShCoefficientCount] RGB
+  /// coefficients with the Lambertian convolution and `1/pi` already folded
+  /// in, as [computeDiffuseSphericalHarmonics] returns), or from
+  /// [diffuseShTexture] (a 9x1 coefficient texture already on the GPU, as a
+  /// sky bake produces); pass at most one. When both are omitted the diffuse
   /// term is zero.
   factory EnvironmentMap.fromGpuTextures({
     required gpu.Texture prefilteredRadiance,
     List<Vector3>? diffuseSphericalHarmonics,
+    gpu.Texture? diffuseShTexture,
   }) {
+    assert(
+      diffuseSphericalHarmonics == null || diffuseShTexture == null,
+      'Pass diffuseSphericalHarmonics or diffuseShTexture, not both.',
+    );
+    if (diffuseShTexture != null) {
+      return EnvironmentMap._fromGpuSh(prefilteredRadiance, diffuseShTexture);
+    }
     return EnvironmentMap._(
       prefilteredRadiance,
       diffuseSphericalHarmonics ?? _zeroSphericalHarmonics(),

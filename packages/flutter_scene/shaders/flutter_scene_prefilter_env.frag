@@ -10,6 +10,12 @@ uniform PrefilterInfo {
   // 1.0 when source_equirect already holds linear radiance (an HDR
   // environment); 0.0 when it is sRGB-encoded and must be linearized.
   float source_is_linear;
+  // The roughness band to compute this pass, or a negative value to compute
+  // the whole atlas in one pass. Band mode discards every texel outside the
+  // band before the expensive sample loop, so an incremental bake (one band
+  // per frame, LoadAction.load preserving the others) costs roughly
+  // 1/kPrefilterBands of the full pass.
+  float band_index;
 }
 prefilter_info;
 
@@ -76,6 +82,10 @@ vec3 ImportanceSampleGGX(vec2 xi, vec3 n, float roughness) {
 
 void main() {
   float band_index = floor(v_uv.y * kPrefilterBands);
+  if (prefilter_info.band_index >= 0.0 &&
+      band_index != prefilter_info.band_index) {
+    discard;
+  }
   float band_v = fract(v_uv.y * kPrefilterBands);
   vec3 n = normalize(EquirectangularToSpherical(vec2(v_uv.x, band_v)));
   // Standard "view == normal" prefiltering assumption.

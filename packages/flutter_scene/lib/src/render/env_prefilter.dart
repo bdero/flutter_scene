@@ -71,7 +71,21 @@ gpu.Texture prefilterEquirectRadiance(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,
 }) {
-  final atlas = gpu.gpuContext.createTexture(
+  final atlas = createPrefilterAtlasTexture();
+  _prefilterPass(
+    sourceEquirect,
+    atlas,
+    band: -1,
+    clear: true,
+    sourceIsLinear: sourceIsLinear,
+  );
+  return atlas;
+}
+
+/// Creates an empty roughness-band atlas render target, for incremental
+/// prefiltering via [prefilterEquirectRadianceBand].
+gpu.Texture createPrefilterAtlasTexture() {
+  return gpu.gpuContext.createTexture(
     gpu.StorageMode.devicePrivate,
     kPrefilterBandWidth,
     kPrefilterBandHeight * kPrefilterBandCount,
@@ -80,13 +94,49 @@ gpu.Texture prefilterEquirectRadiance(
     enableShaderReadUsage: true,
     coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
   );
+}
 
+/// Prefilters a single roughness [band] of [atlas] from [sourceEquirect],
+/// preserving the other bands.
+///
+/// One band costs roughly `1/kPrefilterBandCount` of the full prefilter
+/// (texels outside the band discard before the sample loop), so an
+/// incremental bake can spread the atlas across frames, one band per frame.
+/// The atlas holds a complete result only once every band has been written.
+void prefilterEquirectRadianceBand(
+  gpu.Texture sourceEquirect,
+  gpu.Texture atlas,
+  int band, {
+  bool sourceIsLinear = false,
+}) {
+  assert(band >= 0 && band < kPrefilterBandCount);
+  _prefilterPass(
+    sourceEquirect,
+    atlas,
+    band: band,
+    clear: false,
+    sourceIsLinear: sourceIsLinear,
+  );
+}
+
+void _prefilterPass(
+  gpu.Texture sourceEquirect,
+  gpu.Texture atlas, {
+  required int band,
+  required bool clear,
+  required bool sourceIsLinear,
+}) {
   final vertexShader = baseShaderLibrary['FullscreenVertex']!;
   final fragmentShader = baseShaderLibrary['PrefilterEnvFragment']!;
   final commandBuffer = gpu.gpuContext.createCommandBuffer();
   final renderPass = commandBuffer.createRenderPass(
     gpu.RenderTarget.singleColor(
-      gpu.ColorAttachment(texture: atlas, clearValue: Vector4.zero()),
+      clear
+          ? gpu.ColorAttachment(texture: atlas, clearValue: Vector4.zero())
+          : gpu.ColorAttachment(
+              texture: atlas,
+              loadAction: gpu.LoadAction.load,
+            ),
     ),
   );
   renderPass.bindPipeline(
@@ -103,13 +153,15 @@ gpu.Texture prefilterEquirectRadiance(
       heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
     ),
   );
-  // A single float (std140-padded to 16 bytes): the sRGB-vs-linear flag.
-  final info = Float32List(4)..[0] = sourceIsLinear ? 1.0 : 0.0;
+  // Two floats (std140-padded to 16 bytes): the sRGB-vs-linear flag and the
+  // band index (negative computes the whole atlas in one pass).
+  final info = Float32List(4)
+    ..[0] = sourceIsLinear ? 1.0 : 0.0
+    ..[1] = band.toDouble();
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('PrefilterInfo'),
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
   commandBuffer.submit();
-  return atlas;
 }
