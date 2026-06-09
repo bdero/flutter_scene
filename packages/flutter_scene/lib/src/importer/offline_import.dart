@@ -57,6 +57,7 @@ void importGltfToFsceneb(
   String inputGltfFilePath,
   String outputFscenebFilePath, {
   String? workingDirectory,
+  bool compressTextures = false,
 }) {
   final workingDirectoryUri = Uri.directory(
     workingDirectory ?? Directory.current.path,
@@ -71,7 +72,11 @@ void importGltfToFsceneb(
   final inputBytes = File(inputGltfFilePath).readAsBytesSync();
   final container = parseGlb(inputBytes);
   final doc = parseGltfJson(container.json);
-  final outputBytes = emitFsceneb(doc, container.binaryChunk);
+  final outputBytes = emitFsceneb(
+    doc,
+    container.binaryChunk,
+    compressTextures: compressTextures,
+  );
   final outputFile = File(outputFscenebFilePath);
   outputFile.parent.createSync(recursive: true);
   outputFile.writeAsBytesSync(outputBytes);

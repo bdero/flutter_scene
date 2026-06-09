@@ -27,20 +27,34 @@ import '../../../fscene/binary/fsceneb.dart';
 import '../../../fscene/property_value.dart';
 import '../../../fscene/scene_document.dart';
 import '../../../fscene/specs.dart';
+import '../../../texture/ktx2_image.dart';
 import '../gltf/accessor.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
 
 /// Converts a parsed glTF document (plus its binary buffer) into `.fsceneb`
 /// container bytes.
-Uint8List emitFsceneb(GltfDocument doc, Uint8List bufferData) =>
-    writeFsceneb(buildSceneDocument(doc, bufferData));
+Uint8List emitFsceneb(
+  GltfDocument doc,
+  Uint8List bufferData, {
+  bool compressTextures = false,
+}) => writeFsceneb(
+  buildSceneDocument(doc, bufferData, compressTextures: compressTextures),
+);
 
 /// Builds an `.fscene` [SceneDocument] from a parsed glTF document.
 ///
 /// The document is declared right-handed ([Handedness.right]); the realizer
 /// applies the glTF-to-engine mirror, so no per-node winding flip is baked in.
-SceneDocument buildSceneDocument(GltfDocument doc, Uint8List bufferData) {
+///
+/// When [compressTextures] is set, images are stored as mipped, supercompressed
+/// KTX2 block payloads (`format: 'ktx2'`) instead of raw `rgba8`, shrinking the
+/// container; the realizer transcodes or decodes them at load.
+SceneDocument buildSceneDocument(
+  GltfDocument doc,
+  Uint8List bufferData, {
+  bool compressTextures = false,
+}) {
   final seed = _seedFrom(bufferData);
   final document = SceneDocument(
     documentId: DocumentId.generate(Random(seed)),
@@ -59,7 +73,13 @@ SceneDocument buildSceneDocument(GltfDocument doc, Uint8List bufferData) {
   // (which references materials).
   final textureIds = [
     for (final texture in doc.textures)
-      _buildTexture(document, texture, doc, bufferData),
+      _buildTexture(
+        document,
+        texture,
+        doc,
+        bufferData,
+        compressTextures: compressTextures,
+      ),
   ];
   final materialIds = [
     for (final material in doc.materials)
@@ -478,8 +498,9 @@ LocalId? _buildTexture(
   SceneDocument document,
   GltfTexture texture,
   GltfDocument doc,
-  Uint8List bufferData,
-) {
+  Uint8List bufferData, {
+  bool compressTextures = false,
+}) {
   if (texture.source == null || texture.source! >= doc.images.length) {
     return null;
   }
@@ -494,12 +515,24 @@ LocalId? _buildTexture(
     final decoded = img.decodeImage(encoded);
     if (decoded != null) {
       final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
-      final bytes = rgba.getBytes(order: img.ChannelOrder.rgba);
+      final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
+      // TODO(texture-compression): pick quality/sRGB per material role (base
+      // color is sRGB; normal/metallic-roughness/occlusion are linear) once the
+      // texture's slot is known here.
+      final bytes = compressTextures
+          ? encodeImageToKtx2Bytes(
+              raw,
+              rgba.width,
+              rgba.height,
+              generateMips: true,
+              supercompress: true,
+            )
+          : raw;
       final payload = document.addPayload(
         PayloadSpec(
           document.newId(),
           encoding: PayloadEncoding.image,
-          format: 'rgba8',
+          format: compressTextures ? 'ktx2' : 'rgba8',
           width: rgba.width,
           height: rgba.height,
           length: bytes.length,

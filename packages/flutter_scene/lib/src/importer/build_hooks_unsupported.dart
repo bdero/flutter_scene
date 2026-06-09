@@ -30,6 +30,7 @@ Never buildScenes({
   String outputDirectory = 'build/scenes/',
   String discoveryRoot = 'assets/',
   ModelAssetMode assetMode = ModelAssetMode.legacyOnly,
+  bool compressTextures = false,
 }) => throw UnsupportedError(
   'buildScenes runs at build time on native platforms only.',
 );

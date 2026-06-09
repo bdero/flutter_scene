@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
+import 'package:flutter_scene/src/texture/compressed_texture.dart';
 
 /// Turns a document's resources into live, GPU-backed [Geometry] and
 /// [Material] objects, memoizing each so a resource shared by many nodes is
@@ -80,7 +81,11 @@ class ResourceRealizer {
   bool _needsAsyncTexture(TextureResource res) {
     if (res.asset != null) return true;
     final payload = res.payload;
-    return payload != null && document.payload(payload)?.format != 'rgba8';
+    if (payload == null) return false;
+    final format = document.payload(payload)?.format;
+    // rgba8 and our KTX2 block payloads realize synchronously; only encoded
+    // (PNG/JPEG) image payloads need the async image decoder.
+    return format != 'rgba8' && format != 'ktx2';
   }
 
   Future<void> _preloadTexture(TextureResource res) async {
@@ -289,6 +294,10 @@ class ResourceRealizer {
     }
     if (payload.encoding != PayloadEncoding.image) {
       throw FsceneFormatException('Payload $payloadId is not an image');
+    }
+    if (payload.format == 'ktx2') {
+      // Our KTX2 block payload: decode (or transcode) and upload synchronously.
+      return gpuTextureFromKtx2(bytes);
     }
     final width = payload.width;
     final height = payload.height;
