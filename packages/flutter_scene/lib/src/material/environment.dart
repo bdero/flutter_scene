@@ -145,18 +145,20 @@ base class EnvironmentMap {
   /// Bakes a sky into an environment for image-based lighting.
   ///
   /// Renders [source] (a [ShaderSkySource], including a `.fmat` sky) into a
-  /// prefiltered-radiance atlas so the sky also lights the scene. This is GPU
-  /// work meant to run when the sky is set or changes, not every frame; the
-  /// visible `Scene.skybox` draw is separate and cheap. [faceResolution] and
+  /// prefiltered-radiance atlas plus a GPU-projected diffuse SH texture, so
+  /// the sky also lights the scene. This is GPU work meant to run when the
+  /// sky is set or changes, not every frame; the visible `Scene.skybox` draw
+  /// is separate and cheap. To re-bake on a schedule instead of by hand, set
+  /// `Scene.skyEnvironment` with a refresh policy. [faceResolution] and
   /// [equirectWidth] trade quality for bake cost.
   ///
   /// Only [ShaderSkySource]-based skies can be baked; an [EnvironmentSkySource]
   /// already is an environment.
-  static Future<EnvironmentMap> fromSky(
+  static EnvironmentMap fromSky(
     SkySource source, {
     int faceResolution = 128,
     int equirectWidth = 512,
-  }) async {
+  }) {
     if (source is! ShaderSkySource) {
       throw ArgumentError(
         'EnvironmentMap.fromSky requires a ShaderSkySource (or a .fmat sky); '
