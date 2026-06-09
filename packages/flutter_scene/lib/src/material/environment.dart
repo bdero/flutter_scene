@@ -38,6 +38,14 @@ base class EnvironmentMap {
       _diffuseSphericalHarmonics = sh,
       _diffuseShTexture = _shTextureFromList(sh);
 
+  // Wraps an already-built prefiltered atlas and a GPU-computed SH coefficient
+  // texture (the diffuse term lives only on the GPU, so the coefficient list
+  // is empty). Used by [fromSky].
+  EnvironmentMap._fromGpuSh(
+    this._prefilteredRadianceTexture,
+    this._diffuseShTexture,
+  ) : _diffuseSphericalHarmonics = const <Vector3>[];
+
   /// A black environment that contributes no image-based lighting.
   ///
   /// Specular reflections are black and the diffuse term is zero, so
@@ -155,15 +163,13 @@ base class EnvironmentMap {
         'an EnvironmentSkySource already is an environment.',
       );
     }
-    final atlas = bakeSkyToPrefilteredAtlas(
+    final baked = bakeSkyEnvironment(
       source,
       EnvironmentMap.empty(),
       faceResolution: faceResolution,
       equirectWidth: equirectWidth,
     );
-    // TODO(skybox-ibl): the diffuse term is zero for now (specular only); the
-    // GPU spherical-harmonic reduction is the next milestone.
-    return EnvironmentMap.fromGpuTextures(prefilteredRadiance: atlas);
+    return EnvironmentMap._fromGpuSh(baked.atlas, baked.sh);
   }
 
   // Scratch storage for reinterpreting a 32-bit float as its raw bits.
