@@ -25,6 +25,10 @@ void main(List<String> args) {
       buildOutput: output,
       inputFilePaths: corpus,
       assetMode: ModelAssetMode.dataAssetsIfAvailable,
+      // Store imported textures as compressed KTX2 block payloads so the
+      // import -> compress -> render path is exercised in the app (dash's
+      // textures shrink the most).
+      compressTextures: true,
     );
     await buildShaderBundleJson(
       buildInput: config,
