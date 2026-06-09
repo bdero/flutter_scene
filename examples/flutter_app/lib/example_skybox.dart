@@ -53,16 +53,28 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     await _rebakeLighting();
     if (!mounted) return;
 
-    // A smooth metallic sphere mirrors the baked environment.
+    // Left: a smooth metallic sphere mirrors the baked environment (specular).
     scene.add(
       Node(
         mesh: Mesh(
-          SphereGeometry(radius: 1.3),
+          SphereGeometry(radius: 1.0),
           PhysicallyBasedMaterial()
             ..metallicFactor = 1.0
             ..roughnessFactor = 0.08,
         ),
-      ),
+      )..localTransform = vm.Matrix4.translationValues(-1.5, 0, 0),
+    );
+    // Right: a matte sphere lit by the sky's diffuse irradiance (the SH term).
+    scene.add(
+      Node(
+        mesh: Mesh(
+          SphereGeometry(radius: 1.0),
+          PhysicallyBasedMaterial()
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 1.0
+            ..baseColorFactor = vm.Vector4(0.85, 0.85, 0.85, 1.0),
+        ),
+      )..localTransform = vm.Matrix4.translationValues(1.5, 0, 0),
     );
 
     setState(() => loaded = true);
