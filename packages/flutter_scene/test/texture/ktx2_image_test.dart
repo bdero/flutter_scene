@@ -91,5 +91,38 @@ void main() {
       // under the 4 bytes/texel of raw rgba8.
       expect(bytes.length, lessThan(w * h * 4));
     });
+
+    test('round-trips a supercompressed image and shrinks it further', () {
+      const w = 64, h = 64;
+      final rgba = _gradient(w, h);
+      final plain = encodeImageToKtx2Bytes(rgba, w, h);
+      final packed = encodeImageToKtx2Bytes(rgba, w, h, supercompress: true);
+
+      // A smooth gradient compresses well, so the supercompressed file is
+      // smaller than the raw-block file.
+      expect(packed.length, lessThan(plain.length));
+
+      final decoded = decodeKtx2Level(readKtx2(packed));
+      expect(decoded.width, w);
+      expect(decoded.height, h);
+      expect(_psnr(rgba, decoded.rgba), greaterThan(36));
+    });
+
+    test('round-trips supercompressed mips', () {
+      const w = 32, h = 32;
+      final texture = encodeImageToKtx2(
+        _gradient(w, h),
+        w,
+        h,
+        generateMips: true,
+        supercompress: true,
+      );
+      for (var level = 0; level < texture.levels.length; level++) {
+        final size = mipSize(w, h, level);
+        final decoded = decodeKtx2Level(texture, level: level);
+        expect(decoded.width, size.width);
+        expect(decoded.height, size.height);
+      }
+    });
   });
 }

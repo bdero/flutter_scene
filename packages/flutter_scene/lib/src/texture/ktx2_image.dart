@@ -8,12 +8,28 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/texture/block/universal_block.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
+import 'package:flutter_scene/src/texture/supercompress/lz.dart';
 
 /// Key/value marker naming the block payload format inside our KTX2 files.
 const String kFsBlockFormatKey = 'fsBlockFormat';
 
 /// Current block payload identifier (the [universal_block] layout).
 const String kFsBlockFormatUniversal = 'universal/1';
+
+/// Key/value marker set when level payloads are LZ-supercompressed.
+const String kFsSupercompressKey = 'fsSupercompress';
+
+/// Identifier for the [lz] supercompression of the block payload.
+const String kFsSupercompressLz = 'lz/1';
+
+/// Bytes a level's block payload occupies once decompressed, derived from the
+/// image dimensions (one byte per texel, padded to whole 4x4 blocks).
+int _levelBlockBytes(int width, int height, int level) {
+  final size = mipSize(width, math.max(1, height), level);
+  final blocksX = (size.width + kBlockDim - 1) ~/ kBlockDim;
+  final blocksY = (size.height + kBlockDim - 1) ~/ kBlockDim;
+  return blocksX * blocksY * kBlockBytes;
+}
 
 /// Encodes [width] x [height] rgba8 pixels into a KTX2 texture holding our 4x4
 /// block payload. When [generateMips] is set, a full box-filtered mip chain is
@@ -23,13 +39,12 @@ Ktx2Texture encodeImageToKtx2(
   int width,
   int height, {
   bool generateMips = false,
+  bool supercompress = false,
 }) {
   if (rgba.length < width * height * 4) {
     throw ArgumentError('rgba is too small for ${width}x$height');
   }
-  final levels = <Ktx2Level>[
-    Ktx2Level(data: encodeUniversalBlocks(rgba, width, height)),
-  ];
+  final blockLevels = <Uint8List>[encodeUniversalBlocks(rgba, width, height)];
   if (generateMips) {
     var w = width, h = height;
     var src = rgba;
@@ -37,14 +52,21 @@ Ktx2Texture encodeImageToKtx2(
       final nw = math.max(1, w >> 1);
       final nh = math.max(1, h >> 1);
       src = _downsampleBox(src, w, h, nw, nh);
-      levels.add(Ktx2Level(data: encodeUniversalBlocks(src, nw, nh)));
+      blockLevels.add(encodeUniversalBlocks(src, nw, nh));
       w = nw;
       h = nh;
     }
   }
+  final levels = [
+    for (final blocks in blockLevels)
+      Ktx2Level(
+        data: supercompress ? lzCompress(blocks) : blocks,
+        uncompressedByteLength: blocks.length,
+      ),
+  ];
   return Ktx2Texture(
     vkFormat:
-        0, // VK_FORMAT_UNDEFINED; the block format is in the marker below.
+        0, // VK_FORMAT_UNDEFINED; the block format is in the marker above.
     pixelWidth: width,
     pixelHeight: height,
     levels: levels,
@@ -52,6 +74,10 @@ Ktx2Texture encodeImageToKtx2(
       kFsBlockFormatKey: Uint8List.fromList(
         utf8.encode(kFsBlockFormatUniversal),
       ),
+      if (supercompress)
+        kFsSupercompressKey: Uint8List.fromList(
+          utf8.encode(kFsSupercompressLz),
+        ),
     },
   );
 }
@@ -62,8 +88,15 @@ Uint8List encodeImageToKtx2Bytes(
   int width,
   int height, {
   bool generateMips = false,
+  bool supercompress = false,
 }) => writeKtx2(
-  encodeImageToKtx2(rgba, width, height, generateMips: generateMips),
+  encodeImageToKtx2(
+    rgba,
+    width,
+    height,
+    generateMips: generateMips,
+    supercompress: supercompress,
+  ),
 );
 
 /// The pixel dimensions of mip [level] of a [width] x [height] base image.
@@ -98,22 +131,22 @@ Uint8List encodeImageToKtx2Bytes(
   );
 }
 
-/// Returns a level's decompressed block bytes, undoing supercompression.
+/// Returns a level's block bytes, undoing our LZ supercompression when the
+/// marker is present. The container's own supercompressionScheme stays `none`;
+/// our LZ is a payload-level wrapper signaled by [kFsSupercompressKey].
 Uint8List _levelPayload(Ktx2Texture texture, int level) {
   final stored = texture.levels[level].data;
-  switch (texture.supercompression) {
-    case Ktx2Supercompression.none:
-      return stored;
-    // TODO(texture-compression): decode zstd/zlib/BasisLZ supercompression here
-    // once the supercompressor lands; until then only uncompressed payloads are
-    // read back.
-    case Ktx2Supercompression.zstandard:
-    case Ktx2Supercompression.zlib:
-    case Ktx2Supercompression.basisLz:
-      throw Ktx2FormatException(
-        'Supercompression ${texture.supercompression} is not decodable yet',
-      );
+  final marker = texture.keyValues[kFsSupercompressKey];
+  if (marker == null) return stored;
+  if (utf8.decode(marker) != kFsSupercompressLz) {
+    throw Ktx2FormatException(
+      'Unknown supercompression: ${utf8.decode(marker)}',
+    );
   }
+  return lzDecompress(
+    stored,
+    _levelBlockBytes(texture.pixelWidth, texture.pixelHeight, level),
+  );
 }
 
 /// Box-filters [src] (rgba8, [sw] x [sh]) down to [dw] x [dh].
