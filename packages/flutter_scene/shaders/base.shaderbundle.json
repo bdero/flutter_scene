@@ -62,5 +62,9 @@
     "SkyboxEnvironmentFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_skybox_environment.frag"
+    },
+    "CubeToEquirectFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_cube_to_equirect.frag"
     }
 }
