@@ -80,6 +80,7 @@ export 'src/scene_path.dart';
 export 'src/scene.dart';
 export 'src/shaders.dart';
 export 'src/skin.dart';
+export 'src/skybox.dart';
 export 'src/surface.dart';
 export 'src/widgets/scene_view.dart'
     show SceneCameraBuilder, SceneScope, SceneTickCallback, SceneView;

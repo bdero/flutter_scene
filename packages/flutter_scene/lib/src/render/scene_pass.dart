@@ -10,8 +10,10 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
+import 'package:flutter_scene/src/render/skybox_encoder.dart';
 import 'package:flutter_scene/src/render/ssao_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
+import 'package:flutter_scene/src/skybox.dart';
 
 /// Render-graph blackboard key for the current scene-color texture.
 ///
@@ -33,6 +35,7 @@ class ScenePass extends RenderGraphPass {
     required EnvironmentMap environmentMap,
     required double environmentIntensity,
     Matrix3? environmentTransform,
+    Skybox? skybox,
     required bool enableMsaa,
     DirectionalLight? directionalLight,
     Vector3? directionalLightDirection,
@@ -46,6 +49,7 @@ class ScenePass extends RenderGraphPass {
        _environmentMap = environmentMap,
        _environmentIntensity = environmentIntensity,
        _environmentTransform = environmentTransform,
+       _skybox = skybox,
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
        _directionalLightDirection = directionalLightDirection,
@@ -58,6 +62,7 @@ class ScenePass extends RenderGraphPass {
   final EnvironmentMap _environmentMap;
   final double _environmentIntensity;
   final Matrix3? _environmentTransform;
+  final Skybox? _skybox;
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final Vector3? _directionalLightDirection;
@@ -138,6 +143,24 @@ class ScenePass extends RenderGraphPass {
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(target);
+
+    // Draw the background first, behind the geometry. It writes no depth, so
+    // the opaque phase (depth-tested against the cleared far value) draws
+    // over it; the encoder constructor below re-asserts the opaque state.
+    final skybox = _skybox;
+    if (skybox != null) {
+      encodeSkybox(
+        renderPass,
+        context.transientsBuffer,
+        skybox,
+        _environmentMap,
+        _environmentIntensity,
+        _environmentTransform,
+        _camera,
+        _dimensions,
+      );
+    }
+
     final encoder = SceneEncoder(
       renderPass,
       context.transientsBuffer,

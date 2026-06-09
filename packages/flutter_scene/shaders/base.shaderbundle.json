@@ -54,5 +54,13 @@
     "BloomUpsampleFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_bloom_upsample.frag"
+    },
+    "SkyboxVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_skybox.vert"
+    },
+    "SkyboxEnvironmentFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_skybox_environment.frag"
     }
 }
