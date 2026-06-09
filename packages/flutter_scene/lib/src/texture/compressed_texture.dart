@@ -10,8 +10,18 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/block/transcode_bc1.dart';
+import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+
+/// The order in which compressed families are preferred when the device
+/// supports more than one. BC (desktop) outranks ETC2 (mobile/GLES3/web) on
+/// quality; ASTC is not transcoded yet.
+// TODO(texture-compression): add ASTC at the front once a transcoder exists.
+const List<gpu.TextureCompressionFamily> compressionFamilyPreference = [
+  gpu.TextureCompressionFamily.bc,
+  gpu.TextureCompressionFamily.etc2,
+];
 
 /// Reads a flutter_scene KTX2 file from [bytes] and uploads it as a GPU
 /// texture, choosing a compressed upload when the device supports one and
@@ -22,14 +32,15 @@ gpu.Texture gpuTextureFromKtx2(Uint8List bytes) =>
 /// As [gpuTextureFromKtx2], for an already-parsed [texture].
 gpu.Texture gpuTextureFromKtx2Texture(Ktx2Texture texture) {
   _logFamiliesOnce();
-  // Prefer a compressed upload when both the device and a transcoder support
-  // the family. Only BC1 is implemented today.
-  // TODO(texture-compression): add ASTC and ETC2 transcoders (the Apple and
-  // mobile families) and prefer ASTC > BC > ETC2 per the plan.
-  if (gpu.gpuContext.supportsTextureCompression(
-    gpu.TextureCompressionFamily.bc,
-  )) {
-    return _uploadBc1(texture);
+  // Transcode to the first supported family in the preference order for which
+  // we have a transcoder; otherwise decode to rgba8 and upload uncompressed.
+  for (final family in compressionFamilyPreference) {
+    if (!gpu.gpuContext.supportsTextureCompression(family)) continue;
+    if (family == gpu.TextureCompressionFamily.bc) return _uploadBc1(texture);
+    if (family == gpu.TextureCompressionFamily.etc2) {
+      return _uploadEtc2(texture);
+    }
+    // ASTC: no transcoder yet; fall through to the next family or rgba8.
   }
   return _uploadRgba8(texture);
 }
@@ -63,6 +74,31 @@ gpu.Texture _uploadBc1(Ktx2Texture texture) {
     enableShaderWriteUsage: false,
   );
   result.overwrite(ByteData.sublistView(bc1));
+  return result;
+}
+
+/// Transcodes the base level to ETC2 RGB8 and uploads a compressed texture.
+gpu.Texture _uploadEtc2(Ktx2Texture texture) {
+  final size = mipSize(
+    texture.pixelWidth,
+    texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
+    0,
+  );
+  final blocksX = (size.width + 3) ~/ 4;
+  final blocksY = (size.height + 3) ~/ 4;
+  final etc2 = transcodeUniversalToEtc2Rgb(
+    ktx2LevelBlocks(texture, 0),
+    blocksX * blocksY,
+  );
+  final result = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    size.width,
+    size.height,
+    format: gpu.PixelFormat.etc2RGB8UNormInt,
+    enableRenderTargetUsage: false,
+    enableShaderWriteUsage: false,
+  );
+  result.overwrite(ByteData.sublistView(etc2));
   return result;
 }
 
