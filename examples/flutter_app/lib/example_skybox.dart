@@ -1,19 +1,17 @@
-// Custom skybox example: draws a procedural sky from a caller-authored
-// fragment shader.
+// Custom skybox example: draws a procedural sky authored as a `.fmat` sky.
 //
-// Demonstrates the ShaderSkySource workflow:
-//   1. Author a sky fragment (shaders/example_gradient_sky.frag) that reads
-//      the engine-supplied world view direction `v_ray` and outputs color.
-//   2. Compile it into build/shaderbundles/example.shaderbundle (build hook).
-//   3. Load the bundle, pull the fragment, wrap it in a ShaderSkySource, set
-//      its uniform block, and assign it to scene.skybox.
+// Demonstrates the recommended custom-sky workflow:
+//   1. Author assets/gradient_sky.fmat with a `sky { vec3 Sky(vec3 direction) }`
+//      block and typed parameters.
+//   2. The build hook (buildMaterials) compiles it into the materials bundle.
+//   3. loadFmatSky returns a PreprocessedSky (a SkySource) with typed,
+//      hot-reloadable parameters; assign it to scene.skybox.
 // The engine owns the full-screen draw, depth, and draw order; no geometry is
-// placed for the sky.
+// placed for the sky. (For a raw fragment shader instead, see ShaderSkySource.)
 
 import 'dart:math';
 
 import 'package:flutter/material.dart' hide Material;
-import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -30,7 +28,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   final Scene scene = Scene();
   bool loaded = false;
 
-  ShaderSkySource? _sky;
+  PreprocessedSky? _sky;
 
   // Sun controls, surfaced as sliders.
   double _sunElevation = 0.5; // radians above the horizon
@@ -44,19 +42,8 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   }
 
   Future<void> _load() async {
-    final shaderLibrary = await gpu.loadShaderLibraryAsync(
-      'build/shaderbundles/example.shaderbundle',
-    );
-    final skyShader = shaderLibrary?['GradientSkyFragment'];
-    if (skyShader == null) {
-      throw StateError(
-        'GradientSkyFragment missing from example.shaderbundle. The build '
-        'hook should have produced it; rerun `flutter run` with a clean build.',
-      );
-    }
+    final sky = await loadFmatSky('assets/gradient_sky.fmat');
     if (!mounted) return;
-
-    final sky = ShaderSkySource(fragmentShader: skyShader);
     _sky = sky;
     _refreshSky();
     scene.skybox = Skybox(sky);
@@ -85,13 +72,10 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
       sin(_sunElevation),
       cos(_sunElevation) * cos(_sunAzimuth),
     );
-    // GradientSkyInfo, std140: four vec4 (zenith, horizon, ground, sun).
-    sky.setUniformBlockFromFloats('GradientSkyInfo', <double>[
-      0.05, 0.18, 0.55, 1.0, // zenith
-      0.45, 0.62, 0.90, 1.0, // horizon
-      0.16, 0.14, 0.12, 1.0, // ground
-      dir.x, dir.y, dir.z, _sunSharpness, // sun
-    ]);
+    // Typed, name-addressed parameters from the .fmat sidecar; the colors keep
+    // their .fmat defaults.
+    sky.parameters.setVec3('sun_direction', dir);
+    sky.parameters.setFloat('sun_sharpness', _sunSharpness);
   }
 
   @override
