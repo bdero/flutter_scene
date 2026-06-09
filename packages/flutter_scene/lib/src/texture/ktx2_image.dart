@@ -131,6 +131,11 @@ Uint8List encodeImageToKtx2Bytes(
   );
 }
 
+/// The decompressed 4x4 block payload for [level], ready to decode to rgba8 or
+/// transcode to a GPU block format. Undoes LZ supercompression when present.
+Uint8List ktx2LevelBlocks(Ktx2Texture texture, int level) =>
+    _levelPayload(texture, level);
+
 /// Returns a level's block bytes, undoing our LZ supercompression when the
 /// marker is present. The container's own supercompressionScheme stays `none`;
 /// our LZ is a payload-level wrapper signaled by [kFsSupercompressKey].
