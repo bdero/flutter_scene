@@ -519,12 +519,14 @@ LocalId? _buildTexture(
       // TODO(texture-compression): pick quality/sRGB per material role (base
       // color is sRGB; normal/metallic-roughness/occlusion are linear) once the
       // texture's slot is known here.
+      // TODO(texture-compression): set generateMips once the GPU upload uploads
+      // the full chain (see compressed_texture.dart); today the upload uses the
+      // base level only, so storing mips would just bloat the container.
       final bytes = compressTextures
           ? encodeImageToKtx2Bytes(
               raw,
               rgba.width,
               rgba.height,
-              generateMips: true,
               supercompress: true,
             )
           : raw;

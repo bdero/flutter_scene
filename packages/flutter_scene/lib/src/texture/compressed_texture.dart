@@ -34,55 +34,47 @@ gpu.Texture gpuTextureFromKtx2Texture(Ktx2Texture texture) {
   return _uploadRgba8(texture);
 }
 
-/// Transcodes each level to BC1 and uploads a compressed, mipped texture.
+// TODO(texture-compression): upload the full mip chain once Flutter GPU can
+// mark/generate sampleable mipmaps. Today there is no generateMipmaps API and
+// Impeller does not treat per-level overwrite as a generated mipmap (it warns
+// "mip count > 1, but the mipmap has not been generated" and samples wrong), so
+// the base level is uploaded alone. The KTX2 still carries the precomputed
+// chain for when the engine supports it.
+
+/// Transcodes the base level to BC1 and uploads a compressed texture.
 gpu.Texture _uploadBc1(Ktx2Texture texture) {
-  final levelCount = texture.levels.length;
-  final base = mipSize(
+  final size = mipSize(
     texture.pixelWidth,
     texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
     0,
   );
+  final blocksX = (size.width + 3) ~/ 4;
+  final blocksY = (size.height + 3) ~/ 4;
+  final bc1 = transcodeUniversalToBc1(
+    ktx2LevelBlocks(texture, 0),
+    blocksX * blocksY,
+  );
   final result = gpu.gpuContext.createTexture(
     gpu.StorageMode.hostVisible,
-    base.width,
-    base.height,
+    size.width,
+    size.height,
     format: gpu.PixelFormat.bc1RGBAUNormInt,
     enableRenderTargetUsage: false,
     enableShaderWriteUsage: false,
-    mipLevelCount: levelCount,
   );
-  for (var level = 0; level < levelCount; level++) {
-    final size = mipSize(
-      texture.pixelWidth,
-      texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
-      level,
-    );
-    final blocksX = (size.width + 3) ~/ 4;
-    final blocksY = (size.height + 3) ~/ 4;
-    final bc1 = transcodeUniversalToBc1(
-      ktx2LevelBlocks(texture, level),
-      blocksX * blocksY,
-    );
-    result.overwrite(ByteData.sublistView(bc1), mipLevel: level);
-  }
+  result.overwrite(ByteData.sublistView(bc1));
   return result;
 }
 
-/// Decodes every level to rgba8 and uploads an uncompressed, mipped texture.
+/// Decodes the base level to rgba8 and uploads an uncompressed texture.
 gpu.Texture _uploadRgba8(Ktx2Texture texture) {
   final base = decodeKtx2Level(texture, level: 0);
-  final levelCount = texture.levels.length;
   final result = gpu.gpuContext.createTexture(
     gpu.StorageMode.hostVisible,
     base.width,
     base.height,
-    mipLevelCount: levelCount,
   );
-  result.overwrite(ByteData.sublistView(base.rgba), mipLevel: 0);
-  for (var level = 1; level < levelCount; level++) {
-    final mip = decodeKtx2Level(texture, level: level);
-    result.overwrite(ByteData.sublistView(mip.rgba), mipLevel: level);
-  }
+  result.overwrite(ByteData.sublistView(base.rgba));
   return result;
 }
 
