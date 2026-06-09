@@ -1,6 +1,18 @@
 // Abstract syntax tree for the `.fmat` custom-material format and the error
 // type the parser, validator, and emitter throw.
 
+/// Which rendering contract a `.fmat` targets.
+enum FmatDomain {
+  /// A surface material: the author writes `void Surface(inout MaterialInputs)`
+  /// run on scene geometry through the standard vertex shader.
+  surface,
+
+  /// A sky: the author writes `vec3 Sky(vec3 direction)` drawn full-screen as
+  /// the background. The engine supplies the world view direction and owns the
+  /// draw; `shading_model`, `blending`, and `culling` do not apply.
+  sky,
+}
+
 /// The lighting contract a material opts into.
 enum FmatShadingModel {
   /// The engine runs its physically based lighting (image-based lighting plus
@@ -128,6 +140,7 @@ class FmatParameter {
 class FmatMaterial {
   FmatMaterial({
     required this.name,
+    this.domain = FmatDomain.surface,
     required this.shadingModel,
     required this.blending,
     required this.culling,
@@ -137,12 +150,17 @@ class FmatMaterial {
   });
 
   final String name;
+
+  /// The rendering contract this `.fmat` targets (surface material or sky).
+  final FmatDomain domain;
+
   final FmatShadingModel shadingModel;
   final FmatBlending blending;
   final FmatCulling culling;
   final List<FmatParameter> parameters;
 
-  /// The verbatim contents of the `fragment { }` block.
+  /// The verbatim contents of the code block (`fragment { }` for a surface
+  /// material, `sky { }` for a sky).
   final String fragmentSource;
 
   /// The 1-based line in the source where [fragmentSource] begins, used to

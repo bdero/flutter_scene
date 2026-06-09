@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
+import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 
 const String _indexAssetSuffix = '.index.json';
 const String _indexAssetPrefix = '/flutter_scene/fmat/';
@@ -167,19 +168,65 @@ final class FmatMaterialRegistry {
         await _loadSidecar(index.sidecarAssetKey);
     final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
         .cast<String, Object?>();
+    if (metadata['domain'] == 'sky') {
+      throw StateError(
+        '"$sourcePath" is a sky .fmat; load it with loadFmatSky instead.',
+      );
+    }
     final material = PreprocessedMaterial(
       fragmentShader: shader,
       metadata: metadata,
     );
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
     // from its regenerated sidecar without rebuilding the scene. Debug-only.
-    HotReloadCoordinator.instance.registerMaterial(
+    HotReloadCoordinator.instance.registerFmat(
       material,
       sidecarAssetKey: index.sidecarAssetKey,
       shaderBundleAssetKey: index.shaderBundleAssetKey,
       entryName: resolution.entry.entryName,
     );
     return material;
+  }
+
+  /// Loads the sky whose source is [sourcePath] as a [PreprocessedSky].
+  Future<PreprocessedSky> loadSky(
+    String sourcePath, {
+    String? package,
+    String? bundleName,
+  }) async {
+    final resolution = resolve(
+      sourcePath,
+      package: package,
+      bundleName: bundleName,
+    );
+    final index = resolution.index;
+    final shaderLibrary = _shaderLibraries[index.shaderBundleAssetKey] ??=
+        await _loadShaderLibrary(index.shaderBundleAssetKey);
+    final shader = shaderLibrary[resolution.entry.entryName];
+    if (shader == null) {
+      throw StateError(
+        'Shader entry "${resolution.entry.entryName}" was missing from '
+        '${index.shaderBundleAssetKey}.',
+      );
+    }
+    final metadataByMaterial = _sidecars[index.sidecarAssetKey] ??=
+        await _loadSidecar(index.sidecarAssetKey);
+    final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
+        .cast<String, Object?>();
+    if (metadata['domain'] != 'sky') {
+      throw StateError(
+        '"$sourcePath" is not a sky .fmat (it has no `sky { }` block); load '
+        'it with loadFmatMaterial instead.',
+      );
+    }
+    final sky = PreprocessedSky(fragmentShader: shader, metadata: metadata);
+    HotReloadCoordinator.instance.registerFmat(
+      sky,
+      sidecarAssetKey: index.sidecarAssetKey,
+      shaderBundleAssetKey: index.shaderBundleAssetKey,
+      entryName: resolution.entry.entryName,
+    );
+    return sky;
   }
 
   static Future<List<String>> _loadAssetManifestKeys(AssetBundle bundle) async {
@@ -218,6 +265,23 @@ Future<PreprocessedMaterial> loadFmatMaterial(
     package: package,
     bundleName: bundleName,
   );
+}
+
+/// Loads a DataAssets-backed `.fmat` sky by its source path relative to the
+/// owning package's root (for example `assets/gradient_sky.fmat`).
+///
+/// The `.fmat` must declare a `sky { vec3 Sky(vec3 direction) }` block. Assign
+/// the result to `Scene.skybox` via a `Skybox`. Pass [package] and/or
+/// [bundleName] to disambiguate when the same source path is provided by more
+/// than one bundle.
+Future<PreprocessedSky> loadFmatSky(
+  String sourcePath, {
+  String? package,
+  String? bundleName,
+  AssetBundle? bundle,
+}) async {
+  final registry = await FmatMaterialRegistry.load(bundle: bundle);
+  return registry.loadSky(sourcePath, package: package, bundleName: bundleName);
 }
 
 /// Normalizes a `.fmat` source path for keying (drops a trailing `.fmat`).
