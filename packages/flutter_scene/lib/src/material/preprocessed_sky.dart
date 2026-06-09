@@ -27,7 +27,10 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,
   }) : parameters = MaterialParameters.fromMetadata(fragmentShader, metadata),
-       super(fragmentShader: fragmentShader);
+       super(
+         fragmentShader: fragmentShader,
+         useEnvironment: metadata['use_environment'] == true,
+       );
 
   /// The sky's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
@@ -38,6 +41,7 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     Map<String, Object?> metadata,
   ) {
     this.fragmentShader = fragmentShader;
+    useEnvironment = metadata['use_environment'] == true;
     parameters.updateFromMetadata(fragmentShader, metadata);
   }
 
@@ -50,5 +54,19 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     // Parameters (the MaterialParams block plus any declared samplers) carry
     // the sky's inputs; the raw uniform-block path is unused here.
     parameters.bind(pass, fragmentShader, transientsBuffer);
+    // A `requires: [environment]` sky samples the scene's prefiltered
+    // radiance, bound the same way the standard material binds it.
+    if (useEnvironment) {
+      pass.bindTexture(
+        fragmentShader.getUniformSlot('prefiltered_radiance'),
+        environment.prefilteredRadianceTexture,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+          widthAddressMode: gpu.SamplerAddressMode.repeat,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
+      );
+    }
   }
 }

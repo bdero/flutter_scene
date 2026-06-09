@@ -108,6 +108,18 @@ String _emitSkyGlsl(FmatMaterial material) {
   }
   if (samplers.isNotEmpty) sb.writeln();
 
+  if (material.useEnvironment) {
+    sb.writeln(
+      '// The scene environment\'s prefiltered-radiance atlas, bound by the',
+    );
+    sb.writeln(
+      '// engine. Sample with SamplePrefilteredRadiance(prefiltered_radiance,',
+    );
+    sb.writeln('// direction, roughness).');
+    sb.writeln('uniform sampler2D prefiltered_radiance;');
+    sb.writeln();
+  }
+
   sb.writeln('in vec3 v_ray;');
   sb.writeln('out vec4 frag_color;');
   sb.writeln();
@@ -131,6 +143,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
   return <String, Object?>{
     'name': material.name,
     'domain': material.domain.name,
+    if (material.useEnvironment) 'use_environment': true,
     'shading_model': material.shadingModel.name,
     'blending': material.blending.name,
     'culling': material.culling.name,

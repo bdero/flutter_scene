@@ -314,5 +314,52 @@ sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
         _throwsFmat('not both'),
       );
     });
+
+    const envSky = '''
+material { name: "EnvSky", requires: [environment] }
+sky {
+  vec3 Sky(vec3 direction) {
+    return SamplePrefilteredRadiance(prefiltered_radiance, direction, 0.5);
+  }
+}
+''';
+
+    test('requires: [environment] declares and records the atlas', () {
+      final m = parseFmat(envSky);
+      expect(m.useEnvironment, isTrue);
+      final glsl = emitFragmentGlsl(m);
+      expect(glsl, contains('uniform sampler2D prefiltered_radiance;'));
+      expect(buildSidecar(m)['use_environment'], isTrue);
+    });
+
+    test('skies without requires do not declare the atlas', () {
+      final m = parseFmat(validSky);
+      expect(m.useEnvironment, isFalse);
+      expect(
+        emitFragmentGlsl(m),
+        isNot(contains('uniform sampler2D prefiltered_radiance;')),
+      );
+      expect(buildSidecar(m).containsKey('use_environment'), isFalse);
+    });
+
+    test('rejects requires: [environment] on a surface material', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", requires: [environment] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('only supported in sky materials'),
+      );
+    });
+
+    test('rejects an unknown requires entry', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", requires: [shadow_map] }
+sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
+'''),
+        _throwsFmat('Unknown `requires` entry'),
+      );
+    });
   });
 }

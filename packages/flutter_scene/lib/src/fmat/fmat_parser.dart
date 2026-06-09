@@ -579,6 +579,35 @@ FmatMaterial _build(
 
   final parameters = _buildParameters(tree['parameters'], fileName);
 
+  // `requires` lists engine-provided resources the shader uses. The only
+  // supported entry is `environment` (the prefiltered-radiance atlas), and
+  // only for skies; a lit surface material already receives the environment.
+  var useEnvironment = false;
+  final requires = tree['requires'];
+  if (requires != null) {
+    if (requires is! List) {
+      throw FmatException('`requires` must be a list.', fileName: fileName);
+    }
+    for (final entry in requires) {
+      if (entry is _Ident && entry.name == 'environment') {
+        useEnvironment = true;
+      } else {
+        throw FmatException(
+          'Unknown `requires` entry; supported: `environment`.',
+          fileName: fileName,
+          line: entry is _Ident ? entry.line : null,
+        );
+      }
+    }
+    if (useEnvironment && domain != FmatDomain.sky) {
+      throw FmatException(
+        '`requires: [environment]` is only supported in sky materials; a '
+        'lit surface material already receives the environment.',
+        fileName: fileName,
+      );
+    }
+  }
+
   // Loose check: the code block must define the expected entry function. We do
   // not fully parse GLSL; this catches the common omission with a clear
   // message.
@@ -604,6 +633,7 @@ FmatMaterial _build(
   return FmatMaterial(
     name: name,
     domain: domain,
+    useEnvironment: useEnvironment,
     shadingModel: shadingModel,
     blending: blending,
     culling: culling,
