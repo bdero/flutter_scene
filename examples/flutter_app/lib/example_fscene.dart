@@ -8,6 +8,8 @@ import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/texture/ktx2_image.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/geometry/primitives.dart'
     show buildCuboidArrays;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -20,9 +22,9 @@ import 'example_settings.dart';
 /// graph again. The twice-realized scene is what renders, so anything that
 /// fails to survive serialization would visibly drop out. It exercises
 /// procedural geometry, a payload-backed mesh, parameter materials, a
-/// directional light, and the asynchronously-loaded resources: an embedded
-/// `rgba8` texture, an external image-asset texture, an encoded (PNG) image
-/// payload, and an `fmat` custom material.
+/// directional light, an embedded `rgba8` texture, a compressed KTX2 block
+/// texture, and the asynchronously-loaded resources: an external image-asset
+/// texture, an encoded (PNG) image payload, and an `fmat` custom material.
 class ExampleFscene extends StatefulWidget {
   const ExampleFscene({super.key});
 
@@ -220,6 +222,30 @@ SceneDocument _buildDocument(Uint8List pngBytes) {
     ],
   );
 
+  // A cube textured from a compressed KTX2 block payload (gradient image),
+  // exercising the compressed-texture load path.
+  final ktx2Material = doc.addResource(
+    MaterialResource(
+      doc.newId(),
+      type: 'unlit',
+      properties: {'baseColorTexture': ResourceRefValue(_ktx2Texture(doc).id)},
+    ),
+  );
+  doc.createNode(
+    name: 'ktx2Cube',
+    root: true,
+    transform: TrsTransform(translation: vm.Vector3(0, 0.5, -3.6)),
+    components: [
+      ComponentSpec(
+        'mesh',
+        properties: {
+          'geometry': ResourceRefValue(cubeGeometry.id),
+          'material': ResourceRefValue(ktx2Material.id),
+        },
+      ),
+    ],
+  );
+
   // A row of asynchronously-loaded resources above the ring.
   // 1. An external image-asset texture (referenced by path, not embedded).
   final assetTexture = doc.addResource(
@@ -338,6 +364,42 @@ TextureResource _checkerTexture(SceneDocument doc) {
       width: size,
       height: size,
       bytes: pixels,
+    ),
+  );
+  return doc.addResource(TextureResource(doc.newId(), payload: payload.id));
+}
+
+/// A gradient image stored as a compressed KTX2 block payload (mipped and
+/// supercompressed), the shape a compressed imported texture takes. The
+/// realizer decodes it (or transcodes it to a GPU block format where
+/// supported) at load.
+TextureResource _ktx2Texture(SceneDocument doc) {
+  const size = 64;
+  final pixels = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      pixels[i] = x * 255 ~/ (size - 1);
+      pixels[i + 1] = y * 255 ~/ (size - 1);
+      pixels[i + 2] = 200 - (x * 160 ~/ (size - 1));
+      pixels[i + 3] = 255;
+    }
+  }
+  final ktx2 = encodeImageToKtx2Bytes(
+    pixels,
+    size,
+    size,
+    generateMips: true,
+    supercompress: true,
+  );
+  final payload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'ktx2',
+      width: size,
+      height: size,
+      bytes: ktx2,
     ),
   );
   return doc.addResource(TextureResource(doc.newId(), payload: payload.id));
