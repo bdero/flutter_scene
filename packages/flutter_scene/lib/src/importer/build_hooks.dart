@@ -200,6 +200,7 @@ void buildScenes({
   String outputDirectory = 'build/scenes/',
   String discoveryRoot = 'assets/',
   ModelAssetMode assetMode = ModelAssetMode.legacyOnly,
+  bool compressTextures = false,
 }) {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == ModelAssetMode.dataAssetsRequired && !dataAssetsAvailable) {
@@ -241,6 +242,7 @@ void buildScenes({
       inputFilePath,
       outputSceneUri.toFilePath(),
       workingDirectory: packageRoot.toFilePath(),
+      compressTextures: compressTextures,
     );
 
     buildOutput.dependencies.add(packageRoot.resolve(inputFilePath));

@@ -27,10 +27,17 @@ Uint8List importGlbToModelBytes(Uint8List glbBytes) {
 /// The document declares right-handed coordinates; realize it with
 /// `realizeScene` (or write it with `writeFscene` / `writeFsceneb`). Uses no
 /// `dart:io`, so it runs at runtime on any platform.
-SceneDocument importGlbToSceneDocument(Uint8List glbBytes) {
+SceneDocument importGlbToSceneDocument(
+  Uint8List glbBytes, {
+  bool compressTextures = false,
+}) {
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
-  return buildSceneDocument(doc, container.binaryChunk);
+  return buildSceneDocument(
+    doc,
+    container.binaryChunk,
+    compressTextures: compressTextures,
+  );
 }
 
 /// Converts a single-file glTF binary (`.glb`) to `.fsceneb` binary container
@@ -39,8 +46,15 @@ SceneDocument importGlbToSceneDocument(Uint8List glbBytes) {
 /// Geometry is packed with the same code the `.model` path uses, so a
 /// primitive's vertex/index payload bytes match the `.model` output. Uses no
 /// `dart:io`, so it runs at runtime on any platform.
-Uint8List importGlbToFscenebBytes(Uint8List glbBytes) {
+Uint8List importGlbToFscenebBytes(
+  Uint8List glbBytes, {
+  bool compressTextures = false,
+}) {
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
-  return emitFsceneb(doc, container.binaryChunk);
+  return emitFsceneb(
+    doc,
+    container.binaryChunk,
+    compressTextures: compressTextures,
+  );
 }
