@@ -93,13 +93,12 @@ base class Texture {
     this.width,
     this.height,
     this.sampleCount,
-    TextureCoordinateSystem coordinateSystem,
     this.textureType,
     this.enableRenderTargetUsage,
     this.enableShaderReadUsage,
     this.enableShaderWriteUsage,
     this.mipLevelCount,
-  ) : _coordinateSystem = coordinateSystem {
+  ) {
     if (sampleCount != 1 && sampleCount != 4) {
       throw Exception('Only a sample count of 1 or 4 is currently supported');
     }
@@ -186,16 +185,6 @@ base class Texture {
   web.WebGLTexture? _texture;
   web.WebGLRenderbuffer? _renderbuffer;
   bool _valid = false;
-
-  // Matches flutter_gpu's mutable getter/setter pair.
-  // ignore: unnecessary_getters_setters
-  TextureCoordinateSystem _coordinateSystem;
-  // ignore: unnecessary_getters_setters
-  TextureCoordinateSystem get coordinateSystem => _coordinateSystem;
-  // ignore: unnecessary_getters_setters
-  set coordinateSystem(TextureCoordinateSystem value) {
-    _coordinateSystem = value;
-  }
 
   bool get isValid => _valid;
   bool get isDepthOrStencil => _isDepthOrStencilFormat(format);

@@ -101,8 +101,6 @@ base class GpuContext {
     int height, {
     PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
     int sampleCount = 1,
-    TextureCoordinateSystem coordinateSystem =
-        TextureCoordinateSystem.renderToTexture,
     TextureType? textureType,
     bool enableRenderTargetUsage = true,
     bool enableShaderReadUsage = true,
@@ -121,7 +119,6 @@ base class GpuContext {
       width,
       height,
       sampleCount,
-      coordinateSystem,
       resolvedType,
       enableRenderTargetUsage,
       enableShaderReadUsage,

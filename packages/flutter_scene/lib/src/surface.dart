@@ -79,7 +79,6 @@ class _ViewSurface {
           size.height.toInt(),
           enableRenderTargetUsage: true,
           enableShaderReadUsage: true,
-          coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
         ),
       );
     }
