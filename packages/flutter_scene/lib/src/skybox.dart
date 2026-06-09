@@ -2,11 +2,17 @@
 /// describe what it looks like.
 library;
 
+import 'dart:typed_data';
+
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/material.dart';
+
 /// A source of skybox color as a function of world-space view direction.
 ///
 /// A [Skybox] wraps a source and the engine draws it behind all scene
-/// geometry. The built-in source today is [EnvironmentSkySource]; custom
-/// shader-driven and procedural sources are planned.
+/// geometry. Built-in sources are [EnvironmentSkySource] (show the scene's
+/// environment) and [ShaderSkySource] (a custom fragment shader).
 abstract class SkySource {
   const SkySource();
 }
@@ -27,6 +33,126 @@ class EnvironmentSkySource extends SkySource {
   double blurriness;
 }
 
+/// Draws a custom sky from a fragment shader.
+///
+/// The [fragmentShader] runs full-screen behind the scene. The engine supplies
+/// the world-space view direction as the `v_ray` vertex input and owns the
+/// full-screen draw, depth, and draw order, so you place no geometry; the
+/// shader writes linear HDR radiance with premultiplied alpha (exposure and
+/// tone mapping are applied later). Bind custom uniform blocks and textures by
+/// name with [setUniformBlock] / [setTexture]; set [useEnvironment] to have
+/// the engine bind the scene environment's IBL textures (`prefiltered_radiance`
+/// and `brdf_lut`) when the shader declares them.
+///
+/// Unlike [EnvironmentSkySource], `Skybox.intensity` is not applied for you;
+/// the shader controls its own output brightness.
+class ShaderSkySource extends SkySource {
+  ShaderSkySource({required this.fragmentShader, this.useEnvironment = false});
+
+  /// The full-screen sky fragment shader, typically loaded from a
+  /// `.shaderbundle`.
+  gpu.Shader fragmentShader;
+
+  /// Whether the engine binds the active environment's IBL textures
+  /// (`prefiltered_radiance`, `brdf_lut`) when the shader declares them.
+  bool useEnvironment;
+
+  final Map<String, ByteData> _uniformBlocks = {};
+  final Map<String, _SkyTexture> _textures = {};
+
+  /// Assigns the byte contents of a uniform block by name. [bytes] must match
+  /// the block's std140 layout; pass `null` to clear the binding.
+  void setUniformBlock(String name, ByteData? bytes) {
+    if (bytes == null) {
+      _uniformBlocks.remove(name);
+    } else {
+      _uniformBlocks[name] = bytes;
+    }
+  }
+
+  /// Convenience wrapper around [setUniformBlock] that packs a list of floats.
+  /// The caller is still responsible for std140 padding.
+  void setUniformBlockFromFloats(String name, List<double> floats) {
+    setUniformBlock(name, ByteData.sublistView(Float32List.fromList(floats)));
+  }
+
+  /// Reads back a previously-set uniform block, or `null` when none is set.
+  ByteData? getUniformBlock(String name) => _uniformBlocks[name];
+
+  /// All currently-bound uniform block names, in insertion order.
+  Iterable<String> get uniformBlockNames => _uniformBlocks.keys;
+
+  /// Assigns a texture to a sampler uniform by name. Pass `null` to clear it.
+  void setTexture(
+    String name,
+    gpu.Texture? texture, {
+    gpu.SamplerOptions? sampler,
+  }) {
+    if (texture == null) {
+      _textures.remove(name);
+    } else {
+      _textures[name] = _SkyTexture(texture, sampler);
+    }
+  }
+
+  /// Reads back a previously-set texture binding, or `null` when none is set.
+  gpu.Texture? getTexture(String name) => _textures[name]?.texture;
+
+  /// All currently-bound sampler names, in insertion order.
+  Iterable<String> get textureNames => _textures.keys;
+
+  /// Binds the fragment's uniform blocks, textures, and (when
+  /// [useEnvironment]) the environment IBL samplers. Called by the engine
+  /// during the background draw; not part of the app-facing API.
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    EnvironmentMap environment,
+  ) {
+    for (final entry in _uniformBlocks.entries) {
+      pass.bindUniform(
+        fragmentShader.getUniformSlot(entry.key),
+        transientsBuffer.emplace(entry.value),
+      );
+    }
+    for (final entry in _textures.entries) {
+      pass.bindTexture(
+        fragmentShader.getUniformSlot(entry.key),
+        entry.value.texture,
+        sampler: entry.value.sampler ?? gpu.SamplerOptions(),
+      );
+    }
+    if (useEnvironment) {
+      pass.bindTexture(
+        fragmentShader.getUniformSlot('prefiltered_radiance'),
+        environment.prefilteredRadianceTexture,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+          widthAddressMode: gpu.SamplerAddressMode.repeat,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
+      );
+      pass.bindTexture(
+        fragmentShader.getUniformSlot('brdf_lut'),
+        Material.getBrdfLutTexture(),
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
+      );
+    }
+  }
+}
+
+class _SkyTexture {
+  _SkyTexture(this.texture, this.sampler);
+  final gpu.Texture texture;
+  final gpu.SamplerOptions? sampler;
+}
+
 /// The visible background drawn behind a [Scene].
 ///
 /// Assign one to `Scene.skybox`. The skybox is decoupled from the scene's
@@ -40,8 +166,9 @@ class Skybox {
   /// What the sky looks like.
   SkySource source;
 
-  /// Scales the sampled radiance. It is combined with
-  /// `Scene.environmentIntensity`, so a default skybox showing the
-  /// environment matches the brightness of image-based reflections.
+  /// Scales the sampled radiance for [EnvironmentSkySource]. It is combined
+  /// with `Scene.environmentIntensity`, so a default skybox showing the
+  /// environment matches the brightness of image-based reflections. A
+  /// [ShaderSkySource] controls its own brightness and ignores this.
   double intensity;
 }
