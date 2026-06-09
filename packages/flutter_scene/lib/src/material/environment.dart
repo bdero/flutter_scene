@@ -97,7 +97,8 @@ base class EnvironmentMap {
 
   /// Builds an [EnvironmentMap] from a high-dynamic-range equirectangular
   /// radiance map: linear (not sRGB) RGBA float pixels, row-major,
-  /// [width] by [height].
+  /// [width] by [height]. Row 0 is the top of the image (the up pole), the
+  /// standard equirectangular convention.
   ///
   /// Unlike [fromUIImages], the input is linear HDR, so radiance above 1.0
   /// (bright skies, the sun) is preserved through the prefilter and lights
