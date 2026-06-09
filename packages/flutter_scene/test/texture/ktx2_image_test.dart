@@ -65,7 +65,7 @@ void main() {
       );
     });
 
-    test('builds a full mip chain', () {
+    test('builds a mip chain matching the engine mip count', () {
       const w = 16, h = 16;
       final texture = encodeImageToKtx2(
         _gradient(w, h),
@@ -73,8 +73,9 @@ void main() {
         h,
         generateMips: true,
       );
-      // 16 -> 8 -> 4 -> 2 -> 1 is five levels.
-      expect(texture.levels, hasLength(5));
+      // The engine stops one short of 1x1: 16 -> 8 -> 4 -> 2 is four levels.
+      expect(texture.levels, hasLength(engineMipLevelCount(w, h)));
+      expect(texture.levels, hasLength(4));
 
       for (var level = 0; level < texture.levels.length; level++) {
         final size = mipSize(w, h, level);
@@ -82,6 +83,13 @@ void main() {
         expect(decoded.width, size.width);
         expect(decoded.height, size.height);
       }
+    });
+
+    test('engine mip count stops one level short of 1x1', () {
+      expect(engineMipLevelCount(64, 64), 6); // not 7
+      expect(engineMipLevelCount(2048, 2048), 11); // not 12
+      expect(engineMipLevelCount(1, 1), 1);
+      expect(engineMipLevelCount(64, 32), 5);
     });
 
     test('reports a smaller payload than rgba8', () {

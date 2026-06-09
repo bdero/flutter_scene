@@ -46,9 +46,10 @@ Ktx2Texture encodeImageToKtx2(
   }
   final blockLevels = <Uint8List>[encodeUniversalBlocks(rgba, width, height)];
   if (generateMips) {
+    final levelCount = engineMipLevelCount(width, height);
     var w = width, h = height;
     var src = rgba;
-    while (w > 1 || h > 1) {
+    for (var level = 1; level < levelCount; level++) {
       final nw = math.max(1, w >> 1);
       final nh = math.max(1, h >> 1);
       src = _downsampleBox(src, w, h, nw, nh);
@@ -102,6 +103,17 @@ Uint8List encodeImageToKtx2Bytes(
 /// The pixel dimensions of mip [level] of a [width] x [height] base image.
 ({int width, int height}) mipSize(int width, int height, int level) =>
     (width: math.max(1, width >> level), height: math.max(1, height >> level));
+
+/// The number of mip levels Flutter GPU expects for a [width] x [height]
+/// texture. The engine stops one level short of 1x1, so a generated mip chain
+/// matches what `createTexture(mipLevelCount:)` accepts (this mirrors the web
+/// shim's `fullMipCount`). Returns at least 1.
+int engineMipLevelCount(int width, int height) {
+  final smallest = width < height ? width : height;
+  if (smallest < 1) return 1;
+  final count = smallest.bitLength - 1;
+  return count > 0 ? count : 1;
+}
 
 /// Decodes one [level] of a flutter_scene KTX2 texture back to rgba8. Throws if
 /// the file is not in our block format.
