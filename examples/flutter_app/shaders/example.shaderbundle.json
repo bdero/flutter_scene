@@ -6,5 +6,9 @@
     "WaveFragment": {
         "type": "fragment",
         "file": "shaders/example_wave.frag"
+    },
+    "GradientSkyFragment": {
+        "type": "fragment",
+        "file": "shaders/example_gradient_sky.frag"
     }
 }
