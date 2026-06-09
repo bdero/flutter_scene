@@ -56,7 +56,23 @@ const Map<PixelFormat, _GlFormat> _formatTable = <PixelFormat, _GlFormat>{
     web.WebGL2RenderingContext.UNSIGNED_INT_24_8,
     4,
   ),
+  // Block-compressed formats. The internal format is an extension constant
+  // (the matching extension must be enabled, see supportsTextureCompression);
+  // format/type/bytesPerTexel are unused (size comes from _compressedBlockBytes).
+  PixelFormat.bc1RGBAUNormInt: _GlFormat(0x83F1, 0, 0, 0), // S3TC DXT1
+  PixelFormat.etc2RGB8UNormInt: _GlFormat(0x9274, 0, 0, 0), // ETC2 RGB8
+  PixelFormat.astc4x4LDR: _GlFormat(0x93B0, 0, 0, 0), // ASTC 4x4
 };
+
+/// Bytes per 4x4 block for the compressed formats the upload path supports.
+const Map<PixelFormat, int> _compressedBlockBytes = <PixelFormat, int>{
+  PixelFormat.bc1RGBAUNormInt: 8,
+  PixelFormat.etc2RGB8UNormInt: 8,
+  PixelFormat.astc4x4LDR: 16,
+};
+
+bool _isCompressedFormat(PixelFormat format) =>
+    _compressedBlockBytes.containsKey(format);
 
 bool _isDepthOrStencilFormat(PixelFormat format) {
   switch (format) {
@@ -204,6 +220,12 @@ base class Texture {
   int getMipLevelSizeInBytes(int mipLevel) {
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
+    final blockBytes = _compressedBlockBytes[format];
+    if (blockBytes != null) {
+      final blocksX = (mipWidth + 3) ~/ 4;
+      final blocksY = (mipHeight + 3) ~/ 4;
+      return blocksX * blocksY * blockBytes;
+    }
     return bytesPerTexel * mipWidth * mipHeight;
   }
 
@@ -232,6 +254,22 @@ base class Texture {
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
     gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, _texture);
+    if (_isCompressedFormat(format)) {
+      final blocks = sourceBytes.buffer
+          .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
+          .toJS;
+      gl.compressedTexSubImage2D(
+        web.WebGL2RenderingContext.TEXTURE_2D,
+        mipLevel,
+        0,
+        0,
+        mipWidth,
+        mipHeight,
+        _glFormat.internalFormat,
+        blocks,
+      );
+      return;
+    }
     // texSubImage2D requires the JS typed-array view to match the GL pixel
     // type: FLOAT wants a Float32Array, HALF_FLOAT a Uint16Array, and the
     // integer formats a Uint8Array. (A Uint8Array for a FLOAT texture throws
