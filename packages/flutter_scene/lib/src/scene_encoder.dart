@@ -47,7 +47,7 @@ base class _TranslucentRecord {
 /// process lifetime instead of being rebuilt per draw call.
 final Map<(gpu.Shader, gpu.Shader), gpu.RenderPipeline> _pipelineCache = {};
 
-gpu.RenderPipeline _resolvePipeline(
+gpu.RenderPipeline resolvePipeline(
   gpu.Shader vertexShader,
   gpu.Shader fragmentShader,
 ) {
@@ -159,7 +159,7 @@ base class SceneEncoder {
       }
     }
 
-    final pipeline = _resolvePipeline(
+    final pipeline = resolvePipeline(
       item.geometry.vertexShader,
       item.material.fragmentShader,
     );

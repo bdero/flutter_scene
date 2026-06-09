@@ -7,6 +7,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
 
@@ -26,10 +27,6 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
   lengthInBytes: 6 * 2 * 4,
 );
 
-// Cached for the process lifetime (keyed implicitly by its shader pair, like
-// the scene encoder's pipeline cache).
-gpu.RenderPipeline? _environmentPipeline;
-
 /// Draws [skybox] into [renderPass] as the scene background.
 ///
 /// Issued before the scene geometry, into the same HDR color target: the sky
@@ -39,7 +36,7 @@ gpu.RenderPipeline? _environmentPipeline;
 /// emitted as linear HDR radiance with premultiplied alpha.
 ///
 /// The render pass is left with the skybox's fixed-function state (no depth
-/// write, `always` depth compare, no cull, no blend); the scene encoder
+/// write, `lessEqual` depth compare, no cull, no blend); the scene encoder
 /// re-asserts the opaque-phase state when it is constructed afterward.
 void encodeSkybox(
   gpu.RenderPass renderPass,
@@ -52,21 +49,20 @@ void encodeSkybox(
   ui.Size dimensions,
 ) {
   final source = skybox.source;
-  if (source is! EnvironmentSkySource) {
-    // TODO(skybox): ShaderSkySource (custom sky shaders) and procedural
-    // sources are not implemented yet; only EnvironmentSkySource draws today.
+  final vertexShader = baseShaderLibrary['SkyboxVertex']!;
+  final gpu.Shader fragmentShader;
+  if (source is EnvironmentSkySource) {
+    fragmentShader = baseShaderLibrary['SkyboxEnvironmentFragment']!;
+  } else if (source is ShaderSkySource) {
+    fragmentShader = source.fragmentShader;
+  } else {
     return;
   }
 
-  final vertexShader = baseShaderLibrary['SkyboxVertex']!;
-  final fragmentShader = baseShaderLibrary['SkyboxEnvironmentFragment']!;
-  final pipeline = _environmentPipeline ??= gpu.gpuContext.createRenderPipeline(
-    vertexShader,
-    fragmentShader,
-  );
-
+  // Share the scene encoder's pipeline cache so a hot-reloaded sky fragment is
+  // rebuilt (the cache is evicted by shader identity on reload).
   renderPass.clearBindings();
-  renderPass.bindPipeline(pipeline);
+  renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   renderPass.setColorBlendEnable(false);
   // Draw at the far plane behind everything: pass where nothing has been
   // drawn (depth still at the cleared far value) and never write depth, so
@@ -77,9 +73,45 @@ void encodeSkybox(
   renderPass.setPrimitiveType(gpu.PrimitiveType.triangle);
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
 
-  // Vertex uniforms: the inverse of the exact view-projection the scene
-  // geometry uses (so the sky aligns with the geometry on every backend),
-  // the environment rotation packed into a mat4, and the camera position.
+  // Vertex SkyboxFrameInfo: the world view ray is reconstructed from the
+  // inverse of the exact view-projection the scene geometry uses, rotated by
+  // the environment transform. Shared by every sky source.
+  _bindFrameInfo(
+    renderPass,
+    transientsBuffer,
+    vertexShader,
+    environmentTransform,
+    camera,
+    dimensions,
+  );
+
+  // Fragment bindings depend on the source.
+  if (source is EnvironmentSkySource) {
+    _bindEnvironmentSource(
+      renderPass,
+      transientsBuffer,
+      fragmentShader,
+      source,
+      environment,
+      environmentIntensity * skybox.intensity,
+    );
+  } else if (source is ShaderSkySource) {
+    source.bind(renderPass, transientsBuffer, environment);
+  }
+
+  drawCompat(renderPass, 6);
+}
+
+// Binds SkyboxFrameInfo (inverse view-projection, environment rotation as a
+// mat4, camera position) on the sky vertex shader.
+void _bindFrameInfo(
+  gpu.RenderPass renderPass,
+  gpu.HostBuffer transientsBuffer,
+  gpu.Shader vertexShader,
+  Matrix3? environmentTransform,
+  Camera camera,
+  ui.Size dimensions,
+) {
   final inverseViewProjection = camera.getViewTransform(dimensions).clone()
     ..invert();
   final transform = (environmentTransform ?? Matrix3.identity()).storage;
@@ -101,12 +133,21 @@ void encodeSkybox(
     vertexShader.getUniformSlot('SkyboxFrameInfo'),
     transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
   );
+}
 
-  // Fragment uniforms: blurriness, and the combined intensity so a default
-  // skybox matches the brightness of image-based reflections.
+// Binds the built-in environment sky fragment: SkyboxInfo (blurriness +
+// combined intensity) and the prefiltered-radiance atlas.
+void _bindEnvironmentSource(
+  gpu.RenderPass renderPass,
+  gpu.HostBuffer transientsBuffer,
+  gpu.Shader fragmentShader,
+  EnvironmentSkySource source,
+  EnvironmentMap environment,
+  double intensity,
+) {
   final skyboxInfo = Float32List(4);
   skyboxInfo[0] = source.blurriness;
-  skyboxInfo[1] = environmentIntensity * skybox.intensity;
+  skyboxInfo[1] = intensity;
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('SkyboxInfo'),
     transientsBuffer.emplace(ByteData.sublistView(skyboxInfo)),
@@ -125,6 +166,4 @@ void encodeSkybox(
       heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
     ),
   );
-
-  drawCompat(renderPass, 6);
 }
