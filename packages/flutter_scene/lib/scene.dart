@@ -82,6 +82,7 @@ export 'src/scene.dart';
 export 'src/shaders.dart';
 export 'src/skin.dart';
 export 'src/sky_environment.dart';
+export 'src/sky_sources.dart';
 export 'src/skybox.dart';
 export 'src/surface.dart';
 export 'src/widgets/scene_view.dart'

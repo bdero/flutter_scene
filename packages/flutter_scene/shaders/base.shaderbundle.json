@@ -70,5 +70,13 @@
     "ShProjectFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_sh_project.frag"
+    },
+    "SkyGradientFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_sky_gradient.frag"
+    },
+    "SkyPhysicalFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_sky_physical.frag"
     }
 }
