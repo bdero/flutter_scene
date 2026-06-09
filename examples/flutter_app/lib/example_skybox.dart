@@ -29,6 +29,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   bool loaded = false;
 
   PreprocessedSky? _sky;
+  SkyEnvironment? _skyEnvironment;
 
   // Sun controls, surfaced as sliders.
   double _sunElevation = 0.5; // radians above the horizon
@@ -47,11 +48,11 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     _sky = sky;
     _refreshSky();
     scene.skybox = Skybox(sky);
-    // Bake the sky into the scene's image-based lighting so it also lights and
-    // reflects on objects. The visible sky draws every frame; this bake runs
-    // only when invoked (here on load, and from the "Re-bake lighting" button).
-    await _rebakeLighting();
-    if (!mounted) return;
+    // Bind the same sky to the scene's image-based lighting. The visible sky
+    // draws every frame; the lighting re-bakes per the refresh policy (the
+    // dropdown below switches it; "Re-bake lighting" invalidates manually).
+    _skyEnvironment = SkyEnvironment(sky);
+    scene.skyEnvironment = _skyEnvironment;
 
     // Left: a smooth metallic sphere mirrors the baked environment (specular).
     scene.add(
@@ -78,12 +79,6 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     );
 
     setState(() => loaded = true);
-  }
-
-  Future<void> _rebakeLighting() async {
-    final sky = _sky;
-    if (sky == null) return;
-    scene.environment = await EnvironmentMap.fromSky(sky);
   }
 
   @override
@@ -137,15 +132,43 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        await _rebakeLighting();
-                        if (mounted) setState(() {});
-                      },
-                      child: const Text('Re-bake lighting'),
-                    ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Lighting refresh:',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(width: 8),
+                      DropdownButton<SkyEnvironmentRefresh>(
+                        value:
+                            _skyEnvironment?.refresh ??
+                            SkyEnvironmentRefresh.manual,
+                        dropdownColor: Colors.black87,
+                        style: const TextStyle(color: Colors.white),
+                        items: const [
+                          DropdownMenuItem(
+                            value: SkyEnvironmentRefresh.manual,
+                            child: Text('Manual'),
+                          ),
+                          DropdownMenuItem(
+                            value: SkyEnvironmentRefresh.interval,
+                            child: Text('Interval (1s)'),
+                          ),
+                          DropdownMenuItem(
+                            value: SkyEnvironmentRefresh.everyFrame,
+                            child: Text('Every frame'),
+                          ),
+                        ],
+                        onChanged: (mode) => setState(() {
+                          if (mode != null) _skyEnvironment?.refresh = mode;
+                        }),
+                      ),
+                      const SizedBox(width: 16),
+                      ElevatedButton(
+                        onPressed: () => _skyEnvironment?.invalidate(),
+                        child: const Text('Re-bake lighting'),
+                      ),
+                    ],
                   ),
                   _SliderRow(
                     label: 'Sun elevation',
