@@ -317,9 +317,9 @@ const _environments = <_Environment>[
   const height = 128;
   final pixels = Float32List(width * height * 4);
   for (var py = 0; py < height; py++) {
-    // Row 0 is the down pole, matching EnvironmentMap.studio's convention.
+    // Row 0 is the up pole, the standard equirect convention.
     final v = (py + 0.5) / height;
-    final latitude = (v - 0.5) * pi;
+    final latitude = (0.5 - v) * pi;
     final cosLat = cos(latitude);
     final dirY = sin(latitude);
     for (var px = 0; px < width; px++) {
@@ -477,11 +477,18 @@ class _StressSceneState extends State<_StressScene> {
   double _envRotationY = 0.0;
   double _envRotationZ = 0.0;
 
+  // Skybox: draws the selected environment as the background, with an
+  // adjustable blur. The source samples `_scene.environment`, so the backdrop
+  // follows the environment menu and the rotation with no extra work.
+  bool _showSkybox = true;
+  final EnvironmentSkySource _skySource = EnvironmentSkySource();
+
   @override
   void initState() {
     super.initState();
     // Lighting (the directional key light and shadows) is driven by the
     // shared settings panel via ExampleSettings.applyTo.
+    _applySkybox();
     unawaited(_load());
   }
 
@@ -627,6 +634,13 @@ class _StressSceneState extends State<_StressScene> {
     }
     _environmentCache[environment.id] = map;
     return map;
+  }
+
+  // Sets or clears the scene's skybox from the toggle. The source samples
+  // `_scene.environment`, so selecting a different environment or rotating it
+  // updates the backdrop automatically.
+  void _applySkybox() {
+    _scene.skybox = _showSkybox ? Skybox(_skySource) : null;
   }
 
   // Rebuilds the scene's environment rotation from the three Euler angles.
@@ -947,6 +961,17 @@ class _StressSceneState extends State<_StressScene> {
               envRotationX: _envRotationX,
               envRotationY: _envRotationY,
               envRotationZ: _envRotationZ,
+              showSkybox: _showSkybox,
+              skyBlur: _skySource.blurriness,
+              onShowSkyboxChanged: (value) {
+                setState(() {
+                  _showSkybox = value;
+                  _applySkybox();
+                });
+              },
+              onSkyBlurChanged: (value) {
+                setState(() => _skySource.blurriness = value);
+              },
               onExposureChanged: (value) {
                 setState(() {
                   _exposure = value;
@@ -1119,6 +1144,10 @@ class _LightingPanel extends StatelessWidget {
     required this.envRotationX,
     required this.envRotationY,
     required this.envRotationZ,
+    required this.showSkybox,
+    required this.skyBlur,
+    required this.onShowSkyboxChanged,
+    required this.onSkyBlurChanged,
     required this.onExposureChanged,
     required this.onEnvironmentIntensityChanged,
     required this.onEnvRotationXChanged,
@@ -1134,6 +1163,10 @@ class _LightingPanel extends StatelessWidget {
   final double envRotationX;
   final double envRotationY;
   final double envRotationZ;
+  final bool showSkybox;
+  final double skyBlur;
+  final ValueChanged<bool> onShowSkyboxChanged;
+  final ValueChanged<double> onSkyBlurChanged;
   final ValueChanged<double> onExposureChanged;
   final ValueChanged<double> onEnvironmentIntensityChanged;
   final ValueChanged<double> onEnvRotationXChanged;
@@ -1161,6 +1194,24 @@ class _LightingPanel extends StatelessWidget {
               onSelected: onEnvironmentSelected,
             ),
             const SizedBox(height: 4),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Skybox',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+                Switch(value: showSkybox, onChanged: onShowSkyboxChanged),
+              ],
+            ),
+            _LabeledSlider(
+              label: 'Sky blur',
+              value: skyBlur,
+              min: 0.0,
+              max: 1.0,
+              onChanged: showSkybox ? onSkyBlurChanged : null,
+            ),
             _LabeledSlider(
               label: 'Exposure',
               value: exposure,
@@ -1218,7 +1269,8 @@ class _LabeledSlider extends StatelessWidget {
   final double value;
   final double min;
   final double max;
-  final ValueChanged<double> onChanged;
+  // Null disables the slider (greyed out).
+  final ValueChanged<double>? onChanged;
 
   @override
   Widget build(BuildContext context) {
