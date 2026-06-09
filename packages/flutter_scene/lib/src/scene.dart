@@ -27,6 +27,7 @@ import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'render_view.dart';
 import 'shaders.dart';
+import 'skybox.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
 
@@ -199,6 +200,15 @@ base class Scene implements SceneGraph {
   /// Rotation applied to the image-based-lighting [environment] when it is
   /// sampled. Identity (the default) leaves the environment unrotated.
   Matrix3 environmentTransform = Matrix3.identity();
+
+  /// The visible background drawn behind the scene, or null (the default)
+  /// to clear to transparent.
+  ///
+  /// Decoupled from the image-based lighting ([environment]): a default
+  /// [Skybox] with an [EnvironmentSkySource] shows that same environment
+  /// (optionally blurred), but the two can be set independently. The engine
+  /// draws the skybox behind all geometry; you do not place any geometry.
+  Skybox? skybox;
 
   // The component backing the [directionalLight] convenience: a single
   // light attached to [root]. Null when no scene-level light is set.
@@ -605,6 +615,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         environmentIntensity: environmentIntensity,
         environmentTransform: environmentTransform,
+        skybox: skybox,
         enableMsaa: enableMsaa,
         directionalLight: light,
         directionalLightDirection: lightDirection,
