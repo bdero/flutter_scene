@@ -9,16 +9,18 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/texture/block/transcode_astc.dart';
 import 'package:flutter_scene/src/texture/block/transcode_bc1.dart';
 import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
 
 /// The order in which compressed families are preferred when the device
-/// supports more than one. BC (desktop) outranks ETC2 (mobile/GLES3/web) on
-/// quality; ASTC is not transcoded yet.
-// TODO(texture-compression): add ASTC at the front once a transcoder exists.
-const List<gpu.TextureCompressionFamily> compressionFamilyPreference = [
+/// supports more than one: ASTC (highest quality) > BC (desktop) > ETC2
+/// (mobile/GLES3/web). Reorder for testing a specific family on a device that
+/// supports several.
+List<gpu.TextureCompressionFamily> compressionFamilyPreference = [
+  gpu.TextureCompressionFamily.astc,
   gpu.TextureCompressionFamily.bc,
   gpu.TextureCompressionFamily.etc2,
 ];
@@ -36,11 +38,13 @@ gpu.Texture gpuTextureFromKtx2Texture(Ktx2Texture texture) {
   // we have a transcoder; otherwise decode to rgba8 and upload uncompressed.
   for (final family in compressionFamilyPreference) {
     if (!gpu.gpuContext.supportsTextureCompression(family)) continue;
+    if (family == gpu.TextureCompressionFamily.astc) {
+      return _uploadAstc(texture);
+    }
     if (family == gpu.TextureCompressionFamily.bc) return _uploadBc1(texture);
     if (family == gpu.TextureCompressionFamily.etc2) {
       return _uploadEtc2(texture);
     }
-    // ASTC: no transcoder yet; fall through to the next family or rgba8.
   }
   return _uploadRgba8(texture);
 }
@@ -99,6 +103,31 @@ gpu.Texture _uploadEtc2(Ktx2Texture texture) {
     enableShaderWriteUsage: false,
   );
   result.overwrite(ByteData.sublistView(etc2));
+  return result;
+}
+
+/// Transcodes the base level to ASTC 4x4 LDR and uploads a compressed texture.
+gpu.Texture _uploadAstc(Ktx2Texture texture) {
+  final size = mipSize(
+    texture.pixelWidth,
+    texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
+    0,
+  );
+  final blocksX = (size.width + 3) ~/ 4;
+  final blocksY = (size.height + 3) ~/ 4;
+  final astc = transcodeUniversalToAstc4x4(
+    ktx2LevelBlocks(texture, 0),
+    blocksX * blocksY,
+  );
+  final result = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    size.width,
+    size.height,
+    format: gpu.PixelFormat.astc4x4LDR,
+    enableRenderTargetUsage: false,
+    enableShaderWriteUsage: false,
+  );
+  result.overwrite(ByteData.sublistView(astc));
   return result;
 }
 
