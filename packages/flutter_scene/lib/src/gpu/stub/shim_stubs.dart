@@ -38,6 +38,7 @@ base class GpuContext {
     bool enableShaderWriteUsage = false,
     int mipLevelCount = 1,
   }) => _stub();
+  bool supportsTextureCompression(TextureCompressionFamily family) => _stub();
   CommandBuffer createCommandBuffer() => _stub();
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
