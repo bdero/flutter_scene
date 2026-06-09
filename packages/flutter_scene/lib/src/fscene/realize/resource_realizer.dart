@@ -82,20 +82,16 @@ class ResourceRealizer {
     if (res.asset != null) return true;
     final payload = res.payload;
     if (payload == null) return false;
-    final format = document.payload(payload)?.format;
-    // rgba8 and our KTX2 block payloads realize synchronously; only encoded
-    // (PNG/JPEG) image payloads need the async image decoder.
-    return format != 'rgba8' && format != 'ktx2';
+    // Only raw rgba8 payloads realize synchronously (a plain upload). Encoded
+    // (PNG/JPEG) images decode asynchronously, and KTX2 block payloads
+    // transcode on a background isolate, so both go through preload.
+    return document.payload(payload)?.format != 'rgba8';
   }
 
   Future<void> _preloadTexture(TextureResource res) async {
     try {
-      final asset = res.asset;
-      final image = asset != null
-          ? await imageFromAsset(asset.key, bundle: bundle)
-          : await imageFromBytes(_payloadBytes(res.payload!, 'image'));
       _textures[res.id] = tagResourceOrigin(
-        await gpuTextureFromImage(image),
+        await _loadTextureAsync(res),
         document,
         res.id,
       );
@@ -103,6 +99,22 @@ class ResourceRealizer {
       debugPrint('fscene: failed to load texture ${res.id}: $e; placeholder');
       _textures[res.id] = _placeholderTexture();
     }
+  }
+
+  Future<gpu.Texture> _loadTextureAsync(TextureResource res) async {
+    final asset = res.asset;
+    if (asset != null) {
+      return gpuTextureFromImage(
+        await imageFromAsset(asset.key, bundle: bundle),
+      );
+    }
+    final bytes = _payloadBytes(res.payload!, 'image');
+    // KTX2 block payloads transcode off the main isolate; other encoded images
+    // decode via dart:ui.
+    if (document.payload(res.payload!)?.format == 'ktx2') {
+      return gpuTextureFromKtx2Async(bytes);
+    }
+    return gpuTextureFromImage(await imageFromBytes(bytes));
   }
 
   Future<void> _preloadFmat(MaterialResource res) async {
@@ -296,8 +308,13 @@ class ResourceRealizer {
       throw FsceneFormatException('Payload $payloadId is not an image');
     }
     if (payload.format == 'ktx2') {
-      // Our KTX2 block payload: decode (or transcode) and upload synchronously.
-      return gpuTextureFromKtx2(bytes);
+      // KTX2 block payloads transcode off the main isolate via preload(); the
+      // sync path can't await that.
+      debugPrint(
+        'fscene: ktx2 texture payload $payloadId needs the async loader; '
+        'using a placeholder',
+      );
+      return _placeholderTexture();
     }
     final width = payload.width;
     final height = payload.height;

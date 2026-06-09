@@ -1,10 +1,10 @@
-// Uploads a flutter_scene KTX2 texture to the GPU. This is the one layer that
-// touches Flutter GPU.
+// Uploads a flutter_scene KTX2 texture to the GPU. The CPU-heavy transcode runs
+// off the main isolate; only the GPU calls stay on the main thread.
 //
 // The device may support a block-compressed family directly, in which case the
 // block payload is transcoded to that format and uploaded compressed (less
 // VRAM). Otherwise the payload is decoded to rgba8 and uploaded uncompressed,
-// which is always correct and the only path on web today.
+// which is always correct and the only path on web without the extensions.
 
 import 'package:flutter/foundation.dart';
 
@@ -25,122 +25,113 @@ List<gpu.TextureCompressionFamily> compressionFamilyPreference = [
   gpu.TextureCompressionFamily.etc2,
 ];
 
-/// Reads a flutter_scene KTX2 file from [bytes] and uploads it as a GPU
-/// texture, choosing a compressed upload when the device supports one and
-/// falling back to an uncompressed rgba8 upload otherwise.
+// Transcode target, chosen on the main thread (from the device probe) and
+// passed to the transcode isolate so it knows which format to produce.
+const int _modeRgba8 = 0;
+const int _modeBc1 = 1;
+const int _modeEtc2 = 2;
+const int _modeAstc = 3;
+
+/// The transcoded bytes ready for GPU upload. Plain data so it can cross an
+/// isolate boundary (no GPU types).
+typedef _Prepared = ({Uint8List bytes, int mode, int width, int height});
+
+/// Reads a flutter_scene KTX2 file from [bytes], transcodes it on a background
+/// isolate, and uploads the result. Use this from async load paths so large
+/// textures do not block the UI.
+Future<gpu.Texture> gpuTextureFromKtx2Async(Uint8List bytes) async {
+  _logFamiliesOnce();
+  final mode = _selectMode();
+  final prepared = await compute(_prepareFromBytes, (ktx2: bytes, mode: mode));
+  return _upload(prepared);
+}
+
+/// Synchronous variant: transcodes on the calling (usually main) thread. Heavy
+/// for large textures; prefer [gpuTextureFromKtx2Async]. Kept for the sync
+/// realize path.
 gpu.Texture gpuTextureFromKtx2(Uint8List bytes) =>
     gpuTextureFromKtx2Texture(readKtx2(bytes));
 
 /// As [gpuTextureFromKtx2], for an already-parsed [texture].
 gpu.Texture gpuTextureFromKtx2Texture(Ktx2Texture texture) {
   _logFamiliesOnce();
-  // Transcode to the first supported family in the preference order for which
-  // we have a transcoder; otherwise decode to rgba8 and upload uncompressed.
+  return _upload(_prepare(texture, _selectMode()));
+}
+
+/// Picks the transcode target for the current device.
+int _selectMode() {
   for (final family in compressionFamilyPreference) {
     if (!gpu.gpuContext.supportsTextureCompression(family)) continue;
-    if (family == gpu.TextureCompressionFamily.astc) {
-      return _uploadAstc(texture);
-    }
-    if (family == gpu.TextureCompressionFamily.bc) return _uploadBc1(texture);
-    if (family == gpu.TextureCompressionFamily.etc2) {
-      return _uploadEtc2(texture);
+    switch (family) {
+      case gpu.TextureCompressionFamily.astc:
+        return _modeAstc;
+      case gpu.TextureCompressionFamily.bc:
+        return _modeBc1;
+      case gpu.TextureCompressionFamily.etc2:
+        return _modeEtc2;
     }
   }
-  return _uploadRgba8(texture);
+  return _modeRgba8;
 }
 
-// TODO(texture-compression): upload the full mip chain once Flutter GPU can
-// mark/generate sampleable mipmaps. Today there is no generateMipmaps API and
-// Impeller does not treat per-level overwrite as a generated mipmap (it warns
-// "mip count > 1, but the mipmap has not been generated" and samples wrong), so
-// the base level is uploaded alone. The KTX2 still carries the precomputed
-// chain for when the engine supports it.
+/// Isolate entry point: parse and transcode. Pure Dart, no GPU.
+_Prepared _prepareFromBytes(({Uint8List ktx2, int mode}) input) =>
+    _prepare(readKtx2(input.ktx2), input.mode);
 
-/// Transcodes the base level to BC1 and uploads a compressed texture.
-gpu.Texture _uploadBc1(Ktx2Texture texture) {
+/// Transcodes the base level of [texture] to [mode]. Pure Dart, no GPU.
+_Prepared _prepare(Ktx2Texture texture, int mode) {
   final size = mipSize(
     texture.pixelWidth,
     texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
     0,
   );
-  final blocksX = (size.width + 3) ~/ 4;
-  final blocksY = (size.height + 3) ~/ 4;
-  final bc1 = transcodeUniversalToBc1(
-    ktx2LevelBlocks(texture, 0),
-    blocksX * blocksY,
-  );
-  final result = gpu.gpuContext.createTexture(
+  if (mode == _modeRgba8) {
+    final base = decodeKtx2Level(texture, level: 0);
+    return (
+      bytes: base.rgba,
+      mode: _modeRgba8,
+      width: base.width,
+      height: base.height,
+    );
+  }
+  final blocks = ktx2LevelBlocks(texture, 0);
+  final blockCount = ((size.width + 3) ~/ 4) * ((size.height + 3) ~/ 4);
+  final bytes = switch (mode) {
+    _modeBc1 => transcodeUniversalToBc1(blocks, blockCount),
+    _modeEtc2 => transcodeUniversalToEtc2Rgb(blocks, blockCount),
+    _ => transcodeUniversalToAstc4x4(blocks, blockCount),
+  };
+  return (bytes: bytes, mode: mode, width: size.width, height: size.height);
+}
+
+/// Uploads prepared bytes to a GPU texture. Must run on the main thread.
+gpu.Texture _upload(_Prepared p) {
+  if (p.mode == _modeRgba8) {
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      p.width,
+      p.height,
+    );
+    texture.overwrite(ByteData.sublistView(p.bytes));
+    return texture;
+  }
+  // TODO(texture-compression): upload the full mip chain once Flutter GPU can
+  // mark/generate sampleable mipmaps; today the base level is uploaded alone.
+  final format = switch (p.mode) {
+    _modeBc1 => gpu.PixelFormat.bc1RGBAUNormInt,
+    _modeEtc2 => gpu.PixelFormat.etc2RGB8UNormInt,
+    _ => gpu.PixelFormat.astc4x4LDR,
+  };
+  final texture = gpu.gpuContext.createTexture(
     gpu.StorageMode.hostVisible,
-    size.width,
-    size.height,
-    format: gpu.PixelFormat.bc1RGBAUNormInt,
+    p.width,
+    p.height,
+    format: format,
     enableRenderTargetUsage: false,
     enableShaderWriteUsage: false,
   );
-  result.overwrite(ByteData.sublistView(bc1));
-  return result;
-}
-
-/// Transcodes the base level to ETC2 RGB8 and uploads a compressed texture.
-gpu.Texture _uploadEtc2(Ktx2Texture texture) {
-  final size = mipSize(
-    texture.pixelWidth,
-    texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
-    0,
-  );
-  final blocksX = (size.width + 3) ~/ 4;
-  final blocksY = (size.height + 3) ~/ 4;
-  final etc2 = transcodeUniversalToEtc2Rgb(
-    ktx2LevelBlocks(texture, 0),
-    blocksX * blocksY,
-  );
-  final result = gpu.gpuContext.createTexture(
-    gpu.StorageMode.hostVisible,
-    size.width,
-    size.height,
-    format: gpu.PixelFormat.etc2RGB8UNormInt,
-    enableRenderTargetUsage: false,
-    enableShaderWriteUsage: false,
-  );
-  result.overwrite(ByteData.sublistView(etc2));
-  return result;
-}
-
-/// Transcodes the base level to ASTC 4x4 LDR and uploads a compressed texture.
-gpu.Texture _uploadAstc(Ktx2Texture texture) {
-  final size = mipSize(
-    texture.pixelWidth,
-    texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
-    0,
-  );
-  final blocksX = (size.width + 3) ~/ 4;
-  final blocksY = (size.height + 3) ~/ 4;
-  final astc = transcodeUniversalToAstc4x4(
-    ktx2LevelBlocks(texture, 0),
-    blocksX * blocksY,
-  );
-  final result = gpu.gpuContext.createTexture(
-    gpu.StorageMode.hostVisible,
-    size.width,
-    size.height,
-    format: gpu.PixelFormat.astc4x4LDR,
-    enableRenderTargetUsage: false,
-    enableShaderWriteUsage: false,
-  );
-  result.overwrite(ByteData.sublistView(astc));
-  return result;
-}
-
-/// Decodes the base level to rgba8 and uploads an uncompressed texture.
-gpu.Texture _uploadRgba8(Ktx2Texture texture) {
-  final base = decodeKtx2Level(texture, level: 0);
-  final result = gpu.gpuContext.createTexture(
-    gpu.StorageMode.hostVisible,
-    base.width,
-    base.height,
-  );
-  result.overwrite(ByteData.sublistView(base.rgba));
-  return result;
+  texture.overwrite(ByteData.sublistView(p.bytes));
+  return texture;
 }
 
 bool _logged = false;
@@ -157,6 +148,6 @@ void _logFamiliesOnce() {
     'bc=${context.supportsTextureCompression(gpu.TextureCompressionFamily.bc)} '
     'etc2=${context.supportsTextureCompression(gpu.TextureCompressionFamily.etc2)} '
     'astc=${context.supportsTextureCompression(gpu.TextureCompressionFamily.astc)} '
-    '(bc -> BC1 upload; otherwise rgba8 fallback)',
+    '(transcode runs off the main isolate; rgba8 fallback otherwise)',
   );
 }
