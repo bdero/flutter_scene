@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/fscene.dart';
@@ -34,10 +35,12 @@ class _ExampleFsceneAnimatedState extends State<ExampleFsceneAnimated> {
 
   Future<void> _load() async {
     final glb = await rootBundle.load('assets_src/dash.glb');
-    final container = importGlbToFscenebBytes(
-      glb.buffer.asUint8List(glb.offsetInBytes, glb.lengthInBytes),
-    );
-    final dash = loadFscenebBytes(container)..name = 'Dash';
+    final bytes = glb.buffer.asUint8List(glb.offsetInBytes, glb.lengthInBytes);
+    // The glTF import (image decode + geometry packing) is heavy CPU work, so
+    // run it on a background isolate to keep the UI responsive while loading.
+    final container = await compute(importGlbToFscenebBytes, bytes);
+    if (!mounted) return;
+    final dash = (await loadFscenebBytesAsync(container))..name = 'Dash';
     if (!mounted) return;
 
     // Play a clearly-moving clip, looping (falls back to the first animation).
