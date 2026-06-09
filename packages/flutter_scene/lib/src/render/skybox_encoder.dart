@@ -114,8 +114,28 @@ void _bindFrameInfo(
 ) {
   final inverseViewProjection = camera.getViewTransform(dimensions).clone()
     ..invert();
+  bindSkyboxFrameInfo(
+    renderPass,
+    transientsBuffer,
+    vertexShader,
+    inverseViewProjection,
+    camera.position,
+    environmentTransform,
+  );
+}
+
+/// Binds the sky vertex shader's `SkyboxFrameInfo` from an explicit
+/// [inverseViewProjection] and [cameraPosition]. Shared by the per-frame sky
+/// draw (via the camera) and the offscreen bake (one call per cube face).
+void bindSkyboxFrameInfo(
+  gpu.RenderPass renderPass,
+  gpu.HostBuffer transientsBuffer,
+  gpu.Shader vertexShader,
+  Matrix4 inverseViewProjection,
+  Vector3 cameraPosition,
+  Matrix3? environmentTransform,
+) {
   final transform = (environmentTransform ?? Matrix3.identity()).storage;
-  final cameraPosition = camera.position;
   final frameInfo = Float32List(36);
   frameInfo.setRange(0, 16, inverseViewProjection.storage);
   // environment_transform: a mat4 carrying the 3x3 rotation; std140 mat4

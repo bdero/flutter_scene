@@ -6,6 +6,8 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/env_prefilter.dart';
+import 'package:flutter_scene/src/render/sky_bake.dart';
+import 'package:flutter_scene/src/skybox.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Number of L2 spherical-harmonic coefficients used for diffuse
@@ -130,6 +132,38 @@ base class EnvironmentMap {
         diffuseSphericalHarmonics ??
         _projectLinearEquirectToSphericalHarmonics(linearPixels, width, height);
     return EnvironmentMap._(prefilteredRadiance, sh);
+  }
+
+  /// Bakes a sky into an environment for image-based lighting.
+  ///
+  /// Renders [source] (a [ShaderSkySource], including a `.fmat` sky) into a
+  /// prefiltered-radiance atlas so the sky also lights the scene. This is GPU
+  /// work meant to run when the sky is set or changes, not every frame; the
+  /// visible `Scene.skybox` draw is separate and cheap. [faceResolution] and
+  /// [equirectWidth] trade quality for bake cost.
+  ///
+  /// Only [ShaderSkySource]-based skies can be baked; an [EnvironmentSkySource]
+  /// already is an environment.
+  static Future<EnvironmentMap> fromSky(
+    SkySource source, {
+    int faceResolution = 128,
+    int equirectWidth = 512,
+  }) async {
+    if (source is! ShaderSkySource) {
+      throw ArgumentError(
+        'EnvironmentMap.fromSky requires a ShaderSkySource (or a .fmat sky); '
+        'an EnvironmentSkySource already is an environment.',
+      );
+    }
+    final atlas = bakeSkyToPrefilteredAtlas(
+      source,
+      EnvironmentMap.empty(),
+      faceResolution: faceResolution,
+      equirectWidth: equirectWidth,
+    );
+    // TODO(skybox-ibl): the diffuse term is zero for now (specular only); the
+    // GPU spherical-harmonic reduction is the next milestone.
+    return EnvironmentMap.fromGpuTextures(prefilteredRadiance: atlas);
   }
 
   // Scratch storage for reinterpreting a 32-bit float as its raw bits.
