@@ -47,15 +47,31 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     _sky = sky;
     _refreshSky();
     scene.skybox = Skybox(sky);
+    // Bake the sky into the scene's image-based lighting so it also lights and
+    // reflects on objects. The visible sky draws every frame; this bake runs
+    // only when invoked (here on load, and from the "Re-bake lighting" button).
+    await _rebakeLighting();
+    if (!mounted) return;
 
-    // A spinning reference cuboid so the scene reads as 3D.
-    final mesh = Mesh(
-      CuboidGeometry(vm.Vector3(1.5, 1.5, 1.5), debugColors: true),
-      UnlitMaterial(),
+    // A smooth metallic sphere mirrors the baked environment.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          SphereGeometry(radius: 1.3),
+          PhysicallyBasedMaterial()
+            ..metallicFactor = 1.0
+            ..roughnessFactor = 0.08,
+        ),
+      ),
     );
-    scene.add(Node(mesh: mesh)..addComponent(_Spin(0.5)));
 
     setState(() => loaded = true);
+  }
+
+  Future<void> _rebakeLighting() async {
+    final sky = _sky;
+    if (sky == null) return;
+    scene.environment = await EnvironmentMap.fromSky(sky);
   }
 
   @override
@@ -109,6 +125,16 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await _rebakeLighting();
+                        if (mounted) setState(() {});
+                      },
+                      child: const Text('Re-bake lighting'),
+                    ),
+                  ),
                   _SliderRow(
                     label: 'Sun elevation',
                     value: _sunElevation,
@@ -146,18 +172,6 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
         ),
       ],
     );
-  }
-}
-
-class _Spin extends Component {
-  _Spin(this.radiansPerSecond);
-  final double radiansPerSecond;
-
-  @override
-  void update(double deltaSeconds) {
-    node.localTransform =
-        node.localTransform *
-        vm.Matrix4.rotationY(radiansPerSecond * deltaSeconds);
   }
 }
 
