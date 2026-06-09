@@ -24,11 +24,23 @@ class ExampleSkybox extends StatefulWidget {
   State<ExampleSkybox> createState() => _ExampleSkyboxState();
 }
 
+enum _SkyType {
+  fmatGradient('Gradient (.fmat)'),
+  gradient('Gradient (built-in)'),
+  physical('Physical atmosphere');
+
+  const _SkyType(this.label);
+  final String label;
+}
+
 class _ExampleSkyboxState extends State<ExampleSkybox> {
   final Scene scene = Scene();
   bool loaded = false;
 
-  PreprocessedSky? _sky;
+  PreprocessedSky? _fmatSky;
+  GradientSkySource? _gradientSky;
+  PhysicalSkySource? _physicalSky;
+  _SkyType _skyType = _SkyType.fmatGradient;
   SkyEnvironment? _skyEnvironment;
 
   // Sun controls, surfaced as sliders.
@@ -45,14 +57,8 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   Future<void> _load() async {
     final sky = await loadFmatSky('assets/gradient_sky.fmat');
     if (!mounted) return;
-    _sky = sky;
-    _refreshSky();
-    scene.skybox = Skybox(sky);
-    // Bind the same sky to the scene's image-based lighting. The visible sky
-    // draws every frame; the lighting re-bakes per the refresh policy (the
-    // dropdown below switches it; "Re-bake lighting" invalidates manually).
-    _skyEnvironment = SkyEnvironment(sky);
-    scene.skyEnvironment = _skyEnvironment;
+    _fmatSky = sky;
+    _applySkyType(_skyType);
 
     // Left: a smooth metallic sphere mirrors the baked environment (specular).
     scene.add(
@@ -87,18 +93,55 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     super.dispose();
   }
 
+  // The source for [type], created on first use. The built-in sources are
+  // plain ShaderSkySource subclasses, so all three drive the skybox and the
+  // lighting identically.
+  ShaderSkySource _sourceFor(_SkyType type) {
+    return switch (type) {
+      _SkyType.fmatGradient => _fmatSky!,
+      _SkyType.gradient => _gradientSky ??= GradientSkySource(),
+      _SkyType.physical => _physicalSky ??= PhysicalSkySource(),
+    };
+  }
+
+  // Shows [type] as the background and rebinds the lighting to it. A fresh
+  // binding bakes synchronously, so switching skies relights immediately; the
+  // refresh mode carries over.
+  void _applySkyType(_SkyType type) {
+    _skyType = type;
+    final source = _sourceFor(type);
+    _refreshSky();
+    scene.skybox = Skybox(source);
+    _skyEnvironment = SkyEnvironment(
+      source,
+      refresh: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.manual,
+    );
+    scene.skyEnvironment = _skyEnvironment;
+  }
+
   void _refreshSky() {
-    final sky = _sky;
-    if (sky == null) return;
     final dir = vm.Vector3(
       cos(_sunElevation) * sin(_sunAzimuth),
       sin(_sunElevation),
       cos(_sunElevation) * cos(_sunAzimuth),
     );
-    // Typed, name-addressed parameters from the .fmat sidecar; the colors keep
-    // their .fmat defaults.
-    sky.parameters.setVec3('sun_direction', dir);
-    sky.parameters.setFloat('sun_sharpness', _sunSharpness);
+    switch (_skyType) {
+      case _SkyType.fmatGradient:
+        // Typed, name-addressed parameters from the .fmat sidecar; the colors
+        // keep their .fmat defaults.
+        final sky = _fmatSky;
+        if (sky == null) return;
+        sky.parameters.setVec3('sun_direction', dir);
+        sky.parameters.setFloat('sun_sharpness', _sunSharpness);
+      case _SkyType.gradient:
+        _gradientSky!
+          ..sunDirection = dir
+          ..sunSharpness = _sunSharpness;
+      case _SkyType.physical:
+        // The physical sun is a disk with a fixed angular size; the sharpness
+        // slider does not apply.
+        _physicalSky!.sunDirection = dir;
+    }
   }
 
   @override
@@ -132,6 +175,27 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Row(
+                    children: [
+                      const Text('Sky:', style: TextStyle(color: Colors.white)),
+                      const SizedBox(width: 8),
+                      DropdownButton<_SkyType>(
+                        value: _skyType,
+                        dropdownColor: Colors.black87,
+                        style: const TextStyle(color: Colors.white),
+                        items: [
+                          for (final type in _SkyType.values)
+                            DropdownMenuItem(
+                              value: type,
+                              child: Text(type.label),
+                            ),
+                        ],
+                        onChanged: (type) => setState(() {
+                          if (type != null) _applySkyType(type);
+                        }),
+                      ),
+                    ],
+                  ),
                   Row(
                     children: [
                       const Text(
