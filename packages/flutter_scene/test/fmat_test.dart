@@ -255,4 +255,64 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
   });
+
+  group('sky', () {
+    const validSky = '''
+material {
+  name: "Sky",
+  parameters: [
+    { type: vec3, name: zenith, default: [0.0, 0.2, 0.6] },
+    { type: float, name: sharpness, default: 400.0 },
+  ],
+}
+
+sky {
+  vec3 Sky(vec3 direction) {
+    return mix(vec3(1.0), material_params.zenith, clamp(direction.y, 0.0, 1.0));
+  }
+}
+''';
+
+    test('parses a sky domain', () {
+      final m = parseFmat(validSky, fileName: 'sky.fmat');
+      expect(m.domain, FmatDomain.sky);
+      expect(m.name, 'Sky');
+      expect(m.uniformParameters.map((p) => p.name), ['zenith', 'sharpness']);
+    });
+
+    test('emits a full-screen sky main reading v_ray', () {
+      final glsl = emitFragmentGlsl(parseFmat(validSky));
+      expect(glsl, contains('in vec3 v_ray;'));
+      expect(glsl, contains('out vec4 frag_color;'));
+      expect(glsl, contains('vec3 Sky(vec3 direction)'));
+      expect(glsl, contains('frag_color = vec4(Sky(normalize(v_ray)), 1.0);'));
+      // The sky contract does not use the surface includes or entry point.
+      expect(glsl, isNot(contains('material_varyings.glsl')));
+      expect(glsl, isNot(contains('Surface')));
+    });
+
+    test('sidecar records the sky domain', () {
+      final sidecar = buildSidecar(parseFmat(validSky));
+      expect(sidecar['domain'], 'sky');
+      expect(sidecar['uniform_block'], 'MaterialParams');
+    });
+
+    test('requires a Sky function in the sky block', () {
+      expect(
+        () => parseFmat('material { name: "X" }\nsky { vec3 NotSky() {} }'),
+        _throwsFmat('Sky'),
+      );
+    });
+
+    test('rejects both a fragment and a sky block', () {
+      expect(
+        () => parseFmat('''
+material { name: "X" }
+fragment { void Surface(inout MaterialInputs material) {} }
+sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
+'''),
+        _throwsFmat('not both'),
+      );
+    });
+  });
 }

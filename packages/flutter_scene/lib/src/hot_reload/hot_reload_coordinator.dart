@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/material/preprocessed_material.dart';
+import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 
@@ -54,11 +54,12 @@ class HotReloadCoordinator {
 
   bool _refreshing = false;
 
-  /// Registers a [PreprocessedMaterial] built from the `.fmat` whose shader
-  /// bundle is at [shaderBundleAssetKey] and whose per-material metadata lives
-  /// under [entryName] in the sidecar at [sidecarAssetKey]. No-op outside debug.
-  void registerMaterial(
-    PreprocessedMaterial material, {
+  /// Registers an `.fmat`-backed [material] (a surface material or a sky)
+  /// whose shader bundle is at [shaderBundleAssetKey] and whose per-entry
+  /// metadata lives under [entryName] in the sidecar at [sidecarAssetKey].
+  /// No-op outside debug.
+  void registerFmat(
+    HotReloadableFmat material, {
     required String sidecarAssetKey,
     required String shaderBundleAssetKey,
     required String entryName,
@@ -66,7 +67,7 @@ class HotReloadCoordinator {
     if (!kDebugMode) return;
     _materials.add(
       _MaterialRegistration(
-        WeakReference<PreprocessedMaterial>(material),
+        WeakReference<HotReloadableFmat>(material),
         sidecarAssetKey,
         shaderBundleAssetKey,
         entryName,
@@ -309,7 +310,7 @@ class _MaterialRegistration {
     this.entryName,
   );
 
-  final WeakReference<PreprocessedMaterial> material;
+  final WeakReference<HotReloadableFmat> material;
   final String sidecarAssetKey;
   final String shaderBundleAssetKey;
   final String entryName;

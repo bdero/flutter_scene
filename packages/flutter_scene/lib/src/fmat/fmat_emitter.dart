@@ -18,6 +18,9 @@ const String kMaterialParamsInstance = 'material_params';
 
 /// Emits the fragment shader GLSL for [material].
 String emitFragmentGlsl(FmatMaterial material) {
+  if (material.domain == FmatDomain.sky) {
+    return _emitSkyGlsl(material);
+  }
   final sb = StringBuffer();
   final lit = material.shadingModel == FmatShadingModel.lit;
 
@@ -76,10 +79,58 @@ String emitFragmentGlsl(FmatMaterial material) {
   return sb.toString();
 }
 
+/// Emits the full-screen sky fragment GLSL for a `sky { }` material.
+///
+/// The engine's sky vertex shader supplies the world view direction as
+/// `v_ray`; the generated `main()` calls the author's `Sky()` and outputs
+/// linear HDR radiance with premultiplied alpha.
+String _emitSkyGlsl(FmatMaterial material) {
+  final sb = StringBuffer();
+  sb.writeln('// Generated from a .fmat sky by flutter_scene. Do not edit.');
+  sb.writeln('#include <pbr.glsl>');
+  sb.writeln('#include <texture.glsl>');
+  sb.writeln();
+
+  final uniforms = material.uniformParameters.toList();
+  if (uniforms.isNotEmpty) {
+    sb.writeln('uniform $kMaterialParamsBlock {');
+    for (final p in uniforms) {
+      sb.writeln('  ${p.type.glslType} ${p.name};');
+    }
+    sb.writeln('}');
+    sb.writeln('$kMaterialParamsInstance;');
+    sb.writeln();
+  }
+
+  final samplers = material.samplerParameters.toList();
+  for (final p in samplers) {
+    sb.writeln('uniform ${p.type.glslType} ${p.name};');
+  }
+  if (samplers.isNotEmpty) sb.writeln();
+
+  sb.writeln('in vec3 v_ray;');
+  sb.writeln('out vec4 frag_color;');
+  sb.writeln();
+
+  // Map compiler errors in the author's code back to the .fmat source line.
+  sb.writeln('#line ${material.fragmentSourceLine}');
+  sb.write(material.fragmentSource);
+  if (!material.fragmentSource.endsWith('\n')) sb.writeln();
+  sb.writeln();
+
+  sb.writeln('void main() {');
+  sb.writeln('  // Linear HDR radiance, premultiplied alpha (opaque sky).');
+  sb.writeln('  frag_color = vec4(Sky(normalize(v_ray)), 1.0);');
+  sb.writeln('}');
+
+  return sb.toString();
+}
+
 /// Builds the JSON-serializable metadata sidecar for [material].
 Map<String, Object?> buildSidecar(FmatMaterial material) {
   return <String, Object?>{
     'name': material.name,
+    'domain': material.domain.name,
     'shading_model': material.shadingModel.name,
     'blending': material.blending.name,
     'culling': material.culling.name,

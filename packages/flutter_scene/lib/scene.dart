@@ -37,10 +37,11 @@ export 'src/material/material.dart';
 export 'src/material/material_parameters.dart';
 export 'src/material/physically_based_material.dart';
 export 'src/material/preprocessed_material.dart';
+export 'src/material/preprocessed_sky.dart';
 export 'src/material/shader_material.dart';
 export 'src/material/unlit_material.dart';
 export 'src/fmat/material_registry.dart'
-    show FmatMaterialRegistry, loadFmatMaterial;
+    show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
 export 'src/hot_reload/hot_reload_coordinator.dart' show ModelReloadCallback;
 export 'src/importer/model_registry.dart' show ModelRegistry, loadModel;
 export 'src/importer/scene_registry.dart' show SceneRegistry, loadScene;

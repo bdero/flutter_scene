@@ -20,13 +20,25 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
       fileName: fileName,
     );
   }
+  // Exactly one code block: `fragment` for a surface material, `sky` for a
+  // sky.
   final fragment = blocks['fragment'];
-  if (fragment == null) {
+  final sky = blocks['sky'];
+  if (fragment == null && sky == null) {
     throw FmatException(
-      'Missing required `fragment { ... }` block.',
+      'Missing required `fragment { ... }` or `sky { ... }` block.',
       fileName: fileName,
     );
   }
+  if (fragment != null && sky != null) {
+    throw FmatException(
+      'A `.fmat` has either a `fragment` block or a `sky` block, not both.',
+      fileName: fileName,
+      line: sky.startLine,
+    );
+  }
+  final domain = sky != null ? FmatDomain.sky : FmatDomain.surface;
+  final body = fragment ?? sky!;
 
   final tokens = _Lexer(
     material.content,
@@ -35,7 +47,7 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
   ).tokenize();
   final tree = _ValueParser(tokens, fileName).parseObjectBody();
 
-  return _build(tree, fragment, fileName);
+  return _build(tree, domain, body, fileName);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +108,8 @@ Map<String, _Block> _extractBlocks(String source, String? fileName) {
     }
     if (i == keywordStart) {
       throw FmatException(
-        'Expected a top-level block keyword (`material` or `fragment`).',
+        'Expected a top-level block keyword (`material`, `fragment`, or '
+        '`sky`).',
         fileName: fileName,
         line: line,
       );
@@ -493,6 +506,8 @@ const _reservedNames = <String>{
   'v_viewvector',
   'v_texture_coords',
   'v_color',
+  'v_ray',
+  'Sky',
   'prefiltered_radiance',
   'brdf_lut',
   'shadow_map',
@@ -514,7 +529,8 @@ const _reservedNames = <String>{
 
 FmatMaterial _build(
   Map<String, Object?> tree,
-  _Block fragment,
+  FmatDomain domain,
+  _Block body,
   String? fileName,
 ) {
   const knownKeys = {
@@ -563,25 +579,37 @@ FmatMaterial _build(
 
   final parameters = _buildParameters(tree['parameters'], fileName);
 
-  // Loose check: the fragment block must define a Surface function. We do not
-  // fully parse GLSL; this catches the common omission with a clear message.
-  if (!RegExp(r'\bvoid\s+Surface\s*\(').hasMatch(fragment.content)) {
-    throw FmatException(
-      'The `fragment` block must define '
-      '`void Surface(inout MaterialInputs material)`.',
-      fileName: fileName,
-      line: fragment.startLine,
-    );
+  // Loose check: the code block must define the expected entry function. We do
+  // not fully parse GLSL; this catches the common omission with a clear
+  // message.
+  if (domain == FmatDomain.sky) {
+    if (!RegExp(r'\bvec3\s+Sky\s*\(').hasMatch(body.content)) {
+      throw FmatException(
+        'The `sky` block must define `vec3 Sky(vec3 direction)`.',
+        fileName: fileName,
+        line: body.startLine,
+      );
+    }
+  } else {
+    if (!RegExp(r'\bvoid\s+Surface\s*\(').hasMatch(body.content)) {
+      throw FmatException(
+        'The `fragment` block must define '
+        '`void Surface(inout MaterialInputs material)`.',
+        fileName: fileName,
+        line: body.startLine,
+      );
+    }
   }
 
   return FmatMaterial(
     name: name,
+    domain: domain,
     shadingModel: shadingModel,
     blending: blending,
     culling: culling,
     parameters: parameters,
-    fragmentSource: fragment.content,
-    fragmentSourceLine: fragment.startLine,
+    fragmentSource: body.content,
+    fragmentSourceLine: body.startLine,
   );
 }
 

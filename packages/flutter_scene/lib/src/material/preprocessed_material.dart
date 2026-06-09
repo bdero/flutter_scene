@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
@@ -28,7 +29,7 @@ import 'package:flutter_scene/src/material/material_parameters.dart';
 /// shader's `Surface()` fills the surface description); an `unlit` material
 /// outputs its `base_color` directly. The render state (blending, culling)
 /// comes from the material's metadata.
-class PreprocessedMaterial extends Material {
+class PreprocessedMaterial extends Material implements HotReloadableFmat {
   PreprocessedMaterial({
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,
@@ -57,6 +58,7 @@ class PreprocessedMaterial extends Material {
   /// replacing the material instance, so every primitive already using it picks
   /// up the change. Explicitly-set parameter values are preserved; see
   /// [MaterialParameters.updateFromMetadata].
+  @override
   void updateFromMetadata(
     gpu.Shader fragmentShader,
     Map<String, Object?> metadata,
