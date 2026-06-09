@@ -52,6 +52,10 @@ vec3 _sampleFaces(vec3 d) {
 }
 
 void main() {
-  vec3 d = normalize(EquirectangularToSpherical(v_uv));
+  // The prefilter samples its source equirect with the up pole at the top row
+  // (the standard convention loaded images use), so write that convention
+  // here: flip V before mapping the output texel to a direction. Without this
+  // the baked atlas is vertically inverted relative to the visible sky.
+  vec3 d = normalize(EquirectangularToSpherical(vec2(v_uv.x, 1.0 - v_uv.y)));
   frag_color = vec4(_sampleFaces(d), 1.0);
 }
