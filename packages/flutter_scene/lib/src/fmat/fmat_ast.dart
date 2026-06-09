@@ -141,6 +141,7 @@ class FmatMaterial {
   FmatMaterial({
     required this.name,
     this.domain = FmatDomain.surface,
+    this.useEnvironment = false,
     required this.shadingModel,
     required this.blending,
     required this.culling,
@@ -153,6 +154,10 @@ class FmatMaterial {
 
   /// The rendering contract this `.fmat` targets (surface material or sky).
   final FmatDomain domain;
+
+  /// Whether the engine binds the scene environment's prefiltered-radiance
+  /// atlas (`requires: [environment]`; sky materials only).
+  final bool useEnvironment;
 
   final FmatShadingModel shadingModel;
   final FmatBlending blending;
