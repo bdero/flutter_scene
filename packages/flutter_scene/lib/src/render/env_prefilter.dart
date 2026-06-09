@@ -92,7 +92,6 @@ gpu.Texture createPrefilterAtlasTexture() {
     format: gpu.PixelFormat.r16g16b16a16Float,
     enableRenderTargetUsage: true,
     enableShaderReadUsage: true,
-    coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
   );
 }
 

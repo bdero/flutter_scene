@@ -57,7 +57,6 @@ gpu.Texture _hdrRenderTarget(int width, int height) {
     format: gpu.PixelFormat.r16g16b16a16Float,
     enableRenderTargetUsage: true,
     enableShaderReadUsage: true,
-    coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
   );
 }
 
@@ -180,7 +179,6 @@ gpu.Texture _createShTarget() {
     format: gpu.PixelFormat.r16g16b16a16Float,
     enableRenderTargetUsage: true,
     enableShaderReadUsage: true,
-    coordinateSystem: gpu.TextureCoordinateSystem.renderToTexture,
   );
 }
 

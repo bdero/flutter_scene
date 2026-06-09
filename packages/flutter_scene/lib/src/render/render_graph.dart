@@ -46,7 +46,6 @@ class TransientTextureDescriptor {
     this.sampleCount = 1,
     this.storageMode = gpu.StorageMode.devicePrivate,
     this.enableShaderReadUsage = true,
-    this.coordinateSystem = gpu.TextureCoordinateSystem.renderToTexture,
     this.debugName,
   });
 
@@ -92,7 +91,6 @@ class TransientTextureDescriptor {
   final int sampleCount;
   final gpu.StorageMode storageMode;
   final bool enableShaderReadUsage;
-  final gpu.TextureCoordinateSystem coordinateSystem;
 
   /// Optional disambiguator so two otherwise-identical descriptors map to
   /// separate pool slots. Does not affect the allocated texture.
@@ -107,7 +105,6 @@ class TransientTextureDescriptor {
       other.sampleCount == sampleCount &&
       other.storageMode == storageMode &&
       other.enableShaderReadUsage == enableShaderReadUsage &&
-      other.coordinateSystem == coordinateSystem &&
       other.debugName == debugName;
 
   @override
@@ -118,7 +115,6 @@ class TransientTextureDescriptor {
     sampleCount,
     storageMode,
     enableShaderReadUsage,
-    coordinateSystem,
     debugName,
   );
 }
@@ -162,7 +158,6 @@ class TransientTexturePool {
         format: descriptor.format,
         enableRenderTargetUsage: true,
         enableShaderReadUsage: descriptor.enableShaderReadUsage,
-        coordinateSystem: descriptor.coordinateSystem,
       );
       ring[_frame] = texture;
     }

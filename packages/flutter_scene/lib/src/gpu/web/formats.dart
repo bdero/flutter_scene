@@ -69,8 +69,6 @@ enum PixelFormat {
 /// Hardware families for block-compressed texture support.
 enum TextureCompressionFamily { bc, etc2, astc }
 
-enum TextureCoordinateSystem { uploadFromHost, renderToTexture }
-
 enum BlendFactor {
   zero,
   one,

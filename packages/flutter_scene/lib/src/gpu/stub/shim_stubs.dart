@@ -30,8 +30,6 @@ base class GpuContext {
     int height, {
     PixelFormat format = PixelFormat.r8g8b8a8UNormInt,
     int sampleCount = 1,
-    TextureCoordinateSystem coordinateSystem =
-        TextureCoordinateSystem.renderToTexture,
     TextureType? textureType,
     bool enableRenderTargetUsage = true,
     bool enableShaderReadUsage = true,
@@ -99,8 +97,6 @@ base class Texture {
   bool get enableShaderReadUsage => _stub();
   bool get enableShaderWriteUsage => _stub();
   int get mipLevelCount => _stub();
-  TextureCoordinateSystem get coordinateSystem => _stub();
-  set coordinateSystem(TextureCoordinateSystem value) => _stub();
   bool get isValid => _stub();
   int get sliceCount => _stub();
   int get bytesPerTexel => _stub();
