@@ -23,7 +23,51 @@ enum PixelFormat {
   s8UInt,
   d24UnormS8Uint,
   d32FloatS8UInt,
+  // Block-compressed (sample-only) formats. Support varies by family; check
+  // GpuContext.supportsTextureCompression before allocating.
+  bc1RGBAUNormInt,
+  bc1RGBAUNormIntSRGB,
+  bc3RGBAUNormInt,
+  bc3RGBAUNormIntSRGB,
+  bc5RGUNormInt,
+  bc7RGBAUNormInt,
+  bc7RGBAUNormIntSRGB,
+  etc2RGB8UNormInt,
+  etc2RGB8UNormIntSRGB,
+  etc2RGBA8UNormInt,
+  etc2RGBA8UNormIntSRGB,
+  astc4x4LDR,
+  astc4x4LDRSRGB,
+  astc8x8LDR,
+  astc8x8LDRSRGB;
+
+  /// Whether this is a block-compressed (sample-only) format.
+  bool get isCompressed {
+    switch (this) {
+      case PixelFormat.bc1RGBAUNormInt:
+      case PixelFormat.bc1RGBAUNormIntSRGB:
+      case PixelFormat.bc3RGBAUNormInt:
+      case PixelFormat.bc3RGBAUNormIntSRGB:
+      case PixelFormat.bc5RGUNormInt:
+      case PixelFormat.bc7RGBAUNormInt:
+      case PixelFormat.bc7RGBAUNormIntSRGB:
+      case PixelFormat.etc2RGB8UNormInt:
+      case PixelFormat.etc2RGB8UNormIntSRGB:
+      case PixelFormat.etc2RGBA8UNormInt:
+      case PixelFormat.etc2RGBA8UNormIntSRGB:
+      case PixelFormat.astc4x4LDR:
+      case PixelFormat.astc4x4LDRSRGB:
+      case PixelFormat.astc8x8LDR:
+      case PixelFormat.astc8x8LDRSRGB:
+        return true;
+      default:
+        return false;
+    }
+  }
 }
+
+/// Hardware families for block-compressed texture support.
+enum TextureCompressionFamily { bc, etc2, astc }
 
 enum TextureCoordinateSystem { uploadFromHost, renderToTexture }
 

@@ -54,6 +54,12 @@ base class GpuContext {
 
   bool get doesSupportOffscreenMSAA => true;
 
+  /// The WebGL2 backend does not yet upload block-compressed textures, so no
+  /// family is reported and callers fall back to an uncompressed upload.
+  // TODO(texture-compression): probe WEBGL_compressed_texture_s3tc / _etc /
+  // _astc and upload via compressedTexImage2D, then report support truthfully.
+  bool supportsTextureCompression(TextureCompressionFamily family) => false;
+
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) {
     if (storageMode == StorageMode.deviceTransient) {
       throw Exception(
