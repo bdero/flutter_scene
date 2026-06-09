@@ -1,0 +1,32 @@
+// A procedural gradient sky authored as a `.fmat` sky. The `sky { }` block
+// supplies `vec3 Sky(vec3 direction)`; the engine draws it full-screen and
+// supplies the world view direction. Parameters are typed and hot-reloadable.
+
+material {
+  name: "GradientSky",
+  parameters: [
+    { type: vec3, name: zenith_color, default: [0.05, 0.18, 0.55] },
+    { type: vec3, name: horizon_color, default: [0.45, 0.62, 0.90] },
+    { type: vec3, name: ground_color, default: [0.16, 0.14, 0.12] },
+    { type: vec3, name: sun_direction, default: [0.4, 0.5, 0.6] },
+    { type: float, name: sun_sharpness, hint: range(16, 2000, 1), default: 400.0 },
+  ],
+}
+
+sky {
+  vec3 Sky(vec3 direction) {
+    vec3 color;
+    if (direction.y >= 0.0) {
+      color = mix(material_params.horizon_color, material_params.zenith_color,
+                  sqrt(direction.y));
+    } else {
+      color = mix(material_params.horizon_color, material_params.ground_color,
+                  sqrt(-direction.y));
+    }
+    // Bright (HDR) sun disk plus a soft glow.
+    float s = max(dot(direction, normalize(material_params.sun_direction)), 0.0);
+    color += vec3(3.0, 2.7, 2.2) * pow(s, material_params.sun_sharpness);
+    color += vec3(0.5, 0.45, 0.35) * pow(s, 8.0);
+    return color;
+  }
+}
