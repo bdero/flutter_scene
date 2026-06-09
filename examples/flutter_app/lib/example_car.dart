@@ -27,6 +27,10 @@ class ExampleCarState extends State<ExampleCar> {
 
   double wheelRotation = 0;
 
+  // Shows the scene's environment as the background. Its blurriness is driven
+  // live by a slider; the scene reads it each frame.
+  final EnvironmentSkySource _skySource = EnvironmentSkySource();
+
   Map<String, NodeState> nodes = {};
 
   // All posable car parts, and the subset driven by the door/lid sliders
@@ -78,6 +82,7 @@ class ExampleCarState extends State<ExampleCar> {
 
     scene.environment = environment;
     scene.exposure = 2.5;
+    scene.skybox = Skybox(_skySource);
 
     setState(() {
       loaded = true;
@@ -160,6 +165,21 @@ class ExampleCarState extends State<ExampleCar> {
         Column(
           children: [
             const Spacer(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Sky blur'),
+                SizedBox(
+                  width: 220,
+                  child: Slider(
+                    value: _skySource.blurriness,
+                    onChanged: (value) {
+                      setState(() => _skySource.blurriness = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
