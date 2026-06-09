@@ -82,11 +82,10 @@ HdrImage decodeRadianceHdr(Uint8List bytes) {
 
   for (var y = 0; y < height; y++) {
     pos = _readScanline(bytes, pos, scanline, width);
-    // Radiance `-Y` files store rows top-down (row 0 = up pole), but
-    // flutter_scene's equirect convention is row 0 = down pole (what
-    // EnvironmentMap.studio emits and the SH projection expects), so
-    // write each scanline into the vertically-mirrored destination row.
-    final rowBase = (height - 1 - y) * width * 4;
+    // Radiance `-Y` files store rows top-down (row 0 = up pole), which is
+    // also flutter_scene's equirect convention (row 0 = up pole), so the
+    // scanline order is preserved.
+    final rowBase = y * width * 4;
     for (var x = 0; x < width; x++) {
       final si = x * 4;
       final exponent = scanline[si + 3];
