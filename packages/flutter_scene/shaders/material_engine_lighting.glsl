@@ -75,6 +75,11 @@ frag_info;
 uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
 uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
+// Diffuse irradiance SH coefficients: a 9x1 texture, coefficient i at texel i
+// (RGB). Sampled instead of read from a uniform so a sky's coefficients,
+// computed on the GPU, need no read-back. The diffuse_sh* uniform fields above
+// are unused.
+uniform sampler2D sh_coefficients;
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.

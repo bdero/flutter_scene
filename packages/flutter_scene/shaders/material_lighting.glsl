@@ -14,16 +14,21 @@
 // The coefficients already include the cosine convolution and 1/pi, so
 // the result is E(n)/pi. Must use the same real-SH basis the CPU-side
 // projection in EnvironmentMap.computeDiffuseSphericalHarmonics uses.
+// Fetches SH coefficient i (0..8) from the 9x1 sh_coefficients texture.
+vec3 DiffuseShCoefficient(float i) {
+  return texture(sh_coefficients, vec2((i + 0.5) / 9.0, 0.5)).xyz;
+}
+
 vec3 EvaluateDiffuseSH(vec3 n) {
-  return frag_info.diffuse_sh0.xyz * 0.282095 +
-         frag_info.diffuse_sh1.xyz * (0.488603 * n.y) +
-         frag_info.diffuse_sh2.xyz * (0.488603 * n.z) +
-         frag_info.diffuse_sh3.xyz * (0.488603 * n.x) +
-         frag_info.diffuse_sh4.xyz * (1.092548 * n.x * n.y) +
-         frag_info.diffuse_sh5.xyz * (1.092548 * n.y * n.z) +
-         frag_info.diffuse_sh6.xyz * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
-         frag_info.diffuse_sh7.xyz * (1.092548 * n.x * n.z) +
-         frag_info.diffuse_sh8.xyz * (0.546274 * (n.x * n.x - n.y * n.y));
+  return DiffuseShCoefficient(0.0) * 0.282095 +
+         DiffuseShCoefficient(1.0) * (0.488603 * n.y) +
+         DiffuseShCoefficient(2.0) * (0.488603 * n.z) +
+         DiffuseShCoefficient(3.0) * (0.488603 * n.x) +
+         DiffuseShCoefficient(4.0) * (1.092548 * n.x * n.y) +
+         DiffuseShCoefficient(5.0) * (1.092548 * n.y * n.z) +
+         DiffuseShCoefficient(6.0) * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
+         DiffuseShCoefficient(7.0) * (1.092548 * n.x * n.z) +
+         DiffuseShCoefficient(8.0) * (0.546274 * (n.x * n.x - n.y * n.y));
 }
 
 // One rotated Poisson-disk PCF tap into a cascade's atlas tile. Factored out

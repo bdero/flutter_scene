@@ -35,13 +35,10 @@ class EngineLightingUniforms {
         ? const <ShadowCascade>[]
         : lighting.cascades;
 
-    // diffuse_sh0..8 at [8..43] (xyz used).
-    final shCoefficients = env.diffuseSphericalHarmonics;
-    for (var i = 0; i < shCoefficients.length; i++) {
-      fragInfo[8 + i * 4] = shCoefficients[i].x;
-      fragInfo[9 + i * 4] = shCoefficients[i].y;
-      fragInfo[10 + i * 4] = shCoefficients[i].z;
-    }
+    // diffuse_sh0..8 at [8..43] are now unused: the shader samples the
+    // sh_coefficients texture (bound in bindEngineTextures) instead, so the
+    // GPU-computed coefficients of a baked sky need no read-back. Left zero.
+
     // directional_light_direction [44..47], directional_light_color [48..51].
     if (light != null) {
       // The world-space direction comes from the light node's transform;
@@ -131,6 +128,18 @@ class EngineLightingUniforms {
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
         magFilter: gpu.MinMagFilter.nearest,
+      ),
+    );
+    // Diffuse irradiance SH: a 9x1 coefficient texture, point-sampled (each
+    // texel is one coefficient). Sampled in EvaluateDiffuseSH.
+    pass.bindTexture(
+      shader.getUniformSlot('sh_coefficients'),
+      env.diffuseShTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
     // Screen-space ambient occlusion. Bilinear so a half-resolution

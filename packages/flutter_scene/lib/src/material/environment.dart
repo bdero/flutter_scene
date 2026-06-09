@@ -33,10 +33,10 @@ const int kDiffuseShCoefficientCount = 9;
 /// [EnvironmentMap.studio]); an individual [PhysicallyBasedMaterial] can
 /// override it via `PhysicallyBasedMaterial.environment`.
 base class EnvironmentMap {
-  EnvironmentMap._(
-    this._prefilteredRadianceTexture,
-    this._diffuseSphericalHarmonics,
-  ) : assert(_diffuseSphericalHarmonics.length == kDiffuseShCoefficientCount);
+  EnvironmentMap._(this._prefilteredRadianceTexture, List<Vector3> sh)
+    : assert(sh.length == kDiffuseShCoefficientCount),
+      _diffuseSphericalHarmonics = sh,
+      _diffuseShTexture = _shTextureFromList(sh);
 
   /// A black environment that contributes no image-based lighting.
   ///
@@ -466,6 +466,7 @@ base class EnvironmentMap {
 
   final gpu.Texture _prefilteredRadianceTexture;
   final List<Vector3> _diffuseSphericalHarmonics;
+  final gpu.Texture _diffuseShTexture;
 
   // TODO(bdero): Once mipmapped cubemaps land in Flutter GPU, replace this
   // equirectangular atlas with a real prefiltered cubemap.
@@ -483,5 +484,35 @@ base class EnvironmentMap {
   /// The Lambertian cosine convolution and the `1/pi` BRDF term are
   /// already folded in, so the shader just evaluates the polynomial and
   /// multiplies by the diffuse albedo. All zero for [EnvironmentMap.empty].
+  ///
+  /// Empty for an environment baked from a sky ([fromSky]), whose coefficients
+  /// are computed on the GPU and live only in [diffuseShTexture].
   List<Vector3> get diffuseSphericalHarmonics => _diffuseSphericalHarmonics;
+
+  /// The diffuse SH coefficients as a `kDiffuseShCoefficientCount`-by-1
+  /// `r16g16b16a16Float` texture (coefficient `i` at texel `i`, RGB used).
+  ///
+  /// The engine lighting samples this rather than a uniform so coefficients
+  /// computed on the GPU (a baked sky) need no read-back. Built from
+  /// [diffuseSphericalHarmonics] for the image-based constructors.
+  gpu.Texture get diffuseShTexture => _diffuseShTexture;
+
+  /// Uploads [sh] (9 RGB coefficients) to a 9-by-1 float texture.
+  static gpu.Texture _shTextureFromList(List<Vector3> sh) {
+    final half = Uint16List(kDiffuseShCoefficientCount * 4);
+    for (var i = 0; i < kDiffuseShCoefficientCount; i++) {
+      half[i * 4] = _floatToHalfBits(sh[i].x);
+      half[i * 4 + 1] = _floatToHalfBits(sh[i].y);
+      half[i * 4 + 2] = _floatToHalfBits(sh[i].z);
+      half[i * 4 + 3] = _floatToHalfBits(1.0);
+    }
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      kDiffuseShCoefficientCount,
+      1,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+    );
+    texture.overwrite(ByteData.sublistView(half));
+    return texture;
+  }
 }
