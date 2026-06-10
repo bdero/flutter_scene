@@ -13,7 +13,7 @@ import 'dart:io';
 /// Bump when the hooks' generated output changes for the same inputs (the
 /// importer, the scene emitter, or the material pipeline), so outputs cached
 /// by an older flutter_scene revision are rebuilt.
-const int buildCacheRevision = 1;
+const int buildCacheRevision = 2;
 
 /// Setting this environment variable (to any value) disables the per-input
 /// build cache, so every source is reconverted on each hook run.
