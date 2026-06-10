@@ -62,7 +62,7 @@ class _ExampleFsceneState extends State<ExampleFscene> {
     realized.add(
       Node(
         name: 'handBuilt',
-        localTransform: vm.Matrix4.translation(vm.Vector3(0, 3.2, 0)),
+        localTransform: vm.Matrix4.translation(vm.Vector3(0, 5.2, 0)),
       )..addComponent(
         MeshComponent(
           Mesh(
