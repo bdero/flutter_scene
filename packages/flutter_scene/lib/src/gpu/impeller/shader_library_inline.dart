@@ -20,3 +20,12 @@ ShaderLibrary compileShaderLibraryInline(
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
   return Future.value(ShaderLibrary.fromAsset(assetName));
 }
+
+/// Async shader-bundle reinitialize. On native this wraps flutter_gpu's
+/// synchronous in-place `ShaderLibrary.reinitialize`; the web backend
+/// re-fetches and recompiles asynchronously, so await this before evicting
+/// cached pipelines.
+Future<void> reinitializeShaderLibraryAsync(String assetKey) {
+  ShaderLibrary.reinitialize(assetKey);
+  return Future.value();
+}

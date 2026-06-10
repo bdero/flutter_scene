@@ -179,10 +179,12 @@ class HotReloadCoordinator {
       if (_shaderBundleHashes[key] == hash) continue; // unchanged
       _shaderBundleHashes[key] = hash;
       try {
-        // Re-fetches the bundle through the engine and marks its shaders dirty
-        // so the next pipeline build uses the new code. The material's existing
-        // Shader objects keep their identity.
-        gpu.ShaderLibrary.reinitialize(key);
+        // Re-fetches the bundle and recompiles its shaders in place (through
+        // the engine on native, the WebGL2 shim on web), so the next pipeline
+        // build uses the new code. The material's existing Shader objects
+        // keep their identity; awaiting orders the pipeline eviction below
+        // after the web recompile completes.
+        await gpu.reinitializeShaderLibraryAsync(key);
         // The Shader objects kept their identity, so the pipeline cache (keyed
         // by the shader pair) still points at pipelines built from the old
         // code. Evict the affected ones so the next draw rebuilds them.

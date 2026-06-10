@@ -143,6 +143,11 @@ base class Shader {
         'Failed to compile ${stage.name} shader:\n$log\n--- source ---\n$source',
       );
     }
+    // On a hot-reload recompile, release the replaced shader object (linked
+    // programs keep their own copy of the code, so this only frees the
+    // standalone object).
+    final previous = _glShader;
+    if (previous != null) gl.deleteShader(previous);
     _glShader = s;
   }
 }

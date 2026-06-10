@@ -9,3 +9,5 @@ base class ShaderLibrary {
 
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>
     Future.value(ShaderLibrary.fromAsset(assetName));
+
+Future<void> reinitializeShaderLibraryAsync(String assetKey) => _stub();
