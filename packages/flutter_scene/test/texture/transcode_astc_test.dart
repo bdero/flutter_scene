@@ -38,20 +38,32 @@ void main() {
       expect(astc.length, _blockCount(16, 16) * 16);
     });
 
-    test('writes the fixed block mode and CEM', () {
+    test('writes the fixed block mode and a per-block CEM', () {
+      final opaque = Uint8List(4 * 4 * 4);
+      for (var i = 3; i < opaque.length; i += 4) {
+        opaque[i] = 255;
+      }
       final astc = transcodeUniversalToAstc4x4(
-        encodeUniversalBlocks(Uint8List(4 * 4 * 4), 4, 4),
+        encodeUniversalBlocks(opaque, 4, 4),
         1,
       );
       // Block mode is bits [10:0] = 0x53.
       final blockMode = astc[0] | ((astc[1] & 0x7) << 8);
       expect(blockMode, 0x53);
-      // Partition bits [12:11] = 0, CEM bits [16:13] = 8.
+      // Partition bits [12:11] = 0, CEM bits [16:13] = 8 for opaque blocks.
       final lowHalf = astc[1] | (astc[2] << 8);
       final partition = (lowHalf >> 3) & 0x3; // bits 11-12
       final cem = (lowHalf >> 5) & 0xF; // bits 13-16
       expect(partition, 0);
       expect(cem, 8);
+
+      // A non-opaque block switches to the RGBA endpoint mode (CEM 12).
+      final translucent = transcodeUniversalToAstc4x4(
+        encodeUniversalBlocks(Uint8List(4 * 4 * 4), 4, 4),
+        1,
+      );
+      final translucentLow = translucent[1] | (translucent[2] << 8);
+      expect((translucentLow >> 5) & 0xF, 12);
     });
 
     test('keeps a solid color through transcode', () {

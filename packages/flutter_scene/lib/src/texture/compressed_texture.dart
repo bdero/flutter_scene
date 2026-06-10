@@ -3,10 +3,11 @@
 //
 // The device may support a block-compressed family directly, in which case the
 // block payload is transcoded to that format and uploaded compressed (less
-// VRAM): BC1/ETC2-RGB for opaque textures, BC3/ETC2-RGBA8 when the texture is
-// marked as carrying alpha. Otherwise the payload is decoded to rgba8 and
-// uploaded uncompressed, which is always correct (alpha included) and the
-// only path on web without the extensions.
+// VRAM): BC1/ETC2-RGB for opaque textures, BC3/ETC2-RGBA8 when the texture
+// is marked as carrying alpha, and ASTC either way (its blocks switch to the
+// RGBA endpoint mode where needed). Otherwise the payload is decoded to
+// rgba8 and uploaded uncompressed, which is always correct (alpha included)
+// and the only path on web without the extensions.
 
 import 'package:flutter/foundation.dart';
 
@@ -90,17 +91,13 @@ _Prepared _prepare(Ktx2Texture texture, int mode) {
     texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
     0,
   );
-  // A texture marked as carrying alpha upgrades to the family's alpha format.
-  // ASTC has no alpha config in the transcoder yet, so it falls back to the
-  // (always correct, uncompressed) rgba8 path rather than flattening alpha.
-  // TODO(texture-compression): transcode alpha blocks to ASTC CEM 12 (needs
-  // trit/quint integer-sequence encoding for the endpoint quantization the
-  // decoder derives under our block mode).
+  // A texture marked as carrying alpha upgrades to the family's alpha
+  // format. ASTC needs no upgrade: its transcoder switches non-opaque blocks
+  // to the RGBA color endpoint mode within the same 16-byte format.
   if (ktx2HasAlpha(texture)) {
     mode = switch (mode) {
       _modeBc1 => _modeBc3,
       _modeEtc2 => _modeEtc2Rgba,
-      _modeAstc => _modeRgba8,
       _ => mode,
     };
   }
