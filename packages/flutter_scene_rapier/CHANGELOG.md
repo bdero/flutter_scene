@@ -1,3 +1,8 @@
+## 0.2.0
+
+* Requires flutter_scene 0.17.0.
+* No native changes; this release reuses the 0.1.0 prebuilt binaries and wasm.
+
 ## 0.1.0
 
 First public release. A Rapier 3D physics backend for flutter_scene,
