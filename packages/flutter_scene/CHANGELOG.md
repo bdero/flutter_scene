@@ -29,6 +29,52 @@
   in different directories no longer collide. Move `.fmat` files under `assets/`,
   or pass an explicit list to `buildMaterials`.
 * Building `.fmat` materials and models now requires `flutter_gpu_shaders` 0.5.0.
+* Added the `.fscene` / `.fsceneb` serialized scene format: author scenes as
+  text or import them from `.glb` with `buildScenes`, and load them by source
+  path with `loadScene` (with in-place hot reload, prefabs, and streaming).
+* Added optional texture compression for imported models and scenes, opt in
+  via `compressTextures` on the importers and build hooks. Images are stored
+  as mipped, supercompressed KTX2 block payloads and transcoded at load to a
+  format the device supports (BC1, ETC2, or ASTC, with an rgba8 fallback);
+  transcoding runs off the main isolate.
+* **Breaking:** fixed vertically inverted image-based lighting. The
+  environment prefilter and the diffuse spherical-harmonics projection read
+  source equirectangular images with the up hemisphere at the bottom, so every
+  image-based environment lit scenes from below and reflected upside down.
+  Both now use the standard convention (up pole at the top of the image), and
+  the procedural studio environment was flipped to match, so scenes lit by
+  loaded panoramas or HDRs will render differently (correctly so).
+* Added a skybox: assign `Scene.skybox` to draw a background behind all
+  geometry, with no user geometry or draw ordering. The built-in
+  `EnvironmentSkySource` shows the scene environment with a `blurriness`
+  control that reuses the prefiltered roughness bands, so the backdrop always
+  matches reflections.
+* Added custom sky shaders. `ShaderSkySource` draws a full-screen sky fragment
+  (the engine supplies the world view direction as `v_ray`), and a `.fmat`
+  with a `sky { vec3 Sky(vec3 direction) }` block compiles to one through the
+  existing material pipeline: load it with `loadFmatSky` for typed parameters
+  and in-place hot reload, and declare `requires: [environment]` to sample the
+  scene's prefiltered radiance.
+* Added sky-driven lighting. `EnvironmentMap.fromSky` bakes any shader sky
+  into the image-based lighting (specular and diffuse, projected on the GPU),
+  and `Scene.skyEnvironment` keeps the bake fresh on a refresh policy (manual
+  with `invalidate()`, an interval, or every frame). After a binding's first
+  synchronous bake, re-bakes are time-sliced one GPU pass per frame into
+  double-buffered targets, so refreshes never spike a frame.
+* Added built-in procedural skies: `GradientSkySource` (zenith/horizon/ground
+  colors with an HDR sun disk) and `PhysicalSkySource` (an analytic
+  single-scattering daylight atmosphere driven by a sun direction).
+* The diffuse spherical-harmonics coefficients are now sampled from a small
+  texture instead of packed into a uniform, and
+  `EnvironmentMap.fromGpuTextures` accepts a `diffuseShTexture` computed on
+  the GPU.
+* A `.fmat` that fails to compile during hot reload no longer fails the whole
+  build: the last good shaders stay active and the compile error is reported
+  in the console, both from the build hook and in the running app.
+* Build-hook conversions (models, scenes, and materials) are now cached by
+  input content, so a hook rerun for an unrelated edit skips unchanged
+  sources. Editing one `.fmat` no longer re-imports every model on hot
+  reload. Set `FLUTTER_SCENE_DISABLE_BUILD_CACHE` to always reconvert.
 
 ## 0.16.0
 
