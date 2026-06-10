@@ -88,7 +88,8 @@ Node _realizeWith(
   for (final spec in document.nodes.values) {
     final node = tagNodeId(
       Node(name: spec.name, localTransform: spec.transform.toMatrix4())
-        ..layers = spec.layers,
+        ..layers = spec.layers
+        ..excludeFromWindingParity = spec.excludeFromWindingParity,
       spec.id,
     );
     final instance = spec.instance;
@@ -203,6 +204,7 @@ NodeSpec _serializeNode(
     transform: MatrixTransform(node.localTransform.clone()),
     components: components,
     layers: node.layers,
+    excludeFromWindingParity: node.excludeFromWindingParity,
   );
   document.addNode(spec);
 

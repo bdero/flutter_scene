@@ -320,6 +320,7 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.layers != 1) 'layers': n.layers,
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
+    if (n.excludeFromWindingParity) 'excludeWindingParity': true,
   };
 }
 
@@ -503,6 +504,7 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
   instance: json['instance'] != null
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
+  excludeFromWindingParity: json['excludeWindingParity'] as bool? ?? false,
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {

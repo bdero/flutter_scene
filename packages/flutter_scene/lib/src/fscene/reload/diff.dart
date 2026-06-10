@@ -129,7 +129,9 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
 
     final change = NodeChange(
       id,
-      transform: !_transformsEqual(oldNode.transform, newNode.transform),
+      transform:
+          !_transformsEqual(oldNode.transform, newNode.transform) ||
+          oldNode.excludeFromWindingParity != newNode.excludeFromWindingParity,
       name: oldNode.name != newNode.name,
       layers: oldNode.layers != newNode.layers,
       reparented: oldParents[id] != newParents[id],

@@ -154,6 +154,7 @@ class NodeSpec {
     this.layers = 1,
     this.skin,
     this.instance,
+    this.excludeFromWindingParity = false,
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
@@ -181,6 +182,12 @@ class NodeSpec {
 
   /// Non-null when this node is a prefab instance.
   PrefabInstanceSpec? instance;
+
+  /// Whether this node's mirror transform is excluded from winding-parity
+  /// tracking. Set on handedness-adapter nodes (a `scale(1, 1, -1)` that
+  /// converts between authoring spaces rather than mirroring content), so
+  /// the renderer does not flip triangle winding under it.
+  bool excludeFromWindingParity;
 }
 
 /// An axis-aligned bounding box in a resource's local space.

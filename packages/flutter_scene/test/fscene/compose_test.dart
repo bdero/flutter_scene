@@ -2,7 +2,11 @@
 // prefab documents, id remapping, override/add/remove deltas, nested prefabs,
 // and cycle handling. All GPU-free (document-to-document).
 
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/fscene/compose/compose.dart';
+import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -254,5 +258,103 @@ void main() {
       },
     );
     expect(loads, 1);
+  });
+
+  group('deterministic remapping', () {
+    test('recomposing yields identical ids', () {
+      final prefab = _prefab();
+      SceneDocument host() {
+        final doc = SceneDocument(documentId: DocumentId(Uint8List(16)));
+        doc.addNode(
+          NodeSpec(
+            id: const LocalId(5, 1),
+            name: 'a',
+            instance: PrefabInstanceSpec(source: const AssetRef('p')),
+          ),
+          root: true,
+        );
+        return doc;
+      }
+
+      final first = composeScene(host(), resolve: _resolveTo(prefab));
+      final second = composeScene(host(), resolve: _resolveTo(prefab));
+      expect(first.nodes.keys.toSet(), second.nodes.keys.toSet());
+      expect(first.resources.keys.toSet(), second.resources.keys.toSet());
+      expect(first.payloads.keys.toSet(), second.payloads.keys.toSet());
+    });
+
+    test('two instances of one prefab share resources but not nodes', () {
+      final host = SceneDocument();
+      host.createNode(name: 'a', root: true).instance = PrefabInstanceSpec(
+        source: const AssetRef('p'),
+      );
+      host.createNode(name: 'b', root: true).instance = PrefabInstanceSpec(
+        source: const AssetRef('p'),
+      );
+
+      final composed = composeScene(host, resolve: _resolveTo(_prefab()));
+      // One shared material resource, not one per instance.
+      expect(composed.resources, hasLength(1));
+      final materialId = composed.resources.keys.single;
+      for (final root in composed.rootNodes) {
+        final mesh = root.components.singleWhere((c) => c.type == 'mesh');
+        expect(
+          (mesh.properties['material'] as ResourceRefValue).id,
+          materialId,
+        );
+      }
+      // The wheels stay distinct per instance.
+      final wheels = composed.nodes.values.where((n) => n.name == 'wheel');
+      expect(wheels.map((n) => n.id).toSet(), hasLength(2));
+    });
+  });
+
+  test('keeps a nested lazy instance as a placeholder', () {
+    final prefab = SceneDocument();
+    final root = prefab.createNode(name: 'prefabRoot', root: true);
+    final lazy = prefab.createNode(name: 'lazyChild');
+    lazy.instance = PrefabInstanceSpec(
+      source: const AssetRef('streamed'),
+      load: LoadPolicy.lazy,
+    );
+    root.children.add(lazy.id);
+
+    final host = SceneDocument();
+    host.createNode(name: 'inst', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final placeholder = composed.nodes.values.singleWhere(
+      (n) => n.name == 'lazyChild',
+    );
+    expect(placeholder.instance, isNotNull);
+    expect(placeholder.instance!.load, LoadPolicy.lazy);
+    expect(placeholder.instance!.source.key, 'streamed');
+  });
+
+  test('inserts a mirror adapter for an opposite-handedness prefab', () {
+    final prefab = _prefab();
+    prefab.stage.handedness = Handedness.right;
+
+    final host = SceneDocument(); // left-handed by default
+    host.createNode(name: 'inst', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final instance = composed.rootNodes.single;
+    expect(instance.name, 'inst');
+    // The prefab root is not merged; an adapter sits between them.
+    final adapter = composed.node(instance.children.single)!;
+    expect(adapter.excludeFromWindingParity, isTrue);
+    final matrix = adapter.transform.toMatrix4();
+    expect(matrix.entry(2, 2), -1.0);
+    final body = composed.node(adapter.children.single)!;
+    expect(body.name, 'body');
+
+    // The adapter flag survives the JSON round trip.
+    final restored = readFscene(writeFscene(composed));
+    expect(restored.node(adapter.id)!.excludeFromWindingParity, isTrue);
   });
 }

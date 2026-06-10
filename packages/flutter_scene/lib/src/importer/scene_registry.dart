@@ -8,6 +8,7 @@ import '../fscene/realize/resource_realizer.dart';
 import '../fscene/realize/stage.dart';
 import '../fscene/reload/reload.dart';
 import '../fscene/scene_document.dart';
+import '../fscene/stream/stream.dart' as stream;
 import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
 import '../scene.dart';
@@ -27,6 +28,12 @@ typedef SceneReloadCallback = void Function(Node root);
 /// call realizes its own node graph from it. An entry is dropped when the
 /// scene's assets hot reload, so the next load re-reads them.
 final Map<String, Future<_SceneTemplate>> _sceneTemplates = {};
+
+/// Tracked dependency sets of streamed lazy subtrees, keyed by placeholder
+/// node, so repeated loads refresh the registration instead of duplicating it.
+final Expando<Set<String>> _streamedDependencies = Expando(
+  'fscene streamed subtree dependencies',
+);
 
 class _SceneTemplate {
   _SceneTemplate(this.document, this.resources, this.dependencies);
@@ -160,10 +167,8 @@ final class SceneRegistry {
 
     // Reads the host document and expands any prefab instances, resolving
     // each referenced prefab by source path against this same registry,
-    // collecting the asset keys touched into [seen].
-    // TODO(fscene): lazily streamed prefab subtrees (LoadPolicy.lazy) load
-    // outside the compose, so their assets are not tracked and an edit to
-    // one does not hot-reload the host scene.
+    // collecting the asset keys touched into [seen]. (Lazily streamed
+    // subtrees register their own assets when loaded; see [loadSubtree].)
     Future<SceneDocument> readComposed(Set<String> seen) async {
       final document = await _readDocument(key, assetBundle);
       return document.nodes.values.any((n) => n.instance != null)
@@ -243,6 +248,70 @@ final class SceneRegistry {
     return root;
   }
 
+  /// Streams a lazy placeholder [node]'s prefab content under it, resolving
+  /// the referenced prefab (and its eager references) by source path against
+  /// this registry.
+  ///
+  /// The registry-aware counterpart of `loadSubtree`: the streamed content is
+  /// also registered for hot reload, so an edit to any of the prefab assets
+  /// re-streams the subtree in place while loaded. References the app holds
+  /// into the streamed content go stale after such a reload; re-resolve them
+  /// from [node].
+  Future<void> loadSubtree(
+    Node node, {
+    String? package,
+    AssetBundle? bundle,
+    FsceneComponentRegistry? registry,
+  }) async {
+    final assetBundle = bundle ?? rootBundle;
+
+    Future<Set<String>> streamIn() async {
+      final seen = <String>{};
+      await stream.loadSubtree(
+        node,
+        registry: registry,
+        bundle: assetBundle,
+        load: (ref) {
+          final key = resolveKey(ref.key, package: package);
+          seen.add(key);
+          return _readDocument(key, assetBundle);
+        },
+      );
+      return seen;
+    }
+
+    final seen = await streamIn();
+    if (seen.isEmpty) return;
+
+    // Register once per placeholder; later loads just refresh the tracked
+    // dependency set (debug only; a no-op registration in release).
+    final existing = _streamedDependencies[node];
+    if (existing != null) {
+      existing
+        ..clear()
+        ..addAll(seen);
+      return;
+    }
+    final dependencies = {...seen};
+    _streamedDependencies[node] = dependencies;
+    HotReloadCoordinator.instance.registerScene(
+      node,
+      assetKey: seen.first,
+      dependencies: dependencies,
+      bundle: assetBundle,
+      onReload: () async {
+        // Re-stream in place only while loaded; an unloaded placeholder
+        // streams the fresh content on its next load.
+        if (!stream.isSubtreeLoaded(node)) return;
+        stream.unloadSubtree(node);
+        final refreshed = await streamIn();
+        dependencies
+          ..clear()
+          ..addAll(refreshed);
+      },
+    );
+  }
+
   Future<SceneDocument> _readDocument(String key, AssetBundle bundle) async {
     // Evict so a hot reload re-reads the changed asset.
     bundle.evict(key);
@@ -300,5 +369,26 @@ Future<Node> loadScene(
     registry: registry,
     onReload: onReload,
     applyStageTo: applyStageTo,
+  );
+}
+
+/// Streams a lazy placeholder [node]'s prefab content under it, resolving
+/// the referenced prefab by its source path (the registry-aware counterpart
+/// of `loadSubtree` for scenes loaded with [loadScene]).
+///
+/// The streamed content hot-reloads: editing any of the prefab's assets
+/// re-streams the subtree in place while it is loaded.
+Future<void> loadSceneSubtree(
+  Node node, {
+  String? package,
+  AssetBundle? bundle,
+  FsceneComponentRegistry? registry,
+}) async {
+  final sceneRegistry = await SceneRegistry.load(bundle: bundle);
+  return sceneRegistry.loadSubtree(
+    node,
+    package: package,
+    bundle: bundle,
+    registry: registry,
   );
 }

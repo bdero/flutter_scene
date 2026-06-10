@@ -43,7 +43,7 @@ export 'src/material/unlit_material.dart';
 export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
 export 'src/importer/scene_registry.dart'
-    show SceneRegistry, SceneReloadCallback, loadScene;
+    show SceneRegistry, SceneReloadCallback, loadScene, loadSceneSubtree;
 
 export 'src/ambient_occlusion.dart';
 export 'src/asset_helpers.dart';
