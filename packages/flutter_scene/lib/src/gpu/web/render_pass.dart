@@ -188,12 +188,29 @@ base class RenderPass {
       throw Exception('RenderTarget must have at least one color attachment');
     }
     final color = _target.colorAttachments.first.texture;
+    final depth = _target.depthStencilAttachment?.texture;
 
+    // Configured framebuffers (including the completeness check, a
+    // synchronous GPU round trip) are cached per attachment combination.
+    final fbo = _gpuContext._framebufferFor(
+      color,
+      depth,
+      () => _createFramebuffer(gl, color, depth),
+    );
+    _fbo = fbo;
+    gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
+    gl.viewport(0, 0, color.width, color.height);
+  }
+
+  static web.WebGLFramebuffer _createFramebuffer(
+    web.WebGL2RenderingContext gl,
+    Texture color,
+    Texture? depth,
+  ) {
     final fbo = gl.createFramebuffer();
     if (fbo == null) {
       throw StateError('Failed to create WebGL framebuffer');
     }
-    _fbo = fbo;
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
 
     if (color.sampleCount == 1) {
@@ -213,7 +230,6 @@ base class RenderPass {
       );
     }
 
-    final depth = _target.depthStencilAttachment?.texture;
     if (depth != null) {
       if (depth.sampleCount == 1) {
         gl.framebufferTexture2D(
@@ -241,7 +257,7 @@ base class RenderPass {
         'Framebuffer incomplete (status 0x${status.toRadixString(16)})',
       );
     }
-    gl.viewport(0, 0, color.width, color.height);
+    return fbo;
   }
 
   void _applyLoadActions() {
