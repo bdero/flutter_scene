@@ -84,6 +84,9 @@ Ktx2Texture encodeImageToKtx2(
   return Ktx2Texture(
     vkFormat:
         0, // VK_FORMAT_UNDEFINED; the block format is in the marker above.
+    dataFormatDescriptor: buildBasicDataFormatDescriptor(
+      bytesPerBlock: kBlockBytes,
+    ),
     pixelWidth: width,
     pixelHeight: height,
     levels: levels,

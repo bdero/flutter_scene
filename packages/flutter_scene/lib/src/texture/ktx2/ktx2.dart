@@ -100,11 +100,8 @@ class Ktx2Texture {
   final Ktx2Supercompression supercompression;
 
   /// The data format descriptor block, stored opaquely. Defaults to a minimal
-  /// "null" descriptor (just a total-size word); a format-accurate descriptor
-  /// is the codec layer's responsibility.
-  // TODO(ktx2): build a real basic DFD (Khronos basic descriptor block) for the
-  // formats we emit (UASTC, rgba8, the BC/ETC2/ASTC families) once the codec
-  // lands, so the files validate against KTX-Software.
+  /// "null" descriptor (just a total-size word); the codec layer supplies a
+  /// structured one via [buildBasicDataFormatDescriptor].
   final Uint8List dataFormatDescriptor;
 
   /// Key/value metadata. Keys are UTF-8; values are arbitrary bytes. Written in
@@ -142,6 +139,35 @@ Uint8List _nullDataFormatDescriptor() {
   final dfd = Uint8List(4);
   ByteData.sublistView(dfd).setUint32(0, 4, Endian.little);
   return dfd;
+}
+
+/// Builds a Khronos basic data format descriptor describing a [blockWidth] x
+/// [blockHeight] texel block of [bytesPerBlock] bytes with an unspecified
+/// color model (the proprietary block layout is named by the
+/// `fsBlockFormat` key/value instead). This gives generic KTX2 tooling the
+/// block geometry and plane size it needs to size and walk the file.
+Uint8List buildBasicDataFormatDescriptor({
+  int blockWidth = 4,
+  int blockHeight = 4,
+  int bytesPerBlock = 16,
+}) {
+  const totalBytes = 4 + 24; // total-size word + basic block, zero samples
+  final out = ByteData(totalBytes);
+  out.setUint32(0, totalBytes, Endian.little);
+  // vendorId 0 (Khronos) | descriptorType 0 (basic).
+  out.setUint32(4, 0, Endian.little);
+  // versionNumber 2 | descriptorBlockSize 24.
+  out.setUint32(8, 2 | (24 << 16), Endian.little);
+  out.setUint8(12, 0); // colorModel: unspecified (proprietary block payload)
+  out.setUint8(13, 1); // colorPrimaries: BT.709
+  out.setUint8(14, 2); // transferFunction: sRGB
+  out.setUint8(15, 0); // flags: straight alpha
+  out.setUint8(16, blockWidth - 1);
+  out.setUint8(17, blockHeight - 1);
+  // texelBlockDimension2/3 stay 0 (one texel deep).
+  out.setUint8(20, bytesPerBlock);
+  // bytesPlane1..7 stay 0 (single plane).
+  return out.buffer.asUint8List();
 }
 
 int _align(int value, int alignment) =>
