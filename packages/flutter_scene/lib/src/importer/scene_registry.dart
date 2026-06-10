@@ -4,6 +4,7 @@ import '../fscene/binary/fsceneb.dart';
 import '../fscene/compose/compose.dart';
 import '../fscene/realize/component_codec.dart';
 import '../fscene/realize/realize.dart';
+import '../fscene/realize/resource_realizer.dart';
 import '../fscene/reload/reload.dart';
 import '../fscene/scene_document.dart';
 import '../hot_reload/hot_reload_coordinator.dart';
@@ -11,6 +12,29 @@ import '../node.dart';
 
 const String _sceneAssetMarker = 'flutter_scene/scene/';
 const String _sceneAssetSuffix = '.fsceneb';
+
+/// Called after a hot-reloaded scene has been patched in place (see
+/// [loadScene]), so the app can re-apply per-instance customizations the
+/// patch may have discarded: re-apply a custom material, or re-grab inner
+/// nodes by name. [root] is the same root instance the app holds.
+typedef SceneReloadCallback = void Function(Node root);
+
+/// Shared per-asset scene templates: the composed document plus its
+/// preloaded resource realizer. Every instance realized from one template
+/// shares GPU resources (geometry, materials, textures); each [loadScene]
+/// call realizes its own node graph from it. An entry is dropped when the
+/// scene's assets hot reload, so the next load re-reads them.
+final Map<String, Future<_SceneTemplate>> _sceneTemplates = {};
+
+class _SceneTemplate {
+  _SceneTemplate(this.document, this.resources, this.dependencies);
+
+  final SceneDocument document;
+  final ResourceRealizer resources;
+
+  /// The asset keys the document was composed from (host + prefabs).
+  final Set<String> dependencies;
+}
 
 /// Resolves and loads `.fsceneb` scene packages registered through DataAssets
 /// by the [buildScenes] build hook.
@@ -111,33 +135,32 @@ final class SceneRegistry {
 
   /// Loads the scene whose source is [sourcePath] as a [Node].
   ///
-  /// Pass a custom [registry] to realize app-defined component types; it only
-  /// applies on the first (cache-filling) load of a given scene.
+  /// The composed document and its realized GPU resources (geometry,
+  /// materials, textures) are cached per scene, so loading the same scene
+  /// again instantiates a fresh node graph cheaply, sharing those resources.
+  ///
+  /// Pass a custom [registry] to realize app-defined component types, and
+  /// [onReload] to re-apply per-instance customizations after a hot reload
+  /// patches this instance in place.
   Future<Node> loadScene(
     String sourcePath, {
     String? package,
     AssetBundle? bundle,
     FsceneComponentRegistry? registry,
+    SceneReloadCallback? onReload,
   }) async {
     final key = resolveKey(sourcePath, package: package);
     final assetBundle = bundle ?? rootBundle;
 
-    // The asset keys the realized scene is composed from: the host plus every
-    // eagerly referenced prefab, refreshed on each compose. Shared with the
-    // hot-reload coordinator so an edit to a referenced prefab also reloads
-    // this scene.
+    // Reads the host document and expands any prefab instances, resolving
+    // each referenced prefab by source path against this same registry,
+    // collecting the asset keys touched into [seen].
     // TODO(fscene): lazily streamed prefab subtrees (LoadPolicy.lazy) load
-    // outside the compose, so their assets are not tracked here and an edit
-    // to one does not hot-reload the host scene.
-    final dependencies = <String>{key};
-
-    // Re-reads the host document and expands any prefab instances, resolving
-    // each referenced prefab by source path against this same registry. Run on
-    // load and again on each hot reload.
-    Future<SceneDocument> readComposed() async {
+    // outside the compose, so their assets are not tracked and an edit to
+    // one does not hot-reload the host scene.
+    Future<SceneDocument> readComposed(Set<String> seen) async {
       final document = await _readDocument(key, assetBundle);
-      final seen = <String>{key};
-      final composed = document.nodes.values.any((n) => n.instance != null)
+      return document.nodes.values.any((n) => n.instance != null)
           ? await composeSceneAsync(
               document,
               load: (ref) {
@@ -147,29 +170,53 @@ final class SceneRegistry {
               },
             )
           : document;
-      dependencies
-        ..clear()
-        ..addAll(seen);
-      return composed;
     }
 
-    var current = await readComposed();
+    Future<_SceneTemplate> loadTemplate() async {
+      final seen = <String>{key};
+      final document = await readComposed(seen);
+      final resources = ResourceRealizer(document, bundle: assetBundle);
+      await resources.preload();
+      return _SceneTemplate(document, resources, seen);
+    }
+
+    final pending = _sceneTemplates[key] ??= loadTemplate();
+    _SceneTemplate template;
+    try {
+      template = await pending;
+    } catch (_) {
+      // Don't cache a failed load; the next call retries.
+      _sceneTemplates.remove(key);
+      rethrow;
+    }
+
     final root = await realizeSceneAsync(
-      current,
+      template.document,
       registry: registry,
       bundle: assetBundle,
+      resources: template.resources,
     );
 
     // Patch the live graph in place when the scene's `.fsceneb` (or one of
     // the prefab `.fsceneb`s it is composed from) changes (debug only; a
-    // no-op registration in release).
+    // no-op registration in release). The dependency set is shared with the
+    // coordinator and refreshed on each reload.
+    var current = template.document;
+    final dependencies = {...template.dependencies};
     HotReloadCoordinator.instance.registerScene(
       root,
       assetKey: key,
       dependencies: dependencies,
       bundle: assetBundle,
       onReload: () async {
-        final next = await readComposed();
+        // The cached template no longer matches the edited assets; drop it
+        // so future loads re-read them.
+        _sceneTemplates.remove(key);
+        final seen = <String>{key};
+        final next = await readComposed(seen);
+        dependencies
+          ..clear()
+          ..addAll(seen);
         await reloadScene(
           root,
           current,
@@ -178,6 +225,7 @@ final class SceneRegistry {
           bundle: assetBundle,
         );
         current = next;
+        onReload?.call(root);
       },
     );
     return root;
@@ -214,14 +262,20 @@ String _sceneId(String sourcePath) {
 /// Loads a DataAssets-backed `.fsceneb` scene by its source path relative to
 /// the owning package's root (for example `assets/levels/forest.glb`).
 ///
-/// The `.fscene` counterpart of `loadModel`. Pass [package] to disambiguate
-/// when the same source path is provided by more than one package, and a custom
-/// [registry] to realize app-defined component types.
+/// The `.fscene` counterpart of `loadModel`. Loading the same scene again
+/// instantiates a fresh node graph that shares the first load's GPU
+/// resources, so per-instance loads are cheap.
+///
+/// Pass [package] to disambiguate when the same source path is provided by
+/// more than one package, a custom [registry] to realize app-defined
+/// component types, and [onReload] to re-apply per-instance customizations
+/// after a hot reload patches the returned scene in place.
 Future<Node> loadScene(
   String sourcePath, {
   String? package,
   AssetBundle? bundle,
   FsceneComponentRegistry? registry,
+  SceneReloadCallback? onReload,
 }) async {
   final sceneRegistry = await SceneRegistry.load(bundle: bundle);
   return sceneRegistry.loadScene(
@@ -229,5 +283,6 @@ Future<Node> loadScene(
     package: package,
     bundle: bundle,
     registry: registry,
+    onReload: onReload,
   );
 }

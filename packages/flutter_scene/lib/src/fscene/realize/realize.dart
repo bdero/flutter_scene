@@ -49,17 +49,30 @@ Node realizeScene(SceneDocument document, {FsceneComponentRegistry? registry}) {
 ///
 /// Use this (over [realizeScene]) when a document may reference such
 /// resources; the `.fscene` / `.fsceneb` asset loaders do.
+///
+/// Pass [resources] to share realized GPU resources (geometry, materials,
+/// textures) across multiple realizations of the same document, instancing
+/// a scene cheaply. It must wrap [document] and already be preloaded; the
+/// realizer is constructed and preloaded here only when [resources] is null.
 Future<Node> realizeSceneAsync(
   SceneDocument document, {
   FsceneComponentRegistry? registry,
   AssetBundle? bundle,
+  ResourceRealizer? resources,
 }) async {
-  final resources = ResourceRealizer(document, bundle: bundle);
-  await resources.preload();
+  assert(
+    resources == null || identical(resources.document, document),
+    'A shared ResourceRealizer must wrap the realized document',
+  );
+  var realizer = resources;
+  if (realizer == null) {
+    realizer = ResourceRealizer(document, bundle: bundle);
+    await realizer.preload();
+  }
   return _realizeWith(
     document,
     registry ?? defaultComponentRegistry(),
-    resources,
+    realizer,
   );
 }
 
