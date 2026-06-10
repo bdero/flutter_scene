@@ -5,6 +5,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/texture/block/transcode_astc.dart';
 import 'package:flutter_scene/src/texture/block/transcode_bc3.dart';
 import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/block/universal_block.dart';
@@ -120,6 +121,53 @@ void main() {
       final decoded = decodeEtc2RgbaToRgba8(etc2, w, h);
       expect(_psnrAlpha(rgba, decoded), greaterThan(30));
       expect(_psnrRgba(rgba, decoded), greaterThan(25));
+    });
+  });
+
+  group('ASTC RGBA transcode', () {
+    test('keeps a solid translucent color through transcode', () {
+      const w = 8, h = 8;
+      final rgba = Uint8List(w * h * 4);
+      for (var i = 0; i < w * h; i++) {
+        rgba[i * 4] = 200;
+        rgba[i * 4 + 1] = 60;
+        rgba[i * 4 + 2] = 130;
+        rgba[i * 4 + 3] = 80;
+      }
+      final blocks = encodeUniversalBlocks(rgba, w, h);
+      final astc = transcodeUniversalToAstc4x4(blocks, _blockCount(w, h));
+      final decoded = decodeAstc4x4ToRgba8(astc, w, h);
+      for (var i = 0; i < w * h; i++) {
+        expect((decoded[i * 4 + 3] - 80).abs(), lessThanOrEqualTo(2));
+      }
+      expect(_psnrRgba(rgba, decoded), greaterThan(30));
+    });
+
+    test('preserves an alpha gradient', () {
+      const w = 32, h = 32;
+      final rgba = _alphaGradient(w, h);
+      final blocks = encodeUniversalBlocks(rgba, w, h);
+      final astc = transcodeUniversalToAstc4x4(blocks, _blockCount(w, h));
+      final decoded = decodeAstc4x4ToRgba8(astc, w, h);
+      expect(_psnrAlpha(rgba, decoded), greaterThan(30));
+      expect(_psnrRgba(rgba, decoded), greaterThan(25));
+    });
+
+    test('opaque content keeps full-precision RGB blocks', () {
+      const w = 16, h = 16;
+      final rgba = Uint8List(w * h * 4);
+      for (var i = 0; i < w * h; i++) {
+        rgba[i * 4] = (i * 7) & 0xFF;
+        rgba[i * 4 + 1] = (i * 13) & 0xFF;
+        rgba[i * 4 + 2] = (i * 29) & 0xFF;
+        rgba[i * 4 + 3] = 255;
+      }
+      final blocks = encodeUniversalBlocks(rgba, w, h);
+      final astc = transcodeUniversalToAstc4x4(blocks, _blockCount(w, h));
+      final decoded = decodeAstc4x4ToRgba8(astc, w, h);
+      for (var i = 3; i < decoded.length; i += 4) {
+        expect(decoded[i], 255);
+      }
     });
   });
 
