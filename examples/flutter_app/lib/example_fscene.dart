@@ -289,6 +289,35 @@ SceneDocument _buildDocument(Uint8List pngBytes) {
     ],
   );
 
+  // A KTX2 cube whose texture carries alpha: the compressed payload keeps a
+  // translucent checkerboard (alpha-capable transcode on BC/ETC2 devices,
+  // rgba8 fallback elsewhere), blended by the material's alphaMode.
+  final alphaMaterial = doc.addResource(
+    MaterialResource(
+      doc.newId(),
+      type: 'physicallyBased',
+      properties: {
+        'baseColorTexture': ResourceRefValue(_alphaKtx2Texture(doc).id),
+        'alphaMode': const StringValue('blend'),
+        'roughness': const DoubleValue(0.8),
+      },
+    ),
+  );
+  doc.createNode(
+    name: 'alphaCube',
+    root: true,
+    transform: TrsTransform(translation: vm.Vector3(3.6, 0.5, 0)),
+    components: [
+      ComponentSpec(
+        'mesh',
+        properties: {
+          'geometry': ResourceRefValue(cubeGeometry.id),
+          'material': ResourceRefValue(alphaMaterial.id),
+        },
+      ),
+    ],
+  );
+
   // A row of asynchronously-loaded resources above the ring.
   // 1. An external image-asset texture (referenced by path, not embedded).
   final assetTexture = doc.addResource(
@@ -426,6 +455,36 @@ TextureResource _ktx2Texture(SceneDocument doc) {
       pixels[i + 1] = y * 255 ~/ (size - 1);
       pixels[i + 2] = 200 - (x * 160 ~/ (size - 1));
       pixels[i + 3] = 255;
+    }
+  }
+  final ktx2 = encodeImageToKtx2Bytes(pixels, size, size, supercompress: true);
+  final payload = doc.addPayload(
+    PayloadSpec(
+      doc.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'ktx2',
+      width: size,
+      height: size,
+      bytes: ktx2,
+    ),
+  );
+  return doc.addResource(TextureResource(doc.newId(), payload: payload.id));
+}
+
+/// A translucent checkerboard carried as a compressed KTX2 payload: opaque
+/// warm cells over cells fading with a vertical alpha ramp, so missing alpha
+/// reads as a solid cube immediately.
+TextureResource _alphaKtx2Texture(SceneDocument doc) {
+  const size = 64;
+  final pixels = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      final checker = ((x >> 3) + (y >> 3)).isEven;
+      pixels[i] = checker ? 240 : 40;
+      pixels[i + 1] = checker ? 140 : 90;
+      pixels[i + 2] = checker ? 40 : 220;
+      pixels[i + 3] = checker ? 255 : (y * 255 ~/ (size - 1));
     }
   }
   final ktx2 = encodeImageToKtx2Bytes(pixels, size, size, supercompress: true);

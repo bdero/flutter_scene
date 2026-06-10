@@ -60,14 +60,18 @@ const Map<PixelFormat, _GlFormat> _formatTable = <PixelFormat, _GlFormat>{
   // (the matching extension must be enabled, see supportsTextureCompression);
   // format/type/bytesPerTexel are unused (size comes from _compressedBlockBytes).
   PixelFormat.bc1RGBAUNormInt: _GlFormat(0x83F1, 0, 0, 0), // S3TC DXT1
+  PixelFormat.bc3RGBAUNormInt: _GlFormat(0x83F3, 0, 0, 0), // S3TC DXT5
   PixelFormat.etc2RGB8UNormInt: _GlFormat(0x9274, 0, 0, 0), // ETC2 RGB8
+  PixelFormat.etc2RGBA8UNormInt: _GlFormat(0x9278, 0, 0, 0), // ETC2 RGBA8 EAC
   PixelFormat.astc4x4LDR: _GlFormat(0x93B0, 0, 0, 0), // ASTC 4x4
 };
 
 /// Bytes per 4x4 block for the compressed formats the upload path supports.
 const Map<PixelFormat, int> _compressedBlockBytes = <PixelFormat, int>{
   PixelFormat.bc1RGBAUNormInt: 8,
+  PixelFormat.bc3RGBAUNormInt: 16,
   PixelFormat.etc2RGB8UNormInt: 8,
+  PixelFormat.etc2RGBA8UNormInt: 16,
   PixelFormat.astc4x4LDR: 16,
 };
 

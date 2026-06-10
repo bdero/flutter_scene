@@ -3,14 +3,17 @@
 //
 // The device may support a block-compressed family directly, in which case the
 // block payload is transcoded to that format and uploaded compressed (less
-// VRAM). Otherwise the payload is decoded to rgba8 and uploaded uncompressed,
-// which is always correct and the only path on web without the extensions.
+// VRAM): BC1/ETC2-RGB for opaque textures, BC3/ETC2-RGBA8 when the texture is
+// marked as carrying alpha. Otherwise the payload is decoded to rgba8 and
+// uploaded uncompressed, which is always correct (alpha included) and the
+// only path on web without the extensions.
 
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/block/transcode_astc.dart';
 import 'package:flutter_scene/src/texture/block/transcode_bc1.dart';
+import 'package:flutter_scene/src/texture/block/transcode_bc3.dart';
 import 'package:flutter_scene/src/texture/block/transcode_etc2.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
@@ -31,6 +34,8 @@ const int _modeRgba8 = 0;
 const int _modeBc1 = 1;
 const int _modeEtc2 = 2;
 const int _modeAstc = 3;
+const int _modeBc3 = 4;
+const int _modeEtc2Rgba = 5;
 
 /// The transcoded bytes ready for GPU upload. Plain data so it can cross an
 /// isolate boundary (no GPU types).
@@ -85,6 +90,20 @@ _Prepared _prepare(Ktx2Texture texture, int mode) {
     texture.pixelHeight < 1 ? 1 : texture.pixelHeight,
     0,
   );
+  // A texture marked as carrying alpha upgrades to the family's alpha format.
+  // ASTC has no alpha config in the transcoder yet, so it falls back to the
+  // (always correct, uncompressed) rgba8 path rather than flattening alpha.
+  // TODO(texture-compression): transcode alpha blocks to ASTC CEM 12 (needs
+  // trit/quint integer-sequence encoding for the endpoint quantization the
+  // decoder derives under our block mode).
+  if (ktx2HasAlpha(texture)) {
+    mode = switch (mode) {
+      _modeBc1 => _modeBc3,
+      _modeEtc2 => _modeEtc2Rgba,
+      _modeAstc => _modeRgba8,
+      _ => mode,
+    };
+  }
   if (mode == _modeRgba8) {
     final base = decodeKtx2Level(texture, level: 0);
     return (
@@ -98,7 +117,9 @@ _Prepared _prepare(Ktx2Texture texture, int mode) {
   final blockCount = ((size.width + 3) ~/ 4) * ((size.height + 3) ~/ 4);
   final bytes = switch (mode) {
     _modeBc1 => transcodeUniversalToBc1(blocks, blockCount),
+    _modeBc3 => transcodeUniversalToBc3(blocks, blockCount),
     _modeEtc2 => transcodeUniversalToEtc2Rgb(blocks, blockCount),
+    _modeEtc2Rgba => transcodeUniversalToEtc2Rgba(blocks, blockCount),
     _ => transcodeUniversalToAstc4x4(blocks, blockCount),
   };
   return (bytes: bytes, mode: mode, width: size.width, height: size.height);
@@ -119,7 +140,9 @@ gpu.Texture _upload(_Prepared p) {
   // mark/generate sampleable mipmaps; today the base level is uploaded alone.
   final format = switch (p.mode) {
     _modeBc1 => gpu.PixelFormat.bc1RGBAUNormInt,
+    _modeBc3 => gpu.PixelFormat.bc3RGBAUNormInt,
     _modeEtc2 => gpu.PixelFormat.etc2RGB8UNormInt,
+    _modeEtc2Rgba => gpu.PixelFormat.etc2RGBA8UNormInt,
     _ => gpu.PixelFormat.astc4x4LDR,
   };
   final texture = gpu.gpuContext.createTexture(
