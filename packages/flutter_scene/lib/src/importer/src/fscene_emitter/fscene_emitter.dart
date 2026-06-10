@@ -638,8 +638,9 @@ LocalId? _buildTexture(
     }
   }
   if (image.uri != null) {
-    // An external image; the realizer loads it as an asset.
-    // TODO(fscene): the realizer needs an async external-image-asset path.
+    // An external image, carried as an asset reference; the async realize
+    // path loads it from the asset bundle by this key, so the uri must be a
+    // valid bundle asset path.
     return document
         .addResource(
           TextureResource(document.newId(), asset: AssetRef(image.uri!)),

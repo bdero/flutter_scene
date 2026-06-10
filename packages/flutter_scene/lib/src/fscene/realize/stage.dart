@@ -29,12 +29,12 @@ import 'package:flutter_scene/src/sky_sources.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
-/// Tags applied environments and fmat skies with the spec they realized
-/// from, so [serializeStage] can recover them.
+/// Tags applied environments with the spec they realized from, so
+/// [serializeStage] can recover them. (Fmat skies recover through their
+/// registry source-path stamp plus their assigned parameter values.)
 final Expando<EnvironmentSpec> _environmentSpec = Expando(
   'fscene environment spec',
 );
-final Expando<FmatSkySpec> _fmatSkySpec = Expando('fscene fmat sky spec');
 
 /// Applies [document]'s stage render settings to [scene]: environment,
 /// environment intensity, exposure, tone mapping, skybox, and sky lighting.
@@ -104,12 +104,11 @@ Future<void> realizeStage(
 
 /// Reads [scene]'s stage render settings back into [document]'s stage.
 ///
-/// The reverse of [realizeStage]. An environment or fmat sky the realizer
-/// produced (or a sky loaded through `loadFmatSky`) recovers its source; a
-/// hand-built [EnvironmentMap] serializes as the studio default and a custom
-/// [ShaderSkySource] is dropped, each with a warning. Parameter values an app
-/// set directly on a loaded sky are not recovered; only overrides carried by
-/// the realized spec round-trip.
+/// The reverse of [realizeStage]. An environment the realizer produced
+/// recovers its source spec, and an fmat sky loaded through `loadFmatSky`
+/// recovers its source path plus every parameter assigned through its typed
+/// setters; a hand-built [EnvironmentMap] serializes as the studio default
+/// and a custom [ShaderSkySource] is dropped, each with a warning.
 void serializeStage(Scene scene, SceneDocument document) {
   final stage = document.stage;
   stage.environmentIntensity = scene.environmentIntensity;
@@ -236,7 +235,6 @@ Future<SkySource?> _realizeSkySource(
       try {
         final sky = await loadFmatSky(s.asset.key, bundle: bundle);
         applyFmatParameterOverrides(sky.parameters, s.properties);
-        _fmatSkySpec[sky] = s;
         return sky;
       } catch (e) {
         debugPrint('fscene: failed to load sky fmat "${s.asset.key}": $e');
@@ -249,15 +247,23 @@ SkySourceSpec? _serializeSkySource(SkySource source) {
   // PreprocessedSky and the built-in sources all extend ShaderSkySource;
   // match the concrete types before the generic fallthrough.
   if (source is PreprocessedSky) {
-    final tagged = _fmatSkySpec[source];
-    if (tagged != null) return tagged;
     final sourcePath = fmatSourcePathOf(source);
-    if (sourcePath != null) return FmatSkySpec(AssetRef(sourcePath));
-    debugPrint(
-      'fscene: a sky fmat with no known source path cannot be serialized; '
-      'load skies with loadFmatSky',
+    if (sourcePath == null) {
+      debugPrint(
+        'fscene: a sky fmat with no known source path cannot be serialized; '
+        'load skies with loadFmatSky',
+      );
+      return null;
+    }
+    // Assigned parameter values (overrides applied at realization plus any
+    // the app set since) round-trip; texture parameters have no stage-level
+    // resource pool to reference and are skipped with a warning.
+    return FmatSkySpec(
+      AssetRef(sourcePath),
+      properties: serializeFmatParameterOverrides(
+        source.parameters.assignedValues,
+      ),
     );
-    return null;
   }
   if (source is GradientSkySource) {
     return GradientSkySpec(

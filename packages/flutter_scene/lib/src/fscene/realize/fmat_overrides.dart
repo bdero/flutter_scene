@@ -5,6 +5,7 @@ library;
 import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
@@ -64,4 +65,50 @@ void applyFmatParameterOverrides(
       debugPrint('fscene: failed to apply fmat parameter "$name": $e');
     }
   }
+}
+
+/// Maps the values recorded by `MaterialParameters.assignedValues` back to
+/// their serialized [PropertyValue] form, the reverse of
+/// [applyFmatParameterOverrides]. A texture value is resolved through
+/// [resolveTexture]; when that is absent (or returns null) the texture is
+/// skipped with a warning.
+Map<String, PropertyValue> serializeFmatParameterOverrides(
+  Map<String, Object> assignedValues, {
+  LocalId? Function(gpu.Texture texture)? resolveTexture,
+}) {
+  final properties = <String, PropertyValue>{};
+  assignedValues.forEach((name, value) {
+    switch (value) {
+      case double v:
+        properties[name] = DoubleValue(v);
+      case int v:
+        properties[name] = IntValue(v);
+      case Vector2 v:
+        properties[name] = Vec2Value(v.clone());
+      case Vector3 v:
+        properties[name] = Vec3Value(v.clone());
+      case Vector4 v:
+        properties[name] = Vec4Value(v.clone());
+      case Matrix4 v:
+        properties[name] = Matrix4Value(v.clone());
+      case Color c:
+        properties[name] = ColorValue(c.r, c.g, c.b, c.a);
+      case gpu.Texture t:
+        final id = resolveTexture?.call(t);
+        if (id == null) {
+          debugPrint(
+            'fscene: fmat texture parameter "$name" cannot be serialized '
+            'here; skipping',
+          );
+        } else {
+          properties[name] = ResourceRefValue(id);
+        }
+      default:
+        debugPrint(
+          'fscene: fmat parameter "$name" has an unserializable value '
+          '(${value.runtimeType}); skipping',
+        );
+    }
+  });
+  return properties;
 }
