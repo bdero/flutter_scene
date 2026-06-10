@@ -76,6 +76,9 @@ abstract class TimelineResolver implements PropertyResolver {
 
   TimelineResolver._(this._times);
 
+  /// The keyframe times, in seconds. Read by the scene serializer.
+  List<double> get times => List.unmodifiable(_times);
+
   @override
   double getEndTime() {
     return _times.isEmpty ? 0.0 : _times.last;
@@ -104,6 +107,9 @@ abstract class TimelineResolver implements PropertyResolver {
 class TranslationTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
 
+  /// The keyframe values. Read by the scene serializer.
+  List<Vector3> get values => List.unmodifiable(_values);
+
   TranslationTimelineResolver._(List<double> times, this._values)
     : super._(times) {
     assert(times.length == _values.length);
@@ -131,6 +137,9 @@ class TranslationTimelineResolver extends TimelineResolver {
 /// by the supplied weight.
 class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
+
+  /// The keyframe values. Read by the scene serializer.
+  List<Quaternion> get values => List.unmodifiable(_values);
 
   RotationTimelineResolver._(List<double> times, this._values)
     : super._(times) {
@@ -163,6 +172,9 @@ class RotationTimelineResolver extends TimelineResolver {
 /// scale exactly).
 class ScaleTimelineResolver extends TimelineResolver {
   final List<Vector3> _values;
+
+  /// The keyframe values. Read by the scene serializer.
+  List<Vector3> get values => List.unmodifiable(_values);
 
   ScaleTimelineResolver._(List<double> times, this._values) : super._(times) {
     assert(times.length == _values.length);

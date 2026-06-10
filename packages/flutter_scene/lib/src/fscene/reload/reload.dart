@@ -73,7 +73,8 @@ Future<SceneDiff> reloadScene(
     live[id] = tagNodeId(
       Node(name: spec.name, localTransform: spec.transform.toMatrix4())
         ..layers = spec.layers
-        ..excludeFromWindingParity = spec.excludeFromWindingParity,
+        ..excludeFromWindingParity = spec.excludeFromWindingParity
+        ..visible = spec.visible,
       id,
     );
   }
@@ -101,6 +102,7 @@ Future<SceneDiff> reloadScene(
     }
     if (change.name) node.name = spec.name;
     if (change.layers) node.layers = spec.layers;
+    if (change.visible) node.visible = spec.visible;
     if (change.reparented) {
       node.detach();
       parentFor(change.id).add(node);

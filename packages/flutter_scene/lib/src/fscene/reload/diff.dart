@@ -26,6 +26,7 @@ class NodeChange {
     this.transform = false,
     this.name = false,
     this.layers = false,
+    this.visible = false,
     this.reparented = false,
     this.components = false,
     this.skin = false,
@@ -42,6 +43,9 @@ class NodeChange {
 
   /// The render-layer mask changed.
   final bool layers;
+
+  /// The visibility flag changed.
+  final bool visible;
 
   /// The node's parent changed (it moved in the hierarchy).
   final bool reparented;
@@ -134,6 +138,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
           oldNode.excludeFromWindingParity != newNode.excludeFromWindingParity,
       name: oldNode.name != newNode.name,
       layers: oldNode.layers != newNode.layers,
+      visible: oldNode.visible != newNode.visible,
       reparented: oldParents[id] != newParents[id],
       components: !_componentsEqual(oldNode.components, newNode.components),
       skin: !_skinsEqual(
@@ -147,6 +152,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
     if (change.transform ||
         change.name ||
         change.layers ||
+        change.visible ||
         change.reparented ||
         change.components ||
         change.skin) {

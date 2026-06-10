@@ -34,6 +34,7 @@ LocalId copyResourceInto(
       :final indices,
       :final procedural,
       :final bounds,
+      :final topology,
     ):
       if (vertices != null) _copyPayload(dest, source, vertices);
       if (indices != null) _copyPayload(dest, source, indices);
@@ -43,6 +44,7 @@ LocalId copyResourceInto(
           vertices: vertices,
           indices: indices,
           procedural: procedural,
+          topology: topology,
           bounds: bounds,
         ),
       );

@@ -405,6 +405,7 @@ NodeSpec _remapNode(
   skin: node.skin == null ? null : remap(node.skin!),
   instance: keepInstance ? node.instance : null,
   excludeFromWindingParity: node.excludeFromWindingParity,
+  visible: node.visible,
 );
 
 ComponentSpec _remapComponent(
@@ -438,6 +439,7 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         indices: r.indices == null ? null : remap(r.indices!),
         procedural: r.procedural,
         bounds: r.bounds,
+        topology: r.topology,
       ),
       TextureResource() => TextureResource(
         remap(r.id),

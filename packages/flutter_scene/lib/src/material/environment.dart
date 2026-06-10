@@ -109,10 +109,12 @@ base class EnvironmentMap {
     required String radianceImagePath,
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
-    return fromUIImages(
+    final environment = await fromUIImages(
       radianceImage: await imageFromAsset(radianceImagePath),
       diffuseSphericalHarmonics: diffuseSphericalHarmonics,
     );
+    _environmentAssetPaths[environment] = radianceImagePath;
+    return environment;
   }
 
   /// Builds an [EnvironmentMap] from a high-dynamic-range equirectangular
@@ -534,3 +536,15 @@ base class EnvironmentMap {
     return texture;
   }
 }
+
+/// Radiance asset paths recorded for [EnvironmentMap.fromAssets] results, so
+/// provenance-aware tooling (the scene serializer) can recover where a live
+/// environment came from.
+final Expando<String> _environmentAssetPaths = Expando(
+  'environment asset path',
+);
+
+/// The radiance asset path [environment] was loaded from through
+/// [EnvironmentMap.fromAssets], or null for environments built another way.
+String? environmentAssetPathOf(EnvironmentMap environment) =>
+    _environmentAssetPaths[environment];

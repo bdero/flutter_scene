@@ -166,15 +166,6 @@ class MeshCodec extends ComponentCodec {
   }
 
   LocalId? _serializeMeshGeometry(MeshGeometry geometry, SceneDocument dest) {
-    if (geometry.primitiveType != gpu.PrimitiveType.triangle) {
-      // TODO(fscene): carry primitive topology in GeometryResource so line
-      // and point geometry round-trips; today the realizer assumes triangles.
-      debugPrint(
-        'fscene: only triangle-list geometry serializes; '
-        '${geometry.primitiveType} skipped',
-      );
-      return null;
-    }
     final packed = geometry.packedData;
     final vertices = dest.addPayload(
       PayloadSpec(
@@ -210,6 +201,7 @@ class MeshCodec extends ComponentCodec {
             bounds: bounds == null
                 ? null
                 : BoundsSpec(min: bounds.min.clone(), max: bounds.max.clone()),
+            topology: geometry.primitiveType.name,
           ),
         )
         .id;

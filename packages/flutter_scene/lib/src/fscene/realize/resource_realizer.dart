@@ -224,7 +224,17 @@ class ResourceRealizer {
       indexBytes,
       indexType: indexType,
     );
+    geometry.primitiveType = _topology(res.topology);
     return geometry;
+  }
+
+  gpu.PrimitiveType _topology(String name) {
+    try {
+      return gpu.PrimitiveType.values.byName(name);
+    } catch (_) {
+      debugPrint('fscene: unknown geometry topology "$name"; using triangle');
+      return gpu.PrimitiveType.triangle;
+    }
   }
 
   Uint8List _payloadBytes(LocalId id, String role) {

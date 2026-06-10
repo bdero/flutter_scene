@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/animation.dart' as engine;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
@@ -13,6 +15,7 @@ import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/skin.dart';
 
 /// Returns a registry preloaded with the built-in component codecs.
 FsceneComponentRegistry defaultComponentRegistry() {
@@ -89,7 +92,8 @@ Node _realizeWith(
     final node = tagNodeId(
       Node(name: spec.name, localTransform: spec.transform.toMatrix4())
         ..layers = spec.layers
-        ..excludeFromWindingParity = spec.excludeFromWindingParity,
+        ..excludeFromWindingParity = spec.excludeFromWindingParity
+        ..visible = spec.visible,
       spec.id,
     );
     final instance = spec.instance;
@@ -162,9 +166,14 @@ Matrix4 _handednessTransform(SceneDocument document) =>
 ///
 /// [root] is treated as the synthesized realization root (as returned by
 /// [realizeScene]): its handedness is read back into the stage, and its
-/// children become the document's root nodes. Components are serialized
-/// through [registry] (the built-ins by default); a component no codec claims
-/// (for example a mesh) is skipped with a debug warning.
+/// children become the document's root nodes. Nodes realized from a document
+/// keep their identity-tag ids, so a load/edit/save cycle is rename-proof and
+/// diff-friendly; untagged (hand-built) nodes mint fresh ids. Skins, the
+/// root's parsed animations, and lazy prefab placeholders serialize too; a
+/// loaded lazy subtree serializes as its placeholder (the streamed content
+/// belongs to the referenced prefab, not this document). Components are
+/// serialized through [registry] (the built-ins by default); a component no
+/// codec claims is skipped with a debug warning.
 SceneDocument serializeScene(Node root, {FsceneComponentRegistry? registry}) {
   final reg = registry ?? defaultComponentRegistry();
   final document = SceneDocument();
@@ -173,10 +182,29 @@ SceneDocument serializeScene(Node root, {FsceneComponentRegistry? registry}) {
       : Handedness.left;
   final context = SerializeContext(document);
 
+  // First pass: assign every node its id, reusing realize-time identity tags
+  // where present (skipping duplicates from app-side clones).
+  final ids = <Node, LocalId>{};
+  final used = <LocalId>{};
+  void assign(Node node) {
+    final tagged = nodeFsceneId(node);
+    final id = tagged != null && used.add(tagged) ? tagged : document.newId();
+    ids[node] = id;
+    if (id != tagged) used.add(id);
+    for (final child in node.children) {
+      assign(child);
+    }
+  }
+
   for (final child in root.children) {
-    final spec = _serializeNode(child, document, reg, context);
+    assign(child);
+  }
+
+  for (final child in root.children) {
+    final spec = _serializeNode(child, document, reg, context, ids);
     document.addNode(spec, root: true);
   }
+  _serializeAnimations(root, document, ids);
   return document;
 }
 
@@ -185,6 +213,7 @@ NodeSpec _serializeNode(
   SceneDocument document,
   FsceneComponentRegistry registry,
   SerializeContext context,
+  Map<Node, LocalId> ids,
 ) {
   final components = <ComponentSpec>[];
   for (final component in node.getComponents<Component>()) {
@@ -198,19 +227,150 @@ NodeSpec _serializeNode(
     components.add(spec);
   }
 
+  final lazyInstance = lazyInstanceOf(node);
   final spec = NodeSpec(
-    id: document.newId(),
+    id: ids[node]!,
     name: node.name,
     transform: MatrixTransform(node.localTransform.clone()),
     components: components,
     layers: node.layers,
+    skin: _serializeSkin(node.skin, document, context, ids),
+    instance: lazyInstance,
     excludeFromWindingParity: node.excludeFromWindingParity,
+    visible: node.visible,
   );
   document.addNode(spec);
 
-  for (final child in node.children) {
-    final childSpec = _serializeNode(child, document, registry, context);
-    spec.children.add(childSpec.id);
+  // A loaded lazy subtree's children are the streamed prefab content; the
+  // placeholder's instance reference stands in for them.
+  if (lazyInstance == null) {
+    for (final child in node.children) {
+      final childSpec = _serializeNode(child, document, registry, context, ids);
+      spec.children.add(childSpec.id);
+    }
   }
   return spec;
 }
+
+LocalId? _serializeSkin(
+  Skin? skin,
+  SceneDocument document,
+  SerializeContext context,
+  Map<Node, LocalId> ids,
+) {
+  if (skin == null) return null;
+  final cached = context.serializedResources[skin];
+  if (cached != null) return cached;
+
+  final matrices = Float32List(skin.inverseBindMatrices.length * 16);
+  for (var i = 0; i < skin.inverseBindMatrices.length; i++) {
+    matrices.setAll(i * 16, skin.inverseBindMatrices[i].storage);
+  }
+  final payload = document.addPayload(
+    PayloadSpec(
+      document.newId(),
+      encoding: PayloadEncoding.matrices,
+      length: matrices.lengthInBytes,
+      bytes: matrices.buffer.asUint8List(),
+    ),
+  );
+  final spec = document.addSkin(
+    SkinSpec(
+      document.newId(),
+      // A joint outside the serialized tree (or a null joint) gets a fresh
+      // dangling id, which realizes back to a null (identity) joint.
+      joints: [
+        for (final joint in skin.joints)
+          (joint == null ? null : ids[joint]) ?? document.newId(),
+      ],
+      inverseBindMatrices: payload.id,
+    ),
+  );
+  context.serializedResources[skin] = spec.id;
+  return spec.id;
+}
+
+void _serializeAnimations(
+  Node root,
+  SceneDocument document,
+  Map<Node, LocalId> ids,
+) {
+  for (final animation in root.parsedAnimations) {
+    final channels = <AnimationChannelSpec>[];
+    for (final channel in animation.channels) {
+      final resolver = channel.resolver;
+      final AnimationProperty property;
+      final List<double> times;
+      final Float32List keyframes;
+      switch (resolver) {
+        case engine.TranslationTimelineResolver():
+          property = AnimationProperty.translation;
+          times = resolver.times;
+          keyframes = _packVec3(resolver.values);
+        case engine.RotationTimelineResolver():
+          property = AnimationProperty.rotation;
+          times = resolver.times;
+          keyframes = _packQuaternions(resolver.values);
+        case engine.ScaleTimelineResolver():
+          property = AnimationProperty.scale;
+          times = resolver.times;
+          keyframes = _packVec3(resolver.values);
+        default:
+          debugPrint(
+            'fscene: animation "${animation.name}" channel with a custom '
+            'resolver (${resolver.runtimeType}) is not serializable; skipped',
+          );
+          continue;
+      }
+      final nodeName = channel.bindTarget.nodeName;
+      final target = nodeName == root.name
+          ? root
+          : root.getChildByName(nodeName);
+      channels.add(
+        AnimationChannelSpec(
+          // An unresolved target keeps a dangling id; the name fallback
+          // re-binds it at realization.
+          target: (target != null ? ids[target] : null) ?? document.newId(),
+          targetName: nodeName,
+          property: property,
+          timeline: _floatsPayload(document, Float32List.fromList(times)),
+          keyframes: _floatsPayload(document, keyframes),
+        ),
+      );
+    }
+    if (channels.isEmpty) continue;
+    document.addAnimation(
+      AnimationSpec(document.newId(), name: animation.name, channels: channels),
+    );
+  }
+}
+
+Float32List _packVec3(List<Vector3> values) {
+  final out = Float32List(values.length * 3);
+  for (var i = 0; i < values.length; i++) {
+    out.setAll(i * 3, values[i].storage);
+  }
+  return out;
+}
+
+Float32List _packQuaternions(List<Quaternion> values) {
+  final out = Float32List(values.length * 4);
+  for (var i = 0; i < values.length; i++) {
+    out.setAll(i * 4, values[i].storage);
+  }
+  return out;
+}
+
+LocalId _floatsPayload(SceneDocument document, Float32List floats) => document
+    .addPayload(
+      PayloadSpec(
+        document.newId(),
+        encoding: PayloadEncoding.floats,
+        length: floats.lengthInBytes,
+        bytes: floats.buffer.asUint8List(
+          floats.offsetInBytes,
+          floats.lengthInBytes,
+        ),
+      ),
+    )
+    .id;
