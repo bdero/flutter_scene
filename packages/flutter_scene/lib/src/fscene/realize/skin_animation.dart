@@ -27,7 +27,7 @@ void realizeSkinsAndAnimations(
 ) {
   final skins = <LocalId, Skin>{
     for (final spec in document.skins.values)
-      spec.id: _buildSkin(document, spec, nodes),
+      spec.id: buildSkin(document, spec, nodes),
   };
   for (final nodeSpec in document.nodes.values) {
     final skinId = nodeSpec.skin;
@@ -38,12 +38,14 @@ void realizeSkinsAndAnimations(
   }
 
   for (final spec in document.animations.values) {
-    final animation = _buildAnimation(document, spec, nodes);
+    final animation = buildAnimation(document, spec, nodes);
     if (animation != null) root.addParsedAnimation(animation);
   }
 }
 
-Skin _buildSkin(
+/// Builds [spec] as a live [Skin] bound to the [nodes] joints (marking them
+/// as joints). Also used by scene hot reload to rebuild a changed skin.
+Skin buildSkin(
   SceneDocument document,
   SkinSpec spec,
   Map<LocalId, Node> nodes,
@@ -64,7 +66,10 @@ Skin _buildSkin(
   return skin;
 }
 
-engine.Animation? _buildAnimation(
+/// Builds [spec] as an engine [engine.Animation], with channels bound by the
+/// [nodes] targets' names. Returns null when the animation has no channels.
+/// Also used by scene hot reload to rebuild changed animations.
+engine.Animation? buildAnimation(
   SceneDocument document,
   AnimationSpec spec,
   Map<LocalId, Node> nodes,
