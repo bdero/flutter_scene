@@ -84,6 +84,10 @@ base class Shader {
   final ShaderStage stage;
 
   web.WebGLShader? _glShader;
+
+  // Bumped by every (re)compile; pipeline caches key on it so a hot-reloaded
+  // shader links a fresh program while untouched shaders keep their cache.
+  int _generation = 0;
   // ignore: unused_field
   String? _entrypoint;
   final Map<String, _UniformStruct> _uniformStructs = {};
@@ -149,5 +153,6 @@ base class Shader {
     final previous = _glShader;
     if (previous != null) gl.deleteShader(previous);
     _glShader = s;
+    _generation++;
   }
 }

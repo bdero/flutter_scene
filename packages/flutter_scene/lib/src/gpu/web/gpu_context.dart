@@ -129,17 +129,70 @@ base class GpuContext {
 
   CommandBuffer createCommandBuffer() => CommandBuffer._(this);
 
+  // Linked-program cache. Program linking is expensive and some callers
+  // create a pipeline per draw per frame; native flutter_gpu absorbs that,
+  // so the shim must too. Keyed by shader identity plus compile generation,
+  // so a hot-reloaded shader relinks while untouched pairs stay cached.
+  final Map<(Shader, Shader, int, int), RenderPipeline> _pipelineCache = {};
+
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
     Shader fragmentShader, {
     VertexLayout? vertexLayout,
   }) {
-    return RenderPipeline._(
+    if (vertexLayout != null) {
+      // Custom layouts are rare (inline smoke pipelines); don't cache.
+      return RenderPipeline._(
+        this,
+        vertexShader,
+        fragmentShader,
+        vertexLayout: vertexLayout,
+      );
+    }
+    final key = (
+      vertexShader,
+      fragmentShader,
+      vertexShader._generation,
+      fragmentShader._generation,
+    );
+    final cached = _pipelineCache[key];
+    if (cached != null) return cached;
+    if (_pipelineCache.length >= 512) {
+      // Far above any realistic working set; clearing keeps stale
+      // hot-reload generations from accumulating without bookkeeping.
+      for (final pipeline in _pipelineCache.values) {
+        _gl.deleteProgram(pipeline._program);
+      }
+      _pipelineCache.clear();
+    }
+    return _pipelineCache[key] = RenderPipeline._(
       this,
       vertexShader,
       fragmentShader,
-      vertexLayout: vertexLayout,
     );
+  }
+
+  // Framebuffer cache, keyed by the attachment textures. A pass previously
+  // created (and leaked) a framebuffer and ran the synchronous
+  // checkFramebufferStatus round trip every time; render targets recur every
+  // frame, so both now happen once per attachment combination.
+  final Map<(Texture, Texture?), web.WebGLFramebuffer> _framebufferCache = {};
+
+  web.WebGLFramebuffer _framebufferFor(
+    Texture color,
+    Texture? depth,
+    web.WebGLFramebuffer Function() create,
+  ) {
+    final key = (color, depth);
+    final cached = _framebufferCache[key];
+    if (cached != null) return cached;
+    if (_framebufferCache.length >= 64) {
+      for (final fbo in _framebufferCache.values) {
+        _gl.deleteFramebuffer(fbo);
+      }
+      _framebufferCache.clear();
+    }
+    return _framebufferCache[key] = create();
   }
 
   /// Snapshot the underlying `OffscreenCanvas` into a `ui.Image` for display
