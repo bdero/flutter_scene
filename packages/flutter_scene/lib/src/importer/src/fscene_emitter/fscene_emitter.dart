@@ -12,8 +12,11 @@
 /// isolate. Ids are derived deterministically from the binary chunk, so
 /// re-importing the same asset yields an identical document.
 ///
-// TODO(fscene): bake node-level / skinned pose-union bounds for subtree
-// culling (the realizer treats absent bounds as always-visible meanwhile).
+/// Geometry bounds: unskinned primitives carry their rest AABB; skinned
+/// primitives carry the offline-baked pose-union AABB (the union of every
+/// animated pose's extent), the only sound cull bound once joints move. A
+/// skinned primitive whose pose union could not be computed carries no
+/// bounds, and the realizer leaves it unbounded (always visible).
 library;
 
 import 'dart:math' show Random;
@@ -29,6 +32,7 @@ import '../../../fscene/scene_document.dart';
 import '../../../fscene/specs.dart';
 import '../../../texture/ktx2_image.dart';
 import '../gltf/accessor.dart';
+import '../gltf/bounds_baker.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
 
@@ -98,15 +102,48 @@ SceneDocument buildSceneDocument(
         .id;
   }
 
+  // Pose-union analysis for skinned culling, plus which nodes use each mesh
+  // (geometry resources are shared per mesh, so a mesh used by a skinned
+  // node carries pose-union bounds rather than rest bounds).
+  final poseUnions = bakeSkinnedPoseUnionAabbs(doc, bufferData);
+  final skinnedUsers = <int, List<int>>{};
+  final unskinnedUse = <int>{};
+  for (var i = 0; i < doc.nodes.length; i++) {
+    final node = doc.nodes[i];
+    final mesh = node.mesh;
+    if (mesh == null) continue;
+    if (node.skin != null) {
+      skinnedUsers.putIfAbsent(mesh, () => []).add(i);
+    } else {
+      unskinnedUse.add(mesh);
+    }
+  }
+
   // Geometry resources per mesh primitive, shared across the nodes that
   // reference the same mesh.
   final meshPairs = <int, List<(LocalId, LocalId)>>{};
   for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++) {
     final pairs = <(LocalId, LocalId)>[];
+    var primIndex = 0;
     for (final primitive in doc.meshes[meshIndex].primitives) {
       if (primitive.mode != 4) continue; // triangles only
-      final geometryId = _buildGeometry(document, primitive, doc, bufferData);
+      final bounds = _primitiveBounds(
+        primitive,
+        doc,
+        primIndex,
+        skinnedUsers: skinnedUsers[meshIndex],
+        alsoUsedUnskinned: unskinnedUse.contains(meshIndex),
+        poseUnions: poseUnions,
+      );
+      final geometryId = _buildGeometry(
+        document,
+        primitive,
+        doc,
+        bufferData,
+        bounds: bounds,
+      );
       pairs.add((geometryId, materialFor(primitive.material)));
+      primIndex++;
     }
     meshPairs[meshIndex] = pairs;
   }
@@ -346,8 +383,9 @@ LocalId _buildGeometry(
   SceneDocument document,
   GltfMeshPrimitive primitive,
   GltfDocument doc,
-  Uint8List bufferData,
-) {
+  Uint8List bufferData, {
+  required BoundsSpec? bounds,
+}) {
   final packed = packGltfPrimitive(
     primitive: primitive,
     accessors: doc.accessors,
@@ -378,13 +416,67 @@ LocalId _buildGeometry(
           document.newId(),
           vertices: vertices.id,
           indices: indices.id,
-          bounds: _bounds(primitive, doc),
+          bounds: bounds,
         ),
       )
       .id;
 }
 
-BoundsSpec? _bounds(GltfMeshPrimitive primitive, GltfDocument doc) {
+/// Chooses the cull bounds for one shared mesh primitive.
+///
+/// A primitive used by skinned nodes carries the union of those nodes' baked
+/// pose-union AABBs ([poseUnions], aligned with the mesh's triangle-mode
+/// primitive order); when any pose union is missing, the primitive carries no
+/// bounds and renders unculled. When the mesh is also referenced by an
+/// unskinned node, the rest AABB is unioned in so the shared bound covers
+/// both usages. Primitives without skinning attributes (or without skinned
+/// users) carry the rest AABB.
+BoundsSpec? _primitiveBounds(
+  GltfMeshPrimitive primitive,
+  GltfDocument doc,
+  int primIndex, {
+  required List<int>? skinnedUsers,
+  required bool alsoUsedUnskinned,
+  required Map<int, List<AabbBounds?>> poseUnions,
+}) {
+  final skinnedPrimitive =
+      primitive.attributes.containsKey('JOINTS_0') &&
+      primitive.attributes.containsKey('WEIGHTS_0');
+  if (!skinnedPrimitive || skinnedUsers == null || skinnedUsers.isEmpty) {
+    return _restBounds(primitive, doc);
+  }
+
+  final box = AabbBounds.empty();
+  for (final nodeIndex in skinnedUsers) {
+    final unions = poseUnions[nodeIndex];
+    final union = unions != null && primIndex < unions.length
+        ? unions[primIndex]
+        : null;
+    // No computable pose union (no joints, empty influence): leave the
+    // primitive unbounded so it is never culled mid-animation.
+    if (union == null || union.isEmpty) return null;
+    box.expandToBounds(union);
+  }
+  if (alsoUsedUnskinned) {
+    final rest = _restBounds(primitive, doc);
+    if (rest == null) return null;
+    box.includeMinMax(
+      rest.min.x,
+      rest.min.y,
+      rest.min.z,
+      rest.max.x,
+      rest.max.y,
+      rest.max.z,
+    );
+  }
+  if (box.isEmpty) return null;
+  return BoundsSpec(
+    min: Vector3(box.minX, box.minY, box.minZ),
+    max: Vector3(box.maxX, box.maxY, box.maxZ),
+  );
+}
+
+BoundsSpec? _restBounds(GltfMeshPrimitive primitive, GltfDocument doc) {
   final index = primitive.attributes['POSITION'];
   if (index == null) return null;
   final accessor = doc.accessors[index];
