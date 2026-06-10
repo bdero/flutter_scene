@@ -27,6 +27,6 @@ sky {
     float s = max(dot(direction, normalize(material_params.sun_direction)), 0.0);
     color += vec3(3.0, 2.7, 2.2) * pow(s, material_params.sun_sharpness);
     color += vec3(0.5, 0.45, 0.35) * pow(s, 8.0);
-    return color + vec3(0, 0.3, 0);
+    return color;
   }
 }
