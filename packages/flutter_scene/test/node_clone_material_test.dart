@@ -1,5 +1,5 @@
-// Regression test: cloning a node (as the model cache does on every
-// loadModel) must give each clone its own MeshPrimitive slots, so
+// Regression test: cloning a node must give each clone its own
+// MeshPrimitive slots, so
 // reassigning one instance's material does not leak onto sibling clones
 // or the template. The geometry stays shared (it is the heavy GPU
 // resource). Uses stub geometry / material so no GPU context is required

@@ -8,13 +8,6 @@ import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 
-/// Called after a hot-reloaded model has been swapped into a live [Node] in
-/// place (see `loadModel`), so the app can re-apply per-instance customizations
-/// the swap discarded: re-apply a custom material to the new primitives, or
-/// re-grab inner nodes by name. The [Node] is the same root instance the app
-/// holds; its subtree is the freshly reloaded content.
-typedef ModelReloadCallback = void Function(Node root);
-
 /// Coordinates in-place asset hot reload (debug only).
 ///
 /// `loadFmatMaterial` registers the live [PreprocessedMaterial]s it hands out;
@@ -42,14 +35,12 @@ class HotReloadCoordinator {
   static final HotReloadCoordinator instance = HotReloadCoordinator._();
 
   final List<_MaterialRegistration> _materials = <_MaterialRegistration>[];
-  final List<_ModelRegistration> _models = <_ModelRegistration>[];
   final List<_SceneRegistration> _scenes = <_SceneRegistration>[];
 
-  /// Content hash of each sidecar / shader bundle / model / scene asset last
+  /// Content hash of each sidecar / shader bundle / scene asset last
   /// seen, to skip unchanged assets.
   final Map<String, int> _sidecarHashes = <String, int>{};
   final Map<String, int> _shaderBundleHashes = <String, int>{};
-  final Map<String, int> _modelHashes = <String, int>{};
   final Map<String, int> _sceneHashes = <String, int>{};
 
   bool _refreshing = false;
@@ -72,21 +63,6 @@ class HotReloadCoordinator {
         shaderBundleAssetKey,
         entryName,
       ),
-    );
-  }
-
-  /// Registers a model [node] loaded from [assetKey] (the `.model` asset key).
-  /// On hot reload, when that asset changes, the node's contents are swapped in
-  /// place and [onReload] is invoked so the app can re-apply customizations.
-  /// No-op outside debug.
-  void registerModel(
-    Node node, {
-    required String assetKey,
-    ModelReloadCallback? onReload,
-  }) {
-    if (!kDebugMode) return;
-    _models.add(
-      _ModelRegistration(WeakReference<Node>(node), assetKey, onReload),
     );
   }
 
@@ -133,13 +109,11 @@ class HotReloadCoordinator {
 
   Future<void> _refresh() async {
     _materials.removeWhere((r) => r.material.target == null);
-    _models.removeWhere((r) => r.node.target == null);
     _scenes.removeWhere((r) => r.root.target == null);
-    if (_materials.isEmpty && _models.isEmpty && _scenes.isEmpty) return;
+    if (_materials.isEmpty && _scenes.isEmpty) return;
 
     await _reinitializeChangedShaderBundles();
     await _refreshChangedSidecars();
-    await _refreshChangedModels();
     await _refreshChangedScenes();
   }
 
@@ -284,48 +258,6 @@ class HotReloadCoordinator {
     }
   }
 
-  /// Re-imports any changed `.model` asset and swaps it into the live nodes in
-  /// place, then invokes each node's reload callback.
-  Future<void> _refreshChangedModels() async {
-    if (_models.isEmpty) return;
-    final keys = <String>{for (final r in _models) r.assetKey};
-    for (final key in keys) {
-      rootBundle.evict(key);
-      List<int> bytes;
-      try {
-        final data = await rootBundle.load(key);
-        bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      } catch (_) {
-        continue; // not available this reload; try again next time
-      }
-      final hash = _fnv1aBytes(bytes);
-      if (_modelHashes[key] == hash) continue; // unchanged
-      _modelHashes[key] = hash;
-
-      // Drop the cached template and re-import. fromAsset returns a clone of
-      // the fresh template, which reloadFromTemplate clones again per instance.
-      Node.evictModelCache(key);
-      Node template;
-      try {
-        template = await Node.fromAsset(key);
-      } catch (_) {
-        continue;
-      }
-      for (final r in _models) {
-        if (r.assetKey != key) continue;
-        final node = r.node.target;
-        if (node == null) continue;
-        try {
-          node.reloadFromTemplate(template);
-          r.onReload?.call(node);
-        } catch (_) {
-          // Skip a node that failed to reload; others still refresh.
-        }
-      }
-      debugPrint('flutter_scene: hot-reloaded model "$key"');
-    }
-  }
-
   static int _fnv1a(String s) => _fnv1aBytes(s.codeUnits);
 
   static int _fnv1aBytes(List<int> units) {
@@ -350,14 +282,6 @@ class _MaterialRegistration {
   final String sidecarAssetKey;
   final String shaderBundleAssetKey;
   final String entryName;
-}
-
-class _ModelRegistration {
-  _ModelRegistration(this.node, this.assetKey, this.onReload);
-
-  final WeakReference<Node> node;
-  final String assetKey;
-  final ModelReloadCallback? onReload;
 }
 
 class _SceneRegistration {

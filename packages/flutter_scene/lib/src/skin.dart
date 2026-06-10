@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:vector_math/vector_math.dart';
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 int _getNextPowerOfTwoSize(int x) {
@@ -61,40 +60,6 @@ base class Skin {
   );
   int _jointsTextureRingCursor = 0;
   int _jointsTextureDimension = 0;
-
-  /// Creates a [Skin] from a deserialized flatbuffer skin description,
-  /// resolving each joint reference against the supplied [sceneNodes].
-  ///
-  /// Throws if joints and inverse bind matrices are absent or have mismatched
-  /// lengths, or if a joint index falls outside [sceneNodes].
-  static Skin fromFlatbuffer(fb.Skin skin, List<Node> sceneNodes) {
-    if (skin.joints == null ||
-        skin.inverseBindMatrices == null ||
-        skin.joints!.length != skin.inverseBindMatrices!.length) {
-      throw Exception('Skin data is missing joints or bind matrices.');
-    }
-
-    Skin result = Skin();
-    for (int jointIndex in skin.joints!) {
-      if (jointIndex < 0 || jointIndex > sceneNodes.length) {
-        throw Exception('Skin join index out of range');
-      }
-      sceneNodes[jointIndex].isJoint = true;
-      result.joints.add(sceneNodes[jointIndex]);
-    }
-
-    for (
-      int matrixIndex = 0;
-      matrixIndex < skin.inverseBindMatrices!.length;
-      matrixIndex++
-    ) {
-      final matrix = skin.inverseBindMatrices![matrixIndex].toMatrix4();
-
-      result.inverseBindMatrices.add(matrix);
-    }
-
-    return result;
-  }
 
   /// Computes the joint matrices for the current frame and uploads them as
   /// a square `RGBA32F` GPU texture.

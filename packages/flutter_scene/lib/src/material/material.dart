@@ -7,7 +7,6 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 
 /// Base class for shading a [MeshPrimitive].
 ///
@@ -142,23 +141,6 @@ abstract class Material {
     });
   }
 
-  /// Constructs the appropriate concrete [Material] subclass for the
-  /// supplied flatbuffer material description, resolving texture
-  /// indices against [textures].
-  static Material fromFlatbuffer(
-    fb.Material fbMaterial,
-    List<gpu.Texture> textures,
-  ) {
-    switch (fbMaterial.type) {
-      case fb.MaterialType.kUnlit:
-        return UnlitMaterial.fromFlatbuffer(fbMaterial, textures);
-      case fb.MaterialType.kPhysicallyBased:
-        return PhysicallyBasedMaterial.fromFlatbuffer(fbMaterial, textures);
-      default:
-        throw Exception('Unknown material type');
-    }
-  }
-
   /// Whether to render both faces of triangles drawn with this material
   /// (glTF's `material.doubleSided`). When true, [bind] disables back-face
   /// culling so the geometry is visible from both sides; otherwise back faces
@@ -203,7 +185,7 @@ abstract class Material {
     // overlapping front and back surfaces in triangle-index order rather than
     // depth order (the translucent pass has no per-fragment sorting), which
     // seams thick double-sided glass. Single-sided draws just the outer
-    // surface, matching the legacy `.model` path.
+    // surface.
     final cullBackFace = !doubleSided || !isOpaque();
     pass.setCullMode(cullBackFace ? gpu.CullMode.backFace : gpu.CullMode.none);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);

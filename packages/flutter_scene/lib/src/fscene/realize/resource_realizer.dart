@@ -169,7 +169,7 @@ class ResourceRealizer {
   }
 
   /// Builds a live geometry from a resource's payload chunks, mirroring the
-  /// `.model` import path: the interleaved vertex bytes and optional index
+  /// scene importer stores it: the interleaved vertex bytes and optional index
   /// bytes are uploaded straight into a GPU buffer.
   Geometry _buildPayloadGeometry(GeometryResource res) {
     final vertexId = res.vertices;

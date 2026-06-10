@@ -1,6 +1,6 @@
 /// Animation playback for `flutter_scene`.
 ///
-/// Models loaded from `.model` or glTF files carry [Animation] objects
+/// Imported scenes and glTF files carry [Animation] objects
 /// describing keyframed translation, rotation, and scale changes for
 /// individual nodes. Instantiate one for playback by calling
 /// [Node.createAnimationClip], which returns an [AnimationClip] bound to
@@ -17,7 +17,6 @@ import 'dart:ui';
 
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/math_extensions.dart';
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
 part 'animation/animation.dart';

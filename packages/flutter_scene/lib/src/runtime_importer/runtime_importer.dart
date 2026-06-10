@@ -107,9 +107,8 @@ Future<Node> _buildScene(
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
   // Apply a Z-axis flip on the scene root to convert from glTF's right-handed
-  // coordinate system to flutter_scene's expected convention. This matches
-  // what the offline C++ importer writes as the .model's scene-level
-  // transform (importer_gltf.cc: `MakeScale({1, 1, -1})`).
+  // coordinate system to flutter_scene's expected convention, matching the
+  // handedness mirror the scene realizer applies for right-handed documents.
   final root = Node(
     name: 'root',
     localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
@@ -123,7 +122,7 @@ Future<Node> _buildScene(
   }
 
   // Build animations and attach them to the synthesized root, mirroring how
-  // the offline (.model) path attaches them in Node.fromFlatbuffer.
+  // the scene realizer attaches them.
   for (final ga in doc.animations) {
     root.addParsedAnimation(
       buildAnimation(

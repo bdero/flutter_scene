@@ -17,8 +17,8 @@ class BuiltGeometry {
 /// primitive.
 ///
 /// The pure-data packing (vertex layout, index handling, normal
-/// generation) is done by [packGltfPrimitive] in flutter_scene_importer
-/// so the runtime GLB importer and the offline `.model` emitter share
+/// generation) is done by [packGltfPrimitive]
+/// so the runtime GLB importer and the offline scene emitter share
 /// one implementation.
 BuiltGeometry buildGeometry({
   required GltfMeshPrimitive primitive,

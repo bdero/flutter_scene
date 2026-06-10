@@ -1,12 +1,11 @@
 /// Build-time emitter: parsed glTF -> an `.fscene` document and its `.fsceneb`
 /// binary package.
 ///
-/// This is the `.fscene` counterpart of the `.model` emitter. It builds a
-/// [SceneDocument] from the same parsed glTF the `.model` path consumes, then
-/// packages it as a `.fsceneb` container. Geometry is packed with the shared
+/// Builds a [SceneDocument] from a parsed glTF document, then packages it as
+/// a `.fsceneb` container. Geometry is packed with the shared
 /// [packGltfPrimitive], so a primitive's vertex/index payload bytes are
-/// identical to the bytes the `.model` emitter stores (validated by
-/// byte-comparison tests).
+/// identical to the runtime GLB importer's (validated by byte-comparison
+/// tests).
 ///
 /// Pure Dart (no `dart:ui` / Flutter GPU), so it runs in the build-hook
 /// isolate. Ids are derived deterministically from the binary chunk, so

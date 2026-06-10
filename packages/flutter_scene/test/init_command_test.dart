@@ -16,7 +16,7 @@ void main() {
       expect(contents, contains(hookStartMarker));
       expect(contents, contains('MaterialAssetMode.dataAssetsRequired'));
       expect(contents, contains('buildScenes('));
-      expect(contents, contains('ModelAssetMode.dataAssetsRequired'));
+      expect(contents, contains('SceneAssetMode.dataAssetsRequired'));
       expect(contents, isNot(contains('flutter.assets')));
     } finally {
       temp.deleteSync(recursive: true);

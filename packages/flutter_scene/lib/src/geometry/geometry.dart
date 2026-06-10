@@ -4,8 +4,6 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
-import 'package:flutter_scene/src/importer/constants.dart';
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 
 /// Vertex (and optional index) data along with the vertex shader used to
 /// transform it.
@@ -20,8 +18,7 @@ import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 ///
 /// Construct an instance directly and call [uploadVertexData] (or
 /// [setVertices]/[setIndices] with already-uploaded buffer views) to
-/// supply mesh data, or use [Geometry.fromFlatbuffer] when deserializing
-/// a `.model` payload. For procedurally generated meshes, `MeshGeometry`
+/// supply mesh data. For procedurally generated meshes, `MeshGeometry`
 /// and `GeometryBuilder` assemble a [Geometry] from vertex attribute
 /// arrays without packing vertex bytes by hand.
 abstract class Geometry {
@@ -56,8 +53,8 @@ abstract class Geometry {
 
   /// Local-space axis-aligned bounding box of this geometry's vertex
   /// positions, or `null` if bounds are unknown. Computed by
-  /// [uploadVertexData] for procedural geometry, populated from the
-  /// `.model` flatbuffer for imported geometry, and (for the advanced
+  /// [uploadVertexData] for procedural geometry, populated from baked
+  /// scene-package bounds for imported geometry, and (for the advanced
   /// [setVertices] path where the caller manages its own GPU buffer)
   /// left `null` unless the caller assigns it via [setLocalBounds].
   vm.Aabb3? get localBounds => _localBounds;
@@ -84,112 +81,6 @@ abstract class Geometry {
       throw Exception('Vertex shader has not been set');
     }
     return _vertexShader!;
-  }
-
-  /// Constructs a [Geometry] from a deserialized flatbuffer mesh
-  /// primitive, choosing [UnskinnedGeometry] or [SkinnedGeometry] based
-  /// on the embedded vertex buffer type.
-  ///
-  /// The vertex buffer must be a multiple of the layout size (48 bytes
-  /// unskinned, 80 bytes skinned); a partial trailing vertex is dropped
-  /// with a debug warning.
-  static Geometry fromFlatbuffer(fb.MeshPrimitive fbPrimitive) {
-    Uint8List vertices;
-    bool isSkinned =
-        fbPrimitive.vertices!.runtimeType == fb.SkinnedVertexBuffer;
-    int perVertexBytes = isSkinned
-        ? kSkinnedPerVertexSize
-        : kUnskinnedPerVertexSize;
-
-    switch (fbPrimitive.vertices!.runtimeType) {
-      case const (fb.UnskinnedVertexBuffer):
-        fb.UnskinnedVertexBuffer unskinned =
-            (fbPrimitive.vertices as fb.UnskinnedVertexBuffer?)!;
-        vertices = unskinned.vertices! as Uint8List;
-      case const (fb.SkinnedVertexBuffer):
-        fb.SkinnedVertexBuffer skinned =
-            (fbPrimitive.vertices as fb.SkinnedVertexBuffer?)!;
-        vertices = skinned.vertices! as Uint8List;
-      default:
-        throw Exception('Unknown vertex buffer type');
-    }
-
-    if (vertices.length % perVertexBytes != 0) {
-      debugPrint(
-        'OH NO: Encountered an vertex buffer of size '
-        '${vertices.lengthInBytes} bytes, which doesn\'t match the '
-        'expected multiple of $perVertexBytes bytes. Possible data corruption! '
-        'Attempting to use a vertex count of ${vertices.length ~/ perVertexBytes}. '
-        'The last ${vertices.length % perVertexBytes} bytes will be ignored.',
-      );
-    }
-    int vertexCount = vertices.length ~/ perVertexBytes;
-
-    gpu.IndexType indexType = fbPrimitive.indices!.type.toIndexType();
-    Uint8List indices = fbPrimitive.indices!.data! as Uint8List;
-
-    Geometry geometry;
-    switch (fbPrimitive.vertices!.runtimeType) {
-      case const (fb.UnskinnedVertexBuffer):
-        geometry = UnskinnedGeometry();
-      case const (fb.SkinnedVertexBuffer):
-        geometry = SkinnedGeometry();
-      default:
-        throw Exception('Unknown vertex buffer type');
-    }
-
-    // Pre-populate bounds from the flatbuffer when present so
-    // uploadVertexData can skip the position scan.
-    //
-    // For skinned primitives, only the offline-baked
-    // `skinned_pose_union_aabb` is sound for cull. The static-pose
-    // `bounds_aabb` is useful for editor-style queries on bind-pose
-    // extents but would under-cover the mesh once joints animate.
-    // When the importer didn't bake a pose-union (older `.model`
-    // files), bounds remain `null` and `Geometry.uploadVertexData`
-    // skips the auto-scan for skinned geometries — the runtime
-    // conservatively treats the subtree as always visible.
-    //
-    // Unskinned primitives use the (sound) static AABB and sphere
-    // from the flatbuffer, falling back to a position scan in
-    // `uploadVertexData` when the importer didn't bake bounds.
-    final fbAabb = isSkinned
-        ? fbPrimitive.skinnedPoseUnionAabb
-        : fbPrimitive.boundsAabb;
-    if (fbAabb != null) {
-      geometry._localBounds = vm.Aabb3.minMax(
-        vm.Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
-        vm.Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
-      );
-    }
-    if (isSkinned) {
-      if (geometry._localBounds != null) {
-        // Derive the sphere from the pose-union AABB so it covers the
-        // same animated extent. The baked `bounds_sphere` is fit to
-        // the static bind-pose mesh and would be too small.
-        geometry._localBoundingSphere = _circumscribedSphere(
-          geometry._localBounds!,
-        );
-      }
-      // No pose-union: leave both bounds null so the runtime treats
-      // the subtree as always visible.
-    } else {
-      final fbSphere = fbPrimitive.boundsSphere;
-      if (fbSphere != null) {
-        geometry._localBoundingSphere = vm.Sphere.centerRadius(
-          vm.Vector3(fbSphere.center.x, fbSphere.center.y, fbSphere.center.z),
-          fbSphere.radius,
-        );
-      }
-    }
-
-    geometry.uploadVertexData(
-      ByteData.sublistView(vertices),
-      vertexCount,
-      ByteData.sublistView(indices),
-      indexType: indexType,
-    );
-    return geometry;
   }
 
   /// Binds an already-uploaded vertex buffer view as this geometry's
@@ -365,7 +256,7 @@ abstract class Geometry {
 /// (`vec3`), normal (`vec3`), tex coords (`vec2`), color (`vec4`).
 ///
 /// This is the default vertex format for static (non-animated) meshes
-/// imported from `.model` or glTF.
+/// imported from a scene package or glTF.
 class UnskinnedGeometry extends Geometry {
   /// Creates an [UnskinnedGeometry] preconfigured with the
   /// `UnskinnedVertex` shader from [baseShaderLibrary].

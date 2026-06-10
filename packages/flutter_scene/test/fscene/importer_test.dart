@@ -1,6 +1,6 @@
 // Covers the glTF -> .fscene importer. The load-bearing check is byte parity:
 // a primitive's packed vertex/index payload must equal packGltfPrimitive's
-// output, which is exactly what the .model emitter stores. This is the
+// output, the same packer the runtime GLB importer uses. This is the
 // project's proven import-verification method (compare bytes against the
 // known-good packer rather than eyeballing renders).
 //

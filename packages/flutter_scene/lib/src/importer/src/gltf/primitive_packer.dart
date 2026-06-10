@@ -8,7 +8,7 @@ import 'types.dart';
 /// Pure-data result of packing a glTF mesh primitive into
 /// flutter_scene's vertex layout.
 ///
-/// Shared by the runtime GLB importer and the offline `.model` emitter
+/// Shared by the runtime GLB importer and the offline scene emitter
 /// so a model packs identically whichever path imported it. Backend-
 /// neutral: [indices32Bit] is reported as a flag, and each caller maps
 /// it to its own index-type representation.

@@ -5,7 +5,6 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring
@@ -17,37 +16,6 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Wraps the `UnlitFragment` shader from [baseShaderLibrary].
 class UnlitMaterial extends Material {
-  /// Builds an [UnlitMaterial] from a flatbuffer material description,
-  /// resolving texture indices against [textures].
-  ///
-  /// Throws if [fbMaterial] is not an unlit material.
-  static UnlitMaterial fromFlatbuffer(
-    fb.Material fbMaterial,
-    List<gpu.Texture> textures,
-  ) {
-    if (fbMaterial.type != fb.MaterialType.kUnlit) {
-      throw Exception('Cannot unpack unlit material from non-unlit material');
-    }
-
-    UnlitMaterial material = UnlitMaterial();
-
-    if (fbMaterial.baseColorFactor != null) {
-      material.baseColorFactor = Vector4(
-        fbMaterial.baseColorFactor!.r,
-        fbMaterial.baseColorFactor!.g,
-        fbMaterial.baseColorFactor!.b,
-        fbMaterial.baseColorFactor!.a,
-      );
-    }
-
-    if (fbMaterial.baseColorTexture >= 0 &&
-        fbMaterial.baseColorTexture < textures.length) {
-      material.baseColorTexture = textures[fbMaterial.baseColorTexture];
-    }
-
-    return material;
-  }
-
   /// Creates an [UnlitMaterial], optionally textured.
   ///
   /// When [colorTexture] is null a 1×1 white placeholder is used so the

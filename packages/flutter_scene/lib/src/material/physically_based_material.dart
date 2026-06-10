@@ -6,7 +6,6 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
 import 'package:vector_math/vector_math.dart';
 
 /// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
@@ -44,89 +43,6 @@ enum AlphaMode {
 /// Translucency is determined by [baseColorFactor]'s alpha component;
 /// the material is treated as opaque when alpha is exactly `1`.
 class PhysicallyBasedMaterial extends Material {
-  /// Builds a [PhysicallyBasedMaterial] from a flatbuffer material
-  /// description, resolving texture indices against [textures].
-  ///
-  /// Throws if [fbMaterial] is not a PBR material.
-  static PhysicallyBasedMaterial fromFlatbuffer(
-    fb.Material fbMaterial,
-    List<gpu.Texture> textures,
-  ) {
-    if (fbMaterial.type != fb.MaterialType.kPhysicallyBased) {
-      throw Exception('Cannot unpack PBR material from non-PBR material');
-    }
-
-    PhysicallyBasedMaterial material = PhysicallyBasedMaterial();
-
-    // Base color.
-
-    if (fbMaterial.baseColorFactor != null) {
-      material.baseColorFactor = Vector4(
-        fbMaterial.baseColorFactor!.r,
-        fbMaterial.baseColorFactor!.g,
-        fbMaterial.baseColorFactor!.b,
-        fbMaterial.baseColorFactor!.a,
-      );
-    }
-
-    if (fbMaterial.baseColorTexture >= 0 &&
-        fbMaterial.baseColorTexture < textures.length) {
-      material.baseColorTexture = textures[fbMaterial.baseColorTexture];
-    }
-
-    // Metallic-roughness.
-
-    material.metallicFactor = fbMaterial.metallicFactor;
-    material.roughnessFactor = fbMaterial.roughnessFactor;
-
-    if (fbMaterial.metallicRoughnessTexture >= 0 &&
-        fbMaterial.metallicRoughnessTexture < textures.length) {
-      material.metallicRoughnessTexture =
-          textures[fbMaterial.metallicRoughnessTexture];
-    }
-
-    // Normal.
-
-    if (fbMaterial.normalTexture >= 0 &&
-        fbMaterial.normalTexture < textures.length) {
-      material.normalTexture = textures[fbMaterial.normalTexture];
-    }
-
-    material.normalScale = fbMaterial.normalScale;
-
-    // Emissive.
-
-    if (fbMaterial.emissiveFactor != null) {
-      material.emissiveFactor = Vector4(
-        fbMaterial.emissiveFactor!.x,
-        fbMaterial.emissiveFactor!.y,
-        fbMaterial.emissiveFactor!.z,
-        1,
-      );
-    }
-
-    if (fbMaterial.emissiveTexture >= 0 &&
-        fbMaterial.emissiveTexture < textures.length) {
-      material.emissiveTexture = textures[fbMaterial.emissiveTexture];
-    }
-
-    // Occlusion.
-
-    material.occlusionStrength = fbMaterial.occlusionStrength;
-
-    if (fbMaterial.occlusionTexture >= 0 &&
-        fbMaterial.occlusionTexture < textures.length) {
-      material.occlusionTexture = textures[fbMaterial.occlusionTexture];
-    }
-
-    // Alpha mode.
-
-    material.alphaMode = _alphaModeFromIndex(fbMaterial.alphaMode);
-    material.alphaCutoff = fbMaterial.alphaCutoff;
-
-    return material;
-  }
-
   /// Creates a PBR material with the given textures.
   ///
   /// All textures are optional; missing textures are replaced with
@@ -315,17 +231,5 @@ class PhysicallyBasedMaterial extends Material {
     // materials keep working without an explicit alpha mode.
     if (alphaMode == AlphaMode.blend) return false;
     return baseColorFactor.a >= 1.0;
-  }
-}
-
-/// Maps a flatbuffer `alpha_mode` index (0/1/2) to an [AlphaMode].
-AlphaMode _alphaModeFromIndex(int index) {
-  switch (index) {
-    case 1:
-      return AlphaMode.mask;
-    case 2:
-      return AlphaMode.blend;
-    default:
-      return AlphaMode.opaque;
   }
 }

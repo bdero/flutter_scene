@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
@@ -9,17 +8,10 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
-import 'package:flutter_scene/src/asset_helpers.dart';
-import 'package:flutter_scene/src/geometry/geometry.dart';
-import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
-import 'package:flutter_scene/src/importer/flatbuffer.dart' as fb;
-import 'package:flutter_scene/src/importer/importer.dart';
-import 'package:flutter_scene/src/importer/model_cache.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -100,7 +92,7 @@ base class Node implements SceneGraph {
   bool excludeFromWindingParity = false;
 
   /// The skin attached to this node, used for skeletal animation. Set by
-  /// importers (both the offline .model path and the runtime glTF/GLB loader).
+  /// importers (both the scene importer and the runtime glTF/GLB loader).
   Skin? skin;
 
   /// Assigns the world-space transform of this node, automatically computing
@@ -462,38 +454,10 @@ base class Node implements SceneGraph {
     return _animationPlayer!.createAnimationClip(animation, this);
   }
 
-  /// The asset file should be in a format that can be converted to a scene graph node.
-  ///
-  /// Flutter Scene uses a specialized 3D model format (`.model`) internally.
-  /// You can convert standard glTF binaries (`.glb` files) to this format using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer).
-  ///
-  /// Example:
-  /// ```dart
-  /// final node = await Node.fromAsset('path/to/asset.model');
-  /// ```
-  /// The imported model is cached by [assetPath]: it is parsed and uploaded to
-  /// the GPU once, and each call returns a fresh [clone] sharing those GPU
-  /// resources. Use [evictModelCache] to drop a cached import (for example to
-  /// pick up a changed asset on hot reload).
-  static Future<Node> fromAsset(String assetPath) {
-    return _modelCache.load(assetPath, () async {
-      final buffer = await rootBundle.load(assetPath);
-      return fromFlatbuffer(buffer);
-    });
-  }
-
-  static final ModelImportCache _modelCache = ModelImportCache();
-
-  /// Evicts [assetPath] (or the entire model cache when null) so the next
-  /// [fromAsset] re-reads and re-imports it.
-  static void evictModelCache([String? assetPath]) =>
-      _modelCache.evict(assetPath);
-
   /// Load a glTF binary (GLB) model directly from raw bytes.
   ///
-  /// Unlike [fromAsset], no offline conversion to `.model` is required —
-  /// useful for runtime use cases such as user-uploaded models, network-loaded
-  /// assets, or model editors.
+  /// No offline conversion is required, useful for runtime use cases such
+  /// as user-uploaded models, network-loaded assets, or model editors.
   ///
   /// Example:
   /// ```dart
@@ -538,162 +502,6 @@ base class Node implements SceneGraph {
     required GltfResourceResolver resolveUri,
   }) {
     return importGltf(gltfJson, resolveUri: resolveUri);
-  }
-
-  /// Deserialize a model from Flutter Scene's compact model format.
-  ///
-  /// If you're using [Flutter Scene's offline importer tool](https://pub.dev/packages/flutter_scene_importer),
-  /// consider using [fromAsset] to load the model directly from the asset bundle instead.
-  static Future<Node> fromFlatbuffer(ByteData byteData) async {
-    ImportedScene importedScene = ImportedScene.fromFlatbuffer(byteData);
-    fb.Scene fbScene = importedScene.flatbuffer;
-
-    debugPrint(
-      'Unpacking Scene (nodes: ${fbScene.nodes?.length}, '
-      'textures: ${fbScene.textures?.length})',
-    );
-
-    // Unpack textures.
-    List<gpu.Texture> textures = [];
-    for (fb.Texture fbTexture in fbScene.textures ?? []) {
-      if (fbTexture.embeddedImage == null) {
-        if (fbTexture.uri == null) {
-          debugPrint(
-            'Texture ${textures.length} has no embedded image or URI. A white placeholder will be used instead.',
-          );
-          textures.add(Material.getWhitePlaceholderTexture());
-          continue;
-        }
-        try {
-          // If the texture has a URI, try to load it from the asset bundle.
-          textures.add(await gpuTextureFromAsset(fbTexture.uri!));
-          continue;
-        } catch (e) {
-          debugPrint(
-            'Failed to load texture from asset URI: ${fbTexture.uri}. '
-            'A white placeholder will be used instead. (Error: $e)',
-          );
-          textures.add(Material.getWhitePlaceholderTexture());
-          continue;
-        }
-      }
-      fb.EmbeddedImage image = fbTexture.embeddedImage!;
-      gpu.Texture texture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.hostVisible,
-        image.width,
-        image.height,
-      );
-      Uint8List textureData = image.bytes! as Uint8List;
-      texture.overwrite(ByteData.sublistView(textureData));
-      textures.add(texture);
-    }
-
-    Node result = Node(
-      name: 'root',
-      localTransform: fbScene.transform?.toMatrix4() ?? Matrix4.identity(),
-    )..excludeFromWindingParity = true;
-
-    if (fbScene.nodes == null || fbScene.children == null) {
-      return result; // The scene is empty. ¯\_(ツ)_/¯
-    }
-
-    // Initialize nodes for unpacking the entire scene.
-    List<Node> sceneNodes = [];
-    for (fb.Node _ in fbScene.nodes ?? []) {
-      sceneNodes.add(Node());
-    }
-
-    // Connect children to the root node.
-    for (int childIndex in fbScene.children ?? []) {
-      if (childIndex < 0 || childIndex >= sceneNodes.length) {
-        throw Exception('Scene child index out of range.');
-      }
-      result.add(sceneNodes[childIndex]);
-    }
-
-    // Unpack each node.
-    for (int nodeIndex = 0; nodeIndex < sceneNodes.length; nodeIndex++) {
-      sceneNodes[nodeIndex]._unpackFromFlatbuffer(
-        fbScene.nodes![nodeIndex],
-        sceneNodes,
-        textures,
-      );
-    }
-
-    // Unpack animations.
-    if (fbScene.animations != null) {
-      for (fb.Animation fbAnimation in fbScene.animations!) {
-        result._animations.add(
-          Animation.fromFlatbuffer(fbAnimation, sceneNodes),
-        );
-      }
-    }
-
-    return result;
-  }
-
-  void _unpackFromFlatbuffer(
-    fb.Node fbNode,
-    List<Node> sceneNodes,
-    List<gpu.Texture> textures,
-  ) {
-    name = fbNode.name ?? '';
-    // Assign the private field directly: the node is still being built,
-    // and it already starts out transform-dirty.
-    _localTransform = fbNode.transform?.toMatrix4() ?? Matrix4.identity();
-
-    // Unpack mesh. Attach the mesh component directly: the node is still
-    // being built and not yet mounted, so skip addComponent's mount and
-    // bounds-invalidation path. The baked combined AABB is installed
-    // below.
-    if (fbNode.meshPrimitives != null) {
-      List<MeshPrimitive> meshPrimitives = [];
-      for (fb.MeshPrimitive fbPrimitive in fbNode.meshPrimitives!) {
-        Geometry geometry = Geometry.fromFlatbuffer(fbPrimitive);
-        Material material = fbPrimitive.material != null
-            ? Material.fromFlatbuffer(fbPrimitive.material!, textures)
-            : UnlitMaterial();
-        meshPrimitives.add(MeshPrimitive(geometry, material));
-      }
-      final meshComponent = MeshComponent(
-        Mesh.primitives(primitives: meshPrimitives),
-      );
-      _components.add(meshComponent);
-      _meshComponents.add(meshComponent);
-      meshComponent.attachTo(this);
-    }
-
-    // Connect children. Same private-field assignment to avoid
-    // ancestor-chain invalidation churn while building the graph.
-    for (int childIndex in fbNode.children ?? []) {
-      if (childIndex < 0 || childIndex >= sceneNodes.length) {
-        throw Exception('Node child index out of range.');
-      }
-      final child = sceneNodes[childIndex];
-      if (child._parent != null) {
-        throw Exception('Child already has a parent');
-      }
-      children.add(child);
-      child._parent = this;
-    }
-
-    // Skin.
-    if (fbNode.skin != null) {
-      skin = Skin.fromFlatbuffer(fbNode.skin!, sceneNodes);
-    }
-
-    // Adopt the baked combined-local AABB when present so we don't
-    // recompute it at runtime. When omitted (older files, or the bake
-    // determined the subtree was unbounded), fall through to the lazy
-    // compute path on first access.
-    final fbAabb = fbNode.combinedLocalAabb;
-    if (fbAabb != null) {
-      _combinedBoundsCache = vm.Aabb3.minMax(
-        Vector3(fbAabb.min.x, fbAabb.min.y, fbAabb.min.z),
-        Vector3(fbAabb.max.x, fbAabb.max.y, fbAabb.max.z),
-      );
-      _combinedBoundsCached = true;
-    }
   }
 
   /// This list allows the node to act as a parent in the scene graph hierarchy. Transformations
@@ -957,35 +765,6 @@ base class Node implements SceneGraph {
     }
 
     return result;
-  }
-
-  /// Replaces this node's contents (children, mesh, skin, and parsed
-  /// animations) with a fresh clone of [template], in place, while preserving
-  /// this node's identity, [localTransform], [name], parent, and
-  /// [excludeFromWindingParity].
-  ///
-  /// Used by model hot reload: a re-imported model template is swapped into the
-  /// live node the app already added to the scene, so the app does not rebuild
-  /// the scene or re-`add` anything. Any [AnimationClip]s created on this node
-  /// keep playing and re-bind to the new subtree by node name.
-  ///
-  /// References the app holds to *inner* nodes of the old subtree become stale
-  /// after this; hold the model root (the node this is called on) and re-resolve
-  /// descendants by name if needed.
-  void reloadFromTemplate(Node template) {
-    final fresh = template.clone();
-    removeAll();
-    for (final child in List<Node>.of(fresh.children)) {
-      fresh.remove(child);
-      add(child);
-    }
-    mesh = fresh.mesh;
-    skin = fresh.skin;
-    _animations
-      ..clear()
-      ..addAll(fresh._animations);
-    _animationPlayer?.rebind(this, animations: _animations);
-    markBoundsDirty();
   }
 
   /// Replaces this node's parsed animations with [animations] and re-binds any

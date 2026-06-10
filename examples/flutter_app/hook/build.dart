@@ -18,7 +18,7 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       inputFilePaths: corpus,
-      assetMode: ModelAssetMode.dataAssetsIfAvailable,
+      assetMode: SceneAssetMode.dataAssetsIfAvailable,
       // Store imported textures as compressed KTX2 block payloads so the
       // import -> compress -> render path is exercised in the app (dash's
       // textures shrink the most).

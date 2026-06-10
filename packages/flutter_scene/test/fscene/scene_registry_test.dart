@@ -19,9 +19,7 @@ void main() {
       );
       expect(SceneRegistry.isSceneAssetKey('assets/forest.fsceneb'), isFalse);
       expect(
-        SceneRegistry.isSceneAssetKey(
-          'packages/app/flutter_scene/model/x.model',
-        ),
+        SceneRegistry.isSceneAssetKey('packages/app/flutter_scene/other/x.bin'),
         isFalse,
       );
     });

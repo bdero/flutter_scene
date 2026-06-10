@@ -3,7 +3,7 @@
 /// Splits the parsing layer (no engine type dependencies) from the
 /// engine-type builders that live in `package:flutter_scene`. Used by
 /// flutter_scene's runtime importer at runtime, and by this package's
-/// build hook to convert .glb → .model offline.
+/// build hook to convert .glb → .fsceneb offline.
 library;
 
 export 'src/gltf/accessor.dart';

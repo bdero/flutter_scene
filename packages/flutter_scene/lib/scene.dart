@@ -6,9 +6,9 @@
 ///    [Node]s, and call [Scene.render] from a `CustomPainter` (or any
 ///    `dart:ui` [Canvas]).
 ///  * [Node] — a transform in the scene graph that may carry a [Mesh] and
-///    child nodes. Load 3D models with [Node.fromAsset] (preprocessed
-///    `.model` files) or [Node.fromGlbBytes] / [Node.fromGlbAsset]
-///    (runtime glTF binary).
+///    child nodes. Load 3D content with [loadScene] (preprocessed
+///    `.fsceneb` packages, by source path) or [Node.fromGlbBytes] /
+///    [Node.fromGlbAsset] (runtime glTF binary).
 ///  * [Camera] / [PerspectiveCamera] — view configuration passed to
 ///    [Scene.render].
 ///  * [Material], [PhysicallyBasedMaterial], [UnlitMaterial],
@@ -42,8 +42,6 @@ export 'src/material/shader_material.dart';
 export 'src/material/unlit_material.dart';
 export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
-export 'src/hot_reload/hot_reload_coordinator.dart' show ModelReloadCallback;
-export 'src/importer/model_registry.dart' show ModelRegistry, loadModel;
 export 'src/importer/scene_registry.dart'
     show SceneRegistry, SceneReloadCallback, loadScene;
 

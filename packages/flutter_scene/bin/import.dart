@@ -16,8 +16,14 @@ void main(List<String> args) {
       'output',
       abbr: 'o',
       help:
-          'Output .model file path. Resolved relative to '
+          'Output .fsceneb file path. Resolved relative to '
           '--working-directory.',
+    )
+    ..addFlag(
+      'compress-textures',
+      help:
+          'Store images as mipped, supercompressed KTX2 block payloads '
+          'instead of raw rgba8.',
     )
     ..addOption(
       'working-directory',
@@ -32,6 +38,7 @@ void main(List<String> args) {
   final input = results['input'] as String?;
   final output = results['output'] as String?;
   final workingDirectory = results['working-directory'] as String?;
+  final compressTextures = results['compress-textures'] as bool;
 
   if (input == null || output == null) {
     // ignore: avoid_print
@@ -41,5 +48,10 @@ void main(List<String> args) {
     exit(1);
   }
 
-  importGltf(input, output, workingDirectory: workingDirectory);
+  importGltfToFsceneb(
+    input,
+    output,
+    workingDirectory: workingDirectory,
+    compressTextures: compressTextures,
+  );
 }

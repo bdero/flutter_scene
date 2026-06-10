@@ -100,7 +100,7 @@ const _frameworkShaderFiles = <String>[
 /// `PreprocessedMaterial` at runtime.
 ///
 /// Call this from a consuming app's `hook/build.dart`, alongside
-/// [buildModels] and `buildShaderBundleJson`:
+/// `buildScenes` and `buildShaderBundleJson`:
 ///
 /// ```dart
 /// import 'package:hooks/hooks.dart';
@@ -119,7 +119,7 @@ const _frameworkShaderFiles = <String>[
 ///
 /// Each path in [materials] is resolved relative to the package root. If
 /// [materials] is omitted, `.fmat` files under [discoveryRoot] (default
-/// `assets/`, the same root [buildModels] discovers `.glb` models under) are
+/// `assets/`, the same root `buildScenes` discovers `.glb` sources under) are
 /// discovered automatically; set [discoveryRoot] to search a different
 /// directory.
 /// The produced bundle is written to
