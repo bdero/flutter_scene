@@ -17,6 +17,12 @@ base class ShaderLibrary {
 
   final Map<String, Shader> _shaders;
 
+  /// Libraries loaded from each `.shaderbundle` asset, tracked weakly so
+  /// [reinitializeShaderLibraryAsync] can recompile their shaders in place
+  /// on hot reload without keeping a library alive.
+  static final Map<String, List<WeakReference<ShaderLibrary>>> _loadedByAsset =
+      {};
+
   /// Look up a compiled shader by the name it was given in the bundle (or
   /// in the inline map).
   Shader? operator [](String name) => _shaders[name];
@@ -32,11 +38,12 @@ base class ShaderLibrary {
   }
 
   /// Mirrors flutter_gpu's in-place shader hot reload on native. The web
-  /// backend compiles its own GLSL, so reloading would mean re-fetching and
-  /// recompiling the bundle (an async operation); for now this is a no-op so
-  /// the shim surface matches. Web shader hot reload is not yet supported.
-  // TODO(web-shader-reload): re-fetch and recompile the bundle in place.
-  static void reinitialize(String assetKey) {}
+  /// backend compiles its own GLSL, so the reload is asynchronous; this
+  /// fires it and returns. Await [reinitializeShaderLibraryAsync] instead
+  /// when ordering matters (evicting pipelines after the recompile).
+  static void reinitialize(String assetKey) {
+    unawaited(reinitializeShaderLibraryAsync(assetKey));
+  }
 
   /// Load and compile a `.shaderbundle` asset.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
@@ -53,7 +60,9 @@ base class ShaderLibrary {
       if (name == null || backend == null) continue;
       shaders[name] = _buildFromBackend(backend);
     }
-    return ShaderLibrary._(shaders);
+    final library = ShaderLibrary._(shaders);
+    _loadedByAsset.putIfAbsent(assetName, () => []).add(WeakReference(library));
+    return library;
   }
 
   static Shader _buildFromBackend(fb.BackendShader backend) {
@@ -61,6 +70,14 @@ base class ShaderLibrary {
         ? ShaderStage.fragment
         : ShaderStage.vertex;
     final shader = Shader._(gpuContext, stage);
+    _populateFromBackend(shader, backend);
+    return shader;
+  }
+
+  /// (Re)compiles [backend] into [shader] in place: replaces the GL shader
+  /// object and rebuilds the reflection state, keeping the [Shader]'s
+  /// identity so materials and pipeline-cache keys stay valid.
+  static void _populateFromBackend(Shader shader, fb.BackendShader backend) {
     shader._entrypoint = backend.entrypoint;
 
     final sourceBytes = backend.shader;
@@ -69,9 +86,16 @@ base class ShaderLibrary {
     }
     final source = transpileGlslEs100To300(
       utf8.decode(sourceBytes),
-      isFragment: stage == ShaderStage.fragment,
+      isFragment: shader.stage == ShaderStage.fragment,
     );
     shader._compile(source);
+
+    // Rebuild the reflection state from scratch (a reload may have changed
+    // the uniforms, inputs, or samplers).
+    shader._structInstanceNames.clear();
+    shader._vertexInputs.clear();
+    shader._uniformStructs.clear();
+    shader._textureBindings.clear();
 
     // Parse `uniform TypeName instanceName;` so we can map reflected struct
     // type names to the instance names GL uniform lookups expect. Skips
@@ -132,8 +156,6 @@ base class ShaderLibrary {
       if (name == null) continue;
       shader._textureBindings.add(_TextureBinding(name));
     }
-
-    return shader;
   }
 
   /// Web-only addition. Compile an inline map of GLSL ES 1.00 sources for
@@ -165,6 +187,37 @@ base class ShaderLibrary {
 /// possible).
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
   return ShaderLibrary._loadFromAsset(assetName);
+}
+
+/// Re-fetches a `.shaderbundle` asset and recompiles every live shader that
+/// was loaded from it, in place (shader identities are preserved, so
+/// material references and pipeline-cache keys stay valid). The web
+/// counterpart of flutter_gpu's `ShaderLibrary.reinitialize`; await it
+/// before evicting cached pipelines so rebuilt pipelines link the new code.
+Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
+  final references = ShaderLibrary._loadedByAsset[assetKey];
+  if (references == null) return;
+  references.removeWhere((reference) => reference.target == null);
+  if (references.isEmpty) {
+    ShaderLibrary._loadedByAsset.remove(assetKey);
+    return;
+  }
+
+  rootBundle.evict(assetKey);
+  final data = await rootBundle.load(assetKey);
+  final bundle = fb.ShaderBundle(
+    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+  );
+  for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
+    final name = entry.name;
+    final backend = entry.openglEs;
+    if (name == null || backend == null) continue;
+    for (final reference in references) {
+      final shader = reference.target?._shaders[name];
+      if (shader == null) continue;
+      ShaderLibrary._populateFromBackend(shader, backend);
+    }
+  }
 }
 
 /// Compile a map of inline GLSL ES 1.00 sources into a ShaderLibrary.
