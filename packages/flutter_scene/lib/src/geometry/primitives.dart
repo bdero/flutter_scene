@@ -161,11 +161,14 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
     ([3, 2, 6, 7], [0, 1, 0]), //  +Y
     ([4, 5, 1, 0], [0, -1, 0]), // -Y
   ];
+  // Texture coordinates follow the glTF convention (v = 0 at the top of the
+  // image), matching how image rows are uploaded, so face UVs put v = 1 on
+  // the bottom edge of each face.
   const faceUvs = <List<double>>[
-    [0, 0],
-    [1, 0],
-    [1, 1],
     [0, 1],
+    [1, 1],
+    [1, 0],
+    [0, 0],
   ];
 
   final positions = Float32List(24 * 3);
@@ -237,10 +240,12 @@ PrimitiveArrays buildWedgeArrays(Vector3 size) {
 
   void addQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 n) {
     final base = positions.length ~/ 3;
-    addVert(a, n, 0, 0);
-    addVert(b, n, 1, 0);
-    addVert(c, n, 1, 1);
-    addVert(d, n, 0, 1);
+    // v = 0 at the top of the image (the glTF convention; see faceUvs in
+    // buildCuboidArrays).
+    addVert(a, n, 0, 1);
+    addVert(b, n, 1, 1);
+    addVert(c, n, 1, 0);
+    addVert(d, n, 0, 0);
     indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
   }
 
