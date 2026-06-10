@@ -32,6 +32,7 @@ export 'src/fscene/realize/loader.dart';
 export 'src/fscene/realize/property_read.dart';
 export 'src/fscene/realize/realize.dart';
 export 'src/fscene/realize/resource_realizer.dart';
+export 'src/fscene/realize/stage.dart' show realizeStage, serializeStage;
 export 'src/fscene/scene_document.dart';
 export 'src/fscene/specs.dart';
 export 'src/fscene/stream/stream.dart'

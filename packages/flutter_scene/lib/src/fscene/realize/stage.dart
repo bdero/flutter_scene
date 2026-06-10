@@ -1,0 +1,312 @@
+/// Realizes a document's stage render settings onto a live [Scene], and
+/// serializes them back.
+///
+/// The stage carries the scene-wide, non-spatial settings: the image-based
+/// lighting environment, environment intensity, exposure, tone mapping, the
+/// skybox, and sky-driven lighting. `realizeScene` builds only the node
+/// graph; apply the stage to the scene that hosts it with [realizeStage]
+/// (`loadScene` does this when given a scene). [serializeStage] reads a
+/// scene's settings back into a document, the editor-save direction.
+library;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show AssetBundle;
+
+import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/fmat/material_registry.dart';
+import 'package:flutter_scene/src/fscene/json/canonical.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
+    show encodeSkySource;
+import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
+import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/preprocessed_sky.dart';
+import 'package:flutter_scene/src/scene.dart';
+import 'package:flutter_scene/src/sky_environment.dart';
+import 'package:flutter_scene/src/sky_sources.dart';
+import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/tone_mapping.dart';
+
+/// Tags applied environments and fmat skies with the spec they realized
+/// from, so [serializeStage] can recover them.
+final Expando<EnvironmentSpec> _environmentSpec = Expando(
+  'fscene environment spec',
+);
+final Expando<FmatSkySpec> _fmatSkySpec = Expando('fscene fmat sky spec');
+
+/// Applies [document]'s stage render settings to [scene]: environment,
+/// environment intensity, exposure, tone mapping, skybox, and sky lighting.
+///
+/// When the stage binds sky lighting (`skyEnvironment`), the binding owns
+/// `Scene.environment` and the stage's environment is not applied. A skybox
+/// and a sky-lighting binding whose sources describe the same sky share one
+/// live source, so mutating it (or hot reloading its `.fmat`) updates both.
+///
+/// GPU-bound and async (an asset environment decodes its image, an fmat sky
+/// loads by source path from [bundle], default the root bundle).
+Future<void> realizeStage(
+  SceneDocument document,
+  Scene scene, {
+  AssetBundle? bundle,
+}) async {
+  final stage = document.stage;
+  scene.environmentIntensity = stage.environmentIntensity;
+  scene.exposure = stage.exposure;
+  scene.toneMapping = _toneMapping(stage.toneMapping);
+
+  // Realize each distinct sky source once so a skybox and sky lighting
+  // describing the same sky share one live source.
+  final realized = <String, SkySource?>{};
+  Future<SkySource?> sourceFor(SkySourceSpec spec) async =>
+      realized[canonicalJson(encodeSkySource(spec))] ??=
+          await _realizeSkySource(spec, bundle);
+
+  final skyEnvironmentSpec = stage.skyEnvironment;
+  if (skyEnvironmentSpec == null) {
+    scene.skyEnvironment = null;
+    await _applyEnvironment(stage.environment, scene, bundle);
+  } else {
+    final source = await sourceFor(skyEnvironmentSpec.source);
+    if (source is ShaderSkySource) {
+      scene.skyEnvironment = SkyEnvironment(
+        source,
+        refresh: _refresh(skyEnvironmentSpec.refresh),
+        interval: Duration(
+          microseconds: (skyEnvironmentSpec.intervalSeconds * 1e6).round(),
+        ),
+        faceResolution: skyEnvironmentSpec.faceResolution,
+        equirectWidth: skyEnvironmentSpec.equirectWidth,
+      );
+    } else {
+      if (source != null) {
+        debugPrint(
+          'fscene: skyEnvironment needs a shader sky (fmat, gradient, or '
+          'physical); skipping the binding',
+        );
+      }
+      scene.skyEnvironment = null;
+      await _applyEnvironment(stage.environment, scene, bundle);
+    }
+  }
+
+  final skyboxSpec = stage.skybox;
+  if (skyboxSpec == null) {
+    scene.skybox = null;
+  } else {
+    final source = await sourceFor(skyboxSpec.source);
+    scene.skybox = source == null
+        ? null
+        : Skybox(source, intensity: skyboxSpec.intensity);
+  }
+}
+
+/// Reads [scene]'s stage render settings back into [document]'s stage.
+///
+/// The reverse of [realizeStage]. An environment or fmat sky the realizer
+/// produced (or a sky loaded through `loadFmatSky`) recovers its source; a
+/// hand-built [EnvironmentMap] serializes as the studio default and a custom
+/// [ShaderSkySource] is dropped, each with a warning. Parameter values an app
+/// set directly on a loaded sky are not recovered; only overrides carried by
+/// the realized spec round-trip.
+void serializeStage(Scene scene, SceneDocument document) {
+  final stage = document.stage;
+  stage.environmentIntensity = scene.environmentIntensity;
+  stage.exposure = scene.exposure;
+  stage.toneMapping = scene.toneMapping.name;
+
+  final skyEnvironment = scene.skyEnvironment;
+  if (skyEnvironment == null) {
+    stage.skyEnvironment = null;
+    final environment = scene.environment;
+    final spec = environment == null ? null : _environmentSpec[environment];
+    if (spec != null) {
+      stage.environment = spec;
+    } else {
+      if (environment != null) {
+        debugPrint(
+          'fscene: the scene environment was not produced by realizeStage '
+          'and cannot be recovered; serializing the studio default',
+        );
+      }
+      stage.environment = const StudioEnvironment();
+    }
+  } else {
+    final source = _serializeSkySource(skyEnvironment.source);
+    stage.skyEnvironment = source == null
+        ? null
+        : SkyEnvironmentSpec(
+            source,
+            refresh: skyEnvironment.refresh.name,
+            intervalSeconds: skyEnvironment.interval.inMicroseconds / 1e6,
+            faceResolution: skyEnvironment.faceResolution,
+            equirectWidth: skyEnvironment.equirectWidth,
+          );
+  }
+
+  final skybox = scene.skybox;
+  if (skybox == null) {
+    stage.skybox = null;
+  } else {
+    final source = _serializeSkySource(skybox.source);
+    stage.skybox = source == null
+        ? null
+        : SkyboxSpec(source, intensity: skybox.intensity);
+  }
+}
+
+Future<void> _applyEnvironment(
+  EnvironmentSpec spec,
+  Scene scene,
+  AssetBundle? bundle,
+) async {
+  // Skip rebuilding (and re-decoding an asset panorama) when the current
+  // environment already realized from an identical spec, the common case on
+  // a stage hot reload that only tweaked a scalar.
+  final currentEnvironment = scene.environment;
+  final current = currentEnvironment == null
+      ? null
+      : _environmentSpec[currentEnvironment];
+  if (current != null &&
+      canonicalJson(_encodeEnvironment(current)) ==
+          canonicalJson(_encodeEnvironment(spec))) {
+    return;
+  }
+  final EnvironmentMap environment;
+  switch (spec) {
+    case StudioEnvironment():
+      environment = EnvironmentMap.studio();
+    case EmptyEnvironment():
+      environment = EnvironmentMap.empty();
+    case AssetEnvironment(:final asset):
+      try {
+        environment = await EnvironmentMap.fromUIImages(
+          radianceImage: await imageFromAsset(asset.key, bundle: bundle),
+        );
+      } catch (e) {
+        debugPrint(
+          'fscene: failed to load environment asset "${asset.key}": $e',
+        );
+        return;
+      }
+  }
+  _environmentSpec[environment] = spec;
+  scene.environment = environment;
+}
+
+// EnvironmentSpec has no public encoder; mirror the stage codec's shape just
+// for equality checks.
+Map<String, Object> _encodeEnvironment(EnvironmentSpec spec) => switch (spec) {
+  StudioEnvironment() => {'type': 'studio'},
+  AssetEnvironment(:final asset) => {'type': 'asset', 'ref': asset.key},
+  EmptyEnvironment() => {'type': 'empty'},
+};
+
+Future<SkySource?> _realizeSkySource(
+  SkySourceSpec spec,
+  AssetBundle? bundle,
+) async {
+  switch (spec) {
+    case EnvironmentSkySpec(:final blurriness):
+      return EnvironmentSkySource(blurriness: blurriness);
+    case GradientSkySpec s:
+      return GradientSkySource(
+        zenithColor: s.zenithColor.clone(),
+        horizonColor: s.horizonColor.clone(),
+        groundColor: s.groundColor.clone(),
+        sunDirection: s.sunDirection.clone(),
+        sunColor: s.sunColor.clone(),
+        sunSharpness: s.sunSharpness,
+      );
+    case PhysicalSkySpec s:
+      return PhysicalSkySource(
+        sunDirection: s.sunDirection.clone(),
+        sunAngularRadius: s.sunAngularRadius,
+        rayleighCoefficient: s.rayleighCoefficient,
+        rayleighColor: s.rayleighColor.clone(),
+        mieCoefficient: s.mieCoefficient,
+        mieEccentricity: s.mieEccentricity,
+        mieColor: s.mieColor.clone(),
+        turbidity: s.turbidity,
+        groundColor: s.groundColor.clone(),
+        energy: s.energy,
+      );
+    case FmatSkySpec s:
+      try {
+        final sky = await loadFmatSky(s.asset.key, bundle: bundle);
+        applyFmatParameterOverrides(sky.parameters, s.properties);
+        _fmatSkySpec[sky] = s;
+        return sky;
+      } catch (e) {
+        debugPrint('fscene: failed to load sky fmat "${s.asset.key}": $e');
+        return null;
+      }
+  }
+}
+
+SkySourceSpec? _serializeSkySource(SkySource source) {
+  // PreprocessedSky and the built-in sources all extend ShaderSkySource;
+  // match the concrete types before the generic fallthrough.
+  if (source is PreprocessedSky) {
+    final tagged = _fmatSkySpec[source];
+    if (tagged != null) return tagged;
+    final sourcePath = fmatSourcePathOf(source);
+    if (sourcePath != null) return FmatSkySpec(AssetRef(sourcePath));
+    debugPrint(
+      'fscene: a sky fmat with no known source path cannot be serialized; '
+      'load skies with loadFmatSky',
+    );
+    return null;
+  }
+  if (source is GradientSkySource) {
+    return GradientSkySpec(
+      zenithColor: source.zenithColor.clone(),
+      horizonColor: source.horizonColor.clone(),
+      groundColor: source.groundColor.clone(),
+      sunDirection: source.sunDirection.clone(),
+      sunColor: source.sunColor.clone(),
+      sunSharpness: source.sunSharpness,
+    );
+  }
+  if (source is PhysicalSkySource) {
+    return PhysicalSkySpec(
+      sunDirection: source.sunDirection.clone(),
+      sunAngularRadius: source.sunAngularRadius,
+      rayleighCoefficient: source.rayleighCoefficient,
+      rayleighColor: source.rayleighColor.clone(),
+      mieCoefficient: source.mieCoefficient,
+      mieEccentricity: source.mieEccentricity,
+      mieColor: source.mieColor.clone(),
+      turbidity: source.turbidity,
+      groundColor: source.groundColor.clone(),
+      energy: source.energy,
+    );
+  }
+  if (source is EnvironmentSkySource) {
+    return EnvironmentSkySpec(blurriness: source.blurriness);
+  }
+  debugPrint(
+    'fscene: a custom ShaderSkySource is not serializable; use a .fmat sky '
+    '(loadFmatSky) or a built-in source',
+  );
+  return null;
+}
+
+ToneMappingMode _toneMapping(String name) {
+  try {
+    return ToneMappingMode.values.byName(name);
+  } catch (_) {
+    debugPrint('fscene: unknown tone mapping "$name"; using pbrNeutral');
+    return ToneMappingMode.pbrNeutral;
+  }
+}
+
+SkyEnvironmentRefresh _refresh(String name) {
+  try {
+    return SkyEnvironmentRefresh.values.byName(name);
+  } catch (_) {
+    debugPrint('fscene: unknown sky refresh policy "$name"; using manual');
+    return SkyEnvironmentRefresh.manual;
+  }
+}

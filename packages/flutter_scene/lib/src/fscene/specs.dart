@@ -537,6 +537,168 @@ class EmptyEnvironment extends EnvironmentSpec {
   const EmptyEnvironment();
 }
 
+/// What a stage sky looks like, serialized.
+///
+/// Realized to a runtime `SkySource` by the stage realizer: the environment
+/// sky and the built-in gradient/physical skies realize from their fields;
+/// an fmat sky loads its `.fmat` by source path.
+sealed class SkySourceSpec {
+  /// Const base.
+  const SkySourceSpec();
+}
+
+/// Shows the scene's image-based-lighting environment, optionally blurred.
+class EnvironmentSkySpec extends SkySourceSpec {
+  /// Creates the spec.
+  EnvironmentSkySpec({this.blurriness = 0.0});
+
+  /// How blurred the background is, from `0.0` (sharp) to `1.0`.
+  double blurriness;
+}
+
+/// A sky `.fmat` loaded by source path, with optional parameter overrides
+/// applied to the loaded sky's parameters by name.
+class FmatSkySpec extends SkySourceSpec {
+  /// Creates the spec.
+  FmatSkySpec(this.asset, {Map<String, PropertyValue>? properties})
+    : properties = properties ?? {};
+
+  /// The `.fmat` source path (relative to the owning package's root).
+  final AssetRef asset;
+
+  /// Parameter overrides, keyed by parameter name.
+  final Map<String, PropertyValue> properties;
+}
+
+/// The built-in stylized gradient sky.
+class GradientSkySpec extends SkySourceSpec {
+  /// Creates the spec with the runtime defaults.
+  GradientSkySpec({
+    Vector3? zenithColor,
+    Vector3? horizonColor,
+    Vector3? groundColor,
+    Vector3? sunDirection,
+    Vector3? sunColor,
+    this.sunSharpness = 400.0,
+  }) : zenithColor = zenithColor ?? Vector3(0.05, 0.18, 0.55),
+       horizonColor = horizonColor ?? Vector3(0.45, 0.62, 0.90),
+       groundColor = groundColor ?? Vector3(0.16, 0.14, 0.12),
+       sunDirection = sunDirection ?? Vector3(0.4, 0.5, 0.6),
+       sunColor = sunColor ?? Vector3(3.0, 2.7, 2.2);
+
+  /// The sky color straight up.
+  Vector3 zenithColor;
+
+  /// The sky color at the horizon.
+  Vector3 horizonColor;
+
+  /// The color below the horizon.
+  Vector3 groundColor;
+
+  /// Direction toward the sun.
+  Vector3 sunDirection;
+
+  /// The sun disk color, linear HDR.
+  Vector3 sunColor;
+
+  /// Sharpness exponent of the sun disk.
+  double sunSharpness;
+}
+
+/// The built-in physically based daylight sky.
+class PhysicalSkySpec extends SkySourceSpec {
+  /// Creates the spec with the runtime defaults.
+  PhysicalSkySpec({
+    Vector3? sunDirection,
+    this.sunAngularRadius = 0.0175,
+    this.rayleighCoefficient = 2.0,
+    Vector3? rayleighColor,
+    this.mieCoefficient = 0.005,
+    this.mieEccentricity = 0.8,
+    Vector3? mieColor,
+    this.turbidity = 10.0,
+    Vector3? groundColor,
+    this.energy = 1.0,
+  }) : sunDirection = sunDirection ?? Vector3(0.4, 0.5, 0.6),
+       rayleighColor = rayleighColor ?? Vector3(0.26, 0.41, 0.58),
+       mieColor = mieColor ?? Vector3(0.69, 0.73, 0.81),
+       groundColor = groundColor ?? Vector3(0.12, 0.12, 0.13);
+
+  /// Direction toward the sun.
+  Vector3 sunDirection;
+
+  /// Angular radius of the sun disk, in radians.
+  double sunAngularRadius;
+
+  /// Strength of molecular (Rayleigh) scattering.
+  double rayleighCoefficient;
+
+  /// Wavelength tint of the Rayleigh term.
+  Vector3 rayleighColor;
+
+  /// Strength of aerosol (Mie) scattering.
+  double mieCoefficient;
+
+  /// Forward-scattering eccentricity of the Mie term.
+  double mieEccentricity;
+
+  /// Wavelength tint of the Mie term.
+  Vector3 mieColor;
+
+  /// Aerosol density.
+  double turbidity;
+
+  /// The color below the horizon.
+  Vector3 groundColor;
+
+  /// Overall output multiplier.
+  double energy;
+}
+
+/// The stage skybox: the visible background drawn behind all geometry.
+class SkyboxSpec {
+  /// Creates the spec.
+  SkyboxSpec(this.source, {this.intensity = 1.0});
+
+  /// What the sky looks like.
+  SkySourceSpec source;
+
+  /// Scales the sampled radiance for an environment sky source.
+  double intensity;
+}
+
+/// Sky-driven lighting: bakes a shader sky into the scene's image-based
+/// lighting on a refresh policy.
+class SkyEnvironmentSpec {
+  /// Creates the spec with the runtime defaults.
+  SkyEnvironmentSpec(
+    this.source, {
+    this.refresh = 'manual',
+    this.intervalSeconds = 1.0,
+    this.faceResolution = 128,
+    this.equirectWidth = 512,
+  });
+
+  /// The sky baked into the lighting. Must be a shader sky
+  /// ([FmatSkySpec], [GradientSkySpec], or [PhysicalSkySpec]); an
+  /// [EnvironmentSkySpec] cannot light itself and is skipped with a warning
+  /// at realization.
+  SkySourceSpec source;
+
+  /// The refresh policy name (mapped to the runtime enum at realization):
+  /// `manual`, `interval`, or `everyFrame`.
+  String refresh;
+
+  /// Minimum time between bakes for the `interval` policy, in seconds.
+  double intervalSeconds;
+
+  /// Cube-face capture resolution for the bake.
+  int faceResolution;
+
+  /// Width of the assembled equirect the prefilter and SH projection read.
+  int equirectWidth;
+}
+
 /// Scene-wide, non-spatial render settings (lights and cameras are per-node
 /// components, not stage data).
 class StageMetadata {
@@ -549,6 +711,8 @@ class StageMetadata {
     this.environmentIntensity = 1.0,
     this.exposure = 1.0,
     this.toneMapping = 'pbrNeutral',
+    this.skybox,
+    this.skyEnvironment,
   });
 
   /// The authored up axis.
@@ -572,4 +736,12 @@ class StageMetadata {
   /// The tone-mapping operator name (mapped to the runtime enum at
   /// realization).
   String toneMapping;
+
+  /// The visible background sky, when set.
+  SkyboxSpec? skybox;
+
+  /// Sky-driven lighting (a sky baked into the environment on a refresh
+  /// policy), when set. While set, it owns the scene environment, so
+  /// [environment] is not applied.
+  SkyEnvironmentSpec? skyEnvironment;
 }

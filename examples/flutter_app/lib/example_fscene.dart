@@ -53,12 +53,20 @@ class _ExampleFsceneState extends State<ExampleFscene> {
     // document, then realize that. What renders is the round-tripped scene.
     // The async loader preloads external assets, encoded payloads, and fmat
     // materials before realizing.
-    final realized = await loadFscenebBytesAsync(
-      writeFsceneb(_buildDocument(pngBytes)),
-    );
+    final document = _buildDocument(pngBytes);
+    final realized = await loadFscenebBytesAsync(writeFsceneb(document));
     final roundTripped = serializeScene(realized);
     if (!mounted) return;
     scene.add(await loadFscenebBytesAsync(writeFsceneb(roundTripped)));
+
+    // Stage round trip: apply the authored stage (a gradient skybox that
+    // also drives the lighting), read it back from the live scene, and apply
+    // the read-back copy. What renders is the round-tripped stage.
+    await realizeStage(document, scene);
+    final stageDocument = SceneDocument();
+    serializeStage(scene, stageDocument);
+    if (!mounted) return;
+    await realizeStage(stageDocument, scene);
   }
 
   @override
@@ -79,6 +87,20 @@ class _ExampleFsceneState extends State<ExampleFscene> {
 
 SceneDocument _buildDocument(Uint8List pngBytes) {
   final doc = SceneDocument();
+
+  // A sunset gradient sky: the skybox shows it, and the sky-lighting binding
+  // bakes the same source into the image-based lighting, so reflections and
+  // ambient light match the backdrop.
+  final sky = GradientSkySpec(
+    zenithColor: vm.Vector3(0.07, 0.18, 0.45),
+    horizonColor: vm.Vector3(0.95, 0.55, 0.32),
+    groundColor: vm.Vector3(0.18, 0.14, 0.12),
+    sunDirection: vm.Vector3(0.3, 0.25, 0.8),
+    sunColor: vm.Vector3(4.0, 2.6, 1.6),
+  );
+  doc.stage
+    ..skybox = SkyboxSpec(sky)
+    ..skyEnvironment = SkyEnvironmentSpec(sky);
 
   // A sun, pitched down toward the scene.
   doc.createNode(
