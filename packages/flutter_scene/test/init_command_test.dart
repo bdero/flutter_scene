@@ -15,7 +15,7 @@ void main() {
       final contents = hook.readAsStringSync();
       expect(contents, contains(hookStartMarker));
       expect(contents, contains('MaterialAssetMode.dataAssetsRequired'));
-      expect(contents, contains('buildModels('));
+      expect(contents, contains('buildScenes('));
       expect(contents, contains('ModelAssetMode.dataAssetsRequired'));
       expect(contents, isNot(contains('flutter.assets')));
     } finally {

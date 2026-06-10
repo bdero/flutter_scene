@@ -110,10 +110,10 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   }
 
   Future<void> _load() async {
-    // The model hot reloads in place; onReload re-grabs the car parts (the swap
-    // replaces the inner node instances). _applyCarParts re-poses them each
-    // frame, so only the references need refreshing.
-    final carRoot = await loadModel(
+    // The scene hot reloads in place; onReload re-grabs the car parts (the
+    // patch replaces the inner node instances). _applyCarParts re-poses them
+    // each frame, so only the references need refreshing.
+    final carRoot = await loadScene(
       'assets_src/fcar.glb',
       onReload: _grabCarParts,
     );

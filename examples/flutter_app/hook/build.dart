@@ -12,14 +12,8 @@ void main(List<String> args) {
       'assets_src/dash.glb',
       'assets_src/fcar.glb',
     ];
-    buildModels(
-      buildInput: config,
-      buildOutput: output,
-      inputFilePaths: corpus,
-      assetMode: ModelAssetMode.dataAssetsIfAvailable,
-    );
-    // The same corpus as `.fsceneb` packages, loaded by source path through
-    // loadScene (the "fscene (import)" example).
+    // The corpus as `.fsceneb` packages, loaded by source path through
+    // loadScene.
     buildScenes(
       buildInput: config,
       buildOutput: output,

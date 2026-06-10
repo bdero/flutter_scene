@@ -6,9 +6,9 @@ const String hookEndMarker = '// flutter_scene:init:end';
 const String _hookSnippet =
     '''
 $hookStartMarker
-    // Import .glb models under assets/ as DataAssets, loadable by source path
-    // with loadModel (and hot-reloadable). A no-op when there are no models.
-    buildModels(
+    // Import .glb scenes under assets/ as DataAssets, loadable by source path
+    // with loadScene (and hot-reloadable). A no-op when there are no scenes.
+    buildScenes(
       buildInput: input,
       buildOutput: output,
       assetMode: ModelAssetMode.dataAssetsRequired,

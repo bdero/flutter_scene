@@ -8,7 +8,7 @@ import 'example_settings.dart';
 
 /// Loads a `.fsceneb` scene by source path through [loadScene]. The build hook
 /// (`buildScenes`) imported `assets_src/fcar.glb` into a `.fsceneb` DataAsset;
-/// this resolves and realizes it, the `.fscene` analog of `loadModel`.
+/// this resolves and realizes it by source path.
 class ExampleFsceneImport extends StatefulWidget {
   const ExampleFsceneImport({super.key});
 

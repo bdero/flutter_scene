@@ -62,9 +62,9 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
     // GLSL body, defaults, etc.) updates it live without a restart.
     final material = await loadFmatMaterial('assets/toon.fmat');
 
-    // The model hot reloads in place; onReload re-applies the material to the
-    // freshly swapped-in primitives.
-    final dash = await loadModel(
+    // The scene hot reloads in place; onReload re-applies the material to the
+    // freshly patched-in primitives.
+    final dash = await loadScene(
       'assets_src/dash.glb',
       onReload: _reapplyMaterial,
     );
