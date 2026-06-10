@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/fscene/stream/stream.dart' show unloadSubtree;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/importer/scene_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -147,6 +148,131 @@ void main() {
       // The app callback ran after the patch.
       expect(reloads, greaterThan(baselineReloads));
     });
+
+    test('stable prefab ids patch prefab nodes fine-grained', () async {
+      // Authored documents with fixed ids: recomposing after an edit derives
+      // the same per-instance ids, so the diff patches the existing live
+      // nodes instead of rebuilding the subtree.
+      const stableHostKey =
+          'packages/app/flutter_scene/scene/assets/stable_host.fsceneb';
+      const stablePrefabKey =
+          'packages/app/flutter_scene/scene/assets/stable_prefab.fsceneb';
+
+      Uint8List prefabNamed(String detailName) {
+        final doc = SceneDocument(
+          documentId: DocumentId(Uint8List(16)..[0] = 7),
+        );
+        doc.addNode(
+          NodeSpec(
+            id: const LocalId(4, 1),
+            name: 'prefabRoot',
+            children: [const LocalId(4, 2)],
+          ),
+          root: true,
+        );
+        doc.addNode(NodeSpec(id: const LocalId(4, 2), name: detailName));
+        return writeFsceneb(doc);
+      }
+
+      Uint8List hostDoc() {
+        final doc = SceneDocument(
+          documentId: DocumentId(Uint8List(16)..[0] = 8),
+        );
+        doc.addNode(
+          NodeSpec(
+            id: const LocalId(5, 1),
+            name: 'inst',
+            instance: PrefabInstanceSpec(
+              source: const AssetRef('assets/stable_prefab'),
+            ),
+          ),
+          root: true,
+        );
+        return writeFsceneb(doc);
+      }
+
+      final bundle = _BytesAssetBundle({
+        stableHostKey: hostDoc(),
+        stablePrefabKey: prefabNamed('detail'),
+      });
+      final registry = await SceneRegistry.load(
+        assetKeys: const [stableHostKey, stablePrefabKey],
+      );
+
+      final root = await registry.loadScene(
+        'assets/stable_host',
+        bundle: bundle,
+      );
+      final detail = root.getChildByName('detail')!;
+
+      bundle.assets[stablePrefabKey] = prefabNamed('renamed');
+      HotReloadCoordinator.instance.onReassemble();
+      await _settle(() => root.getChildByName('renamed') != null);
+
+      // The same live node was renamed in place rather than replaced.
+      expect(root.getChildByName('renamed'), same(detail));
+    });
+  });
+
+  group('streamed subtrees', () {
+    test(
+      'loadSubtree streams by source path and hot-reloads in place',
+      () async {
+        const hostKey =
+            'packages/app/flutter_scene/scene/assets/stream_host.fsceneb';
+        const prefabKey =
+            'packages/app/flutter_scene/scene/assets/stream_prefab.fsceneb';
+
+        Uint8List prefabNamed(String name) {
+          final doc = SceneDocument();
+          doc.createNode(name: name, root: true);
+          return writeFsceneb(doc);
+        }
+
+        Uint8List hostDoc() {
+          final doc = SceneDocument();
+          doc
+              .createNode(name: 'spot', root: true)
+              .instance = PrefabInstanceSpec(
+            source: const AssetRef('assets/stream_prefab'),
+            load: LoadPolicy.lazy,
+          );
+          return writeFsceneb(doc);
+        }
+
+        final bundle = _BytesAssetBundle({
+          hostKey: hostDoc(),
+          prefabKey: prefabNamed('tree'),
+        });
+        final registry = await SceneRegistry.load(
+          assetKeys: const [hostKey, prefabKey],
+        );
+
+        final root = await registry.loadScene(
+          'assets/stream_host',
+          bundle: bundle,
+        );
+        final placeholder = root.getChildByName('spot')!;
+        expect(placeholder.children, isEmpty);
+
+        await registry.loadSubtree(placeholder, bundle: bundle);
+        expect(root.getChildByName('tree'), isNotNull);
+
+        // Editing the streamed prefab re-streams the loaded subtree in place.
+        bundle.assets[prefabKey] = prefabNamed('bush');
+        HotReloadCoordinator.instance.onReassemble();
+        await _settle(() => root.getChildByName('bush') != null);
+        expect(root.getChildByName('bush'), isNotNull);
+        expect(root.getChildByName('tree'), isNull);
+
+        // An unloaded placeholder is left alone by further edits.
+        unloadSubtree(placeholder);
+        bundle.assets[prefabKey] = prefabNamed('rock');
+        HotReloadCoordinator.instance.onReassemble();
+        await _settle(() => false);
+        expect(placeholder.children, isEmpty);
+      },
+    );
   });
 
   group('scene templates', () {

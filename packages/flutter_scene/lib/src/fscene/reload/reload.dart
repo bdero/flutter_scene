@@ -72,7 +72,8 @@ Future<SceneDiff> reloadScene(
     final spec = newDocument.nodes[id]!;
     live[id] = tagNodeId(
       Node(name: spec.name, localTransform: spec.transform.toMatrix4())
-        ..layers = spec.layers,
+        ..layers = spec.layers
+        ..excludeFromWindingParity = spec.excludeFromWindingParity,
       id,
     );
   }
@@ -94,7 +95,10 @@ Future<SceneDiff> reloadScene(
   for (final change in diff.changed) {
     final node = live[change.id]!;
     final spec = newDocument.nodes[change.id]!;
-    if (change.transform) node.localTransform = spec.transform.toMatrix4();
+    if (change.transform) {
+      node.localTransform = spec.transform.toMatrix4();
+      node.excludeFromWindingParity = spec.excludeFromWindingParity;
+    }
     if (change.name) node.name = spec.name;
     if (change.layers) node.layers = spec.layers;
     if (change.reparented) {
