@@ -408,4 +408,49 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   environmentIntensity: s.environmentIntensity,
   exposure: s.exposure,
   toneMapping: s.toneMapping,
+  skybox: s.skybox == null
+      ? null
+      : SkyboxSpec(
+          _copySkySource(s.skybox!.source),
+          intensity: s.skybox!.intensity,
+        ),
+  skyEnvironment: s.skyEnvironment == null
+      ? null
+      : SkyEnvironmentSpec(
+          _copySkySource(s.skyEnvironment!.source),
+          refresh: s.skyEnvironment!.refresh,
+          intervalSeconds: s.skyEnvironment!.intervalSeconds,
+          faceResolution: s.skyEnvironment!.faceResolution,
+          equirectWidth: s.skyEnvironment!.equirectWidth,
+        ),
 );
+
+SkySourceSpec _copySkySource(SkySourceSpec source) => switch (source) {
+  EnvironmentSkySpec(:final blurriness) => EnvironmentSkySpec(
+    blurriness: blurriness,
+  ),
+  FmatSkySpec(:final asset, :final properties) => FmatSkySpec(
+    asset,
+    properties: Map.of(properties),
+  ),
+  GradientSkySpec s => GradientSkySpec(
+    zenithColor: s.zenithColor.clone(),
+    horizonColor: s.horizonColor.clone(),
+    groundColor: s.groundColor.clone(),
+    sunDirection: s.sunDirection.clone(),
+    sunColor: s.sunColor.clone(),
+    sunSharpness: s.sunSharpness,
+  ),
+  PhysicalSkySpec s => PhysicalSkySpec(
+    sunDirection: s.sunDirection.clone(),
+    sunAngularRadius: s.sunAngularRadius,
+    rayleighCoefficient: s.rayleighCoefficient,
+    rayleighColor: s.rayleighColor.clone(),
+    mieCoefficient: s.mieCoefficient,
+    mieEccentricity: s.mieEccentricity,
+    mieColor: s.mieColor.clone(),
+    turbidity: s.turbidity,
+    groundColor: s.groundColor.clone(),
+    energy: s.energy,
+  ),
+};

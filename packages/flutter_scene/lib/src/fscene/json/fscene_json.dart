@@ -135,7 +135,7 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
     json['featuresRequired'] = doc.featuresRequired.toList()..sort();
   }
   if (doc.generator != null) json['generator'] = doc.generator;
-  json['stage'] = _encodeStage(doc.stage);
+  json['stage'] = encodeStage(doc.stage);
   if (doc.resources.isNotEmpty) {
     json['resources'] = _encodeIdMap(
       doc.resources,
@@ -199,7 +199,9 @@ Map<String, dynamic> _encodeIdMap<V>(
   return {for (final e in entries) idKey(e.key): encode(e.value)};
 }
 
-Map<String, dynamic> _encodeStage(StageMetadata s) => {
+/// Encodes [s] to its canonical JSON map (also used to compare stages for
+/// equality in the scene diff).
+Map<String, dynamic> encodeStage(StageMetadata s) => {
   'upAxis': s.upAxis.name,
   'handedness': s.handedness.name,
   'unitsPerMeter': s.unitsPerMeter,
@@ -211,7 +213,62 @@ Map<String, dynamic> _encodeStage(StageMetadata s) => {
   'environmentIntensity': s.environmentIntensity,
   'exposure': s.exposure,
   'toneMapping': s.toneMapping,
+  if (s.skybox != null)
+    'skybox': {
+      'source': encodeSkySource(s.skybox!.source),
+      'intensity': s.skybox!.intensity,
+    },
+  if (s.skyEnvironment != null)
+    'skyEnvironment': {
+      'source': encodeSkySource(s.skyEnvironment!.source),
+      'refresh': s.skyEnvironment!.refresh,
+      'intervalSeconds': s.skyEnvironment!.intervalSeconds,
+      'faceResolution': s.skyEnvironment!.faceResolution,
+      'equirectWidth': s.skyEnvironment!.equirectWidth,
+    },
 };
+
+/// Encodes a sky source spec to its canonical JSON form (also used to key
+/// realized sky sources for sharing).
+Object encodeSkySource(SkySourceSpec source) => switch (source) {
+  EnvironmentSkySpec(:final blurriness) => {
+    'type': 'environment',
+    'blurriness': blurriness,
+  },
+  FmatSkySpec(:final asset, :final properties) => {
+    'type': 'fmat',
+    'ref': asset.key,
+    if (properties.isNotEmpty)
+      'properties': {
+        for (final e in properties.entries)
+          e.key: encodePropertyValue(e.value, (id) => id.toToken()),
+      },
+  },
+  GradientSkySpec s => {
+    'type': 'gradient',
+    'zenithColor': _vec3Json(s.zenithColor),
+    'horizonColor': _vec3Json(s.horizonColor),
+    'groundColor': _vec3Json(s.groundColor),
+    'sunDirection': _vec3Json(s.sunDirection),
+    'sunColor': _vec3Json(s.sunColor),
+    'sunSharpness': s.sunSharpness,
+  },
+  PhysicalSkySpec s => {
+    'type': 'physical',
+    'sunDirection': _vec3Json(s.sunDirection),
+    'sunAngularRadius': s.sunAngularRadius,
+    'rayleighCoefficient': s.rayleighCoefficient,
+    'rayleighColor': _vec3Json(s.rayleighColor),
+    'mieCoefficient': s.mieCoefficient,
+    'mieEccentricity': s.mieEccentricity,
+    'mieColor': _vec3Json(s.mieColor),
+    'turbidity': s.turbidity,
+    'groundColor': _vec3Json(s.groundColor),
+    'energy': s.energy,
+  },
+};
+
+List<double> _vec3Json(Vector3 v) => [v.x, v.y, v.z];
 
 Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
   switch (r) {
@@ -666,7 +723,85 @@ StageMetadata _decodeStage(Map<String, dynamic> json) => StageMetadata(
   environmentIntensity: _d(json['environmentIntensity'] ?? 1.0),
   exposure: _d(json['exposure'] ?? 1.0),
   toneMapping: json['toneMapping'] as String? ?? 'pbrNeutral',
+  skybox: _decodeSkybox(json['skybox']),
+  skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
 );
+
+SkyboxSpec? _decodeSkybox(Object? json) {
+  if (json == null) return null;
+  final m = json as Map;
+  final source = _decodeSkySource(m['source']);
+  if (source == null) return null;
+  return SkyboxSpec(source, intensity: _d(m['intensity'] ?? 1.0));
+}
+
+SkyEnvironmentSpec? _decodeSkyEnvironment(Object? json) {
+  if (json == null) return null;
+  final m = json as Map;
+  final source = _decodeSkySource(m['source']);
+  if (source == null) return null;
+  return SkyEnvironmentSpec(
+    source,
+    refresh: m['refresh'] as String? ?? 'manual',
+    intervalSeconds: _d(m['intervalSeconds'] ?? 1.0),
+    faceResolution: (m['faceResolution'] as num?)?.toInt() ?? 128,
+    equirectWidth: (m['equirectWidth'] as num?)?.toInt() ?? 512,
+  );
+}
+
+SkySourceSpec? _decodeSkySource(Object? json) {
+  if (json == null) return null;
+  final m = json as Map;
+  switch (m['type']) {
+    case 'environment':
+      return EnvironmentSkySpec(blurriness: _d(m['blurriness'] ?? 0.0));
+    case 'fmat':
+      return FmatSkySpec(
+        AssetRef(m['ref'] as String),
+        properties: {
+          for (final e in ((m['properties'] as Map?) ?? const {}).entries)
+            e.key as String: decodePropertyValue(e.value),
+        },
+      );
+    case 'gradient':
+      final s = GradientSkySpec();
+      _setVec3(m['zenithColor'], (v) => s.zenithColor = v);
+      _setVec3(m['horizonColor'], (v) => s.horizonColor = v);
+      _setVec3(m['groundColor'], (v) => s.groundColor = v);
+      _setVec3(m['sunDirection'], (v) => s.sunDirection = v);
+      _setVec3(m['sunColor'], (v) => s.sunColor = v);
+      if (m['sunSharpness'] != null) s.sunSharpness = _d(m['sunSharpness']);
+      return s;
+    case 'physical':
+      final s = PhysicalSkySpec();
+      _setVec3(m['sunDirection'], (v) => s.sunDirection = v);
+      if (m['sunAngularRadius'] != null) {
+        s.sunAngularRadius = _d(m['sunAngularRadius']);
+      }
+      if (m['rayleighCoefficient'] != null) {
+        s.rayleighCoefficient = _d(m['rayleighCoefficient']);
+      }
+      _setVec3(m['rayleighColor'], (v) => s.rayleighColor = v);
+      if (m['mieCoefficient'] != null) {
+        s.mieCoefficient = _d(m['mieCoefficient']);
+      }
+      if (m['mieEccentricity'] != null) {
+        s.mieEccentricity = _d(m['mieEccentricity']);
+      }
+      _setVec3(m['mieColor'], (v) => s.mieColor = v);
+      if (m['turbidity'] != null) s.turbidity = _d(m['turbidity']);
+      _setVec3(m['groundColor'], (v) => s.groundColor = v);
+      if (m['energy'] != null) s.energy = _d(m['energy']);
+      return s;
+    default:
+      return null;
+  }
+}
+
+void _setVec3(Object? json, void Function(Vector3) assign) {
+  if (json is! List || json.length < 3) return;
+  assign(Vector3(_d(json[0]), _d(json[1]), _d(json[2])));
+}
 
 EnvironmentSpec _decodeEnvironment(Object? json) {
   if (json == null) return const StudioEnvironment();

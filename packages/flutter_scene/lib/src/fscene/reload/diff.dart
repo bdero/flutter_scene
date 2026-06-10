@@ -12,6 +12,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/canonical.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
+    show encodeStage;
 import 'package:flutter_scene/src/fscene/json/property_json.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -61,6 +63,7 @@ class SceneDiff {
     required this.removed,
     required this.changed,
     this.animationsChanged = false,
+    this.stageChanged = false,
   });
 
   /// Node ids present in the new document but not the old (to realize and
@@ -79,9 +82,19 @@ class SceneDiff {
   /// bind by target name and capture bind poses from rest transforms).
   final bool animationsChanged;
 
+  /// Whether the stage render settings changed (environment, exposure, tone
+  /// mapping, skybox, or sky lighting). The node patch does not apply these;
+  /// callers holding a `Scene` re-apply the stage when set (see
+  /// `realizeStage`).
+  final bool stageChanged;
+
   /// Whether nothing changed.
   bool get isEmpty =>
-      added.isEmpty && removed.isEmpty && changed.isEmpty && !animationsChanged;
+      added.isEmpty &&
+      removed.isEmpty &&
+      changed.isEmpty &&
+      !animationsChanged &&
+      !stageChanged;
 }
 
 /// Computes the node-id-keyed diff turning [oldDocument] into [newDocument].
@@ -149,6 +162,9 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       staleNodes,
       changed,
     ),
+    stageChanged:
+        canonicalJson(encodeStage(oldDocument.stage)) !=
+        canonicalJson(encodeStage(newDocument.stage)),
   );
 }
 

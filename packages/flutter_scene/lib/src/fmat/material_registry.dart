@@ -177,6 +177,7 @@ final class FmatMaterialRegistry {
       fragmentShader: shader,
       metadata: metadata,
     );
+    _fmatSourcePaths[material] = sourcePath;
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
     // from its regenerated sidecar without rebuilding the scene. Debug-only.
     HotReloadCoordinator.instance.registerFmat(
@@ -220,6 +221,7 @@ final class FmatMaterialRegistry {
       );
     }
     final sky = PreprocessedSky(fragmentShader: shader, metadata: metadata);
+    _fmatSourcePaths[sky] = sourcePath;
     HotReloadCoordinator.instance.registerFmat(
       sky,
       sidecarAssetKey: index.sidecarAssetKey,
@@ -253,6 +255,17 @@ final class FmatMaterialRegistry {
 ///
 /// Pass [package] and/or [bundleName] to disambiguate when the same source path
 /// is provided by more than one bundle.
+/// `.fmat` source paths recorded for registry-loaded materials and skies, so
+/// provenance-aware tooling (the scene serializer) can recover where a live
+/// instance came from.
+final Expando<String> _fmatSourcePaths = Expando('fmat source path');
+
+/// The `.fmat` source path [materialOrSky] was loaded from through the
+/// registry (`loadFmatMaterial` / `loadFmatSky`), or null for hand-built
+/// instances.
+String? fmatSourcePathOf(Object materialOrSky) =>
+    _fmatSourcePaths[materialOrSky];
+
 Future<PreprocessedMaterial> loadFmatMaterial(
   String sourcePath, {
   String? package,

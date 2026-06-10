@@ -5,10 +5,12 @@ import '../fscene/compose/compose.dart';
 import '../fscene/realize/component_codec.dart';
 import '../fscene/realize/realize.dart';
 import '../fscene/realize/resource_realizer.dart';
+import '../fscene/realize/stage.dart';
 import '../fscene/reload/reload.dart';
 import '../fscene/scene_document.dart';
 import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
+import '../scene.dart';
 
 const String _sceneAssetMarker = 'flutter_scene/scene/';
 const String _sceneAssetSuffix = '.fsceneb';
@@ -139,15 +141,19 @@ final class SceneRegistry {
   /// materials, textures) are cached per scene, so loading the same scene
   /// again instantiates a fresh node graph cheaply, sharing those resources.
   ///
-  /// Pass a custom [registry] to realize app-defined component types, and
-  /// [onReload] to re-apply per-instance customizations after a hot reload
-  /// patches this instance in place.
+  /// Pass [applyStageTo] to also apply the document's stage render settings
+  /// (environment, exposure, tone mapping, skybox, and sky lighting) to that
+  /// scene, kept fresh across hot reloads. Pass a custom [registry] to
+  /// realize app-defined component types, and [onReload] to re-apply
+  /// per-instance customizations after a hot reload patches this instance in
+  /// place.
   Future<Node> loadScene(
     String sourcePath, {
     String? package,
     AssetBundle? bundle,
     FsceneComponentRegistry? registry,
     SceneReloadCallback? onReload,
+    Scene? applyStageTo,
   }) async {
     final key = resolveKey(sourcePath, package: package);
     final assetBundle = bundle ?? rootBundle;
@@ -196,6 +202,9 @@ final class SceneRegistry {
       bundle: assetBundle,
       resources: template.resources,
     );
+    if (applyStageTo != null) {
+      await realizeStage(template.document, applyStageTo, bundle: assetBundle);
+    }
 
     // Patch the live graph in place when the scene's `.fsceneb` (or one of
     // the prefab `.fsceneb`s it is composed from) changes (debug only; a
@@ -217,7 +226,7 @@ final class SceneRegistry {
         dependencies
           ..clear()
           ..addAll(seen);
-        await reloadScene(
+        final diff = await reloadScene(
           root,
           current,
           next,
@@ -225,6 +234,9 @@ final class SceneRegistry {
           bundle: assetBundle,
         );
         current = next;
+        if (diff.stageChanged && applyStageTo != null) {
+          await realizeStage(next, applyStageTo, bundle: assetBundle);
+        }
         onReload?.call(root);
       },
     );
@@ -262,20 +274,23 @@ String _sceneId(String sourcePath) {
 /// Loads a DataAssets-backed `.fsceneb` scene by its source path relative to
 /// the owning package's root (for example `assets/levels/forest.glb`).
 ///
-/// The `.fscene` counterpart of `loadModel`. Loading the same scene again
-/// instantiates a fresh node graph that shares the first load's GPU
-/// resources, so per-instance loads are cheap.
+/// Loading the same scene again instantiates a fresh node graph that shares
+/// the first load's GPU resources, so per-instance loads are cheap.
 ///
-/// Pass [package] to disambiguate when the same source path is provided by
-/// more than one package, a custom [registry] to realize app-defined
-/// component types, and [onReload] to re-apply per-instance customizations
-/// after a hot reload patches the returned scene in place.
+/// Pass [applyStageTo] to also apply the document's stage render settings
+/// (environment, exposure, tone mapping, skybox, and sky lighting) to that
+/// scene, kept fresh across hot reloads. Pass [package] to disambiguate when
+/// the same source path is provided by more than one package, a custom
+/// [registry] to realize app-defined component types, and [onReload] to
+/// re-apply per-instance customizations after a hot reload patches the
+/// returned scene in place.
 Future<Node> loadScene(
   String sourcePath, {
   String? package,
   AssetBundle? bundle,
   FsceneComponentRegistry? registry,
   SceneReloadCallback? onReload,
+  Scene? applyStageTo,
 }) async {
   final sceneRegistry = await SceneRegistry.load(bundle: bundle);
   return sceneRegistry.loadScene(
@@ -284,5 +299,6 @@ Future<Node> loadScene(
     bundle: bundle,
     registry: registry,
     onReload: onReload,
+    applyStageTo: applyStageTo,
   );
 }

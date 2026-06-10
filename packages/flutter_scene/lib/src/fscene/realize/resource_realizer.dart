@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
@@ -67,15 +68,23 @@ class ResourceRealizer {
   /// placeholder (textures) or an unlit material (`fmat`) with a warning,
   /// rather than failing the whole scene.
   Future<void> preload() async {
-    final pending = <Future<void>>[];
+    // Textures first: an fmat material's parameter overrides may reference a
+    // texture resource, which must be decoded before the override resolves it.
+    final textures = <Future<void>>[];
     for (final resource in document.resources.values) {
       if (resource is TextureResource && _needsAsyncTexture(resource)) {
-        pending.add(_preloadTexture(resource));
-      } else if (resource is MaterialResource && resource.type == 'fmat') {
-        pending.add(_preloadFmat(resource));
+        textures.add(_preloadTexture(resource));
       }
     }
-    await Future.wait(pending);
+    await Future.wait(textures);
+
+    final materials = <Future<void>>[];
+    for (final resource in document.resources.values) {
+      if (resource is MaterialResource && resource.type == 'fmat') {
+        materials.add(_preloadFmat(resource));
+      }
+    }
+    await Future.wait(materials);
   }
 
   bool _needsAsyncTexture(TextureResource res) {
@@ -129,13 +138,15 @@ class ResourceRealizer {
       return;
     }
     try {
-      // TODO(fscene): apply MaterialResource.properties as fmat parameter
-      // overrides (scalars and sampler bindings) once exposed.
-      _materials[res.id] = tagResourceOrigin(
-        await loadFmatMaterial(asset.key, bundle: bundle),
-        document,
-        res.id,
+      final material = await loadFmatMaterial(asset.key, bundle: bundle);
+      // Apply the document's parameter overrides (scalars, vectors, colors,
+      // and texture-resource references) over the sidecar defaults.
+      applyFmatParameterOverrides(
+        material.parameters,
+        res.properties,
+        resolveTexture: texture,
       );
+      _materials[res.id] = tagResourceOrigin(material, document, res.id);
     } catch (e) {
       debugPrint('fscene: failed to load fmat ${res.id} ("${asset.key}"): $e');
       _materials[res.id] = tagResourceOrigin(
@@ -168,9 +179,9 @@ class ResourceRealizer {
     return _buildPayloadGeometry(res);
   }
 
-  /// Builds a live geometry from a resource's payload chunks, mirroring the
-  /// scene importer stores it: the interleaved vertex bytes and optional index
-  /// bytes are uploaded straight into a GPU buffer.
+  /// Builds a live geometry from a resource's payload chunks, matching how
+  /// the scene importer stores it: the interleaved vertex bytes and optional
+  /// index bytes are uploaded straight into a GPU buffer.
   Geometry _buildPayloadGeometry(GeometryResource res) {
     final vertexId = res.vertices;
     if (vertexId == null) {
