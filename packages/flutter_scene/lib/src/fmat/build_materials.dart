@@ -6,6 +6,8 @@ import 'package:data_assets/data_assets.dart';
 import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
+import 'package:flutter_scene/src/importer/build_cache.dart';
+
 import 'fmat.dart';
 
 /// Controls how [buildMaterials] exposes generated `.fmat` shader assets.
@@ -193,6 +195,65 @@ Future<void> buildMaterials({
   final sidecars = <String, Object?>{};
   final materialSources = <String, String>{};
 
+  // Skip the whole compile when every source (.fmat files and the framework
+  // GLSL they include) is unchanged since the outputs were produced, so a
+  // hook rerun for an unrelated edit costs nothing here. A recorded compile
+  // error always forces a rebuild (the marker must clear once the source is
+  // fixed). Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always compile.
+  final stampBuffer = StringBuffer(
+    'rev=$buildCacheRevision fmat package=${buildInput.packageName} '
+    'bundle=$bundleName',
+  );
+  for (final materialPath in materialPaths) {
+    final hash = contentHash(
+      File(packageRoot.resolve(materialPath).toFilePath()).readAsBytesSync(),
+    );
+    stampBuffer.write(' $materialPath=$hash');
+  }
+  for (final name in _frameworkShaderFiles) {
+    final hash = contentHash(
+      File(frameworkShaders.resolve(name).toFilePath()).readAsBytesSync(),
+    );
+    stampBuffer.write(' $name=$hash');
+  }
+  final stamp = stampBuffer.toString();
+  final stampFile = File(
+    packageRoot.resolve('build/shaderbundles/$bundleName.inputs').toFilePath(),
+  );
+  final wantIndex =
+      dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
+  var fresh = isBuildCacheFresh(stampFile, stamp, [
+    bundleFile,
+    sidecarFile,
+    if (wantIndex) indexFile,
+  ]);
+  if (fresh) {
+    try {
+      fresh = !sidecarFile.readAsStringSync().contains('#compile_error');
+    } catch (_) {
+      fresh = false;
+    }
+  }
+  if (fresh) {
+    _registerOutputs(
+      buildInput: buildInput,
+      buildOutput: buildOutput,
+      assetMode: assetMode,
+      dataAssetsAvailable: dataAssetsAvailable,
+      bundleName: bundleName,
+      bundleFile: bundleFile,
+      sidecarFile: sidecarFile,
+      indexFile: indexFile,
+      writeIndex: false,
+      sidecars: const {},
+      materialSources: const {},
+      packageRoot: packageRoot,
+      materialPaths: materialPaths,
+      frameworkShaders: frameworkShaders,
+    );
+    return;
+  }
+
   // Compile and bundle, but tolerate a broken material when the previous
   // outputs exist: a `.fmat` edit with a shader error during hot reload then
   // keeps the last good shaders on screen (with the error reported) instead
@@ -270,6 +331,7 @@ Future<void> buildMaterials({
     sidecarFile.writeAsStringSync(
       const JsonEncoder.withIndent('  ').convert(sidecars),
     );
+    stampFile.writeAsStringSync(stamp);
   } catch (error) {
     final shouldRegisterIndex =
         dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
