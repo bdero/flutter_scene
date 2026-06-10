@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:data_assets/data_assets.dart';
+import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:hooks/hooks.dart';
 
 import 'offline_import.dart';
@@ -161,11 +162,24 @@ void buildModels({
     final outputModelUri = modelsRoot.resolve(relativeModelPath);
     Directory.fromUri(outputModelUri.resolve('.')).createSync(recursive: true);
 
-    importGltf(
-      inputFilePath,
-      outputModelUri.toFilePath(),
-      workingDirectory: packageRoot.toFilePath(),
+    // Skip the conversion when the source is unchanged since the output was
+    // produced, so a hook rerun for an unrelated edit does not re-import
+    // every model. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always convert.
+    final sourceHash = contentHash(
+      File(packageRoot.resolve(inputFilePath).toFilePath()).readAsBytesSync(),
     );
+    final stamp = 'rev=$buildCacheRevision model src=$sourceHash';
+    final stampFile = File('${outputModelUri.toFilePath()}.inputs');
+    if (!isBuildCacheFresh(stampFile, stamp, [
+      File(outputModelUri.toFilePath()),
+    ])) {
+      importGltf(
+        inputFilePath,
+        outputModelUri.toFilePath(),
+        workingDirectory: packageRoot.toFilePath(),
+      );
+      stampFile.writeAsStringSync(stamp);
+    }
 
     // Declare the source GLB as a dependency so re-exporting it retriggers the
     // build (and hot reload).
@@ -238,12 +252,26 @@ void buildScenes({
     final outputSceneUri = scenesRoot.resolve(relativeScenePath);
     Directory.fromUri(outputSceneUri.resolve('.')).createSync(recursive: true);
 
-    importGltfToFsceneb(
-      inputFilePath,
-      outputSceneUri.toFilePath(),
-      workingDirectory: packageRoot.toFilePath(),
-      compressTextures: compressTextures,
+    // Skip the conversion when the source and settings are unchanged since
+    // the output was produced (see buildModels).
+    final sourceHash = contentHash(
+      File(packageRoot.resolve(inputFilePath).toFilePath()).readAsBytesSync(),
     );
+    final stamp =
+        'rev=$buildCacheRevision scene compress=$compressTextures '
+        'src=$sourceHash';
+    final stampFile = File('${outputSceneUri.toFilePath()}.inputs');
+    if (!isBuildCacheFresh(stampFile, stamp, [
+      File(outputSceneUri.toFilePath()),
+    ])) {
+      importGltfToFsceneb(
+        inputFilePath,
+        outputSceneUri.toFilePath(),
+        workingDirectory: packageRoot.toFilePath(),
+        compressTextures: compressTextures,
+      );
+      stampFile.writeAsStringSync(stamp);
+    }
 
     buildOutput.dependencies.add(packageRoot.resolve(inputFilePath));
 
