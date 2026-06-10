@@ -5,9 +5,8 @@
 // indices. When color0 > color1 (as unsigned 16-bit) the block is opaque
 // 4-color; otherwise it is 3-color-plus-transparent. We always emit the
 // 4-color form so output stays opaque (BC1 carries no real alpha; textures
-// with alpha need BC3/BC7).
-// TODO(texture-compression): add BC3/BC7 (alpha), and ASTC/ETC2 for the mobile
-// and Apple families, which is where the VRAM win lands on those devices.
+// with alpha transcode to BC3, which reuses this color block).
+// TODO(texture-compression): add BC7 for higher quality on desktop.
 
 import 'dart:typed_data';
 
@@ -21,12 +20,24 @@ const int kBc1BlockBytes = 8;
 Uint8List transcodeUniversalToBc1(Uint8List blocks, int blockCount) {
   final out = Uint8List(blockCount * kBc1BlockBytes);
   for (var b = 0; b < blockCount; b++) {
-    _transcodeBlock(blocks, b * kBlockBytes, out, b * kBc1BlockBytes);
+    transcodeUniversalBlockToBc1(
+      blocks,
+      b * kBlockBytes,
+      out,
+      b * kBc1BlockBytes,
+    );
   }
   return out;
 }
 
-void _transcodeBlock(Uint8List src, int si, Uint8List out, int oi) {
+/// Writes one universal block's color line as an 8-byte BC1 block at
+/// [out]+[oi]. Also used as the color half of a BC3 block.
+void transcodeUniversalBlockToBc1(
+  Uint8List src,
+  int si,
+  Uint8List out,
+  int oi,
+) {
   // Endpoints, as RGB565.
   var c0 = _pack565(src[si], src[si + 1], src[si + 2]);
   var c1 = _pack565(src[si + 4], src[si + 5], src[si + 6]);

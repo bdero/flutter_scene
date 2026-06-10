@@ -19,6 +19,15 @@ const String kFsBlockFormatUniversal = 'universal/1';
 /// Key/value marker set when level payloads are LZ-supercompressed.
 const String kFsSupercompressKey = 'fsSupercompress';
 
+/// Key/value marker set when the source image carries non-opaque alpha. The
+/// transcoder picks an alpha-capable GPU format (or the rgba8 fallback) for
+/// marked textures and the smaller opaque formats otherwise.
+const String kFsAlphaKey = 'fsAlpha';
+
+/// Whether [texture] was encoded from a source with non-opaque alpha.
+bool ktx2HasAlpha(Ktx2Texture texture) =>
+    texture.keyValues.containsKey(kFsAlphaKey);
+
 /// Identifier for the [lz] supercompression of the block payload.
 const String kFsSupercompressLz = 'lz/1';
 
@@ -43,6 +52,13 @@ Ktx2Texture encodeImageToKtx2(
 }) {
   if (rgba.length < width * height * 4) {
     throw ArgumentError('rgba is too small for ${width}x$height');
+  }
+  var hasAlpha = false;
+  for (var i = 3; i < width * height * 4; i += 4) {
+    if (rgba[i] != 255) {
+      hasAlpha = true;
+      break;
+    }
   }
   final blockLevels = <Uint8List>[encodeUniversalBlocks(rgba, width, height)];
   if (generateMips) {
@@ -79,6 +95,7 @@ Ktx2Texture encodeImageToKtx2(
         kFsSupercompressKey: Uint8List.fromList(
           utf8.encode(kFsSupercompressLz),
         ),
+      if (hasAlpha) kFsAlphaKey: Uint8List.fromList(utf8.encode('1')),
     },
   );
 }

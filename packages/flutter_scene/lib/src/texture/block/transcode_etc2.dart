@@ -4,9 +4,9 @@
 // We emit ETC1-subset blocks (individual and differential modes), which every
 // ETC2 RGB8 sampler decodes. Transcoding goes through rgba: each universal
 // block is decoded to 16 texels, then ETC1-encoded. ETC2 RGB8 is 8 bytes per
-// 4x4 block (opaque); textures with alpha need a separate path.
-// TODO(texture-compression): add the ETC2 T/H/planar modes for higher quality,
-// and ETC2 RGBA8 (with the EAC alpha block) for textures with alpha.
+// 4x4 block (opaque); textures with alpha use [transcodeUniversalToEtc2Rgba],
+// which prepends an EAC alpha block.
+// TODO(texture-compression): add the ETC2 T/H/planar modes for higher quality.
 
 import 'dart:typed_data';
 
@@ -364,6 +364,184 @@ List<int> _expand555(List<int> c) {
   for (var i = 0; i < 3; i++) {
     final v = c[i] & 0x1F;
     out[i] = (v << 3) | (v >> 2);
+  }
+  return out;
+}
+
+// ───── ETC2 RGBA8 (EAC alpha) ─────
+
+/// Bytes per ETC2 RGBA8 block: an 8-byte EAC alpha block then the 8-byte
+/// color block.
+const int kEtc2Rgba8BlockBytes = 16;
+
+// EAC alpha base modifiers, indexed [tableCodeword][j], j in 0..3. The full
+// 8-entry row for a codeword is {base[3], base[2], base[1], base[0],
+// -base[3]-1, -base[2]-1, -base[1]-1, -base[0]-1}, scaled by the block's
+// multiplier (matching the ETCPACK reference decoder's setupAlphaTable).
+const List<List<int>> _alphaBase = [
+  [-15, -9, -6, -3],
+  [-13, -10, -7, -3],
+  [-13, -8, -5, -2],
+  [-13, -6, -4, -2],
+  [-12, -8, -6, -3],
+  [-11, -9, -7, -3],
+  [-11, -8, -7, -4],
+  [-11, -8, -5, -3],
+  [-10, -8, -6, -2],
+  [-10, -8, -5, -2],
+  [-10, -8, -4, -2],
+  [-10, -7, -5, -2],
+  [-10, -7, -4, -3],
+  [-10, -3, -2, -1],
+  [-9, -8, -6, -4],
+  [-9, -7, -5, -3],
+];
+
+/// The j'th (0..7) unscaled modifier of EAC alpha table [codeword].
+int _alphaModifier(int codeword, int j) {
+  final buf = _alphaBase[codeword][3 - (j % 4)];
+  return j < 4 ? buf : -buf - 1;
+}
+
+/// Transcodes packed universal blocks to packed ETC2 RGBA8 blocks (EAC alpha
+/// followed by the ETC1-subset color block). [blockCount] is the number of
+/// 4x4 blocks.
+Uint8List transcodeUniversalToEtc2Rgba(Uint8List blocks, int blockCount) {
+  final out = Uint8List(blockCount * kEtc2Rgba8BlockBytes);
+  final rgb = Int32List(16 * 3);
+  final alphas = Int32List(16);
+  for (var b = 0; b < blockCount; b++) {
+    final si = b * kBlockBytes;
+    final oi = b * kEtc2Rgba8BlockBytes;
+    _decodeUniversalAlphas(blocks, si, alphas);
+    _encodeEacAlphaBlock(alphas, out, oi);
+    _decodeUniversalToRgb(blocks, si, rgb);
+    _encodeEtc1Block(rgb, out, oi + 8);
+  }
+  return out;
+}
+
+/// Decodes one universal block's 16 alpha values (texel i = row*4 + col).
+void _decodeUniversalAlphas(Uint8List src, int si, Int32List alphas) {
+  final a0 = src[si + 3];
+  final a1 = src[si + 7];
+  for (var i = 0; i < 16; i++) {
+    final byte = src[si + 8 + (i >> 1)];
+    final w = i.isEven ? byte & 0x0F : (byte >> 4) & 0x0F;
+    alphas[i] = _clampByte((a0 + (a1 - a0) * (w / 15.0)).round());
+  }
+}
+
+/// Encodes 16 alpha values (texel i = row*4 + col) as an 8-byte EAC alpha
+/// block at [out]+[oi]: base codeword, multiplier/table nibbles, then 16
+/// 3-bit indices MSB-first in EAC's column-major pixel order.
+void _encodeEacAlphaBlock(Int32List alphas, Uint8List out, int oi) {
+  var min = 255, max = 0;
+  for (var i = 0; i < 16; i++) {
+    if (alphas[i] < min) min = alphas[i];
+    if (alphas[i] > max) max = alphas[i];
+  }
+  if (min == max) {
+    // Constant alpha: multiplier 0 zeroes every modifier.
+    out[oi] = min;
+    out[oi + 1] = 0;
+    return;
+  }
+
+  final base = (min + max + 1) >> 1;
+  var bestTable = 0;
+  var bestMultiplier = 1;
+  var bestError = 1 << 30;
+  for (var table = 0; table < 16; table++) {
+    for (var multiplier = 1; multiplier < 16; multiplier++) {
+      var error = 0;
+      for (var i = 0; i < 16 && error < bestError; i++) {
+        var texelError = 1 << 30;
+        for (var j = 0; j < 8; j++) {
+          final value = _clampByte(
+            base + _alphaModifier(table, j) * multiplier,
+          );
+          final d = (value - alphas[i]).abs();
+          if (d < texelError) texelError = d;
+        }
+        error += texelError;
+      }
+      if (error < bestError) {
+        bestError = error;
+        bestTable = table;
+        bestMultiplier = multiplier;
+      }
+    }
+  }
+
+  out[oi] = base;
+  out[oi + 1] = (bestMultiplier << 4) | bestTable;
+  // Indices, 3 bits each, MSB-first from byte 2, pixel order p = x*4 + y.
+  for (var p = 0; p < 16; p++) {
+    final texel = (p & 3) * 4 + (p >> 2);
+    var bestIndex = 0;
+    var texelError = 1 << 30;
+    for (var j = 0; j < 8; j++) {
+      final value = _clampByte(
+        base + _alphaModifier(bestTable, j) * bestMultiplier,
+      );
+      final d = (value - alphas[texel]).abs();
+      if (d < texelError) {
+        texelError = d;
+        bestIndex = j;
+      }
+    }
+    for (var b = 0; b < 3; b++) {
+      if ((bestIndex >> (2 - b)) & 1 != 0) {
+        final pos = p * 3 + b;
+        out[oi + 2 + (pos >> 3)] |= 1 << (7 - (pos & 7));
+      }
+    }
+  }
+}
+
+/// Decodes packed ETC2 RGBA8 blocks to rgba8, the CPU reference for tests.
+Uint8List decodeEtc2RgbaToRgba8(Uint8List etc2, int width, int height) {
+  final blocksX = (width + kBlockDim - 1) ~/ kBlockDim;
+  final blocksY = (height + kBlockDim - 1) ~/ kBlockDim;
+
+  // Color halves, decoded through the RGB reference.
+  final colorOnly = Uint8List(blocksX * blocksY * kEtc2Rgb8BlockBytes);
+  for (var b = 0; b < blocksX * blocksY; b++) {
+    colorOnly.setRange(
+      b * kEtc2Rgb8BlockBytes,
+      (b + 1) * kEtc2Rgb8BlockBytes,
+      etc2,
+      b * kEtc2Rgba8BlockBytes + 8,
+    );
+  }
+  final out = decodeEtc2RgbToRgba8(colorOnly, width, height);
+
+  // Alpha halves (mirrors the ETCPACK reference decoder).
+  for (var by = 0; by < blocksY; by++) {
+    for (var bx = 0; bx < blocksX; bx++) {
+      final bi = (by * blocksX + bx) * kEtc2Rgba8BlockBytes;
+      final base = etc2[bi];
+      final multiplier = (etc2[bi + 1] >> 4) & 0xF;
+      final table = etc2[bi + 1] & 0xF;
+      for (var p = 0; p < 16; p++) {
+        var index = 0;
+        for (var b = 0; b < 3; b++) {
+          final pos = p * 3 + b;
+          if ((etc2[bi + 2 + (pos >> 3)] >> (7 - (pos & 7))) & 1 != 0) {
+            index |= 1 << (2 - b);
+          }
+        }
+        final x = p >> 2;
+        final y = p & 3;
+        final dx = bx * 4 + x;
+        final dy = by * 4 + y;
+        if (dx >= width || dy >= height) continue;
+        out[(dy * width + dx) * 4 + 3] = _clampByte(
+          base + _alphaModifier(table, index) * multiplier,
+        );
+      }
+    }
   }
   return out;
 }
