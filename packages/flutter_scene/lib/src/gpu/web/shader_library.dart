@@ -17,11 +17,13 @@ base class ShaderLibrary {
 
   final Map<String, Shader> _shaders;
 
-  /// Libraries loaded from each `.shaderbundle` asset, tracked weakly so
-  /// [reinitializeShaderLibraryAsync] can recompile their shaders in place
-  /// on hot reload without keeping a library alive.
-  static final Map<String, List<WeakReference<ShaderLibrary>>> _loadedByAsset =
-      {};
+  /// Shaders loaded from each `.shaderbundle` asset, tracked weakly by their
+  /// bundle entry name so [reinitializeShaderLibraryAsync] can recompile the
+  /// live ones in place on hot reload. Weak per shader: a shader stays
+  /// tracked exactly as long as something (a material, a pipeline) holds it,
+  /// regardless of whether its [ShaderLibrary] wrapper is still alive.
+  static final Map<String, List<({String name, WeakReference<Shader> shader})>>
+  _shadersByAsset = {};
 
   /// Look up a compiled shader by the name it was given in the bundle (or
   /// in the inline map).
@@ -58,11 +60,14 @@ base class ShaderLibrary {
       final name = entry.name;
       final backend = entry.openglEs;
       if (name == null || backend == null) continue;
-      shaders[name] = _buildFromBackend(backend);
+      final shader = _buildFromBackend(backend);
+      shaders[name] = shader;
+      _shadersByAsset.putIfAbsent(assetName, () => []).add((
+        name: name,
+        shader: WeakReference(shader),
+      ));
     }
-    final library = ShaderLibrary._(shaders);
-    _loadedByAsset.putIfAbsent(assetName, () => []).add(WeakReference(library));
-    return library;
+    return ShaderLibrary._(shaders);
   }
 
   static Shader _buildFromBackend(fb.BackendShader backend) {
@@ -195,11 +200,17 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
 /// counterpart of flutter_gpu's `ShaderLibrary.reinitialize`; await it
 /// before evicting cached pipelines so rebuilt pipelines link the new code.
 Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
-  final references = ShaderLibrary._loadedByAsset[assetKey];
-  if (references == null) return;
-  references.removeWhere((reference) => reference.target == null);
-  if (references.isEmpty) {
-    ShaderLibrary._loadedByAsset.remove(assetKey);
+  final tracked = ShaderLibrary._shadersByAsset[assetKey];
+  if (tracked == null) {
+    debugPrint(
+      'flutter_scene (web): no shaders were loaded from "$assetKey"; '
+      'nothing to reload',
+    );
+    return;
+  }
+  tracked.removeWhere((entry) => entry.shader.target == null);
+  if (tracked.isEmpty) {
+    ShaderLibrary._shadersByAsset.remove(assetKey);
     return;
   }
 
@@ -213,8 +224,9 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
     final name = entry.name;
     final backend = entry.openglEs;
     if (name == null || backend == null) continue;
-    for (final reference in references) {
-      final shader = reference.target?._shaders[name];
+    for (final record in tracked) {
+      if (record.name != name) continue;
+      final shader = record.shader.target;
       if (shader == null) continue;
       ShaderLibrary._populateFromBackend(shader, backend);
       recompiled++;
