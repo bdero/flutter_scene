@@ -288,6 +288,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             'min': [bounds.min.x, bounds.min.y, bounds.min.z],
             'max': [bounds.max.x, bounds.max.y, bounds.max.z],
           },
+        if (r.topology != 'triangle') 'topology': r.topology,
       };
     case TextureResource(:final payload, :final asset):
       return {
@@ -321,6 +322,7 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (n.excludeFromWindingParity) 'excludeWindingParity': true,
+    if (!n.visible) 'visible': false,
   };
 }
 
@@ -505,6 +507,7 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
   excludeFromWindingParity: json['excludeWindingParity'] as bool? ?? false,
+  visible: json['visible'] as bool? ?? true,
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {
@@ -587,6 +590,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
               )
             : null,
         bounds: _decodeBounds(json['bounds']),
+        topology: json['topology'] as String? ?? 'triangle',
       );
     case 'texture':
       return TextureResource(

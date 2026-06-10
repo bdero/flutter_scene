@@ -119,14 +119,21 @@ void serializeStage(Scene scene, SceneDocument document) {
   if (skyEnvironment == null) {
     stage.skyEnvironment = null;
     final environment = scene.environment;
-    final spec = environment == null ? null : _environmentSpec[environment];
+    var spec = environment == null ? null : _environmentSpec[environment];
+    if (spec == null && environment != null) {
+      // An environment the app loaded itself still recovers when it carries
+      // its asset-path stamp (EnvironmentMap.fromAssets).
+      final assetPath = environmentAssetPathOf(environment);
+      if (assetPath != null) spec = AssetEnvironment(AssetRef(assetPath));
+    }
     if (spec != null) {
       stage.environment = spec;
     } else {
       if (environment != null) {
         debugPrint(
           'fscene: the scene environment was not produced by realizeStage '
-          'and cannot be recovered; serializing the studio default',
+          'or EnvironmentMap.fromAssets and cannot be recovered; serializing '
+          'the studio default',
         );
       }
       stage.environment = const StudioEnvironment();

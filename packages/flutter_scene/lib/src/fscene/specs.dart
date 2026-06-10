@@ -155,6 +155,7 @@ class NodeSpec {
     this.skin,
     this.instance,
     this.excludeFromWindingParity = false,
+    this.visible = true,
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
@@ -188,6 +189,10 @@ class NodeSpec {
   /// converts between authoring spaces rather than mirroring content), so
   /// the renderer does not flip triangle winding under it.
   bool excludeFromWindingParity;
+
+  /// Whether this node (and so its subtree) renders. Hidden nodes still
+  /// realize and tick; only drawing is skipped.
+  bool visible;
 }
 
 /// An axis-aligned bounding box in a resource's local space.
@@ -278,6 +283,7 @@ class GeometryResource extends ResourceSpec {
     this.indices,
     this.procedural,
     this.bounds,
+    this.topology = 'triangle',
   }) : assert(
          (vertices == null) != (procedural == null),
          'A geometry has exactly one source: a vertex payload or a procedural '
@@ -300,6 +306,11 @@ class GeometryResource extends ResourceSpec {
 
   /// The geometry's local-space bounds, when known.
   final BoundsSpec? bounds;
+
+  /// How the vertex/index data assembles into primitives (mapped to the
+  /// runtime enum at realization): `triangle`, `triangleStrip`, `line`,
+  /// `lineStrip`, or `point`.
+  final String topology;
 }
 
 /// A texture sourced either from an embedded [payload] chunk or an external
