@@ -91,19 +91,33 @@ class HotReloadCoordinator {
   }
 
   /// Registers a scene [root] loaded from the `.fsceneb` asset [assetKey]. On
-  /// hot reload, when that asset's content changes, [onReload] is invoked to
-  /// re-read the document and patch the live graph in place (see `loadScene`).
-  /// The closure owns the re-read / re-compose / diff / patch; the coordinator
-  /// only detects the content change and drops the registration once [root] is
-  /// collected. No-op outside debug.
+  /// hot reload, when the content of any asset the scene depends on changes,
+  /// [onReload] is invoked to re-read the document and patch the live graph in
+  /// place (see `loadScene`). The closure owns the re-read / re-compose /
+  /// diff / patch; the coordinator only detects the content change and drops
+  /// the registration once [root] is collected. No-op outside debug.
+  ///
+  /// [dependencies] is the live set of asset keys the scene is composed from
+  /// ([assetKey] plus any referenced prefab `.fsceneb`s); the caller may
+  /// mutate it in place as references change across reloads. Defaults to just
+  /// [assetKey]. [bundle] is the bundle the keys load from (default
+  /// [rootBundle]).
   void registerScene(
     Node root, {
     required String assetKey,
+    Set<String>? dependencies,
+    AssetBundle? bundle,
     required Future<void> Function() onReload,
   }) {
     if (!kDebugMode) return;
     _scenes.add(
-      _SceneRegistration(WeakReference<Node>(root), assetKey, onReload),
+      _SceneRegistration(
+        WeakReference<Node>(root),
+        assetKey,
+        dependencies ?? {assetKey},
+        bundle ?? rootBundle,
+        onReload,
+      ),
     );
   }
 
@@ -130,15 +144,23 @@ class HotReloadCoordinator {
   }
 
   /// Re-reads any changed `.fsceneb` scene asset and patches the live graph in
-  /// place via each registration's reload closure.
+  /// place via each registration's reload closure. Hashes every asset a scene
+  /// depends on (the host `.fsceneb` plus the prefab `.fsceneb`s it is
+  /// composed from), so an edit to a referenced prefab also reloads the
+  /// scenes built from it.
   Future<void> _refreshChangedScenes() async {
     if (_scenes.isEmpty) return;
-    final keys = <String>{for (final r in _scenes) r.assetKey};
-    for (final key in keys) {
-      rootBundle.evict(key);
+    final bundles = <String, AssetBundle>{
+      for (final r in _scenes)
+        for (final key in r.dependencies) key: r.bundle,
+    };
+    final changedKeys = <String>{};
+    for (final entry in bundles.entries) {
+      final key = entry.key;
+      entry.value.evict(key);
       List<int> bytes;
       try {
-        final data = await rootBundle.load(key);
+        final data = await entry.value.load(key);
         bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       } catch (_) {
         continue; // not available this reload; try again next time
@@ -146,17 +168,21 @@ class HotReloadCoordinator {
       final hash = _fnv1aBytes(bytes);
       if (_sceneHashes[key] == hash) continue; // unchanged
       _sceneHashes[key] = hash;
+      changedKeys.add(key);
+    }
+    if (changedKeys.isEmpty) return;
 
-      for (final r in _scenes) {
-        if (r.assetKey != key) continue;
-        if (r.root.target == null) continue;
-        try {
-          await r.onReload();
-        } catch (e) {
-          debugPrint('flutter_scene: scene reload failed for "$key": $e');
-        }
+    for (final r in _scenes) {
+      if (r.root.target == null) continue;
+      if (!r.dependencies.any(changedKeys.contains)) continue;
+      try {
+        await r.onReload();
+        debugPrint('flutter_scene: hot-reloaded scene "${r.assetKey}"');
+      } catch (e) {
+        debugPrint(
+          'flutter_scene: scene reload failed for "${r.assetKey}": $e',
+        );
       }
-      debugPrint('flutter_scene: hot-reloaded scene "$key"');
     }
   }
 
@@ -335,9 +361,21 @@ class _ModelRegistration {
 }
 
 class _SceneRegistration {
-  _SceneRegistration(this.root, this.assetKey, this.onReload);
+  _SceneRegistration(
+    this.root,
+    this.assetKey,
+    this.dependencies,
+    this.bundle,
+    this.onReload,
+  );
 
   final WeakReference<Node> root;
   final String assetKey;
+
+  /// The asset keys the scene is composed from (the host plus referenced
+  /// prefabs). Shared with the registering loader, which updates it in place
+  /// when a reload changes the reference set.
+  final Set<String> dependencies;
+  final AssetBundle bundle;
   final Future<void> Function() onReload;
 }

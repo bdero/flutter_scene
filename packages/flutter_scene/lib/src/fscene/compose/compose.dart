@@ -145,6 +145,10 @@ void _expandInstance(
   // Fresh id for every prefab id; a single-root prefab merges its root into
   // the instance node (so the instance node "is" the prefab root, which is
   // what overrides and added/removed components target).
+  // TODO(fscene): derive the remapped ids deterministically from the instance
+  // id + prefab id instead of allocating fresh ones, so recomposing after a
+  // prefab edit keeps ids stable and hot reload patches the prefab subtree
+  // fine-grained instead of rebuilding it.
   final singleRoot = prefab.roots.length == 1 ? prefab.roots.single : null;
   final remap = <LocalId, LocalId>{};
   for (final id in _allIds(prefab)) {

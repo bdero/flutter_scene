@@ -122,20 +122,35 @@ final class SceneRegistry {
     final key = resolveKey(sourcePath, package: package);
     final assetBundle = bundle ?? rootBundle;
 
+    // The asset keys the realized scene is composed from: the host plus every
+    // eagerly referenced prefab, refreshed on each compose. Shared with the
+    // hot-reload coordinator so an edit to a referenced prefab also reloads
+    // this scene.
+    // TODO(fscene): lazily streamed prefab subtrees (LoadPolicy.lazy) load
+    // outside the compose, so their assets are not tracked here and an edit
+    // to one does not hot-reload the host scene.
+    final dependencies = <String>{key};
+
     // Re-reads the host document and expands any prefab instances, resolving
     // each referenced prefab by source path against this same registry. Run on
     // load and again on each hot reload.
     Future<SceneDocument> readComposed() async {
       final document = await _readDocument(key, assetBundle);
-      return document.nodes.values.any((n) => n.instance != null)
+      final seen = <String>{key};
+      final composed = document.nodes.values.any((n) => n.instance != null)
           ? await composeSceneAsync(
               document,
-              load: (ref) => _readDocument(
-                resolveKey(ref.key, package: package),
-                assetBundle,
-              ),
+              load: (ref) {
+                final refKey = resolveKey(ref.key, package: package);
+                seen.add(refKey);
+                return _readDocument(refKey, assetBundle);
+              },
             )
           : document;
+      dependencies
+        ..clear()
+        ..addAll(seen);
+      return composed;
     }
 
     var current = await readComposed();
@@ -145,11 +160,14 @@ final class SceneRegistry {
       bundle: assetBundle,
     );
 
-    // Patch the live graph in place when the scene's `.fsceneb` changes (debug
-    // only; a no-op registration in release).
+    // Patch the live graph in place when the scene's `.fsceneb` (or one of
+    // the prefab `.fsceneb`s it is composed from) changes (debug only; a
+    // no-op registration in release).
     HotReloadCoordinator.instance.registerScene(
       root,
       assetKey: key,
+      dependencies: dependencies,
+      bundle: assetBundle,
       onReload: () async {
         final next = await readComposed();
         await reloadScene(
