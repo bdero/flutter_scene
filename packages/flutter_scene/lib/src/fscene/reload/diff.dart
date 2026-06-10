@@ -13,8 +13,9 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/canonical.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
-    show encodeStage;
+    show encodeResource, encodeStage;
 import 'package:flutter_scene/src/fscene/json/property_json.dart';
+import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
@@ -50,7 +51,9 @@ class NodeChange {
   /// The node's parent changed (it moved in the hierarchy).
   final bool reparented;
 
-  /// The component set or a component's properties changed.
+  /// The component set or a component's properties changed, or a resource the
+  /// components reference (directly or through other resources) changed, so
+  /// the components must re-realize.
   final bool components;
 
   /// The bound skin must be rebuilt: the skin id changed, the skin's content
@@ -120,6 +123,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
 
   final oldParents = _parents(oldDocument);
   final newParents = _parents(newDocument);
+  final changedResources = _changedResources(oldDocument, newDocument);
 
   // Joints of these nodes are live Node objects that get recreated, so any
   // skin binding them must be rebuilt even when its spec is unchanged.
@@ -140,7 +144,9 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       layers: oldNode.layers != newNode.layers,
       visible: oldNode.visible != newNode.visible,
       reparented: oldParents[id] != newParents[id],
-      components: !_componentsEqual(oldNode.components, newNode.components),
+      components:
+          !_componentsEqual(oldNode.components, newNode.components) ||
+          _referencesAny(newNode.components, changedResources),
       skin: !_skinsEqual(
         oldDocument,
         newDocument,
@@ -174,6 +180,97 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
         canonicalJson(encodeStage(oldDocument.stage)) !=
         canonicalJson(encodeStage(newDocument.stage)),
   );
+}
+
+/// Resource ids whose realized content would differ between the documents:
+/// the resource's spec changed, a payload it references has different bytes,
+/// it is new, or (transitively) a resource it references changed. Component
+/// property diffs alone miss these, since components reference resources by
+/// id and an edited resource keeps its id.
+Set<LocalId> _changedResources(
+  SceneDocument oldDocument,
+  SceneDocument newDocument,
+) {
+  String encode(ResourceSpec r) =>
+      canonicalJson(encodeResource(r, (id) => id.toToken()));
+
+  final changed = <LocalId>{};
+  for (final entry in newDocument.resources.entries) {
+    final oldResource = oldDocument.resources[entry.key];
+    if (oldResource == null || encode(oldResource) != encode(entry.value)) {
+      changed.add(entry.key);
+      continue;
+    }
+    for (final payloadId in _resourcePayloads(entry.value)) {
+      if (!_payloadsEqual(
+        oldDocument.payload(payloadId),
+        newDocument.payload(payloadId),
+      )) {
+        changed.add(entry.key);
+        break;
+      }
+    }
+  }
+
+  // Propagate through resource-to-resource references (a material referencing
+  // a changed texture is itself changed) until a fixed point.
+  var grew = changed.isNotEmpty;
+  while (grew) {
+    grew = false;
+    for (final entry in newDocument.resources.entries) {
+      if (changed.contains(entry.key)) continue;
+      final refs = <LocalId>{};
+      _collectRefs(_resourceProperties(entry.value), refs);
+      if (refs.any(changed.contains)) {
+        changed.add(entry.key);
+        grew = true;
+      }
+    }
+  }
+  return changed;
+}
+
+List<LocalId> _resourcePayloads(ResourceSpec resource) => switch (resource) {
+  GeometryResource() => [
+    if (resource.vertices != null) resource.vertices!,
+    if (resource.indices != null) resource.indices!,
+  ],
+  TextureResource() => [if (resource.payload != null) resource.payload!],
+  _ => const [],
+};
+
+Map<String, PropertyValue> _resourceProperties(ResourceSpec resource) =>
+    switch (resource) {
+      MaterialResource() => resource.properties,
+      _ => const {},
+    };
+
+/// Collects every [ResourceRefValue] id reachable through [properties]
+/// (including nested lists and maps).
+void _collectRefs(Map<String, PropertyValue> properties, Set<LocalId> out) {
+  void walk(PropertyValue value) {
+    switch (value) {
+      case ResourceRefValue():
+        out.add(value.id);
+      case ListValue():
+        value.values.forEach(walk);
+      case MapValue():
+        value.values.values.forEach(walk);
+      default:
+        break;
+    }
+  }
+
+  properties.values.forEach(walk);
+}
+
+bool _referencesAny(List<ComponentSpec> components, Set<LocalId> resources) {
+  if (resources.isEmpty) return false;
+  final refs = <LocalId>{};
+  for (final component in components) {
+    _collectRefs(component.properties, refs);
+  }
+  return refs.any(resources.contains);
 }
 
 bool _skinsEqual(

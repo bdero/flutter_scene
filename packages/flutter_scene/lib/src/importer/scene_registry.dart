@@ -35,6 +35,14 @@ final Expando<Set<String>> _streamedDependencies = Expando(
   'fscene streamed subtree dependencies',
 );
 
+/// App reload callbacks, keyed by the loaded root so the callback (often a
+/// bound method of a State that transitively owns the root) lives exactly as
+/// long as the root itself. Holding it in the registration's closure instead
+/// would keep discarded instances alive through the callback's captures.
+final Expando<SceneReloadCallback> _reloadCallbacks = Expando(
+  'fscene reload callbacks',
+);
+
 class _SceneTemplate {
   _SceneTemplate(this.document, this.resources, this.dependencies);
 
@@ -214,15 +222,25 @@ final class SceneRegistry {
     // Patch the live graph in place when the scene's `.fsceneb` (or one of
     // the prefab `.fsceneb`s it is composed from) changes (debug only; a
     // no-op registration in release). The dependency set is shared with the
-    // coordinator and refreshed on each reload.
+    // coordinator and refreshed on each reload. The closure must hold the
+    // root (and the stage scene) weakly: the registration owns the closure,
+    // so a strong capture would keep every discarded instance alive forever,
+    // accumulating registrations that re-patch dead graphs on each reload.
     var current = template.document;
     final dependencies = {...template.dependencies};
+    final weakRoot = WeakReference(root);
+    final weakStageScene = applyStageTo == null
+        ? null
+        : WeakReference(applyStageTo);
+    if (onReload != null) _reloadCallbacks[root] = onReload;
     HotReloadCoordinator.instance.registerScene(
       root,
       assetKey: key,
       dependencies: dependencies,
       bundle: assetBundle,
       onReload: () async {
+        final liveRoot = weakRoot.target;
+        if (liveRoot == null) return;
         // The cached template no longer matches the edited assets; drop it
         // so future loads re-read them.
         _sceneTemplates.remove(key);
@@ -232,17 +250,18 @@ final class SceneRegistry {
           ..clear()
           ..addAll(seen);
         final diff = await reloadScene(
-          root,
+          liveRoot,
           current,
           next,
           registry: registry,
           bundle: assetBundle,
         );
         current = next;
-        if (diff.stageChanged && applyStageTo != null) {
-          await realizeStage(next, applyStageTo, bundle: assetBundle);
+        final stageScene = weakStageScene?.target;
+        if (diff.stageChanged && stageScene != null) {
+          await realizeStage(next, stageScene, bundle: assetBundle);
         }
-        onReload?.call(root);
+        _reloadCallbacks[liveRoot]?.call(liveRoot);
       },
     );
     return root;
@@ -265,10 +284,10 @@ final class SceneRegistry {
   }) async {
     final assetBundle = bundle ?? rootBundle;
 
-    Future<Set<String>> streamIn() async {
+    Future<Set<String>> streamIn(Node target) async {
       final seen = <String>{};
       await stream.loadSubtree(
-        node,
+        target,
         registry: registry,
         bundle: assetBundle,
         load: (ref) {
@@ -280,7 +299,7 @@ final class SceneRegistry {
       return seen;
     }
 
-    final seen = await streamIn();
+    final seen = await streamIn(node);
     if (seen.isEmpty) return;
 
     // Register once per placeholder; later loads just refresh the tracked
@@ -294,6 +313,7 @@ final class SceneRegistry {
     }
     final dependencies = {...seen};
     _streamedDependencies[node] = dependencies;
+    final weakNode = WeakReference(node);
     HotReloadCoordinator.instance.registerScene(
       node,
       assetKey: seen.first,
@@ -301,10 +321,14 @@ final class SceneRegistry {
       bundle: assetBundle,
       onReload: () async {
         // Re-stream in place only while loaded; an unloaded placeholder
-        // streams the fresh content on its next load.
-        if (!stream.isSubtreeLoaded(node)) return;
-        stream.unloadSubtree(node);
-        final refreshed = await streamIn();
+        // streams the fresh content on its next load. Held weakly so a
+        // discarded placeholder's registration can be pruned.
+        final placeholder = weakNode.target;
+        if (placeholder == null || !stream.isSubtreeLoaded(placeholder)) {
+          return;
+        }
+        stream.unloadSubtree(placeholder);
+        final refreshed = await streamIn(placeholder);
         dependencies
           ..clear()
           ..addAll(refreshed);

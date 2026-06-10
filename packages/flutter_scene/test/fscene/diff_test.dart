@@ -97,6 +97,99 @@ void main() {
     expect(change.reparented, isTrue);
   });
 
+  group('resource content changes', () {
+    test('a material property edit marks referencing nodes changed', () {
+      // Same ids, same nodes; only the material's color differs (what a
+      // re-imported model with a recolored material produces).
+      final before = _base();
+      final after = _base();
+      after.resources[_mat1] = MaterialResource(
+        _mat1,
+        type: 'physicallyBased',
+        properties: {'baseColor': const ColorValue(1, 0, 0, 1)},
+      );
+      final diff = diffScene(before, after);
+      expect(diff.added, isEmpty);
+      expect(diff.removed, isEmpty);
+      expect(_change(diff, _b).components, isTrue);
+    });
+
+    test('a geometry payload byte edit marks referencing nodes changed', () {
+      SceneDocument geometryDoc(List<int> bytes) {
+        final doc = SceneDocument();
+        final payload = doc.addPayload(
+          PayloadSpec(
+            const LocalId(8, 1),
+            encoding: PayloadEncoding.vertexBuffer,
+            bytes: Uint8List.fromList(bytes),
+          ),
+        );
+        doc.addResource(
+          GeometryResource(const LocalId(8, 2), vertices: payload.id),
+        );
+        doc.addNode(
+          NodeSpec(
+            id: _a,
+            name: 'a',
+            components: [
+              ComponentSpec(
+                'mesh',
+                properties: {'geometry': const ResourceRefValue(LocalId(8, 2))},
+              ),
+            ],
+          ),
+          root: true,
+        );
+        return doc;
+      }
+
+      final diff = diffScene(geometryDoc([1, 2, 3]), geometryDoc([1, 2, 4]));
+      expect(_change(diff, _a).components, isTrue);
+    });
+
+    test('a texture edit propagates through the referencing material', () {
+      SceneDocument texturedDoc(List<int> imageBytes) {
+        final doc = SceneDocument();
+        final payload = doc.addPayload(
+          PayloadSpec(
+            const LocalId(8, 1),
+            encoding: PayloadEncoding.image,
+            format: 'rgba8',
+            width: 1,
+            height: 1,
+            bytes: Uint8List.fromList(imageBytes),
+          ),
+        );
+        final texture = doc.addResource(
+          TextureResource(const LocalId(8, 2), payload: payload.id),
+        );
+        doc.addResource(
+          MaterialResource(
+            _mat1,
+            type: 'physicallyBased',
+            properties: {'baseColorTexture': ResourceRefValue(texture.id)},
+          ),
+        );
+        doc.addNode(
+          NodeSpec(id: _a, name: 'a', components: [_mesh(_mat1)]),
+          root: true,
+        );
+        return doc;
+      }
+
+      final diff = diffScene(
+        texturedDoc([255, 0, 0, 255]),
+        texturedDoc([0, 255, 0, 255]),
+      );
+      expect(_change(diff, _a).components, isTrue);
+    });
+
+    test('identical resources stay quiet', () {
+      final diff = diffScene(_base(), _base());
+      expect(diff.isEmpty, isTrue);
+    });
+  });
+
   group('skins and animations', () {
     test('identical skinned documents diff to nothing', () {
       final diff = diffScene(_skinned(), _skinned());

@@ -270,6 +270,12 @@ Object encodeSkySource(SkySourceSpec source) => switch (source) {
 
 List<double> _vec3Json(Vector3 v) => [v.x, v.y, v.z];
 
+/// Encodes a single resource spec the same way [encodeScene] does, for
+/// canonical-form comparison (the reload diff uses this to detect resource
+/// content changes).
+Object encodeResource(ResourceSpec r, String Function(LocalId) idKey) =>
+    _encodeResource(r, idKey);
+
 Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
   switch (r) {
     case GeometryResource(
