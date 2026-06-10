@@ -149,6 +149,15 @@ class MaterialParameters {
   /// takes effect live.
   final Set<String> _overridden = <String>{};
 
+  final Map<String, Object> _assigned = <String, Object>{};
+
+  /// The values explicitly assigned through the typed setters, keyed by
+  /// parameter name, as last set (vectors and matrices are stored as defensive
+  /// copies; textures appear as their live `gpu.Texture`). Sidecar defaults
+  /// are not included. Used by the scene serializer to round-trip parameter
+  /// overrides.
+  Map<String, Object> get assignedValues => Map.unmodifiable(_assigned);
+
   /// The names of the scalar/vector parameters in this material.
   Iterable<String> get parameterNames => _layout.keys;
 
@@ -288,10 +297,15 @@ class MaterialParameters {
     _overridden.removeWhere(
       (name) => !newLayout.containsKey(name) && !newSamplers.containsKey(name),
     );
+    _assigned.removeWhere(
+      (name, _) =>
+          !newLayout.containsKey(name) && !newSamplers.containsKey(name),
+    );
   }
 
   void setFloat(String name, double value) {
     _overridden.add(name);
+    _assigned[name] = value;
     _block.setFloat32(
       _slot(name, FmatType.float_).offsetBytes,
       value,
@@ -301,26 +315,31 @@ class MaterialParameters {
 
   void setInt(String name, int value) {
     _overridden.add(name);
+    _assigned[name] = value;
     _block.setInt32(_slot(name, FmatType.int_).offsetBytes, value, Endian.host);
   }
 
   void setVec2(String name, Vector2 value) {
     _overridden.add(name);
+    _assigned[name] = value.clone();
     _writeFloats(_slot(name, FmatType.vec2).offsetBytes, value.storage);
   }
 
   void setVec3(String name, Vector3 value) {
     _overridden.add(name);
+    _assigned[name] = value.clone();
     _writeFloats(_slot(name, FmatType.vec3).offsetBytes, value.storage);
   }
 
   void setVec4(String name, Vector4 value) {
     _overridden.add(name);
+    _assigned[name] = value.clone();
     _writeFloats(_slot(name, FmatType.vec4).offsetBytes, value.storage);
   }
 
   void setMat4(String name, Matrix4 value) {
     _overridden.add(name);
+    _assigned[name] = value.clone();
     _writeFloats(_slot(name, FmatType.mat4).offsetBytes, value.storage);
   }
 
@@ -329,6 +348,7 @@ class MaterialParameters {
   /// the shader's `SRGBToLinear`); alpha is written as-is.
   void setColor(String name, Color color) {
     _overridden.add(name);
+    _assigned[name] = color;
     final slot = _slot(name, FmatType.vec4);
     var r = color.r, g = color.g, b = color.b;
     if (slot.sourceColor) {
@@ -349,6 +369,7 @@ class MaterialParameters {
       throw ArgumentError('Unknown sampler parameter "$name".');
     }
     _overridden.add(name);
+    _assigned[name] = texture;
     slot.texture = texture;
     slot.sampler = sampler;
   }

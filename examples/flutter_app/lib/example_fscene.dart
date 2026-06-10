@@ -55,6 +55,27 @@ class _ExampleFsceneState extends State<ExampleFscene> {
     // materials before realizing.
     final document = _buildDocument(pngBytes);
     final realized = await loadFscenebBytesAsync(writeFsceneb(document));
+
+    // A hand-built mesh (no document behind it) added to the live graph: the
+    // serializer re-packs its interleaved streams and reads back the material
+    // factors, so it survives the round trip below like everything else.
+    realized.add(
+      Node(
+        name: 'handBuilt',
+        localTransform: vm.Matrix4.translation(vm.Vector3(0, 3.2, 0)),
+      )..addComponent(
+        MeshComponent(
+          Mesh(
+            SphereGeometry(radius: 0.6),
+            PhysicallyBasedMaterial()
+              ..baseColorFactor = vm.Vector4(1.0, 0.85, 0.1, 1.0)
+              ..metallicFactor = 1.0
+              ..roughnessFactor = 0.25,
+          ),
+        ),
+      ),
+    );
+
     final roundTripped = serializeScene(realized);
     if (!mounted) return;
     scene.add(await loadFscenebBytesAsync(writeFsceneb(roundTripped)));

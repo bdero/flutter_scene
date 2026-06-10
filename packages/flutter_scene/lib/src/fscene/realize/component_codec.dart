@@ -1,4 +1,5 @@
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -29,6 +30,11 @@ class SerializeContext {
 
   /// The document being written into.
   final SceneDocument document;
+
+  /// Live hand-built resources already serialized into [document] this pass,
+  /// keyed by instance, so a geometry or material shared by several nodes is
+  /// emitted once and referenced everywhere.
+  final Map<Object, LocalId> serializedResources = <Object, LocalId>{};
 }
 
 /// Translates between a serialized [ComponentSpec] and a live [Component] of

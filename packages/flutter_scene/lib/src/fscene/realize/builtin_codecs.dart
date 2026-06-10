@@ -1,7 +1,15 @@
 import 'package:flutter/foundation.dart';
-import 'package:vector_math/vector_math.dart';
+import 'package:vector_math/vector_math.dart' hide Sphere;
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/fmat/material_registry.dart'
+    show fmatSourcePathOf;
+import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
+import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/physically_based_material.dart';
+import 'package:flutter_scene/src/material/preprocessed_material.dart';
+import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
@@ -65,15 +73,14 @@ class MeshCodec extends ComponentCodec {
   @override
   ComponentSpec? serialize(Component component, SerializeContext context) {
     if (component is! MeshComponent) return null;
-    final dest = context.document;
     final pairs = <(LocalId, LocalId)>[];
     for (final primitive in component.mesh.primitives) {
-      final geometryId = _serializeResource(primitive.geometry, dest);
-      final materialId = _serializeResource(primitive.material, dest);
+      final geometryId = _serializeResource(primitive.geometry, context);
+      final materialId = _serializeResource(primitive.material, context);
       if (geometryId == null || materialId == null) {
         debugPrint(
           'fscene: mesh primitive not serialized; its geometry or material '
-          'was not produced by the realizer',
+          'is not recoverable (see the warnings above)',
         );
         continue;
       }
@@ -130,15 +137,200 @@ class MeshCodec extends ComponentCodec {
     return null;
   }
 
-  // Recovers the source resource a live geometry or material was realized from
-  // and copies it into [dest], returning its id. Returns null for an object the
-  // realizer did not produce.
-  // TODO(fscene): serialize hand-built geometry/materials (re-pack a
-  // MeshGeometry's CPU streams; read back material factor fields).
-  LocalId? _serializeResource(Object live, SceneDocument dest) {
+  // Serializes a live geometry or material into the destination document.
+  // Realizer-produced objects are recovered from their origin tags; hand-built
+  // ones are re-packed from their retained data: a MeshGeometry's interleaved
+  // streams, a parameter material's factor fields, or an fmat material's
+  // source path plus assigned parameters. Caller-managed buffers (a raw
+  // Geometry with setVertices) are not recoverable.
+  LocalId? _serializeResource(Object live, SerializeContext context) {
+    final dest = context.document;
     final origin = resourceOrigin(live);
+    if (origin != null) {
+      return copyResourceInto(dest, origin.document, origin.resourceId);
+    }
+    final cached = context.serializedResources[live];
+    if (cached != null) return cached;
+    LocalId? id;
+    if (live is MeshGeometry) {
+      id = _serializeMeshGeometry(live, dest);
+    } else if (live is PreprocessedMaterial) {
+      id = _serializeFmat(live, context);
+    } else if (live is PhysicallyBasedMaterial) {
+      id = _serializePbr(live, context);
+    } else if (live is UnlitMaterial) {
+      id = _serializeUnlit(live, context);
+    }
+    if (id != null) context.serializedResources[live] = id;
+    return id;
+  }
+
+  LocalId? _serializeMeshGeometry(MeshGeometry geometry, SceneDocument dest) {
+    if (geometry.primitiveType != gpu.PrimitiveType.triangle) {
+      // TODO(fscene): carry primitive topology in GeometryResource so line
+      // and point geometry round-trips; today the realizer assumes triangles.
+      debugPrint(
+        'fscene: only triangle-list geometry serializes; '
+        '${geometry.primitiveType} skipped',
+      );
+      return null;
+    }
+    final packed = geometry.packedData;
+    final vertices = dest.addPayload(
+      PayloadSpec(
+        dest.newId(),
+        encoding: PayloadEncoding.vertexBuffer,
+        layout: 'unskinned',
+        length: packed.vertexBytes.length,
+        bytes: packed.vertexBytes,
+      ),
+    );
+    LocalId? indices;
+    final indexBytes = packed.indexBytes;
+    if (indexBytes != null) {
+      indices = dest
+          .addPayload(
+            PayloadSpec(
+              dest.newId(),
+              encoding: PayloadEncoding.indexBuffer,
+              format: packed.indices32Bit ? 'uint32' : 'uint16',
+              length: indexBytes.length,
+              bytes: indexBytes,
+            ),
+          )
+          .id;
+    }
+    final bounds = geometry.localBounds;
+    return dest
+        .addResource(
+          GeometryResource(
+            dest.newId(),
+            vertices: vertices.id,
+            indices: indices,
+            bounds: bounds == null
+                ? null
+                : BoundsSpec(min: bounds.min.clone(), max: bounds.max.clone()),
+          ),
+        )
+        .id;
+  }
+
+  LocalId? _serializeFmat(PreprocessedMaterial m, SerializeContext context) {
+    final sourcePath = fmatSourcePathOf(m);
+    if (sourcePath == null) {
+      debugPrint(
+        'fscene: an fmat material with no known source path cannot be '
+        'serialized; load materials with loadFmatMaterial',
+      );
+      return null;
+    }
+    return context.document
+        .addResource(
+          MaterialResource(
+            context.document.newId(),
+            type: 'fmat',
+            asset: AssetRef(sourcePath),
+            properties: serializeFmatParameterOverrides(
+              m.parameters.assignedValues,
+              resolveTexture: (texture) => _serializeTexture(texture, context),
+            ),
+          ),
+        )
+        .id;
+  }
+
+  LocalId? _serializePbr(PhysicallyBasedMaterial m, SerializeContext context) {
+    final properties = <String, PropertyValue>{
+      'baseColor': _color(m.baseColorFactor),
+      'emissive': _color(m.emissiveFactor),
+      'metallic': DoubleValue(m.metallicFactor),
+      'roughness': DoubleValue(m.roughnessFactor),
+      'occlusionStrength': DoubleValue(m.occlusionStrength),
+      'normalScale': DoubleValue(m.normalScale),
+      'doubleSided': BoolValue(m.doubleSided),
+      'alphaMode': StringValue(m.alphaMode.name),
+      'alphaCutoff': DoubleValue(m.alphaCutoff),
+    };
+    _textureProperty(
+      properties,
+      'baseColorTexture',
+      m.baseColorTexture,
+      context,
+    );
+    _textureProperty(
+      properties,
+      'metallicRoughnessTexture',
+      m.metallicRoughnessTexture,
+      context,
+    );
+    _textureProperty(properties, 'normalTexture', m.normalTexture, context);
+    _textureProperty(
+      properties,
+      'occlusionTexture',
+      m.occlusionTexture,
+      context,
+    );
+    _textureProperty(properties, 'emissiveTexture', m.emissiveTexture, context);
+    return context.document
+        .addResource(
+          MaterialResource(
+            context.document.newId(),
+            type: 'physicallyBased',
+            properties: properties,
+          ),
+        )
+        .id;
+  }
+
+  LocalId? _serializeUnlit(UnlitMaterial m, SerializeContext context) {
+    final properties = <String, PropertyValue>{
+      'baseColor': _color(m.baseColorFactor),
+      'doubleSided': BoolValue(m.doubleSided),
+    };
+    _textureProperty(
+      properties,
+      'baseColorTexture',
+      m.baseColorTexture,
+      context,
+    );
+    return context.document
+        .addResource(
+          MaterialResource(
+            context.document.newId(),
+            type: 'unlit',
+            properties: properties,
+          ),
+        )
+        .id;
+  }
+
+  ColorValue _color(Vector4 v) => ColorValue(v.x, v.y, v.z, v.w);
+
+  void _textureProperty(
+    Map<String, PropertyValue> properties,
+    String key,
+    gpu.Texture? texture,
+    SerializeContext context,
+  ) {
+    if (texture == null) return;
+    final id = _serializeTexture(texture, context);
+    if (id == null) {
+      debugPrint('fscene: material texture "$key" not serialized');
+      return;
+    }
+    properties[key] = ResourceRefValue(id);
+  }
+
+  // A texture is recoverable only when the realizer produced it (origin tag);
+  // hand-uploaded textures carry no source to re-emit.
+  LocalId? _serializeTexture(gpu.Texture texture, SerializeContext context) {
+    final origin = resourceOrigin(texture);
     if (origin == null) return null;
-    return copyResourceInto(dest, origin.document, origin.resourceId);
+    return copyResourceInto(
+      context.document,
+      origin.document,
+      origin.resourceId,
+    );
   }
 }
 

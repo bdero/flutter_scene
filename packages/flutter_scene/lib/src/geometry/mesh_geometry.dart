@@ -147,6 +147,20 @@ class MeshGeometry extends UnskinnedGeometry {
   // CPU-side copies of every attribute stream, sized to the live vertex
   // count. Retained so a single-attribute update can re-pack the
   // interleaved buffer, which holds every attribute together.
+  Uint8List _packedVertexBytes = Uint8List(0);
+  Uint8List? _packedIndexBytes;
+  bool _packedIndices32Bit = false;
+
+  /// The packed interleaved vertex bytes (and packed index bytes with their
+  /// width) as last uploaded, retained so the scene serializer can re-emit
+  /// this geometry as payload chunks.
+  ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
+  get packedData => (
+    vertexBytes: _packedVertexBytes,
+    indexBytes: _packedIndexBytes,
+    indices32Bit: _packedIndices32Bit,
+  );
+
   Float32List _cpuPositions = Float32List(0);
   Float32List _cpuNormals = Float32List(0);
   Float32List _cpuTexCoords = Float32List(0);
@@ -278,7 +292,10 @@ class MeshGeometry extends UnskinnedGeometry {
       final packed = InterleavedLayoutAdapter.packIndices(indices);
       indexBytes = ByteData.sublistView(packed.bytes);
       indexType = packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
+      _packedIndexBytes = packed.bytes;
+      _packedIndices32Bit = packed.is32Bit;
     }
+    _packedVertexBytes = vertexBytes;
     uploadVertexData(
       ByteData.sublistView(vertexBytes),
       vertexCount,
@@ -297,6 +314,7 @@ class MeshGeometry extends UnskinnedGeometry {
       texCoords: _cpuTexCoords,
       colors: _cpuColors,
     );
+    _packedVertexBytes = bytes;
     final buffer = _vertexBuffer!;
     if (bytes.isNotEmpty) {
       buffer.overwrite(ByteData.sublistView(bytes));
@@ -310,6 +328,8 @@ class MeshGeometry extends UnskinnedGeometry {
 
   void _uploadIndices(List<int> indices) {
     final packed = InterleavedLayoutAdapter.packIndices(indices);
+    _packedIndexBytes = packed.bytes;
+    _packedIndices32Bit = packed.is32Bit;
     final indexType = packed.is32Bit
         ? gpu.IndexType.int32
         : gpu.IndexType.int16;

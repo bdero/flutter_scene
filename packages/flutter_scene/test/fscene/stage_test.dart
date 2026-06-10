@@ -168,5 +168,35 @@ void main() {
       // The block is untouched and no exception escaped.
       expect(p.rawBlock.getFloat32(16, Endian.host), 0.0);
     });
+
+    test('assigned values round-trip back to property values', () {
+      final p = params();
+      final overrides = <String, PropertyValue>{
+        'gloss': const DoubleValue(0.5),
+        'steps': const IntValue(4),
+        'dir': Vec3Value(Vector3(1, 2, 3)),
+        'tint': const ColorValue(0.1, 0.2, 0.3, 1.0),
+      };
+      applyFmatParameterOverrides(p, overrides);
+
+      final serialized = serializeFmatParameterOverrides(p.assignedValues);
+      expect((serialized['gloss'] as DoubleValue).value, 0.5);
+      expect((serialized['steps'] as IntValue).value, 4);
+      expect((serialized['dir'] as Vec3Value).value, Vector3(1, 2, 3));
+      final tint = serialized['tint'] as ColorValue;
+      expect(tint.r, closeTo(0.1, 1e-6));
+      expect(tint.a, 1.0);
+
+      // Defaults are not recorded; only explicit assignments serialize.
+      expect(serialized.keys.toSet(), overrides.keys.toSet());
+
+      // Re-applying the serialized form reproduces the same block bytes.
+      final replay = params();
+      applyFmatParameterOverrides(replay, serialized);
+      expect(
+        replay.rawBlock.buffer.asUint8List(),
+        p.rawBlock.buffer.asUint8List(),
+      );
+    });
   });
 }
