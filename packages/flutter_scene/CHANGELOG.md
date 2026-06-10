@@ -7,21 +7,34 @@
 * Added debug-mode hot reload for assets, driven by `SceneView`. Editing a
   `.fmat` updates the running scene in place (culling, blending, shading model,
   and parameter defaults, plus the GLSL body) with no app code, and re-exporting
-  a `.glb` swaps the model in place while preserving its transform and animation
-  playback. Load materials and models by source path (`loadFmatMaterial`,
-  `loadModel`) to participate; `loadModel` takes an optional `onReload` callback
-  for re-applying per-instance customizations after a model is swapped in.
-* Added DataAssets-backed GLB model import: `buildModels` can auto-discover
-  `assets/**/*.glb` and register the generated `.model` files as DataAssets, and
-  `loadModel` / `ModelRegistry` load them by source path. Requires Dart data
-  assets (`flutter config --enable-dart-data-assets`). Imported models are
-  cached, so repeated loads are cheap (`Node.fromAsset` returns a clone). The
-  `dart run flutter_scene:init` hook now wires up both `buildModels` and
-  `buildMaterials`. Both accept a `discoveryRoot` to auto-discover under a
-  directory other than `assets/`, or an explicit list to bypass discovery.
-* Added `Node.reloadFromTemplate`, `AnimationClip.rebind` / `AnimationPlayer.rebind`
-  (in-place model reload with animation re-binding), and `Mesh.clone` so cloned
-  model instances get independent materials.
+  a `.glb` (or editing a referenced prefab) patches the scene in place while
+  preserving node identity, transforms, and animation playback. Load materials
+  and scenes by source path (`loadFmatMaterial`, `loadScene`) to participate;
+  `loadScene` takes an optional `onReload` callback for re-applying
+  per-instance customizations after a scene is patched.
+* Added DataAssets-backed GLB import: `buildScenes` can auto-discover
+  `assets/**/*.glb` and register the generated `.fsceneb` packages as
+  DataAssets, and `loadScene` / `SceneRegistry` load them by source path.
+  Requires Dart data assets (`flutter config --enable-dart-data-assets`).
+  The composed document and its GPU resources are cached per scene, so
+  loading the same scene again instantiates a fresh node graph cheaply,
+  sharing those resources. The `dart run flutter_scene:init` hook wires up
+  both `buildScenes` and `buildMaterials`. Both accept a `discoveryRoot` to
+  auto-discover under a directory other than `assets/`, or an explicit list
+  to bypass discovery.
+* Added `AnimationClip.rebind` / `AnimationPlayer.rebind` (animation
+  re-binding across a hot reload, keeping playback state) and `Mesh.clone` so
+  cloned scene instances get independent materials.
+* Skinned geometry imported by `buildScenes` carries an offline-baked
+  pose-union bound (the union of every animated pose's extent), so skinned
+  content is frustum-culled soundly instead of being treated as always
+  visible.
+* **Breaking:** removed the `.model` format. `Node.fromAsset` and
+  `Node.fromFlatbuffer` are gone, along with the `fromFlatbuffer`
+  constructors on `Geometry`, `Material`, `Skin`, and `Animation`. Convert
+  `.glb` sources with the `buildScenes` build hook and load them by source
+  path with `loadScene`, or load glTF binaries at runtime with
+  `Node.fromGlbAsset` / `Node.fromGlbBytes` (no conversion step needed).
 * **Breaking:** `.fmat` materials are now auto-discovered under `assets/`
   (matching where `.glb` models are discovered) instead of `materials/`, and
   `loadFmatMaterial` resolves a material by its `.fmat` source path (for example
@@ -32,7 +45,7 @@
 * Added the `.fscene` / `.fsceneb` serialized scene format: author scenes as
   text or import them from `.glb` with `buildScenes`, and load them by source
   path with `loadScene` (with in-place hot reload, prefabs, and streaming).
-* Added optional texture compression for imported models and scenes, opt in
+* Added optional texture compression for imported scenes, opt in
   via `compressTextures` on the importers and build hooks. Images are stored
   as mipped, supercompressed KTX2 block payloads and transcoded at load to a
   format the device supports (BC1, ETC2, or ASTC, with an rgba8 fallback);
@@ -71,10 +84,10 @@
 * A `.fmat` that fails to compile during hot reload no longer fails the whole
   build: the last good shaders stay active and the compile error is reported
   in the console, both from the build hook and in the running app.
-* Build-hook conversions (models, scenes, and materials) are now cached by
-  input content, so a hook rerun for an unrelated edit skips unchanged
-  sources. Editing one `.fmat` no longer re-imports every model on hot
-  reload. Set `FLUTTER_SCENE_DISABLE_BUILD_CACHE` to always reconvert.
+* Build-hook conversions (scenes and materials) are now cached by input
+  content, so a hook rerun for an unrelated edit skips unchanged sources.
+  Editing one `.fmat` no longer re-imports every scene on hot reload. Set
+  `FLUTTER_SCENE_DISABLE_BUILD_CACHE` to always reconvert.
 
 ## 0.16.0
 

@@ -40,7 +40,7 @@ void main() {
       buildScenes(
         buildInput: input,
         buildOutput: outputBuilder,
-        assetMode: ModelAssetMode.dataAssetsIfAvailable,
+        assetMode: SceneAssetMode.dataAssetsIfAvailable,
       );
 
       final scenePath = temp.uri.resolve(

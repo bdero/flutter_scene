@@ -11,7 +11,7 @@ $hookStartMarker
     buildScenes(
       buildInput: input,
       buildOutput: output,
-      assetMode: ModelAssetMode.dataAssetsRequired,
+      assetMode: SceneAssetMode.dataAssetsRequired,
     );
     // Compile .fmat materials under assets/ as DataAssets, loadable by source
     // path with loadFmatMaterial (and hot-reloadable). A no-op when there are

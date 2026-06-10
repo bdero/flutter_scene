@@ -73,7 +73,7 @@ class GltfNode {
 /// name, so every unnamed node sharing the empty string would make all
 /// channels collide on the same node. Synthesizing a unique,
 /// index-derived name keeps channel binding correct. Both the offline
-/// `.model` emitter and the runtime GLB importer must call this so a
+/// scene emitter and the runtime GLB importer must call this so a
 /// model animates identically whichever path imported it.
 ///
 /// Named nodes are returned unchanged. The synthetic `node_<index>`

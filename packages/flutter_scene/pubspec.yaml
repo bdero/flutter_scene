@@ -23,9 +23,7 @@ dependencies:
   args: ^2.5.0
   collection: ^1.19.0
   data_assets: ^0.20.0
-  # Reader for the bundled GPU shim's shader-bundle flatbuffer. The importer's
-  # own glTF flatbuffers use a separate vendored copy under
-  # src/importer/third_party.
+  # Reader for the bundled GPU shim's shader-bundle flatbuffer.
   flat_buffers: ^25.9.23
   flutter:
     sdk: flutter
