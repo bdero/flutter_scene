@@ -18,11 +18,13 @@ import 'example_settings.dart';
 
 import 'hdr_image.dart';
 import 'stress_cache.dart';
-// The in-memory offline (ahead-of-time) glTF -> .model conversion, used by the
-// per-test importer toggle below. Reaching into flutter_scene's internals is
-// intentional here: this is a renderer stress test, not a typical consumer.
+// The in-memory offline (ahead-of-time) glTF -> .fsceneb conversion, used by
+// the per-test importer toggle below. Reaching into flutter_scene's internals
+// is intentional here: this is a renderer stress test, not a typical consumer.
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/realize/loader.dart';
 
 // Toggle these on to inspect scenes as they load. Both are off by
 // default; flip them locally when debugging a renderer regression in
@@ -32,10 +34,9 @@ const bool _kDebugTintMaterials = false;
 
 /// Which importer path a stress test exercises. [runtime] uses the direct GLB
 /// importer (`Node.fromGlbBytes` / `Node.fromGltfBytes`). [offline] runs the
-/// ahead-of-time glTF -> .model conversion in memory and loads the result via
-/// `Node.fromFlatbuffer`, the same conversion the `buildModels` build hook
-/// performs. Offline is `.glb` only (the offline importer has no multi-file
-/// `.gltf` path).
+/// ahead-of-time glTF -> .fsceneb conversion in memory and realizes the
+/// result, the same conversion the `buildScenes` build hook performs. Offline
+/// is `.glb` only (the offline importer has no multi-file `.gltf` path).
 enum _ImporterMode { runtime, offline }
 
 class _StressTest {
@@ -1330,10 +1331,10 @@ Future<Node> _importTest(
     );
     if (mode == _ImporterMode.offline) {
       // Exercise the offline (ahead-of-time) importer: run the same
-      // glTF -> .model conversion the build hook performs, in memory, then
-      // load the result. This is the path issue #134 lives in.
-      final modelBytes = importGlbToModelBytes(bytes);
-      return Node.fromFlatbuffer(ByteData.sublistView(modelBytes));
+      // glTF -> .fsceneb conversion the build hook performs, in memory, then
+      // realize the result. This is the path issue #134 lives in.
+      final scenebBytes = importGlbToFscenebBytes(bytes);
+      return loadFscenebBytesAsync(scenebBytes);
     }
     return Node.fromGlbBytes(bytes);
   }

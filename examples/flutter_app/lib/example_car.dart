@@ -63,9 +63,10 @@ class ExampleCarState extends State<ExampleCar> {
   }
 
   Future<void> _load() async {
-    // The model hot reloads in place; onReload re-grabs the door/wheel nodes
-    // (preserving slider positions) since the swap replaces the node instances.
-    final value = await loadModel(
+    // The scene hot reloads in place; onReload re-grabs the door/wheel nodes
+    // (preserving slider positions) since the patch replaces the node
+    // instances.
+    final value = await loadScene(
       'assets_src/fcar.glb',
       onReload: _onCarReloaded,
     );

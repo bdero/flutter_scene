@@ -24,10 +24,10 @@ class ExampleLogoState extends State<ExampleLogo> {
   }
 
   Future<void> _load() async {
-    // The model hot reloads in place: loadModel swaps a re-exported GLB into
+    // The scene hot reloads in place: loadScene patches a re-exported GLB into
     // this node automatically, and the logo holds only the root, so no reload
     // callback is needed.
-    final value = await loadModel('assets_src/flutter_logo_baked.glb');
+    final value = await loadScene('assets_src/flutter_logo_baked.glb');
     if (!mounted) {
       return;
     }

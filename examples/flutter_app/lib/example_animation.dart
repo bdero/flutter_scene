@@ -27,10 +27,10 @@ class ExampleAnimationState extends State<ExampleAnimation> {
   }
 
   Future<void> _load() async {
-    // The model hot reloads in place. The clips below are held by reference and
+    // The scene hot reloads in place. The clips below are held by reference and
     // re-bound automatically across a reload (their playback state and the
     // slider bindings survive), so no reload callback is needed.
-    final modelNode = await loadModel('assets_src/dash.glb');
+    final modelNode = await loadScene('assets_src/dash.glb');
     if (!mounted) {
       return;
     }

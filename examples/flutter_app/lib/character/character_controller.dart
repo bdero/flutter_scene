@@ -184,7 +184,7 @@ class CharacterController extends Component {
 
   @override
   Future<void> onLoad() async {
-    final model = await loadModel(modelSource);
+    final model = await loadScene(modelSource);
     final pivot = Node()..add(model);
     node.add(pivot);
     _pivot = pivot;

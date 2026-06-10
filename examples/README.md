@@ -14,4 +14,4 @@ cd examples/flutter_app
 flutter run --enable-flutter-gpu             # add `-d <device>` as needed
 ```
 
-The build hook (`hook/build.dart`) compiles shader bundles and imports the example glTF assets in `assets_src/` to the runtime `.model` format on the fly.
+The build hook (`hook/build.dart`) compiles shader bundles and imports the example glTF assets in `assets_src/` to `.fsceneb` scene packages on the fly.

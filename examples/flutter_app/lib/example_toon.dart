@@ -68,9 +68,9 @@ class _ExampleToonState extends State<ExampleToon> {
       );
     }
 
-    // The model hot reloads in place; onReload re-applies the toon material to
-    // the freshly swapped-in primitives.
-    final dash = await loadModel(
+    // The scene hot reloads in place; onReload re-applies the toon material to
+    // the freshly patched-in primitives.
+    final dash = await loadScene(
       'assets_src/dash.glb',
       onReload: _reapplyMaterial,
     );
