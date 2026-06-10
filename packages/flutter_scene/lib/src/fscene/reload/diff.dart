@@ -8,6 +8,8 @@
 /// the patch layer.
 library;
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/canonical.dart';
 import 'package:flutter_scene/src/fscene/json/property_json.dart';
@@ -45,7 +47,9 @@ class NodeChange {
   /// The component set or a component's properties changed.
   final bool components;
 
-  /// The bound skin changed.
+  /// The bound skin must be rebuilt: the skin id changed, the skin's content
+  /// (joints, skeleton, inverse-bind matrices) changed, or a joint node was
+  /// added or removed (so the live joint bindings are stale).
   final bool skin;
 }
 
@@ -56,6 +60,7 @@ class SceneDiff {
     required this.added,
     required this.removed,
     required this.changed,
+    this.animationsChanged = false,
   });
 
   /// Node ids present in the new document but not the old (to realize and
@@ -68,8 +73,15 @@ class SceneDiff {
   /// Nodes present in both whose content changed.
   final List<NodeChange> changed;
 
+  /// Whether the realized animations would differ: the animation pool changed
+  /// (an animation or its keyframe payloads), or a channel-target node was
+  /// added, removed, renamed, or had its rest transform changed (animations
+  /// bind by target name and capture bind poses from rest transforms).
+  final bool animationsChanged;
+
   /// Whether nothing changed.
-  bool get isEmpty => added.isEmpty && removed.isEmpty && changed.isEmpty;
+  bool get isEmpty =>
+      added.isEmpty && removed.isEmpty && changed.isEmpty && !animationsChanged;
 }
 
 /// Computes the node-id-keyed diff turning [oldDocument] into [newDocument].
@@ -92,6 +104,10 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
   final oldParents = _parents(oldDocument);
   final newParents = _parents(newDocument);
 
+  // Joints of these nodes are live Node objects that get recreated, so any
+  // skin binding them must be rebuilt even when its spec is unchanged.
+  final staleNodes = {...added, ...removed};
+
   final changed = <NodeChange>[];
   for (final id in newDocument.nodes.keys) {
     if (!oldIds.contains(id)) continue;
@@ -105,7 +121,13 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       layers: oldNode.layers != newNode.layers,
       reparented: oldParents[id] != newParents[id],
       components: !_componentsEqual(oldNode.components, newNode.components),
-      skin: oldNode.skin != newNode.skin,
+      skin: !_skinsEqual(
+        oldDocument,
+        newDocument,
+        oldNode,
+        newNode,
+        staleNodes,
+      ),
     );
     if (change.transform ||
         change.name ||
@@ -117,7 +139,103 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
     }
   }
 
-  return SceneDiff(added: added, removed: removed, changed: changed);
+  return SceneDiff(
+    added: added,
+    removed: removed,
+    changed: changed,
+    animationsChanged: _animationsChanged(
+      oldDocument,
+      newDocument,
+      staleNodes,
+      changed,
+    ),
+  );
+}
+
+bool _skinsEqual(
+  SceneDocument oldDocument,
+  SceneDocument newDocument,
+  NodeSpec oldNode,
+  NodeSpec newNode,
+  Set<LocalId> staleNodes,
+) {
+  if (oldNode.skin != newNode.skin) return false;
+  final skinId = newNode.skin;
+  if (skinId == null) return true;
+  final oldSkin = oldDocument.skins[skinId];
+  final newSkin = newDocument.skins[skinId];
+  if (oldSkin == null || newSkin == null) {
+    return identical(oldSkin, newSkin);
+  }
+  if (!listEquals(oldSkin.joints, newSkin.joints)) return false;
+  if (oldSkin.skeleton != newSkin.skeleton) return false;
+  if (newSkin.joints.any(staleNodes.contains)) return false;
+  return _payloadsEqual(
+    oldDocument.payload(oldSkin.inverseBindMatrices),
+    newDocument.payload(newSkin.inverseBindMatrices),
+  );
+}
+
+bool _animationsChanged(
+  SceneDocument oldDocument,
+  SceneDocument newDocument,
+  Set<LocalId> staleNodes,
+  List<NodeChange> changed,
+) {
+  if (oldDocument.animations.length != newDocument.animations.length) {
+    return true;
+  }
+  // Channel targets whose live node was replaced, renamed, or whose rest
+  // transform changed need a rebind (bindings resolve by name; bind poses
+  // come from rest transforms).
+  final retargeted = {
+    ...staleNodes,
+    for (final change in changed)
+      if (change.name || change.transform) change.id,
+  };
+  for (final id in newDocument.animations.keys) {
+    final oldAnimation = oldDocument.animations[id];
+    final newAnimation = newDocument.animations[id]!;
+    if (oldAnimation == null) return true;
+    if (oldAnimation.name != newAnimation.name) return true;
+    if (oldAnimation.channels.length != newAnimation.channels.length) {
+      return true;
+    }
+    for (var i = 0; i < newAnimation.channels.length; i++) {
+      final oldChannel = oldAnimation.channels[i];
+      final newChannel = newAnimation.channels[i];
+      if (oldChannel.target != newChannel.target ||
+          oldChannel.targetName != newChannel.targetName ||
+          oldChannel.property != newChannel.property) {
+        return true;
+      }
+      if (retargeted.contains(newChannel.target)) return true;
+      if (!_payloadsEqual(
+            oldDocument.payload(oldChannel.timeline),
+            newDocument.payload(newChannel.timeline),
+          ) ||
+          !_payloadsEqual(
+            oldDocument.payload(oldChannel.keyframes),
+            newDocument.payload(newChannel.keyframes),
+          )) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool _payloadsEqual(PayloadSpec? a, PayloadSpec? b) {
+  final aBytes = a?.bytes;
+  final bBytes = b?.bytes;
+  if (aBytes == null || bBytes == null) {
+    return identical(aBytes, bBytes);
+  }
+  if (aBytes.lengthInBytes != bBytes.lengthInBytes) return false;
+  for (var i = 0; i < aBytes.lengthInBytes; i++) {
+    if (aBytes[i] != bBytes[i]) return false;
+  }
+  return true;
 }
 
 Map<LocalId, LocalId?> _parents(SceneDocument doc) {

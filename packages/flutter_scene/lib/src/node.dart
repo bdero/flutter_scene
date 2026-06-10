@@ -988,6 +988,38 @@ base class Node implements SceneGraph {
     markBoundsDirty();
   }
 
+  /// Replaces this node's parsed animations with [animations] and re-binds any
+  /// [AnimationClip]s created from the old set (matched by name), keeping
+  /// their playback state.
+  ///
+  /// Used by scene hot reload when a reloaded scene's animations changed. The
+  /// re-bind recaptures each bound node's rest pose from its current local
+  /// transform; pass [restPoseOf] to supply the authored rest transform
+  /// instead, so a node frozen mid-playback does not have its animated pose
+  /// captured as the rest pose.
+  void reloadParsedAnimations(
+    List<Animation> animations, {
+    Matrix4? Function(Node node)? restPoseOf,
+  }) {
+    _animations
+      ..clear()
+      ..addAll(animations);
+    final player = _animationPlayer;
+    if (player == null) return;
+    if (restPoseOf != null) {
+      for (final animation in _animations) {
+        for (final channel in animation.channels) {
+          final nodeName = channel.bindTarget.nodeName;
+          final target = nodeName == name ? this : getChildByName(nodeName);
+          if (target == null) continue;
+          final pose = restPoseOf(target);
+          if (pose != null) target.localTransform = pose;
+        }
+      }
+    }
+    player.rebind(this, animations: _animations);
+  }
+
   /// Detaches this node from its parent in the scene graph.
   ///
   /// Once detached, this node is removed from its parent's list of children, effectively
