@@ -44,7 +44,8 @@ export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
 export 'src/hot_reload/hot_reload_coordinator.dart' show ModelReloadCallback;
 export 'src/importer/model_registry.dart' show ModelRegistry, loadModel;
-export 'src/importer/scene_registry.dart' show SceneRegistry, loadScene;
+export 'src/importer/scene_registry.dart'
+    show SceneRegistry, SceneReloadCallback, loadScene;
 
 export 'src/ambient_occlusion.dart';
 export 'src/asset_helpers.dart';
