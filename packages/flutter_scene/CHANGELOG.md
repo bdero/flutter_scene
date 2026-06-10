@@ -45,11 +45,21 @@
 * Added the `.fscene` / `.fsceneb` serialized scene format: author scenes as
   text or import them from `.glb` with `buildScenes`, and load them by source
   path with `loadScene` (with in-place hot reload, prefabs, and streaming).
+  Prefab expansion is deterministic, so an unchanged scene composes to the
+  same ids across sessions and platforms.
+* Added scene serialization: `serializeScene` captures a live node graph back
+  into a document (geometry, materials, skins, animations, visibility, and
+  hand-built meshes included), and `realizeStage` / `serializeStage` apply and
+  read back scene-level render settings (environment, skybox, sky lighting,
+  exposure, tone mapping). A realized scene round-trips through
+  `writeFsceneb` byte-stably.
 * Added optional texture compression for imported scenes, opt in
   via `compressTextures` on the importers and build hooks. Images are stored
   as mipped, supercompressed KTX2 block payloads and transcoded at load to a
-  format the device supports (BC1, ETC2, or ASTC, with an rgba8 fallback);
-  transcoding runs off the main isolate.
+  format the device supports; transcoding runs off the main isolate. Opaque
+  textures take BC1, ETC2 RGB8, or ASTC; textures with alpha take BC3, ETC2
+  RGBA8, or ASTC with per-block RGBA endpoints, with an rgba8 fallback
+  everywhere.
 * **Breaking:** fixed vertically inverted image-based lighting. The
   environment prefilter and the diffuse spherical-harmonics projection read
   source equirectangular images with the up hemisphere at the bottom, so every
@@ -88,6 +98,11 @@
   content, so a hook rerun for an unrelated edit skips unchanged sources.
   Editing one `.fmat` no longer re-imports every scene on hot reload. Set
   `FLUTTER_SCENE_DISABLE_BUILD_CACHE` to always reconvert.
+* Fixed progressive slowdown on the web backend during long sessions: render
+  passes leaked a GL framebuffer (and ran a synchronous completeness check)
+  every pass of every frame, and some passes re-linked GL programs every
+  frame. Framebuffers and linked programs are now cached, and per-draw
+  uniform uploads no longer allocate.
 
 ## 0.16.0
 
