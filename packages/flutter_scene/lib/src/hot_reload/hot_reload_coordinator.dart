@@ -64,6 +64,8 @@ class HotReloadCoordinator {
         entryName,
       ),
     );
+    _seedBytesHash(shaderBundleAssetKey, rootBundle, _shaderBundleHashes);
+    _seedSidecarHash(sidecarAssetKey);
   }
 
   /// Registers a scene [root] loaded from the `.fsceneb` asset [assetKey]. On
@@ -86,15 +88,52 @@ class HotReloadCoordinator {
     required Future<void> Function() onReload,
   }) {
     if (!kDebugMode) return;
+    final keys = dependencies ?? {assetKey};
     _scenes.add(
       _SceneRegistration(
         WeakReference<Node>(root),
         assetKey,
-        dependencies ?? {assetKey},
+        keys,
         bundle ?? rootBundle,
         onReload,
       ),
     );
+    for (final key in Set<String>.of(keys)) {
+      _seedBytesHash(key, bundle ?? rootBundle, _sceneHashes);
+    }
+  }
+
+  /// Seeds [store] with the hash of [key]'s content as of registration, so
+  /// the first reassemble only reloads assets that actually changed since
+  /// they were loaded (instead of treating every never-hashed asset as
+  /// changed and re-reading every registered scene and bundle).
+  final Set<String> _seeding = <String>{};
+
+  void _seedBytesHash(String key, AssetBundle bundle, Map<String, int> store) {
+    if (store.containsKey(key) || !_seeding.add(key)) return;
+    bundle
+        .load(key)
+        .then((data) {
+          store.putIfAbsent(
+            key,
+            () => _fnv1aBytes(
+              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+            ),
+          );
+        })
+        .catchError((_) {
+          // Not loadable right now; the first reassemble hashes it instead.
+        });
+  }
+
+  void _seedSidecarHash(String key) {
+    if (_sidecarHashes.containsKey(key) || !_seeding.add(key)) return;
+    rootBundle
+        .loadString(key)
+        .then((contents) {
+          _sidecarHashes.putIfAbsent(key, () => _fnv1a(contents));
+        })
+        .catchError((_) {});
   }
 
   /// Called by every mounted `SceneView` on hot reload. Refreshes changed
@@ -196,9 +235,11 @@ class HotReloadCoordinator {
         }
         evictPipelinesForShaders(affected);
         debugPrint('flutter_scene: hot-reloaded shader bundle "$key"');
-      } catch (_) {
-        // The running engine may predate in-place shader reload, or the bytes
-        // were briefly unavailable; the sidecar refresh below still runs.
+      } catch (e) {
+        // The running engine may predate in-place shader reload, or the
+        // reloaded source failed to compile; the sidecar refresh below still
+        // runs either way.
+        debugPrint('flutter_scene: shader bundle reload failed for "$key": $e');
       }
     }
   }

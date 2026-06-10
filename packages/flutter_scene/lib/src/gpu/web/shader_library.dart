@@ -208,6 +208,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
   final bundle = fb.ShaderBundle(
     data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
   );
+  var recompiled = 0;
   for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
     final name = entry.name;
     final backend = entry.openglEs;
@@ -216,8 +217,12 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
       final shader = reference.target?._shaders[name];
       if (shader == null) continue;
       ShaderLibrary._populateFromBackend(shader, backend);
+      recompiled++;
     }
   }
+  debugPrint(
+    'flutter_scene (web): recompiled $recompiled shader(s) from "$assetKey"',
+  );
 }
 
 /// Compile a map of inline GLSL ES 1.00 sources into a ShaderLibrary.
