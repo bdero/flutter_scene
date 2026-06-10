@@ -57,6 +57,10 @@ base class RenderPipeline {
   /// GL uniform locations keyed by "structName.memberName".
   final Map<String, web.WebGLUniformLocation?> _memberLocations = {};
 
+  /// Member locations per struct type name, parallel to the struct's member
+  /// list, so the per-draw uniform bind avoids building lookup strings.
+  final Map<String, List<web.WebGLUniformLocation?>> _structLocations = {};
+
   /// Texture unit assigned to each reflected sampler name.
   final Map<String, int> _samplerUnits = {};
 
@@ -80,13 +84,16 @@ base class RenderPipeline {
         // callers use its type name. Look up via instance, key by type.
         final instance =
             shader._structInstanceNames[struct.name] ?? struct.name;
+        final locations = <web.WebGLUniformLocation?>[];
         for (final m in struct.members) {
           final glName = '$instance.${m.name}';
           final loc =
               gl.getUniformLocation(_program, glName) ??
               gl.getUniformLocation(_program, '$glName[0]');
           _memberLocations['${struct.name}.${m.name}'] = loc;
+          locations.add(loc);
         }
+        _structLocations[struct.name] = locations;
       }
       for (final tex in shader.textureBindings) {
         if (_samplerUnits.containsKey(tex.name)) continue;

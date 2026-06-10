@@ -358,72 +358,80 @@ base class RenderPass {
     if (struct == null) return;
 
     final gl = _gpuContext._gl;
-    final staging = bufferView.buffer._staging;
+    final floats = bufferView.buffer._stagingFloats;
     final base = bufferView.offsetInBytes;
-    for (final member in struct.members) {
-      final loc = pipeline._memberLocations['${struct.name}.${member.name}'];
+    final locations = pipeline._structLocations[struct.name];
+    for (var i = 0; i < struct.members.length; i++) {
+      final loc = locations?[i];
       if (loc == null) continue; // optimized out by the linker
-      _setUniformMember(gl, loc, member, staging, base + member.offsetInBytes);
+      final member = struct.members[i];
+      _setUniformMember(gl, loc, member, floats, base + member.offsetInBytes);
     }
   }
+
+  // Scratch for the rare matrix repack; grows to the largest repacked member
+  // and is reused across draws.
+  static Float32List _matrixScratch = Float32List(64);
 
   void _setUniformMember(
     web.WebGL2RenderingContext gl,
     web.WebGLUniformLocation loc,
     _UniformMember member,
-    Uint8List staging,
+    Float32List floats,
     int byteOffset,
   ) {
+    final floatOffset = byteOffset >> 2;
     if (member.columns > 1) {
       // Matrix, possibly an array. In std140 each matrix column is aligned
       // to 16 bytes (a mat3 column is a vec3 padded to vec4); GL's
-      // uniformMatrix*fv wants tightly-packed columns, so repack. The matrix
-      // count comes from the total size, not arrayElements (which Impeller
+      // uniformMatrix*fv wants tightly-packed columns. The matrix count
+      // comes from the total size, not arrayElements (which Impeller
       // overloads to mean column count for a standalone matrix).
       const columnStride = 16;
       final cols = member.columns;
       final rows = member.vecSize;
       final count = member.totalSizeInBytes ~/ (cols * columnStride);
-      final tight = Float32List(count * cols * rows);
+      if (rows * 4 == columnStride) {
+        // mat4 columns are already tight in std140; upload straight from the
+        // staging view with no copy (the overwhelmingly common case).
+        gl.uniformMatrix4fv(loc, false, floats.toJS, floatOffset, count * 16);
+        return;
+      }
+      final tightLength = count * cols * rows;
+      if (_matrixScratch.length < tightLength) {
+        _matrixScratch = Float32List(tightLength);
+      }
+      final tight = _matrixScratch;
       var w = 0;
       for (var m = 0; m < count; m++) {
         for (var c = 0; c < cols; c++) {
-          final colBytes = byteOffset + (m * cols + c) * columnStride;
-          final col = staging.buffer.asFloat32List(
-            staging.offsetInBytes + colBytes,
-            rows,
-          );
+          final col = floatOffset + (m * cols + c) * (columnStride >> 2);
           for (var r = 0; r < rows; r++) {
-            tight[w++] = col[r];
+            tight[w++] = floats[col + r];
           }
         }
       }
       switch (cols) {
         case 2:
-          gl.uniformMatrix2fv(loc, false, tight.toJS);
+          gl.uniformMatrix2fv(loc, false, tight.toJS, 0, tightLength);
         case 3:
-          gl.uniformMatrix3fv(loc, false, tight.toJS);
-        case 4:
-          gl.uniformMatrix4fv(loc, false, tight.toJS);
+          gl.uniformMatrix3fv(loc, false, tight.toJS, 0, tightLength);
       }
     } else {
       // Vector / scalar, possibly an array. vec4 arrays are tightly packed
       // (16-byte elements); vec3/vec2/scalar arrays would have std140
       // padding, but flutter_scene's uniforms don't use those.
       final count = member.arrayElements == 0 ? 1 : member.arrayElements;
-      final floats = staging.buffer.asFloat32List(
-        staging.offsetInBytes + byteOffset,
-        member.vecSize * count,
-      );
+      final length = member.vecSize * count;
       switch (member.vecSize) {
         case 1:
-          gl.uniform1fv(loc, floats.toJS);
+          gl.uniform1fv(loc, floats.toJS, floatOffset, length);
         case 2:
-          gl.uniform2fv(loc, floats.toJS);
+          gl.uniform2fv(loc, floats.toJS, floatOffset, length);
         case 3:
-          gl.uniform3fv(loc, floats.toJS);
+          gl.uniform3fv(loc, floats.toJS, floatOffset, length);
         case 4:
-          gl.uniform4fv(loc, floats.toJS);
+          gl.uniform4fv(loc, floats.toJS, floatOffset, length);
       }
     }
   }

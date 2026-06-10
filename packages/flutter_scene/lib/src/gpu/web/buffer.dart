@@ -39,6 +39,13 @@ base class DeviceBuffer {
 
   final GpuContext _gpuContext;
   late final Uint8List _staging;
+
+  /// A float view over the whole staging buffer, used by the uniform upload
+  /// path with srcOffset/srcLength so no per-draw views are created.
+  late final Float32List _stagingFloats = _staging.buffer.asFloat32List(
+    _staging.offsetInBytes,
+    _staging.lengthInBytes >> 2,
+  );
   web.WebGLBuffer? _glElementBuffer;
   web.WebGLBuffer? _glOtherBuffer;
   bool _valid = false;
