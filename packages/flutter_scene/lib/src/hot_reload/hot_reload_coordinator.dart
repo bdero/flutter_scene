@@ -227,6 +227,16 @@ class HotReloadCoordinator {
       } catch (_) {
         continue;
       }
+      // The build hook leaves this marker when a .fmat failed to compile and
+      // the last good shaders were kept; surface it in the console so the
+      // silent "nothing changed" reload is explained.
+      final compileError = sidecar['#compile_error'];
+      if (compileError is String) {
+        debugPrint(
+          'flutter_scene: a .fmat shader failed to compile; the last good '
+          'shaders are still active:\n$compileError',
+        );
+      }
       for (final r in entry.value) {
         final material = r.material.target;
         if (material == null) continue;
