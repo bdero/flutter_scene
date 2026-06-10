@@ -607,12 +607,15 @@ LocalId? _buildTexture(
     if (decoded != null) {
       final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
       final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
-      // TODO(texture-compression): pick quality/sRGB per material role (base
-      // color is sRGB; normal/metallic-roughness/occlusion are linear) once the
-      // texture's slot is known here.
+      // sRGB needs no per-role handling here: the engine linearizes sRGB in
+      // the fragment shaders (SRGBToLinear on the sampled base color), so
+      // every texture uploads as a non-sRGB format regardless of role and
+      // the compressed path matches the uncompressed one.
       // TODO(texture-compression): set generateMips once the GPU upload uploads
       // the full chain (see compressed_texture.dart); today the upload uses the
-      // base level only, so storing mips would just bloat the container.
+      // base level only, so storing mips would just bloat the container. Mip
+      // downsampling should then be gamma-correct for base-color (sRGB) roles,
+      // which is where knowing the texture's material slot becomes relevant.
       final bytes = compressTextures
           ? encodeImageToKtx2Bytes(
               raw,

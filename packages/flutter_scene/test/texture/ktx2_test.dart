@@ -166,4 +166,27 @@ void main() {
       );
     });
   });
+
+  test('the image encoder writes a structured basic DFD', () {
+    final dfd = buildBasicDataFormatDescriptor(bytesPerBlock: 16);
+    final data = ByteData.sublistView(dfd);
+    expect(data.getUint32(0, Endian.little), dfd.length); // dfdTotalSize
+    expect(data.getUint32(4, Endian.little), 0); // Khronos basic
+    expect(data.getUint32(8, Endian.little) & 0xFFFF, 2); // version
+    expect(data.getUint32(8, Endian.little) >> 16, 24); // block size
+    expect(dfd[16], 3); // texel block width - 1
+    expect(dfd[17], 3); // texel block height - 1
+    expect(dfd[20], 16); // bytesPlane0
+
+    // And it round-trips through the container opaquely.
+    final texture = Ktx2Texture(
+      vkFormat: 0,
+      pixelWidth: 4,
+      pixelHeight: 4,
+      dataFormatDescriptor: dfd,
+      levels: [Ktx2Level(data: Uint8List(16), uncompressedByteLength: 16)],
+    );
+    final restored = readKtx2(writeKtx2(texture));
+    expect(restored.dataFormatDescriptor, dfd);
+  });
 }
