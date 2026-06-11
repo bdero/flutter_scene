@@ -1,5 +1,12 @@
 ## 0.18.0
 
+* BREAKING: the package exports are now explicit show lists; implementation
+  details that previously leaked from wholesale exports (the scene encoder,
+  render-graph texture pooling, environment-prefilter internals, animation
+  channel/resolver plumbing, and the fscene built-in codec classes) are no
+  longer exported. If something you used disappeared, please file an issue,
+  re-exporting an accidentally hidden symbol is a quick patch release.
+
 * Added scene raycasting: `Scene.raycast` / `Scene.raycastAll` cast a ray
   through the rendered meshes (no colliders or physics setup) and return
   typed hits with the distance, world point, geometric normal, barycentric

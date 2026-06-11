@@ -23,17 +23,90 @@ export 'src/fscene/json/fscene_json.dart'
         FsceneFormatException,
         FsceneVersionException,
         FsceneUnsupportedFeatureException;
-export 'src/fscene/property_value.dart';
-export 'src/fscene/realize/builtin_codecs.dart';
+export 'src/fscene/property_value.dart'
+    show
+        AssetRef,
+        BoolValue,
+        ColorValue,
+        DoubleValue,
+        IntValue,
+        ListValue,
+        MapValue,
+        Matrix4Value,
+        NodeRefValue,
+        PropertyValue,
+        QuaternionValue,
+        ResourceRefValue,
+        StringValue,
+        Vec2Value,
+        Vec3Value,
+        Vec4Value;
+export 'src/fscene/realize/builtin_codecs.dart'
+    show registerBuiltinComponentCodecs;
 export 'src/fscene/reload/diff.dart' show diffScene, SceneDiff, NodeChange;
 export 'src/fscene/reload/reload.dart' show reloadScene;
-export 'src/fscene/realize/component_codec.dart';
-export 'src/fscene/realize/loader.dart';
-export 'src/fscene/realize/property_read.dart';
-export 'src/fscene/realize/realize.dart';
-export 'src/fscene/realize/resource_realizer.dart';
+export 'src/fscene/realize/component_codec.dart'
+    show
+        ComponentCodec,
+        FsceneComponentRegistry,
+        RealizeContext,
+        SerializeContext;
+export 'src/fscene/realize/loader.dart'
+    show
+        loadFsceneAsset,
+        loadFsceneString,
+        loadFscenebAsset,
+        loadFscenebBytes,
+        loadFscenebBytesAsync;
+export 'src/fscene/realize/property_read.dart'
+    show readBool, readColor, readDouble, readInt, readString, readVec3;
+export 'src/fscene/realize/realize.dart'
+    show
+        defaultComponentRegistry,
+        realizeScene,
+        realizeSceneAsync,
+        serializeScene;
+export 'src/fscene/realize/resource_realizer.dart' show ResourceRealizer;
 export 'src/fscene/realize/stage.dart' show realizeStage, serializeStage;
-export 'src/fscene/scene_document.dart';
-export 'src/fscene/specs.dart';
+export 'src/fscene/scene_document.dart' show SceneDocument;
+export 'src/fscene/specs.dart'
+    show
+        AnimationChannelSpec,
+        AnimationProperty,
+        AnimationSpec,
+        AssetEnvironment,
+        BoundsSpec,
+        ComponentSpec,
+        CuboidGeometrySpec,
+        EmptyEnvironment,
+        EnvironmentSkySpec,
+        EnvironmentSpec,
+        FmatSkySpec,
+        GeometryResource,
+        GradientSkySpec,
+        Handedness,
+        LoadPolicy,
+        MaterialResource,
+        MatrixTransform,
+        NodeSpec,
+        PayloadEncoding,
+        PayloadSpec,
+        PhysicalSkySpec,
+        PlaneGeometrySpec,
+        PrefabInstanceSpec,
+        ProceduralGeometry,
+        PropertyOverride,
+        ResourceSpec,
+        SkinSpec,
+        SkyEnvironmentSpec,
+        SkySourceSpec,
+        SkyboxSpec,
+        SphereGeometrySpec,
+        StageMetadata,
+        StudioEnvironment,
+        TextureResource,
+        TransformSpec,
+        TrsTransform,
+        UpAxis;
 export 'src/fscene/stream/stream.dart'
     show loadSubtree, unloadSubtree, isLazySubtree, isSubtreeLoaded;
