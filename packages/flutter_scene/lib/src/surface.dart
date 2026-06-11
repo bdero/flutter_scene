@@ -50,6 +50,17 @@ class Surface {
   /// the view's previous call.
   gpu.Texture getNextSwapchainColorTexture(Size size, [int viewIndex = 0]) =>
       _view(viewIndex).nextSwapchainColor(size);
+
+  /// The color texture most recently issued for [viewIndex] (the previous
+  /// frame's output once the next frame begins), or null before the first
+  /// frame or after a resize.
+  ///
+  /// Sampling it from a material creates a one-frame feedback loop, the
+  /// scene's own output appearing inside the scene. The ring guarantees the
+  /// returned texture is not the one being rendered this frame, so reading
+  /// it while the current frame draws is safe.
+  gpu.Texture? lastSwapchainColorTexture([int viewIndex = 0]) =>
+      _view(viewIndex)._lastIssued;
 }
 
 /// One view's swapchain color ring plus its transient texture pool. View 0
@@ -62,6 +73,7 @@ class _ViewSurface {
   final List<gpu.Texture> _swapchainColors = [];
   int _cursor = 0;
   Size _previousSize = const Size(0, 0);
+  gpu.Texture? _lastIssued;
 
   gpu.Texture nextSwapchainColor(Size size) {
     pool.beginFrame();
@@ -70,6 +82,7 @@ class _ViewSurface {
       _swapchainColors.clear();
       pool.clear();
       _previousSize = size;
+      _lastIssued = null;
     }
     if (_cursor == _swapchainColors.length) {
       _swapchainColors.add(
@@ -84,6 +97,7 @@ class _ViewSurface {
     }
     final result = _swapchainColors[_cursor];
     _cursor = (_cursor + 1) % Surface._maxFramesInFlight;
+    _lastIssued = result;
     return result;
   }
 }

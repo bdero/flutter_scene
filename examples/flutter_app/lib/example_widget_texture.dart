@@ -24,6 +24,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   Node? _panel;
   PerspectiveCamera? _camera;
   bool _dragging = false;
+  bool _recursive = false;
 
   static final vm.Vector3 _panelExtents = vm.Vector3(3.2, 2.0, 0.2);
 
@@ -158,6 +159,19 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                 _panel?.localTransform = vm.Matrix4.rotationY(
                   elapsed.inMicroseconds / 4e6,
                 );
+                // Recursive mode samples the scene's own previous frame, a
+                // one-frame feedback loop (an infinite mirror as the camera
+                // orbits). Otherwise the panel shows the live widget capture.
+                final material = _material;
+                if (material != null) {
+                  final feedback = _recursive
+                      ? scene.surface.lastSwapchainColorTexture()
+                      : null;
+                  material.baseColorTexture =
+                      feedback ??
+                      _widgetTexture.texture ??
+                      material.baseColorTexture;
+                }
               },
             ),
           ),
@@ -169,6 +183,23 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           height: 300,
           pixelRatio: 2.0,
           child: const _PanelContent(),
+        ),
+        Positioned(
+          right: 8,
+          bottom: 8,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'recursive',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              Switch(
+                value: _recursive,
+                onChanged: (value) => setState(() => _recursive = value),
+              ),
+            ],
+          ),
         ),
         // Capture diagnostics.
         Positioned(
