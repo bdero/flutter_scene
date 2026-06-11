@@ -37,7 +37,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
 
   PreprocessedMaterial? _material;
   WidgetComponent? _component;
-  Node? _panel;
   double _elapsedSeconds = 0.0;
 
   @override
@@ -89,7 +88,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
         ),
       ),
     );
-    _panel = panel;
     scene.add(panel);
     setState(() {});
   }
@@ -149,9 +147,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                   exampleSettings.applyTo(scene);
                   _elapsedSeconds = elapsed.inMicroseconds / 1e6;
                   _material?.parameters.setFloat('time', _elapsedSeconds);
-                  _panel?.localTransform = vm.Matrix4.rotationY(
-                    _elapsedSeconds / 6,
-                  );
                   // Recursive mode samples the scene's own previous frame,
                   // a one-frame feedback loop through the CRT filter.
                   final material = _material;
@@ -233,7 +228,9 @@ Geometry _buildCrtScreen({
       positions[v * 3] = nx * width / 2;
       positions[v * 3 + 1] = ny * height / 2;
       positions[v * 3 + 2] = bulge * dome;
-      texCoords[v * 2] = (nx + 1) / 2;
+      // u = 0 at +x, matching the engine's hand-built front-face
+      // convention (see the component quad).
+      texCoords[v * 2] = (1 - nx) / 2;
       texCoords[v * 2 + 1] = (1 - ny) / 2; // v = 0 at the top
     }
   }
