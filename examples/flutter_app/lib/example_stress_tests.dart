@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
+import 'quake_camera.dart';
 
 import 'hdr_image.dart';
 import 'stress_cache.dart';
@@ -433,22 +434,10 @@ class _StressSceneState extends State<_StressScene> {
   final Scene _scene = Scene();
   final FocusNode _focusNode = FocusNode();
 
-  // FPS-style camera state. `_yaw` rotates about world +Y; `_pitch`
-  // rotates the look direction up/down. At yaw=0, pitch=0 forward
-  // points down -Z.
-  vm.Vector3 _camPos = vm.Vector3(0, 2, 5);
-  double _yaw = 0;
-  double _pitch = 0;
-  static const _pitchLimit = 1.5; // ~86 deg
-
-  // Movement speed (units/sec) scaled to the model size so the same
-  // controls feel right for a 10-cm bottle and a 100-m architectural
-  // scene. Set at load-time from the model's AABB radius.
-  double _moveSpeed = 3.0;
-
-  // Currently-held movement keys (read each frame). Mouse delta is
-  // applied immediately on drag.
-  final Set<LogicalKeyboardKey> _pressed = {};
+  // FPS-style free-look camera. Speed is scaled to the model size at load
+  // time so the same controls feel right for a 10-cm bottle and a 100-m
+  // architectural scene.
+  final QuakeCamera _quake = QuakeCamera()..speed = 3.0;
 
   // Load state. `null` total means the server didn't send a Content-Length
   // — the screen still shows downloaded bytes so users see motion.
@@ -539,11 +528,13 @@ class _StressSceneState extends State<_StressScene> {
       // the camera in front of the model rather than behind it. Yaw=pi
       // turns the camera around to look back at the model; pitch tilts
       // down so it stays centered.
-      _camPos = vm.Vector3(lookAt.x, height, lookAt.z - distance);
-      final dir = (lookAt - _camPos)..normalize();
-      _yaw = pi;
-      _pitch = asin(dir.y).clamp(-_pitchLimit, _pitchLimit);
-      _moveSpeed = max(radius * 0.5, 0.5);
+      _quake.position = vm.Vector3(lookAt.x, height, lookAt.z - distance);
+      final dir = (lookAt - _quake.position)..normalize();
+      _quake.yaw = pi;
+      _quake.pitch = asin(
+        dir.y,
+      ).clamp(-QuakeCamera.pitchLimit, QuakeCamera.pitchLimit);
+      _quake.speed = max(radius * 0.5, 0.5);
 
       // Kick off the first matching animation if requested.
       final wantedAnim = widget.test.animationName;
@@ -770,75 +761,8 @@ class _StressSceneState extends State<_StressScene> {
     super.dispose();
   }
 
-  // Forward unit vector from yaw/pitch. Yaw=0/pitch=0 → (0, 0, -1).
-  vm.Vector3 _forward() {
-    final cp = cos(_pitch);
-    return vm.Vector3(-sin(_yaw) * cp, sin(_pitch), -cos(_yaw) * cp);
-  }
-
-  // Strafe-right unit vector (yaw only — strafing ignores pitch so we
-  // don't drift into/out of the floor when looking down).
-  vm.Vector3 _right() => vm.Vector3(cos(_yaw), 0, -sin(_yaw));
-
-  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
-    final key = event.logicalKey;
-    final tracked = _isMovementKey(key);
-    if (!tracked) return KeyEventResult.ignored;
-    if (event is KeyDownEvent || event is KeyRepeatEvent) {
-      _pressed.add(key);
-    } else if (event is KeyUpEvent) {
-      _pressed.remove(key);
-    }
-    return KeyEventResult.handled;
-  }
-
-  bool _isMovementKey(LogicalKeyboardKey k) =>
-      k == LogicalKeyboardKey.keyW ||
-      k == LogicalKeyboardKey.keyA ||
-      k == LogicalKeyboardKey.keyS ||
-      k == LogicalKeyboardKey.keyD ||
-      k == LogicalKeyboardKey.keyQ ||
-      k == LogicalKeyboardKey.keyE ||
-      k == LogicalKeyboardKey.shiftLeft ||
-      k == LogicalKeyboardKey.shiftRight;
-
   void _onPanUpdate(DragUpdateDetails d) {
-    const sensitivity = 0.005;
-    setState(() {
-      // Horizontal: drag-the-world (drag right turns camera left).
-      // Vertical: FPS convention (drag down looks down).
-      _yaw += d.delta.dx * sensitivity;
-      _pitch -= d.delta.dy * sensitivity;
-      _pitch = _pitch.clamp(-_pitchLimit, _pitchLimit);
-    });
-  }
-
-  // Integrates camera position from currently-held keys. Called each frame
-  // from SceneView's tick; dt is clamped to keep a dropped frame or focus
-  // pause from teleporting the camera.
-  void _updateCamera(double deltaSeconds) {
-    final dt = deltaSeconds.clamp(0.0, 0.1);
-    if (_pressed.isEmpty) return;
-    var velocity = vm.Vector3.zero();
-    if (_pressed.contains(LogicalKeyboardKey.keyW)) velocity += _forward();
-    if (_pressed.contains(LogicalKeyboardKey.keyS)) velocity -= _forward();
-    // D moves the camera to its own right (toward what's on the right
-    // side of the screen). A moves left.
-    if (_pressed.contains(LogicalKeyboardKey.keyD)) velocity -= _right();
-    if (_pressed.contains(LogicalKeyboardKey.keyA)) velocity += _right();
-    if (_pressed.contains(LogicalKeyboardKey.keyE)) {
-      velocity += vm.Vector3(0, 1, 0);
-    }
-    if (_pressed.contains(LogicalKeyboardKey.keyQ)) {
-      velocity -= vm.Vector3(0, 1, 0);
-    }
-    if (velocity.length2 == 0) return;
-    velocity.normalize();
-    final boosted =
-        _pressed.contains(LogicalKeyboardKey.shiftLeft) ||
-        _pressed.contains(LogicalKeyboardKey.shiftRight);
-    final speed = _moveSpeed * (boosted ? 4.0 : 1.0);
-    _camPos += velocity * (speed * dt);
+    setState(() => _quake.look(d.delta));
   }
 
   @override
@@ -849,7 +773,7 @@ class _StressSceneState extends State<_StressScene> {
           Focus(
             focusNode: _focusNode,
             autofocus: true,
-            onKeyEvent: _onKey,
+            onKeyEvent: _quake.onKeyEvent,
             child: MouseRegion(
               cursor: SystemMouseCursors.move,
               child: GestureDetector(
@@ -858,12 +782,11 @@ class _StressSceneState extends State<_StressScene> {
                 onPanUpdate: _onPanUpdate,
                 child: SceneView(
                   _scene,
-                  cameraBuilder: (elapsed) => PerspectiveCamera(
-                    position: _camPos,
-                    target: _camPos + _forward(),
-                  ),
+                  cameraBuilder: (elapsed) {
+                    _quake.move(elapsed.inMicroseconds / 1e6);
+                    return _quake.camera;
+                  },
                   onTick: (elapsed, deltaSeconds) {
-                    _updateCamera(deltaSeconds);
                     exampleSettings.applyTo(_scene);
                   },
                 ),

@@ -1,4 +1,3 @@
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
@@ -27,7 +26,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   // on the widget panel forwards to the widgets instead.
   final QuakeCamera _quakeCamera = QuakeCamera(
     position: vm.Vector3(0, 1.2, 4.5),
-    yaw: pi,
     pitch: -0.15,
   )..speed = 6.0;
   PerspectiveCamera? _camera;
