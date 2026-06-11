@@ -1,3 +1,46 @@
+## 0.18.0
+
+* Added scene raycasting: `Scene.raycast` / `Scene.raycastAll` cast a ray
+  through the rendered meshes (no colliders or physics setup) and return
+  typed hits with the distance, world point, geometric normal, barycentric
+  weights, triangle index, and the texture coordinate interpolated from the
+  vertex data. Filtering: invisible subtrees are skipped by default, plus a
+  layer mask, the new `Node.raycastable` flag (geometry that renders but is
+  transparent to rays), and an optional predicate. Distinct from the physics
+  queries, which test collision shapes.
+* Added `WidgetComponent`: a live widget subtree on a scene surface. The
+  widget stays fully interactive (state, tickers, animations) while
+  `SceneView` hosts it invisibly and streams its visual output into a
+  texture. Zero-config use creates an aspect-correct alpha-blended quad;
+  bring your own geometry or material (with implicit binding for the
+  built-in materials or a `bind` callback), or use `bindOnly` to texture a
+  surface that already exists, such as a screen inside an imported model.
+  Captures follow a `WidgetUpdatePolicy` (on repaint by default, interval,
+  or manual) and dialogs and dropdowns render inside the texture.
+* Added automatic widget-surface input: platform pointer events raycast into
+  the scene, and presses, drags, and scrolls forward into the widgets at the
+  hit UV, on any geometry, blocked by occluding geometry, with pointer
+  capture keeping drags alive at surface edges. Opt out per component with
+  `WidgetInput.manual`. `SceneView.debugWidgetInput` overlays the pointer's
+  hit node, UV, and distance for input debugging.
+* Added `ScenePointer` for programmatic input (a crosshair, a gamepad-driven
+  cursor): point it along any ray or screen position, then `press`,
+  `release`, and `scroll`. Occlusion filtering (what blocks the ray) and
+  interaction filtering (which surfaces respond) are independent masks, and
+  multiple pointers carry independent capture and hover state.
+* Added `WidgetTexture` (the low-level capture primitive behind
+  `WidgetComponent`) and `Camera.screenPointToRay` (screen position to world
+  ray, for picking and custom input).
+* Added `UnlitMaterial.alphaMode` (opaque or blend), routing unlit surfaces
+  through the depth-sorted translucent pass.
+* Added `Surface.lastSwapchainColorTexture`, the previous frame's color
+  texture, safe to sample from materials for one-frame feedback effects.
+* Fixed vertically flipped texturing on the cuboid and wedge primitives:
+  their face UVs put v = 0 on the bottom edge, while the engine convention
+  (and imported models) put v = 0 at the top of the image. Textures on these
+  primitives render right side up now; scenes that compensated for the flip
+  will see the change.
+
 ## 0.17.0
 
 * Added `SceneView`, a widget that renders a `Scene` and drives its per-frame
