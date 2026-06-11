@@ -1,14 +1,12 @@
 <p align="center">
-  <a href="https://github.com/bdero/flutter_scene">
-    <img alt="Flutter Scene" width="200px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DashColorTransparent.svg">
+  <a href="https://fscene.dev">
+    <img alt="Flutter Scene" width="220px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DashColorTransparent.svg">
   </a>
 </p>
 
-<h3>
-<p align="center">
-Scene: 3D library for Flutter
-</p>
-</h3>
+<h1 align="center">Scene</h1>
+
+<p align="center"><b>A realtime 3D engine for Flutter</b></p>
 
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
@@ -20,7 +18,7 @@ Scene is a general purpose realtime 3D rendering library for Flutter. It started
 
 The primary goal of this project is to make performant cross platform 3D easy in Flutter.
 
-<p align="center"><a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> — <a href="https://github.com/bdero/flutter-scene-example">Example Game</a> — <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> — <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
+<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://github.com/bdero/flutter-scene-example">Example Game</a> · <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
 
 ---
 
