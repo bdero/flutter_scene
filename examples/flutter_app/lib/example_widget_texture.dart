@@ -26,8 +26,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   bool _dragging = false;
   bool _recursive = false;
 
-  static final vm.Vector3 _panelExtents = vm.Vector3(3.2, 2.0, 0.2);
-
   @override
   void initState() {
     super.initState();
@@ -63,13 +61,14 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     }
   }
 
-  /// Maps a tap inside the view to texture UV on the panel's front face, or
-  /// null when the ray misses. The ray is built by unprojecting the tap
-  /// through the camera and intersected in the panel's local space.
+  /// Maps a tap inside the view to texture UV on the panel, or null when the
+  /// ray misses or other geometry is in front. The tap is unprojected
+  /// through the camera into a world ray; `scene.raycast` returns the
+  /// nearest render-geometry hit with the surface UV interpolated from the
+  /// vertex data, so any panel shape works and the floor occludes correctly.
   Offset? _panelUv(Offset position, Size viewSize) {
     final camera = _camera;
-    final panel = _panel;
-    if (camera == null || panel == null || viewSize.isEmpty) return null;
+    if (camera == null || viewSize.isEmpty) return null;
 
     final viewProjection =
         camera.projection.getProjectionMatrix(
@@ -87,21 +86,12 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     }
 
     final near = unproject(0.0);
-    final far = unproject(1.0);
-
-    // Panel local space: front face at z = +halfDepth.
-    final toLocal = vm.Matrix4.inverted(panel.localTransform);
-    final origin = toLocal.transform3(near);
-    final direction = toLocal.transform3(far) - origin;
-    final halfDepth = _panelExtents.z / 2;
-    if (direction.z.abs() < 1e-6) return null;
-    final t = (halfDepth - origin.z) / direction.z;
-    if (t < 0 || t > 1) return null;
-    final hit = origin + direction * t;
-    final u = hit.x / _panelExtents.x + 0.5;
-    final v = 0.5 - hit.y / _panelExtents.y;
-    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
-    return Offset(u, v);
+    final hit = scene.raycast(
+      vm.Ray.originDirection(near, unproject(1.0) - near),
+    );
+    if (hit == null || hit.node != _panel) return null;
+    final uv = hit.uv!;
+    return Offset(uv.x, uv.y);
   }
 
   @override

@@ -29,6 +29,13 @@ abstract class Geometry {
   gpu.IndexType _indexType = gpu.IndexType.int16;
   int _indexCount = 0;
 
+  // CPU copies of the uploaded vertex/index data (references to the caller's
+  // buffers, not copies), retained by [uploadVertexData] so scene raycasts
+  // can test render geometry without reading back from the GPU. Null for
+  // geometry driven through [setVertices] (caller-managed buffers).
+  ByteData? _cpuVertices;
+  ByteData? _cpuIndices;
+
   gpu.Shader? _vertexShader;
 
   /// How the vertex/index data is assembled into primitives when drawn.
@@ -131,6 +138,9 @@ abstract class Geometry {
           : vertices.lengthInBytes + indices.lengthInBytes,
     );
 
+    _cpuVertices = vertices;
+    _cpuIndices = indices;
+
     deviceBuffer.overwrite(vertices, destinationOffsetInBytes: 0);
     setVertices(
       gpu.BufferView(
@@ -160,6 +170,34 @@ abstract class Geometry {
       _scanLocalBoundsFromVertices(vertices, vertexCount);
     }
   }
+
+  /// Internal: retains CPU vertex/index data for scene raycasts. Subclasses
+  /// with their own upload paths (see MeshGeometry's updatable buffers) call
+  /// this when they bypass [uploadVertexData].
+  @internal
+  void retainCpuMeshData(ByteData? vertices, ByteData? indices) {
+    _cpuVertices = vertices;
+    _cpuIndices = indices;
+  }
+
+  /// Internal: the retained CPU vertex/index data for scene raycasts, or
+  /// null vertices when this geometry is not raycastable (caller-managed
+  /// buffers via [setVertices], or no upload yet).
+  @internal
+  ({
+    ByteData? vertices,
+    ByteData? indices,
+    gpu.IndexType indexType,
+    int vertexCount,
+    int indexCount,
+  })
+  get cpuMeshData => (
+    vertices: _cpuVertices,
+    indices: _cpuIndices,
+    indexType: _indexType,
+    vertexCount: _vertexCount,
+    indexCount: _indexCount,
+  );
 
   /// Whether [uploadVertexData] should auto-populate [localBounds] from
   /// the vertex positions when no bound has been set yet. True by
