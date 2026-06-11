@@ -8,6 +8,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart' show Offset, Size;
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu show IndexType;
@@ -156,6 +157,51 @@ void main() {
         Ray.originDirection(Vector3(0.3, -0.2, 5), Vector3(0, 0, -1)),
       ).single;
       expect(hit.localNormal.dot(Vector3(0, 0, 1)).abs(), closeTo(1.0, 1e-6));
+    });
+  });
+
+  group('Camera.screenPointToRay (GPU-free)', () {
+    test('center of the view unprojects along the camera forward', () {
+      final camera = PerspectiveCamera(
+        position: Vector3(1, 2, 3),
+        target: Vector3(1, 2, -7),
+      );
+      final ray = camera.screenPointToRay(
+        const Offset(200, 150),
+        const Size(400, 300),
+      );
+      final direction = ray.direction.normalized();
+      expect(direction.dot(Vector3(0, 0, -1)), closeTo(1.0, 1e-4));
+      // The near point lies in front of the eye along the forward axis.
+      expect((ray.origin - camera.position).dot(direction), greaterThan(0));
+    });
+
+    test('round-trips a projected world point', () {
+      final camera = PerspectiveCamera(
+        position: Vector3(0, 0, 5),
+        target: Vector3.zero(),
+      );
+      const viewSize = Size(400, 300);
+      final world = Vector3(-1.0, 0.5, 0.0);
+
+      // Project the point to screen space the way the renderer does.
+      final clip =
+          camera.getViewTransform(viewSize) *
+                  Vector4(world.x, world.y, world.z, 1)
+              as Vector4;
+      final screen = Offset(
+        (clip.x / clip.w + 1) / 2 * viewSize.width,
+        (1 - clip.y / clip.w) / 2 * viewSize.height,
+      );
+
+      // The unprojected ray must pass through the original point.
+      final ray = camera.screenPointToRay(screen, viewSize);
+      final direction = ray.direction.normalized();
+      final toPoint = world - ray.origin;
+      final along = toPoint.dot(direction);
+      final offAxis = (toPoint - direction * along).length;
+      expect(along, greaterThan(0));
+      expect(offAxis, lessThan(1e-3));
     });
   });
 

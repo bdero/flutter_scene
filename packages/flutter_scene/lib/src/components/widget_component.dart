@@ -11,6 +11,19 @@ import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/widget_texture.dart';
 import 'dart:typed_data';
 
+/// How a [WidgetComponent] receives pointer input.
+enum WidgetInput {
+  /// `SceneView` forwards platform pointer events automatically: presses
+  /// and drags raycast into the scene, and when this component's surface is
+  /// the nearest hit, events forward at the hit UV. Occluded surfaces are
+  /// blocked.
+  automatic,
+
+  /// No automatic forwarding; drive input through
+  /// [WidgetComponent.controller] or a `ScenePointer`.
+  manual,
+}
+
 /// A live widget subtree on a scene surface.
 ///
 /// The component owns the capture pipeline (through a [WidgetTextureController])
@@ -45,6 +58,7 @@ class WidgetComponent extends Component {
     double pixelRatio = 1.0,
     double worldHeight = 1.0,
     WidgetUpdatePolicy update = WidgetUpdatePolicy.onRepaint,
+    this.input = WidgetInput.automatic,
     Geometry? geometry,
     Material? material,
     void Function(gpu.Texture texture)? bind,
@@ -67,6 +81,7 @@ class WidgetComponent extends Component {
     required void Function(gpu.Texture texture) bind,
     double pixelRatio = 1.0,
     WidgetUpdatePolicy update = WidgetUpdatePolicy.onRepaint,
+    this.input = WidgetInput.automatic,
   }) : _child = child,
        _size = size,
        _pixelRatio = pixelRatio,
@@ -76,6 +91,9 @@ class WidgetComponent extends Component {
        _material = null,
        _bind = bind,
        _createsSurface = false;
+
+  /// How this surface receives pointer input.
+  final WidgetInput input;
 
   final Widget _child;
   final Size _size;

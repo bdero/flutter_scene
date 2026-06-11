@@ -105,6 +105,73 @@ void main() {
     expect(node.getComponent<MeshComponent>(), isNull);
   });
 
+  testWidgets('ScenePointer: hover, press, occlusion, interaction mask', (
+    tester,
+  ) async {
+    final scene = Scene();
+    var presses = 0;
+    final component = WidgetComponent(
+      child: Center(
+        child: SizedBox(
+          width: 200,
+          height: 100,
+          child: ElevatedButton(
+            onPressed: () => presses++,
+            child: const Text('press'),
+          ),
+        ),
+      ),
+      size: const Size(200, 100),
+      worldHeight: 2.0,
+    );
+    final panel = Node(name: 'panel')..addComponent(component);
+    scene.add(panel);
+
+    await tester.pumpWidget(
+      MaterialApp(home: SceneView(scene, camera: PerspectiveCamera())),
+    );
+    await _settle(tester, () => component.controller.texture != null);
+    if (component.controller.texture == null) {
+      markTestSkipped('Capture did not complete in this environment');
+      return;
+    }
+
+    final pointer = ScenePointer(scene);
+    final ray = vm.Ray.originDirection(
+      vm.Vector3(0, 0, 5),
+      vm.Vector3(0, 0, -1),
+    );
+
+    // Hover then press-release lands on the button.
+    pointer.pointAlong(ray);
+    expect(pointer.hoveredWidget, component);
+    pointer.press();
+    pointer.release();
+    await tester.pump();
+    expect(presses, 1);
+
+    // An occluder in front blocks the press.
+    final blocker = Node(
+      name: 'blocker',
+      localTransform: vm.Matrix4.translation(vm.Vector3(0, 0, 1)),
+      mesh: Mesh(CuboidGeometry(vm.Vector3(5, 5, 0.1)), UnlitMaterial()),
+    );
+    scene.add(blocker);
+    pointer.pointAlong(ray);
+    expect(pointer.hoveredWidget, isNull);
+    pointer.press();
+    pointer.release();
+    await tester.pump();
+    expect(presses, 1);
+    scene.remove(blocker);
+
+    // The interaction mask gates forwarding without affecting occlusion.
+    pointer.interactionMask = 1 << 5; // panel is on layer 0
+    pointer.pointAlong(ray);
+    expect(pointer.hit, isNotNull);
+    expect(pointer.hoveredWidget, isNull);
+  });
+
   testWidgets('mount and unmount drive the render-scene registry', (
     tester,
   ) async {
