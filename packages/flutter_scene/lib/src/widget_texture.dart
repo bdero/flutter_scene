@@ -7,6 +7,36 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
+/// When a [WidgetTexture] (or a `WidgetComponent`) re-captures its child.
+sealed class WidgetUpdatePolicy {
+  const WidgetUpdatePolicy._();
+
+  /// Capture whenever the child subtree repaints (the default). A static
+  /// subtree costs nothing per frame.
+  static const WidgetUpdatePolicy onRepaint = _OnRepaintUpdatePolicy();
+
+  /// Capture at most once per [duration], even when the child repaints
+  /// more often.
+  const factory WidgetUpdatePolicy.interval(Duration duration) =
+      _IntervalUpdatePolicy;
+
+  /// Capture only when [WidgetTextureController.requestCapture] is called.
+  static const WidgetUpdatePolicy manual = _ManualUpdatePolicy();
+}
+
+class _OnRepaintUpdatePolicy extends WidgetUpdatePolicy {
+  const _OnRepaintUpdatePolicy() : super._();
+}
+
+class _IntervalUpdatePolicy extends WidgetUpdatePolicy {
+  const _IntervalUpdatePolicy(this.duration) : super._();
+  final Duration duration;
+}
+
+class _ManualUpdatePolicy extends WidgetUpdatePolicy {
+  const _ManualUpdatePolicy() : super._();
+}
+
 /// Owns the [gpu.Texture] a [WidgetTexture] streams its child into.
 ///
 /// Bind [texture] to any material texture slot (for example
@@ -86,6 +116,11 @@ class WidgetTextureController extends ChangeNotifier {
     pointerDown(uv);
     pointerUp(uv);
   }
+
+  /// Captures the child's latest recorded content now. The trigger for
+  /// [WidgetUpdatePolicy.manual]; under other policies it forces an
+  /// immediate capture (subject to one-in-flight throttling).
+  void requestCapture() => _host?._captureNow();
 }
 
 /// Hosts a live widget subtree and streams its visual output into a
@@ -114,6 +149,7 @@ class WidgetTexture extends SingleChildRenderObjectWidget {
     required this.width,
     required this.height,
     this.pixelRatio = 1.0,
+    this.update = WidgetUpdatePolicy.onRepaint,
     required Widget super.child,
   });
 
@@ -129,11 +165,15 @@ class WidgetTexture extends SingleChildRenderObjectWidget {
   /// Texels per logical pixel in the captured texture.
   final double pixelRatio;
 
+  /// When the child is re-captured; see [WidgetUpdatePolicy].
+  final WidgetUpdatePolicy update;
+
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderWidgetTexture(
     controller: controller,
     captureSize: Size(width, height),
     pixelRatio: pixelRatio,
+    update: update,
   );
 
   @override
@@ -145,7 +185,8 @@ class WidgetTexture extends SingleChildRenderObjectWidget {
     renderObject
       ..controller = controller
       ..captureSize = Size(width, height)
-      ..pixelRatio = pixelRatio;
+      ..pixelRatio = pixelRatio
+      ..update = update;
   }
 }
 
@@ -162,9 +203,15 @@ class _RenderWidgetTexture extends RenderProxyBox {
     required WidgetTextureController controller,
     required Size captureSize,
     required double pixelRatio,
+    required WidgetUpdatePolicy update,
   }) : _controller = controller,
        _captureSize = captureSize,
-       _pixelRatio = pixelRatio;
+       _pixelRatio = pixelRatio,
+       _update = update;
+
+  WidgetUpdatePolicy _update;
+  set update(WidgetUpdatePolicy value) => _update = value;
+  DateTime _lastCaptureStart = DateTime.fromMillisecondsSinceEpoch(0);
 
   WidgetTextureController _controller;
   set controller(WidgetTextureController value) {
@@ -305,10 +352,28 @@ class _RenderWidgetTexture extends RenderProxyBox {
 
     _pendingLayer?.dispose();
     _pendingLayer = layer;
-    _pumpCapture();
+    switch (_update) {
+      case _OnRepaintUpdatePolicy():
+        _pumpCapture();
+      case _IntervalUpdatePolicy(:final duration):
+        final wait = duration - DateTime.now().difference(_lastCaptureStart);
+        if (wait <= Duration.zero) {
+          _pumpCapture();
+        } else {
+          Future<void>.delayed(wait, () {
+            if (attached && _pendingLayer != null) _pumpCapture();
+          });
+        }
+      case _ManualUpdatePolicy():
+        break; // Holds the latest recording until requestCapture().
+    }
     // Nothing is painted into the live tree; the subtree only exists in the
     // captured texture.
   }
+
+  /// Captures the latest recorded content immediately (the manual-policy
+  /// trigger; also forces a capture under other policies).
+  void _captureNow() => _pumpCapture();
 
   Future<void> _pumpCapture() async {
     if (_captureInFlight) return;
@@ -317,6 +382,7 @@ class _RenderWidgetTexture extends RenderProxyBox {
       while (_pendingLayer != null && attached) {
         final layer = _pendingLayer!;
         _pendingLayer = null;
+        _lastCaptureStart = DateTime.now();
         final stopwatch = Stopwatch()..start();
         try {
           final image = await layer.toImage(
