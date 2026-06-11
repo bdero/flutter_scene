@@ -5,6 +5,7 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'lighting_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -52,7 +53,8 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           PlaneGeometry(width: 8, depth: 8),
           PhysicallyBasedMaterial()
             ..baseColorFactor = vm.Vector4(0.25, 0.3, 0.4, 1.0)
-            ..roughnessFactor = 0.7,
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.3,
         ),
       ),
     );
@@ -105,19 +107,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
       ..setFloat('switching', settings.switching)
       ..setFloat('bloom_spread', settings.bloom)
       ..setFloat('ac_beat', settings.beat);
-  }
-
-  Future<void> _selectEnvironment(ExampleEnvironment environment) async {
-    try {
-      await _environmentSelector.select(environment, scene);
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {});
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Failed to load ${environment.title}: $e')),
-      );
-    }
   }
 
   /// Whether [position] is over a widget surface (nearest raycast hit
@@ -184,11 +173,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           Positioned(
             top: 48,
             right: 8,
-            child: EnvironmentMenu(
-              active: _environmentSelector.active,
-              loading: _environmentSelector.loading,
-              onSelected: _selectEnvironment,
-            ),
+            child: LightingPanel(scene: scene, selector: _environmentSelector),
           ),
           Positioned(
             right: 8,
