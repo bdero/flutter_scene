@@ -302,21 +302,65 @@ base class RenderPass {
   }
 
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
-    if (slot != 0) {
-      throw RangeError.value(
-        slot,
-        'slot',
-        'WebGL2 backend only supports slot 0',
-      );
-    }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline;
     if (pipeline == null) {
       throw StateError('bindVertexBuffer called before bindPipeline');
     }
 
+    final layout = pipeline.vertexLayout;
+    if (layout == null && slot != 0) {
+      throw RangeError.value(
+        slot,
+        'slot',
+        'Slots other than 0 need an explicit pipeline VertexLayout',
+      );
+    }
+
     _ensureVao();
     bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+
+    if (layout != null) {
+      // Explicit layout: the buffer's slot describes its stride, step mode,
+      // and named attributes; the shader's reflection only supplies the
+      // attribute locations.
+      if (slot < 0 || slot >= layout.buffers.length) {
+        throw RangeError.value(
+          slot,
+          'slot',
+          'Pipeline VertexLayout declares ${layout.buffers.length} buffers',
+        );
+      }
+      _inlineVertexBufferView = null;
+      final buffer = layout.buffers[slot];
+      final divisor = buffer.stepMode == VertexStepMode.instance ? 1 : 0;
+      for (final attribute in buffer.attributes) {
+        final input = pipeline.vertexShader.vertexInputByName(attribute.name);
+        if (input == null) {
+          throw StateError(
+            'Vertex shader has no input named "${attribute.name}"',
+          );
+        }
+        if (attribute.format.name.startsWith('uint') ||
+            attribute.format.name.startsWith('sint')) {
+          throw UnimplementedError(
+            'Integer vertex formats are not implemented in the WebGL2 '
+            'backend',
+          );
+        }
+        gl.enableVertexAttribArray(input.location);
+        gl.vertexAttribPointer(
+          input.location,
+          attribute.format.componentCount,
+          web.WebGL2RenderingContext.FLOAT,
+          false,
+          buffer.strideInBytes,
+          bufferView.offsetInBytes + attribute.offsetInBytes,
+        );
+        gl.vertexAttribDivisor(input.location, divisor);
+      }
+      return;
+    }
 
     final inputs = pipeline.vertexShader.vertexInputs;
     if (inputs.isEmpty) {
@@ -334,6 +378,9 @@ base class RenderPass {
           stride,
           bufferView.offsetInBytes + input.offsetInBytes,
         );
+        // Divisor state lives in the VAO and may be left over from an
+        // instanced layout; reset it for vertex-rate inputs.
+        gl.vertexAttribDivisor(input.location, 0);
       }
     }
   }
@@ -688,16 +735,26 @@ base class RenderPass {
     );
   }
 
-  void draw(int vertexCount) {
+  void draw(int vertexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
     if (_boundPipeline == null) {
       throw StateError('draw called before bindPipeline');
     }
+    if (vertexCount == 0 || instanceCount == 0) return;
     _configureInlineVertexBuffer(vertexCount);
-    gl.drawArrays(_glPrimitiveType(_primitiveType), 0, vertexCount);
+    if (instanceCount != 1) {
+      gl.drawArraysInstanced(
+        _glPrimitiveType(_primitiveType),
+        0,
+        vertexCount,
+        instanceCount,
+      );
+    } else {
+      gl.drawArrays(_glPrimitiveType(_primitiveType), 0, vertexCount);
+    }
   }
 
-  void drawIndexed(int indexCount) {
+  void drawIndexed(int indexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
     if (_boundPipeline == null) {
       throw StateError('drawIndexed called before bindPipeline');
@@ -705,18 +762,30 @@ base class RenderPass {
     if (_inlineVertexBufferView != null) {
       throw StateError('Indexed inline pipelines require reflected attributes');
     }
+    if (indexCount == 0 || instanceCount == 0) return;
     final indexView = _indexBufferView;
     if (indexView == null) {
       throw StateError('drawIndexed called before bindIndexBuffer');
     }
-    gl.drawElements(
-      _glPrimitiveType(_primitiveType),
-      indexCount,
-      _indexType == IndexType.int16
-          ? web.WebGL2RenderingContext.UNSIGNED_SHORT
-          : web.WebGL2RenderingContext.UNSIGNED_INT,
-      indexView.offsetInBytes,
-    );
+    final glIndexType = _indexType == IndexType.int16
+        ? web.WebGL2RenderingContext.UNSIGNED_SHORT
+        : web.WebGL2RenderingContext.UNSIGNED_INT;
+    if (instanceCount != 1) {
+      gl.drawElementsInstanced(
+        _glPrimitiveType(_primitiveType),
+        indexCount,
+        glIndexType,
+        indexView.offsetInBytes,
+        instanceCount,
+      );
+    } else {
+      gl.drawElements(
+        _glPrimitiveType(_primitiveType),
+        indexCount,
+        glIndexType,
+        indexView.offsetInBytes,
+      );
+    }
   }
 
   /// Called by CommandBuffer when the pass ends (a new pass begins, or the

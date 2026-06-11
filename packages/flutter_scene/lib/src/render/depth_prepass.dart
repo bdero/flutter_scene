@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -187,7 +188,11 @@ class _DepthPrepassEncoder {
     _renderPass.clearBindings();
     final pipeline = _depthPipelineCache[item.geometry.vertexShader] ??= gpu
         .gpuContext
-        .createRenderPipeline(item.geometry.vertexShader, _depthShader);
+        .createRenderPipeline(
+          item.geometry.vertexShader,
+          _depthShader,
+          vertexLayout: item.geometry.instancedVertexLayout,
+        );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
@@ -200,20 +205,48 @@ class _DepthPrepassEncoder {
 
     final instances = item.instanceTransforms;
     if (instances != null) {
-      for (final instanceTransform in instances) {
-        item.geometry.bind(
-          _renderPass,
-          _transientsBuffer,
-          item.worldTransform * instanceTransform,
-          _cameraTransform,
-          _cameraPosition,
-        );
-        final flip =
-            item.windingFlipped != (instanceTransform.determinant() < 0);
-        _renderPass.setWindingOrder(
-          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
-        );
-        item.geometry.draw(_renderPass);
+      if (item.geometry.instancedVertexLayout == null) {
+        // Skinned geometry has no instance-attribute path; loop.
+        for (final instanceTransform in instances) {
+          item.geometry.bind(
+            _renderPass,
+            _transientsBuffer,
+            item.worldTransform * instanceTransform,
+            _cameraTransform,
+            _cameraPosition,
+          );
+          final flip =
+              item.windingFlipped != (instanceTransform.determinant() < 0);
+          _renderPass.setWindingOrder(
+            flip
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
+          );
+          item.geometry.draw(_renderPass);
+        }
+        return;
+      }
+      item.geometry.bind(
+        _renderPass,
+        _transientsBuffer,
+        item.worldTransform,
+        _cameraTransform,
+        _cameraPosition,
+      );
+      final packed = packInstanceTransforms(
+        item.worldTransform,
+        instances,
+        nodeWindingFlipped: item.windingFlipped,
+      );
+      if (packed.ccwCount > 0) {
+        bindInstanceTransforms(_renderPass, _transientsBuffer, packed.ccw);
+        _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+        item.geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+      }
+      if (packed.cwCount > 0) {
+        bindInstanceTransforms(_renderPass, _transientsBuffer, packed.cw);
+        _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+        item.geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
       return;
     }
@@ -225,6 +258,13 @@ class _DepthPrepassEncoder {
       _cameraTransform,
       _cameraPosition,
     );
+    if (item.geometry.instancedVertexLayout != null) {
+      bindSingleInstanceTransform(
+        _renderPass,
+        _transientsBuffer,
+        item.worldTransform,
+      );
+    }
     _renderPass.setWindingOrder(
       item.windingFlipped
           ? gpu.WindingOrder.clockwise

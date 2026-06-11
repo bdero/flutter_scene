@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
+import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
@@ -283,13 +284,22 @@ abstract class Geometry {
   );
 
   /// Emits this geometry's draw call after [bind] has prepared the render pass.
-  void draw(gpu.RenderPass pass) {
+  void draw(gpu.RenderPass pass, {int instanceCount = 1}) {
     if (_indices != null) {
-      drawIndexedCompat(pass, _indexCount);
+      drawIndexedCompat(pass, _indexCount, instanceCount: instanceCount);
     } else {
-      drawCompat(pass, _vertexCount);
+      drawCompat(pass, _vertexCount, instanceCount: instanceCount);
     }
   }
+
+  /// The explicit pipeline vertex layout this geometry's vertex shader
+  /// expects, or null for the shader bundle's default interleaved layout.
+  ///
+  /// A non-null layout signals the encoders that the shader consumes the
+  /// model transform from the instance-rate vertex buffer (slot 1) rather
+  /// than a per-draw uniform, so every draw must bind an instance buffer.
+  @internal
+  gpu.VertexLayout? get instancedVertexLayout => null;
 }
 
 /// Geometry whose vertices use the unskinned 48-byte layout: position
@@ -304,6 +314,9 @@ class UnskinnedGeometry extends Geometry {
   UnskinnedGeometry() {
     setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
   }
+
+  @override
+  gpu.VertexLayout? get instancedVertexLayout => kUnskinnedInstancedLayout;
 
   @override
   void bind(
@@ -324,25 +337,11 @@ class UnskinnedGeometry extends Geometry {
       bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
     }
 
-    // Unskinned vertex UBO.
+    // Unskinned vertex UBO. The model transform is NOT part of this block;
+    // it arrives through the instance-rate vertex buffer (slot 1), bound by
+    // the encoder for instanced and non-instanced draws alike.
     final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([
-      modelTransform.storage[0],
-      modelTransform.storage[1],
-      modelTransform.storage[2],
-      modelTransform.storage[3],
-      modelTransform.storage[4],
-      modelTransform.storage[5],
-      modelTransform.storage[6],
-      modelTransform.storage[7],
-      modelTransform.storage[8],
-      modelTransform.storage[9],
-      modelTransform.storage[10],
-      modelTransform.storage[11],
-      modelTransform.storage[12],
-      modelTransform.storage[13],
-      modelTransform.storage[14],
-      modelTransform.storage[15],
       cameraTransform.storage[0],
       cameraTransform.storage[1],
       cameraTransform.storage[2],
@@ -485,3 +484,61 @@ class SkinnedGeometry extends Geometry {
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
+
+/// The two-buffer pipeline layout for the unskinned vertex shader: slot 0
+/// carries the interleaved 48-byte vertex stream, slot 1 carries the
+/// instance-rate model matrix as four vec4 columns (64 bytes per instance).
+@internal
+final gpu.VertexLayout kUnskinnedInstancedLayout = gpu.VertexLayout(
+  buffers: [
+    gpu.VertexBuffer(
+      strideInBytes: kUnskinnedPerVertexSize,
+      attributes: const [
+        gpu.VertexAttribute(
+          name: 'position',
+          format: gpu.VertexFormat.float32x3,
+        ),
+        gpu.VertexAttribute(
+          name: 'normal',
+          format: gpu.VertexFormat.float32x3,
+          offsetInBytes: 12,
+        ),
+        gpu.VertexAttribute(
+          name: 'texture_coords',
+          format: gpu.VertexFormat.float32x2,
+          offsetInBytes: 24,
+        ),
+        gpu.VertexAttribute(
+          name: 'color',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 32,
+        ),
+      ],
+    ),
+    gpu.VertexBuffer(
+      strideInBytes: 64,
+      stepMode: gpu.VertexStepMode.instance,
+      attributes: const [
+        gpu.VertexAttribute(
+          name: 'model_transform_0',
+          format: gpu.VertexFormat.float32x4,
+        ),
+        gpu.VertexAttribute(
+          name: 'model_transform_1',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 16,
+        ),
+        gpu.VertexAttribute(
+          name: 'model_transform_2',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 32,
+        ),
+        gpu.VertexAttribute(
+          name: 'model_transform_3',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 48,
+        ),
+      ],
+    ),
+  ],
+);

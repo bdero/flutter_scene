@@ -134,9 +134,59 @@ base class RenderPipeline {
   Shader get fragmentShader => _stub();
 }
 
-class VertexLayout {
-  const VertexLayout({this.strideInBytes = 0});
+enum VertexFormat {
+  float32(bytesPerElement: 4, componentCount: 1),
+  float32x2(bytesPerElement: 8, componentCount: 2),
+  float32x3(bytesPerElement: 12, componentCount: 3),
+  float32x4(bytesPerElement: 16, componentCount: 4),
+  uint32(bytesPerElement: 4, componentCount: 1),
+  uint32x2(bytesPerElement: 8, componentCount: 2),
+  uint32x3(bytesPerElement: 12, componentCount: 3),
+  uint32x4(bytesPerElement: 16, componentCount: 4),
+  sint32(bytesPerElement: 4, componentCount: 1),
+  sint32x2(bytesPerElement: 8, componentCount: 2),
+  sint32x3(bytesPerElement: 12, componentCount: 3),
+  sint32x4(bytesPerElement: 16, componentCount: 4);
+
+  const VertexFormat({
+    required this.bytesPerElement,
+    required this.componentCount,
+  });
+
+  final int bytesPerElement;
+  final int componentCount;
+}
+
+enum VertexStepMode { vertex, instance }
+
+class VertexAttribute {
+  const VertexAttribute({
+    required this.name,
+    required this.format,
+    this.offsetInBytes = 0,
+  });
+
+  final String name;
+  final VertexFormat format;
+  final int offsetInBytes;
+}
+
+class VertexBuffer {
+  const VertexBuffer({
+    required this.strideInBytes,
+    required this.attributes,
+    this.stepMode = VertexStepMode.vertex,
+  });
+
   final int strideInBytes;
+  final List<VertexAttribute> attributes;
+  final VertexStepMode stepMode;
+}
+
+class VertexLayout {
+  const VertexLayout({required this.buffers});
+
+  final List<VertexBuffer> buffers;
 }
 
 base class ColorAttachment {
@@ -299,6 +349,6 @@ base class RenderPass {
   void setPrimitiveType(PrimitiveType primitiveType) => _stub();
   void setWindingOrder(WindingOrder windingOrder) => _stub();
   void setViewport(Viewport viewport) => _stub();
-  void draw(int vertexCount) => _stub();
-  void drawIndexed(int indexCount) => _stub();
+  void draw(int vertexCount, {int instanceCount = 1}) => _stub();
+  void drawIndexed(int indexCount, {int instanceCount = 1}) => _stub();
 }

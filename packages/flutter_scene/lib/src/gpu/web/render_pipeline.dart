@@ -52,6 +52,10 @@ base class RenderPipeline {
   final Shader fragmentShader;
   // ignore: unused_field
   final VertexLayout? _vertexLayout;
+
+  /// The explicit vertex layout this pipeline was created with, or null for
+  /// the default reflection-derived single-buffer layout.
+  VertexLayout? get vertexLayout => _vertexLayout;
   late final web.WebGLProgram _program;
 
   /// GL uniform locations keyed by "structName.memberName".

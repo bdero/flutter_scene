@@ -25,7 +25,11 @@ void bindIndexBufferCompat(
   }
 }
 
-void drawCompat(gpu.RenderPass pass, int vertexCount) {
+void drawCompat(gpu.RenderPass pass, int vertexCount, {int instanceCount = 1}) {
+  if (instanceCount != 1) {
+    (pass as dynamic).draw(vertexCount, instanceCount: instanceCount);
+    return;
+  }
   try {
     (pass as dynamic).draw(vertexCount);
   } on NoSuchMethodError {
@@ -33,7 +37,15 @@ void drawCompat(gpu.RenderPass pass, int vertexCount) {
   }
 }
 
-void drawIndexedCompat(gpu.RenderPass pass, int indexCount) {
+void drawIndexedCompat(
+  gpu.RenderPass pass,
+  int indexCount, {
+  int instanceCount = 1,
+}) {
+  if (instanceCount != 1) {
+    (pass as dynamic).drawIndexed(indexCount, instanceCount: instanceCount);
+    return;
+  }
   try {
     (pass as dynamic).drawIndexed(indexCount);
   } on NoSuchMethodError {

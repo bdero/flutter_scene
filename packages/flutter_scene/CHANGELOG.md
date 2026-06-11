@@ -1,5 +1,16 @@
 ## 0.18.0
 
+* Adopted hardware instancing: `InstancedMesh` draws upload every instance
+  transform to an instance-rate vertex buffer and render with a single
+  instanced draw call per winding-parity group (in the color, depth-prepass,
+  and shadow passes), instead of rebinding the model uniform and drawing
+  once per instance. The unskinned vertex shader now consumes the model
+  matrix from instance attributes, and the WebGL2 backend gained
+  `VertexStepMode`/`VertexLayout` support and instanced draw calls. Custom
+  geometry overriding `bind` with the standard unskinned shader picks up the
+  new path automatically; custom vertex shaders with their own uniform
+  layouts are unaffected.
+
 * BREAKING: the package exports are now explicit show lists; implementation
   details that previously leaked from wholesale exports (the scene encoder,
   render-graph texture pooling, environment-prefilter internals, animation

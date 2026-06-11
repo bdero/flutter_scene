@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
@@ -49,10 +50,17 @@ final Map<(gpu.Shader, gpu.Shader), gpu.RenderPipeline> _pipelineCache = {};
 
 gpu.RenderPipeline resolvePipeline(
   gpu.Shader vertexShader,
-  gpu.Shader fragmentShader,
-) {
+  gpu.Shader fragmentShader, {
+  gpu.VertexLayout? vertexLayout,
+}) {
+  // The layout is a pure function of the vertex shader (each shader has one
+  // expected layout), so the cache key stays the shader pair.
   return _pipelineCache[(vertexShader, fragmentShader)] ??= gpu.gpuContext
-      .createRenderPipeline(vertexShader, fragmentShader);
+      .createRenderPipeline(
+        vertexShader,
+        fragmentShader,
+        vertexLayout: vertexLayout,
+      );
 }
 
 /// Drops cached pipelines that use any of [shaders] (as vertex or fragment) so
@@ -162,6 +170,7 @@ base class SceneEncoder {
     final pipeline = resolvePipeline(
       item.geometry.vertexShader,
       item.material.fragmentShader,
+      vertexLayout: item.geometry.instancedVertexLayout,
     );
 
     if (item.material.isOpaque()) {
@@ -235,6 +244,14 @@ base class SceneEncoder {
       _cameraTransform,
       _camera.position,
     );
+    if (geometry.instancedVertexLayout != null) {
+      // The model matrix arrives through the instance-rate vertex buffer.
+      bindSingleInstanceTransform(
+        _renderPass,
+        _transientsBuffer,
+        worldTransform,
+      );
+    }
     material.bind(_renderPass, _transientsBuffer, _lighting);
     if (windingFlipped) {
       // A mirrored (negative-determinant) transform reverses triangle
@@ -246,9 +263,14 @@ base class SceneEncoder {
     geometry.draw(_renderPass);
   }
 
-  /// Draws an opaque instanced item: binds the pipeline (when it changed)
-  /// and the material once, then re-binds only the geometry (with each
-  /// instance's world transform) and draws, once per instance.
+  /// Draws an opaque instanced item with hardware instancing: the instance
+  /// world transforms are packed into an instance-rate vertex buffer and the
+  /// whole set draws with one call per winding-parity group (mirrored
+  /// instances reverse triangle winding, so they draw as a second group
+  /// under the flipped winding order).
+  ///
+  /// Geometry without an instanced vertex layout (skinned) falls back to a
+  /// per-instance loop through the per-draw uniform path.
   void _encodeInstanced(
     gpu.RenderPipeline pipeline,
     Matrix4 nodeTransform,
@@ -261,20 +283,47 @@ base class SceneEncoder {
     _bindPipeline(pipeline);
     material.bind(_renderPass, _transientsBuffer, _lighting);
     _renderPass.setPrimitiveType(geometry.primitiveType);
-    for (final instanceTransform in instances) {
-      geometry.bind(
-        _renderPass,
-        _transientsBuffer,
-        nodeTransform * instanceTransform,
-        _cameraTransform,
-        _camera.position,
-      );
-      // Each instance can itself mirror; combine with the node's parity.
-      final flip = windingFlipped != (instanceTransform.determinant() < 0);
-      _renderPass.setWindingOrder(
-        flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
-      );
-      geometry.draw(_renderPass);
+
+    if (geometry.instancedVertexLayout == null) {
+      for (final instanceTransform in instances) {
+        geometry.bind(
+          _renderPass,
+          _transientsBuffer,
+          nodeTransform * instanceTransform,
+          _cameraTransform,
+          _camera.position,
+        );
+        // Each instance can itself mirror; combine with the node's parity.
+        final flip = windingFlipped != (instanceTransform.determinant() < 0);
+        _renderPass.setWindingOrder(
+          flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
+        );
+        geometry.draw(_renderPass);
+      }
+      return;
+    }
+
+    geometry.bind(
+      _renderPass,
+      _transientsBuffer,
+      nodeTransform,
+      _cameraTransform,
+      _camera.position,
+    );
+    final packed = packInstanceTransforms(
+      nodeTransform,
+      instances,
+      nodeWindingFlipped: windingFlipped,
+    );
+    if (packed.ccwCount > 0) {
+      bindInstanceTransforms(_renderPass, _transientsBuffer, packed.ccw);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+    }
+    if (packed.cwCount > 0) {
+      bindInstanceTransforms(_renderPass, _transientsBuffer, packed.cw);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      geometry.draw(_renderPass, instanceCount: packed.cwCount);
     }
   }
 

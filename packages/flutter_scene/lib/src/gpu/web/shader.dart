@@ -108,6 +108,16 @@ base class Shader {
   // ignore: library_private_types_in_public_api
   List<_VertexInput> get vertexInputs => _vertexInputs;
 
+  /// The reflected vertex input named [name], or null if the vertex shader
+  /// declares no such input.
+  // ignore: library_private_types_in_public_api
+  _VertexInput? vertexInputByName(String name) {
+    for (final input in _vertexInputs) {
+      if (input.name == name) return input;
+    }
+    return null;
+  }
+
   /// Internal: total per-vertex stride in bytes (vertex shaders only).
   int get vertexStride => _vertexStride;
 
