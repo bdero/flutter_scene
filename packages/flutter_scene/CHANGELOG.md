@@ -1,5 +1,16 @@
 ## 0.18.0
 
+* Added FXAA and an automatic anti-aliasing mode. `AntiAliasingMode` gains
+  `fxaa` (a post-process pass over the tone-mapped image, available on
+  every backend) and `auto` (MSAA where the backend supports it, FXAA
+  otherwise), and `auto` is the new default. Backends without offscreen
+  MSAA support previously rendered with no anti-aliasing at all; they now
+  get FXAA. `Scene.antiAliasingMode` now always keeps the requested mode
+  (instead of ignoring unsupported assignments), the new
+  `Scene.effectiveAntiAliasingMode` reports the technique that actually
+  runs, and the new static `Scene.isAntiAliasingModeSupported` answers
+  support queries without touching the Flutter GPU API.
+
 * Adopted hardware instancing: `InstancedMesh` draws upload every instance
   transform to an instance-rate vertex buffer and render with a single
   instanced draw call per winding-parity group (in the color, depth-prepass,

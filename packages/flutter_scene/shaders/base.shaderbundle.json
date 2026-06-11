@@ -39,6 +39,10 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_resolve.frag"
     },
+    "FxaaFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_fxaa.frag"
+    },
     "PrefilterEnvFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_prefilter_env.frag"

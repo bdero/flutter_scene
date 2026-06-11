@@ -1,7 +1,7 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
-    show Scene, PostInsertion, SpecularAmbientOcclusionMode;
+    show AntiAliasingMode, Scene, PostInsertion, SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
 import 'package:example_app/example_animation.dart';
@@ -251,6 +251,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      _buildAntiAliasing(),
                       _buildDirectionalLight(),
                       _buildAmbientOcclusion(),
                       _buildPostProcessing(),
@@ -262,6 +263,45 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAntiAliasing() {
+    final msaaSupported = Scene.isAntiAliasingModeSupported(
+      AntiAliasingMode.msaa,
+    );
+    return ExpansionTile(
+      title: const Text('Anti-aliasing'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        Row(
+          children: [
+            const Text('Mode'),
+            const Spacer(),
+            DropdownButton<AntiAliasingMode>(
+              value: exampleSettings.antiAliasingMode,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => exampleSettings.antiAliasingMode = value);
+                }
+              },
+              items: [
+                for (final mode in AntiAliasingMode.values)
+                  DropdownMenuItem(value: mode, child: Text(mode.name)),
+              ],
+            ),
+          ],
+        ),
+        if (!msaaSupported)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'MSAA is unavailable on this backend; msaa and auto render '
+              'with FXAA.',
+            ),
+          ),
+      ],
     );
   }
 

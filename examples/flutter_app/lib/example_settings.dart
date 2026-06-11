@@ -29,6 +29,9 @@ class ExampleSettings {
   /// Screen-space ambient occlusion shared across the examples.
   final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
 
+  /// Anti-aliasing mode shared across the examples.
+  AntiAliasingMode antiAliasingMode = AntiAliasingMode.auto;
+
   /// Whether the shared directional light is attached to the scene.
   bool directionalLightEnabled = true;
 
@@ -57,6 +60,10 @@ class ExampleSettings {
 
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
+    if (scene.antiAliasingMode != antiAliasingMode) {
+      scene.antiAliasingMode = antiAliasingMode;
+    }
+
     final grading = scene.postProcess.colorGrading;
     grading.enabled = colorGrading.enabled;
     grading.brightness = colorGrading.brightness;

@@ -19,6 +19,7 @@ import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
 import 'render/depth_prepass.dart';
+import 'render/fxaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
@@ -57,18 +58,31 @@ mixin SceneGraph {
 
 /// Anti-aliasing strategy used when rendering a [Scene].
 ///
-/// Set on a [Scene] via [Scene.antiAliasingMode]. The default is [msaa]
-/// when the GPU backend supports offscreen MSAA, otherwise [none].
+/// Set on a [Scene] via [Scene.antiAliasingMode]. The default is [auto],
+/// which selects [msaa] when the GPU backend supports offscreen MSAA and
+/// [fxaa] otherwise, so every backend gets anti-aliasing out of the box.
+/// Query support with [Scene.isAntiAliasingModeSupported] and read the
+/// technique that actually runs from [Scene.effectiveAntiAliasingMode].
 /// {@category Scene graph}
 enum AntiAliasingMode {
   /// No anti-aliasing. Geometry edges are rendered at the render target's
   /// native resolution.
   none,
 
-  /// 4x multi-sample anti-aliasing. Requires offscreen MSAA support on
-  /// the active Flutter GPU backend; setting this mode is silently
-  /// ignored (with a debug warning) when MSAA is unavailable.
+  /// 4x multi-sample anti-aliasing on the scene pass. The highest quality
+  /// option for geometry edges, and cheap on mobile GPUs. Not supported
+  /// on every Flutter GPU backend; where it is unavailable, rendering
+  /// falls back to [fxaa] (see [Scene.effectiveAntiAliasingMode]).
   msaa,
+
+  /// Fast approximate anti-aliasing, a single post-process pass over the
+  /// tone-mapped image. Supported on every backend. Softens all
+  /// high-contrast edges, including texture detail, so prefer [msaa]
+  /// where it is available.
+  fxaa,
+
+  /// Selects [msaa] when the backend supports it and [fxaa] otherwise.
+  auto,
 }
 
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
@@ -81,7 +95,6 @@ base class Scene implements SceneGraph {
   Scene() {
     initializeStaticResources();
     root.registerAsRoot(this);
-    antiAliasingMode = AntiAliasingMode.msaa;
   }
 
   static Future<void>? _initializeStaticResources;
@@ -108,32 +121,73 @@ base class Scene implements SceneGraph {
     return 1.0 / (1.2 * math.pow(2.0, ev100));
   }
 
-  AntiAliasingMode _antiAliasingMode = AntiAliasingMode.none;
+  // Resolved once at construction; the capability is fixed per context, so
+  // this avoids a backend query per frame. The eager read also makes
+  // Scene() fail fast when no usable Flutter GPU context exists, which the
+  // GPU-gated test suites rely on to skip without a device.
+  final bool _offscreenMsaaSupported = gpu.gpuContext.doesSupportOffscreenMSAA;
 
-  /// The anti-aliasing strategy used when rendering this [Scene].
+  AntiAliasingMode _antiAliasingMode = AntiAliasingMode.auto;
+  bool _warnedUnsupportedAntiAliasing = false;
+
+  /// The requested anti-aliasing strategy for this [Scene].
   ///
-  /// Defaults to [AntiAliasingMode.msaa] (set in the constructor) and falls
-  /// back to [AntiAliasingMode.none] when the active Flutter GPU backend
-  /// does not support offscreen MSAA. Assigning [AntiAliasingMode.msaa]
-  /// on an unsupported backend is silently ignored, leaving the previous
-  /// value in place.
+  /// Defaults to [AntiAliasingMode.auto]. The requested mode is always
+  /// kept; when it isn't supported by the active Flutter GPU backend
+  /// (currently only [AntiAliasingMode.msaa] can be unsupported),
+  /// rendering uses [AntiAliasingMode.fxaa] instead and a warning is
+  /// printed once in debug mode. Read [effectiveAntiAliasingMode] for the
+  /// technique that actually runs, and check support up front with
+  /// [isAntiAliasingModeSupported].
   set antiAliasingMode(AntiAliasingMode value) {
-    switch (value) {
-      case AntiAliasingMode.none:
-        break;
-      case AntiAliasingMode.msaa:
-        if (!gpu.gpuContext.doesSupportOffscreenMSAA) {
-          debugPrint("MSAA is not currently supported on this backend.");
-          return;
-        }
-        break;
-    }
-
     _antiAliasingMode = value;
+    final supported = value != AntiAliasingMode.msaa || _offscreenMsaaSupported;
+    if (!supported && !_warnedUnsupportedAntiAliasing) {
+      _warnedUnsupportedAntiAliasing = true;
+      debugPrint(
+        'Scene.antiAliasingMode: $value is not supported by the active GPU '
+        'backend; rendering with $effectiveAntiAliasingMode instead. Use '
+        'Scene.isAntiAliasingModeSupported to query support.',
+      );
+    }
   }
 
   AntiAliasingMode get antiAliasingMode {
     return _antiAliasingMode;
+  }
+
+  /// The anti-aliasing technique that actually runs when this [Scene]
+  /// renders.
+  ///
+  /// Resolves the requested [antiAliasingMode] against backend support:
+  /// [AntiAliasingMode.auto] becomes [AntiAliasingMode.msaa] where
+  /// offscreen MSAA is supported and [AntiAliasingMode.fxaa] otherwise,
+  /// and an unsupported [AntiAliasingMode.msaa] request also resolves to
+  /// [AntiAliasingMode.fxaa]. Never returns [AntiAliasingMode.auto].
+  AntiAliasingMode get effectiveAntiAliasingMode {
+    switch (_antiAliasingMode) {
+      case AntiAliasingMode.none:
+        return AntiAliasingMode.none;
+      case AntiAliasingMode.fxaa:
+        return AntiAliasingMode.fxaa;
+      case AntiAliasingMode.msaa:
+      case AntiAliasingMode.auto:
+        return _offscreenMsaaSupported
+            ? AntiAliasingMode.msaa
+            : AntiAliasingMode.fxaa;
+    }
+  }
+
+  /// Whether [mode] is supported by the active Flutter GPU backend.
+  ///
+  /// Every mode except [AntiAliasingMode.msaa] is supported everywhere;
+  /// MSAA requires offscreen MSAA support, which a subset of GLES-only
+  /// devices lacks. [AntiAliasingMode.auto] always reports supported
+  /// since it resolves to a supported technique by definition. Useful for
+  /// building settings UI without touching the Flutter GPU API directly.
+  static bool isAntiAliasingModeSupported(AntiAliasingMode mode) {
+    return mode != AntiAliasingMode.msaa ||
+        gpu.gpuContext.doesSupportOffscreenMSAA;
   }
 
   /// Casts [ray] through the scene's render geometry and returns the nearest
@@ -607,7 +661,9 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    final enableMsaa = _antiAliasingMode == AntiAliasingMode.msaa;
+    final effectiveAa = effectiveAntiAliasingMode;
+    final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
+    final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
       viewIndex,
@@ -740,9 +796,9 @@ base class Scene implements SceneGraph {
       );
     }
 
-    // The resolve writes the swapchain directly unless after-tone-mapping
-    // effects need an intermediate buffer to chain on.
-    final gpu.Texture resolveOutput = afterTonemap.isEmpty
+    // The resolve writes the swapchain directly unless FXAA or
+    // after-tone-mapping effects need an intermediate buffer to chain on.
+    final gpu.Texture resolveOutput = afterTonemap.isEmpty && !enableFxaa
         ? swapchainColor
         : pool.acquire(
             TransientTextureDescriptor.color(
@@ -760,6 +816,25 @@ base class Scene implements SceneGraph {
         postProcess: postProcess,
       ),
     );
+
+    // FXAA runs right after the resolve so custom after-tone-mapping
+    // effects receive the anti-aliased image. The resolve applies film
+    // grain and vignette first, so heavy grain is softened slightly here.
+    // TODO(antialiasing): if that softening bothers anyone, move grain
+    // application after the FXAA pass.
+    if (enableFxaa) {
+      final gpu.Texture fxaaOutput = afterTonemap.isEmpty
+          ? swapchainColor
+          : pool.acquire(
+              TransientTextureDescriptor.color(
+                width: width,
+                height: height,
+                format: swapchainColor.format,
+                debugName: 'fxaa_out',
+              ),
+            );
+      graph.addPass(FxaaPass(output: fxaaOutput, dimensions: pixelSize));
+    }
 
     // Custom effects on the display-referred image. The last one writes
     // the swapchain that gets composited onto the canvas.
