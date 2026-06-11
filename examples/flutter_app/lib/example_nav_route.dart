@@ -93,6 +93,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // toggling it on does not jump the view.
   bool _freeCamera = false;
   final QuakeCamera _freeCam = QuakeCamera(position: vm.Vector3(0, 12, 30))
+    ..speed = 20.0
     ..enabled = false;
 
   // Total elapsed seconds, updated each frame from SceneView's tick.
@@ -768,7 +769,7 @@ class _CameraToggle extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Text(
-                'WASD to move, Space and Shift for up and down, drag to look',
+                'WASD to move, Q and E for down and up, Shift to boost, drag to look',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
               ),
             ),
