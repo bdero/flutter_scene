@@ -14,11 +14,7 @@
   <a title="Discord" href="https://discord.gg/BfGKrcheRj"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white"/></a>
 </p>
 
-Scene is a general purpose realtime 3D rendering library for Flutter. It started life as a C++ component of the Impeller rendering backend in Flutter Engine, and is currently being actively developed as a pure Dart package powered by the Flutter GPU API, with a built-in WebGL2 backend so it also runs on the web.
-
-The primary goal of this project is to make performant cross platform 3D easy in Flutter.
-
-<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://github.com/bdero/flutter-scene-example">Example Game</a> · <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
+<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
 
 ---
 
@@ -27,15 +23,15 @@ The primary goal of this project is to make performant cross platform 3D easy in
 </p>
 
 <p align="center">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DamagedHelmet2.webp">
+</p>
+
+<p align="center">
+  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dash_physics.webp">
+</p>
+
+<p align="center">
   <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/hexagons3.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DamagedHelmet.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/car_example.webp">
 </p>
 
 <p align="center">
@@ -74,10 +70,10 @@ On the web, no flags are needed; it works under both the CanvasKit and Skwasm re
 | ---------------: | :-------------- |
 |              iOS | 🟢 Supported     |
 |          Android | 🟢 Supported     |
+|              Web | 🟢 Supported     |
 |            MacOS | 🟡 Preview       |
 |          Windows | 🟡 Preview       |
 |            Linux | 🟡 Preview       |
-|              Web | 🟡 Preview       |
 | Custom embedders | 🟢 Supported     |
 
 ### **Q:** How does web support work?
