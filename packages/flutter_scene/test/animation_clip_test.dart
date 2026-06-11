@@ -5,6 +5,10 @@
 library;
 
 import 'package:flutter_scene/scene.dart';
+// The channel/resolver data model is internal; tests reach it directly.
+// ignore: implementation_imports
+import 'package:flutter_scene/src/animation.dart'
+    show AnimationChannel, BindKey, PropertyResolver;
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 

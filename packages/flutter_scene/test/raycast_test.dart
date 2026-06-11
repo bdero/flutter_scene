@@ -10,6 +10,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart' show Offset, Size;
 import 'package:flutter_scene/scene.dart' hide Material;
+// The packed-triangle intersector is test-only surface; reach it directly.
+// ignore: implementation_imports
+import 'package:flutter_scene/src/raycast.dart'
+    show PackedTriangleHit, intersectPackedTriangles;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu show IndexType;
 import 'package:vector_math/vector_math.dart';
