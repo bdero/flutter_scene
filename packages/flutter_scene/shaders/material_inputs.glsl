@@ -25,11 +25,13 @@ struct MaterialInputs {
 };
 
 // A MaterialInputs with neutral defaults. A Surface() function that leaves a
-// field unset gets these values.
+// field unset gets these values. The normal defaults to the interpolated
+// surface normal (NOT a constant), so a lit Surface() that never assigns
+// material.normal still shades with the geometry's curvature.
 MaterialInputs InitMaterialInputs() {
   MaterialInputs material;
   material.base_color = vec4(1.0);
-  material.normal = vec3(0.0, 0.0, 1.0);
+  material.normal = GetWorldNormal();
   material.emissive = vec3(0.0);
   material.metallic = 0.0;
   material.roughness = 1.0;
