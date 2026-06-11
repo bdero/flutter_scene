@@ -9,6 +9,7 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Concrete joint classes live in backend packages. Hold a reference at
 /// the appropriate abstract subclass so user code stays portable.
+/// {@category Physics}
 abstract class Joint extends Component {
   /// The other node this joint connects to. When `null`, the joint
   /// anchors to the world (the other side behaves as a fixed body).
@@ -21,6 +22,7 @@ abstract class Joint extends Component {
 }
 
 /// Welds two bodies together with zero degrees of freedom.
+/// {@category Physics}
 abstract class FixedJoint extends Joint {}
 
 /// A ball-and-socket joint: three rotational degrees of freedom, zero
@@ -34,6 +36,7 @@ abstract class SphericalJoint extends Joint {
 }
 
 /// A hinge: one rotational degree of freedom around a shared axis.
+/// {@category Physics}
 abstract class RevoluteJoint extends Joint {
   Vector3 get localAnchorA;
   set localAnchorA(Vector3 value);
@@ -65,6 +68,7 @@ abstract class RevoluteJoint extends Joint {
 }
 
 /// A slider: one translational degree of freedom along a shared axis.
+/// {@category Physics}
 abstract class PrismaticJoint extends Joint {
   Vector3 get localAnchorA;
   set localAnchorA(Vector3 value);
@@ -95,6 +99,7 @@ abstract class PrismaticJoint extends Joint {
 /// linear axes are translations along, and the angular axes rotations
 /// about, the joint frame's local X / Y / Z (oriented by the joint's
 /// local bases on each body).
+/// {@category Physics}
 enum JointAxis { linearX, linearY, linearZ, angularX, angularY, angularZ }
 
 /// How a [JointMotor] turns its drive parameters into a force.
@@ -115,6 +120,7 @@ enum JointMotorModel {
 /// most [maxForce] (a force on a linear axis, a torque on an angular
 /// one). Leave [stiffness] at 0 for a pure velocity drive; set it for a
 /// positional spring (a soft constraint).
+/// {@category Physics}
 class JointMotor {
   /// Rest position the spring pulls toward: meters on a linear axis,
   /// radians on an angular one.
@@ -148,6 +154,7 @@ class JointMotor {
 }
 
 /// Whether a [GenericJoint] axis is locked, free, or limited.
+/// {@category Physics}
 enum JointAxisMotion { locked, free, limited }
 
 /// The configuration of one of a [GenericJoint]'s six axes.
@@ -155,6 +162,7 @@ enum JointAxisMotion { locked, free, limited }
 /// [motion] sets whether the axis is rigidly locked, free, or confined to
 /// a band. [lowerLimit] / [upperLimit] apply only when [motion] is
 /// [JointAxisMotion.limited]. An optional [motor] drives the axis.
+/// {@category Physics}
 class JointAxisConfig {
   final JointAxisMotion motion;
   final double lowerLimit;
@@ -190,6 +198,7 @@ class JointAxisConfig {
 /// limited and may carry a spring-damper [JointMotor]. This is the most
 /// general joint: the fixed, spherical, revolute, and prismatic joints
 /// are all special cases. Pass a null [otherNode] to anchor to the world.
+/// {@category Physics}
 abstract class GenericJoint extends Joint {
   Vector3 get localAnchorA;
   set localAnchorA(Vector3 value);

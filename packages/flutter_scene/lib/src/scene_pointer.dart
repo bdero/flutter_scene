@@ -36,6 +36,7 @@ import 'package:vector_math/vector_math.dart' show Ray;
 /// caller (crosshair highlights, cursor feedback); it is not forwarded into
 /// the widgets (widget-level hover needs MouseTracker integration, a
 /// planned follow-up).
+/// {@category Picking and input}
 class ScenePointer {
   /// Creates a pointer into [scene].
   ScenePointer(

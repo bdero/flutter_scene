@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 /// registers a single [RenderItem] for the whole instanced mesh and
 /// refreshes it each frame. The render passes draw every instance from
 /// that one item.
+/// {@category Scene graph}
 class InstancedMeshComponent extends Component {
   /// Creates a component that draws [instancedMesh].
   InstancedMeshComponent(this.instancedMesh);

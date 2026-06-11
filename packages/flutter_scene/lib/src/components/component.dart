@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/node.dart';
 ///
 /// Subclasses override the `onX` hooks and [update]; all other members
 /// are driven by the engine and should not be called directly.
+/// {@category Scene graph}
 abstract class Component {
   Node? _node;
 

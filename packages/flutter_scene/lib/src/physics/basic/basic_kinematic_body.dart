@@ -12,6 +12,7 @@ import 'package:vector_math/vector_math.dart';
 /// ships a constraint solver. The constructor rejects
 /// [BodyType.dynamic_] with a clear error to make the limitation
 /// obvious instead of silently producing wrong results.
+/// {@category Physics}
 class BasicKinematicBody extends RigidBody {
   BasicKinematicBody({
     BodyType type = BodyType.kinematic,

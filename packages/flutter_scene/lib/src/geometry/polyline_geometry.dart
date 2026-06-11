@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 
 /// How a [PolylineGeometry]'s width is measured.
+/// {@category Geometry}
 enum PolylineWidthMode {
   /// The width is a constant number of screen pixels at every distance,
   /// so a route line keeps the same on-screen thickness as the camera
@@ -20,6 +21,7 @@ enum PolylineWidthMode {
 }
 
 /// How a [PolylineGeometry] finishes its two end points.
+/// {@category Geometry}
 enum PolylineCap {
   /// The strip ends flat at the end point.
   butt,
@@ -30,6 +32,7 @@ enum PolylineCap {
 
 /// A repeating dash-and-gap pattern for a [PolylineGeometry], measured
 /// in scene units along the line's arc length.
+/// {@category Geometry}
 class DashPattern {
   /// Creates a dash pattern; both lengths must be positive.
   const DashPattern({
@@ -71,6 +74,7 @@ const int _diskSegments = 16;
 /// pinch on a very sharp turn. Rounded corner joins and a GPU
 /// vertex-shader expansion that avoids the per-frame rebuild are
 /// planned follow-ups.
+/// {@category Geometry}
 class PolylineGeometry extends MeshGeometry {
   /// Creates a polyline through [points] (at least two).
   ///

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 /// resource's bytes. Supplied by the caller of [Node.fromGltfBytes] /
 /// `importGltf`; `data:` URIs are decoded internally and never reach
 /// the resolver.
+/// {@category Assets and loading}
 typedef GltfResourceResolver = Future<Uint8List> Function(String uri);
 
 /// Decodes a `data:` URI into its raw bytes.

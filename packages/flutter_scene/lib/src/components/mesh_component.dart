@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 ///
 /// A node's [Node.mesh] getter and setter are a convenience over the
 /// node's first `MeshComponent`.
+/// {@category Scene graph}
 class MeshComponent extends Component {
   /// Creates a component that draws [mesh].
   MeshComponent(this._mesh);

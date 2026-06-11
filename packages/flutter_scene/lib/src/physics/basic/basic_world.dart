@@ -21,6 +21,7 @@ import 'package:vector_math/vector_math.dart';
 /// [BasicKinematicBody]s to nodes you intend to move under your own
 /// control. For full rigid-body simulation, depend on a backend
 /// package with a solver.
+/// {@category Physics}
 class BasicPhysicsWorld extends PhysicsWorld {
   BasicPhysicsWorld({Vector3? gravity}) {
     if (gravity != null) this.gravity = gravity;

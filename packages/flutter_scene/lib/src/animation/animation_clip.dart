@@ -17,6 +17,7 @@ class _ChannelBinding {
 /// Multiple clips on the same node are blended by an internal
 /// [AnimationPlayer] that normalizes their weights when the sum exceeds
 /// `1`.
+/// {@category Animation}
 class AnimationClip {
   Animation _animation;
   final List<_ChannelBinding> _bindings = [];

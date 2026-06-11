@@ -11,6 +11,7 @@ part of '../animation.dart';
 /// It advances every clip by the frame delta, blends their results into
 /// the bind pose, and writes the resulting transforms back to the bound
 /// nodes.
+/// {@category Animation}
 class AnimationPlayer {
   final Map<Node, AnimationTransforms> _targetTransforms = {};
   final Map<String, AnimationClip> _clips = {};

@@ -12,6 +12,7 @@ import 'package:vector_math/vector_math.dart';
 
 /// Number of L2 spherical-harmonic coefficients used for diffuse
 /// irradiance (bands 0..2).
+/// {@category Lighting and environment}
 const int kDiffuseShCoefficientCount = 9;
 
 /// A source of image-based lighting: diffuse irradiance plus prefiltered
@@ -32,6 +33,7 @@ const int kDiffuseShCoefficientCount = 9;
 /// Set one on a [Scene] via `Scene.environment` (it defaults to
 /// [EnvironmentMap.studio]); an individual [PhysicallyBasedMaterial] can
 /// override it via `PhysicallyBasedMaterial.environment`.
+/// {@category Lighting and environment}
 base class EnvironmentMap {
   EnvironmentMap._(this._prefilteredRadianceTexture, List<Vector3> sh)
     : assert(sh.length == kDiffuseShCoefficientCount),
@@ -546,5 +548,6 @@ final Expando<String> _environmentAssetPaths = Expando(
 
 /// The radiance asset path [environment] was loaded from through
 /// [EnvironmentMap.fromAssets], or null for environments built another way.
+/// {@category Lighting and environment}
 String? environmentAssetPathOf(EnvironmentMap environment) =>
     _environmentAssetPaths[environment];

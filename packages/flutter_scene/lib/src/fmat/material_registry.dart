@@ -65,6 +65,7 @@ final class FmatMaterialIndexEntry {
 /// Materials are keyed by their `.fmat` source path relative to the owning
 /// package's root, so two materials that share a name in different directories
 /// do not collide.
+/// {@category Materials}
 final class FmatMaterialRegistry {
   FmatMaterialRegistry._(this._bundle, this._indexes);
 
@@ -266,6 +267,7 @@ final Expando<String> _fmatSourcePaths = Expando('fmat source path');
 String? fmatSourcePathOf(Object materialOrSky) =>
     _fmatSourcePaths[materialOrSky];
 
+/// {@category Materials}
 Future<PreprocessedMaterial> loadFmatMaterial(
   String sourcePath, {
   String? package,
@@ -287,6 +289,7 @@ Future<PreprocessedMaterial> loadFmatMaterial(
 /// the result to `Scene.skybox` via a `Skybox`. Pass [package] and/or
 /// [bundleName] to disambiguate when the same source path is provided by more
 /// than one bundle.
+/// {@category Materials}
 Future<PreprocessedSky> loadFmatSky(
   String sourcePath, {
   String? package,

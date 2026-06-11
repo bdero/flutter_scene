@@ -17,6 +17,7 @@ gpu.ShaderLibrary? _baseShaderLibrary;
 /// must be loaded ahead of time by awaiting [Scene.initializeStaticResources]
 /// (which calls [loadBaseShaderLibrary]); accessing this getter before that
 /// completes throws.
+/// {@category Assets and loading}
 gpu.ShaderLibrary get baseShaderLibrary {
   final cached = _baseShaderLibrary;
   if (cached != null) {
@@ -39,6 +40,7 @@ gpu.ShaderLibrary get baseShaderLibrary {
 /// Called by [Scene.initializeStaticResources] so the synchronous
 /// [baseShaderLibrary] getter has a cached library to return (required on
 /// web, where shader assets can't be read synchronously).
+/// {@category Assets and loading}
 Future<void> loadBaseShaderLibrary() async {
   if (_baseShaderLibrary != null) {
     return;

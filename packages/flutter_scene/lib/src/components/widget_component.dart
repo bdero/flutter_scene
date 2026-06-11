@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/widget_texture.dart';
 import 'dart:typed_data';
 
 /// How a [WidgetComponent] receives pointer input.
+/// {@category Widgets}
 enum WidgetInput {
   /// `SceneView` forwards platform pointer events automatically: presses
   /// and drags raycast into the scene, and when this component's surface is
@@ -45,6 +46,7 @@ enum WidgetInput {
 /// The texture object is stable across captures (overwritten in place) and
 /// replaced only when the capture size changes; [bind] re-fires exactly on
 /// replacement.
+/// {@category Widgets}
 // TODO(widget-component): WidgetInput.automatic via ScenePointer (phase 3).
 // TODO(fscene): serialize the component spec (size, policy, geometry) with a
 // named slot the app binds the widget tree to at runtime.

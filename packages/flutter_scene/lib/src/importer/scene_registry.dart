@@ -20,6 +20,7 @@ const String _sceneAssetSuffix = '.fsceneb';
 /// [loadScene]), so the app can re-apply per-instance customizations the
 /// patch may have discarded: re-apply a custom material, or re-grab inner
 /// nodes by name. [root] is the same root instance the app holds.
+/// {@category Assets and loading}
 typedef SceneReloadCallback = void Function(Node root);
 
 /// Shared per-asset scene templates: the composed document plus its
@@ -96,6 +97,7 @@ final class SceneEntry {
 
 /// Resolves DataAssets-backed `.fsceneb` files by source path, the `.fscene`
 /// counterpart of `ModelRegistry`.
+/// {@category Assets and loading}
 final class SceneRegistry {
   SceneRegistry._(this._entries);
 
@@ -162,6 +164,7 @@ final class SceneRegistry {
   /// realize app-defined component types, and [onReload] to re-apply
   /// per-instance customizations after a hot reload patches this instance in
   /// place.
+  /// {@category Assets and loading}
   Future<Node> loadScene(
     String sourcePath, {
     String? package,
@@ -402,6 +405,7 @@ Future<Node> loadScene(
 ///
 /// The streamed content hot-reloads: editing any of the prefab's assets
 /// re-streams the subtree in place while it is loaded.
+/// {@category Assets and loading}
 Future<void> loadSceneSubtree(
   Node node, {
   String? package,

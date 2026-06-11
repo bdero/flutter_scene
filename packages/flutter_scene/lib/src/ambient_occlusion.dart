@@ -16,6 +16,7 @@
 /// (the per-pixel normal is reconstructed from depth), so it fits a
 /// forward renderer with no normal buffer, and runs as full-screen
 /// fragment passes with no compute.
+/// {@category Rendering}
 class AmbientOcclusionSettings {
   /// Whether ambient occlusion runs. Off by default. When false the scene
   /// adds no ambient-occlusion passes and the lighting is unaffected.
@@ -56,6 +57,7 @@ class AmbientOcclusionSettings {
 /// occluding the specular lobe with the same factor over-darkens glossy
 /// reflections. These modes select how (or whether) the specular lobe is
 /// occluded.
+/// {@category Rendering}
 enum SpecularAmbientOcclusionMode {
   /// Indirect specular is not occluded by ambient occlusion. Cheapest and
   /// the default.

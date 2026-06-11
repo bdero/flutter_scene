@@ -19,6 +19,7 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Like every Geometry and Material constructor, construct only after
 /// `Scene.initializeStaticResources` completes.
+/// {@category Lighting and environment}
 class GradientSkySource extends ShaderSkySource {
   GradientSkySource({
     Vector3? zenithColor,
@@ -89,6 +90,7 @@ class GradientSkySource extends ShaderSkySource {
 ///
 /// Like every Geometry and Material constructor, construct only after
 /// `Scene.initializeStaticResources` completes.
+/// {@category Lighting and environment}
 class PhysicalSkySource extends ShaderSkySource {
   PhysicalSkySource({
     Vector3? sunDirection,

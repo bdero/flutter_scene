@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart';
 /// direction of travel). [distance] is positive and measured along the
 /// normalized direction. [Ray] is `vector_math`'s class; backends
 /// normalize its direction internally.
+/// {@category Physics}
 class RaycastHit {
   /// The node whose collider was hit.
   final Node node;
@@ -32,6 +33,7 @@ class RaycastHit {
 }
 
 /// One collider returned by an overlap query (sphere or box).
+/// {@category Physics}
 class OverlapHit {
   final Node node;
   final Component collider;
@@ -41,6 +43,7 @@ class OverlapHit {
 
 /// The first collider intersected by a shape cast, with the same fields
 /// as [RaycastHit] plus the cast direction's hit distance.
+/// {@category Physics}
 class ShapeCastHit extends RaycastHit {
   ShapeCastHit({
     required super.node,

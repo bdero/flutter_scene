@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/render/sky_bake.dart';
 import 'package:flutter_scene/src/skybox.dart';
 
 /// When a [SkyEnvironment] re-bakes the sky into the scene's lighting.
+/// {@category Lighting and environment}
 enum SkyEnvironmentRefresh {
   /// Bake once when the binding is set, then only when [SkyEnvironment.invalidate]
   /// is called. The right choice for a static sky.
@@ -41,6 +42,7 @@ enum SkyEnvironmentRefresh {
 /// // ... later, after changing the sky's parameters:
 /// scene.skyEnvironment!.invalidate();
 /// ```
+/// {@category Lighting and environment}
 class SkyEnvironment {
   SkyEnvironment(
     this.source, {

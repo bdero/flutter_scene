@@ -37,6 +37,7 @@ import 'tone_mapping.dart';
 ///
 /// `SceneGraph` provides a set of methods that can be implemented by a class
 /// to manage a hierarchy of nodes within a 3D scene.
+/// {@category Scene graph}
 mixin SceneGraph {
   /// Add a child node.
   void add(Node child);
@@ -58,6 +59,7 @@ mixin SceneGraph {
 ///
 /// Set on a [Scene] via [Scene.antiAliasingMode]. The default is [msaa]
 /// when the GPU backend supports offscreen MSAA, otherwise [none].
+/// {@category Scene graph}
 enum AntiAliasingMode {
   /// No anti-aliasing. Geometry edges are rendered at the render target's
   /// native resolution.
@@ -74,6 +76,7 @@ enum AntiAliasingMode {
 /// `Scene` manages the scene graph and handles rendering operations.
 /// It contains a root [Node] that serves as the entry point for all nodes in this `Scene`, and
 /// it provides methods for adding and removing nodes from the scene graph.
+/// {@category Scene graph}
 base class Scene implements SceneGraph {
   Scene() {
     initializeStaticResources();

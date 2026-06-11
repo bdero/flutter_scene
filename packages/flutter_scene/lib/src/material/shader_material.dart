@@ -72,6 +72,7 @@ import 'package:flutter_scene/src/material/material.dart';
 /// TODO(https://github.com/bdero/flutter_scene/issues/22): generate
 /// this packing code at build time from a declarative material
 /// source so callers don't write it by hand.
+/// {@category Materials}
 class ShaderMaterial extends Material {
   /// Creates a [ShaderMaterial] wrapping [fragmentShader].
   ///

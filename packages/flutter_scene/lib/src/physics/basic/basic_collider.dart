@@ -12,6 +12,7 @@ import 'package:vector_math/vector_math.dart';
 /// raycasting, overlap queries, and trigger events. Attaching one
 /// without a [BasicKinematicBody] on the same node yields a static
 /// collider (the basic backend has no dynamics solver).
+/// {@category Physics}
 class BasicCollider extends Collider {
   BasicCollider({
     required Shape shape,

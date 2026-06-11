@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/components/component.dart';
 /// Use [toCamera] to capture a [Camera] for the node's current transform to
 /// pass to `Scene.render`. (The node should not be scaled; a camera node is
 /// expected to carry only rotation and translation.)
+/// {@category Scene graph}
 class CameraComponent extends Component {
   /// Creates a camera component with the given [projection] (a
   /// [PerspectiveProjection] by default).

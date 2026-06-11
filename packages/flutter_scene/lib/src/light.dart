@@ -23,6 +23,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 /// radius [shadowSoftness], and shadowing fades back to lit at the far
 /// edge over [shadowFadeRange]. Cascaded shadows require the scene to
 /// render with a perspective projection.
+/// {@category Lighting and environment}
 class DirectionalLight {
   /// Creates a [DirectionalLight].
   ///
@@ -267,6 +268,7 @@ class DirectionalLight {
 /// A cascade owns the world -> light-clip-space matrix that renders and
 /// samples its shadow map tile, plus the camera view distance at which
 /// its coverage ends.
+/// {@category Lighting and environment}
 class ShadowCascade {
   /// Creates a cascade from its [lightSpaceMatrix], [splitDistance], and
   /// [boxSize].
@@ -295,6 +297,7 @@ class ShadowCascade {
 /// Bundles the image-based-lighting [EnvironmentMap] (and the scene's
 /// `environmentIntensity` multiplier) with the analytic lights and shadow
 /// resources, so material code has everything it needs in one place.
+/// {@category Lighting and environment}
 class Lighting {
   Lighting({
     required this.environmentMap,

@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 /// picture, and more). Each view binds a camera to a [viewport]
 /// sub-rectangle of the target, a [layerMask] selecting which nodes it
 /// sees, and an [order] controlling how overlapping views composite.
+/// {@category Rendering}
 class RenderView {
   /// Creates a render view for [camera].
   RenderView({

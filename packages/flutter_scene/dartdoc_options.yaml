@@ -1,0 +1,12 @@
+dartdoc:
+  categoryOrder:
+    - "Scene graph"
+    - "Geometry"
+    - "Materials"
+    - "Lighting and environment"
+    - "Rendering"
+    - "Animation"
+    - "Physics"
+    - "Picking and input"
+    - "Widgets"
+    - "Assets and loading"

@@ -61,6 +61,7 @@ class AnimationChannel {
 /// [PropertyResolver]. To play an animation, instantiate it as an
 /// [AnimationClip] bound to a target subtree with
 /// [Node.createAnimationClip].
+/// {@category Animation}
 class Animation {
   /// Display name of the animation, used by [Node.findAnimationByName].
   final String name;

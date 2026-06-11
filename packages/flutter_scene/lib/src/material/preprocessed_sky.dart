@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/skybox.dart';
 ///
 /// Loaded via `loadFmatSky`, which registers it for in-place hot reload so a
 /// `.fmat` edit shows up without a restart.
+/// {@category Lighting and environment}
 class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
   // fragmentShader is also consumed in the initializer (to build parameters),
   // so it can't be a super parameter.

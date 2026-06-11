@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// [EnvironmentMap].
 ///
 /// Throws if the image can't be read as RGBA.
+/// {@category Assets and loading}
 Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
   final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
   if (byteData == null) {
@@ -33,6 +34,7 @@ Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
 ///
 /// Uses `dart:ui`'s built-in image codecs (PNG, JPEG, etc.). Throws if
 /// the asset is not present in the bundle or cannot be decoded.
+/// {@category Assets and loading}
 Future<ui.Image> imageFromAsset(String assetPath, {AssetBundle? bundle}) async {
   // Load resource from the asset bundle. Throws exception if the asset couldn't
   // be found in the bundle.
@@ -48,6 +50,7 @@ Future<ui.Image> imageFromAsset(String assetPath, {AssetBundle? bundle}) async {
 ///
 /// Uses `dart:ui`'s built-in image codecs. Throws if the bytes can't be
 /// decoded as an image.
+/// {@category Assets and loading}
 Future<ui.Image> imageFromBytes(Uint8List bytes) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
   final codec = await ui.instantiateImageCodecFromBuffer(buffer);
@@ -61,6 +64,7 @@ Future<ui.Image> imageFromBytes(Uint8List bytes) async {
 /// The asset is decoded with [imageFromAsset] and then uploaded via
 /// [gpuTextureFromImage]. Throws if the asset is not present in the
 /// bundle or cannot be decoded.
+/// {@category Assets and loading}
 Future<gpu.Texture> gpuTextureFromAsset(String assetPath) async {
   return await gpuTextureFromImage(await imageFromAsset(assetPath));
 }

@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart';
 
 /// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
 /// matching glTF's `alphaMode`.
+/// {@category Materials}
 enum AlphaMode {
   /// Alpha is ignored; the material renders fully opaque.
   opaque,
@@ -42,6 +43,7 @@ enum AlphaMode {
 ///
 /// Translucency is determined by [baseColorFactor]'s alpha component;
 /// the material is treated as opaque when alpha is exactly `1`.
+/// {@category Materials}
 class PhysicallyBasedMaterial extends Material {
   /// Creates a PBR material with the given textures.
   ///

@@ -29,6 +29,7 @@ import 'package:flutter_scene/src/material/material_parameters.dart';
 /// shader's `Surface()` fills the surface description); an `unlit` material
 /// outputs its `base_color` directly. The render state (blending, culling)
 /// comes from the material's metadata.
+/// {@category Materials}
 class PreprocessedMaterial extends Material implements HotReloadableFmat {
   PreprocessedMaterial({
     required gpu.Shader fragmentShader,

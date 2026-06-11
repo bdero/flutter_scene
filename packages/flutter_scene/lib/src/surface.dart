@@ -24,6 +24,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 ///
 /// Applications typically don't interact with `Surface` directly; it is
 /// driven internally by [Scene.render] / [Scene.renderViews].
+/// {@category Rendering}
 class Surface {
   // TODO(bdero): There should be a method on the Flutter GPU context to pull
   //              this information.

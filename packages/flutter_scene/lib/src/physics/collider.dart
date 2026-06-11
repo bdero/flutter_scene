@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Concrete subclasses live in backend packages. Hold a reference as
 /// [Collider] so user code stays portable between backends.
+/// {@category Physics}
 abstract class Collider extends Component {
   Shape get shape;
   set shape(Shape value);

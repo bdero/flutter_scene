@@ -20,6 +20,7 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 ///
 /// The default [bind] enables back-face culling with counter-clockwise
 /// winding, matching the [glTF coordinate convention](https://github.com/KhronosGroup/glTF/tree/main/specification/2.0#coordinate-system-and-units).
+/// {@category Materials}
 abstract class Material {
   static gpu.Texture? _whitePlaceholderTexture;
 

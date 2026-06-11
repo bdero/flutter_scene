@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// paint [Material], the windows a transparent glass [Material], and the wheels a black rubber [Material].
 /// Each of these parts of the car has its own [Geometry] and [Material], and together
 /// they form the complete model.
+/// {@category Geometry}
 base class MeshPrimitive {
   /// Pairs [geometry] with the [material] used to shade it.
   MeshPrimitive(this.geometry, this.material);
@@ -29,6 +30,7 @@ base class MeshPrimitive {
 /// It consists of a list of [MeshPrimitive] instances, where each primitive
 /// contains the [Geometry] and the [Material] to render a specific part of
 /// the 3d model.
+/// {@category Geometry}
 base class Mesh {
   /// Creates a `Mesh` consisting of a single [MeshPrimitive] with the given [Geometry] and [Material].
   Mesh(Geometry geometry, Material material)

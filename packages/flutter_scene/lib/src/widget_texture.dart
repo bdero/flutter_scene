@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 /// When a [WidgetTexture] (or a `WidgetComponent`) re-captures its child.
+/// {@category Widgets}
 sealed class WidgetUpdatePolicy {
   const WidgetUpdatePolicy._();
 
@@ -55,6 +56,7 @@ class _ManualUpdatePolicy extends WidgetUpdatePolicy {
 /// so treat this as a correct-but-slow path: captures are throttled to one in
 /// flight and only run when the child subtree actually repaints, but each one
 /// costs a readback on the raster thread plus a byte upload.
+/// {@category Widgets}
 // TODO(widget-textures): keep the snapshot on the GPU once the engine can
 // wrap a ui.Image's backing texture as a flutter_gpu texture (the planned
 // gpu.Texture.fromImage); the capture and binding API stays the same.
@@ -156,6 +158,7 @@ class WidgetTextureController extends ChangeNotifier {
 ///
 /// Pointer input does not reach the child (the subtree never appears on
 /// screen).
+/// {@category Widgets}
 // TODO(widget-textures): route pointer events from scene raycasts into the
 // hosted subtree so textured widgets become interactive.
 class WidgetTexture extends SingleChildRenderObjectWidget {

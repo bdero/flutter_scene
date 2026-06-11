@@ -42,6 +42,7 @@ class _SamplerSlot {
 ///  * the dynamic [operator []=]: dispatches on the declared type and throws on
 ///    a mismatch;
 ///  * [rawBlock] / [offsetOf]: a raw escape hatch for hot loops.
+/// {@category Materials}
 class MaterialParameters {
   MaterialParameters._(
     this._blockName,

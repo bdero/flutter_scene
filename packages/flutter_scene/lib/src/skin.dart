@@ -32,6 +32,7 @@ int _getNextPowerOfTwoSize(int x) {
 /// `Skin` instances are usually populated by an importer rather than
 /// constructed directly. They are attached to the mesh-bearing [Node] via
 /// [Node.skin].
+/// {@category Geometry}
 base class Skin {
   /// The bone nodes referenced by this skin, in shader-binding order.
   ///
