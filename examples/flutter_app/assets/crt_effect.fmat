@@ -111,7 +111,8 @@ fragment {
             material_params.ac_beat;
 
     // A black, glossy tube: the picture is emitted light, and the
-    // environment glares off the glass.
+    // environment glares off the glass, following the dome's curvature.
+    material.normal = GetWorldNormal();
     material.base_color = vec4(0.0, 0.0, 0.0, 1.0);
     material.metallic = 0.0;
     material.roughness = material_params.roughness;
