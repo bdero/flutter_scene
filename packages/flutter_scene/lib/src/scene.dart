@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart' show Matrix3;
+import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
 import 'camera.dart';
 import 'components/directional_light_component.dart';
@@ -13,6 +13,7 @@ import 'material/environment.dart';
 import 'material/material.dart';
 import 'mesh.dart';
 import 'node.dart';
+import 'raycast.dart';
 import 'physics/physics_world.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
@@ -131,6 +132,47 @@ base class Scene implements SceneGraph {
   AntiAliasingMode get antiAliasingMode {
     return _antiAliasingMode;
   }
+
+  /// Casts [ray] through the scene's render geometry and returns the nearest
+  /// hit, or null.
+  ///
+  /// Tests the meshes as rendered (no colliders or physics setup), with the
+  /// hit's texture coordinate interpolated from the vertex data. Invisible
+  /// subtrees are skipped unless [includeInvisible] is set; nodes must
+  /// intersect [layerMask] (against [Node.layers]), have [Node.raycastable]
+  /// set, and pass [where] when provided. Distinct from the physics queries
+  /// (`PhysicsWorld.raycast`), which test collision shapes.
+  SceneRaycastHit? raycast(
+    Ray ray, {
+    double maxDistance = double.infinity,
+    int layerMask = 0xFFFFFFFF,
+    bool Function(Node node)? where,
+    bool includeInvisible = false,
+  }) => raycastNode(
+    root,
+    ray,
+    maxDistance: maxDistance,
+    layerMask: layerMask,
+    where: where,
+    includeInvisible: includeInvisible,
+  );
+
+  /// Casts [ray] through the scene's render geometry and returns every hit,
+  /// sorted nearest-first. Parameters as in [raycast].
+  List<SceneRaycastHit> raycastAll(
+    Ray ray, {
+    double maxDistance = double.infinity,
+    int layerMask = 0xFFFFFFFF,
+    bool Function(Node node)? where,
+    bool includeInvisible = false,
+  }) => raycastNodeAll(
+    root,
+    ray,
+    maxDistance: maxDistance,
+    layerMask: layerMask,
+    where: where,
+    includeInvisible: includeInvisible,
+  );
 
   /// Prepares the rendering resources, such as textures and shaders,
   /// that are used to display models in this [Scene].

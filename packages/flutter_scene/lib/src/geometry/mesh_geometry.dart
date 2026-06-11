@@ -315,6 +315,12 @@ class MeshGeometry extends UnskinnedGeometry {
       colors: _cpuColors,
     );
     _packedVertexBytes = bytes;
+    retainCpuMeshData(
+      ByteData.sublistView(bytes),
+      _packedIndexBytes == null
+          ? null
+          : ByteData.sublistView(_packedIndexBytes!),
+    );
     final buffer = _vertexBuffer!;
     if (bytes.isNotEmpty) {
       buffer.overwrite(ByteData.sublistView(bytes));
@@ -330,6 +336,10 @@ class MeshGeometry extends UnskinnedGeometry {
     final packed = InterleavedLayoutAdapter.packIndices(indices);
     _packedIndexBytes = packed.bytes;
     _packedIndices32Bit = packed.is32Bit;
+    retainCpuMeshData(
+      ByteData.sublistView(_packedVertexBytes),
+      ByteData.sublistView(packed.bytes),
+    );
     final indexType = packed.is32Bit
         ? gpu.IndexType.int32
         : gpu.IndexType.int16;

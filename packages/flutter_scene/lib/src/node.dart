@@ -59,6 +59,14 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
+  /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.
+  ///
+  /// Disable for geometry that renders but should be transparent to rays
+  /// (effects, decals); it then neither blocks nor receives picks. Distinct
+  /// from [visible]: invisible nodes are already skipped by default.
+  // TODO(fscene): serialize this flag (NodeSpec field + json + diff).
+  bool raycastable = true;
+
   Matrix4 _localTransform;
 
   /// The transform of this node relative to its parent: position,
