@@ -33,7 +33,7 @@ dependencies:
   # The physics contract this package implements lands in flutter_scene
   # 0.16.0. Within this workspace it resolves to the local package; on
   # pub.dev it requires flutter_scene 0.16.0 to be published first.
-  flutter_scene: ^0.17.0
+  flutter_scene: ^0.18.0
   hooks: ^2.0.0
   vector_math: ^2.1.4
 
