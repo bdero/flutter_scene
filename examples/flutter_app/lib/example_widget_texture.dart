@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -230,27 +229,17 @@ Geometry _buildCrtScreen({
   final columns = segments + 1;
   final rows = (segments * 3) ~/ 4 + 1;
   final positions = Float32List(columns * rows * 3);
-  final normals = Float32List(columns * rows * 3);
   final texCoords = Float32List(columns * rows * 2);
   for (var r = 0; r < rows; r++) {
     final ny = r / (rows - 1) * 2 - 1; // -1 (bottom) .. 1 (top)
     for (var c = 0; c < columns; c++) {
       final nx = c / (columns - 1) * 2 - 1;
       final v = r * columns + c;
-      // A smooth dome: full bulge at the center, flat at the rim,
-      // z = bulge * (1 - nx^2)(1 - ny^2) over x = nx*w/2, y = ny*h/2.
+      // A smooth dome: full bulge at the center, flat at the rim.
       final dome = (1 - nx * nx) * (1 - ny * ny);
       positions[v * 3] = nx * width / 2;
       positions[v * 3 + 1] = ny * height / 2;
       positions[v * 3 + 2] = bulge * dome;
-      // Analytic surface normal: (-dz/dx, -dz/dy, 1) normalized. The
-      // chain rule brings in dnx/dx = 2/width (and likewise for y).
-      final dzdx = bulge * (-2 * nx) * (1 - ny * ny) * (2 / width);
-      final dzdy = bulge * (1 - nx * nx) * (-2 * ny) * (2 / height);
-      final inverseLength = 1 / math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
-      normals[v * 3] = -dzdx * inverseLength;
-      normals[v * 3 + 1] = -dzdy * inverseLength;
-      normals[v * 3 + 2] = inverseLength;
       // u = 0 at +x, matching the engine's hand-built front-face
       // convention (see the component quad).
       texCoords[v * 2] = (1 - nx) / 2;
@@ -269,9 +258,10 @@ Geometry _buildCrtScreen({
       indices.addAll([br, bl, tr, tr, bl, tl]);
     }
   }
+  // Normals are omitted; smooth area-weighted vertex normals are generated
+  // from the faces.
   return MeshGeometry.fromArrays(
     positions: positions,
-    normals: normals,
     texCoords: texCoords,
     indices: indices,
   );
