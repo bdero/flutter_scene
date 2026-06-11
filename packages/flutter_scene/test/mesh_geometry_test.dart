@@ -75,10 +75,12 @@ void main() {
     });
 
     test('packVertices generates normals for an authored triangle', () {
+      // Wound per the engine front-face convention (clockwise in model
+      // space), so the generated face normal points at the front viewer.
       final builder = GeometryBuilder(deduplicate: false)
         ..addVertex(Vector3(0, 0, 0))
-        ..addVertex(Vector3(1, 0, 0))
         ..addVertex(Vector3(0, 1, 0))
+        ..addVertex(Vector3(1, 0, 0))
         ..addTriangle(0, 1, 2);
       final floats = Float32List.sublistView(builder.packVertices());
       // Vertex 0 normal (floats 3..5) is the generated face normal +Z.
