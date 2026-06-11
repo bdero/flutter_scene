@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 
 /// How a [MeshGeometry] manages its GPU buffers over its lifetime.
+/// {@category Geometry}
 enum GeometryStorage {
   /// The vertex and index buffers are uploaded once at construction and
   /// never change. This is the right choice for imported or generated
@@ -43,6 +44,7 @@ enum GeometryStorage {
 /// attribute when the vertex count is unchanged; [rebuild] replaces
 /// everything and reallocates only when the data outgrows the spare
 /// capacity.
+/// {@category Geometry}
 class MeshGeometry extends UnskinnedGeometry {
   /// Builds a mesh from structure-of-arrays vertex attributes.
   ///
@@ -499,6 +501,7 @@ int nextBufferCapacity(int needed, {int minimum = 16}) {
 ///       ..addTriangle(0, 1, 2))
 ///     .build();
 /// ```
+/// {@category Geometry}
 class GeometryBuilder {
   /// Creates an empty builder.
   ///

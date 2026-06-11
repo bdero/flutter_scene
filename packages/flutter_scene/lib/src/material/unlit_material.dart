@@ -17,6 +17,7 @@ import 'package:vector_math/vector_math.dart';
 /// blended with the per-vertex color via [vertexColorWeight].
 ///
 /// Wraps the `UnlitFragment` shader from [baseShaderLibrary].
+/// {@category Materials}
 class UnlitMaterial extends Material {
   /// Creates an [UnlitMaterial], optionally textured.
   ///

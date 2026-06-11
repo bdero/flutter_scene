@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart';
 /// runs along the path, and [normal] and [binormal] span the plane
 /// across it. Frames along a path are rotation-minimizing, so a profile
 /// swept through them does not twist.
+/// {@category Geometry}
 class ScenePathFrame {
   /// Creates a frame from its position and axes.
   const ScenePathFrame({
@@ -40,6 +41,7 @@ class ScenePathFrame {
 /// evenly along the curve ([positionAtDistance], [frameAtDistance]); use
 /// it when spacing must stay uniform around bends, such as for dashes or
 /// a swept profile.
+/// {@category Geometry}
 abstract class ScenePath {
   /// The point on the curve at natural parameter [t] (clamped to `0..1`).
   Vector3 positionAt(double t);
@@ -240,6 +242,7 @@ class _PathTable {
 }
 
 /// A path of straight segments connecting a list of points.
+/// {@category Geometry}
 class PolylinePath extends ScenePath {
   /// Creates a polyline through [points], which is copied. At least two
   /// points are required.
@@ -293,6 +296,7 @@ List<double> _subdividedParameters(int segments) {
 /// The curve interpolates its control points with uniform Catmull-Rom
 /// segments, so `positionAt` returns a control point exactly at that
 /// point's natural parameter.
+/// {@category Geometry}
 class CatmullRomPath extends ScenePath {
   /// Creates a Catmull-Rom curve through [points], which is copied. At
   /// least two points are required.
@@ -348,6 +352,7 @@ class CatmullRomPath extends ScenePath {
 /// Each segment is defined by four control points, and adjacent
 /// segments share an endpoint, so the control point count must be
 /// `3 * segments + 1`.
+/// {@category Geometry}
 class BezierPath extends ScenePath {
   /// Creates a Bezier path from [controlPoints], which is copied. The
   /// count must be `3 * segments + 1` for one or more segments.

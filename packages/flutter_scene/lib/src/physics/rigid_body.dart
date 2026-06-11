@@ -12,6 +12,7 @@ import 'package:vector_math/vector_math.dart';
 /// * [BodyType.dynamic_]: fully simulated. The backend writes the node's
 ///   transform each step in response to forces, contacts, and gravity.
 ///   The trailing underscore avoids the Dart `dynamic` keyword.
+/// {@category Physics}
 enum BodyType { fixed, kinematic, dynamic_ }
 
 /// A simulated rigid body attached to a [Node].
@@ -24,6 +25,7 @@ enum BodyType { fixed, kinematic, dynamic_ }
 /// a [BodyType.dynamic_] body's [Node.localTransform] is allowed but is
 /// treated as a teleport (the backend overrides velocity and wakes the
 /// body).
+/// {@category Physics}
 abstract class RigidBody extends Component {
   BodyType get type;
 

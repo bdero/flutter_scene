@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/post_process/post_effect.dart';
 /// Reachable through `Scene.postProcess`. Every effect is off by default,
 /// so a fresh scene does no extra post-processing work. Turn an effect on
 /// and adjust its fields to change the final image.
+/// {@category Rendering}
 class PostProcessSettings {
   /// Color grading applied to the linear HDR scene color before tone
   /// mapping.
@@ -36,6 +37,7 @@ class PostProcessSettings {
 ///
 /// The defaults are neutral: with [enabled] off, or every field left at
 /// its default, the image is unchanged.
+/// {@category Rendering}
 class ColorGradingSettings {
   /// Whether color grading runs. Off by default.
   bool enabled = false;
@@ -71,6 +73,7 @@ class ColorGradingSettings {
 
 /// Splits the red and blue channels toward the edges, like a simple lens.
 /// Sampled from the scene color before grading and tone mapping.
+/// {@category Rendering}
 class ChromaticAberrationSettings {
   /// Whether the effect runs. Off by default.
   bool enabled = false;
@@ -80,6 +83,7 @@ class ChromaticAberrationSettings {
 }
 
 /// Darkens the image toward the edges, after tone mapping.
+/// {@category Rendering}
 class VignetteSettings {
   /// Whether the vignette runs. Off by default.
   bool enabled = false;
@@ -96,6 +100,7 @@ class VignetteSettings {
 }
 
 /// Adds animated noise over the final image, after tone mapping.
+/// {@category Rendering}
 class FilmGrainSettings {
   /// Whether the grain runs. Off by default.
   bool enabled = false;
@@ -106,6 +111,7 @@ class FilmGrainSettings {
 
 /// Makes bright areas bleed light into their surroundings. Computed in a
 /// chain of HDR passes and added back to the scene before tone mapping.
+/// {@category Rendering}
 class BloomSettings {
   /// Whether bloom runs. Off by default.
   bool enabled = false;

@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart';
 /// [Camera]'s [Camera.getViewMatrix]) to form a full view-projection
 /// transform. [PerspectiveProjection] is the built-in option; applications
 /// can implement [CameraProjection] for orthographic or other projections.
+/// {@category Scene graph}
 abstract class CameraProjection {
   /// Returns the projection matrix for a render target of the given
   /// [aspectRatio] (width / height).
@@ -18,6 +19,7 @@ abstract class CameraProjection {
 }
 
 /// A standard pinhole perspective projection.
+/// {@category Scene graph}
 class PerspectiveProjection extends CameraProjection {
   /// Creates a [PerspectiveProjection] with a vertical field of view
   /// [fovRadiansY] and a [near]/[far] clip range.
@@ -51,6 +53,7 @@ class PerspectiveProjection extends CameraProjection {
 /// [PerspectiveCamera] is the built-in free camera, positioned by
 /// eye/target/up. Attach a [CameraComponent] to a [Node] to drive the view
 /// from that node's transform instead.
+/// {@category Scene graph}
 abstract class Camera {
   /// The world-space position of the camera (the eye point). Used by
   /// materials for view-dependent shading (e.g. specular reflections).
@@ -173,6 +176,7 @@ Matrix4 _matrix4Perspective(
 /// Default placement is at `(0, 0, -5)` looking at the origin with `+Y`
 /// up, suitable for inspecting a model that fits within a unit cube
 /// centered on the origin.
+/// {@category Scene graph}
 class PerspectiveCamera extends Camera {
   /// Creates a [PerspectiveCamera].
   ///

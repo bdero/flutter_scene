@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/shaders.dart';
 /// supply mesh data. For procedurally generated meshes, `MeshGeometry`
 /// and `GeometryBuilder` assemble a [Geometry] from vertex attribute
 /// arrays without packing vertex bytes by hand.
+/// {@category Geometry}
 abstract class Geometry {
   gpu.BufferView? _vertices;
   int _vertexCount = 0;
@@ -296,6 +297,7 @@ abstract class Geometry {
 ///
 /// This is the default vertex format for static (non-animated) meshes
 /// imported from a scene package or glTF.
+/// {@category Geometry}
 class UnskinnedGeometry extends Geometry {
   /// Creates an [UnskinnedGeometry] preconfigured with the
   /// `UnskinnedVertex` shader from [baseShaderLibrary].
@@ -374,6 +376,7 @@ class UnskinnedGeometry extends Geometry {
 /// Used for meshes attached to a [Skin] for skeletal animation. The
 /// joints texture supplied by the skin must be assigned before each draw
 /// via [setJointsTexture].
+/// {@category Geometry}
 class SkinnedGeometry extends Geometry {
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;

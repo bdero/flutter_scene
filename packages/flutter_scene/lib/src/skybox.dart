@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/material/material.dart';
 /// A [Skybox] wraps a source and the engine draws it behind all scene
 /// geometry. Built-in sources are [EnvironmentSkySource] (show the scene's
 /// environment) and [ShaderSkySource] (a custom fragment shader).
+/// {@category Lighting and environment}
 abstract class SkySource {
   const SkySource();
 }
@@ -25,6 +26,7 @@ abstract class SkySource {
 /// is: `0.0` shows the sharp environment, `1.0` shows the fully-blurred band.
 /// The same atlas drives specular reflections, so a blurred background stays
 /// consistent with what reflective surfaces show.
+/// {@category Lighting and environment}
 class EnvironmentSkySource extends SkySource {
   EnvironmentSkySource({this.blurriness = 0.0});
 
@@ -46,6 +48,7 @@ class EnvironmentSkySource extends SkySource {
 ///
 /// Unlike [EnvironmentSkySource], `Skybox.intensity` is not applied for you;
 /// the shader controls its own output brightness.
+/// {@category Lighting and environment}
 class ShaderSkySource extends SkySource {
   ShaderSkySource({required this.fragmentShader, this.useEnvironment = false});
 
@@ -160,6 +163,7 @@ class _SkyTexture {
 /// [EnvironmentSkySource] shows that same environment, but the two can be set
 /// independently. The engine draws the skybox behind all scene geometry at
 /// the far plane; you never place or order any geometry yourself.
+/// {@category Lighting and environment}
 class Skybox {
   Skybox(this.source, {this.intensity = 1.0});
 

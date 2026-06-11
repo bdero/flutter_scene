@@ -24,6 +24,7 @@ typedef PrimitiveArrays = ({
 /// (visualized with an unlit material, as in the Cuboid example). It is off
 /// by default so a lit material renders the box in its own base color rather
 /// than tinted by the debug colors.
+/// {@category Geometry}
 class CuboidGeometry extends MeshGeometry {
   /// Builds a cuboid sized to [extents].
   ///
@@ -48,6 +49,7 @@ class CuboidGeometry extends MeshGeometry {
 /// linearly from height `0` at the `-Z` edge to height `Y` at the `+Z`
 /// edge, so the slope angle is `atan(Y / Z)`. Normals are flat per face.
 /// Useful as a ramp the character walks up.
+/// {@category Geometry}
 class WedgeGeometry extends MeshGeometry {
   /// Builds a wedge sized to [size] = `(width, height, run)`.
   factory WedgeGeometry(Vector3 size) =>
@@ -69,6 +71,7 @@ class WedgeGeometry extends MeshGeometry {
 /// [width] spans X and [depth] spans Z. [segmentsX] and [segmentsZ] set
 /// the number of grid cells along each axis; subdividing is useful when
 /// the surface will be deformed or lit by per-vertex data.
+/// {@category Geometry}
 class PlaneGeometry extends MeshGeometry {
   /// Builds a plane of the given size and subdivision.
   factory PlaneGeometry({
@@ -102,6 +105,7 @@ class PlaneGeometry extends MeshGeometry {
 /// [rings] the number of divisions from pole to pole. Vertex normals
 /// point radially outward and texture coordinates wrap longitude in `u`
 /// and latitude in `v`.
+/// {@category Geometry}
 class SphereGeometry extends MeshGeometry {
   /// Builds a sphere of the given [radius] and tessellation.
   factory SphereGeometry({

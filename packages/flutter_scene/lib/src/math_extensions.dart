@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:vector_math/vector_math.dart';
 
 /// Per-component arithmetic helpers on [Vector3].
+/// {@category Scene graph}
 extension Vector3Lerp on Vector3 {
   /// Linearly interpolates each component of this vector toward [to].
   ///
@@ -25,6 +26,7 @@ extension Vector3Lerp on Vector3 {
 }
 
 /// Spherical interpolation helpers on [Quaternion].
+/// {@category Scene graph}
 extension QuaternionSlerp on Quaternion {
   /// Returns the 4D dot product of this quaternion and [other].
   ///

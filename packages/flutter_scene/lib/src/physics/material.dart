@@ -1,11 +1,13 @@
 /// How a per-contact friction or restitution value is derived from the
 /// two participating materials.
+/// {@category Physics}
 enum CombineRule { average, min, max, multiply }
 
 /// Surface properties (friction, restitution, density) of a collider.
 ///
 /// Materials are immutable, identity-shared value objects: assign one
 /// instance to many colliders and the backend will cook it once.
+/// {@category Physics}
 class PhysicsMaterial {
   /// Coulomb friction coefficient. Typical range is `[0, 1]`; higher
   /// values produce more resistance to sliding.

@@ -15,6 +15,7 @@ typedef SweptArrays = ({
 });
 
 /// How a [RibbonGeometry] orients its strip across the path.
+/// {@category Geometry}
 enum RibbonAlignment {
   /// The strip stays horizontal, its width running perpendicular to the
   /// path as seen from above. Suited to a route drawn on the ground.
@@ -30,6 +31,7 @@ enum RibbonAlignment {
 /// ordinary triangle mesh that works with any material; texture
 /// coordinates run `0..1` across the width and by arc-length distance
 /// along the path.
+/// {@category Geometry}
 class RibbonGeometry extends MeshGeometry {
   /// Sweeps a ribbon of the given [width] along [path].
   ///
@@ -229,6 +231,7 @@ class MeshAccumulator {
 ///
 /// Useful for a 3D route tube or pipe. Texture coordinates run `0..1`
 /// around the circumference and by arc-length distance along the path.
+/// {@category Geometry}
 class TubeGeometry extends MeshGeometry {
   /// Sweeps a tube of the given [radius] along [path].
   ///
@@ -428,6 +431,7 @@ void addFanCap(
 /// The profile is a closed polygon in the path's cross-section plane.
 /// Texture coordinates run `0..1` around the profile and by arc-length
 /// distance along the path. End caps assume a convex profile.
+/// {@category Geometry}
 class ExtrudeGeometry extends MeshGeometry {
   /// Sweeps [profile] along [path].
   ///

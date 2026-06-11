@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/widget_texture.dart';
 /// view started ticking. Use this for time-based cameras (for example an
 /// orbiting view); pass a fixed [SceneView.camera] instead when the camera does
 /// not change over time.
+/// {@category Widgets}
 typedef SceneCameraBuilder = Camera Function(Duration elapsed);
 
 /// Builds the list of [RenderView]s to render for the current frame from the
@@ -27,6 +28,7 @@ typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 /// since the previous tick. Drive per-frame app logic here, or advance the
 /// scene with a supplied timestep via [Scene.update] (after which [Scene.render]
 /// skips its implicit wall-clock tick for that frame).
+/// {@category Widgets}
 typedef SceneTickCallback =
     void Function(Duration elapsed, double deltaSeconds);
 
@@ -59,6 +61,7 @@ typedef SceneTickCallback =
 ///
 /// The active [scene] is exposed to descendants through [SceneScope], so widgets
 /// below can resolve the scene from their [BuildContext].
+/// {@category Widgets}
 //
 // TODO(declarative): a future declarative API will add a `SceneView.builder`
 // (or `child:`) form where SceneView owns an internal Scene that declarative
@@ -458,6 +461,7 @@ class _ScenePainter extends CustomPainter {
 /// Today [SceneView] is the only producer and there are no built-in consumers;
 /// this plumbing exists so a future declarative node API can attach widgets to
 /// the right scene subtree without restructuring the view.
+/// {@category Widgets}
 class SceneScope extends InheritedWidget {
   const SceneScope({
     super.key,

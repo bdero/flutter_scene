@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/light.dart';
 /// The renderer currently shades a single directional light (the first one
 /// registered); additional directional lights are collected but not yet
 /// shaded.
+/// {@category Scene graph}
 // TODO(lighting): shade multiple directional lights once the material
 // shader supports more than one.
 class DirectionalLightComponent extends Component {

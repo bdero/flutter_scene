@@ -19,6 +19,7 @@ import 'package:vector_math/vector_math.dart';
 /// substepping to keep up when the frame interval exceeds
 /// [fixedTimestep] and interpolating transforms for the rendered frame.
 /// Concrete subclasses implement [step] and [interpolateTransforms].
+/// {@category Physics}
 abstract class PhysicsWorld extends Component {
   /// Identifier of the concrete backend, suitable for logging
   /// (for example `"basic"`).

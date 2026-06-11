@@ -3,6 +3,7 @@
 ///
 /// The integer values are wire-compatible with the `tone_mapping_mode`
 /// uniform in the tone-mapping fragment shader; don't reorder.
+/// {@category Rendering}
 enum ToneMappingMode {
   /// Khronos PBR Neutral. Preserves base-color hue/saturation and only
   /// rolls off highlights. Good default for product/configurator

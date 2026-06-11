@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Phase 3c carries a per-instance transform only. The naive backend
 /// still issues one draw call per instance.
+/// {@category Scene graph}
 class InstancedMesh {
   /// Creates an instanced mesh that draws [geometry] shaded by
   /// [material]. It starts with no instances; add them with

@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 /// the normal impulse applied to resolve the contact this step (zero
 /// for trigger events). [separation] is positive when bodies are
 /// separated and negative when they are interpenetrating.
+/// {@category Physics}
 class ContactPoint {
   final Vector3 worldPosition;
   final Vector3 worldNormal;
@@ -27,6 +28,7 @@ class ContactPoint {
 /// Subscribe via `PhysicsWorld.collisions`. The same pair fires
 /// [CollisionBegan] / [CollisionEnded] for solid contacts and
 /// [TriggerEntered] / [TriggerExited] for trigger volumes.
+/// {@category Physics}
 sealed class CollisionEvent {
   /// The node owning [colliderA]. [nodeA] and [nodeB] may be the same
   /// when a compound body's children touch each other.
@@ -38,6 +40,7 @@ sealed class CollisionEvent {
 }
 
 /// Fired the first step a pair of solid colliders touch.
+/// {@category Physics}
 class CollisionBegan extends CollisionEvent {
   @override
   final Node nodeA;
@@ -61,6 +64,7 @@ class CollisionBegan extends CollisionEvent {
 }
 
 /// Fired the step a previously-touching solid pair separates.
+/// {@category Physics}
 class CollisionEnded extends CollisionEvent {
   @override
   final Node nodeA;
@@ -81,6 +85,7 @@ class CollisionEnded extends CollisionEvent {
 
 /// Fired the first step a non-trigger collider overlaps a trigger
 /// volume.
+/// {@category Physics}
 class TriggerEntered extends CollisionEvent {
   @override
   final Node nodeA;
@@ -101,6 +106,7 @@ class TriggerEntered extends CollisionEvent {
 
 /// Fired the step a previously-overlapping pair stops overlapping a
 /// trigger volume.
+/// {@category Physics}
 class TriggerExited extends CollisionEvent {
   @override
   final Node nodeA;

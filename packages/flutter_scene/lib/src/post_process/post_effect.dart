@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 
 /// Where in the post-processing chain a [PostEffect] runs.
+/// {@category Rendering}
 enum PostInsertion {
   /// Runs on the linear HDR scene color, before tone mapping. The shader
   /// should output linear HDR premultiplied by alpha, the same contract as
@@ -53,6 +54,7 @@ enum PostInsertion {
 /// A [PostInsertion.beforeTonemap] effect should output linear HDR
 /// premultiplied by alpha; a [PostInsertion.afterTonemap] effect works on
 /// the display-referred image.
+/// {@category Rendering}
 class PostEffect {
   PostEffect({
     gpu.Shader? fragmentShader,

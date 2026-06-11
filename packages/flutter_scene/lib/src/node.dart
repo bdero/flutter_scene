@@ -20,6 +20,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// Each node can contain a transform (position, rotation, scale), a mesh (3D geometry and material),
 /// and child nodes. Nodes are used to build complex scenes by establishing relationships
 /// between different elements, allowing for transformations to propagate down the hierarchy.
+/// {@category Scene graph}
 base class Node implements SceneGraph {
   /// Creates a node with an optional [name], [localTransform], and [mesh].
   ///

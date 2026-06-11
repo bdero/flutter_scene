@@ -67,6 +67,7 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
 /// treated as sRGB-encoded; pass [sourceIsLinear] when it already holds
 /// linear radiance (an HDR environment), so it is not linearized twice.
 /// The atlas always stores linear radiance.
+/// {@category Lighting and environment}
 gpu.Texture prefilterEquirectRadiance(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,

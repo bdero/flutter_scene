@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/node.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// A render-geometry intersection from [raycastNode] (or `Scene.raycast`).
+/// {@category Picking and input}
 class SceneRaycastHit {
   /// Creates a hit record.
   SceneRaycastHit({
@@ -73,6 +74,7 @@ class SceneRaycastHit {
 /// [Node.raycastable] set, and pass [where] when provided. Skinned meshes
 /// are tested at rest pose. Geometry with caller-managed vertex buffers
 /// (`setVertices`) or non-triangle topology is skipped.
+/// {@category Picking and input}
 // TODO(raycast): test InstancedMesh components (one local-space test per
 // instance transform).
 // TODO(raycast): a per-mesh triangle BVH for dense meshes; today each
@@ -96,6 +98,7 @@ SceneRaycastHit? raycastNode(
 
 /// Casts [ray] through [root]'s subtree and returns every hit, sorted
 /// nearest-first. Parameters as in [raycastNode].
+/// {@category Picking and input}
 List<SceneRaycastHit> raycastNodeAll(
   Node root,
   Ray ray, {
