@@ -89,6 +89,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           CuboidGeometry(vm.Vector3(3.25, 2.5, 0.6)),
           PhysicallyBasedMaterial()
             ..baseColorFactor = vm.Vector4(0.16, 0.15, 0.14, 1.0)
+            ..metallicFactor = 0.0
             ..roughnessFactor = 0.55,
         ),
       ),
