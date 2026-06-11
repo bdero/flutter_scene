@@ -8,8 +8,10 @@ import 'quake_camera.dart';
 /// A live widget subtree streamed onto scene geometry via [WidgetComponent]:
 /// the component owns the panel quad, captures the widget whenever it
 /// repaints, and binds the texture to the material. SceneView hosts the
-/// widget invisibly; it never appears in the 2D UI. Taps and drags raycast
-/// through `scene.raycast` and forward into the widgets at the hit UV.
+/// widget invisibly (it never appears in the 2D UI) and forwards pointer
+/// input automatically: presses raycast into the scene and drive the
+/// widgets at the hit UV, blocked by occluding geometry. The camera-look
+/// drag is gated so it only engages when the drag starts off the panel.
 class ExampleWidgetTexture extends StatefulWidget {
   const ExampleWidgetTexture({super.key});
 
@@ -31,7 +33,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     pitch: -0.15,
   )..speed = 6.0;
   PerspectiveCamera? _camera;
-  bool _dragging = false;
+  bool _looking = false;
   bool _recursive = false;
 
   @override
@@ -76,37 +78,13 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     scene.add(panel);
   }
 
-  /// Maps a tap inside the view to texture UV on the panel, or null when the
-  /// ray misses or other geometry is in front. The tap is unprojected
-  /// through the camera into a world ray; `scene.raycast` returns the
-  /// nearest render-geometry hit with the surface UV interpolated from the
-  /// vertex data, so any panel shape works and the floor occludes correctly.
-  Offset? _panelUv(Offset position, Size viewSize) {
+  /// Whether [position] is over a widget surface (nearest raycast hit
+  /// carries a WidgetComponent).
+  bool _overWidget(Offset position, Size viewSize) {
     final camera = _camera;
-    if (camera == null || viewSize.isEmpty) return null;
-
-    final viewProjection =
-        camera.projection.getProjectionMatrix(
-          viewSize.width / viewSize.height,
-        ) *
-        camera.getViewMatrix();
-    final inverse = vm.Matrix4.inverted(viewProjection as vm.Matrix4);
-    final ndc = vm.Vector2(
-      position.dx / viewSize.width * 2 - 1,
-      1 - position.dy / viewSize.height * 2,
-    );
-    vm.Vector3 unproject(double z) {
-      final v = inverse * vm.Vector4(ndc.x, ndc.y, z, 1) as vm.Vector4;
-      return v.xyz / v.w;
-    }
-
-    final near = unproject(0.0);
-    final hit = scene.raycast(
-      vm.Ray.originDirection(near, unproject(1.0) - near),
-    );
-    if (hit == null || hit.node != _panel) return null;
-    final uv = hit.uv!;
-    return Offset(uv.x, uv.y);
+    if (camera == null || viewSize.isEmpty) return false;
+    final hit = scene.raycast(camera.screenPointToRay(position, viewSize));
+    return hit?.node.getComponent<WidgetComponent>() != null;
   }
 
   @override
@@ -119,42 +97,22 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           LayoutBuilder(
             builder: (context, constraints) => GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onPanDown: (details) {
-                final uv = _panelUv(details.localPosition, constraints.biggest);
-                if (uv != null) {
-                  _dragging = true;
-                  _component.controller.pointerDown(uv);
-                }
+              onPanStart: (details) {
+                // Camera look only when the drag starts off the panel; on the
+                // panel, SceneView's automatic input drives the widgets.
+                _looking = !_overWidget(
+                  details.localPosition,
+                  constraints.biggest,
+                );
               },
               onPanUpdate: (details) {
-                if (_dragging) {
-                  final uv = _panelUv(
-                    details.localPosition,
-                    constraints.biggest,
-                  );
-                  if (uv != null) _component.controller.pointerMove(uv);
-                } else {
-                  _quakeCamera.look(details.delta);
-                }
+                if (_looking) _quakeCamera.look(details.delta);
               },
-              onPanEnd: (details) {
-                if (!_dragging) return;
-                _dragging = false;
-                final uv = _panelUv(details.localPosition, constraints.biggest);
-                if (uv != null) {
-                  _component.controller.pointerUp(uv);
-                } else {
-                  _component.controller.pointerCancel();
-                }
-              },
-              onPanCancel: () {
-                if (_dragging) {
-                  _dragging = false;
-                  _component.controller.pointerCancel();
-                }
-              },
+              onPanEnd: (details) => _looking = false,
+              onPanCancel: () => _looking = false,
               child: SceneView(
                 scene,
+                debugWidgetInput: true,
                 cameraBuilder: (elapsed) {
                   _quakeCamera.move(elapsed.inMicroseconds / 1e6);
                   return _camera = _quakeCamera.camera;

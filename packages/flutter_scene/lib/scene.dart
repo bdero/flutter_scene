@@ -79,6 +79,7 @@ export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
 export 'src/scene_encoder.dart' hide evictPipelinesForShaders, resolvePipeline;
 export 'src/scene_path.dart';
 export 'src/raycast.dart';
+export 'src/scene_pointer.dart';
 export 'src/scene.dart';
 export 'src/widget_texture.dart';
 export 'src/shaders.dart';

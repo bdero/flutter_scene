@@ -70,6 +70,27 @@ abstract class Camera {
   /// the render target size.
   Matrix4 getViewMatrix();
 
+  /// Maps a position inside a view (logical pixels, origin top-left) to the
+  /// world-space ray leaving the camera through that point, for picking
+  /// (`Scene.raycast`) and pointer input. [viewSize] is the view's logical
+  /// size (the constraints `SceneView` renders into).
+  Ray screenPointToRay(ui.Offset screenPosition, ui.Size viewSize) {
+    final viewProjection = getViewTransform(viewSize);
+    final inverse = Matrix4.zero();
+    if (inverse.copyInverse(viewProjection) == 0.0) {
+      return Ray.originDirection(position.clone(), forward.clone());
+    }
+    final ndcX = screenPosition.dx / viewSize.width * 2 - 1;
+    final ndcY = 1 - screenPosition.dy / viewSize.height * 2;
+    Vector3 unproject(double z) {
+      final v = inverse * Vector4(ndcX, ndcY, z, 1) as Vector4;
+      return v.xyz / v.w;
+    }
+
+    final near = unproject(0.0);
+    return Ray.originDirection(near, unproject(1.0) - near);
+  }
+
   /// Returns the combined projection-and-view transform for a render target
   /// of the given [dimensions].
   ///

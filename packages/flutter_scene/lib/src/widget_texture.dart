@@ -100,21 +100,32 @@ class WidgetTextureController extends ChangeNotifier {
 
   /// Sends a pointer down at [uv]. Follow with [pointerMove] and [pointerUp]
   /// (or [pointerCancel]) to complete the interaction.
-  void pointerDown(Offset uv) => _host?._pointerDown(uv);
+  ///
+  /// [pointer] distinguishes concurrent pointers (multi-touch, several
+  /// `ScenePointer`s): each carries independent capture and gesture state.
+  void pointerDown(Offset uv, {int pointer = 0}) =>
+      _host?._pointerDown(uv, pointer);
 
-  /// Moves the active pointer to [uv].
-  void pointerMove(Offset uv) => _host?._pointerMove(uv);
+  /// Moves an active pointer to [uv].
+  void pointerMove(Offset uv, {int pointer = 0}) =>
+      _host?._pointerMove(uv, pointer);
 
-  /// Releases the active pointer at [uv].
-  void pointerUp(Offset uv) => _host?._pointerUp(uv);
+  /// Releases an active pointer at [uv].
+  void pointerUp(Offset uv, {int pointer = 0}) =>
+      _host?._pointerUp(uv, pointer);
 
-  /// Cancels the active pointer interaction, if any.
-  void pointerCancel() => _host?._pointerCancel();
+  /// Cancels an active pointer interaction, if any.
+  void pointerCancel({int pointer = 0}) => _host?._pointerCancel(pointer);
+
+  /// Sends a scroll at [uv] of [scrollDelta] logical pixels (positive y
+  /// scrolls down), driving scrollables under that point.
+  void pointerScroll(Offset uv, Offset scrollDelta) =>
+      _host?._pointerScroll(uv, scrollDelta);
 
   /// Sends a complete tap (down then up) at [uv].
-  void tapAt(Offset uv) {
-    pointerDown(uv);
-    pointerUp(uv);
+  void tapAt(Offset uv, {int pointer = 0}) {
+    pointerDown(uv, pointer: pointer);
+    pointerUp(uv, pointer: pointer);
   }
 
   /// Captures the child's latest recorded content now. The trigger for
@@ -244,72 +255,81 @@ class _RenderWidgetTexture extends RenderProxyBox {
 
   // Base offset keeps synthetic pointer ids clear of platform pointers.
   static int _nextSyntheticPointer = 0x40000000;
-  int? _activePointer;
-  HitTestResult? _activePath;
-  Offset _lastLocal = Offset.zero;
+
+  // Per caller-pointer-id interaction state: each concurrent pointer gets
+  // its own synthetic Flutter pointer id, hit path (captured at down, the
+  // standard pointer-capture semantics), and last position.
+  final Map<int, _SyntheticPointer> _pointers = {};
 
   Offset _uvToLocal(Offset uv) => Offset(
     (uv.dx.clamp(0.0, 1.0)) * _captureSize.width,
     (uv.dy.clamp(0.0, 1.0)) * _captureSize.height,
   );
 
-  void _pointerDown(Offset uv) {
+  void _pointerDown(Offset uv, int id) {
     final child = this.child;
     if (child == null) return;
-    if (_activePointer != null) _pointerCancel();
+    if (_pointers.containsKey(id)) _pointerCancel(id);
     final local = _uvToLocal(uv);
     final result = HitTestResult();
     child.hitTest(BoxHitTestResult.wrap(result), position: local);
     // The trailing binding entry routes the event into the pointer router
     // and closes the gesture arena, mirroring the live pointer pipeline.
     result.add(HitTestEntry(GestureBinding.instance));
-    _activePointer = _nextSyntheticPointer++;
-    _activePath = result;
-    _lastLocal = local;
+    final state = _SyntheticPointer(_nextSyntheticPointer++, result, local);
+    _pointers[id] = state;
     GestureBinding.instance.dispatchEvent(
-      PointerDownEvent(pointer: _activePointer!, position: local),
+      PointerDownEvent(pointer: state.pointer, position: local),
       result,
     );
   }
 
-  void _pointerMove(Offset uv) {
-    final pointer = _activePointer;
-    final path = _activePath;
-    if (pointer == null || path == null) return;
+  void _pointerMove(Offset uv, int id) {
+    final state = _pointers[id];
+    if (state == null) return;
     final local = _uvToLocal(uv);
     GestureBinding.instance.dispatchEvent(
       PointerMoveEvent(
-        pointer: pointer,
+        pointer: state.pointer,
         position: local,
-        delta: local - _lastLocal,
+        delta: local - state.lastLocal,
       ),
-      path,
+      state.path,
     );
-    _lastLocal = local;
+    state.lastLocal = local;
   }
 
-  void _pointerUp(Offset uv) {
-    final pointer = _activePointer;
-    final path = _activePath;
-    if (pointer == null || path == null) return;
+  void _pointerUp(Offset uv, int id) {
+    final state = _pointers.remove(id);
+    if (state == null) return;
     GestureBinding.instance.dispatchEvent(
-      PointerUpEvent(pointer: pointer, position: _uvToLocal(uv)),
-      path,
+      PointerUpEvent(pointer: state.pointer, position: _uvToLocal(uv)),
+      state.path,
     );
-    _activePointer = null;
-    _activePath = null;
   }
 
-  void _pointerCancel() {
-    final pointer = _activePointer;
-    final path = _activePath;
-    if (pointer == null || path == null) return;
+  void _pointerCancel(int id) {
+    final state = _pointers.remove(id);
+    if (state == null) return;
     GestureBinding.instance.dispatchEvent(
-      PointerCancelEvent(pointer: pointer, position: _lastLocal),
-      path,
+      PointerCancelEvent(pointer: state.pointer, position: state.lastLocal),
+      state.path,
     );
-    _activePointer = null;
-    _activePath = null;
+  }
+
+  void _pointerScroll(Offset uv, Offset scrollDelta) {
+    final child = this.child;
+    if (child == null) return;
+    final local = _uvToLocal(uv);
+    final result = HitTestResult();
+    child.hitTest(BoxHitTestResult.wrap(result), position: local);
+    result.add(HitTestEntry(GestureBinding.instance));
+    // The binding entry's handleEvent resolves pointer signals, so
+    // scrollables under the point receive the event.
+    GestureBinding.instance.dispatchEvent(
+      PointerScrollEvent(position: local, scrollDelta: scrollDelta),
+      result,
+    );
   }
 
   @override
@@ -418,10 +438,21 @@ class _RenderWidgetTexture extends RenderProxyBox {
 
   @override
   void detach() {
-    _pointerCancel();
+    for (final id in _pointers.keys.toList()) {
+      _pointerCancel(id);
+    }
     if (identical(_controller._host, this)) _controller._host = null;
     _pendingLayer?.dispose();
     _pendingLayer = null;
     super.detach();
   }
+}
+
+/// One in-flight synthetic pointer interaction.
+class _SyntheticPointer {
+  _SyntheticPointer(this.pointer, this.path, this.lastLocal);
+
+  final int pointer;
+  final HitTestResult path;
+  Offset lastLocal;
 }

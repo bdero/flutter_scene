@@ -6,7 +6,9 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render_view.dart';
 import 'package:flutter_scene/src/components/widget_component.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_scene/src/scene.dart';
+import 'package:flutter_scene/src/scene_pointer.dart';
 import 'package:flutter_scene/src/widget_texture.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
@@ -76,6 +78,7 @@ class SceneView extends StatefulWidget {
     this.autoTick = true,
     this.pixelRatio,
     this.onTick,
+    this.debugWidgetInput = false,
   }) : assert(
          (camera != null ? 1 : 0) +
                  (cameraBuilder != null ? 1 : 0) +
@@ -110,6 +113,11 @@ class SceneView extends StatefulWidget {
   /// Logical-to-physical pixel multiplier for the offscreen render target,
   /// forwarded to [Scene.render]. Defaults to the view's device pixel ratio.
   final double? pixelRatio;
+
+  /// Debug-only: overlays the automatic widget-input pointer's state (hit
+  /// node, UV, distance, and a marker at the pointer position), the first
+  /// tool to reach for when a widget surface does not respond to input.
+  final bool debugWidgetInput;
 
   /// Called once per frame while ticking. See [SceneTickCallback].
   final SceneTickCallback? onTick;
@@ -161,10 +169,71 @@ class _SceneViewState extends State<SceneView>
     _repaint.notify();
   }
 
+  Camera? _lastBuiltCamera;
+
   Camera _cameraForFrame() =>
-      widget.camera ?? widget.cameraBuilder!(_elapsed.value);
+      _lastBuiltCamera = widget.camera ?? widget.cameraBuilder!(_elapsed.value);
 
   List<RenderView> _viewsForFrame() => widget.viewsBuilder!(_elapsed.value);
+
+  // ----- automatic widget input -----
+
+  ScenePointer? _autoPointer;
+  int? _activePlatformPointer;
+  Size _viewSize = Size.zero;
+  Offset? _debugPosition;
+
+  ScenePointer get _pointer => _autoPointer ??= ScenePointer(widget.scene);
+
+  bool get _autoInputAvailable =>
+      widget.viewsBuilder == null &&
+      widget.scene.renderScene.widgetComponents.isNotEmpty;
+
+  void _autoPoint(Offset position) {
+    final camera = _lastBuiltCamera;
+    if (camera == null || _viewSize.isEmpty) return;
+    _pointer.pointAt(position, camera: camera, viewSize: _viewSize);
+    if (widget.debugWidgetInput) {
+      setState(() => _debugPosition = position);
+    }
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!_autoInputAvailable || _activePlatformPointer != null) return;
+    _autoPoint(event.localPosition);
+    final hovered = _pointer.hoveredWidget;
+    if (hovered != null && hovered.input == WidgetInput.automatic) {
+      _activePlatformPointer = event.pointer;
+      _pointer.press();
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _activePlatformPointer) return;
+    _autoPoint(event.localPosition);
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _activePlatformPointer) return;
+    _activePlatformPointer = null;
+    _autoPoint(event.localPosition);
+    _pointer.release();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePlatformPointer) return;
+    _activePlatformPointer = null;
+    _pointer.cancel();
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (!_autoInputAvailable || event is! PointerScrollEvent) return;
+    _autoPoint(event.localPosition);
+    final hovered = _pointer.hoveredWidget;
+    if (hovered != null && hovered.input == WidgetInput.automatic) {
+      _pointer.scroll(event.scrollDelta);
+    }
+  }
 
   @override
   void reassemble() {
@@ -188,52 +257,126 @@ class _SceneViewState extends State<SceneView>
     return SceneScope(
       scene: widget.scene,
       elapsed: _elapsed,
-      child: Stack(
-        fit: StackFit.passthrough,
-        children: [
-          CustomPaint(
-            // Size.infinite fills the largest bounded constraints the view is
-            // given (both tight constraints and a Stack's loose ones), so the
-            // scene is never collapsed to zero size. See the class doc: place
-            // SceneView where it receives bounded constraints.
-            size: Size.infinite,
-            painter: _ScenePainter(
-              scene: widget.scene,
-              cameraForFrame: widget.viewsBuilder == null
-                  ? _cameraForFrame
-                  : null,
-              viewsForFrame: widget.viewsBuilder == null
-                  ? null
-                  : _viewsForFrame,
-              pixelRatio: widget.pixelRatio,
-              repaint: _repaint,
-            ),
-          ),
-          // Invisible hosts for the scene's WidgetComponents: each hosted
-          // subtree stays fully live (state, tickers, animations) while
-          // occupying no layout space and never painting to the screen; its
-          // visual output streams into the component's texture. The Overlay
-          // keeps dialogs, dropdowns, and tooltips inside the capture.
-          ValueListenableBuilder<int>(
-            valueListenable: widget.scene.renderScene.widgetComponentsChanged,
-            builder: (context, _, _) => Stack(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          _viewSize = constraints.biggest;
+          return Listener(
+            // Translucent: forwarded events still reach the app's own
+            // gesture handlers; the scene never wins a gesture arena.
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
+            onPointerSignal: _onPointerSignal,
+            child: Stack(
+              fit: StackFit.passthrough,
               children: [
-                for (final component
-                    in widget.scene.renderScene.widgetComponents
-                        .whereType<WidgetComponent>())
-                  WidgetTexture(
-                    key: ObjectKey(component),
-                    controller: component.controller,
-                    width: component.size.width,
-                    height: component.size.height,
-                    pixelRatio: component.pixelRatio,
-                    update: component.updatePolicy,
-                    child: _WidgetComponentHost(component: component),
+                CustomPaint(
+                  // Size.infinite fills the largest bounded constraints the view is
+                  // given (both tight constraints and a Stack's loose ones), so the
+                  // scene is never collapsed to zero size. See the class doc: place
+                  // SceneView where it receives bounded constraints.
+                  size: Size.infinite,
+                  painter: _ScenePainter(
+                    scene: widget.scene,
+                    cameraForFrame: widget.viewsBuilder == null
+                        ? _cameraForFrame
+                        : null,
+                    viewsForFrame: widget.viewsBuilder == null
+                        ? null
+                        : _viewsForFrame,
+                    pixelRatio: widget.pixelRatio,
+                    repaint: _repaint,
                   ),
+                ),
+                if (widget.debugWidgetInput) _buildDebugOverlay(),
+                // Invisible hosts for the scene's WidgetComponents: each hosted
+                // subtree stays fully live (state, tickers, animations) while
+                // occupying no layout space and never painting to the screen; its
+                // visual output streams into the component's texture. The Overlay
+                // keeps dialogs, dropdowns, and tooltips inside the capture.
+                ValueListenableBuilder<int>(
+                  valueListenable:
+                      widget.scene.renderScene.widgetComponentsChanged,
+                  builder: (context, _, _) => Stack(
+                    children: [
+                      for (final component
+                          in widget.scene.renderScene.widgetComponents
+                              .whereType<WidgetComponent>())
+                        WidgetTexture(
+                          key: ObjectKey(component),
+                          controller: component.controller,
+                          width: component.size.width,
+                          height: component.size.height,
+                          pixelRatio: component.pixelRatio,
+                          update: component.updatePolicy,
+                          child: _WidgetComponentHost(component: component),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDebugOverlay() {
+    final hit = _autoPointer?.hit;
+    final position = _debugPosition;
+    final hovered = _autoPointer?.hoveredWidget;
+    final label = hit == null
+        ? 'no hit'
+        : '${hit.node.name.isEmpty ? '(unnamed)' : hit.node.name}  '
+              'd=${hit.distance.toStringAsFixed(2)}  '
+              'uv=${hit.uv == null ? 'none' : '(${hit.uv!.x.toStringAsFixed(3)}, ${hit.uv!.y.toStringAsFixed(3)})'}'
+              '${hovered != null ? '  [widget]' : ''}';
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
+          children: [
+            if (position != null)
+              Positioned(
+                left: position.dx - 4,
+                top: position.dy - 4,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: hovered != null
+                        ? const Color(0xFF40FF80)
+                        : const Color(0xFFFF8040),
+                  ),
+                ),
+              ),
+            Positioned(
+              left: 8,
+              top: 8,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(color: Color(0xAA000000)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFFFFFFF),
+                      fontSize: 11,
+                      decoration: TextDecoration.none,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
