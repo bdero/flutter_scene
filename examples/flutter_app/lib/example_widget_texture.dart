@@ -5,6 +5,7 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
+import 'quake_camera.dart';
 
 /// A live widget subtree streamed onto scene geometry. The panel on the cube
 /// is an ordinary animated Flutter widget hosted by a [WidgetTexture]; it is
@@ -22,6 +23,13 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   final WidgetTextureController _widgetTexture = WidgetTextureController();
   UnlitMaterial? _material;
   Node? _panel;
+  // Free-look camera (WASD + space/shift, drag to look). A drag that starts
+  // on the widget panel forwards to the widgets instead.
+  final QuakeCamera _quakeCamera = QuakeCamera(
+    position: vm.Vector3(0, 1.2, 4.5),
+    yaw: pi,
+    pitch: -0.15,
+  )..speed = 6.0;
   PerspectiveCamera? _camera;
   bool _dragging = false;
   bool _recursive = false;
@@ -102,109 +110,116 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanDown: (details) {
-              final uv = _panelUv(details.localPosition, constraints.biggest);
-              if (uv != null) {
-                _dragging = true;
-                _widgetTexture.pointerDown(uv);
-              }
-            },
-            onPanUpdate: (details) {
-              if (!_dragging) return;
-              final uv = _panelUv(details.localPosition, constraints.biggest);
-              if (uv != null) _widgetTexture.pointerMove(uv);
-            },
-            onPanEnd: (details) {
-              if (!_dragging) return;
-              _dragging = false;
-              final uv = _panelUv(details.localPosition, constraints.biggest);
-              if (uv != null) {
-                _widgetTexture.pointerUp(uv);
-              } else {
-                _widgetTexture.pointerCancel();
-              }
-            },
-            onPanCancel: () {
-              if (_dragging) {
-                _dragging = false;
-                _widgetTexture.pointerCancel();
-              }
-            },
-            child: SceneView(
-              scene,
-              cameraBuilder: (elapsed) {
-                final t = elapsed.inMicroseconds / 2e6;
-                return _camera = PerspectiveCamera(
-                  position: vm.Vector3(sin(t) * 4.5, 1.2, cos(t) * 4.5),
-                  target: vm.Vector3(0, 0, 0),
-                );
-              },
-              onTick: (elapsed, deltaSeconds) {
-                exampleSettings.applyTo(scene);
-                _panel?.localTransform = vm.Matrix4.rotationY(
-                  elapsed.inMicroseconds / 4e6,
-                );
-                // Recursive mode samples the scene's own previous frame, a
-                // one-frame feedback loop (an infinite mirror as the camera
-                // orbits). Otherwise the panel shows the live widget capture.
-                final material = _material;
-                if (material != null) {
-                  final feedback = _recursive
-                      ? scene.surface.lastSwapchainColorTexture()
-                      : null;
-                  material.baseColorTexture =
-                      feedback ??
-                      _widgetTexture.texture ??
-                      material.baseColorTexture;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _quakeCamera.onKeyEvent,
+      child: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanDown: (details) {
+                final uv = _panelUv(details.localPosition, constraints.biggest);
+                if (uv != null) {
+                  _dragging = true;
+                  _widgetTexture.pointerDown(uv);
                 }
               },
+              onPanUpdate: (details) {
+                if (_dragging) {
+                  final uv = _panelUv(
+                    details.localPosition,
+                    constraints.biggest,
+                  );
+                  if (uv != null) _widgetTexture.pointerMove(uv);
+                } else {
+                  _quakeCamera.look(details.delta);
+                }
+              },
+              onPanEnd: (details) {
+                if (!_dragging) return;
+                _dragging = false;
+                final uv = _panelUv(details.localPosition, constraints.biggest);
+                if (uv != null) {
+                  _widgetTexture.pointerUp(uv);
+                } else {
+                  _widgetTexture.pointerCancel();
+                }
+              },
+              onPanCancel: () {
+                if (_dragging) {
+                  _dragging = false;
+                  _widgetTexture.pointerCancel();
+                }
+              },
+              child: SceneView(
+                scene,
+                cameraBuilder: (elapsed) {
+                  _quakeCamera.move(elapsed.inMicroseconds / 1e6);
+                  return _camera = _quakeCamera.camera;
+                },
+                onTick: (elapsed, deltaSeconds) {
+                  exampleSettings.applyTo(scene);
+                  _panel?.localTransform = vm.Matrix4.rotationY(
+                    elapsed.inMicroseconds / 4e6,
+                  );
+                  // Recursive mode samples the scene's own previous frame, a
+                  // one-frame feedback loop (an infinite mirror as the camera
+                  // orbits). Otherwise the panel shows the live widget capture.
+                  final material = _material;
+                  if (material != null) {
+                    final feedback = _recursive
+                        ? scene.surface.lastSwapchainColorTexture()
+                        : null;
+                    material.baseColorTexture =
+                        feedback ??
+                        _widgetTexture.texture ??
+                        material.baseColorTexture;
+                  }
+                },
+              ),
             ),
           ),
-        ),
-        // The hosted subtree: zero layout size, never painted on screen.
-        WidgetTexture(
-          controller: _widgetTexture,
-          width: 480,
-          height: 300,
-          pixelRatio: 2.0,
-          child: const _PanelContent(),
-        ),
-        Positioned(
-          right: 8,
-          bottom: 8,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'recursive',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              Switch(
-                value: _recursive,
-                onChanged: (value) => setState(() => _recursive = value),
-              ),
-            ],
+          // The hosted subtree: zero layout size, never painted on screen.
+          WidgetTexture(
+            controller: _widgetTexture,
+            width: 480,
+            height: 300,
+            pixelRatio: 2.0,
+            child: const _PanelContent(),
           ),
-        ),
-        // Capture diagnostics.
-        Positioned(
-          left: 8,
-          bottom: 8,
-          child: ListenableBuilder(
-            listenable: _widgetTexture,
-            builder: (context, _) => Text(
-              'captures: ${_widgetTexture.captureCount}  '
-              'last: ${_widgetTexture.lastCaptureDuration.inMilliseconds}ms',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'recursive',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                Switch(
+                  value: _recursive,
+                  onChanged: (value) => setState(() => _recursive = value),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+          // Capture diagnostics.
+          Positioned(
+            left: 8,
+            bottom: 8,
+            child: ListenableBuilder(
+              listenable: _widgetTexture,
+              builder: (context, _) => Text(
+                'captures: ${_widgetTexture.captureCount}  '
+                'last: ${_widgetTexture.lastCaptureDuration.inMilliseconds}ms',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
