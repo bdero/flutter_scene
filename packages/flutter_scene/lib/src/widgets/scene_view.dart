@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render_view.dart';
+import 'package:flutter_scene/src/components/widget_component.dart';
 import 'package:flutter_scene/src/scene.dart';
+import 'package:flutter_scene/src/widget_texture.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
 /// view started ticking. Use this for time-based cameras (for example an
@@ -186,19 +188,52 @@ class _SceneViewState extends State<SceneView>
     return SceneScope(
       scene: widget.scene,
       elapsed: _elapsed,
-      child: CustomPaint(
-        // Size.infinite fills the largest bounded constraints the view is
-        // given (both tight constraints and a Stack's loose ones), so the
-        // scene is never collapsed to zero size. See the class doc: place
-        // SceneView where it receives bounded constraints.
-        size: Size.infinite,
-        painter: _ScenePainter(
-          scene: widget.scene,
-          cameraForFrame: widget.viewsBuilder == null ? _cameraForFrame : null,
-          viewsForFrame: widget.viewsBuilder == null ? null : _viewsForFrame,
-          pixelRatio: widget.pixelRatio,
-          repaint: _repaint,
-        ),
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          CustomPaint(
+            // Size.infinite fills the largest bounded constraints the view is
+            // given (both tight constraints and a Stack's loose ones), so the
+            // scene is never collapsed to zero size. See the class doc: place
+            // SceneView where it receives bounded constraints.
+            size: Size.infinite,
+            painter: _ScenePainter(
+              scene: widget.scene,
+              cameraForFrame: widget.viewsBuilder == null
+                  ? _cameraForFrame
+                  : null,
+              viewsForFrame: widget.viewsBuilder == null
+                  ? null
+                  : _viewsForFrame,
+              pixelRatio: widget.pixelRatio,
+              repaint: _repaint,
+            ),
+          ),
+          // Invisible hosts for the scene's WidgetComponents: each hosted
+          // subtree stays fully live (state, tickers, animations) while
+          // occupying no layout space and never painting to the screen; its
+          // visual output streams into the component's texture. The Overlay
+          // keeps dialogs, dropdowns, and tooltips inside the capture.
+          ValueListenableBuilder<int>(
+            valueListenable: widget.scene.renderScene.widgetComponentsChanged,
+            builder: (context, _, _) => Stack(
+              children: [
+                for (final component
+                    in widget.scene.renderScene.widgetComponents
+                        .whereType<WidgetComponent>())
+                  WidgetTexture(
+                    key: ObjectKey(component),
+                    controller: component.controller,
+                    width: component.size.width,
+                    height: component.size.height,
+                    pixelRatio: component.pixelRatio,
+                    update: component.updatePolicy,
+                    child: _WidgetComponentHost(component: component),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -287,4 +322,28 @@ class SceneScope extends InheritedWidget {
   @override
   bool updateShouldNotify(SceneScope oldWidget) =>
       scene != oldWidget.scene || elapsed != oldWidget.elapsed;
+}
+
+/// Hosts one [WidgetComponent]'s subtree inside its own [Overlay], so routes
+/// and overlay entries the subtree spawns (dialogs, dropdown menus,
+/// tooltips) render inside the captured texture instead of escaping to the
+/// app's root overlay.
+class _WidgetComponentHost extends StatefulWidget {
+  const _WidgetComponentHost({required this.component});
+
+  final WidgetComponent component;
+
+  @override
+  State<_WidgetComponentHost> createState() => _WidgetComponentHostState();
+}
+
+class _WidgetComponentHostState extends State<_WidgetComponentHost> {
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(
+      initialEntries: [
+        OverlayEntry(builder: (context) => widget.component.child),
+      ],
+    );
+  }
 }

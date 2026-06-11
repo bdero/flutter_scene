@@ -53,6 +53,7 @@ export 'src/components/component.dart';
 export 'src/components/directional_light_component.dart';
 export 'src/components/instanced_mesh_component.dart';
 export 'src/components/mesh_component.dart';
+export 'src/components/widget_component.dart';
 export 'src/instanced_mesh.dart';
 export 'src/light.dart';
 export 'src/render/render_layers.dart';

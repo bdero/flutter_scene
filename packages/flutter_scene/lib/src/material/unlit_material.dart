@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/physically_based_material.dart'
+    show AlphaMode;
 import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:vector_math/vector_math.dart';
@@ -30,6 +32,18 @@ class UnlitMaterial extends Material {
   /// Always non-null after construction; pass `null` to the constructor
   /// to fall back to a 1×1 white placeholder.
   late gpu.Texture baseColorTexture;
+
+  /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
+  /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
+  /// translucent pass with alpha blending (use for widget textures and
+  /// other surfaces with transparency).
+  // TODO(materials): support AlphaMode.mask for unlit (needs a cutoff
+  // uniform and a discard in the unlit fragment shader); it currently
+  // behaves like blend.
+  AlphaMode alphaMode = AlphaMode.opaque;
+
+  @override
+  bool isOpaque() => alphaMode == AlphaMode.opaque;
 
   /// Linear RGBA tint multiplied with [baseColorTexture].
   Vector4 baseColorFactor = Colors.white;

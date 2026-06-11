@@ -1,5 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
@@ -125,6 +126,27 @@ class RenderScene {
   /// [DirectionalLightComponent] when its owning node mounts.
   void addDirectionalLight(DirectionalLightComponent light) {
     directionalLights.add(light);
+  }
+
+  /// The mounted widget components, in registration order. `SceneView`
+  /// listens to [widgetComponentsChanged] and hosts each component's widget
+  /// subtree invisibly.
+  final List<Object> widgetComponents = [];
+
+  /// Bumped whenever [widgetComponents] changes.
+  final ValueNotifier<int> widgetComponentsChanged = ValueNotifier<int>(0);
+
+  /// Registers a mounted widget component (typed as Object to keep this
+  /// render-layer file free of a widgets dependency).
+  void addWidgetComponent(Object component) {
+    widgetComponents.add(component);
+    widgetComponentsChanged.value++;
+  }
+
+  /// Unregisters an unmounted widget component.
+  void removeWidgetComponent(Object component) {
+    widgetComponents.remove(component);
+    widgetComponentsChanged.value++;
   }
 
   /// Unregisters [light]. Called when its owning node unmounts.

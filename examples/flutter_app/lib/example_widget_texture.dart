@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -6,10 +5,11 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
-/// A live widget subtree streamed onto scene geometry. The panel on the cube
-/// is an ordinary animated Flutter widget hosted by a [WidgetTexture]; it is
-/// captured whenever it repaints and sampled as the cube's base color
-/// texture. The widget never appears in the 2D UI.
+/// A live widget subtree streamed onto scene geometry via [WidgetComponent]:
+/// the component owns the panel quad, captures the widget whenever it
+/// repaints, and binds the texture to the material. SceneView hosts the
+/// widget invisibly; it never appears in the 2D UI. Taps and drags raycast
+/// through `scene.raycast` and forward into the widgets at the hit UV.
 class ExampleWidgetTexture extends StatefulWidget {
   const ExampleWidgetTexture({super.key});
 
@@ -19,8 +19,10 @@ class ExampleWidgetTexture extends StatefulWidget {
 
 class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   final Scene scene = Scene();
-  final WidgetTextureController _widgetTexture = WidgetTextureController();
-  UnlitMaterial? _material;
+  // The material is provided (tier 3 implicit binding) so the recursive
+  // toggle can also swap its texture by hand.
+  final UnlitMaterial _material = UnlitMaterial()..alphaMode = AlphaMode.blend;
+  late final WidgetComponent _component;
   Node? _panel;
   // Free-look camera (WASD + space/shift, drag to look). A drag that starts
   // on the widget panel forwards to the widgets instead.
@@ -47,24 +49,16 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
         ),
       ),
     );
-    _widgetTexture.addListener(_onCapture);
-  }
-
-  void _onCapture() {
-    final texture = _widgetTexture.texture;
-    if (texture == null) return;
-    if (_material == null) {
-      // First capture: build the textured panel.
-      _material = UnlitMaterial()..baseColorTexture = texture;
-      _panel = Node(
-        name: 'panel',
-        mesh: Mesh(CuboidGeometry(vm.Vector3(3.2, 2.0, 0.2)), _material!),
-      );
-      scene.add(_panel!);
-    } else {
-      // The texture object only changes when the capture size changes.
-      _material!.baseColorTexture = texture;
-    }
+    _component = WidgetComponent(
+      child: const _PanelContent(),
+      size: const Size(480, 300),
+      pixelRatio: 2.0,
+      worldHeight: 2.0,
+      material: _material,
+    );
+    final panel = Node(name: 'panel')..addComponent(_component);
+    _panel = panel;
+    scene.add(panel);
   }
 
   /// Maps a tap inside the view to texture UV on the panel, or null when the
@@ -101,12 +95,6 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   }
 
   @override
-  void dispose() {
-    _widgetTexture.removeListener(_onCapture);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Focus(
       autofocus: true,
@@ -120,7 +108,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                 final uv = _panelUv(details.localPosition, constraints.biggest);
                 if (uv != null) {
                   _dragging = true;
-                  _widgetTexture.pointerDown(uv);
+                  _component.controller.pointerDown(uv);
                 }
               },
               onPanUpdate: (details) {
@@ -129,7 +117,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                     details.localPosition,
                     constraints.biggest,
                   );
-                  if (uv != null) _widgetTexture.pointerMove(uv);
+                  if (uv != null) _component.controller.pointerMove(uv);
                 } else {
                   _quakeCamera.look(details.delta);
                 }
@@ -139,15 +127,15 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                 _dragging = false;
                 final uv = _panelUv(details.localPosition, constraints.biggest);
                 if (uv != null) {
-                  _widgetTexture.pointerUp(uv);
+                  _component.controller.pointerUp(uv);
                 } else {
-                  _widgetTexture.pointerCancel();
+                  _component.controller.pointerCancel();
                 }
               },
               onPanCancel: () {
                 if (_dragging) {
                   _dragging = false;
-                  _widgetTexture.pointerCancel();
+                  _component.controller.pointerCancel();
                 }
               },
               child: SceneView(
@@ -164,27 +152,16 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                   // Recursive mode samples the scene's own previous frame, a
                   // one-frame feedback loop (an infinite mirror as the camera
                   // orbits). Otherwise the panel shows the live widget capture.
-                  final material = _material;
-                  if (material != null) {
-                    final feedback = _recursive
-                        ? scene.surface.lastSwapchainColorTexture()
-                        : null;
-                    material.baseColorTexture =
-                        feedback ??
-                        _widgetTexture.texture ??
-                        material.baseColorTexture;
-                  }
+                  final feedback = _recursive
+                      ? scene.surface.lastSwapchainColorTexture()
+                      : null;
+                  _material.baseColorTexture =
+                      feedback ??
+                      _component.controller.texture ??
+                      _material.baseColorTexture;
                 },
               ),
             ),
-          ),
-          // The hosted subtree: zero layout size, never painted on screen.
-          WidgetTexture(
-            controller: _widgetTexture,
-            width: 480,
-            height: 300,
-            pixelRatio: 2.0,
-            child: const _PanelContent(),
           ),
           Positioned(
             right: 8,
@@ -208,10 +185,10 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
             left: 8,
             bottom: 8,
             child: ListenableBuilder(
-              listenable: _widgetTexture,
+              listenable: _component.controller,
               builder: (context, _) => Text(
-                'captures: ${_widgetTexture.captureCount}  '
-                'last: ${_widgetTexture.lastCaptureDuration.inMilliseconds}ms',
+                'captures: ${_component.controller.captureCount}  '
+                'last: ${_component.controller.lastCaptureDuration.inMilliseconds}ms',
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
