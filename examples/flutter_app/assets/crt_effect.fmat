@@ -1,3 +1,5 @@
+// Adapted from https://www.shadertoy.com/view/XtBXDt
+//
 // A VHS-playback effect for a widget texture on a CRT tube: tape wave, tape
 // crease, head-switching noise, chromatic bloom, and an AC beat, applied to
 // the live widget capture bound to screen_texture. The tube itself is a
