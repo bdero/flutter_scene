@@ -57,6 +57,21 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
       material: _material,
     );
     final panel = Node(name: 'panel')..addComponent(_component);
+    // A solid backing box, slightly extruded, so the panel reads as an
+    // object with depth and stays visible from behind (the widget quad
+    // itself is front-facing only).
+    panel.add(
+      Node(
+        name: 'panelBacking',
+        localTransform: vm.Matrix4.translation(vm.Vector3(0, 0, -0.07)),
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(3.4, 2.2, 0.12)),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.12, 0.13, 0.17, 1.0)
+            ..roughnessFactor = 0.4,
+        ),
+      ),
+    );
     _panel = panel;
     scene.add(panel);
   }
