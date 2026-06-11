@@ -11,6 +11,7 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'lighting_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -335,28 +336,11 @@ class _StressSceneState extends State<_StressScene> {
   // HDRs; the renderer's built-in studio environment is the default).
   final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
-  // Tone-mapping exposure and image-based-lighting intensity, tunable
-  // from the lighting panel. Both default to the renderer's neutral 1.0.
-  double _exposure = 1.0;
-  double _environmentIntensity = 1.0;
-
-  // Environment rotation in degrees about each world axis.
-  double _envRotationX = 0.0;
-  double _envRotationY = 0.0;
-  double _envRotationZ = 0.0;
-
-  // Skybox: draws the selected environment as the background, with an
-  // adjustable blur. The source samples `_scene.environment`, so the backdrop
-  // follows the environment menu and the rotation with no extra work.
-  bool _showSkybox = true;
-  final EnvironmentSkySource _skySource = EnvironmentSkySource();
-
   @override
   void initState() {
     super.initState();
     // Lighting (the directional key light and shadows) is driven by the
     // shared settings panel via ExampleSettings.applyTo.
-    _applySkybox();
     unawaited(_load());
   }
 
@@ -451,35 +435,6 @@ class _StressSceneState extends State<_StressScene> {
   // Switches the scene's image-based-lighting environment. Downloads and
   // decodes the HDR on first use (cached afterward); the built-in studio
   // environment needs no download.
-  Future<void> _selectEnvironment(ExampleEnvironment environment) async {
-    try {
-      await _environmentSelector.select(environment, _scene);
-      if (!mounted) return;
-      setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {});
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('Failed to load ${environment.title}: $e')),
-      );
-    }
-  }
-
-  // Sets or clears the scene's skybox from the toggle. The source samples
-  // `_scene.environment`, so selecting a different environment or rotating it
-  // updates the backdrop automatically.
-  void _applySkybox() {
-    _scene.skybox = _showSkybox ? Skybox(_skySource) : null;
-  }
-
-  // Rebuilds the scene's environment rotation from the three Euler angles.
-  void _applyEnvironmentRotation() {
-    const degToRad = pi / 180.0;
-    _scene.environmentTransform =
-        vm.Matrix3.rotationY(_envRotationY * degToRad) *
-        vm.Matrix3.rotationX(_envRotationX * degToRad) *
-        vm.Matrix3.rotationZ(_envRotationZ * degToRad);
-  }
 
   Animation? _findAnimation(Node root, String name) {
     final hit = root.findAnimationByName(name);
@@ -713,57 +668,7 @@ class _StressSceneState extends State<_StressScene> {
           Positioned(
             left: 8,
             bottom: 8,
-            child: _LightingPanel(
-              activeEnvironment: _environmentSelector.active,
-              environmentLoading: _environmentSelector.loading,
-              onEnvironmentSelected: _selectEnvironment,
-              exposure: _exposure,
-              environmentIntensity: _environmentIntensity,
-              envRotationX: _envRotationX,
-              envRotationY: _envRotationY,
-              envRotationZ: _envRotationZ,
-              showSkybox: _showSkybox,
-              skyBlur: _skySource.blurriness,
-              onShowSkyboxChanged: (value) {
-                setState(() {
-                  _showSkybox = value;
-                  _applySkybox();
-                });
-              },
-              onSkyBlurChanged: (value) {
-                setState(() => _skySource.blurriness = value);
-              },
-              onExposureChanged: (value) {
-                setState(() {
-                  _exposure = value;
-                  _scene.exposure = value;
-                });
-              },
-              onEnvironmentIntensityChanged: (value) {
-                setState(() {
-                  _environmentIntensity = value;
-                  _scene.environmentIntensity = value;
-                });
-              },
-              onEnvRotationXChanged: (value) {
-                setState(() {
-                  _envRotationX = value;
-                  _applyEnvironmentRotation();
-                });
-              },
-              onEnvRotationYChanged: (value) {
-                setState(() {
-                  _envRotationY = value;
-                  _applyEnvironmentRotation();
-                });
-              },
-              onEnvRotationZChanged: (value) {
-                setState(() {
-                  _envRotationZ = value;
-                  _applyEnvironmentRotation();
-                });
-              },
-            ),
+            child: LightingPanel(scene: _scene, selector: _environmentSelector),
           ),
         if (_ready)
           Positioned(
@@ -825,188 +730,6 @@ class _LoadingOverlay extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// The "Active Environment" menu: a compact dark pill that opens the list
-// of selectable image-based-lighting environments. Shows a spinner while
-// the chosen environment downloads and prefilters.
-// Bottom-left lighting panel: the environment menu plus exposure and
-// image-based-lighting intensity sliders.
-class _LightingPanel extends StatelessWidget {
-  const _LightingPanel({
-    required this.activeEnvironment,
-    required this.environmentLoading,
-    required this.onEnvironmentSelected,
-    required this.exposure,
-    required this.environmentIntensity,
-    required this.envRotationX,
-    required this.envRotationY,
-    required this.envRotationZ,
-    required this.showSkybox,
-    required this.skyBlur,
-    required this.onShowSkyboxChanged,
-    required this.onSkyBlurChanged,
-    required this.onExposureChanged,
-    required this.onEnvironmentIntensityChanged,
-    required this.onEnvRotationXChanged,
-    required this.onEnvRotationYChanged,
-    required this.onEnvRotationZChanged,
-  });
-
-  final ExampleEnvironment activeEnvironment;
-  final bool environmentLoading;
-  final ValueChanged<ExampleEnvironment> onEnvironmentSelected;
-  final double exposure;
-  final double environmentIntensity;
-  final double envRotationX;
-  final double envRotationY;
-  final double envRotationZ;
-  final bool showSkybox;
-  final double skyBlur;
-  final ValueChanged<bool> onShowSkyboxChanged;
-  final ValueChanged<double> onSkyBlurChanged;
-  final ValueChanged<double> onExposureChanged;
-  final ValueChanged<double> onEnvironmentIntensityChanged;
-  final ValueChanged<double> onEnvRotationXChanged;
-  final ValueChanged<double> onEnvRotationYChanged;
-  final ValueChanged<double> onEnvRotationZChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 248,
-      constraints: const BoxConstraints(maxHeight: 440),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EnvironmentMenu(
-              active: activeEnvironment,
-              loading: environmentLoading,
-              onSelected: onEnvironmentSelected,
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Skybox',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ),
-                Switch(value: showSkybox, onChanged: onShowSkyboxChanged),
-              ],
-            ),
-            _LabeledSlider(
-              label: 'Sky blur',
-              value: skyBlur,
-              min: 0.0,
-              max: 1.0,
-              onChanged: showSkybox ? onSkyBlurChanged : null,
-            ),
-            _LabeledSlider(
-              label: 'Exposure',
-              value: exposure,
-              min: 0.1,
-              max: 8.0,
-              onChanged: onExposureChanged,
-            ),
-            _LabeledSlider(
-              label: 'IBL intensity',
-              value: environmentIntensity,
-              min: 0.0,
-              max: 4.0,
-              onChanged: onEnvironmentIntensityChanged,
-            ),
-            _LabeledSlider(
-              label: 'Env rotation X',
-              value: envRotationX,
-              min: -180.0,
-              max: 180.0,
-              onChanged: onEnvRotationXChanged,
-            ),
-            _LabeledSlider(
-              label: 'Env rotation Y',
-              value: envRotationY,
-              min: -180.0,
-              max: 180.0,
-              onChanged: onEnvRotationYChanged,
-            ),
-            _LabeledSlider(
-              label: 'Env rotation Z',
-              value: envRotationZ,
-              min: -180.0,
-              max: 180.0,
-              onChanged: onEnvRotationZChanged,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// A compact labeled slider for the lighting panel: label and current
-// value on one row, the slider below.
-class _LabeledSlider extends StatelessWidget {
-  const _LabeledSlider({
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  // Null disables the slider (greyed out).
-  final ValueChanged<double>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-              Text(
-                value.toStringAsFixed(2),
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 2,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-          ),
-          child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChanged,
-          ),
-        ),
-      ],
     );
   }
 }
