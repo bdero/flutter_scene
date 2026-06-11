@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -101,7 +102,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     if (material == null) return;
     material.parameters
       ..setFloat('brightness', settings.brightness)
-      ..setFloat('roughness', settings.roughness)
+      ..setFloat('roughness', (1.0 - settings.gloss).clamp(0.0, 1.0))
       ..setFloat('tape_wave', settings.wave)
       ..setFloat('tape_crease', settings.crease)
       ..setFloat('switching', settings.switching)
@@ -171,8 +172,8 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
             ),
           ),
           Positioned(
-            top: 48,
-            right: 8,
+            left: 8,
+            bottom: 8,
             child: LightingPanel(scene: scene, selector: _environmentSelector),
           ),
           Positioned(
@@ -194,8 +195,8 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           ),
           // Capture diagnostics.
           Positioned(
-            left: 8,
-            bottom: 8,
+            right: 8,
+            bottom: 48,
             child: _component == null
                 ? const SizedBox.shrink()
                 : ListenableBuilder(
@@ -228,17 +229,27 @@ Geometry _buildCrtScreen({
   final columns = segments + 1;
   final rows = (segments * 3) ~/ 4 + 1;
   final positions = Float32List(columns * rows * 3);
+  final normals = Float32List(columns * rows * 3);
   final texCoords = Float32List(columns * rows * 2);
   for (var r = 0; r < rows; r++) {
     final ny = r / (rows - 1) * 2 - 1; // -1 (bottom) .. 1 (top)
     for (var c = 0; c < columns; c++) {
       final nx = c / (columns - 1) * 2 - 1;
       final v = r * columns + c;
-      // A smooth dome: full bulge at the center, flat at the rim.
+      // A smooth dome: full bulge at the center, flat at the rim,
+      // z = bulge * (1 - nx^2)(1 - ny^2) over x = nx*w/2, y = ny*h/2.
       final dome = (1 - nx * nx) * (1 - ny * ny);
       positions[v * 3] = nx * width / 2;
       positions[v * 3 + 1] = ny * height / 2;
       positions[v * 3 + 2] = bulge * dome;
+      // Analytic surface normal: (-dz/dx, -dz/dy, 1) normalized. The
+      // chain rule brings in dnx/dx = 2/width (and likewise for y).
+      final dzdx = bulge * (-2 * nx) * (1 - ny * ny) * (2 / width);
+      final dzdy = bulge * (1 - nx * nx) * (-2 * ny) * (2 / height);
+      final inverseLength = 1 / math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
+      normals[v * 3] = -dzdx * inverseLength;
+      normals[v * 3 + 1] = -dzdy * inverseLength;
+      normals[v * 3 + 2] = inverseLength;
       // u = 0 at +x, matching the engine's hand-built front-face
       // convention (see the component quad).
       texCoords[v * 2] = (1 - nx) / 2;
@@ -259,6 +270,7 @@ Geometry _buildCrtScreen({
   }
   return MeshGeometry.fromArrays(
     positions: positions,
+    normals: normals,
     texCoords: texCoords,
     indices: indices,
   );
@@ -268,7 +280,7 @@ Geometry _buildCrtScreen({
 class CrtEffectSettings {
   const CrtEffectSettings({
     this.brightness = 1.5,
-    this.roughness = 0.08,
+    this.gloss = 0.92,
     this.wave = 1.0,
     this.crease = 1.0,
     this.switching = 1.0,
@@ -277,7 +289,9 @@ class CrtEffectSettings {
   });
 
   final double brightness;
-  final double roughness;
+
+  /// 0 = matte, 1 = mirror glass (the material's roughness is `1 - gloss`).
+  final double gloss;
   final double wave;
   final double crease;
   final double switching;
@@ -286,7 +300,7 @@ class CrtEffectSettings {
 
   CrtEffectSettings copyWith({
     double? brightness,
-    double? roughness,
+    double? gloss,
     double? wave,
     double? crease,
     double? switching,
@@ -294,7 +308,7 @@ class CrtEffectSettings {
     double? beat,
   }) => CrtEffectSettings(
     brightness: brightness ?? this.brightness,
-    roughness: roughness ?? this.roughness,
+    gloss: gloss ?? this.gloss,
     wave: wave ?? this.wave,
     crease: crease ?? this.crease,
     switching: switching ?? this.switching,
@@ -385,8 +399,8 @@ class _CrtPanelState extends State<_CrtPanel> {
                 ),
                 _slider(
                   'gloss',
-                  _settings.roughness,
-                  (v) => _settings.copyWith(roughness: v),
+                  _settings.gloss,
+                  (v) => _settings.copyWith(gloss: v),
                   max: 1.0,
                 ),
                 _slider(
