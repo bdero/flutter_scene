@@ -26,6 +26,11 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
 /// re-fetches and recompiles asynchronously, so await this before evicting
 /// cached pipelines.
 Future<void> reinitializeShaderLibraryAsync(String assetKey) {
+  // TODO(shader-reload): drop the ignore once ShaderLibrary.reinitialize
+  // reaches a released Flutter channel. The API exists only on master, so
+  // analyzing against stable (which pub.dev scoring does) reports it
+  // undefined; the package requires the master channel at runtime anyway.
+  // ignore: undefined_method
   ShaderLibrary.reinitialize(assetKey);
   return Future.value();
 }
