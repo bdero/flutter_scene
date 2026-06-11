@@ -3,6 +3,7 @@
 // selection, and area-weighted normal generation. Pure logic, so these
 // run without a Flutter GPU context.
 
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
@@ -88,9 +89,12 @@ void main() {
   });
 
   group('generateNormals', () {
-    test('generates +Z for a counter-clockwise triangle in the XY plane', () {
+    test('generates +Z for a front-face-wound triangle in the XY plane', () {
+      // Wound like the cuboid's +Z face (clockwise in model space, the
+      // engine's front-face convention), so the normal points at the
+      // viewer of that face.
       final normals = InterleavedLayoutAdapter.generateNormals(
-        positions: Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        positions: Float32List.fromList([1, -1, 0, -1, -1, 0, 1, 1, 0]),
         vertexCount: 3,
         indices: [0, 1, 2],
       );
@@ -103,10 +107,67 @@ void main() {
 
     test('handles a non-indexed triangle list', () {
       final normals = InterleavedLayoutAdapter.generateNormals(
-        positions: Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        positions: Float32List.fromList([1, -1, 0, -1, -1, 0, 1, 1, 0]),
         vertexCount: 3,
       );
       expect(normals[2], closeTo(1, 1e-6));
+    });
+
+    test('matches analytic normals on a curved front-face-wound grid', () {
+      // A dome z = b(1 - nx^2)(1 - ny^2) over [-1, 1]^2, wound per the
+      // engine front-face convention (the same construction as the
+      // widget-texture example's screen). The generated smooth normals
+      // must agree with the analytic surface normals, including SIGN
+      // (pointing out of the bulge, toward the front-face viewer).
+      const n = 8;
+      const bulge = 0.3;
+      final positions = Float32List((n + 1) * (n + 1) * 3);
+      for (var r = 0; r <= n; r++) {
+        final ny = r / n * 2 - 1;
+        for (var c = 0; c <= n; c++) {
+          final nx = c / n * 2 - 1;
+          final v = r * (n + 1) + c;
+          positions[v * 3] = nx;
+          positions[v * 3 + 1] = ny;
+          positions[v * 3 + 2] = bulge * (1 - nx * nx) * (1 - ny * ny);
+        }
+      }
+      final indices = <int>[];
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          final bl = r * (n + 1) + c;
+          final br = bl + 1;
+          final tl = bl + n + 1;
+          final tr = tl + 1;
+          indices.addAll([br, bl, tr, tr, bl, tl]);
+        }
+      }
+      final normals = InterleavedLayoutAdapter.generateNormals(
+        positions: positions,
+        vertexCount: (n + 1) * (n + 1),
+        indices: indices,
+      );
+      for (var r = 0; r <= n; r++) {
+        final ny = r / n * 2 - 1;
+        for (var c = 0; c <= n; c++) {
+          final nx = c / n * 2 - 1;
+          final v = r * (n + 1) + c;
+          final dzdx = bulge * -2 * nx * (1 - ny * ny);
+          final dzdy = bulge * (1 - nx * nx) * -2 * ny;
+          final inverseLength = 1 / sqrt(dzdx * dzdx + dzdy * dzdy + 1);
+          final dot =
+              normals[v * 3] * -dzdx * inverseLength +
+              normals[v * 3 + 1] * -dzdy * inverseLength +
+              normals[v * 3 + 2] * inverseLength;
+          expect(
+            dot,
+            greaterThan(0.98),
+            reason:
+                'vertex ($nx, $ny) generated normal disagrees with '
+                'the analytic surface normal',
+          );
+        }
+      }
     });
 
     test('falls back to (0, 0, 1) for a vertex touched by no triangle', () {
