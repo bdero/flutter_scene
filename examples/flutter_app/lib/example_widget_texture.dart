@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'environment_menu.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -38,6 +39,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   PreprocessedMaterial? _material;
   WidgetComponent? _component;
   double _elapsedSeconds = 0.0;
+  final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
   @override
   void initState() {
@@ -96,11 +98,26 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     final material = _material;
     if (material == null) return;
     material.parameters
-      ..setFloat('scanline_strength', settings.scanlines)
-      ..setFloat('noise_strength', settings.noise)
-      ..setFloat('chroma_shift', settings.chroma)
-      ..setFloat('wobble_strength', settings.wobble)
-      ..setFloat('vignette_strength', settings.vignette);
+      ..setFloat('brightness', settings.brightness)
+      ..setFloat('roughness', settings.roughness)
+      ..setFloat('tape_wave', settings.wave)
+      ..setFloat('tape_crease', settings.crease)
+      ..setFloat('switching', settings.switching)
+      ..setFloat('bloom_spread', settings.bloom)
+      ..setFloat('ac_beat', settings.beat);
+  }
+
+  Future<void> _selectEnvironment(ExampleEnvironment environment) async {
+    try {
+      await _environmentSelector.select(environment, scene);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('Failed to load ${environment.title}: $e')),
+      );
+    }
   }
 
   /// Whether [position] is over a widget surface (nearest raycast hit
@@ -162,6 +179,15 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                   }
                 },
               ),
+            ),
+          ),
+          Positioned(
+            top: 48,
+            right: 8,
+            child: EnvironmentMenu(
+              active: _environmentSelector.active,
+              loading: _environmentSelector.loading,
+              onSelected: _selectEnvironment,
             ),
           ),
           Positioned(
@@ -256,31 +282,39 @@ Geometry _buildCrtScreen({
 /// The effect parameters the in-screen sliders drive.
 class CrtEffectSettings {
   const CrtEffectSettings({
-    this.scanlines = 0.55,
-    this.noise = 0.2,
-    this.chroma = 0.45,
-    this.wobble = 0.25,
-    this.vignette = 0.55,
+    this.brightness = 1.5,
+    this.roughness = 0.08,
+    this.wave = 1.0,
+    this.crease = 1.0,
+    this.switching = 1.0,
+    this.bloom = 1.0,
+    this.beat = 1.0,
   });
 
-  final double scanlines;
-  final double noise;
-  final double chroma;
-  final double wobble;
-  final double vignette;
+  final double brightness;
+  final double roughness;
+  final double wave;
+  final double crease;
+  final double switching;
+  final double bloom;
+  final double beat;
 
   CrtEffectSettings copyWith({
-    double? scanlines,
-    double? noise,
-    double? chroma,
-    double? wobble,
-    double? vignette,
+    double? brightness,
+    double? roughness,
+    double? wave,
+    double? crease,
+    double? switching,
+    double? bloom,
+    double? beat,
   }) => CrtEffectSettings(
-    scanlines: scanlines ?? this.scanlines,
-    noise: noise ?? this.noise,
-    chroma: chroma ?? this.chroma,
-    wobble: wobble ?? this.wobble,
-    vignette: vignette ?? this.vignette,
+    brightness: brightness ?? this.brightness,
+    roughness: roughness ?? this.roughness,
+    wave: wave ?? this.wave,
+    crease: crease ?? this.crease,
+    switching: switching ?? this.switching,
+    bloom: bloom ?? this.bloom,
+    beat: beat ?? this.beat,
   );
 }
 
@@ -307,8 +341,9 @@ class _CrtPanelState extends State<_CrtPanel> {
   Widget _slider(
     String label,
     double value,
-    CrtEffectSettings Function(double) apply,
-  ) {
+    CrtEffectSettings Function(double) apply, {
+    double max = 2.0,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
@@ -322,7 +357,8 @@ class _CrtPanelState extends State<_CrtPanel> {
           ),
           Expanded(
             child: Slider(
-              value: value,
+              value: value.clamp(0.0, max),
+              max: max,
               activeColor: const Color(0xFF9FE8A8),
               onChanged: (v) => _update(apply(v)),
             ),
@@ -357,29 +393,41 @@ class _CrtPanelState extends State<_CrtPanel> {
               padding: const EdgeInsets.symmetric(vertical: 6),
               children: [
                 _slider(
-                  'scanlines',
-                  _settings.scanlines,
-                  (v) => _settings.copyWith(scanlines: v),
+                  'brightness',
+                  _settings.brightness,
+                  (v) => _settings.copyWith(brightness: v),
+                  max: 4.0,
                 ),
                 _slider(
-                  'static',
-                  _settings.noise,
-                  (v) => _settings.copyWith(noise: v),
+                  'gloss',
+                  _settings.roughness,
+                  (v) => _settings.copyWith(roughness: v),
+                  max: 1.0,
                 ),
                 _slider(
-                  'chroma',
-                  _settings.chroma,
-                  (v) => _settings.copyWith(chroma: v),
+                  'tape wave',
+                  _settings.wave,
+                  (v) => _settings.copyWith(wave: v),
                 ),
                 _slider(
-                  'tracking',
-                  _settings.wobble,
-                  (v) => _settings.copyWith(wobble: v),
+                  'crease',
+                  _settings.crease,
+                  (v) => _settings.copyWith(crease: v),
                 ),
                 _slider(
-                  'vignette',
-                  _settings.vignette,
-                  (v) => _settings.copyWith(vignette: v),
+                  'switching',
+                  _settings.switching,
+                  (v) => _settings.copyWith(switching: v),
+                ),
+                _slider(
+                  'bloom',
+                  _settings.bloom,
+                  (v) => _settings.copyWith(bloom: v),
+                ),
+                _slider(
+                  'ac beat',
+                  _settings.beat,
+                  (v) => _settings.copyWith(beat: v),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(

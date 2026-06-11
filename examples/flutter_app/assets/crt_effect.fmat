@@ -1,62 +1,121 @@
-// An old-TV effect for a widget texture: scanlines, RGB chroma fringing,
-// tracking wobble, static noise, and a vignette, applied to the live widget
-// capture bound to screen_texture. The sliders rendered INSIDE the screen
-// drive these parameters, so the panel adjusts its own distortion.
+// A VHS-playback effect for a widget texture on a CRT tube: tape wave, tape
+// crease, head-switching noise, chromatic bloom, and an AC beat, applied to
+// the live widget capture bound to screen_texture. The tube itself is a
+// black, glossy physically based surface: the picture is EMITTED light
+// (scaled by `brightness`), and the environment glares off the glass per
+// `roughness`. The sliders rendered INSIDE the screen drive these
+// parameters, so the panel adjusts its own playback quality.
 
 material {
   name: "CrtEffect",
-  shading_model: unlit,
+  shading_model: lit,
   blending: opaque,
   culling: back,
 
   parameters: [
     { type: sampler2d, name: screen_texture, hint: default_white },
-    { type: float, name: scanline_strength, hint: range(0, 1, 0.01), default: 0.55 },
-    { type: float, name: noise_strength, hint: range(0, 1, 0.01), default: 0.2 },
-    { type: float, name: chroma_shift, hint: range(0, 1, 0.01), default: 0.45 },
-    { type: float, name: wobble_strength, hint: range(0, 1, 0.01), default: 0.25 },
-    { type: float, name: vignette_strength, hint: range(0, 1, 0.01), default: 0.55 },
+    { type: float, name: brightness, hint: range(0, 4, 0.01), default: 1.5 },
+    { type: float, name: roughness, hint: range(0, 1, 0.01), default: 0.08 },
+    { type: float, name: tape_wave, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: tape_crease, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: switching, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: bloom_spread, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: ac_beat, hint: range(0, 2, 0.01), default: 1.0 },
     { type: float, name: time, default: 0.0 },
   ],
 }
 
 fragment {
-  float Hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  // The effect math runs in tape space (v = 0 at the BOTTOM of the picture,
+  // where the head-switching band lives); our texture convention is v = 0 at
+  // the top, so sampling flips back.
+  vec3 SampleTape(vec2 p) {
+    vec3 col = texture(screen_texture, vec2(p.x, 1.0 - p.y)).xyz;
+    // Off the tape edge there is no picture, just faint noise floor.
+    if (0.5 < abs(p.x - 0.5)) {
+      col = vec3(0.1);
+    }
+    return col;
+  }
+
+  float Hash(vec2 v) {
+    return fract(sin(dot(v, vec2(89.44, 19.36))) * 22189.22);
+  }
+
+  // Bilinearly interpolated hash on a grid of resolution r.
+  float IHash(vec2 v, vec2 r) {
+    float h00 = Hash(vec2(floor(v * r + vec2(0.0, 0.0)) / r));
+    float h10 = Hash(vec2(floor(v * r + vec2(1.0, 0.0)) / r));
+    float h01 = Hash(vec2(floor(v * r + vec2(0.0, 1.0)) / r));
+    float h11 = Hash(vec2(floor(v * r + vec2(1.0, 1.0)) / r));
+    vec2 ip = vec2(
+      smoothstep(vec2(0.0, 0.0), vec2(1.0, 1.0), mod(v * r, 1.0))
+    );
+    return (h00 * (1.0 - ip.x) + h10 * ip.x) * (1.0 - ip.y) +
+        (h01 * (1.0 - ip.x) + h11 * ip.x) * ip.y;
+  }
+
+  // Octaved value noise.
+  float Noise(vec2 v) {
+    float sum = 0.0;
+    for (int i = 1; i < 9; i++) {
+      sum += IHash(v + vec2(float(i)), vec2(2.0 * pow(2.0, float(i)))) /
+          pow(2.0, float(i));
+    }
+    return sum;
   }
 
   void Surface(inout MaterialInputs material) {
-    vec2 uv = GetUV0();
     float t = material_params.time;
+    vec2 uv = vec2(GetUV0().x, 1.0 - GetUV0().y); // into tape space
+    vec2 uvn = uv;
 
-    // Tracking wobble: slow horizontal sway plus an occasional rolling
-    // glitch band that sweeps down the screen.
-    float sway = sin(uv.y * 9.0 + t * 1.7) * 0.0015;
-    float band = smoothstep(0.0, 0.08, abs(fract(uv.y - t * 0.13) - 0.5) - 0.42);
-    float glitch = (1.0 - band) * 0.012 * sin(t * 31.0);
-    uv.x += (sway + glitch) * material_params.wobble_strength * 4.0;
+    // Tape wave: a slow horizontal sway plus fine per-line jitter.
+    uvn.x += (Noise(vec2(uvn.y, t)) - 0.5) * 0.005 * material_params.tape_wave;
+    uvn.x += (Noise(vec2(uvn.y * 100.0, t * 10.0)) - 0.5) * 0.01 *
+        material_params.tape_wave;
 
-    // Chroma fringing: offset the red and blue taps horizontally.
-    float shift = material_params.chroma_shift * 0.004;
-    float r = texture(screen_texture, uv + vec2(shift, 0.0)).r;
-    float g = texture(screen_texture, uv).g;
-    float b = texture(screen_texture, uv - vec2(shift, 0.0)).b;
-    vec3 color = vec3(r, g, b);
+    // Tape crease: a band that sweeps the frame, dragging the picture
+    // sideways where it passes.
+    float creasePhase = clamp(
+          (sin(uvn.y * 8.0 - t * 3.14159265 * 1.2) - 0.92) * Noise(vec2(t)),
+          0.0, 0.01) *
+        10.0 * material_params.tape_crease;
+    float creaseNoise = max(Noise(vec2(uvn.y * 100.0, t * 10.0)) - 0.5, 0.0);
+    uvn.x = uvn.x - creaseNoise * creasePhase;
 
-    // Scanlines: darken alternating raster lines.
-    float scan = 0.5 + 0.5 * sin(uv.y * 720.0);
-    color *= 1.0 - material_params.scanline_strength * 0.45 * scan;
+    // Head-switching noise: the torn band at the bottom of the picture.
+    float switchPhase = smoothstep(0.03, 0.0, uvn.y) *
+        material_params.switching;
+    uvn.y += switchPhase * 0.3;
+    uvn.x += switchPhase * ((Noise(vec2(uv.y * 100.0, t * 10.0)) - 0.5) * 0.2);
 
-    // Static: per-texel noise scrolled by time.
-    float n = Hash(uv * vec2(721.0, 539.0) + fract(t) * 53.0);
-    color = mix(color, vec3(n), material_params.noise_strength * 0.22);
+    vec3 col = SampleTape(uvn);
+    col *= 1.0 - creasePhase;
+    col = mix(col, col.yzx, switchPhase);
 
-    // Vignette: darken toward the corners.
-    vec2 centered = uv - 0.5;
-    float falloff = dot(centered, centered) * 2.0;
-    color *= 1.0 - material_params.vignette_strength * falloff;
+    // Chromatic bloom: horizontally smeared taps, one channel at a time.
+    float spread = 7e-3 * material_params.bloom_spread;
+    for (float x = -4.0; x < 2.5; x += 1.0) {
+      col += vec3(
+            SampleTape(uvn + vec2(x - 0.0, 0.0) * spread).x,
+            SampleTape(uvn + vec2(x - 2.0, 0.0) * spread).y,
+            SampleTape(uvn + vec2(x - 4.0, 0.0) * spread).z) *
+          0.1;
+    }
+    col *= 0.6;
 
-    material.base_color = vec4(color, 1.0);
+    // AC beat: a faint brightness band drifting up the frame.
+    col *= 1.0 +
+        clamp(Noise(vec2(0.0, uv.y + t * 0.2)) * 0.6 - 0.25, 0.0, 0.1) *
+            material_params.ac_beat;
+
+    // A black, glossy tube: the picture is emitted light, and the
+    // environment glares off the glass.
+    material.base_color = vec4(0.0, 0.0, 0.0, 1.0);
+    material.metallic = 0.0;
+    material.roughness = material_params.roughness;
+    material.emissive = col * material_params.brightness;
     PrepareMaterial(material);
   }
 }

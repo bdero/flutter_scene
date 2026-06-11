@@ -5,20 +5,15 @@
 
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart' hide Animation;
-import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
-import 'package:http/http.dart' as http;
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'environment_menu.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
-import 'hdr_image.dart';
-import 'stress_cache.dart';
 // The in-memory offline (ahead-of-time) glTF -> .fsceneb conversion, used by
 // the per-test importer toggle below. Reaching into flutter_scene's internals
 // is intentional here: this is a renderer stress test, not a typical consumer.
@@ -235,124 +230,10 @@ const _catalog = <_StressTest>[
   ),
 ];
 
-// An image-based-lighting environment selectable from the scene's
-// environment menu.
-class _Environment {
-  const _Environment({required this.id, required this.title, this.url});
-
-  final String id;
-  final String title;
-
-  /// Radiance `.hdr` URL, or null for the renderer's built-in procedural
-  /// studio environment.
-  final String? url;
-}
-
-// Khronos sample-environment HDRs, downloaded at runtime. They are Git LFS
-// blobs, so they are fetched through media.githubusercontent.com (the
-// raw.githubusercontent.com path serves only the LFS pointer).
-const _kEnvironmentBaseUrl =
-    'https://media.githubusercontent.com/media/KhronosGroup/'
-    'glTF-Sample-Environments/main';
-
-const _environments = <_Environment>[
-  _Environment(id: 'studio', title: 'Studio (built-in)'),
-  _Environment(id: 'axis_test', title: 'Axis Test (solid colors)'),
-  _Environment(
-    id: 'neutral',
-    title: 'Studio Neutral',
-    url: '$_kEnvironmentBaseUrl/neutral.hdr',
-  ),
-  _Environment(
-    id: 'footprint_court',
-    title: 'Footprint Court',
-    url: '$_kEnvironmentBaseUrl/footprint_court.hdr',
-  ),
-  _Environment(
-    id: 'pisa',
-    title: 'Pisa',
-    url: '$_kEnvironmentBaseUrl/pisa.hdr',
-  ),
-  _Environment(
-    id: 'doge2',
-    title: "Doge's Palace",
-    url: '$_kEnvironmentBaseUrl/doge2.hdr',
-  ),
-  _Environment(
-    id: 'ennis',
-    title: 'Ennis House',
-    url: '$_kEnvironmentBaseUrl/ennis.hdr',
-  ),
-  _Environment(
-    id: 'field',
-    title: 'Field',
-    url: '$_kEnvironmentBaseUrl/field.hdr',
-  ),
-  _Environment(
-    id: 'helipad',
-    title: 'Helipad',
-    url: '$_kEnvironmentBaseUrl/helipad.hdr',
-  ),
-  _Environment(
-    id: 'papermill',
-    title: 'Papermill Ruins',
-    url: '$_kEnvironmentBaseUrl/papermill.hdr',
-  ),
-  _Environment(
-    id: 'directional',
-    title: 'Directional (test)',
-    url: '$_kEnvironmentBaseUrl/directional.hdr',
-  ),
-  _Environment(
-    id: 'chromatic',
-    title: 'Chromatic (test)',
-    url: '$_kEnvironmentBaseUrl/chromatic.hdr',
-  ),
-];
-
 // Generates a procedural test environment: a low-resolution equirect
 // colored by the dominant world axis of each direction (+X red, -X cyan,
 // +Y green, -Y magenta, +Z blue, -Z yellow). Solid colors make the
 // environment's orientation unambiguous in reflections and ambient light.
-({Float32List pixels, int width, int height}) _buildAxisTestEquirect() {
-  const width = 256;
-  const height = 128;
-  final pixels = Float32List(width * height * 4);
-  for (var py = 0; py < height; py++) {
-    // Row 0 is the up pole, the standard equirect convention.
-    final v = (py + 0.5) / height;
-    final latitude = (0.5 - v) * pi;
-    final cosLat = cos(latitude);
-    final dirY = sin(latitude);
-    for (var px = 0; px < width; px++) {
-      final u = (px + 0.5) / width;
-      final longitude = (u - 0.5) * 2.0 * pi;
-      final dirX = cosLat * cos(longitude);
-      final dirZ = cosLat * sin(longitude);
-      double r, g, b;
-      if (dirX.abs() >= dirY.abs() && dirX.abs() >= dirZ.abs()) {
-        r = dirX >= 0 ? 1.0 : 0.0; // +X red, -X cyan
-        g = dirX >= 0 ? 0.0 : 1.0;
-        b = dirX >= 0 ? 0.0 : 1.0;
-      } else if (dirY.abs() >= dirZ.abs()) {
-        r = dirY >= 0 ? 0.0 : 1.0; // +Y green, -Y magenta
-        g = dirY >= 0 ? 1.0 : 0.0;
-        b = dirY >= 0 ? 0.0 : 1.0;
-      } else {
-        r = dirZ >= 0 ? 0.0 : 1.0; // +Z blue, -Z yellow
-        g = dirZ >= 0 ? 0.0 : 1.0;
-        b = dirZ >= 0 ? 1.0 : 0.0;
-      }
-      final o = (py * width + px) * 4;
-      pixels[o] = r;
-      pixels[o + 1] = g;
-      pixels[o + 2] = b;
-      pixels[o + 3] = 1.0;
-    }
-  }
-  return (pixels: pixels, width: width, height: height);
-}
-
 class ExampleStressTests extends StatefulWidget {
   const ExampleStressTests({super.key});
 
@@ -450,12 +331,9 @@ class _StressSceneState extends State<_StressScene> {
   // is only offered for single-file .glb tests.
   _ImporterMode _importerMode = _ImporterMode.runtime;
 
-  // Image-based-lighting environment. `_activeEnvironment` tracks the menu
-  // choice; the renderer's built-in studio environment is the default.
-  // Loaded HDR environments are cached so re-selecting one is instant.
-  _Environment _activeEnvironment = _environments.first;
-  bool _environmentLoading = false;
-  final Map<String, EnvironmentMap> _environmentCache = {};
+  // Image-based-lighting environment (the shared selector caches loaded
+  // HDRs; the renderer's built-in studio environment is the default).
+  final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
   // Tone-mapping exposure and image-based-lighting intensity, tunable
   // from the lighting panel. Both default to the renderer's neutral 1.0.
@@ -573,59 +451,18 @@ class _StressSceneState extends State<_StressScene> {
   // Switches the scene's image-based-lighting environment. Downloads and
   // decodes the HDR on first use (cached afterward); the built-in studio
   // environment needs no download.
-  Future<void> _selectEnvironment(_Environment environment) async {
-    if (environment.id == _activeEnvironment.id && !_environmentLoading) {
-      return;
-    }
-    setState(() {
-      _activeEnvironment = environment;
-      _environmentLoading = true;
-    });
+  Future<void> _selectEnvironment(ExampleEnvironment environment) async {
     try {
-      final map = await _resolveEnvironment(environment);
+      await _environmentSelector.select(environment, _scene);
       if (!mounted) return;
-      setState(() {
-        _scene.environment = map;
-        _environmentLoading = false;
-      });
+      setState(() {});
     } catch (e) {
       if (!mounted) return;
-      setState(() => _environmentLoading = false);
+      setState(() {});
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text('Failed to load ${environment.title}: $e')),
       );
     }
-  }
-
-  // Returns the [EnvironmentMap] for [environment], or null for the
-  // renderer's built-in studio default. HDR environments are downloaded,
-  // decoded off the UI isolate, prefiltered, and cached; the axis-test
-  // environment is generated procedurally.
-  Future<EnvironmentMap?> _resolveEnvironment(_Environment environment) async {
-    if (environment.id == 'studio') return null; // renderer's built-in
-
-    final cached = _environmentCache[environment.id];
-    if (cached != null) return cached;
-
-    final EnvironmentMap map;
-    if (environment.id == 'axis_test') {
-      final test = _buildAxisTestEquirect();
-      map = await EnvironmentMap.fromEquirectHdr(
-        linearPixels: test.pixels,
-        width: test.width,
-        height: test.height,
-      );
-    } else {
-      final bytes = await _fetchResource(environment.url!, onChunk: (_) {});
-      final hdr = await compute(loadHdrEnvironment, bytes);
-      map = await EnvironmentMap.fromEquirectHdr(
-        linearPixels: hdr.pixels,
-        width: hdr.width,
-        height: hdr.height,
-      );
-    }
-    _environmentCache[environment.id] = map;
-    return map;
   }
 
   // Sets or clears the scene's skybox from the toggle. The source samples
@@ -877,8 +714,8 @@ class _StressSceneState extends State<_StressScene> {
             left: 8,
             bottom: 8,
             child: _LightingPanel(
-              activeEnvironment: _activeEnvironment,
-              environmentLoading: _environmentLoading,
+              activeEnvironment: _environmentSelector.active,
+              environmentLoading: _environmentSelector.loading,
               onEnvironmentSelected: _selectEnvironment,
               exposure: _exposure,
               environmentIntensity: _environmentIntensity,
@@ -995,67 +832,6 @@ class _LoadingOverlay extends StatelessWidget {
 // The "Active Environment" menu: a compact dark pill that opens the list
 // of selectable image-based-lighting environments. Shows a spinner while
 // the chosen environment downloads and prefilters.
-class _EnvironmentMenu extends StatelessWidget {
-  const _EnvironmentMenu({
-    required this.active,
-    required this.loading,
-    required this.onSelected,
-  });
-
-  final _Environment active;
-  final bool loading;
-  final ValueChanged<_Environment> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white12,
-      borderRadius: BorderRadius.circular(4),
-      child: PopupMenuButton<_Environment>(
-        tooltip: 'Select environment',
-        position: PopupMenuPosition.over,
-        onSelected: onSelected,
-        itemBuilder: (context) => [
-          for (final environment in _environments)
-            PopupMenuItem<_Environment>(
-              value: environment,
-              child: Text(environment.title),
-            ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.light_mode, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                active.title,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-              const SizedBox(width: 6),
-              loading
-                  ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.arrow_drop_down,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // Bottom-left lighting panel: the environment menu plus exposure and
 // image-based-lighting intensity sliders.
 class _LightingPanel extends StatelessWidget {
@@ -1079,9 +855,9 @@ class _LightingPanel extends StatelessWidget {
     required this.onEnvRotationZChanged,
   });
 
-  final _Environment activeEnvironment;
+  final ExampleEnvironment activeEnvironment;
   final bool environmentLoading;
-  final ValueChanged<_Environment> onEnvironmentSelected;
+  final ValueChanged<ExampleEnvironment> onEnvironmentSelected;
   final double exposure;
   final double environmentIntensity;
   final double envRotationX;
@@ -1112,7 +888,7 @@ class _LightingPanel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _EnvironmentMenu(
+            EnvironmentMenu(
               active: activeEnvironment,
               loading: environmentLoading,
               onSelected: onEnvironmentSelected,
@@ -1247,7 +1023,7 @@ Future<Node> _importTest(
   void Function(int) onChunk,
 ) async {
   if (!test.isMultiFile) {
-    final bytes = await _fetchResource(
+    final bytes = await fetchResource(
       test.url,
       onChunk: onChunk,
       expectedSize: test.sizeBytes,
@@ -1267,11 +1043,11 @@ Future<Node> _importTest(
   // (and cached) by their own absolute URL, resolved relative to the `.gltf`'s
   // URL.
   final baseUri = Uri.parse(test.url);
-  final gltfBytes = await _fetchResource(test.url, onChunk: onChunk);
+  final gltfBytes = await fetchResource(test.url, onChunk: onChunk);
   return Node.fromGltfBytes(
     gltfBytes,
     resolveUri: (uri) =>
-        _fetchResource(baseUri.resolve(uri).toString(), onChunk: onChunk),
+        fetchResource(baseUri.resolve(uri).toString(), onChunk: onChunk),
   );
 }
 
@@ -1280,42 +1056,6 @@ Future<Node> _importTest(
 // otherwise streams the download via http, caches it, and returns it.
 // `onChunk` is fed each streamed chunk's length -- and the whole length on a
 // cache hit -- so callers can show cumulative progress.
-Future<Uint8List> _fetchResource(
-  String url, {
-  required void Function(int bytes) onChunk,
-  int? expectedSize,
-}) async {
-  final cached = await loadCachedResource(url);
-  if (cached != null) {
-    // With a known size, reject a suspiciously short (interrupted) cache
-    // entry; otherwise just require it to be non-empty.
-    final usable = expectedSize == null
-        ? cached.isNotEmpty
-        : cached.lengthInBytes >= expectedSize * 0.95;
-    if (usable) {
-      onChunk(cached.lengthInBytes);
-      return cached;
-    }
-  }
-
-  final client = http.Client();
-  try {
-    final response = await client.send(http.Request('GET', Uri.parse(url)));
-    if (response.statusCode != 200) {
-      throw Exception('GET $url returned ${response.statusCode}');
-    }
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in response.stream) {
-      builder.add(chunk);
-      onChunk(chunk.length);
-    }
-    final bytes = builder.takeBytes();
-    await storeCachedResource(url, bytes);
-    return bytes;
-  } finally {
-    client.close();
-  }
-}
 
 String _formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
