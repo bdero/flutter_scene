@@ -15,7 +15,7 @@
   bring your own geometry or material (with implicit binding for the
   built-in materials or a `bind` callback), or use `bindOnly` to texture a
   surface that already exists, such as a screen inside an imported model.
-  Captures follow a `WidgetUpdatePolicy` (on repaint by default, interval,
+  Captures follow a `WidgetUpdatePolicy` (every frame by default, interval,
   or manual) and dialogs and dropdowns render inside the texture.
 * Added automatic widget-surface input: platform pointer events raycast into
   the scene, and presses, drags, and scrolls forward into the widgets at the

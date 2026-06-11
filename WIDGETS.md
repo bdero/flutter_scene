@@ -20,7 +20,7 @@ scene.add(
 
 That is the whole setup. The component creates an aspect-correct,
 alpha-blended quad, `SceneView` hosts the widget invisibly (it never appears
-in the 2D UI and takes no layout space), captures it whenever it repaints,
+in the 2D UI and takes no layout space), streams its output into the texture,
 and forwards taps, drags, and scroll wheel input automatically: a press
 raycasts into the scene, and when the panel is the nearest hit, the
 interaction lands on the widgets at exactly the point you see. Geometry in
@@ -82,13 +82,18 @@ screen.addComponent(WidgetComponent.bindOnly(
 
 ## Update policies
 
-Captures default to `WidgetUpdatePolicy.onRepaint`: the widget is re-captured
-when (and only when) it actually repaints, so a static panel costs nothing
-per frame. `WidgetUpdatePolicy.interval(duration)` throttles fast-animating
-content, and `WidgetUpdatePolicy.manual` captures only on
-`controller.requestCapture()`. Captures are asynchronous and throttled to
-one in flight; content that repaints faster than captures complete skips
-intermediate frames and converges on the latest.
+Captures default to `WidgetUpdatePolicy.everyFrame`: the widget is
+re-recorded each frame, which is the only trigger that observes every
+change (repaints inside the child's own repaint boundaries, scrollable
+items, progress indicators, update their layers without notifying
+ancestors). The recording reuses the child's retained layers, so the
+steady-state cost is rasterizing and reading back content that actually
+changes. `WidgetUpdatePolicy.interval(duration)` throttles that cadence,
+and `WidgetUpdatePolicy.manual` captures only on
+`controller.requestCapture()`, right for genuinely static panels. Captures
+are asynchronous and throttled to one in flight; content that changes
+faster than captures complete skips intermediate frames and converges on
+the latest.
 
 `pixelRatio` sets texel density independently of world size. Blurry panel
 text means the texture is too small for its on-screen size; raise

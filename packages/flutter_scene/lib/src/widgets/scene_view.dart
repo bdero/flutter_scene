@@ -235,6 +235,28 @@ class _SceneViewState extends State<SceneView>
     }
   }
 
+  // Trackpads report scrolling as pan-zoom gestures (not scroll signals);
+  // forward the pan as scroll deltas so trackpad scrolling drives widget
+  // surfaces too.
+  Offset _panZoomLastPan = Offset.zero;
+
+  void _onPointerPanZoomStart(PointerPanZoomStartEvent event) {
+    if (!_autoInputAvailable) return;
+    _panZoomLastPan = Offset.zero;
+    _autoPoint(event.localPosition);
+  }
+
+  void _onPointerPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    if (!_autoInputAvailable) return;
+    _autoPoint(event.localPosition);
+    final hovered = _pointer.hoveredWidget;
+    final delta = event.pan - _panZoomLastPan;
+    _panZoomLastPan = event.pan;
+    if (hovered != null && hovered.input == WidgetInput.automatic) {
+      _pointer.scroll(-delta);
+    }
+  }
+
   @override
   void reassemble() {
     super.reassemble();
@@ -269,6 +291,8 @@ class _SceneViewState extends State<SceneView>
             onPointerUp: _onPointerUp,
             onPointerCancel: _onPointerCancel,
             onPointerSignal: _onPointerSignal,
+            onPointerPanZoomStart: _onPointerPanZoomStart,
+            onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
             child: Stack(
               fit: StackFit.passthrough,
               children: [

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
@@ -11,12 +12,18 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 sealed class WidgetUpdatePolicy {
   const WidgetUpdatePolicy._();
 
-  /// Capture whenever the child subtree repaints (the default). A static
-  /// subtree costs nothing per frame.
-  static const WidgetUpdatePolicy onRepaint = _OnRepaintUpdatePolicy();
+  /// Capture every frame while attached (the default). Captures are
+  /// throttled to one in flight, and the recording itself reuses the
+  /// child's retained layers, so the steady-state cost is the rasterize
+  /// and readback of content that is actually changing.
+  ///
+  /// Per-frame capture is the only trigger that observes every change:
+  /// repaints inside the child's own repaint boundaries (scrollable items,
+  /// progress indicators) update their layers in place without notifying
+  /// ancestors, so a repaint-driven trigger misses them.
+  static const WidgetUpdatePolicy everyFrame = _EveryFrameUpdatePolicy();
 
-  /// Capture at most once per [duration], even when the child repaints
-  /// more often.
+  /// Capture at most once per [duration].
   const factory WidgetUpdatePolicy.interval(Duration duration) =
       _IntervalUpdatePolicy;
 
@@ -24,8 +31,8 @@ sealed class WidgetUpdatePolicy {
   static const WidgetUpdatePolicy manual = _ManualUpdatePolicy();
 }
 
-class _OnRepaintUpdatePolicy extends WidgetUpdatePolicy {
-  const _OnRepaintUpdatePolicy() : super._();
+class _EveryFrameUpdatePolicy extends WidgetUpdatePolicy {
+  const _EveryFrameUpdatePolicy() : super._();
 }
 
 class _IntervalUpdatePolicy extends WidgetUpdatePolicy {
@@ -160,7 +167,7 @@ class WidgetTexture extends SingleChildRenderObjectWidget {
     required this.width,
     required this.height,
     this.pixelRatio = 1.0,
-    this.update = WidgetUpdatePolicy.onRepaint,
+    this.update = WidgetUpdatePolicy.everyFrame,
     required Widget super.child,
   });
 
@@ -373,7 +380,7 @@ class _RenderWidgetTexture extends RenderProxyBox {
     _pendingLayer?.dispose();
     _pendingLayer = layer;
     switch (_update) {
-      case _OnRepaintUpdatePolicy():
+      case _EveryFrameUpdatePolicy():
         _pumpCapture();
       case _IntervalUpdatePolicy(:final duration):
         final wait = duration - DateTime.now().difference(_lastCaptureStart);
@@ -385,15 +392,51 @@ class _RenderWidgetTexture extends RenderProxyBox {
           });
         }
       case _ManualUpdatePolicy():
-        break; // Holds the latest recording until requestCapture().
+        if (_manualCaptureRequested) {
+          _manualCaptureRequested = false;
+          _pumpCapture();
+        }
     }
     // Nothing is painted into the live tree; the subtree only exists in the
     // captured texture.
+    _scheduleFramePump();
   }
 
-  /// Captures the latest recorded content immediately (the manual-policy
-  /// trigger; also forces a capture under other policies).
-  void _captureNow() => _pumpCapture();
+  bool _manualCaptureRequested = false;
+  bool _framePumpScheduled = false;
+
+  // Re-records the child each frame (per policy) by dirtying this boundary.
+  // The child's repaint boundaries (scrollable items, progress indicators)
+  // repaint in place without notifying ancestors, so paint-driven capture
+  // alone misses their changes; the per-frame re-record observes them, and
+  // recording reuses the child's retained layers so it stays cheap.
+  void _scheduleFramePump() {
+    if (_framePumpScheduled || !attached) return;
+    final due = switch (_update) {
+      _EveryFrameUpdatePolicy() => true,
+      _IntervalUpdatePolicy() => true,
+      _ManualUpdatePolicy() => false,
+    };
+    if (!due) return;
+    _framePumpScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _framePumpScheduled = false;
+      if (!attached) return;
+      markNeedsPaint();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  /// Captures the child's current content (the manual-policy trigger; also
+  /// forces a capture under other policies).
+  void _captureNow() {
+    _manualCaptureRequested = true;
+    markNeedsPaint();
+    if (_pendingLayer != null) {
+      _manualCaptureRequested = false;
+      _pumpCapture();
+    }
+  }
 
   Future<void> _pumpCapture() async {
     if (_captureInFlight) return;
@@ -434,6 +477,7 @@ class _RenderWidgetTexture extends RenderProxyBox {
   void attach(PipelineOwner owner) {
     super.attach(owner);
     _controller._host = this;
+    _scheduleFramePump();
   }
 
   @override
