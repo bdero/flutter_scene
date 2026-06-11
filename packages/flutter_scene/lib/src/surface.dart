@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -41,6 +42,7 @@ class Surface {
   /// render-graph attachments: HDR scene color, depth, shadow maps,
   /// post-process buffers). Each view has its own pool so simultaneous
   /// views in a frame never share an attachment.
+  @internal
   TransientTexturePool transientTexturePool([int viewIndex = 0]) =>
       _view(viewIndex).pool;
 

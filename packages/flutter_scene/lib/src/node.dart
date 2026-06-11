@@ -151,6 +151,7 @@ base class Node implements SceneGraph {
   /// Whether this node's accumulated transform reverses triangle winding (a
   /// mirror / negative scale somewhere up the chain). The renderer flips cull
   /// winding for such nodes so their front faces are not culled.
+  @internal
   bool get windingFlipped {
     // Touch globalTransform to refresh the cache (which sets _windingFlipped).
     globalTransform;
