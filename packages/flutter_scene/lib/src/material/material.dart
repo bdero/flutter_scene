@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -111,6 +112,7 @@ abstract class Material {
   ///
   /// Loaded by [initializeStaticResources]; throws if accessed before
   /// initialization completes.
+  @internal
   static gpu.Texture getBrdfLutTexture() {
     if (_brdfLutTexture == null) {
       throw Exception('BRDF LUT texture has not been initialized.');

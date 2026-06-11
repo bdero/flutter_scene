@@ -56,6 +56,7 @@ abstract class Geometry {
   ///
   /// Lets cache holders such as [Mesh] notice that an updatable
   /// geometry's bounds moved without an explicit invalidation call.
+  @internal
   int get localBoundsVersion => _localBoundsVersion;
 
   /// Local-space axis-aligned bounding box of this geometry's vertex
