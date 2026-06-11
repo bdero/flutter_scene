@@ -329,9 +329,20 @@ class _CrtPanel extends StatefulWidget {
   State<_CrtPanel> createState() => _CrtPanelState();
 }
 
-class _CrtPanelState extends State<_CrtPanel> {
+class _CrtPanelState extends State<_CrtPanel>
+    with SingleTickerProviderStateMixin {
   CrtEffectSettings _settings = const CrtEffectSettings();
   int _presses = 0;
+  late final AnimationController _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
 
   void _update(CrtEffectSettings settings) {
     setState(() => _settings = settings);
@@ -391,6 +402,13 @@ class _CrtPanelState extends State<_CrtPanel> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 6),
               children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: RotationTransition(
+                    turns: _spin,
+                    child: const FlutterLogo(size: 96),
+                  ),
+                ),
                 _slider(
                   'brightness',
                   _settings.brightness,
