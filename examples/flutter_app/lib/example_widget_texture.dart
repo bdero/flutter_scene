@@ -352,14 +352,13 @@ class _CrtPanelState extends State<_CrtPanel> {
             width: 110,
             child: Text(
               label,
-              style: const TextStyle(color: Color(0xFF9FE8A8), fontSize: 14),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
             ),
           ),
           Expanded(
             child: Slider(
               value: value.clamp(0.0, max),
               max: max,
-              activeColor: const Color(0xFF9FE8A8),
               onChanged: (v) => _update(apply(v)),
             ),
           ),
@@ -371,18 +370,18 @@ class _CrtPanelState extends State<_CrtPanel> {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF101A12),
+      color: const Color(0xFF15161C),
       child: Column(
         children: [
           Container(
             width: double.infinity,
-            color: const Color(0xFF1D3322),
+            color: const Color(0xFF24262F),
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: const Text(
               '*** CHANNEL 3 . TRACKING ***',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF9FE8A8),
+                color: Colors.white,
                 fontSize: 16,
                 letterSpacing: 2,
               ),
@@ -444,11 +443,7 @@ class _CrtPanelState extends State<_CrtPanel> {
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
-                        child: LinearProgressIndicator(
-                          minHeight: 6,
-                          color: Color(0xFF9FE8A8),
-                          backgroundColor: Color(0xFF1D3322),
-                        ),
+                        child: LinearProgressIndicator(minHeight: 6),
                       ),
                     ],
                   ),
@@ -459,13 +454,13 @@ class _CrtPanelState extends State<_CrtPanel> {
                     dense: true,
                     leading: const Icon(
                       Icons.tv,
-                      color: Color(0xFF9FE8A8),
+                      color: Colors.white70,
                       size: 18,
                     ),
                     title: Text(
                       'CHANNEL $channel  .  NO SIGNAL',
                       style: const TextStyle(
-                        color: Color(0xFF5F9868),
+                        color: Colors.white54,
                         fontSize: 13,
                         letterSpacing: 1.5,
                       ),
