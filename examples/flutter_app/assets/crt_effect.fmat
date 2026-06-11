@@ -1,0 +1,62 @@
+// An old-TV effect for a widget texture: scanlines, RGB chroma fringing,
+// tracking wobble, static noise, and a vignette, applied to the live widget
+// capture bound to screen_texture. The sliders rendered INSIDE the screen
+// drive these parameters, so the panel adjusts its own distortion.
+
+material {
+  name: "CrtEffect",
+  shading_model: unlit,
+  blending: opaque,
+  culling: back,
+
+  parameters: [
+    { type: sampler2d, name: screen_texture, hint: default_white },
+    { type: float, name: scanline_strength, hint: range(0, 1, 0.01), default: 0.55 },
+    { type: float, name: noise_strength, hint: range(0, 1, 0.01), default: 0.2 },
+    { type: float, name: chroma_shift, hint: range(0, 1, 0.01), default: 0.45 },
+    { type: float, name: wobble_strength, hint: range(0, 1, 0.01), default: 0.25 },
+    { type: float, name: vignette_strength, hint: range(0, 1, 0.01), default: 0.55 },
+    { type: float, name: time, default: 0.0 },
+  ],
+}
+
+fragment {
+  float Hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+    float t = material_params.time;
+
+    // Tracking wobble: slow horizontal sway plus an occasional rolling
+    // glitch band that sweeps down the screen.
+    float sway = sin(uv.y * 9.0 + t * 1.7) * 0.0015;
+    float band = smoothstep(0.0, 0.08, abs(fract(uv.y - t * 0.13) - 0.5) - 0.42);
+    float glitch = (1.0 - band) * 0.012 * sin(t * 31.0);
+    uv.x += (sway + glitch) * material_params.wobble_strength * 4.0;
+
+    // Chroma fringing: offset the red and blue taps horizontally.
+    float shift = material_params.chroma_shift * 0.004;
+    float r = texture(screen_texture, uv + vec2(shift, 0.0)).r;
+    float g = texture(screen_texture, uv).g;
+    float b = texture(screen_texture, uv - vec2(shift, 0.0)).b;
+    vec3 color = vec3(r, g, b);
+
+    // Scanlines: darken alternating raster lines.
+    float scan = 0.5 + 0.5 * sin(uv.y * 720.0);
+    color *= 1.0 - material_params.scanline_strength * 0.45 * scan;
+
+    // Static: per-texel noise scrolled by time.
+    float n = Hash(uv * vec2(721.0, 539.0) + fract(t) * 53.0);
+    color = mix(color, vec3(n), material_params.noise_strength * 0.22);
+
+    // Vignette: darken toward the corners.
+    vec2 centered = uv - 0.5;
+    float falloff = dot(centered, centered) * 2.0;
+    color *= 1.0 - material_params.vignette_strength * falloff;
+
+    material.base_color = vec4(color, 1.0);
+    PrepareMaterial(material);
+  }
+}
