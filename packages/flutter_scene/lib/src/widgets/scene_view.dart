@@ -354,22 +354,25 @@ class _SceneViewState extends State<SceneView>
                 ),
               ),
             Positioned(
-              left: 8,
               top: 8,
-              child: DecoratedBox(
-                decoration: const BoxDecoration(color: Color(0xAA000000)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Color(0xFFFFFFFF),
-                      fontSize: 11,
-                      decoration: TextDecoration.none,
-                      fontWeight: FontWeight.normal,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Color(0xAA000000)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: Color(0xFFFFFFFF),
+                        fontSize: 11,
+                        decoration: TextDecoration.none,
+                        fontWeight: FontWeight.normal,
+                      ),
                     ),
                   ),
                 ),
