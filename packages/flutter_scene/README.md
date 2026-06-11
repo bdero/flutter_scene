@@ -14,7 +14,7 @@
   <a title="Discord" href="https://discord.gg/BfGKrcheRj"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white"/></a>
 </p>
 
-<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
+<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://pub.dev/documentation/flutter_scene/latest/">Docs</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
 
 ---
 
