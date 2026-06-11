@@ -3,7 +3,6 @@
 // the controller's texture.
 
 import 'package:flutter/material.dart' hide Material;
-import 'package:flutter/rendering.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
