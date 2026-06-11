@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -5,13 +7,17 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
-/// A live widget subtree streamed onto scene geometry via [WidgetComponent]:
-/// the component owns the panel quad, captures the widget whenever it
-/// repaints, and binds the texture to the material. SceneView hosts the
-/// widget invisibly (it never appears in the 2D UI) and forwards pointer
-/// input automatically: presses raycast into the scene and drive the
-/// widgets at the hit UV, blocked by occluding geometry. The camera-look
-/// drag is gated so it only engages when the drag starts off the panel.
+/// A live widget subtree on a bulbous CRT screen, run through a custom
+/// `.fmat` effect.
+///
+/// The screen geometry is a dome-curved grid, so the raycast input
+/// forwarding works through real interpolated UVs (not a quad shortcut).
+/// The widget capture is bound to `assets/crt_effect.fmat`, an old-TV filter
+/// (scanlines, chroma fringing, tracking wobble, static, vignette), and the
+/// sliders rendered INSIDE the screen drive the effect's parameters, so the
+/// panel adjusts its own distortion. The panel is scrollable: drag it or use
+/// the scroll wheel. A drag starting off the screen looks around (WASD/QE
+/// to fly, shift to boost).
 class ExampleWidgetTexture extends StatefulWidget {
   const ExampleWidgetTexture({super.key});
 
@@ -21,13 +27,6 @@ class ExampleWidgetTexture extends StatefulWidget {
 
 class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   final Scene scene = Scene();
-  // The material is provided (tier 3 implicit binding) so the recursive
-  // toggle can also swap its texture by hand.
-  final UnlitMaterial _material = UnlitMaterial()..alphaMode = AlphaMode.blend;
-  late final WidgetComponent _component;
-  Node? _panel;
-  // Free-look camera (WASD + space/shift, drag to look). A drag that starts
-  // on the widget panel forwards to the widgets instead.
   final QuakeCamera _quakeCamera = QuakeCamera(
     position: vm.Vector3(0, 1.2, 4.5),
     pitch: -0.15,
@@ -35,6 +34,11 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   PerspectiveCamera? _camera;
   bool _looking = false;
   bool _recursive = false;
+
+  PreprocessedMaterial? _material;
+  WidgetComponent? _component;
+  Node? _panel;
+  double _elapsedSeconds = 0.0;
 
   @override
   void initState() {
@@ -51,31 +55,54 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
         ),
       ),
     );
-    _component = WidgetComponent(
-      child: const _PanelContent(),
-      size: const Size(480, 300),
+    _load();
+  }
+
+  Future<void> _load() async {
+    final material = await loadFmatMaterial('assets/crt_effect.fmat');
+    if (!mounted) return;
+    _material = material;
+
+    final component = WidgetComponent(
+      child: _CrtPanel(onChanged: _applyEffectSettings),
+      size: const Size(480, 360), // 4:3, like the tube it lives on
       pixelRatio: 2.0,
-      worldHeight: 2.0,
-      material: _material,
+      geometry: _buildCrtScreen(width: 3.0, height: 2.25, bulge: 0.3),
+      material: material,
+      bind: (texture) =>
+          material.parameters.setTexture('screen_texture', texture),
     );
-    final panel = Node(name: 'panel')..addComponent(_component);
-    // A solid backing box, slightly extruded, so the panel reads as an
-    // object with depth and stays visible from behind (the widget quad
-    // itself is front-facing only).
+    _component = component;
+    _applyEffectSettings(const CrtEffectSettings());
+
+    final panel = Node(name: 'crt')..addComponent(component);
+    // The tube housing: a deep casing behind the curved screen.
     panel.add(
       Node(
-        name: 'panelBacking',
-        localTransform: vm.Matrix4.translation(vm.Vector3(0, 0, -0.07)),
+        name: 'crtHousing',
+        localTransform: vm.Matrix4.translation(vm.Vector3(0, 0, -0.31)),
         mesh: Mesh(
-          CuboidGeometry(vm.Vector3(3.4, 2.2, 0.12)),
+          CuboidGeometry(vm.Vector3(3.25, 2.5, 0.6)),
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.12, 0.13, 0.17, 1.0)
-            ..roughnessFactor = 0.4,
+            ..baseColorFactor = vm.Vector4(0.16, 0.15, 0.14, 1.0)
+            ..roughnessFactor = 0.55,
         ),
       ),
     );
     _panel = panel;
     scene.add(panel);
+    setState(() {});
+  }
+
+  void _applyEffectSettings(CrtEffectSettings settings) {
+    final material = _material;
+    if (material == null) return;
+    material.parameters
+      ..setFloat('scanline_strength', settings.scanlines)
+      ..setFloat('noise_strength', settings.noise)
+      ..setFloat('chroma_shift', settings.chroma)
+      ..setFloat('wobble_strength', settings.wobble)
+      ..setFloat('vignette_strength', settings.vignette);
   }
 
   /// Whether [position] is over a widget surface (nearest raycast hit
@@ -98,8 +125,9 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
             builder: (context, constraints) => GestureDetector(
               behavior: HitTestBehavior.opaque,
               onPanStart: (details) {
-                // Camera look only when the drag starts off the panel; on the
-                // panel, SceneView's automatic input drives the widgets.
+                // Camera look only when the drag starts off the screen; on
+                // the screen, SceneView's automatic input drives the
+                // widgets (including drag-scrolling the panel).
                 _looking = !_overWidget(
                   details.localPosition,
                   constraints.biggest,
@@ -119,19 +147,24 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                 },
                 onTick: (elapsed, deltaSeconds) {
                   exampleSettings.applyTo(scene);
+                  _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                  _material?.parameters.setFloat('time', _elapsedSeconds);
                   _panel?.localTransform = vm.Matrix4.rotationY(
-                    elapsed.inMicroseconds / 4e6,
+                    _elapsedSeconds / 6,
                   );
-                  // Recursive mode samples the scene's own previous frame, a
-                  // one-frame feedback loop (an infinite mirror as the camera
-                  // orbits). Otherwise the panel shows the live widget capture.
-                  final feedback = _recursive
-                      ? scene.surface.lastSwapchainColorTexture()
-                      : null;
-                  _material.baseColorTexture =
-                      feedback ??
-                      _component.controller.texture ??
-                      _material.baseColorTexture;
+                  // Recursive mode samples the scene's own previous frame,
+                  // a one-frame feedback loop through the CRT filter.
+                  final material = _material;
+                  final component = _component;
+                  if (material != null && component != null) {
+                    final feedback = _recursive
+                        ? scene.surface.lastSwapchainColorTexture()
+                        : null;
+                    final texture = feedback ?? component.controller.texture;
+                    if (texture != null) {
+                      material.parameters.setTexture('screen_texture', texture);
+                    }
+                  }
                 },
               ),
             ),
@@ -157,14 +190,19 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
           Positioned(
             left: 8,
             bottom: 8,
-            child: ListenableBuilder(
-              listenable: _component.controller,
-              builder: (context, _) => Text(
-                'captures: ${_component.controller.captureCount}  '
-                'last: ${_component.controller.lastCaptureDuration.inMilliseconds}ms',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
+            child: _component == null
+                ? const SizedBox.shrink()
+                : ListenableBuilder(
+                    listenable: _component!.controller,
+                    builder: (context, _) => Text(
+                      'captures: ${_component!.controller.captureCount}  '
+                      'last: ${_component!.controller.lastCaptureDuration.inMilliseconds}ms',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -172,51 +210,224 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   }
 }
 
-/// Ordinary animated Flutter UI; everything here runs live while textured
-/// onto the cube.
-class _PanelContent extends StatefulWidget {
-  const _PanelContent();
-
-  @override
-  State<_PanelContent> createState() => _PanelContentState();
+/// Builds the bulbous CRT screen: a grid in XY domed toward +Z, so hits on
+/// any part of the curve interpolate the right UVs. [width] x [height] world
+/// units with [bulge] units of forward curvature at the center.
+Geometry _buildCrtScreen({
+  required double width,
+  required double height,
+  required double bulge,
+  int segments = 32,
+}) {
+  final columns = segments + 1;
+  final rows = (segments * 3) ~/ 4 + 1;
+  final positions = Float32List(columns * rows * 3);
+  final texCoords = Float32List(columns * rows * 2);
+  for (var r = 0; r < rows; r++) {
+    final ny = r / (rows - 1) * 2 - 1; // -1 (bottom) .. 1 (top)
+    for (var c = 0; c < columns; c++) {
+      final nx = c / (columns - 1) * 2 - 1;
+      final v = r * columns + c;
+      // A smooth dome: full bulge at the center, flat at the rim.
+      final dome = (1 - nx * nx) * (1 - ny * ny);
+      positions[v * 3] = nx * width / 2;
+      positions[v * 3 + 1] = ny * height / 2;
+      positions[v * 3 + 2] = bulge * dome;
+      texCoords[v * 2] = (nx + 1) / 2;
+      texCoords[v * 2 + 1] = (1 - ny) / 2; // v = 0 at the top
+    }
+  }
+  // Two triangles per cell, wound to match the engine front-face convention
+  // (the same order as the cuboid's +Z face: br, bl, tl, tr).
+  final indices = <int>[];
+  for (var r = 0; r < rows - 1; r++) {
+    for (var c = 0; c < columns - 1; c++) {
+      final bl = r * columns + c;
+      final br = bl + 1;
+      final tl = bl + columns;
+      final tr = tl + 1;
+      indices.addAll([br, bl, tr, tr, bl, tl]);
+    }
+  }
+  return MeshGeometry.fromArrays(
+    positions: positions,
+    texCoords: texCoords,
+    indices: indices,
+  );
 }
 
-class _PanelContentState extends State<_PanelContent>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _spin = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 3),
-  )..repeat();
-  int _presses = 0;
+/// The effect parameters the in-screen sliders drive.
+class CrtEffectSettings {
+  const CrtEffectSettings({
+    this.scanlines = 0.55,
+    this.noise = 0.2,
+    this.chroma = 0.45,
+    this.wobble = 0.25,
+    this.vignette = 0.55,
+  });
+
+  final double scanlines;
+  final double noise;
+  final double chroma;
+  final double wobble;
+  final double vignette;
+
+  CrtEffectSettings copyWith({
+    double? scanlines,
+    double? noise,
+    double? chroma,
+    double? wobble,
+    double? vignette,
+  }) => CrtEffectSettings(
+    scanlines: scanlines ?? this.scanlines,
+    noise: noise ?? this.noise,
+    chroma: chroma ?? this.chroma,
+    wobble: wobble ?? this.wobble,
+    vignette: vignette ?? this.vignette,
+  );
+}
+
+/// The widget tree living on the CRT: a scrollable control panel whose
+/// sliders adjust the very effect distorting it.
+class _CrtPanel extends StatefulWidget {
+  const _CrtPanel({required this.onChanged});
+
+  final ValueChanged<CrtEffectSettings> onChanged;
 
   @override
-  void dispose() {
-    _spin.dispose();
-    super.dispose();
+  State<_CrtPanel> createState() => _CrtPanelState();
+}
+
+class _CrtPanelState extends State<_CrtPanel> {
+  CrtEffectSettings _settings = const CrtEffectSettings();
+  int _presses = 0;
+
+  void _update(CrtEffectSettings settings) {
+    setState(() => _settings = settings);
+    widget.onChanged(settings);
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    CrtEffectSettings Function(double) apply,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF9FE8A8), fontSize: 14),
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              value: value,
+              activeColor: const Color(0xFF9FE8A8),
+              onChanged: (v) => _update(apply(v)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF1B2433),
+      color: const Color(0xFF101A12),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text(
-            'Hello from the widget tree',
-            style: TextStyle(color: Colors.white, fontSize: 28),
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF1D3322),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: const Text(
+              '*** CHANNEL 3 . TRACKING ***',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF9FE8A8),
+                fontSize: 16,
+                letterSpacing: 2,
+              ),
+            ),
           ),
-          const SizedBox(height: 16),
-          RotationTransition(turns: _spin, child: const FlutterLogo(size: 96)),
-          const SizedBox(height: 16),
-          const SizedBox(
-            width: 220,
-            child: LinearProgressIndicator(minHeight: 6),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: () => setState(() => _presses++),
-            child: Text('Pressed $_presses times'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              children: [
+                _slider(
+                  'scanlines',
+                  _settings.scanlines,
+                  (v) => _settings.copyWith(scanlines: v),
+                ),
+                _slider(
+                  'static',
+                  _settings.noise,
+                  (v) => _settings.copyWith(noise: v),
+                ),
+                _slider(
+                  'chroma',
+                  _settings.chroma,
+                  (v) => _settings.copyWith(chroma: v),
+                ),
+                _slider(
+                  'tracking',
+                  _settings.wobble,
+                  (v) => _settings.copyWith(wobble: v),
+                ),
+                _slider(
+                  'vignette',
+                  _settings.vignette,
+                  (v) => _settings.copyWith(vignette: v),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => setState(() => _presses++),
+                          child: Text('Pressed $_presses times'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: LinearProgressIndicator(
+                          minHeight: 6,
+                          color: Color(0xFF9FE8A8),
+                          backgroundColor: Color(0xFF1D3322),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Filler "channels" so the panel scrolls meaningfully.
+                for (var channel = 4; channel <= 12; channel++)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.tv,
+                      color: Color(0xFF9FE8A8),
+                      size: 18,
+                    ),
+                    title: Text(
+                      'CHANNEL $channel  .  NO SIGNAL',
+                      style: const TextStyle(
+                        color: Color(0xFF5F9868),
+                        fontSize: 13,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
