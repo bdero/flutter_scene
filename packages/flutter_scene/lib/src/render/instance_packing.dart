@@ -70,29 +70,80 @@ void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
 ///
-/// The transforms go into a dedicated [gpu.DeviceBuffer] rather than the
-/// per-frame transient uniform `HostBuffer`. On the GLES backend a vertex
-/// buffer sourced from that shared host buffer reads corrupted data,
-/// because the same buffer also serves the uniform emplacements issued
-/// later in the same draw (`Material.bind`) and GLES binds vertex
-/// attributes by stateful pointer into the live buffer object; the
-/// symptom was objects toggling between transforms. A standalone buffer
-/// is never disturbed by other emplacements, so the binding stays valid
-/// on every backend. The render pass keeps the buffer alive through
-/// submission via the recorded binding.
-// TODO(instance-buffer-pool): this allocates a device buffer per draw per
-// frame. Fine for typical scenes; pool these for instance-heavy scenes.
+/// The transforms come from [instanceTransformBuffers], a dedicated pool of
+/// [gpu.DeviceBuffer]s, not the per-frame transient uniform `HostBuffer`.
+/// On the GLES backend a vertex buffer sourced from that shared host
+/// buffer reads corrupted data, because the same buffer also serves the
+/// uniform emplacements issued later in the same draw (`Material.bind`) and
+/// GLES binds vertex attributes by stateful pointer into the live buffer
+/// object; the symptom was objects toggling between transforms. Metal and
+/// Vulkan resolve buffer+offset at submit and were unaffected. A dedicated
+/// buffer bound at offset 0, never touched by another emplacement, keeps
+/// the binding valid on every backend; the pool reuses buffers across
+/// frames so the hot draw path does not allocate.
 void bindInstanceTransforms(gpu.RenderPass pass, Float32List packed) {
   if (packed.isEmpty) return;
-  final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-    ByteData.sublistView(packed),
-  );
   pass.bindVertexBuffer(
-    gpu.BufferView(
-      buffer,
-      offsetInBytes: 0,
-      lengthInBytes: packed.lengthInBytes,
-    ),
+    instanceTransformBuffers.acquire(ByteData.sublistView(packed)),
     slot: 1,
   );
 }
+
+/// A pool of [gpu.DeviceBuffer]s for instance-rate transforms, reused
+/// across frames so the per-draw binding (see [bindInstanceTransforms])
+/// never allocates in the hot path.
+///
+/// Each draw within a frame gets a distinct buffer (so binding one draw's
+/// transforms is never disturbed by a later draw), and a ring of
+/// [framesInFlight] buffer sets keeps the GPU's in-flight reads off the
+/// buffers the next frame overwrites. Call [beginFrame] once per frame
+/// before any [acquire].
+class InstanceTransformBuffers {
+  InstanceTransformBuffers({this.framesInFlight = 3});
+
+  final int framesInFlight;
+  final List<List<gpu.DeviceBuffer>> _rings = [];
+  int _frame = 0;
+  int _cursor = 0;
+
+  /// Advances to the next frame's buffer set. Call once per frame.
+  void beginFrame() {
+    while (_rings.length < framesInFlight) {
+      _rings.add(<gpu.DeviceBuffer>[]);
+    }
+    _frame = (_frame + 1) % framesInFlight;
+    _cursor = 0;
+  }
+
+  /// Returns a buffer view holding [data] at offset 0, reusing a pooled
+  /// buffer when one of sufficient size is free this frame.
+  gpu.BufferView acquire(ByteData data) {
+    if (_rings.isEmpty) beginFrame();
+    final ring = _rings[_frame];
+    gpu.DeviceBuffer buffer;
+    if (_cursor < ring.length &&
+        ring[_cursor].sizeInBytes >= data.lengthInBytes) {
+      buffer = ring[_cursor];
+      buffer.overwrite(data);
+    } else {
+      buffer = gpu.gpuContext.createDeviceBufferWithCopy(data);
+      if (_cursor < ring.length) {
+        ring[_cursor] = buffer;
+      } else {
+        ring.add(buffer);
+      }
+    }
+    _cursor++;
+    return gpu.BufferView(
+      buffer,
+      offsetInBytes: 0,
+      lengthInBytes: data.lengthInBytes,
+    );
+  }
+}
+
+/// The process-wide instance-transform buffer pool. One GPU context per
+/// process, so a single pool serves every scene; [beginFrame] is driven
+/// from the per-frame render setup.
+final InstanceTransformBuffers instanceTransformBuffers =
+    InstanceTransformBuffers();
