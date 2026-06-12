@@ -330,6 +330,40 @@ class TextureResource extends ResourceSpec {
   final AssetRef? asset;
 }
 
+/// An offscreen render target a serialized render view draws into and
+/// materials sample by id (the runtime `RenderTexture`).
+class RenderTextureResource extends ResourceSpec {
+  /// Creates a render-texture resource.
+  RenderTextureResource(
+    super.id, {
+    required this.width,
+    required this.height,
+    this.update = 'everyFrame',
+    this.intervalMilliseconds,
+    this.filter = 'linear',
+    this.wrap = 'clampToEdge',
+  });
+
+  /// Target width in physical pixels.
+  final int width;
+
+  /// Target height in physical pixels.
+  final int height;
+
+  /// The update policy name (`everyFrame`, `interval`, `manual`), mapped
+  /// to the runtime `RenderTextureUpdate` at realization.
+  final String update;
+
+  /// The interval for the `interval` policy, in milliseconds.
+  final int? intervalMilliseconds;
+
+  /// The sampling filter name (`linear`, `nearest`).
+  final String filter;
+
+  /// The sampling wrap-mode name (`clampToEdge`, `repeat`, `mirror`).
+  final String wrap;
+}
+
 /// A material: a [type] (for example `physicallyBased`, `unlit`, `fmat`)
 /// plus typed [properties]. An `fmat` material references its `.fmat` source
 /// via [asset].
@@ -717,6 +751,46 @@ class SkyEnvironmentSpec {
   int equirectWidth;
 }
 
+/// One serialized view of the scene: a camera node bound to a target and
+/// the view's render settings (the runtime `RenderView`).
+class RenderViewSpec {
+  /// Creates a render-view spec.
+  RenderViewSpec({
+    required this.cameraNode,
+    this.target,
+    this.layerMask = 0xFFFFFFFF,
+    this.order = 0,
+    this.antiAliasingMode,
+    this.renderScale,
+    this.filterQuality,
+  });
+
+  /// The node whose `CameraComponent` provides this view's camera.
+  final LocalId cameraNode;
+
+  /// The render-texture resource this view draws into, or null for the
+  /// screen.
+  final LocalId? target;
+
+  /// A bitmask selecting which node layers this view renders.
+  final int layerMask;
+
+  /// Compositing order among views sharing a target (lower first).
+  final int order;
+
+  /// The anti-aliasing mode name (`none`, `msaa`, `fxaa`, `auto`), or
+  /// null to inherit the stage's.
+  final String? antiAliasingMode;
+
+  /// Resolution scale relative to the display's native, or null to
+  /// inherit the stage's.
+  final double? renderScale;
+
+  /// The composite filter-quality name (`none`, `low`, `medium`, `high`),
+  /// or null to inherit the stage's.
+  final String? filterQuality;
+}
+
 /// Scene-wide, non-spatial render settings (lights and cameras are per-node
 /// components, not stage data).
 class StageMetadata {
@@ -729,6 +803,9 @@ class StageMetadata {
     this.environmentIntensity = 1.0,
     this.exposure = 1.0,
     this.toneMapping = 'pbrNeutral',
+    this.antiAliasingMode = 'auto',
+    this.renderScale = 1.0,
+    this.filterQuality = 'medium',
     this.skybox,
     this.skyEnvironment,
   });
@@ -754,6 +831,18 @@ class StageMetadata {
   /// The tone-mapping operator name (mapped to the runtime enum at
   /// realization).
   String toneMapping;
+
+  /// The anti-aliasing mode name (`none`, `msaa`, `fxaa`, `auto`), the
+  /// scene-wide default views inherit.
+  String antiAliasingMode;
+
+  /// Resolution scale relative to the display's native, the scene-wide
+  /// default views inherit.
+  double renderScale;
+
+  /// The composite filter-quality name (`none`, `low`, `medium`, `high`),
+  /// the scene-wide default views inherit.
+  String filterQuality;
 
   /// The visible background sky, when set.
   SkyboxSpec? skybox;

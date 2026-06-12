@@ -64,6 +64,10 @@ class SceneDocument {
   /// The binary chunk manifest, keyed by id.
   final Map<LocalId, PayloadSpec> payloads = {};
 
+  /// Serialized render views, in order. Each binds a camera node to a
+  /// target (a [RenderTextureResource] id, or null for the screen).
+  final List<RenderViewSpec> views = [];
+
   /// Mints a fresh, document-unique [LocalId] from [allocator].
   LocalId newId() => allocator.mint();
 

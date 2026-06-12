@@ -68,6 +68,7 @@ export 'src/fscene/realize/realize.dart'
         serializeScene;
 export 'src/fscene/realize/resource_realizer.dart' show ResourceRealizer;
 export 'src/fscene/realize/stage.dart' show realizeStage, serializeStage;
+export 'src/fscene/realize/views.dart' show realizeViews, serializeViews;
 export 'src/fscene/scene_document.dart' show SceneDocument;
 export 'src/fscene/specs.dart'
     show
@@ -96,6 +97,8 @@ export 'src/fscene/specs.dart'
         PrefabInstanceSpec,
         ProceduralGeometry,
         PropertyOverride,
+        RenderTextureResource,
+        RenderViewSpec,
         ResourceSpec,
         SkinSpec,
         SkyEnvironmentSpec,

@@ -58,7 +58,7 @@ export 'src/asset_helpers.dart'
         imageFromBytes;
 export 'src/camera.dart'
     show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
-export 'src/components/camera_component.dart' show CameraComponent;
+export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'
     show DirectionalLightComponent;

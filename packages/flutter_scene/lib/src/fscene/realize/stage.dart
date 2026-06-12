@@ -9,6 +9,8 @@
 /// scene's settings back into a document, the editor-save direction.
 library;
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 
@@ -55,6 +57,17 @@ Future<void> realizeStage(
   scene.environmentIntensity = stage.environmentIntensity;
   scene.exposure = stage.exposure;
   scene.toneMapping = _toneMapping(stage.toneMapping);
+  scene.antiAliasingMode = _byName(
+    AntiAliasingMode.values,
+    stage.antiAliasingMode,
+    AntiAliasingMode.auto,
+  );
+  scene.renderScale = stage.renderScale;
+  scene.filterQuality = _byName(
+    ui.FilterQuality.values,
+    stage.filterQuality,
+    ui.FilterQuality.medium,
+  );
 
   // Realize each distinct sky source once so a skybox and sky lighting
   // describing the same sky share one live source.
@@ -114,6 +127,9 @@ void serializeStage(Scene scene, SceneDocument document) {
   stage.environmentIntensity = scene.environmentIntensity;
   stage.exposure = scene.exposure;
   stage.toneMapping = scene.toneMapping.name;
+  stage.antiAliasingMode = scene.antiAliasingMode.name;
+  stage.renderScale = scene.renderScale;
+  stage.filterQuality = scene.filterQuality.name;
 
   final skyEnvironment = scene.skyEnvironment;
   if (skyEnvironment == null) {
@@ -313,6 +329,14 @@ ToneMappingMode _toneMapping(String name) {
     debugPrint('fscene: unknown tone mapping "$name"; using pbrNeutral');
     return ToneMappingMode.pbrNeutral;
   }
+}
+
+T _byName<T extends Enum>(List<T> values, String name, T fallback) {
+  for (final value in values) {
+    if (value.name == name) return value;
+  }
+  debugPrint('fscene: unknown $T "$name"; using ${fallback.name}');
+  return fallback;
 }
 
 SkyEnvironmentRefresh _refresh(String name) {

@@ -75,6 +75,20 @@ class PhysicallyBasedMaterial extends Material {
   Object? _emissiveSource;
   Object? _occlusionSource;
 
+  /// The raw slot sources (a gpu.Texture, a RenderTexture, or null), for
+  /// serialization, which must see the handle rather than the resolved
+  /// frame.
+  @internal
+  Object? get baseColorTextureSource => _baseColorSource;
+  @internal
+  Object? get metallicRoughnessTextureSource => _metallicRoughnessSource;
+  @internal
+  Object? get normalTextureSource => _normalSource;
+  @internal
+  Object? get emissiveTextureSource => _emissiveSource;
+  @internal
+  Object? get occlusionTextureSource => _occlusionSource;
+
   /// The albedo (base color) texture, sampled in linear space and
   /// multiplied by [baseColorFactor]. Defaults to white when null.
   ///
