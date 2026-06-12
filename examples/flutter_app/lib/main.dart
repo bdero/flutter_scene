@@ -338,11 +338,12 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               child: _slider(
                 'Render scale',
                 exampleSettings.renderScale,
-                0.25,
+                0.001,
                 2,
                 (v) {
                   exampleSettings.renderScale = v;
                 },
+                decimals: 3,
               ),
             ),
             IconButton(
@@ -631,8 +632,9 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
     double value,
     double min,
     double max,
-    ValueChanged<double> onChanged,
-  ) {
+    ValueChanged<double> onChanged, {
+    int decimals = 2,
+  }) {
     final textStyle = Theme.of(context).textTheme.bodySmall;
     return Row(
       children: [
@@ -648,7 +650,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         SizedBox(
           width: 36,
           child: Text(
-            value.toStringAsFixed(2),
+            value.toStringAsFixed(decimals),
             style: textStyle,
             textAlign: TextAlign.right,
           ),
