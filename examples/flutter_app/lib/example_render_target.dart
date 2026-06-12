@@ -9,12 +9,12 @@ import 'example_settings.dart';
 
 /// Offscreen render targets displayed as HUD widgets.
 ///
-/// Three scene-owned views render into [RenderTexture]s alongside the main
-/// view, a top-down minimap on a 500 ms update interval, and a pair of
-/// fixed-camera insets comparing anti-aliasing off against the scene's
-/// mode. The comparison targets are deliberately low resolution and drawn
-/// upscaled with nearest sampling, so the effect of the AA mode is visible
-/// regardless of display density.
+/// A top-down minimap re-renders on a 500 ms interval, and two
+/// configurable panels render the same fixed camera side by side. Each
+/// panel has its own render resolution (the texture resizes while the
+/// on-screen area stays fixed, so low resolutions pixelate), display
+/// filtering, and per-view anti-aliasing mode, making the AA modes easy
+/// to compare regardless of display density.
 class ExampleRenderTarget extends StatefulWidget {
   const ExampleRenderTarget({super.key});
 
@@ -22,7 +22,25 @@ class ExampleRenderTarget extends StatefulWidget {
   ExampleRenderTargetState createState() => ExampleRenderTargetState();
 }
 
+/// One comparison panel's render target, view, and display settings.
+class _ComparePanel {
+  _ComparePanel({
+    required this.target,
+    required this.view,
+    required this.height,
+    required this.filter,
+  });
+
+  final RenderTexture target;
+  final RenderView view;
+  int height;
+  FilterQuality filter;
+}
+
 class ExampleRenderTargetState extends State<ExampleRenderTarget> {
+  static const double _aspect = 4 / 3;
+  static const List<int> _heights = [1080, 720, 540, 360, 240, 180, 120, 90];
+
   Scene scene = Scene();
 
   final RenderTexture _minimap = RenderTexture(
@@ -30,8 +48,10 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
     height: 320,
     update: const RenderTextureUpdate.interval(Duration(milliseconds: 500)),
   );
-  final RenderTexture _aaOff = RenderTexture(width: 240, height: 180);
-  final RenderTexture _aaScene = RenderTexture(width: 240, height: 180);
+
+  late final List<_ComparePanel> _panels;
+
+  static int _widthFor(int height) => (height * _aspect).round();
 
   @override
   void initState() {
@@ -45,6 +65,27 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
       position: vm.Vector3(2.2, 1.2, 2.2),
       target: vm.Vector3(0, 0, 0),
     );
+    _ComparePanel makePanel(AntiAliasingMode mode) {
+      const height = 180;
+      final target = RenderTexture(width: _widthFor(height), height: height);
+      final view = RenderView(
+        camera: compareCamera,
+        target: target,
+        antiAliasingMode: mode,
+      );
+      return _ComparePanel(
+        target: target,
+        view: view,
+        height: height,
+        filter: FilterQuality.none,
+      );
+    }
+
+    _panels = [
+      makePanel(AntiAliasingMode.none),
+      makePanel(AntiAliasingMode.auto),
+    ];
+
     scene.views.addAll([
       RenderView(
         camera: PerspectiveCamera(
@@ -53,43 +94,107 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
         ),
         target: _minimap,
       ),
-      RenderView(
-        camera: compareCamera,
-        target: _aaOff,
-        antiAliasingMode: AntiAliasingMode.none,
-      ),
-      RenderView(camera: compareCamera, target: _aaScene),
+      for (final panel in _panels) panel.view,
     ]);
 
     super.initState();
   }
 
-  Widget _inset(String label, RenderTexture target, {required double width}) {
+  Widget _label(String text) => Container(
+    color: Colors.black54,
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    child: Text(
+      text,
+      style: const TextStyle(color: Colors.white, fontSize: 12),
+    ),
+  );
+
+  Widget _dropdownRow<T>({
+    required String label,
+    required T value,
+    required List<T> items,
+    required String Function(T) name,
+    required void Function(T) onChanged,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 52,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+        DropdownButton<T>(
+          value: value,
+          isDense: true,
+          dropdownColor: Colors.black87,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+          items: [
+            for (final item in items)
+              DropdownMenuItem(value: item, child: Text(name(item))),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => onChanged(value));
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _comparePanel(_ComparePanel panel) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: width,
-          height: width * target.height / target.width,
+          width: 240,
+          height: 240 / _aspect,
           decoration: BoxDecoration(
             border: Border.all(color: Colors.white54),
             color: Colors.black26,
           ),
-          // Nearest sampling keeps the upscale honest: each texture pixel
-          // maps to a visible block, so the AA comparison reads clearly.
           child: RenderTextureView(
-            target,
+            panel.target,
             fit: BoxFit.fill,
-            filterQuality: FilterQuality.none,
+            filterQuality: panel.filter,
           ),
         ),
         Container(
           color: Colors.black54,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _dropdownRow<int>(
+                label: 'Height',
+                value: panel.height,
+                items: _heights,
+                name: (h) => '${_widthFor(h)}x$h',
+                onChanged: (h) {
+                  panel.height = h;
+                  panel.target.resize(_widthFor(h), h);
+                },
+              ),
+              _dropdownRow<FilterQuality>(
+                label: 'Filter',
+                value: panel.filter,
+                items: FilterQuality.values,
+                name: (f) => f.name,
+                onChanged: (f) => panel.filter = f,
+              ),
+              _dropdownRow<AntiAliasingMode>(
+                label: 'AA',
+                value: panel.view.antiAliasingMode!,
+                items: AntiAliasingMode.values,
+                name: (m) => m.name,
+                onChanged: (m) => panel.view.antiAliasingMode = m,
+              ),
+            ],
           ),
         ),
       ],
@@ -114,21 +219,32 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
         Positioned(
           top: 12,
           left: 12,
-          child: _inset(
-            'Top-down view (re-renders every 500 ms)',
-            _minimap,
-            width: 160,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 160,
+                height: 160,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white54),
+                  color: Colors.black26,
+                ),
+                child: RenderTextureView(_minimap),
+              ),
+              _label('Top-down view (re-renders every 500 ms)'),
+            ],
           ),
         ),
         Positioned(
           bottom: 12,
           left: 12,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _inset('Anti-aliasing off', _aaOff, width: 240),
+              _comparePanel(_panels[0]),
               const SizedBox(width: 12),
-              _inset('Scene anti-aliasing', _aaScene, width: 240),
+              _comparePanel(_panels[1]),
             ],
           ),
         ),
