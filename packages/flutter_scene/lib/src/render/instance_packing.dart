@@ -70,80 +70,50 @@ void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
 ///
-/// The transforms come from [instanceTransformBuffers], a dedicated pool of
-/// [gpu.DeviceBuffer]s, not the per-frame transient uniform `HostBuffer`.
-/// On the GLES backend a vertex buffer sourced from that shared host
-/// buffer reads corrupted data, because the same buffer also serves the
-/// uniform emplacements issued later in the same draw (`Material.bind`) and
-/// GLES binds vertex attributes by stateful pointer into the live buffer
-/// object; the symptom was objects toggling between transforms. Metal and
-/// Vulkan resolve buffer+offset at submit and were unaffected. A dedicated
-/// buffer bound at offset 0, never touched by another emplacement, keeps
-/// the binding valid on every backend; the pool reuses buffers across
-/// frames so the hot draw path does not allocate.
+/// The transforms are emplaced into [instanceTransformBuffers], a `HostBuffer`
+/// dedicated to instance vertex data, separate from the per-frame transient
+/// uniform `HostBuffer`. On the GLES backend, sourcing this vertex buffer
+/// from the same `HostBuffer` that also serves uniform emplacements
+/// corrupts the model matrix (objects toggle between transforms), because
+/// the uniform emplacements `Material.bind` issues later in the same draw
+/// disturb the vertex binding into the shared GL buffer object. Metal and
+/// Vulkan resolve buffer+offset at submit and were unaffected. A separate
+/// buffer that only ever holds vertex data removes the interference on
+/// every backend, while keeping the cheap per-frame `HostBuffer`
+/// sub-allocation (no per-draw device-buffer creation, which stalls the
+/// GLES backend).
 void bindInstanceTransforms(gpu.RenderPass pass, Float32List packed) {
   if (packed.isEmpty) return;
   pass.bindVertexBuffer(
-    instanceTransformBuffers.acquire(ByteData.sublistView(packed)),
+    instanceTransformBuffers.emplace(ByteData.sublistView(packed)),
     slot: 1,
   );
 }
 
-/// A pool of [gpu.DeviceBuffer]s for instance-rate transforms, reused
-/// across frames so the per-draw binding (see [bindInstanceTransforms])
-/// never allocates in the hot path.
-///
-/// Each draw within a frame gets a distinct buffer (so binding one draw's
-/// transforms is never disturbed by a later draw), and a ring of
-/// [framesInFlight] buffer sets keeps the GPU's in-flight reads off the
-/// buffers the next frame overwrites. Call [beginFrame] once per frame
-/// before any [acquire].
+/// A `HostBuffer` dedicated to instance-rate transform vertex data, kept
+/// apart from the uniform transients buffer (see [bindInstanceTransforms]
+/// for why). [beginFrame] cycles it to the next frame's backing storage
+/// and is driven once per frame from the render setup.
 class InstanceTransformBuffers {
-  InstanceTransformBuffers({this.framesInFlight = 3});
+  // Created lazily: the GPU context initializes on the raster thread after
+  // the first frame on some backends, so it isn't available at startup.
+  gpu.HostBuffer? _buffer;
+  gpu.HostBuffer get _host => _buffer ??= gpu.gpuContext.createHostBuffer();
 
-  final int framesInFlight;
-  final List<List<gpu.DeviceBuffer>> _rings = [];
-  int _frame = 0;
-  int _cursor = 0;
+  /// Cycles to the next frame's backing storage. Call once per frame
+  /// before any [emplace].
+  void beginFrame() => _host.reset();
 
-  /// Advances to the next frame's buffer set. Call once per frame.
-  void beginFrame() {
-    while (_rings.length < framesInFlight) {
-      _rings.add(<gpu.DeviceBuffer>[]);
-    }
-    _frame = (_frame + 1) % framesInFlight;
-    _cursor = 0;
-  }
-
-  /// Returns a buffer view holding [data] at offset 0, reusing a pooled
-  /// buffer when one of sufficient size is free this frame.
-  gpu.BufferView acquire(ByteData data) {
-    if (_rings.isEmpty) beginFrame();
-    final ring = _rings[_frame];
-    gpu.DeviceBuffer buffer;
-    if (_cursor < ring.length &&
-        ring[_cursor].sizeInBytes >= data.lengthInBytes) {
-      buffer = ring[_cursor];
-      buffer.overwrite(data);
-    } else {
-      buffer = gpu.gpuContext.createDeviceBufferWithCopy(data);
-      if (_cursor < ring.length) {
-        ring[_cursor] = buffer;
-      } else {
-        ring.add(buffer);
-      }
-    }
-    _cursor++;
-    return gpu.BufferView(
-      buffer,
-      offsetInBytes: 0,
-      lengthInBytes: data.lengthInBytes,
-    );
-  }
+  /// Emplaces [data] and returns a view to bind as the instance-rate
+  /// vertex buffer.
+  gpu.BufferView emplace(ByteData data) => _host.emplace(data);
 }
 
-/// The process-wide instance-transform buffer pool. One GPU context per
-/// process, so a single pool serves every scene; [beginFrame] is driven
+/// The process-wide instance-transform vertex buffer. One GPU context per
+/// process, so a single buffer serves every scene; [beginFrame] is driven
 /// from the per-frame render setup.
+// TODO(instance-buffer-ownership): a single process-wide buffer means two
+// Scenes rendering in the same frame both reset it; make it per-Surface if
+// multi-scene-per-frame becomes common.
 final InstanceTransformBuffers instanceTransformBuffers =
     InstanceTransformBuffers();
