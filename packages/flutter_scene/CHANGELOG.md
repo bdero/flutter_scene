@@ -11,6 +11,18 @@
   that sizes the target from widget layout). Views also gain a per-view
   `antiAliasingMode` override that defaults to the scene's setting.
 
+* The prefiltered-radiance environment now stores its roughness bands as
+  mip levels of one equirect texture, sampled with hardware trilinear
+  `textureLod` (smoother roughness transitions, ~25% less memory, no
+  band-seam clamping). Enabled by the recent Flutter GPU mip support
+  (render-to-mip-level, mip samplers, and sampling manually-written mip
+  chains). The legacy stacked-band atlas remains supported, selectable
+  via the new `EnvironmentMap.useMipRadianceLayout` static (each
+  environment carries its own layout, and the
+  `SamplePrefilteredRadiance` shader contract for custom materials is
+  unchanged). The web backend gained render-to-mip-level attachments and
+  mip-aware sampler filtering.
+
 * Render targets serialize in `.fscene`. Documents gain a
   `renderTexture` resource kind (size, update policy, sampling) and a
   top-level `views` array binding camera nodes to targets with per-view

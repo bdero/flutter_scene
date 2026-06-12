@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
 
 /// A [Material] backed by a caller-supplied fragment shader.
@@ -211,15 +212,10 @@ class ShaderMaterial extends Material {
   }
 
   void _bindEnvironmentTextures(gpu.RenderPass pass, Lighting lighting) {
-    pass.bindTexture(
-      fragmentShader.getUniformSlot('prefiltered_radiance'),
-      lighting.environmentMap.prefilteredRadianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+    EngineLightingUniforms.bindPrefilteredRadiance(
+      pass,
+      fragmentShader,
+      lighting.environmentMap,
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('brdf_lut'),

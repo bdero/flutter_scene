@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
@@ -173,17 +174,11 @@ void _bindEnvironmentSource(
     transientsBuffer.emplace(ByteData.sublistView(skyboxInfo)),
   );
 
-  // The prefiltered-radiance atlas: horizontal repeat (longitude wraps),
-  // vertical clamp (roughness bands must not bleed). Matches the standard
-  // material's binding so the sky and reflections sample identically.
-  renderPass.bindTexture(
-    fragmentShader.getUniformSlot('prefiltered_radiance'),
-    environment.prefilteredRadianceTexture,
-    sampler: gpu.SamplerOptions(
-      minFilter: gpu.MinMagFilter.linear,
-      magFilter: gpu.MinMagFilter.linear,
-      widthAddressMode: gpu.SamplerAddressMode.repeat,
-      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-    ),
+  // The prefiltered radiance, bound through the shared helper so the sky
+  // and reflections sample identically (including the layout flag).
+  EngineLightingUniforms.bindPrefilteredRadiance(
+    renderPass,
+    fragmentShader,
+    environment,
   );
 }
