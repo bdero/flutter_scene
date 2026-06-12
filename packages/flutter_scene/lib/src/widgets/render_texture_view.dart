@@ -1,3 +1,4 @@
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene/src/render_texture.dart';
@@ -71,7 +72,20 @@ class _RenderTextureViewState extends State<RenderTextureView> {
   }
 
   void _onUpdated() {
-    if (mounted) {
+    if (!mounted) {
+      return;
+    }
+    // The target re-renders inside the scene's paint, so this notification
+    // usually arrives mid-frame, where setState is not allowed. Defer the
+    // rebuild to the end of the frame; the new image shows next frame.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    } else {
       setState(() {});
     }
   }
