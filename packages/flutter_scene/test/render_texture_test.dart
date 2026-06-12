@@ -117,6 +117,49 @@ void main() {
     return;
   }
 
+  test('material texture slots accept render textures', () async {
+    await Scene.initializeStaticResources();
+
+    final target = RenderTexture(width: 8, height: 8);
+    final pbr = PhysicallyBasedMaterial();
+
+    // No completed frame yet resolves to null (placeholder applies at
+    // draw time).
+    pbr.baseColorTexture = target;
+    expect(pbr.baseColorTexture, isNull);
+
+    // Static textures keep working verbatim, and bogus values throw.
+    final white = Material.getWhitePlaceholderTexture();
+    pbr.baseColorTexture = white;
+    expect(pbr.baseColorTexture, same(white));
+    expect(() => pbr.baseColorTexture = 'nope', throwsArgumentError);
+
+    final unlit = UnlitMaterial();
+    unlit.baseColorTexture = target;
+    // Unlit's getter never returns null; an empty render texture resolves
+    // to the white placeholder.
+    expect(unlit.baseColorTexture, same(white));
+  });
+
+  test('texture publishes on markUpdated, not on acquire', () async {
+    await Scene.initializeStaticResources();
+
+    final target = RenderTexture(width: 8, height: 8);
+    final first = target.acquireNextTexture();
+    // Mid-render (acquired but not published), consumers still see the
+    // previous frame, which is null before the first completes.
+    expect(target.texture, isNull);
+    target.markUpdated(DateTime(2026));
+    expect(target.texture, same(first));
+
+    final second = target.acquireNextTexture();
+    expect(second, isNot(same(first)));
+    // The ring's previous frame stays visible while the next is written.
+    expect(target.texture, same(first));
+    target.markUpdated(DateTime(2026));
+    expect(target.texture, same(second));
+  });
+
   testWidgets('a scene-owned texture view renders into its target', (
     tester,
   ) async {

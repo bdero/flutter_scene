@@ -23,16 +23,22 @@ class UnlitMaterial extends Material {
   ///
   /// When [colorTexture] is null a 1×1 white placeholder is used so the
   /// final color reduces to [baseColorFactor].
-  UnlitMaterial({gpu.Texture? colorTexture}) {
+  UnlitMaterial({gpu.Texture? colorTexture}) : _baseColorSource = colorTexture {
     setFragmentShader(baseShaderLibrary['UnlitFragment']!);
-    baseColorTexture = Material.whitePlaceholder(colorTexture);
   }
+
+  Object? _baseColorSource;
 
   /// The base color texture, sampled and multiplied by [baseColorFactor].
   ///
-  /// Always non-null after construction; pass `null` to the constructor
-  /// to fall back to a 1×1 white placeholder.
-  late gpu.Texture baseColorTexture;
+  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live). The
+  /// getter never returns null; an empty slot (or a render texture with
+  /// no completed frame yet) resolves to a 1×1 white placeholder so the
+  /// final color reduces to [baseColorFactor].
+  gpu.Texture get baseColorTexture =>
+      Material.whitePlaceholder(resolveTextureSource(_baseColorSource));
+  set baseColorTexture(Object? value) =>
+      _baseColorSource = checkTextureSource(value, 'baseColorTexture');
 
   /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
   /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
@@ -74,10 +80,12 @@ class UnlitMaterial extends Material {
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),
       baseColorTexture,
-      sampler: gpu.SamplerOptions(
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.repeat,
-      ),
+      sampler:
+          textureSourceSampler(_baseColorSource) ??
+          gpu.SamplerOptions(
+            widthAddressMode: gpu.SamplerAddressMode.repeat,
+            heightAddressMode: gpu.SamplerAddressMode.repeat,
+          ),
     );
   }
 }

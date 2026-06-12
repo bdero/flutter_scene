@@ -43,12 +43,46 @@ class _ManualUpdate extends RenderTextureUpdate {
   const _ManualUpdate() : super._();
 }
 
+/// Sampling options used when a material samples a [RenderTexture].
+///
+/// Captures default to bilinear filtering with clamped edges (the right
+/// choice for screen-like content, where wrapping would bleed opposite
+/// edges together). Use [gpu.MinMagFilter.nearest] for a pixelated look.
+/// {@category Rendering}
+class RenderTextureSampling {
+  /// Creates sampling options.
+  const RenderTextureSampling({
+    this.filter = gpu.MinMagFilter.linear,
+    this.wrap = gpu.SamplerAddressMode.clampToEdge,
+  });
+
+  /// The minification/magnification filter.
+  final gpu.MinMagFilter filter;
+
+  /// The addressing mode for texture coordinates outside `0..1`, applied
+  /// to both axes.
+  final gpu.SamplerAddressMode wrap;
+
+  /// The equivalent sampler description.
+  @internal
+  gpu.SamplerOptions toSamplerOptions() => gpu.SamplerOptions(
+    minFilter: filter,
+    magFilter: filter,
+    widthAddressMode: wrap,
+    heightAddressMode: wrap,
+  );
+}
+
 /// An offscreen render target a `RenderView` can render into.
 ///
 /// Create one, set it as a view's `RenderView.target`, and add the view to
 /// `Scene.views`; the scene renders it (subject to [update]) whenever the
 /// scene itself renders. Display it in the widget tree with a
-/// `RenderTextureView`.
+/// `RenderTextureView`, or assign it to a material texture slot (for
+/// example `PhysicallyBasedMaterial.baseColorTexture` or
+/// `UnlitMaterial.baseColorTexture`) to show the live capture on scene
+/// geometry, the security-camera/monitor/mirror pattern. Material
+/// sampling uses [sampling].
 ///
 /// The texture holds the same display-referred premultiplied image a
 /// screen view shows (tone mapping and anti-aliasing applied), sized at
@@ -58,6 +92,13 @@ class _ManualUpdate extends RenderTextureUpdate {
 /// writing a new frame never races a still-displayed previous frame).
 /// Consumers hold the [RenderTexture] itself and resolve [texture] when
 /// they draw; notifications fire after each re-render.
+///
+/// Texture-target views render in `RenderView.order` before the screen
+/// views, and [texture] always returns the most recently *completed*
+/// frame. So a consumer drawn after this target's producing view samples
+/// this frame's capture, while a consumer visible *inside* the capture
+/// (including the target sampling itself, a mirror facing a mirror)
+/// samples the previous frame instead of forming a feedback loop.
 /// {@category Rendering}
 class RenderTexture extends ChangeNotifier {
   /// Creates a render target of [width] x [height] physical pixels.
@@ -65,6 +106,7 @@ class RenderTexture extends ChangeNotifier {
     required int width,
     required int height,
     this.update = RenderTextureUpdate.everyFrame,
+    this.sampling = const RenderTextureSampling(),
   }) : assert(width > 0 && height > 0, 'RenderTexture size must be positive'),
        _size = ui.Size(width.toDouble(), height.toDouble());
 
@@ -77,9 +119,14 @@ class RenderTexture extends ChangeNotifier {
   /// When this target re-renders. See [RenderTextureUpdate].
   RenderTextureUpdate update;
 
+  /// Sampling options used when a material samples this target.
+  RenderTextureSampling sampling;
+
   DateTime? _lastUpdateTime;
   bool _updateRequested = false;
   bool _hasRendered = false;
+  gpu.Texture? _latest;
+  gpu.Texture? _pending;
 
   /// The target width in physical pixels.
   int get width => _size.width.toInt();
@@ -87,12 +134,15 @@ class RenderTexture extends ChangeNotifier {
   /// The target height in physical pixels.
   int get height => _size.height.toInt();
 
-  /// The most recently rendered texture, or null before the first render.
+  /// The most recently completed frame, or null before the first render.
   ///
   /// The returned object changes identity across frames (the ring
   /// advances), so hold the [RenderTexture] and re-read this when drawing
-  /// rather than caching the result.
-  gpu.Texture? get texture => _surface.lastSwapchainColorTexture();
+  /// rather than caching the result. While this target's own producing
+  /// view is being encoded, this still returns the previous frame, which
+  /// is what makes self-sampling read one frame stale instead of forming
+  /// a feedback loop (see the class doc).
+  gpu.Texture? get texture => _latest;
 
   /// Reallocates the target at a new size. Consumers pick up the new
   /// textures on the next render; the next [update] check re-renders
@@ -136,21 +186,25 @@ class RenderTexture extends ChangeNotifier {
   }
 
   /// The next ring texture to render into. Advances the ring and the
-  /// transient pool's frame.
+  /// transient pool's frame. [texture] keeps returning the previous frame
+  /// until [markUpdated] publishes the new one.
   @internal
   gpu.Texture acquireNextTexture() =>
-      _surface.getNextSwapchainColorTexture(_size);
+      _pending = _surface.getNextSwapchainColorTexture(_size);
 
   /// The transient texture pool for this target's render passes.
   @internal
   TransientTexturePool get transientTexturePool =>
       _surface.transientTexturePool();
 
-  /// Records that a render completed and notifies consumers.
+  /// Publishes the frame written since [acquireNextTexture] and notifies
+  /// consumers.
   @internal
   void markUpdated(DateTime now) {
     _lastUpdateTime = now;
     _hasRendered = true;
+    _latest = _pending ?? _latest;
+    _pending = null;
     notifyListeners();
   }
 }
