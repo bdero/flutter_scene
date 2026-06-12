@@ -239,7 +239,7 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
     atlas: prefilterEquirectRadiance(
       equirect,
       sourceIsLinear: true,
-      mipLayout: EnvironmentMap.useMipRadianceLayout,
+      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     ),
     sh: sh,
   );
@@ -297,7 +297,7 @@ class SkyBakeJob {
     }
     _writeIndex = 1 - _writeIndex;
     _atlases[_writeIndex] ??= createPrefilterAtlasTexture(
-      mipLayout: EnvironmentMap.useMipRadianceLayout,
+      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     );
     _shs[_writeIndex] ??= _createShTarget();
     _step = 0;
