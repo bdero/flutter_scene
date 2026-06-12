@@ -230,33 +230,40 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
           },
           onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
         ),
+        // Scrolls horizontally so the panels fit a narrow (phone) screen
+        // instead of overflowing.
         Positioned(
           bottom: 12,
-          left: 12,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 160,
-                    height: 160,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white54),
-                      color: Colors.black26,
+          left: 0,
+          right: 0,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 160,
+                      height: 160,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white54),
+                        color: Colors.black26,
+                      ),
+                      child: RenderTextureView(_minimap),
                     ),
-                    child: RenderTextureView(_minimap),
-                  ),
-                  _label('Top-down view (re-renders every 500 ms)'),
-                ],
-              ),
-              const SizedBox(width: 12),
-              _comparePanel(_panels[0]),
-              const SizedBox(width: 12),
-              _comparePanel(_panels[1]),
-            ],
+                    _label('Top-down view (re-renders every 500 ms)'),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                _comparePanel(_panels[0]),
+                const SizedBox(width: 12),
+                _comparePanel(_panels[1]),
+              ],
+            ),
           ),
         ),
       ],
