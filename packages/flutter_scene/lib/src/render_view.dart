@@ -79,7 +79,8 @@ class RenderView {
 
   /// The sampling quality this view's image is composited onto the canvas
   /// with, or null (the default) to inherit the scene's
-  /// `Scene.filterQuality`.
+  /// `Scene.filterQuality` (which documents how the values map to
+  /// concrete sampling modes per backend).
   ///
   /// Ignored when [target] is set; display filtering of a render texture
   /// belongs to its consumer (for example `RenderTextureView`).

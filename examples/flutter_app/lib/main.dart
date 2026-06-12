@@ -198,6 +198,7 @@ class _SettingsSidebar extends StatefulWidget {
 
 class _SettingsSidebarState extends State<_SettingsSidebar> {
   bool _expanded = false;
+  double _width = 320;
 
   @override
   Widget build(BuildContext context) {
@@ -218,47 +219,75 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
       );
     }
 
+    final maxWidth = MediaQuery.of(context).size.width - 32;
     return Material(
       color: surface,
       borderRadius: BorderRadius.circular(8),
       elevation: 2,
       child: SizedBox(
-        width: 320,
+        width: _width.clamp(280.0, maxWidth),
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height - 16,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
-                child: Row(
-                  children: [
-                    Text(
-                      'Settings',
-                      style: Theme.of(context).textTheme.titleMedium,
+              // Drag the panel's left edge to resize it.
+              MouseRegion(
+                cursor: SystemMouseCursors.resizeLeftRight,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: (details) => setState(() {
+                    _width = (_width - details.delta.dx).clamp(280.0, maxWidth);
+                  }),
+                  child: const SizedBox(
+                    width: 8,
+                    child: Center(
+                      child: SizedBox(
+                        width: 2,
+                        height: 32,
+                        child: ColoredBox(color: Colors.black26),
+                      ),
                     ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Close settings',
-                      onPressed: () => setState(() => _expanded = false),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildRendering(),
-                      _buildDirectionalLight(),
-                      _buildAmbientOcclusion(),
-                      _buildPostProcessing(),
-                    ],
-                  ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 4, 0),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Settings',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Close settings',
+                            onPressed: () => setState(() => _expanded = false),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildRendering(),
+                            _buildDirectionalLight(),
+                            _buildAmbientOcclusion(),
+                            _buildPostProcessing(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -303,11 +332,28 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               'with FXAA.',
             ),
           ),
-        _slider('Render scale', exampleSettings.renderScale, 0.25, 2, (v) {
-          // Snap to quarter steps; each change reallocates the swapchain,
-          // so a continuous slider would thrash while dragging.
-          exampleSettings.renderScale = (v * 4).roundToDouble() / 4;
-        }),
+        Row(
+          children: [
+            Expanded(
+              child: _slider(
+                'Render scale',
+                exampleSettings.renderScale,
+                0.25,
+                2,
+                (v) {
+                  exampleSettings.renderScale = v;
+                },
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.restart_alt, size: 18),
+              tooltip: 'Reset render scale',
+              visualDensity: VisualDensity.compact,
+              onPressed: () =>
+                  setState(() => exampleSettings.renderScale = 1.0),
+            ),
+          ],
+        ),
         Row(
           children: [
             const Text('Filter'),

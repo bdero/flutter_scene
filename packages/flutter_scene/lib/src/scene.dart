@@ -223,12 +223,19 @@ base class Scene implements SceneGraph {
   /// The sampling quality used when compositing screen views onto the
   /// canvas. Defaults to [ui.FilterQuality.medium].
   ///
-  /// This matters most when [renderScale] is not `1.0`:
-  /// [ui.FilterQuality.none] shows the rendered pixels as hard blocks,
-  /// the other modes smooth the scale. Per-view overrides via
-  /// `RenderView.filterQuality`. Ignored by views targeting a
-  /// `RenderTexture` (display filtering belongs to the consumer there,
-  /// for example `RenderTextureView.filterQuality`).
+  /// This matters most when [renderScale] is not `1.0`. The values map to
+  /// concrete sampling modes, [ui.FilterQuality.none] is nearest-neighbor
+  /// (hard pixel blocks), [ui.FilterQuality.low] is bilinear,
+  /// [ui.FilterQuality.medium] adds mipmaps, and [ui.FilterQuality.high]
+  /// is bicubic where the backend implements it. On native (Impeller),
+  /// `high` currently behaves like `medium`, and since the composited
+  /// image has no mipmaps every value except `none` resolves to plain
+  /// bilinear there; the web renderers (CanvasKit and Skwasm, both
+  /// Skia-backed) implement the tiers distinctly, including bicubic.
+  ///
+  /// Per-view overrides via `RenderView.filterQuality`. Ignored by views
+  /// targeting a `RenderTexture` (display filtering belongs to the
+  /// consumer there, for example `RenderTextureView.filterQuality`).
   ui.FilterQuality filterQuality = ui.FilterQuality.medium;
 
   /// Views this scene owns and renders every frame, in addition to the

@@ -39,6 +39,11 @@ class RenderTextureView extends StatefulWidget {
   final BoxFit fit;
 
   /// The sampling quality the texture is drawn with.
+  ///
+  /// [FilterQuality.none] is nearest-neighbor (hard pixel blocks when the
+  /// texture is smaller than the widget) and the other values smooth the
+  /// scale; `Scene.filterQuality` documents how they map to concrete
+  /// sampling modes per backend.
   final FilterQuality filterQuality;
 
   /// Whether to resize [renderTexture] to the widget's layout size (times

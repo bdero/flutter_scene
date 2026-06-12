@@ -39,7 +39,9 @@ enum PixelFormat {
   astc4x4LDR,
   astc4x4LDRSRGB,
   astc8x8LDR,
-  astc8x8LDRSRGB;
+  astc8x8LDRSRGB,
+  astc4x4HDR,
+  astc8x8HDR;
 
   /// Whether this is a block-compressed (sample-only) format.
   bool get isCompressed {
@@ -59,6 +61,8 @@ enum PixelFormat {
       case PixelFormat.astc4x4LDRSRGB:
       case PixelFormat.astc8x8LDR:
       case PixelFormat.astc8x8LDRSRGB:
+      case PixelFormat.astc4x4HDR:
+      case PixelFormat.astc8x8HDR:
         return true;
       default:
         return false;
@@ -67,7 +71,7 @@ enum PixelFormat {
 }
 
 /// Hardware families for block-compressed texture support.
-enum TextureCompressionFamily { bc, etc2, astc }
+enum TextureCompressionFamily { bc, etc2, astc, astcHdr }
 
 enum BlendFactor {
   zero,
