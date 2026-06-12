@@ -228,8 +228,13 @@ Map<String, String> _cargoEnvironment(CodeConfig code, String triple) {
     final api = code.android.targetNdkApi;
     final cargoTriple = triple.toUpperCase().replaceAll('-', '_');
     environment['CARGO_TARGET_${cargoTriple}_LINKER'] = compiler.toFilePath();
+    // Align ELF load segments to 16 KB so the library loads on devices with
+    // 16 KB memory pages (Android 15+; required on Pixel 8 and newer, and
+    // for Play uploads). The Rust/NDK default is 4 KB, which the loader
+    // rejects on those devices ("ELF alignment check failed").
     environment['CARGO_TARGET_${cargoTriple}_RUSTFLAGS'] =
-        '-Clink-arg=--target=${_androidClangTarget(triple)}$api';
+        '-Clink-arg=--target=${_androidClangTarget(triple)}$api '
+        '-Clink-arg=-Wl,-z,max-page-size=16384';
     // TODO(android-cc-crate): rapier3d and its dependencies are pure Rust
     // today, so only the final link needs the NDK. If a dependency ever
     // pulls in a C build (a build.rs using the cc crate), also set
