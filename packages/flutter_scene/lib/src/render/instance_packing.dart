@@ -72,17 +72,14 @@ void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
 ///
 /// The transforms are emplaced into [instanceTransformBuffers], a `HostBuffer`
 /// dedicated to instance vertex data, separate from the per-frame transient
-/// uniform `HostBuffer`. On the GLES backend, sourcing this vertex buffer
-/// from the same `HostBuffer` that also serves uniform emplacements
-/// corrupts the model matrix (objects toggle between transforms), because
-/// the uniform emplacements `Material.bind` issues later in the same draw
-/// disturb the vertex binding into the shared GL buffer object. Metal and
-/// Vulkan resolve buffer+offset at submit and were unaffected. A separate
-/// buffer that only ever holds vertex data removes the interference on
-/// every backend, while keeping the cheap per-frame `HostBuffer`
-/// sub-allocation (no per-draw device-buffer creation, which stalls the
-/// GLES backend).
+/// uniform `HostBuffer`. The split dates from debugging stale instance
+/// transforms on the GLES backend, which turned out to be an engine bug
+/// (flutter/flutter#187931, buffer writes racing the GL upload) that a
+/// dedicated buffer does not actually avoid. Kept for now since it is
+/// harmless and the engine fix has not shipped in the SDK yet.
 void bindInstanceTransforms(gpu.RenderPass pass, Float32List packed) {
+  // TODO(gles-dirty-range): fold instance transforms back into the shared
+  // transients HostBuffer once flutter/flutter#187931 is fixed in the SDK.
   if (packed.isEmpty) return;
   pass.bindVertexBuffer(
     instanceTransformBuffers.emplace(ByteData.sublistView(packed)),
