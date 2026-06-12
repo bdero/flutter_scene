@@ -23,7 +23,12 @@ class RenderView {
     this.layerMask = kRenderLayerAll,
     this.order = 0,
     this.antiAliasingMode,
-  });
+    this.renderScale,
+    this.filterQuality,
+  }) : assert(
+         renderScale == null || (renderScale.isFinite && renderScale > 0.0),
+         'renderScale must be a positive, finite number.',
+       );
 
   /// The camera whose view and projection this view renders.
   Camera camera;
@@ -63,4 +68,20 @@ class RenderView {
   /// scene-level setting (an unsupported [AntiAliasingMode.msaa] renders
   /// with FXAA); check [Scene.isAntiAliasingModeSupported] up front.
   AntiAliasingMode? antiAliasingMode;
+
+  /// Scales the resolution this view renders at relative to the display's
+  /// native resolution, or null (the default) to inherit the scene's
+  /// `Scene.renderScale`.
+  ///
+  /// Ignored when [target] is set; a render texture's resolution is its
+  /// explicit size.
+  double? renderScale;
+
+  /// The sampling quality this view's image is composited onto the canvas
+  /// with, or null (the default) to inherit the scene's
+  /// `Scene.filterQuality`.
+  ///
+  /// Ignored when [target] is set; display filtering of a render texture
+  /// belongs to its consumer (for example `RenderTextureView`).
+  ui.FilterQuality? filterQuality;
 }

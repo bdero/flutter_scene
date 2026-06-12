@@ -253,7 +253,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildAntiAliasing(),
+                      _buildRendering(),
                       _buildDirectionalLight(),
                       _buildAmbientOcclusion(),
                       _buildPostProcessing(),
@@ -268,18 +268,18 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
     );
   }
 
-  Widget _buildAntiAliasing() {
+  Widget _buildRendering() {
     final msaaSupported = Scene.isAntiAliasingModeSupported(
       AntiAliasingMode.msaa,
     );
     return ExpansionTile(
-      title: const Text('Anti-aliasing'),
+      title: const Text('Rendering'),
       initiallyExpanded: true,
       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       children: [
         Row(
           children: [
-            const Text('Mode'),
+            const Text('Anti-aliasing'),
             const Spacer(),
             DropdownButton<AntiAliasingMode>(
               value: exampleSettings.antiAliasingMode,
@@ -303,6 +303,29 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               'with FXAA.',
             ),
           ),
+        _slider('Render scale', exampleSettings.renderScale, 0.25, 2, (v) {
+          // Snap to quarter steps; each change reallocates the swapchain,
+          // so a continuous slider would thrash while dragging.
+          exampleSettings.renderScale = (v * 4).roundToDouble() / 4;
+        }),
+        Row(
+          children: [
+            const Text('Filter'),
+            const Spacer(),
+            DropdownButton<FilterQuality>(
+              value: exampleSettings.filterQuality,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => exampleSettings.filterQuality = value);
+                }
+              },
+              items: [
+                for (final quality in FilterQuality.values)
+                  DropdownMenuItem(value: quality, child: Text(quality.name)),
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }

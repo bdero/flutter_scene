@@ -11,6 +11,14 @@
   that sizes the target from widget layout). Views also gain a per-view
   `antiAliasingMode` override that defaults to the scene's setting.
 
+* Added render scaling and composite filtering. `Scene.renderScale`
+  (default 1.0) scales the resolution screen views render at relative to
+  the display's native resolution, trading sharpness for fragment work
+  below 1.0 and supersampling above it, and `Scene.filterQuality`
+  (default medium) sets the sampling quality the rendered image is
+  composited onto the canvas with. Both have per-view overrides on
+  `RenderView` (`renderScale`, `filterQuality`).
+
 * Added FXAA and an automatic anti-aliasing mode. `AntiAliasingMode` gains
   `fxaa` (a post-process pass over the tone-mapped image, available on
   every backend) and `auto` (MSAA where the backend supports it, FXAA

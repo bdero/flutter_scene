@@ -194,6 +194,43 @@ base class Scene implements SceneGraph {
         gpu.gpuContext.doesSupportOffscreenMSAA;
   }
 
+  double _renderScale = 1.0;
+
+  /// Scales the resolution screen views render at, relative to the
+  /// display's native resolution. Defaults to `1.0`.
+  ///
+  /// Values below `1.0` trade sharpness for proportionally less fragment
+  /// work on every device (the multiplier applies on top of the device
+  /// pixel ratio, so the cost saving is display-relative); values above
+  /// `1.0` supersample. Combine a low scale with
+  /// [FilterQuality.none] in [filterQuality] for a pixelated look.
+  ///
+  /// Per-view overrides via `RenderView.renderScale`. Ignored by views
+  /// targeting a `RenderTexture`, whose resolution is the texture's
+  /// explicit size. Changing the scale reallocates the view's swapchain
+  /// at the new size, so treat it as a settings-style knob rather than a
+  /// per-frame animation target.
+  double get renderScale => _renderScale;
+
+  set renderScale(double value) {
+    assert(
+      value.isFinite && value > 0.0,
+      'renderScale must be a positive, finite number.',
+    );
+    _renderScale = value;
+  }
+
+  /// The sampling quality used when compositing screen views onto the
+  /// canvas. Defaults to [ui.FilterQuality.medium].
+  ///
+  /// This matters most when [renderScale] is not `1.0`:
+  /// [ui.FilterQuality.none] shows the rendered pixels as hard blocks,
+  /// the other modes smooth the scale. Per-view overrides via
+  /// `RenderView.filterQuality`. Ignored by views targeting a
+  /// `RenderTexture` (display filtering belongs to the consumer there,
+  /// for example `RenderTextureView.filterQuality`).
+  ui.FilterQuality filterQuality = ui.FilterQuality.medium;
+
   /// Views this scene owns and renders every frame, in addition to the
   /// views passed to each [renderViews] call.
   ///
@@ -698,9 +735,12 @@ base class Scene implements SceneGraph {
     // Without this, the texture is sized in logical pixels and the
     // framebuffer compositor upscales it (visible as pixelation on
     // high-DPI devices). See: https://github.com/bdero/flutter_scene/issues/60
+    // The render scale multiplies on top, trading resolution for fragment
+    // work (or supersampling above 1.0).
+    final scale = dpr * (view.renderScale ?? _renderScale);
     final pixelSize = ui.Size(
-      (drawArea.width * dpr).ceilToDouble(),
-      (drawArea.height * dpr).ceilToDouble(),
+      (drawArea.width * scale).ceilToDouble(),
+      (drawArea.height * scale).ceilToDouble(),
     );
     if (pixelSize.width < 1 || pixelSize.height < 1) {
       return;
@@ -722,7 +762,8 @@ base class Scene implements SceneGraph {
 
     final image = swapchainColor.asImage();
     final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
-    final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
+    final paint = ui.Paint()
+      ..filterQuality = view.filterQuality ?? filterQuality;
     canvas.drawImageRect(image, srcRect, drawArea, paint);
   }
 
