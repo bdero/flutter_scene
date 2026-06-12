@@ -48,7 +48,7 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
     scene.views.addAll([
       RenderView(
         camera: PerspectiveCamera(
-          position: vm.Vector3(0, 8, 0.01),
+          position: vm.Vector3(0, 4, 0.01),
           target: vm.Vector3(0, 0, 0),
         ),
         target: _minimap,
@@ -114,7 +114,11 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
         Positioned(
           top: 12,
           left: 12,
-          child: _inset('Top view (updates at 2 Hz)', _minimap, width: 160),
+          child: _inset(
+            'Top-down view (re-renders every 500 ms)',
+            _minimap,
+            width: 160,
+          ),
         ),
         Positioned(
           bottom: 12,
