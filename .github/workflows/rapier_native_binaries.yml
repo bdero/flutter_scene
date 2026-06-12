@@ -95,7 +95,12 @@ jobs:
           fi
           env_triple=$(echo "$triple" | tr 'a-z-' 'A-Z_')
           export "CARGO_TARGET_${env_triple}_LINKER=$clang"
-          export "CARGO_TARGET_${env_triple}_RUSTFLAGS=-Clink-arg=--target=${clang_target}${ANDROID_API}"
+          # Align ELF load segments to 16 KB so the library loads on devices
+          # with 16 KB memory pages (Android 15+; required on Pixel 8 and
+          # newer). The default is 4 KB, which fails the loader's alignment
+          # check ("ELF alignment check failed"). Keep in sync with the
+          # source-build flags in hook/build.dart.
+          export "CARGO_TARGET_${env_triple}_RUSTFLAGS=-Clink-arg=--target=${clang_target}${ANDROID_API} -Clink-arg=-Wl,-z,max-page-size=16384"
           cargo build --release --target "$triple"
 
       - name: Build (cargo)
