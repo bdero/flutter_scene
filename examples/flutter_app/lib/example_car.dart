@@ -190,42 +190,52 @@ class ExampleCarState extends State<ExampleCar> {
                   'DoorBack.L',
                   'DoorBack.R',
                 ])
-                  Slider(
-                    value: nodes[doorName]!.amount,
-                    onChanged: (value) {
-                      setState(() => _applyDoorPose(doorName, value));
-                    },
+                  Expanded(
+                    child: Slider(
+                      value: nodes[doorName]!.amount,
+                      onChanged: (value) {
+                        setState(() => _applyDoorPose(doorName, value));
+                      },
+                    ),
                   ),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                Slider(
-                  value: nodes['Frunk']!.amount,
-                  onChanged: (value) {
-                    setState(() => _applyDoorPose('Frunk', value));
-                  },
+                Expanded(
+                  child: Slider(
+                    value: nodes['Frunk']!.amount,
+                    onChanged: (value) {
+                      setState(() => _applyDoorPose('Frunk', value));
+                    },
+                  ),
                 ),
-                Slider(
-                  value: nodes['Trunk']!.amount,
-                  onChanged: (value) {
-                    setState(() => _applyDoorPose('Trunk', value));
-                  },
+                Expanded(
+                  child: Slider(
+                    value: nodes['Trunk']!.amount,
+                    onChanged: (value) {
+                      setState(() => _applyDoorPose('Trunk', value));
+                    },
+                  ),
                 ),
-                Slider(
-                  value: nodes['WheelBack.L']!.amount,
-                  onChanged: (value) {
-                    setState(() => nodes['WheelBack.L']!.amount = value);
-                  },
+                Expanded(
+                  child: Slider(
+                    value: nodes['WheelBack.L']!.amount,
+                    onChanged: (value) {
+                      setState(() => nodes['WheelBack.L']!.amount = value);
+                    },
+                  ),
                 ),
-                Slider(
-                  min: -1,
-                  max: 1,
-                  value: nodes['WheelFront.L']!.amount,
-                  onChanged: (value) {
-                    setState(() => nodes['WheelFront.L']!.amount = value);
-                  },
+                Expanded(
+                  child: Slider(
+                    min: -1,
+                    max: 1,
+                    value: nodes['WheelFront.L']!.amount,
+                    onChanged: (value) {
+                      setState(() => nodes['WheelFront.L']!.amount = value);
+                    },
+                  ),
                 ),
               ],
             ),
