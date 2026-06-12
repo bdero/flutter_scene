@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show FilterQuality;
 
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
@@ -32,6 +33,14 @@ class ExampleSettings {
   /// Anti-aliasing mode shared across the examples.
   AntiAliasingMode antiAliasingMode = AntiAliasingMode.auto;
 
+  /// Render scale shared across the examples (resolution relative to the
+  /// display's native, applied to screen views).
+  double renderScale = 1.0;
+
+  /// Sampling quality the rendered image is composited with, shared
+  /// across the examples.
+  FilterQuality filterQuality = FilterQuality.medium;
+
   /// Whether the shared directional light is attached to the scene.
   bool directionalLightEnabled = true;
 
@@ -63,6 +72,8 @@ class ExampleSettings {
     if (scene.antiAliasingMode != antiAliasingMode) {
       scene.antiAliasingMode = antiAliasingMode;
     }
+    scene.renderScale = renderScale;
+    scene.filterQuality = filterQuality;
 
     final grading = scene.postProcess.colorGrading;
     grading.enabled = colorGrading.enabled;
