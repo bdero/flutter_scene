@@ -27,6 +27,7 @@ import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
+import 'render_texture.dart';
 import 'render_view.dart';
 import 'shaders.dart';
 import 'sky_environment.dart';
@@ -164,8 +165,11 @@ base class Scene implements SceneGraph {
   /// offscreen MSAA is supported and [AntiAliasingMode.fxaa] otherwise,
   /// and an unsupported [AntiAliasingMode.msaa] request also resolves to
   /// [AntiAliasingMode.fxaa]. Never returns [AntiAliasingMode.auto].
-  AntiAliasingMode get effectiveAntiAliasingMode {
-    switch (_antiAliasingMode) {
+  AntiAliasingMode get effectiveAntiAliasingMode =>
+      _resolveAntiAliasingMode(_antiAliasingMode);
+
+  AntiAliasingMode _resolveAntiAliasingMode(AntiAliasingMode requested) {
+    switch (requested) {
       case AntiAliasingMode.none:
         return AntiAliasingMode.none;
       case AntiAliasingMode.fxaa:
@@ -189,6 +193,17 @@ base class Scene implements SceneGraph {
     return mode != AntiAliasingMode.msaa ||
         gpu.gpuContext.doesSupportOffscreenMSAA;
   }
+
+  /// Views this scene owns and renders every frame, in addition to the
+  /// views passed to each [renderViews] call.
+  ///
+  /// This is the home for views targeting a [RenderTexture]
+  /// ([RenderView.target]): add one here and it re-renders whenever the
+  /// scene renders, subject to the target's [RenderTexture.update] policy,
+  /// without being threaded through every render call. Views in this list
+  /// without a target are ignored by [renderViews] (the screen views come
+  /// from the call's argument).
+  final List<RenderView> views = [];
 
   /// Casts [ray] through the scene's render geometry and returns the nearest
   /// hit, or null.
@@ -593,11 +608,43 @@ base class Scene implements SceneGraph {
         ? null
         : renderScene.directionalLights.first;
 
-    // Composite lower-order views first.
-    final ordered = views.length == 1
-        ? views
-        : (List<RenderView>.of(views)
-            ..sort((a, b) => a.order.compareTo(b.order)));
+    // Texture-target views render first so screen views (and the HUD)
+    // composite this frame's captures, the simple form of the
+    // produce-before-consume rule.
+    // TODO(rendertarget): order texture views among themselves by
+    // resource read/write edges once materials can sample render textures.
+    final textureViews = <RenderView>[
+      for (final view in this.views)
+        if (view.target != null) view,
+      for (final view in views)
+        if (view.target != null) view,
+    ]..sort((a, b) => a.order.compareTo(b.order));
+    final now = DateTime.now();
+    for (final view in textureViews) {
+      final target = view.target!;
+      if (!target.shouldUpdate(now)) {
+        continue;
+      }
+      _renderViewToTexture(
+        view: view,
+        outputColor: target.acquireNextTexture(),
+        pixelSize: ui.Size(target.width.toDouble(), target.height.toDouble()),
+        pool: target.transientTexturePool,
+        environmentMap: environmentMap,
+        transientsBuffer: transientsBuffer,
+        lightComponent: lightComponent,
+      );
+      target.markUpdated(now);
+    }
+
+    // Composite lower-order screen views first.
+    final screenViews = [
+      for (final view in views)
+        if (view.target == null) view,
+    ];
+    final ordered = screenViews.length == 1
+        ? screenViews
+        : (screenViews..sort((a, b) => a.order.compareTo(b.order)));
 
     for (var i = 0; i < ordered.length; i++) {
       final view = ordered[i];
@@ -646,8 +693,6 @@ base class Scene implements SceneGraph {
     required gpu.HostBuffer transientsBuffer,
     required DirectionalLightComponent? lightComponent,
   }) {
-    final camera = view.camera;
-
     // Allocate the offscreen render target at physical-pixel resolution so
     // the rasterized 3D content matches Flutter's framebuffer density.
     // Without this, the texture is sized in logical pixels and the
@@ -661,14 +706,45 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    final effectiveAa = effectiveAntiAliasingMode;
-    final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
-    final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
       viewIndex,
     );
-    final pool = surface.transientTexturePool(viewIndex);
+    _renderViewToTexture(
+      view: view,
+      outputColor: swapchainColor,
+      pixelSize: pixelSize,
+      pool: surface.transientTexturePool(viewIndex),
+      environmentMap: environmentMap,
+      transientsBuffer: transientsBuffer,
+      lightComponent: lightComponent,
+    );
+
+    final image = swapchainColor.asImage();
+    final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
+    final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
+    canvas.drawImageRect(image, srcRect, drawArea, paint);
+  }
+
+  // Builds and submits one view's render graph into [outputColor] (a
+  // swapchain texture for screen views, or a [RenderTexture] ring slot).
+  // [pool] supplies the view's transient attachments; each view (and each
+  // render texture) has its own so simultaneous renders never share one.
+  void _renderViewToTexture({
+    required RenderView view,
+    required gpu.Texture outputColor,
+    required ui.Size pixelSize,
+    required TransientTexturePool pool,
+    required EnvironmentMap environmentMap,
+    required gpu.HostBuffer transientsBuffer,
+    required DirectionalLightComponent? lightComponent,
+  }) {
+    final camera = view.camera;
+    final effectiveAa = _resolveAntiAliasingMode(
+      view.antiAliasingMode ?? _antiAliasingMode,
+    );
+    final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
+    final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
 
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
@@ -796,15 +872,15 @@ base class Scene implements SceneGraph {
       );
     }
 
-    // The resolve writes the swapchain directly unless FXAA or
+    // The resolve writes the output directly unless FXAA or
     // after-tone-mapping effects need an intermediate buffer to chain on.
     final gpu.Texture resolveOutput = afterTonemap.isEmpty && !enableFxaa
-        ? swapchainColor
+        ? outputColor
         : pool.acquire(
             TransientTextureDescriptor.color(
               width: width,
               height: height,
-              format: swapchainColor.format,
+              format: outputColor.format,
               debugName: 'post_ldr_resolve',
             ),
           );
@@ -824,12 +900,12 @@ base class Scene implements SceneGraph {
     // application after the FXAA pass.
     if (enableFxaa) {
       final gpu.Texture fxaaOutput = afterTonemap.isEmpty
-          ? swapchainColor
+          ? outputColor
           : pool.acquire(
               TransientTextureDescriptor.color(
                 width: width,
                 height: height,
-                format: swapchainColor.format,
+                format: outputColor.format,
                 debugName: 'fxaa_out',
               ),
             );
@@ -837,16 +913,16 @@ base class Scene implements SceneGraph {
     }
 
     // Custom effects on the display-referred image. The last one writes
-    // the swapchain that gets composited onto the canvas.
+    // the output texture.
     for (var i = 0; i < afterTonemap.length; i++) {
       final isLast = i == afterTonemap.length - 1;
       final output = isLast
-          ? swapchainColor
+          ? outputColor
           : pool.acquire(
               TransientTextureDescriptor.color(
                 width: width,
                 height: height,
-                format: swapchainColor.format,
+                format: outputColor.format,
                 debugName: i.isEven ? 'post_ldr_a' : 'post_ldr_b',
               ),
             );
@@ -863,10 +939,5 @@ base class Scene implements SceneGraph {
     }
 
     graph.execute(transientsBuffer: transientsBuffer, texturePool: pool);
-
-    final image = swapchainColor.asImage();
-    final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
-    final paint = ui.Paint()..filterQuality = ui.FilterQuality.medium;
-    canvas.drawImageRect(image, srcRect, drawArea, paint);
   }
 }

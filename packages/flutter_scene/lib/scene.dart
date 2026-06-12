@@ -70,6 +70,7 @@ export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart' show DirectionalLight, Lighting, ShadowCascade;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;
+export 'src/render_texture.dart' show RenderTexture, RenderTextureUpdate;
 export 'src/render_view.dart' show RenderView;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
@@ -140,6 +141,7 @@ export 'src/sky_sources.dart' show GradientSkySource, PhysicalSkySource;
 export 'src/skybox.dart'
     show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox;
 export 'src/surface.dart' show Surface;
+export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
     show SceneCameraBuilder, SceneScope, SceneTickCallback, SceneView;
 export 'src/tone_mapping.dart' show ToneMappingMode;

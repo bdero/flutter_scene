@@ -16,6 +16,7 @@ import 'example_instancing.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
+import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_skybox.dart';
 import 'example_widget_texture.dart';
@@ -60,6 +61,7 @@ class _MyAppState extends State<MyApp> {
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
+      'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(
         // The Rapier backend needs its wasm module loaded before a world
         // can be built on the web; wait on it here so only this example
