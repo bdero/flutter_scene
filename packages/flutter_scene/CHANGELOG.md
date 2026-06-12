@@ -11,6 +11,18 @@
   that sizes the target from widget layout). Views also gain a per-view
   `antiAliasingMode` override that defaults to the scene's setting.
 
+* Material texture slots now accept a `RenderTexture` for live
+  render-to-texture sampling, the security-camera/monitor/mirror
+  pattern. `PhysicallyBasedMaterial` and `UnlitMaterial` texture setters
+  (and `ShaderMaterial.setTexture`) take either a `gpu.Texture` or a
+  `RenderTexture`; a render texture resolves to its latest completed
+  frame at draw time and brings its own sampling options (the new
+  `RenderTexture.sampling`, bilinear + clamped by default). A capture
+  that can see its own consumer (including a target sampling itself)
+  reads the previous frame instead of forming a feedback loop, and a
+  target with no completed frame yet resolves to the slot's neutral
+  placeholder.
+
 * Added render scaling and composite filtering. `Scene.renderScale`
   (default 1.0) scales the resolution screen views render at relative to
   the display's native resolution, trading sharpness for fragment work

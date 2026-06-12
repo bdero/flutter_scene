@@ -61,6 +61,20 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
     );
     scene.add(Node(mesh: mesh)..addComponent(SpinComponent(-1.5)));
 
+    // An in-scene monitor showing the minimap capture live: assigning the
+    // RenderTexture to a material slot samples its latest completed
+    // frame. The top-down camera sees this monitor too, so the capture
+    // contains itself, one frame stale (no feedback loop).
+    final monitorMaterial = UnlitMaterial();
+    monitorMaterial.baseColorTexture = _minimap;
+    final monitor = Node(
+      mesh: Mesh(PlaneGeometry(width: 2.4, depth: 1.8), monitorMaterial),
+    );
+    monitor.localTransform =
+        vm.Matrix4.translation(vm.Vector3(0, 0.4, -2.4)) *
+        vm.Matrix4.rotationX(pi / 2);
+    scene.add(monitor);
+
     final compareCamera = PerspectiveCamera(
       position: vm.Vector3(2.2, 1.2, 2.2),
       target: vm.Vector3(0, 0, 0),

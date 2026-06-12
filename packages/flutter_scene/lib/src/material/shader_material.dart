@@ -147,22 +147,27 @@ class ShaderMaterial extends Material {
 
   /// Assign a texture to a sampler uniform by name.
   ///
-  /// Pass `null` for [texture] to clear the binding.
-  void setTexture(
-    String name,
-    gpu.Texture? texture, {
-    gpu.SamplerOptions? sampler,
-  }) {
+  /// [texture] accepts a [gpu.Texture] or a `RenderTexture` (sampled
+  /// live; an explicit [sampler] overrides the render texture's own
+  /// sampling). Pass `null` to clear the binding.
+  void setTexture(String name, Object? texture, {gpu.SamplerOptions? sampler}) {
     if (texture == null) {
       _textures.remove(name);
     } else {
-      _textures[name] = _BoundTexture(texture, sampler);
+      _textures[name] = _BoundTexture(
+        checkTextureSource(texture, 'texture')!,
+        sampler,
+      );
     }
   }
 
   /// Read back a previously-set texture binding, or `null` when none
   /// has been set.
-  gpu.Texture? getTexture(String name) => _textures[name]?.texture;
+  ///
+  /// A slot holding a `RenderTexture` resolves to its latest completed
+  /// frame (null before the first render).
+  gpu.Texture? getTexture(String name) =>
+      resolveTextureSource(_textures[name]?.source);
 
   /// All currently-bound sampler names. Order is insertion order.
   Iterable<String> get textureNames => _textures.keys;
@@ -187,10 +192,16 @@ class ShaderMaterial extends Material {
     }
 
     for (final entry in _textures.entries) {
+      // An empty render texture (no completed frame yet) binds the white
+      // placeholder so the sampler slot is never left dangling.
+      final resolved = resolveTextureSource(entry.value.source);
       pass.bindTexture(
         fragmentShader.getUniformSlot(entry.key),
-        entry.value.texture,
-        sampler: entry.value.sampler ?? gpu.SamplerOptions(),
+        Material.whitePlaceholder(resolved),
+        sampler:
+            entry.value.sampler ??
+            textureSourceSampler(entry.value.source) ??
+            gpu.SamplerOptions(),
       );
     }
 
@@ -224,7 +235,9 @@ class ShaderMaterial extends Material {
 }
 
 class _BoundTexture {
-  _BoundTexture(this.texture, this.sampler);
-  final gpu.Texture texture;
+  _BoundTexture(this.source, this.sampler);
+
+  /// A gpu.Texture or a RenderTexture (see checkTextureSource).
+  final Object source;
   final gpu.SamplerOptions? sampler;
 }
