@@ -75,6 +75,10 @@ int _selectMode() {
         return _modeBc1;
       case gpu.TextureCompressionFamily.etc2:
         return _modeEtc2;
+      case gpu.TextureCompressionFamily.astcHdr:
+        // The transcoder emits LDR formats only; HDR ASTC is not a
+        // transcode target, so skip to the next preferred family.
+        break;
     }
   }
   return _modeRgba8;

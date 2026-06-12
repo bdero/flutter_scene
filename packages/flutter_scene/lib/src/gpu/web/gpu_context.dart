@@ -65,8 +65,10 @@ base class GpuContext {
         TextureCompressionFamily.bc => 'WEBGL_compressed_texture_s3tc',
         TextureCompressionFamily.etc2 => 'WEBGL_compressed_texture_etc',
         TextureCompressionFamily.astc => 'WEBGL_compressed_texture_astc',
+        // No WebGL extension exposes the ASTC HDR profile.
+        TextureCompressionFamily.astcHdr => null,
       };
-      return _gl.getExtension(name) != null;
+      return name != null && _gl.getExtension(name) != null;
     });
   }
 
