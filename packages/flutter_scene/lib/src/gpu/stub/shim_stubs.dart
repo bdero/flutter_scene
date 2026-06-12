@@ -18,6 +18,8 @@ base class GpuContext {
   PixelFormat get defaultDepthStencilFormat => _stub();
   int get minimumUniformByteAlignment => _stub();
   bool get doesSupportOffscreenMSAA => _stub();
+  bool get doesSupportFramebufferRenderMipmap => _stub();
+  bool get doesSupportManuallyMippedTextures => _stub();
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) =>
       _stub();
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) => _stub();

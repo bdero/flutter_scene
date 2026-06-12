@@ -54,6 +54,13 @@ base class GpuContext {
 
   bool get doesSupportOffscreenMSAA => true;
 
+  // WebGL2 framebufferTexture2D accepts any allocated mip level.
+  bool get doesSupportFramebufferRenderMipmap => true;
+
+  // texStorage2D allocates complete mip chains; per-level overwrite plus
+  // mipmap min filters sample correctly.
+  bool get doesSupportManuallyMippedTextures => true;
+
   final Map<TextureCompressionFamily, bool> _compressionSupport = {};
 
   /// Reports block-compression support by probing (and enabling) the matching

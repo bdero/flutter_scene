@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/material.dart';
@@ -62,13 +63,31 @@ base class EnvironmentMap {
   /// Whether newly built environments store their prefiltered roughness
   /// bands as mip levels of one equirect (sampled with hardware trilinear
   /// `textureLod`) rather than the legacy vertically stacked band atlas.
-  /// Defaults to true.
+  /// Defaults to true, and applies only where the backend supports the
+  /// layout (see [mipRadianceLayoutSupported]).
   ///
-  /// The legacy layout remains supported for comparison and as a fallback
-  /// while backends are verified. Each environment carries its own layout
-  /// (detected from its texture), so flipping this affects only
-  /// environments built afterwards.
+  /// The legacy layout remains supported for comparison and as the
+  /// fallback. Each environment carries its own layout (detected from its
+  /// texture), so flipping this affects only environments built
+  /// afterwards.
   static bool useMipRadianceLayout = true;
+
+  /// Whether the active Flutter GPU backend can build and sample the mip
+  /// radiance layout: rendering into non-zero mip levels plus sampling
+  /// hand-written mip chains.
+  ///
+  /// Currently false on the native GLES backend (Impeller does not yet
+  /// implement render-to-mip-level there), where new environments build
+  /// the legacy band atlas regardless of [useMipRadianceLayout].
+  static bool get mipRadianceLayoutSupported =>
+      gpu.gpuContext.doesSupportFramebufferRenderMipmap &&
+      gpu.gpuContext.doesSupportManuallyMippedTextures;
+
+  /// The layout new environments build: [useMipRadianceLayout] resolved
+  /// against backend support.
+  @internal
+  static bool get effectiveMipRadianceLayout =>
+      useMipRadianceLayout && mipRadianceLayoutSupported;
 
   /// Wraps an already-built prefiltered radiance texture.
   ///
@@ -112,7 +131,7 @@ base class EnvironmentMap {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
     final prefilteredRadiance = prefilterEquirectRadiance(
       radianceTexture,
-      mipLayout: EnvironmentMap.useMipRadianceLayout,
+      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     );
     final sh =
         diffuseSphericalHarmonics ??
@@ -164,7 +183,7 @@ base class EnvironmentMap {
     final prefilteredRadiance = prefilterEquirectRadiance(
       radianceTexture,
       sourceIsLinear: true,
-      mipLayout: EnvironmentMap.useMipRadianceLayout,
+      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     );
     final sh =
         diffuseSphericalHarmonics ??
@@ -257,7 +276,7 @@ base class EnvironmentMap {
     return EnvironmentMap._(
       prefilterEquirectRadiance(
         radianceTexture,
-        mipLayout: EnvironmentMap.useMipRadianceLayout,
+        mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
       ),
       _projectEquirectToSphericalHarmonics(
         pixels,
