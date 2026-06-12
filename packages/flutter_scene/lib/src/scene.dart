@@ -23,6 +23,7 @@ import 'render/fxaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
+import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
@@ -630,6 +631,10 @@ base class Scene implements SceneGraph {
     final transientsBuffer = _transientsBuffer ??= gpu.gpuContext
         .createHostBuffer();
     transientsBuffer.reset();
+    // Advance the instance-transform buffer pool to this frame's set (it
+    // backs the instance-rate vertex buffer, separate from the uniform
+    // host buffer above; see instance_packing.dart).
+    instanceTransformBuffers.beginFrame();
 
     // Advance the scene once per frame (not once per view): tick components
     // and animations and refresh the flat render list before the passes
