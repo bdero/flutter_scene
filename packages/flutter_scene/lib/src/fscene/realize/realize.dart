@@ -183,14 +183,19 @@ SceneDocument serializeScene(Node root, {FsceneComponentRegistry? registry}) {
   final context = SerializeContext(document);
 
   // First pass: assign every node its id, reusing realize-time identity tags
-  // where present (skipping duplicates from app-side clones).
+  // where present (skipping duplicates from app-side clones). Newly assigned
+  // ids are tagged back onto the nodes so follow-up passes (`serializeViews`
+  // referencing camera nodes) and future saves see stable ids.
   final ids = <Node, LocalId>{};
   final used = <LocalId>{};
   void assign(Node node) {
     final tagged = nodeFsceneId(node);
     final id = tagged != null && used.add(tagged) ? tagged : document.newId();
     ids[node] = id;
-    if (id != tagged) used.add(id);
+    if (id != tagged) {
+      used.add(id);
+      tagNodeId(node, id);
+    }
     for (final child in node.children) {
       assign(child);
     }

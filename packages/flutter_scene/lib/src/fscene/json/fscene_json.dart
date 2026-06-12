@@ -19,6 +19,7 @@ const Set<String> supportedFeatures = {
   'skinning',
   'prefabInstances',
   'streaming',
+  'renderTextures',
 };
 
 /// Upgrades a raw decoded document one version forward (version `N` to
@@ -162,8 +163,24 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
   if (doc.payloads.isNotEmpty) {
     json['payloads'] = _encodeIdMap(doc.payloads, idKey, _encodePayload);
   }
+  if (doc.views.isNotEmpty) {
+    json['views'] = [for (final view in doc.views) _encodeView(view, idKey)];
+  }
   return json;
 }
+
+Map<String, dynamic> _encodeView(
+  RenderViewSpec view,
+  String Function(LocalId) idKey,
+) => {
+  'camera': idKey(view.cameraNode),
+  if (view.target != null) 'target': idKey(view.target!),
+  if (view.layerMask != 0xFFFFFFFF) 'layerMask': view.layerMask,
+  if (view.order != 0) 'order': view.order,
+  if (view.antiAliasingMode != null) 'antiAliasing': view.antiAliasingMode,
+  if (view.renderScale != null) 'renderScale': view.renderScale,
+  if (view.filterQuality != null) 'filterQuality': view.filterQuality,
+};
 
 Map<LocalId, String> _buildPrefixMap(SceneDocument doc) {
   final prefixes = <LocalId, String>{};
@@ -175,6 +192,7 @@ Map<LocalId, String> _buildPrefixMap(SceneDocument doc) {
       GeometryResource() => 'geo',
       MaterialResource() => 'mat',
       TextureResource() => 'tex',
+      RenderTextureResource() => 'rt',
     };
   }
   for (final id in doc.skins.keys) {
@@ -213,6 +231,9 @@ Map<String, dynamic> encodeStage(StageMetadata s) => {
   'environmentIntensity': s.environmentIntensity,
   'exposure': s.exposure,
   'toneMapping': s.toneMapping,
+  if (s.antiAliasingMode != 'auto') 'antiAliasing': s.antiAliasingMode,
+  if (s.renderScale != 1.0) 'renderScale': s.renderScale,
+  if (s.filterQuality != 'medium') 'filterQuality': s.filterQuality,
   if (s.skybox != null)
     'skybox': {
       'source': encodeSkySource(s.skybox!.source),
@@ -301,6 +322,24 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
         'kind': 'texture',
         if (payload != null) 'payload': idKey(payload),
         if (asset != null) 'ref': asset.key,
+      };
+    case RenderTextureResource(
+      :final width,
+      :final height,
+      :final update,
+      :final intervalMilliseconds,
+      :final filter,
+      :final wrap,
+    ):
+      return {
+        'kind': 'renderTexture',
+        'width': width,
+        'height': height,
+        if (update != 'everyFrame') 'update': update,
+        if (intervalMilliseconds != null)
+          'intervalMilliseconds': intervalMilliseconds,
+        if (filter != 'linear') 'filter': filter,
+        if (wrap != 'clampToEdge') 'wrap': wrap,
       };
     case MaterialResource(:final type, :final properties, :final asset):
       return {
@@ -454,6 +493,11 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
 
   // Mint future ids with a fresh session that avoids every session already
   // present in the document, so new edits cannot collide with loaded ids.
+  final views = [
+    for (final view in (json['views'] as List? ?? const []))
+      _decodeView(Map<String, dynamic>.from(view as Map)),
+  ];
+
   final usedSessions = <int>{};
   void collect(LocalId id) => usedSessions.add(id.session);
   nodes.keys.forEach(collect);
@@ -461,6 +505,10 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
   skins.keys.forEach(collect);
   animations.keys.forEach(collect);
   payloads.keys.forEach(collect);
+  for (final view in views) {
+    collect(view.cameraNode);
+    if (view.target != null) collect(view.target!);
+  }
 
   final doc = SceneDocument(
     documentId: documentId,
@@ -479,8 +527,21 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
   doc.skins.addAll(skins);
   doc.animations.addAll(animations);
   doc.payloads.addAll(payloads);
+  doc.views.addAll(views);
   return doc;
 }
+
+RenderViewSpec _decodeView(Map<String, dynamic> json) => RenderViewSpec(
+  cameraNode: LocalId.parse(json['camera'] as String),
+  target: json['target'] != null
+      ? LocalId.parse(json['target'] as String)
+      : null,
+  layerMask: json['layerMask'] as int? ?? 0xFFFFFFFF,
+  order: json['order'] as int? ?? 0,
+  antiAliasingMode: json['antiAliasing'] as String?,
+  renderScale: json['renderScale'] != null ? _d(json['renderScale']) : null,
+  filterQuality: json['filterQuality'] as String?,
+);
 
 Map<LocalId, V> _decodeIdMap<V>(
   Object? json,
@@ -605,6 +666,16 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
             ? LocalId.parse(json['payload'] as String)
             : null,
         asset: json['ref'] != null ? AssetRef(json['ref'] as String) : null,
+      );
+    case 'renderTexture':
+      return RenderTextureResource(
+        id,
+        width: json['width'] as int,
+        height: json['height'] as int,
+        update: json['update'] as String? ?? 'everyFrame',
+        intervalMilliseconds: json['intervalMilliseconds'] as int?,
+        filter: json['filter'] as String? ?? 'linear',
+        wrap: json['wrap'] as String? ?? 'clampToEdge',
       );
     case 'material':
       return MaterialResource(
@@ -735,6 +806,9 @@ StageMetadata _decodeStage(Map<String, dynamic> json) => StageMetadata(
   environmentIntensity: _d(json['environmentIntensity'] ?? 1.0),
   exposure: _d(json['exposure'] ?? 1.0),
   toneMapping: json['toneMapping'] as String? ?? 'pbrNeutral',
+  antiAliasingMode: json['antiAliasing'] as String? ?? 'auto',
+  renderScale: _d(json['renderScale'] ?? 1.0),
+  filterQuality: json['filterQuality'] as String? ?? 'medium',
   skybox: _decodeSkybox(json['skybox']),
   skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
 );

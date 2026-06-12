@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/node.dart';
 
 /// An engine [Component] that places a [Camera] in the scene.
 ///
@@ -11,9 +12,10 @@ import 'package:flutter_scene/src/components/component.dart';
 /// [projection] (the lens) is configured on the component. Move or rotate
 /// the node to move or aim the camera.
 ///
-/// Use [toCamera] to capture a [Camera] for the node's current transform to
-/// pass to `Scene.render`. (The node should not be scaled; a camera node is
-/// expected to carry only rotation and translation.)
+/// Use [toCamera] to get a [Camera] backed by the node, suitable for
+/// `Scene.render` or a persistent `RenderView`. (The node should not be
+/// scaled; a camera node is expected to carry only rotation and
+/// translation.)
 /// {@category Scene graph}
 class CameraComponent extends Component {
   /// Creates a camera component with the given [projection] (a
@@ -24,42 +26,49 @@ class CameraComponent extends Component {
   /// The lens projection for this camera.
   CameraProjection projection;
 
-  /// Returns a [Camera] for the owning node's current world transform.
+  /// Returns a [NodeCamera] backed by the owning node.
   ///
-  /// The returned camera snapshots the transform, so subsequently moving
-  /// the node does not change it; call [toCamera] again for an updated
-  /// view.
-  Camera toCamera() => _NodeCamera(node.globalTransform.clone(), projection);
+  /// The returned camera tracks the node: moving or rotating the node
+  /// moves the view on the next frame, so it is safe to hold in a
+  /// persistent `RenderView`.
+  NodeCamera toCamera() => NodeCamera(node, projection);
 }
 
-/// A [Camera] whose view comes from a world transform: the `+Z` axis is the
-/// look direction, `+Y` is up, and the translation is the eye. This is the
-/// inverse of the eye/target/up convention [PerspectiveCamera] builds, so a
-/// node placed at `inverse(camera.getViewMatrix())` yields the same view.
-class _NodeCamera extends Camera {
-  _NodeCamera(this._worldTransform, this.projection);
+/// A [Camera] whose view comes from a [node]'s world transform: the `+Z`
+/// axis is the look direction, `+Y` is up, and the translation is the eye.
+/// This is the inverse of the eye/target/up convention [PerspectiveCamera]
+/// builds, so a node placed at `inverse(camera.getViewMatrix())` yields
+/// the same view.
+///
+/// The transform is read at render time, so the camera tracks the node
+/// live. Usually obtained from [CameraComponent.toCamera].
+/// {@category Scene graph}
+class NodeCamera extends Camera {
+  /// Creates a camera that tracks [node] with the given [projection].
+  NodeCamera(this.node, this.projection);
 
-  final Matrix4 _worldTransform;
+  /// The node whose world transform drives the view.
+  final Node node;
 
   @override
   final CameraProjection projection;
+
+  Matrix4 get _worldTransform => node.globalTransform;
 
   @override
   Vector3 get position => _worldTransform.getTranslation();
 
   @override
-  Vector3 get forward => Vector3(
-    _worldTransform[8],
-    _worldTransform[9],
-    _worldTransform[10],
-  ).normalized();
+  Vector3 get forward {
+    final transform = _worldTransform;
+    return Vector3(transform[8], transform[9], transform[10]).normalized();
+  }
 
   @override
-  Vector3 get up => Vector3(
-    _worldTransform[4],
-    _worldTransform[5],
-    _worldTransform[6],
-  ).normalized();
+  Vector3 get up {
+    final transform = _worldTransform;
+    return Vector3(transform[4], transform[5], transform[6]).normalized();
+  }
 
   @override
   Matrix4 getViewMatrix() {

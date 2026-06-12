@@ -53,10 +53,31 @@ LocalId copyResourceInto(
       dest.addResource(
         TextureResource(resourceId, payload: payload, asset: asset),
       );
+    case RenderTextureResource(
+      :final width,
+      :final height,
+      :final update,
+      :final intervalMilliseconds,
+      :final filter,
+      :final wrap,
+    ):
+      dest.addResource(
+        RenderTextureResource(
+          resourceId,
+          width: width,
+          height: height,
+          update: update,
+          intervalMilliseconds: intervalMilliseconds,
+          filter: filter,
+          wrap: wrap,
+        ),
+      );
     case MaterialResource(:final type, :final properties, :final asset):
       for (final value in properties.values) {
-        if (value is ResourceRefValue &&
-            source.resource(value.id) is TextureResource) {
+        if (value is! ResourceRefValue) continue;
+        final referenced = source.resource(value.id);
+        if (referenced is TextureResource ||
+            referenced is RenderTextureResource) {
           copyResourceInto(dest, source, value.id);
         }
       }

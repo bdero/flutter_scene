@@ -16,6 +16,8 @@ import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/realize/views.dart';
+import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
@@ -246,23 +248,33 @@ class MeshCodec extends ComponentCodec {
     _textureProperty(
       properties,
       'baseColorTexture',
-      m.baseColorTexture,
+      m.baseColorTextureSource,
       context,
     );
     _textureProperty(
       properties,
       'metallicRoughnessTexture',
-      m.metallicRoughnessTexture,
+      m.metallicRoughnessTextureSource,
       context,
     );
-    _textureProperty(properties, 'normalTexture', m.normalTexture, context);
+    _textureProperty(
+      properties,
+      'normalTexture',
+      m.normalTextureSource,
+      context,
+    );
     _textureProperty(
       properties,
       'occlusionTexture',
-      m.occlusionTexture,
+      m.occlusionTextureSource,
       context,
     );
-    _textureProperty(properties, 'emissiveTexture', m.emissiveTexture, context);
+    _textureProperty(
+      properties,
+      'emissiveTexture',
+      m.emissiveTextureSource,
+      context,
+    );
     return context.document
         .addResource(
           MaterialResource(
@@ -282,7 +294,7 @@ class MeshCodec extends ComponentCodec {
     _textureProperty(
       properties,
       'baseColorTexture',
-      m.baseColorTexture,
+      m.baseColorTextureSource,
       context,
     );
     return context.document
@@ -298,14 +310,22 @@ class MeshCodec extends ComponentCodec {
 
   ColorValue _color(Vector4 v) => ColorValue(v.x, v.y, v.z, v.w);
 
+  // [source] is the slot's raw value: a gpu.Texture, a live RenderTexture
+  // (serialized from its live state by id), or null.
   void _textureProperty(
     Map<String, PropertyValue> properties,
     String key,
-    gpu.Texture? texture,
+    Object? source,
     SerializeContext context,
   ) {
-    if (texture == null) return;
-    final id = _serializeTexture(texture, context);
+    if (source == null) return;
+    if (source is RenderTexture) {
+      properties[key] = ResourceRefValue(
+        serializeRenderTexture(source, context),
+      );
+      return;
+    }
+    final id = _serializeTexture(source as gpu.Texture, context);
     if (id == null) {
       debugPrint('fscene: material texture "$key" not serialized');
       return;

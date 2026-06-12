@@ -452,6 +452,15 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         properties: _remapProperties(r.properties, remap),
         asset: r.asset,
       ),
+      RenderTextureResource() => RenderTextureResource(
+        remap(r.id),
+        width: r.width,
+        height: r.height,
+        update: r.update,
+        intervalMilliseconds: r.intervalMilliseconds,
+        filter: r.filter,
+        wrap: r.wrap,
+      ),
     };
 
 PayloadSpec _remapPayload(PayloadSpec p, LocalId Function(LocalId) remap) =>

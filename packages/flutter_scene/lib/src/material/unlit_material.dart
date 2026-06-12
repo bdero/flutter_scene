@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
@@ -28,6 +27,12 @@ class UnlitMaterial extends Material {
   }
 
   Object? _baseColorSource;
+
+  /// The raw slot source (a gpu.Texture, a RenderTexture, or null), for
+  /// serialization, which must see the handle rather than the resolved
+  /// frame.
+  @internal
+  Object? get baseColorTextureSource => _baseColorSource;
 
   /// The base color texture, sampled and multiplied by [baseColorFactor].
   ///

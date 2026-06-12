@@ -28,6 +28,21 @@ sealed class RenderTextureUpdate {
   /// Render once when first wired, then only when
   /// [RenderTexture.requestUpdate] is called.
   static const RenderTextureUpdate manual = _ManualUpdate();
+
+  /// The policy's serialized name (`everyFrame`, `interval`, `manual`).
+  @internal
+  String get kindName => switch (this) {
+    _EveryFrameUpdate() => 'everyFrame',
+    _IntervalUpdate() => 'interval',
+    _ManualUpdate() => 'manual',
+  };
+
+  /// The interval for [RenderTextureUpdate.interval] policies, else null.
+  @internal
+  Duration? get intervalDuration => switch (this) {
+    _IntervalUpdate(:final duration) => duration,
+    _ => null,
+  };
 }
 
 class _EveryFrameUpdate extends RenderTextureUpdate {

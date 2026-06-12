@@ -11,6 +11,19 @@
   that sizes the target from widget layout). Views also gain a per-view
   `antiAliasingMode` override that defaults to the scene's setting.
 
+* Render targets serialize in `.fscene`. Documents gain a
+  `renderTexture` resource kind (size, update policy, sampling) and a
+  top-level `views` array binding camera nodes to targets with per-view
+  settings; material texture slots reference the same resource id the
+  producing view targets, so the wiring survives a round trip. Realize
+  with the new `realizeViews` (after `realizeScene`, sharing live
+  targets with the materials that sample them) and write back with
+  `serializeViews`. The stage now also carries the scene's
+  anti-aliasing mode, render scale, and filter quality. `CameraComponent.
+  toCamera()` now returns a `NodeCamera` that tracks its node live
+  (previously it snapshotted the transform), so node-driven cameras work
+  in persistent views.
+
 * Material texture slots now accept a `RenderTexture` for live
   render-to-texture sampling, the security-camera/monitor/mirror
   pattern. `PhysicallyBasedMaterial` and `UnlitMaterial` texture setters
