@@ -1,5 +1,16 @@
 ## 0.18.0
 
+* Added offscreen render targets. A `RenderTexture` is a fixed-size target
+  a `RenderView` can render into (`RenderView.target`); add such views to
+  the new `Scene.views` list and they render whenever the scene renders,
+  ordered before the screen views. The target's `update` policy
+  (`everyFrame`, `interval`, or `manual` + `requestUpdate`, mirroring
+  `WidgetUpdatePolicy`) controls re-render cadence, and `resize`
+  reallocates on the fly. Display a live target in the widget tree with
+  the new `RenderTextureView` widget (with an opt-in `followLayout` mode
+  that sizes the target from widget layout). Views also gain a per-view
+  `antiAliasingMode` override that defaults to the scene's setting.
+
 * Added FXAA and an automatic anti-aliasing mode. `AntiAliasingMode` gains
   `fxaa` (a post-process pass over the tone-mapped image, available on
   every backend) and `auto` (MSAA where the backend supports it, FXAA
