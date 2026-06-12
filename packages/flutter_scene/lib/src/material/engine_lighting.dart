@@ -88,6 +88,49 @@ class EngineLightingUniforms {
     fragInfo[159] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
   }
 
+  // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound
+  // prefiltered radiance's layout in the shader (RadianceLayoutInfo in
+  // texture.glsl); device-resident so binding needs no per-frame buffer.
+  static final gpu.BufferView _mipLayoutOn = _layoutFlagBuffer(1.0);
+  static final gpu.BufferView _mipLayoutOff = _layoutFlagBuffer(0.0);
+
+  static gpu.BufferView _layoutFlagBuffer(double flag) {
+    final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
+      ByteData.sublistView(Float32List(4)..[0] = flag),
+    );
+    return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: 16);
+  }
+
+  /// Binds the prefiltered radiance sampler plus the `RadianceLayoutInfo`
+  /// block that tells `SamplePrefilteredRadiance` which layout the bound
+  /// texture uses. Every engine site that binds `prefiltered_radiance`
+  /// goes through this so the texture and its layout flag never disagree.
+  static void bindPrefilteredRadiance(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    EnvironmentMap env,
+  ) {
+    final mipLayout = env.usesMipRadianceLayout;
+    // Horizontal repeat (longitude wraps), vertical clamp. The mip layout
+    // needs a linear mip filter for textureLod to take effect; the legacy
+    // band atlas has a single level, where the mip filter is inert.
+    pass.bindTexture(
+      shader.getUniformSlot('prefiltered_radiance'),
+      env.prefilteredRadianceTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        mipFilter: mipLayout ? gpu.MipFilter.linear : gpu.MipFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    pass.bindUniform(
+      shader.getUniformSlot('RadianceLayoutInfo'),
+      mipLayout ? _mipLayoutOn : _mipLayoutOff,
+    );
+  }
+
   /// Binds the engine image-based-lighting and shadow samplers
   /// (`prefiltered_radiance`, `brdf_lut`, `shadow_map`) on [shader].
   static void bindEngineTextures(
@@ -96,18 +139,7 @@ class EngineLightingUniforms {
     Lighting lighting,
     EnvironmentMap env,
   ) {
-    // Specular IBL atlas: horizontal repeat (longitude wraps), vertical clamp
-    // (roughness bands must not bleed).
-    pass.bindTexture(
-      shader.getUniformSlot('prefiltered_radiance'),
-      env.prefilteredRadianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
+    bindPrefilteredRadiance(pass, shader, env);
     pass.bindTexture(
       shader.getUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),

@@ -195,11 +195,15 @@ base class ColorAttachment {
     this.storeAction = StoreAction.store,
     Object? clearValue,
     required this.texture,
+    this.mipLevel = 0,
+    this.slice = 0,
     this.resolveTexture,
   });
   LoadAction loadAction;
   StoreAction storeAction;
   Texture texture;
+  int mipLevel;
+  int slice;
   Texture? resolveTexture;
 }
 
@@ -212,6 +216,8 @@ base class DepthStencilAttachment {
     this.stencilStoreAction = StoreAction.dontCare,
     this.stencilClearValue = 0,
     required this.texture,
+    this.mipLevel = 0,
+    this.slice = 0,
   });
   LoadAction depthLoadAction;
   StoreAction depthStoreAction;
@@ -220,6 +226,8 @@ base class DepthStencilAttachment {
   StoreAction stencilStoreAction;
   int stencilClearValue;
   Texture texture;
+  int mipLevel;
+  int slice;
 }
 
 base class StencilConfig {

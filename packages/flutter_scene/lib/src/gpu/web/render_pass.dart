@@ -10,6 +10,8 @@ base class ColorAttachment {
     this.storeAction = StoreAction.store,
     vm.Vector4? clearValue,
     required this.texture,
+    this.mipLevel = 0,
+    this.slice = 0,
     this.resolveTexture,
   }) : clearValue = clearValue ?? vm.Vector4.zero();
 
@@ -17,6 +19,15 @@ base class ColorAttachment {
   StoreAction storeAction;
   vm.Vector4 clearValue;
   Texture texture;
+
+  /// The mip level of [texture] to render into.
+  int mipLevel;
+
+  /// The slice of [texture] to render into. Cubemap textures are not
+  /// supported on the web backend, so this must be 0.
+  // TODO(rendertarget): cubemap slices on the web backend.
+  int slice;
+
   Texture? resolveTexture;
 }
 
@@ -29,6 +40,8 @@ base class DepthStencilAttachment {
     this.stencilStoreAction = StoreAction.dontCare,
     this.stencilClearValue = 0,
     required this.texture,
+    this.mipLevel = 0,
+    this.slice = 0,
   });
 
   LoadAction depthLoadAction;
@@ -38,6 +51,13 @@ base class DepthStencilAttachment {
   StoreAction stencilStoreAction;
   int stencilClearValue;
   Texture texture;
+
+  /// The mip level of [texture] to render into.
+  int mipLevel;
+
+  /// The slice of [texture] to render into. Cubemap textures are not
+  /// supported on the web backend, so this must be 0.
+  int slice;
 }
 
 base class StencilConfig {
@@ -187,24 +207,44 @@ base class RenderPass {
     if (_target.colorAttachments.isEmpty) {
       throw Exception('RenderTarget must have at least one color attachment');
     }
-    final color = _target.colorAttachments.first.texture;
+    final colorAttachment = _target.colorAttachments.first;
+    final color = colorAttachment.texture;
+    final mipLevel = colorAttachment.mipLevel;
     final depth = _target.depthStencilAttachment?.texture;
+    if (colorAttachment.slice != 0 ||
+        (_target.depthStencilAttachment?.slice ?? 0) != 0) {
+      throw UnsupportedError(
+        'Rendering to texture slices is not supported on the web backend',
+      );
+    }
+    if ((_target.depthStencilAttachment?.mipLevel ?? 0) != 0) {
+      throw UnsupportedError(
+        'Rendering to a depth mip level is not supported on the web backend',
+      );
+    }
 
     // Configured framebuffers (including the completeness check, a
     // synchronous GPU round trip) are cached per attachment combination.
     final fbo = _gpuContext._framebufferFor(
       color,
+      mipLevel,
       depth,
-      () => _createFramebuffer(gl, color, depth),
+      () => _createFramebuffer(gl, color, mipLevel, depth),
     );
     _fbo = fbo;
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
-    gl.viewport(0, 0, color.width, color.height);
+    gl.viewport(
+      0,
+      0,
+      (color.width >> mipLevel).clamp(1, color.width).toInt(),
+      (color.height >> mipLevel).clamp(1, color.height).toInt(),
+    );
   }
 
   static web.WebGLFramebuffer _createFramebuffer(
     web.WebGL2RenderingContext gl,
     Texture color,
+    int mipLevel,
     Texture? depth,
   ) {
     final fbo = gl.createFramebuffer();
@@ -219,9 +259,13 @@ base class RenderPass {
         web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
         web.WebGL2RenderingContext.TEXTURE_2D,
         color.glTexture,
-        0,
+        mipLevel,
       );
     } else {
+      assert(
+        mipLevel == 0,
+        'Multisampled attachments cannot target a mip level',
+      );
       gl.framebufferRenderbuffer(
         web.WebGL2RenderingContext.FRAMEBUFFER,
         web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
@@ -502,9 +546,7 @@ base class RenderPass {
       gl.texParameteri(
         web.WebGL2RenderingContext.TEXTURE_2D,
         web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
-        sampler.minFilter == MinMagFilter.nearest
-            ? web.WebGL2RenderingContext.NEAREST
-            : web.WebGL2RenderingContext.LINEAR,
+        _glMinFilter(sampler, texture),
       );
       gl.texParameteri(
         web.WebGL2RenderingContext.TEXTURE_2D,
@@ -524,6 +566,28 @@ base class RenderPass {
         _glAddressMode(sampler.heightAddressMode),
       );
     }
+  }
+
+  // The GL minification filter for [sampler]. Mipmap modes apply only when
+  // the texture actually has mip levels; a mipmap MIN_FILTER on a
+  // single-level texture is incomplete in GL and samples black.
+  static int _glMinFilter(SamplerOptions sampler, Texture texture) {
+    final nearest = sampler.minFilter == MinMagFilter.nearest;
+    if (texture.mipLevelCount <= 1) {
+      return nearest
+          ? web.WebGL2RenderingContext.NEAREST
+          : web.WebGL2RenderingContext.LINEAR;
+    }
+    return switch ((nearest, sampler.mipFilter)) {
+      (true, MipFilter.nearest) =>
+        web.WebGL2RenderingContext.NEAREST_MIPMAP_NEAREST,
+      (true, MipFilter.linear) =>
+        web.WebGL2RenderingContext.NEAREST_MIPMAP_LINEAR,
+      (false, MipFilter.nearest) =>
+        web.WebGL2RenderingContext.LINEAR_MIPMAP_NEAREST,
+      (false, MipFilter.linear) =>
+        web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR,
+    };
   }
 
   static int _glAddressMode(SamplerAddressMode mode) {

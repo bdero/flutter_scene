@@ -19,11 +19,10 @@ vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
 
 vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
   vec2 uv = SphericalToEquirectangular(direction);
-  // textureLod is not supported in GLSL ES 1.0. But it doesn't matter anyway,
-  // since this function will eventually use `textureCubeLod` once environment
-  // maps are fixed.
-  //return textureLod(tex, uv, lod).rgb;
-  return texture(tex, uv).rgb;
+  // Compiles to texture2DLodEXT (GL_EXT_shader_texture_lod) on the GLES
+  // 1.00 dialect; the sampler must use a mipmap min filter for the lod to
+  // take effect.
+  return textureLod(tex, uv, lod).rgb;
 }
 
 // Inverse of SphericalToEquirectangular: maps an equirectangular UV back to
@@ -36,26 +35,53 @@ vec3 EquirectangularToSpherical(vec2 uv) {
 }
 
 //------------------------------------------------------------------------------
-/// Prefiltered radiance atlas.
+/// Prefiltered radiance.
 ///
-/// The specular IBL is sampled from a "PMREM-style" atlas: kPrefilterBands
-/// equirectangular bands stacked vertically, band i prefiltered for
-/// perceptual roughness i / (kPrefilterBands - 1) (band 0 = mirror, the last
-/// band = fully rough). Generated once by flutter_scene_prefilter_env.frag;
-/// the layout here must match env_prefilter.dart.
+/// The specular IBL is sampled from a "PMREM-style" prefiltered equirect:
+/// kPrefilterBands roughness bands, band i prefiltered for perceptual
+/// roughness i / (kPrefilterBands - 1) (band 0 = mirror, the last band =
+/// fully rough). Two layouts exist (see env_prefilter.dart, which this must
+/// match):
+///  * mip layout: one equirect whose mip level i is band i, sampled with
+///    textureLod (hardware trilinear between bands).
+///  * legacy band atlas: the bands stacked vertically in one texture,
+///    sampled with a manual two-band lerp.
+/// The engine binds RadianceLayoutInfo alongside the prefiltered_radiance
+/// sampler to select the bound texture's layout.
 ///
 
 const float kPrefilterBands = 8.0;
 const float kPrefilterBandHeight = 256.0;
 // Keep bilinear taps from bleeding across the seam between bands: clamp the
-// in-band V to one texel from each edge.
+// in-band V to one texel from each edge (legacy band-atlas layout only).
 const float kPrefilterBandEdgeClamp = 1.0 / kPrefilterBandHeight;
 
-// Samples the prefiltered radiance atlas for reflection `direction` at the
-// given perceptual `roughness`, interpolating between the two nearest
-// bands. Sample the atlas with a horizontal-repeat / vertical-clamp sampler.
+uniform RadianceLayoutInfo {
+  // 1.0 when the bound prefiltered_radiance stores its roughness bands as
+  // mip levels; 0.0 for the legacy stacked-band atlas.
+  float mip_layout;
+}
+radiance_layout_info;
+
+// Samples a mip-layout prefiltered radiance texture (band i in mip level
+// i) for reflection `direction` at the given perceptual `roughness`. The
+// sampler must use a linear mip filter for the lod to take effect.
+vec3 SamplePrefilteredRadianceLod(sampler2D radiance, vec3 direction,
+                                  float roughness) {
+  vec2 eq = SphericalToEquirectangular(direction);
+  float lod = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);
+  return textureLod(radiance, eq, lod).rgb;
+}
+
+// Samples the prefiltered radiance for reflection `direction` at the given
+// perceptual `roughness`, dispatching on the bound texture's layout (see
+// RadianceLayoutInfo). Sample with a horizontal-repeat / vertical-clamp
+// sampler.
 vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
                                float roughness) {
+  if (radiance_layout_info.mip_layout > 0.5) {
+    return SamplePrefilteredRadianceLod(atlas, direction, roughness);
+  }
   vec2 eq = SphericalToEquirectangular(direction);
   eq.y = clamp(eq.y, kPrefilterBandEdgeClamp, 1.0 - kPrefilterBandEdgeClamp);
   float band = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);

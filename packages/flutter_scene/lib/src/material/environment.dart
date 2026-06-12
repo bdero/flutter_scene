@@ -59,10 +59,22 @@ base class EnvironmentMap {
     );
   }
 
-  /// Wraps an already-built prefiltered-radiance atlas.
+  /// Whether newly built environments store their prefiltered roughness
+  /// bands as mip levels of one equirect (sampled with hardware trilinear
+  /// `textureLod`) rather than the legacy vertically stacked band atlas.
+  /// Defaults to true.
   ///
-  /// [prefilteredRadiance] must be a roughness-band atlas as produced by
-  /// [prefilterEquirectRadiance]. The diffuse term comes from
+  /// The legacy layout remains supported for comparison and as a fallback
+  /// while backends are verified. Each environment carries its own layout
+  /// (detected from its texture), so flipping this affects only
+  /// environments built afterwards.
+  static bool useMipRadianceLayout = true;
+
+  /// Wraps an already-built prefiltered radiance texture.
+  ///
+  /// [prefilteredRadiance] is either layout produced by
+  /// [prefilterEquirectRadiance] (mip levels or the legacy band atlas,
+  /// detected from the texture's mip count). The diffuse term comes from
   /// [diffuseSphericalHarmonics] ([kDiffuseShCoefficientCount] RGB
   /// coefficients with the Lambertian convolution and `1/pi` already folded
   /// in, as [computeDiffuseSphericalHarmonics] returns), or from
@@ -98,7 +110,10 @@ base class EnvironmentMap {
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
-    final prefilteredRadiance = prefilterEquirectRadiance(radianceTexture);
+    final prefilteredRadiance = prefilterEquirectRadiance(
+      radianceTexture,
+      mipLayout: EnvironmentMap.useMipRadianceLayout,
+    );
     final sh =
         diffuseSphericalHarmonics ??
         await computeDiffuseSphericalHarmonics(radianceImage);
@@ -149,6 +164,7 @@ base class EnvironmentMap {
     final prefilteredRadiance = prefilterEquirectRadiance(
       radianceTexture,
       sourceIsLinear: true,
+      mipLayout: EnvironmentMap.useMipRadianceLayout,
     );
     final sh =
         diffuseSphericalHarmonics ??
@@ -239,7 +255,10 @@ base class EnvironmentMap {
       _studioEnvHeight,
     )..overwrite(ByteData.sublistView(pixels));
     return EnvironmentMap._(
-      prefilterEquirectRadiance(radianceTexture),
+      prefilterEquirectRadiance(
+        radianceTexture,
+        mipLayout: EnvironmentMap.useMipRadianceLayout,
+      ),
       _projectEquirectToSphericalHarmonics(
         pixels,
         _studioEnvWidth,
@@ -490,15 +509,22 @@ base class EnvironmentMap {
   final List<Vector3> _diffuseSphericalHarmonics;
   final gpu.Texture _diffuseShTexture;
 
-  // TODO(bdero): Once mipmapped cubemaps land in Flutter GPU, replace this
-  // equirectangular atlas with a real prefiltered cubemap.
+  // TODO(bdero): Replace the equirectangular prefilter with a real
+  // prefiltered cubemap (render-to-slice and mipmapped textures make it
+  // possible now), removing the pole distortion.
   // (https://github.com/flutter/flutter/issues/145027)
-  /// The prefiltered-radiance atlas sampled for specular IBL.
+  /// The prefiltered radiance texture sampled for specular IBL.
   ///
-  /// A vertical atlas of equirectangular roughness bands (see
-  /// [prefilterEquirectRadiance]); the standard fragment shader samples it
+  /// Equirectangular roughness bands, stored as mip levels or as the
+  /// legacy vertical band atlas (see [prefilterEquirectRadiance] and
+  /// [usesMipRadianceLayout]); the standard fragment shader samples it
   /// via `SamplePrefilteredRadiance`.
   gpu.Texture get prefilteredRadianceTexture => _prefilteredRadianceTexture;
+
+  /// Whether [prefilteredRadianceTexture] stores its roughness bands as
+  /// mip levels (see [useMipRadianceLayout]).
+  bool get usesMipRadianceLayout =>
+      _prefilteredRadianceTexture.mipLevelCount > 1;
 
   /// The [kDiffuseShCoefficientCount] RGB L2 spherical-harmonic
   /// coefficients describing the diffuse (Lambertian) irradiance.

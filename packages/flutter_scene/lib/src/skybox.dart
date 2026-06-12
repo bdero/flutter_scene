@@ -5,6 +5,7 @@ library;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 
@@ -126,15 +127,10 @@ class ShaderSkySource extends SkySource {
       );
     }
     if (useEnvironment) {
-      pass.bindTexture(
-        fragmentShader.getUniformSlot('prefiltered_radiance'),
-        environment.prefilteredRadianceTexture,
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-          widthAddressMode: gpu.SamplerAddressMode.repeat,
-          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        ),
+      EngineLightingUniforms.bindPrefilteredRadiance(
+        pass,
+        fragmentShader,
+        environment,
       );
       pass.bindTexture(
         fragmentShader.getUniformSlot('brdf_lut'),
