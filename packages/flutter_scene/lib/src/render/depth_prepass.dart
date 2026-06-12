@@ -239,12 +239,12 @@ class _DepthPrepassEncoder {
         nodeWindingFlipped: item.windingFlipped,
       );
       if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, _transientsBuffer, packed.ccw);
+        bindInstanceTransforms(_renderPass, packed.ccw);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         item.geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, _transientsBuffer, packed.cw);
+        bindInstanceTransforms(_renderPass, packed.cw);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         item.geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
@@ -259,11 +259,7 @@ class _DepthPrepassEncoder {
       _cameraPosition,
     );
     if (item.geometry.instancedVertexLayout != null) {
-      bindSingleInstanceTransform(
-        _renderPass,
-        _transientsBuffer,
-        item.worldTransform,
-      );
+      bindSingleInstanceTransform(_renderPass, item.worldTransform);
     }
     _renderPass.setWindingOrder(
       item.windingFlipped

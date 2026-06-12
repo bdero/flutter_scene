@@ -64,23 +64,35 @@ PackedInstanceTransforms packInstanceTransforms(
 /// Every draw through the unskinned vertex shader needs this: the model
 /// matrix arrives via instance attributes whether or not the draw is
 /// instanced.
-void bindSingleInstanceTransform(
-  gpu.RenderPass pass,
-  gpu.HostBuffer transientsBuffer,
-  Matrix4 worldTransform,
-) {
-  final view = transientsBuffer.emplace(
-    Float32List.fromList(worldTransform.storage).buffer.asByteData(),
-  );
-  pass.bindVertexBuffer(view, slot: 1);
+void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
+  bindInstanceTransforms(pass, Float32List.fromList(worldTransform.storage));
 }
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
-void bindInstanceTransforms(
-  gpu.RenderPass pass,
-  gpu.HostBuffer transientsBuffer,
-  Float32List packed,
-) {
-  final view = transientsBuffer.emplace(packed.buffer.asByteData());
-  pass.bindVertexBuffer(view, slot: 1);
+///
+/// The transforms go into a dedicated [gpu.DeviceBuffer] rather than the
+/// per-frame transient uniform `HostBuffer`. On the GLES backend a vertex
+/// buffer sourced from that shared host buffer reads corrupted data,
+/// because the same buffer also serves the uniform emplacements issued
+/// later in the same draw (`Material.bind`) and GLES binds vertex
+/// attributes by stateful pointer into the live buffer object; the
+/// symptom was objects toggling between transforms. A standalone buffer
+/// is never disturbed by other emplacements, so the binding stays valid
+/// on every backend. The render pass keeps the buffer alive through
+/// submission via the recorded binding.
+// TODO(instance-buffer-pool): this allocates a device buffer per draw per
+// frame. Fine for typical scenes; pool these for instance-heavy scenes.
+void bindInstanceTransforms(gpu.RenderPass pass, Float32List packed) {
+  if (packed.isEmpty) return;
+  final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
+    ByteData.sublistView(packed),
+  );
+  pass.bindVertexBuffer(
+    gpu.BufferView(
+      buffer,
+      offsetInBytes: 0,
+      lengthInBytes: packed.lengthInBytes,
+    ),
+    slot: 1,
+  );
 }
