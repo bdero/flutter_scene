@@ -36,10 +36,16 @@ const int kDiffuseShCoefficientCount = 9;
 /// override it via `PhysicallyBasedMaterial.environment`.
 /// {@category Lighting and environment}
 base class EnvironmentMap {
-  EnvironmentMap._(this._prefilteredRadianceTexture, List<Vector3> sh)
-    : assert(sh.length == kDiffuseShCoefficientCount),
-      _diffuseSphericalHarmonics = sh,
-      _diffuseShTexture = _shTextureFromList(sh);
+  EnvironmentMap._(
+    this._prefilteredRadianceTexture,
+    List<Vector3> sh, {
+    gpu.Texture? rebakeSource,
+    bool rebakeSourceIsLinear = false,
+  }) : assert(sh.length == kDiffuseShCoefficientCount),
+       _diffuseSphericalHarmonics = sh,
+       _diffuseShTexture = _shTextureFromList(sh) {
+    _registerForWarmupRebakeIfCold(rebakeSource, rebakeSourceIsLinear);
+  }
 
   // Wraps an already-built prefiltered atlas and a GPU-computed SH coefficient
   // texture (the diffuse term lives only on the GPU, so the coefficient list
@@ -136,7 +142,11 @@ base class EnvironmentMap {
     final sh =
         diffuseSphericalHarmonics ??
         await computeDiffuseSphericalHarmonics(radianceImage);
-    return EnvironmentMap._(prefilteredRadiance, sh);
+    return EnvironmentMap._(
+      prefilteredRadiance,
+      sh,
+      rebakeSource: radianceTexture,
+    );
   }
 
   /// Loads an [EnvironmentMap] from an equirectangular sRGB radiance image
@@ -188,7 +198,12 @@ base class EnvironmentMap {
     final sh =
         diffuseSphericalHarmonics ??
         _projectLinearEquirectToSphericalHarmonics(linearPixels, width, height);
-    return EnvironmentMap._(prefilteredRadiance, sh);
+    return EnvironmentMap._(
+      prefilteredRadiance,
+      sh,
+      rebakeSource: radianceTexture,
+      rebakeSourceIsLinear: true,
+    );
   }
 
   /// Bakes a sky into an environment for image-based lighting.
@@ -283,6 +298,7 @@ base class EnvironmentMap {
         _studioEnvWidth,
         _studioEnvHeight,
       ),
+      rebakeSource: radianceTexture,
     );
   }
 
@@ -524,9 +540,77 @@ base class EnvironmentMap {
 
   static double _srgbToLinear(double c) => math.pow(c, 2.2).toDouble();
 
-  final gpu.Texture _prefilteredRadianceTexture;
+  // Not final: re-baked in place once the web GL context is warm (see
+  // [markContextWarmAndRebakeRadiance]).
+  gpu.Texture _prefilteredRadianceTexture;
   final List<Vector3> _diffuseSphericalHarmonics;
   final gpu.Texture _diffuseShTexture;
+
+  // The equirect source this environment was prefiltered from, retained only
+  // while it awaits a warm-context re-bake (web only); dropped once re-baked
+  // or when built warm, so steady-state memory is unchanged.
+  gpu.Texture? _rebakeSource;
+  bool _rebakeSourceIsLinear = false;
+
+  // Environments built on a cold web GL context, before the first frame is
+  // composited, get a degenerate radiance prefilter (the float
+  // render-to-texture only works once the context is warm). They are tracked
+  // here and re-baked once on the first warm frame.
+  // TODO(web-warmup): this covers the equirect-source environments (studio,
+  // fromUIImages/fromAssets, fromEquirectHdr). A sky-baked environment
+  // (EnvironmentMap.fromSky, which has no equirect source) built cold is not
+  // re-baked here; a Scene.skyEnvironment with a refresh policy re-bakes
+  // itself, but a one-shot fromSky stays dim until the next bake. Retain the
+  // SkySource to re-bake it the same way if that becomes a real case.
+  static final List<EnvironmentMap> _coldBuiltEnvironments = <EnvironmentMap>[];
+  static bool _contextWarm = false;
+
+  void _registerForWarmupRebakeIfCold(gpu.Texture? source, bool isLinear) {
+    // Only the web backend has the cold-context prefilter problem; elsewhere
+    // the source is never retained and nothing is re-baked.
+    if (source == null || !kIsWeb || _contextWarm) {
+      return;
+    }
+    _rebakeSource = source;
+    _rebakeSourceIsLinear = isLinear;
+    _coldBuiltEnvironments.add(this);
+  }
+
+  void _rebakeRadianceForWarmup() {
+    final source = _rebakeSource;
+    if (source == null) {
+      return;
+    }
+    _rebakeSource = null;
+    _prefilteredRadianceTexture = prefilterEquirectRadiance(
+      source,
+      sourceIsLinear: _rebakeSourceIsLinear,
+      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
+    );
+  }
+
+  /// Marks the GL context warm and re-bakes the radiance of every environment
+  /// built while it was cold.
+  ///
+  /// On the web backend the radiance prefilter (a float render-to-texture) is
+  /// degenerate until the context has presented and the browser composited its
+  /// first frame; environments built before then (the lazily built default,
+  /// or any the app built in `initState`) hold their source equirect and
+  /// re-bake here once warm, fixing the dim image-based specular lighting.
+  /// Called from `Scene.renderViews` after the first frame is presented; a
+  /// no-op once run and on backends that never registered an environment
+  /// (everything but web).
+  @internal
+  static void markContextWarmAndRebakeRadiance() {
+    if (_contextWarm) {
+      return;
+    }
+    _contextWarm = true;
+    for (final environment in _coldBuiltEnvironments) {
+      environment._rebakeRadianceForWarmup();
+    }
+    _coldBuiltEnvironments.clear();
+  }
 
   // TODO(bdero): Replace the equirectangular prefilter with a real
   // prefiltered cubemap (render-to-slice and mipmapped textures make it
