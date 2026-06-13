@@ -1,0 +1,183 @@
+{
+  "fscene": 1,
+  "documentId": "V9MQ4DTWP90B193CSY2C4JAPZG",
+  "stage": {
+    "upAxis": "y",
+    "handedness": "left",
+    "unitsPerMeter": 1.0,
+    "environment": {
+      "type": "studio"
+    },
+    "environmentIntensity": 1.0,
+    "exposure": 1.0,
+    "toneMapping": "pbrNeutral"
+  },
+  "resources": {
+    "geo:00000SG000000": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000SG000002": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.5, 0.5, 0.55, 1.0]
+        }
+      }
+    },
+    "geo:00000SG000006": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000SG000008": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.85, 0.2, 0.2, 1.0]
+        }
+      }
+    },
+    "geo:00000SG00000C": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "sphere",
+        "radius": 0.5,
+        "segments": 32,
+        "rings": 16
+      }
+    },
+    "mat:00000SG00000E": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.2, 0.75, 0.3, 1.0]
+        }
+      }
+    },
+    "geo:00000SG00000J": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000SG00000M": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.2, 0.4, 0.85, 1.0]
+        }
+      }
+    }
+  },
+  "nodes": {
+    "n:00000SG000004": {
+      "name": "Floor",
+      "transform": {
+        "trs": {
+          "t": [0.0, -1.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [6.0, 0.20000000298023224, 6.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SG000000"
+            },
+            "material": {
+              "rref": "mat:00000SG000002"
+            }
+          }
+        }
+      ]
+    },
+    "n:00000SG00000A": {
+      "name": "RedBox",
+      "transform": {
+        "trs": {
+          "t": [-1.5, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SG000006"
+            },
+            "material": {
+              "rref": "mat:00000SG000008"
+            }
+          }
+        }
+      ]
+    },
+    "n:00000SG00000G": {
+      "name": "GreenBall",
+      "transform": {
+        "trs": {
+          "t": [1.5, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SG00000C"
+            },
+            "material": {
+              "rref": "mat:00000SG00000E"
+            }
+          }
+        }
+      ]
+    },
+    "n:00000SG00000P": {
+      "name": "BlueTower",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.5, -1.5],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [0.6000000238418579, 2.0, 0.6000000238418579]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SG00000J"
+            },
+            "material": {
+              "rref": "mat:00000SG00000M"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "roots": [
+    "n:00000SG000004",
+    "n:00000SG00000A",
+    "n:00000SG00000G",
+    "n:00000SG00000P"
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "fscene": 1,
+  "documentId": "YQRWS4QGYH0JK5C4YP356RM0NR",
+  "stage": {
+    "upAxis": "y",
+    "handedness": "left",
+    "unitsPerMeter": 1.0,
+    "environment": {
+      "type": "studio"
+    },
+    "environmentIntensity": 1.0,
+    "exposure": 1.0,
+    "toneMapping": "pbrNeutral"
+  },
+  "resources": {
+    "geo:00000SR000002": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000SR000004": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.4, 0.26, 0.13, 1.0]
+        }
+      }
+    },
+    "geo:00000SR000008": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "sphere",
+        "radius": 0.5,
+        "segments": 32,
+        "rings": 16
+      }
+    },
+    "mat:00000SR00000A": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.18, 0.55, 0.2, 1.0]
+        }
+      }
+    }
+  },
+  "nodes": {
+    "n:00000SR000000": {
+      "name": "Tree",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "children": [
+        "n:00000SR000006",
+        "n:00000SR00000C"
+      ]
+    },
+    "n:00000SR000006": {
+      "name": "Trunk",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [0.30000001192092896, 1.0, 0.30000001192092896]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SR000002"
+            },
+            "material": {
+              "rref": "mat:00000SR000004"
+            }
+          }
+        }
+      ]
+    },
+    "n:00000SR00000C": {
+      "name": "Foliage",
+      "transform": {
+        "trs": {
+          "t": [0.0, 1.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000SR000008"
+            },
+            "material": {
+              "rref": "mat:00000SR00000A"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "roots": [
+    "n:00000SR000000"
+  ]
+}

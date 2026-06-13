@@ -1,0 +1,61 @@
+{
+  "fscene": 1,
+  "documentId": "RBNANBY0DD5PV7A7HNH3ZS389W",
+  "stage": {
+    "upAxis": "y",
+    "handedness": "left",
+    "unitsPerMeter": 1.0,
+    "environment": {
+      "type": "studio"
+    },
+    "environmentIntensity": 1.0,
+    "exposure": 1.0,
+    "toneMapping": "pbrNeutral"
+  },
+  "resources": {
+    "geo:00000S8000000": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000S8000002": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.8, 0.2, 0.2, 1.0]
+        }
+      }
+    }
+  },
+  "nodes": {
+    "n:00000S8000004": {
+      "name": "Cube",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000S8000000"
+            },
+            "material": {
+              "rref": "mat:00000S8000002"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "roots": [
+    "n:00000S8000004"
+  ]
+}
