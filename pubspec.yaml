@@ -12,3 +12,4 @@ workspace:
   - examples/flutter_app
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render
+  - examples/editor_example

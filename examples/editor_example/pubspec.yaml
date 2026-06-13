@@ -1,0 +1,16 @@
+name: editor_example
+description: Runnable example app for the flutter_scene editor.
+publish_to: none
+version: 0.1.0
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.29.0-1.0.pre.242'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene_editor:
+    path: ../../packages/flutter_scene_editor
