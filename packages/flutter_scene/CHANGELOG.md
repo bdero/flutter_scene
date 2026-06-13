@@ -37,6 +37,11 @@
   `Scene.initializeStaticResources()` before constructing geometry or
   materials; the native synchronous load on first access is gone.
 
+* The `flutter` SDK constraint is now `>=3.44.0` (the latest stable, so the
+  package can be analyzed and scored on pub.dev). The actual requirement is
+  newer, a Flutter master build from 2026-06-09 or later (render-to-mip-level
+  Flutter GPU support, flutter/flutter#187685); see the README.
+
 * Render targets serialize in `.fscene`. Documents gain a
   `renderTexture` resource kind (size, update policy, sampling) and a
   top-level `views` array binding camera nodes to targets with per-view
