@@ -1,0 +1,20 @@
+name: flutter_scene_editor_core
+description: >-
+  Headless command and change-record core for the flutter_scene scene editor.
+  GPU-free and UI-free, driven identically by the editor, scripting, and agents.
+version: 0.0.1
+# TODO(publish): drop publish_to once the core API stabilizes and is ready for pub.dev.
+publish_to: 'none'
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter_scene: ^0.18.0
+  meta: ^1.15.0
+
+dev_dependencies:
+  lints: ^5.1.0
+  test: ^1.25.0
