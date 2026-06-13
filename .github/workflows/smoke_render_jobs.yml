@@ -80,6 +80,13 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
+          # Never upload an empty/partial build: a failed render must not
+          # overwrite the Argos baseline (see the android job, and
+          # notes/ci/argos_visual_baseline_tracking.md).
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
           reference_args=()
           if [ -n "${{ inputs.reference_branch }}" ]; then
             reference_args=(--reference-branch "${{ inputs.reference_branch }}")
@@ -187,6 +194,9 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
+          # Never upload an empty/partial build: a failed render must not
+          # overwrite the Argos baseline (see
+          # notes/ci/argos_visual_baseline_tracking.md).
           if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
             echo "No smoke screenshots found; skipping Argos upload."
             exit 0
@@ -250,6 +260,13 @@ jobs:
         env:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
         run: |
+          # Never upload an empty/partial build: a failed render must not
+          # overwrite the Argos baseline (see the android job, and
+          # notes/ci/argos_visual_baseline_tracking.md).
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
           reference_args=()
           if [ -n "${{ inputs.reference_branch }}" ]; then
             reference_args=(--reference-branch "${{ inputs.reference_branch }}")
