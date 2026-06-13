@@ -83,8 +83,7 @@ class EditorSession {
 
   /// Applies [transaction] without recording it on the history. For transient
   /// view state (camera moves, framing) that should not be undoable.
-  void applyTransient(Transaction transaction) =>
-      transaction.apply(_mutator);
+  void applyTransient(Transaction transaction) => transaction.apply(_mutator);
 
   /// Commits an externally produced [transaction] to the history (the result
   /// of an async import or bake), so it is undoable like any other edit.

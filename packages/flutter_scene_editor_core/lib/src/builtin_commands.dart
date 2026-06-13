@@ -56,7 +56,10 @@ ChangeRecord _detach(SceneDocument doc, LocalId id, LocalId? parent) {
       targetId: ChangeRecord.rootsTarget,
       slot: ChangeSlot.roots,
       oldValue: IdListChange(old),
-      newValue: IdListChange([for (final e in old) if (e != id) e]),
+      newValue: IdListChange([
+        for (final e in old)
+          if (e != id) e,
+      ]),
     );
   }
   final old = List.of(doc.nodes[parent]!.children);
@@ -64,7 +67,10 @@ ChangeRecord _detach(SceneDocument doc, LocalId id, LocalId? parent) {
     targetId: parent,
     slot: ChangeSlot.children,
     oldValue: IdListChange(old),
-    newValue: IdListChange([for (final e in old) if (e != id) e]),
+    newValue: IdListChange([
+      for (final e in old)
+        if (e != id) e,
+    ]),
   );
 }
 
@@ -88,15 +94,13 @@ ChangeRecord _attach(SceneDocument doc, LocalId id, LocalId? parent) {
   );
 }
 
-ChangeRecord _componentsRecord(
-  NodeSpec node,
-  List<ComponentSpec> next,
-) => ChangeRecord(
-  targetId: node.id,
-  slot: ChangeSlot.components,
-  oldValue: ComponentListChange(List.of(node.components)),
-  newValue: ComponentListChange(next),
-);
+ChangeRecord _componentsRecord(NodeSpec node, List<ComponentSpec> next) =>
+    ChangeRecord(
+      targetId: node.id,
+      slot: ChangeSlot.components,
+      oldValue: ComponentListChange(List.of(node.components)),
+      newValue: ComponentListChange(next),
+    );
 
 const _empty = <ChangeRecord>[];
 
@@ -181,7 +185,8 @@ final setNodeLayers = CommandEntry(
 
 final setNodeTransform = CommandEntry(
   name: 'setNodeTransform',
-  doc: 'Set a node\'s local transform. Omitted components keep their current '
+  doc:
+      'Set a node\'s local transform. Omitted components keep their current '
       'value.',
   category: 'Node',
   paramSchema: const [
@@ -244,10 +249,18 @@ final createNode = CommandEntry(
   doc: 'Create an empty node, optionally parented under another node.',
   category: 'Node',
   paramSchema: const [
-    ParamSpec(name: 'name', type: ParamType.string, label: 'Name',
-        required: false),
-    ParamSpec(name: 'parentId', type: ParamType.nodeRef, label: 'Parent',
-        required: false),
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'parentId',
+      type: ParamType.nodeRef,
+      label: 'Parent',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final parentId = optionalNodeId(params, 'parentId');
@@ -305,8 +318,12 @@ final reparentNode = CommandEntry(
   category: 'Node',
   paramSchema: const [
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
-    ParamSpec(name: 'newParentId', type: ParamType.nodeRef, label: 'New parent',
-        required: false),
+    ParamSpec(
+      name: 'newParentId',
+      type: ParamType.nodeRef,
+      label: 'New parent',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final id = requireNodeId(params, 'nodeId');
@@ -327,10 +344,7 @@ final reparentNode = CommandEntry(
     }
     return Transaction(
       name: 'Reparent node',
-      records: [
-        _detach(doc, id, oldParent),
-        _attach(doc, id, newParent),
-      ],
+      records: [_detach(doc, id, oldParent), _attach(doc, id, newParent)],
     );
   },
 );
@@ -341,14 +355,19 @@ final reparentNode = CommandEntry(
 
 final addComponent = CommandEntry(
   name: 'addComponent',
-  doc: 'Attach a component to a node, replacing any existing one of the same '
+  doc:
+      'Attach a component to a node, replacing any existing one of the same '
       'type.',
   category: 'Component',
   paramSchema: const [
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
     ParamSpec(name: 'componentType', type: ParamType.string, label: 'Type'),
-    ParamSpec(name: 'properties', type: ParamType.propertyMap,
-        label: 'Properties', required: false),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Properties',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final id = requireNodeId(params, 'nodeId');
@@ -362,7 +381,8 @@ final addComponent = CommandEntry(
       name: 'Add component ($type)',
       records: [
         _componentsRecord(node, [
-          for (final c in node.components) if (c.type != type) c,
+          for (final c in node.components)
+            if (c.type != type) c,
           component,
         ]),
       ],
@@ -389,7 +409,8 @@ final removeComponent = CommandEntry(
       name: 'Remove component ($type)',
       records: [
         _componentsRecord(node, [
-          for (final c in node.components) if (c.type != type) c,
+          for (final c in node.components)
+            if (c.type != type) c,
         ]),
       ],
     );
@@ -403,8 +424,11 @@ final setComponentProperties = CommandEntry(
   paramSchema: const [
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
     ParamSpec(name: 'componentType', type: ParamType.string, label: 'Type'),
-    ParamSpec(name: 'properties', type: ParamType.propertyMap,
-        label: 'Properties'),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Properties',
+    ),
   ],
   execute: (ctx, params) {
     final id = requireNodeId(params, 'nodeId');
@@ -414,15 +438,19 @@ final setComponentProperties = CommandEntry(
     if (existing == null) {
       throw CommandException('Node has no component of type: $type');
     }
-    final merged = ComponentSpec(type, properties: {
-      ...existing.properties,
-      ...optionalPropertyMap(params, 'properties'),
-    });
+    final merged = ComponentSpec(
+      type,
+      properties: {
+        ...existing.properties,
+        ...optionalPropertyMap(params, 'properties'),
+      },
+    );
     return Transaction(
       name: 'Set component properties ($type)',
       records: [
         _componentsRecord(node, [
-          for (final c in node.components) if (c.type != type) c else merged,
+          for (final c in node.components)
+            if (c.type != type) c else merged,
         ]),
       ],
     );
@@ -445,8 +473,12 @@ final createCuboidGeometry = CommandEntry(
   doc: 'Create a procedural cuboid geometry resource.',
   category: 'Resource',
   paramSchema: const [
-    ParamSpec(name: 'extents', type: ParamType.vec3, label: 'Extents',
-        required: false),
+    ParamSpec(
+      name: 'extents',
+      type: ParamType.vec3,
+      label: 'Extents',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final resource = GeometryResource(
@@ -467,12 +499,17 @@ final createSphereGeometry = CommandEntry(
   doc: 'Create a procedural sphere geometry resource.',
   category: 'Resource',
   paramSchema: const [
-    ParamSpec(name: 'radius', type: ParamType.number, label: 'Radius',
-        required: false),
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
-    final radius =
-        params['radius'] == null ? 0.5 : requireDouble(params, 'radius');
+    final radius = params['radius'] == null
+        ? 0.5
+        : requireDouble(params, 'radius');
     final resource = GeometryResource(
       ctx.document.newId(),
       procedural: SphereGeometrySpec(radius: radius),
@@ -490,10 +527,18 @@ final createMaterial = CommandEntry(
   category: 'Resource',
   paramSchema: const [
     ParamSpec(name: 'type', type: ParamType.string, label: 'Type'),
-    ParamSpec(name: 'properties', type: ParamType.propertyMap,
-        label: 'Properties', required: false),
-    ParamSpec(name: 'asset', type: ParamType.assetRef, label: 'Asset (.fmat)',
-        required: false),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Properties',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'asset',
+      type: ParamType.assetRef,
+      label: 'Asset (.fmat)',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final assetKey = optionalString(params, 'asset');
@@ -515,8 +560,11 @@ final removeResource = CommandEntry(
   doc: 'Remove a resource from the document.',
   category: 'Resource',
   paramSchema: const [
-    ParamSpec(name: 'resourceId', type: ParamType.resourceRef,
-        label: 'Resource'),
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Resource',
+    ),
   ],
   execute: (ctx, params) {
     final id = requireResourceId(params, 'resourceId');
@@ -564,12 +612,24 @@ final instantiatePrefab = CommandEntry(
   category: 'Prefab',
   paramSchema: const [
     ParamSpec(name: 'prefabAsset', type: ParamType.assetRef, label: 'Prefab'),
-    ParamSpec(name: 'name', type: ParamType.string, label: 'Name',
-        required: false),
-    ParamSpec(name: 'parentId', type: ParamType.nodeRef, label: 'Parent',
-        required: false),
-    ParamSpec(name: 'overrides', type: ParamType.overrideList,
-        label: 'Overrides', required: false),
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'parentId',
+      type: ParamType.nodeRef,
+      label: 'Parent',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'overrides',
+      type: ParamType.overrideList,
+      label: 'Overrides',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final parentId = optionalNodeId(params, 'parentId');

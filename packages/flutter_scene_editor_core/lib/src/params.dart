@@ -194,8 +194,12 @@ PropertyValue _coerceObject(Map<String, Object?> m) {
   if (m['\$quat'] case final Map<Object?, Object?> q) {
     final qm = q.map((k, v) => MapEntry('$k', v));
     return QuaternionValue(
-      Quaternion(_num(qm, r'$quat', 'x'), _num(qm, r'$quat', 'y'),
-          _num(qm, r'$quat', 'z'), _num(qm, r'$quat', 'w')),
+      Quaternion(
+        _num(qm, r'$quat', 'x'),
+        _num(qm, r'$quat', 'y'),
+        _num(qm, r'$quat', 'z'),
+        _num(qm, r'$quat', 'w'),
+      ),
     );
   }
   bool has(String k) => m[k] is num;

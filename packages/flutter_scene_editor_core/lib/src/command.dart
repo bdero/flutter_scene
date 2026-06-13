@@ -211,22 +211,18 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
       };
     case ParamType.quaternion:
       return {
-        ...object({'x': number, 'y': number, 'z': number, 'w': number}, [
-          'x',
-          'y',
-          'z',
-          'w',
-        ]),
+        ...object(
+          {'x': number, 'y': number, 'z': number, 'w': number},
+          ['x', 'y', 'z', 'w'],
+        ),
         'description': param.description,
       };
     case ParamType.color:
       return {
-        ...object({'r': number, 'g': number, 'b': number, 'a': number}, [
-          'r',
-          'g',
-          'b',
-          'a',
-        ]),
+        ...object(
+          {'r': number, 'g': number, 'b': number, 'a': number},
+          ['r', 'g', 'b', 'a'],
+        ),
         'description': param.description,
       };
     case ParamType.nodeRef:
@@ -254,11 +250,14 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
       return {
         'type': 'array',
         'description': param.description,
-        'items': object({
-          'target': {'type': 'string'},
-          'path': {'type': 'string'},
-          'value': {},
-        }, ['target', 'path', 'value']),
+        'items': object(
+          {
+            'target': {'type': 'string'},
+            'path': {'type': 'string'},
+            'value': {},
+          },
+          ['target', 'path', 'value'],
+        ),
       };
   }
 }

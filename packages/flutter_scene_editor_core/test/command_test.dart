@@ -9,11 +9,16 @@ import 'package:flutter_scene_editor_core/src/history.dart';
 import 'package:test/test.dart';
 
 /// A document plus a history and a registry wired to it, for command tests.
-({SceneDocument doc, EditHistory history, CommandRegistry registry}) _harness() {
+({SceneDocument doc, EditHistory history, CommandRegistry registry})
+_harness() {
   final doc = SceneDocument(allocator: IdAllocator(session: 1));
   final registry = CommandRegistry();
   registerBuiltinCommands(registry);
-  return (doc: doc, history: EditHistory(DocumentMutator(doc)), registry: registry);
+  return (
+    doc: doc,
+    history: EditHistory(DocumentMutator(doc)),
+    registry: registry,
+  );
 }
 
 /// Runs a command by name and commits its transaction.
@@ -39,13 +44,19 @@ void main() {
       final schema = mcpToolSchema(setNodeTransform);
       expect(schema['name'], 'setNodeTransform');
       final input = schema['inputSchema'] as Map<String, Object>;
-      expect((input['properties'] as Map).keys,
-          containsAll(['nodeId', 'translation', 'rotation', 'scale']));
+      expect(
+        (input['properties'] as Map).keys,
+        containsAll(['nodeId', 'translation', 'rotation', 'scale']),
+      );
       expect(input['required'], ['nodeId']); // the rest are optional
 
       final ui = uiDescriptors(setNodeTransform);
-      expect(ui.map((d) => d.field),
-          ['nodeId', 'translation', 'rotation', 'scale']);
+      expect(ui.map((d) => d.field), [
+        'nodeId',
+        'translation',
+        'rotation',
+        'scale',
+      ]);
       expect(ui.first.type, ParamType.nodeRef);
     });
   });
@@ -95,7 +106,10 @@ void main() {
       _run(h, 'createNode', {'name': 'B'});
       final a = h.doc.roots.first;
       final b = h.doc.roots.last;
-      _run(h, 'reparentNode', {'nodeId': b.toToken(), 'newParentId': a.toToken()});
+      _run(h, 'reparentNode', {
+        'nodeId': b.toToken(),
+        'newParentId': a.toToken(),
+      });
       expect(h.doc.node(a)!.children, [b]);
       expect(h.doc.roots, [a]);
 
@@ -112,10 +126,10 @@ void main() {
       final b = h.doc.node(a)!.children.single;
       final entry = h.registry.lookup('reparentNode')!;
       expect(
-        () => entry.execute(
-          CommandContext(h.doc),
-          {'nodeId': a.toToken(), 'newParentId': b.toToken()},
-        ),
+        () => entry.execute(CommandContext(h.doc), {
+          'nodeId': a.toToken(),
+          'newParentId': b.toToken(),
+        }),
         throwsA(isA<CommandException>()),
       );
     });

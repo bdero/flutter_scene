@@ -72,7 +72,8 @@ export 'src/params.dart'
         coercePropertyValue;
 
 // The built-in command set.
-export 'src/builtin_commands.dart' show builtinCommands, registerBuiltinCommands;
+export 'src/builtin_commands.dart'
+    show builtinCommands, registerBuiltinCommands;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;

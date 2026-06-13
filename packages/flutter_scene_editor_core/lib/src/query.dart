@@ -22,8 +22,10 @@ class SceneQuery {
   NodeSpec? node(LocalId id) => document.node(id);
 
   /// The document's root nodes, in order.
-  List<NodeSpec> get roots =>
-      [for (final id in document.roots) if (document.node(id) != null) document.node(id)!];
+  List<NodeSpec> get roots => [
+    for (final id in document.roots)
+      if (document.node(id) != null) document.node(id)!,
+  ];
 
   /// The direct children of [id], in order.
   List<NodeSpec> childrenOf(LocalId id) {

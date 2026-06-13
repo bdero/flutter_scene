@@ -11,14 +11,16 @@ void main() {
     test('navigates parents, children, subtree, and name paths', () {
       final s = _session();
       final root = s.run('createNode', {'name': 'Root'}).records.first.targetId;
-      final mid = s.run('createNode', {
-        'name': 'Mid',
-        'parentId': root.toToken(),
-      }).records.first.targetId;
-      final leaf = s.run('createNode', {
-        'name': 'Leaf',
-        'parentId': mid.toToken(),
-      }).records.first.targetId;
+      final mid = s
+          .run('createNode', {'name': 'Mid', 'parentId': root.toToken()})
+          .records
+          .first
+          .targetId;
+      final leaf = s
+          .run('createNode', {'name': 'Leaf', 'parentId': mid.toToken()})
+          .records
+          .first
+          .targetId;
 
       expect(s.query.roots.map((n) => n.name), ['Root']);
       expect(s.query.childrenOf(root).map((n) => n.name), ['Mid']);

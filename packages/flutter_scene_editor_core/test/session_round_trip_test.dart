@@ -13,26 +13,38 @@ void main() {
     );
     final empty = session.toFscene();
 
-    final root = session.run('createNode', {'name': 'Root'}).records.first
+    final root = session
+        .run('createNode', {'name': 'Root'})
+        .records
+        .first
         .targetId;
-    final child = session.run('createNode', {
-      'name': 'Child',
-      'parentId': root.toToken(),
-    }).records.first.targetId;
+    final child = session
+        .run('createNode', {'name': 'Child', 'parentId': root.toToken()})
+        .records
+        .first
+        .targetId;
     session.run('setNodeTransform', {
       'nodeId': child.toToken(),
       'translation': {'x': 1.0, 'y': 2.0, 'z': 3.0},
     });
-    final geometry = session.run('createCuboidGeometry', {
-      'extents': {'x': 2.0, 'y': 1.0, 'z': 1.0},
-    }).records.first.targetId;
-    final material = session.run('createMaterial', {
-      'type': 'physicallyBased',
-      'properties': {
-        'baseColor': {'r': 1.0, 'g': 0.0, 'b': 0.0, 'a': 1.0},
-        'metallic': 0.5,
-      },
-    }).records.first.targetId;
+    final geometry = session
+        .run('createCuboidGeometry', {
+          'extents': {'x': 2.0, 'y': 1.0, 'z': 1.0},
+        })
+        .records
+        .first
+        .targetId;
+    final material = session
+        .run('createMaterial', {
+          'type': 'physicallyBased',
+          'properties': {
+            'baseColor': {'r': 1.0, 'g': 0.0, 'b': 0.0, 'a': 1.0},
+            'metallic': 0.5,
+          },
+        })
+        .records
+        .first
+        .targetId;
     session.run('addComponent', {
       'nodeId': child.toToken(),
       'componentType': 'mesh',
@@ -46,10 +58,14 @@ void main() {
       'componentType': 'directionalLight',
       'properties': {'intensity': 1.5, 'castsShadow': true},
     });
-    final enemy = session.run('instantiatePrefab', {
-      'prefabAsset': 'assets/enemy.fscene',
-      'name': 'Enemy',
-    }).records.first.targetId;
+    final enemy = session
+        .run('instantiatePrefab', {
+          'prefabAsset': 'assets/enemy.fscene',
+          'name': 'Enemy',
+        })
+        .records
+        .first
+        .targetId;
     session.run('setPrefabOverride', {
       'nodeId': enemy.toToken(),
       'target': enemy.toToken(),
@@ -80,8 +96,9 @@ void main() {
   });
 
   test('fromFscene loads a session that can keep editing', () {
-    final source = EditorSession(SceneDocument(allocator: IdAllocator(session: 3)))
-      ..run('createNode', {'name': 'Loaded'});
+    final source = EditorSession(
+      SceneDocument(allocator: IdAllocator(session: 3)),
+    )..run('createNode', {'name': 'Loaded'});
     final text = source.toFscene();
 
     final loaded = EditorSession.fromFscene(text);
