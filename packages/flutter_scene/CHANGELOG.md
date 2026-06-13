@@ -1,3 +1,9 @@
+## 0.18.1
+
+* No code changes. Reworded the package description, added the Flutter Scene
+  logo as a pub.dev screenshot so it shows in search results, and removed a
+  stray rule from the README.
+
 ## 0.18.0
 
 * Added offscreen render targets. A `RenderTexture` is a fixed-size target
