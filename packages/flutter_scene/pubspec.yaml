@@ -1,8 +1,11 @@
 name: flutter_scene
-description: A powerful and flexible realtime 3D engine for Flutter.
+description: A powerful and flexible realtime 3D rendering engine for Flutter.
 version: 0.18.0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
+screenshots:
+  - description: The Flutter Scene logo.
+    path: screenshots/flutter_scene_logo.png
 platforms:
   macos:
   ios:
