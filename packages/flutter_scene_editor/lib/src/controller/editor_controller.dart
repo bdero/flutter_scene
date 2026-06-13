@@ -70,15 +70,18 @@ class EditorController extends ChangeNotifier {
   Node? liveNode(LocalId id) => _liveById[id];
 
   /// Runs the command named [name] with [params], reflects the resulting
-  /// transaction onto the live scene, and notifies listeners. Surfaces a
-  /// [CommandException] (invalid params) to the caller for the UI to show.
-  Future<void> run(
+  /// transaction onto the live scene, and notifies listeners. Returns the
+  /// committed transaction (its records carry the ids of anything created, so
+  /// a multi-step action can chain on them). Surfaces a [CommandException]
+  /// (invalid params) to the caller for the UI to show.
+  Future<Transaction> run(
     String name, [
     Map<String, Object?> params = const {},
   ]) async {
     final transaction = session.run(name, params);
     await _reflect(transaction);
     notifyListeners();
+    return transaction;
   }
 
   /// Undoes the last edit, reflecting it onto the live scene.
