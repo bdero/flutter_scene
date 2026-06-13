@@ -95,7 +95,10 @@
   `VertexStepMode`/`VertexLayout` support and instanced draw calls. Custom
   geometry overriding `bind` with the standard unskinned shader picks up the
   new path automatically; custom vertex shaders with their own uniform
-  layouts are unaffected.
+  layouts are unaffected. Breaking for code that builds vertex layouts
+  directly, `VertexLayout` is now constructed from a list of `VertexBuffer`s
+  (each carrying its own stride and step mode) instead of a single
+  `strideInBytes`.
 
 * BREAKING: the package exports are now explicit show lists; implementation
   details that previously leaked from wholesale exports (the scene encoder,
