@@ -1,0 +1,28 @@
+name: flutter_scene_editor
+description: >-
+  The flutter_scene scene editor UI, built in Flutter. Panels, an interactive
+  viewport, and gizmos that drive the headless editor core.
+version: 0.0.1
+# TODO(publish): drop publish_to once the editor is ready for pub.dev.
+publish_to: 'none'
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.29.0-1.0.pre.242'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene: ^0.18.0
+  flutter_scene_editor_core:
+    path: ../flutter_scene_editor_core
+  multi_split_view: ^3.6.0
+  two_dimensional_scrollables: ^0.5.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter

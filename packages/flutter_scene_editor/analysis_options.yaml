@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # The editor reaches into flutter_scene's in-repo realize/identity layer
+    # (the same lib/src access in-repo dev packages use).
+    implementation_imports: false
