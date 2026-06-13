@@ -449,6 +449,27 @@ base class RenderPass {
     if (struct == null) return;
 
     final gl = _gpuContext._gl;
+
+    // GLSL ES 3.00 bundles expose the struct as a std140 uniform block;
+    // attach the emplaced bytes directly as a buffer range. The emplaced
+    // layout matches std140 (it is what the reflection metadata describes),
+    // and HostBuffer offsets are 256-aligned, satisfying WebGL2's
+    // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
+    final blockBinding = pipeline._structBlockBindings[struct.name];
+    if (blockBinding != null) {
+      final glBuffer = bufferView.buffer._bindForTarget(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+      );
+      gl.bindBufferRange(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+        blockBinding,
+        glBuffer,
+        bufferView.offsetInBytes,
+        bufferView.lengthInBytes,
+      );
+      return;
+    }
+
     final floats = bufferView.buffer._stagingFloats;
     final base = bufferView.offsetInBytes;
     final locations = pipeline._structLocations[struct.name];

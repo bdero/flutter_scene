@@ -28,6 +28,8 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       manifestFileName: 'shaders/example.shaderbundle.json',
+      // Match the engine bundle's GLES dialect (see the flutter_scene hook).
+      glesLanguageVersion: 300,
     );
     // Compile .fmat custom materials into a bundle plus a parameter sidecar,
     // consumed by the "Toon (.fmat)" example through loadFmatMaterial. With no

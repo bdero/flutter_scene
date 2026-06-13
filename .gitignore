@@ -29,3 +29,4 @@ pubspec.lock
 .packages
 build/
 **/ephemeral/
+pubspec_overrides.yaml

@@ -20,6 +20,11 @@ final RegExp _versionDirective = RegExp(
   multiLine: true,
 );
 
+final RegExp _version300Directive = RegExp(
+  r'^#version\s+300\s+es\b',
+  multiLine: true,
+);
+
 final RegExp _dropExtensionLines = RegExp(
   r'^#extension\s+'
   r'(?:GL_OES_standard_derivatives|GL_EXT_shader_texture_lod)'
@@ -76,7 +81,14 @@ String stripWebGl2CoreExtensions(String source) {
 ///
 /// [isFragment] selects the right `varying` translation and gates the
 /// fragment-output injection. Use `false` for vertex shaders.
+///
+/// Source that is already GLSL ES 3.00 (bundles compiled with
+/// `--gles-language-version=300`) is returned unchanged; everything this
+/// function rewrites is core in 300 es.
 String transpileGlslEs100To300(String source, {required bool isFragment}) {
+  if (_version300Directive.hasMatch(source)) {
+    return source;
+  }
   var out = source;
 
   out = out.replaceFirst(_versionDirective, '#version 300 es');
