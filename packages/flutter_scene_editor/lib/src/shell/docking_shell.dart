@@ -81,6 +81,9 @@ class _DockingShellState extends State<DockingShell> {
       // to grab. The band gets a solid background; a brighter groove and a
       // primary-tinted highlight show where to drag.
       dividerThickness: 8,
+      // Extend the draggable hit zone a few pixels past the visible band so the
+      // divider is easy to grab.
+      dividerHandleBuffer: 6,
       dividerPainter: DividerPainters.grooved1(
         backgroundColor: scheme.outlineVariant,
         highlightedBackgroundColor: scheme.primary.withValues(alpha: 0.35),

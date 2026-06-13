@@ -37,6 +37,25 @@ class CommandPaletteIntent extends Intent {
   const CommandPaletteIntent();
 }
 
+/// An action that disables itself when [enabled] returns false, so the bound
+/// key falls through to the focused widget (for example a text field) instead
+/// of being consumed.
+class _GuardedAction<T extends Intent> extends Action<T> {
+  _GuardedAction(this.enabled, this.onInvokeCallback);
+
+  final bool Function() enabled;
+  final Object? Function(T intent) onInvokeCallback;
+
+  @override
+  bool isEnabled(T intent) => enabled();
+
+  @override
+  bool consumesKey(T intent) => enabled();
+
+  @override
+  Object? invoke(T intent) => onInvokeCallback(intent);
+}
+
 /// The top-level editor widget.
 ///
 /// Accepts an [EditorController] and builds the full 4-panel shell with
@@ -89,16 +108,20 @@ class _EditorShellState extends State<EditorShell> {
       },
       child: Actions(
         actions: {
-          // Undo, redo, and delete yield to a focused text field so editing a
-          // value never undoes a scene edit or deletes the selected node.
-          UndoIntent: CallbackAction<UndoIntent>(
-            onInvoke: (_) => _isEditingText() ? null : _ctrl.undo(),
+          // Undo, redo, and delete disable themselves while a text field is
+          // focused, so the key passes through to the field (Backspace edits
+          // text, Cmd+Z undoes typing) instead of being swallowed.
+          UndoIntent: _GuardedAction<UndoIntent>(
+            () => !_isEditingText(),
+            (_) => _ctrl.undo(),
           ),
-          RedoIntent: CallbackAction<RedoIntent>(
-            onInvoke: (_) => _isEditingText() ? null : _ctrl.redo(),
+          RedoIntent: _GuardedAction<RedoIntent>(
+            () => !_isEditingText(),
+            (_) => _ctrl.redo(),
           ),
-          DeleteNodeIntent: CallbackAction<DeleteNodeIntent>(
-            onInvoke: (_) => _isEditingText() ? null : _deleteSelected(),
+          DeleteNodeIntent: _GuardedAction<DeleteNodeIntent>(
+            () => !_isEditingText(),
+            (_) => _deleteSelected(),
           ),
           SaveIntent: CallbackAction<SaveIntent>(onInvoke: (_) => _save()),
           CommandPaletteIntent: CallbackAction<CommandPaletteIntent>(

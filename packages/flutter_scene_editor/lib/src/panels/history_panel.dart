@@ -5,20 +5,43 @@ import '../controller/editor_controller.dart';
 /// History panel: lists committed transactions with the undo cursor marked.
 ///
 /// Shows Undo and Redo buttons and all transactions oldest-first. The entry
-/// at [history.cursor - 1] is the most-recently applied one.
-class HistoryPanel extends StatelessWidget {
+/// at [history.cursor - 1] is the most-recently applied one. The list
+/// auto-scrolls to keep the newest entry in view.
+class HistoryPanel extends StatefulWidget {
   const HistoryPanel({super.key, required this.controller});
 
   final EditorController controller;
 
   @override
+  State<HistoryPanel> createState() => _HistoryPanelState();
+}
+
+class _HistoryPanelState extends State<HistoryPanel> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _scrollToEnd() {
+    if (!_scroll.hasClients) return;
+    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: widget.controller,
       builder: (context, _) {
-        final history = controller.history;
+        final history = widget.controller.history;
+        final controller = widget.controller;
         final transactions = history.transactions;
         final cursor = history.cursor;
+
+        // Keep the newest entry visible as edits land.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
 
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -54,6 +77,7 @@ class HistoryPanel extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scroll,
                       scrollDirection: Axis.horizontal,
                       itemCount: transactions.length,
                       itemBuilder: (context, index) {
