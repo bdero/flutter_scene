@@ -14,6 +14,7 @@ environment:
 dependencies:
   flutter_scene: ^0.18.0
   meta: ^1.15.0
+  vector_math: ^2.1.4
 
 dev_dependencies:
   lints: ^5.1.0

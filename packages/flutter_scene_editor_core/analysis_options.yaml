@@ -4,3 +4,10 @@ analyzer:
   language:
     strict-casts: true
     strict-raw-types: true
+
+linter:
+  rules:
+    # The editor core builds directly on flutter_scene's in-repo fscene model
+    # (the same lib/src access in-repo dev packages use). The published surface
+    # for these types is not yet curated, so reach into lib/src for now.
+    implementation_imports: false
