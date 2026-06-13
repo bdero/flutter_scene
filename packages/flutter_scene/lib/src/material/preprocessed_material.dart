@@ -16,7 +16,7 @@ import 'package:flutter_scene/src/material/material_parameters.dart';
 /// parameters by name through [parameters]:
 ///
 /// ```dart
-/// final library = gpu.ShaderLibrary.fromAsset('build/shaderbundles/materials.shaderbundle')!;
+/// final library = (await gpu.loadShaderLibraryAsync('build/shaderbundles/materials.shaderbundle'))!;
 /// final metadata = jsonDecode(await rootBundle.loadString(
 ///     'build/shaderbundles/materials.fmat.json')) as Map<String, Object?>;
 /// final toon = PreprocessedMaterial(

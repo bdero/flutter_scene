@@ -31,6 +31,12 @@
   re-bake their radiance once a frame has been presented, so the first frame
   may show dim specular IBL but every frame after is correct.
 
+* The base shader bundle now loads asynchronously on every backend,
+  following `ShaderLibrary.fromAsset` becoming async. Native joins web in
+  requiring the bundle to be loaded ahead of time by awaiting
+  `Scene.initializeStaticResources()` before constructing geometry or
+  materials; the native synchronous load on first access is gone.
+
 * Render targets serialize in `.fscene`. Documents gain a
   `renderTexture` resource kind (size, update policy, sampling) and a
   top-level `views` array binding camera nodes to targets with per-view

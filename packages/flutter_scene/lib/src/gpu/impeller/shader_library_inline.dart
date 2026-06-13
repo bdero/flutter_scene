@@ -14,9 +14,10 @@ ShaderLibrary compileShaderLibraryInline(
   );
 }
 
-/// Async shader-library loader. On native this just wraps flutter_gpu's
-/// synchronous `ShaderLibrary.fromAsset`; the web backend implements a
-/// genuinely async load.
+/// Async shader-library loader. On native this defers to flutter_gpu's
+/// `ShaderLibrary.fromAsset`; `Future.value` adopts its result whether that
+/// is a `ShaderLibrary?` or a `Future<ShaderLibrary?>`. The web backend
+/// implements its own async load.
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
   return Future.value(ShaderLibrary.fromAsset(assetName));
 }

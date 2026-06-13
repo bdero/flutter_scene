@@ -23,7 +23,7 @@ import 'package:flutter_scene/src/material/material.dart';
 /// 2. Compile the shader through the `flutter_gpu_shaders` build
 ///    hook into a `.shaderbundle` packaged with your app.
 /// 3. Load the bundle at runtime with
-///    `gpu.ShaderLibrary.fromAsset('path/to/your.shaderbundle')` and
+///    `await gpu.loadShaderLibraryAsync('path/to/your.shaderbundle')` and
 ///    pull out the fragment shader entry.
 /// 4. Construct a `ShaderMaterial` pointing at the shader, populate
 ///    its uniform blocks and textures by name, and attach it to a
