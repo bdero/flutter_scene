@@ -66,32 +66,39 @@ class _EditorShellState extends State<EditorShell> {
 
   EditorController get _ctrl => widget.controller;
 
+  /// Whether a text field currently has focus, so the global shortcuts can
+  /// step aside and let it handle the key.
+  bool _isEditingText() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    return context != null &&
+        context.findAncestorStateOfType<EditableTextState>() != null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Shortcuts(
-      shortcuts: {
-        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
-            const UndoIntent(),
-        LogicalKeySet(
-          LogicalKeyboardKey.meta,
-          LogicalKeyboardKey.shift,
-          LogicalKeyboardKey.keyZ,
-        ): const RedoIntent(),
-        const SingleActivator(LogicalKeyboardKey.delete):
-            const DeleteNodeIntent(),
-        const SingleActivator(LogicalKeyboardKey.backspace):
-            const DeleteNodeIntent(),
-        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS):
-            const SaveIntent(),
-        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyP):
-            const CommandPaletteIntent(),
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.keyZ, meta: true): UndoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+            RedoIntent(),
+        SingleActivator(LogicalKeyboardKey.delete): DeleteNodeIntent(),
+        SingleActivator(LogicalKeyboardKey.backspace): DeleteNodeIntent(),
+        SingleActivator(LogicalKeyboardKey.keyS, meta: true): SaveIntent(),
+        SingleActivator(LogicalKeyboardKey.keyP, meta: true):
+            CommandPaletteIntent(),
       },
       child: Actions(
         actions: {
-          UndoIntent: CallbackAction<UndoIntent>(onInvoke: (_) => _ctrl.undo()),
-          RedoIntent: CallbackAction<RedoIntent>(onInvoke: (_) => _ctrl.redo()),
+          // Undo, redo, and delete yield to a focused text field so editing a
+          // value never undoes a scene edit or deletes the selected node.
+          UndoIntent: CallbackAction<UndoIntent>(
+            onInvoke: (_) => _isEditingText() ? null : _ctrl.undo(),
+          ),
+          RedoIntent: CallbackAction<RedoIntent>(
+            onInvoke: (_) => _isEditingText() ? null : _ctrl.redo(),
+          ),
           DeleteNodeIntent: CallbackAction<DeleteNodeIntent>(
-            onInvoke: (_) => _deleteSelected(),
+            onInvoke: (_) => _isEditingText() ? null : _deleteSelected(),
           ),
           SaveIntent: CallbackAction<SaveIntent>(onInvoke: (_) => _save()),
           CommandPaletteIntent: CallbackAction<CommandPaletteIntent>(
@@ -156,8 +163,7 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Future<void> _open() async {
-    if (!context.mounted) return;
-    final path = await promptFilePath(context, title: 'Open scene');
+    final path = await pickOpenPath();
     if (path == null) return;
     try {
       final ctrl = await openFscene(path);
@@ -185,15 +191,13 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Future<void> _saveAs() async {
-    if (!context.mounted) return;
-    final path = await promptFilePath(
-      context,
-      title: 'Save scene as',
-      initial: _currentPath,
-    );
+    final suggested = _currentPath == null
+        ? 'scene.fscene'
+        : _currentPath!.split(Platform.pathSeparator).last;
+    final path = await pickSavePath(suggestedName: suggested);
     if (path == null) return;
     await _writeTo(path);
-    setState(() => _currentPath = path);
+    if (mounted) setState(() => _currentPath = path);
   }
 
   Future<void> _writeTo(String path) async {
@@ -312,7 +316,7 @@ class _EditorMenuBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             currentPath != null
-                ? 'flutter_scene Editor  —  ${currentPath!.split(Platform.pathSeparator).last}'
+                ? 'flutter_scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
                 : 'flutter_scene Editor',
             style: Theme.of(context).textTheme.labelSmall,
           ),

@@ -14,3 +14,6 @@ dependencies:
     sdk: flutter
   flutter_scene_editor:
     path: ../../packages/flutter_scene_editor
+
+flutter:
+  uses-material-design: true

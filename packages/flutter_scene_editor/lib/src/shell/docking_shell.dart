@@ -75,15 +75,19 @@ class _DockingShellState extends State<DockingShell> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final theme = MultiSplitViewThemeData(
-      dividerThickness: 4,
+      // A wide, filled divider so the separation is clearly visible and easy
+      // to grab. The band gets a solid background; a brighter groove and a
+      // primary-tinted highlight show where to drag.
+      dividerThickness: 8,
       dividerPainter: DividerPainters.grooved1(
-        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
-        highlightedColor: Theme.of(
-          context,
-        ).colorScheme.primary.withValues(alpha: 0.7),
-        thickness: 1,
-        highlightedThickness: 2,
+        backgroundColor: scheme.outlineVariant,
+        highlightedBackgroundColor: scheme.primary.withValues(alpha: 0.35),
+        color: scheme.onSurfaceVariant,
+        highlightedColor: scheme.primary,
+        thickness: 2,
+        highlightedThickness: 3,
       ),
     );
 

@@ -32,6 +32,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final _gizmo = GizmoController();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
+  // Holds keyboard focus while the viewport is the active surface, so the
+  // app-level shortcuts (undo, delete) fire after the viewport is clicked.
+  final _focusNode = FocusNode(debugLabel: 'editorViewport');
 
   bool _draggingGizmo = false;
 
@@ -65,6 +68,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _ctrl.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -83,6 +87,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // --- pointer handling ----------------------------------------------------
 
   void _onPointerDown(PointerDownEvent event, Size viewSize) {
+    _focusNode.requestFocus();
     _viewSize = viewSize;
     final primary = _ctrl.selection.primary;
     if (primary != null) {
@@ -122,9 +127,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
     _dragAccum += delta;
 
-    // Preview: apply accumulated delta to the drag-start transform.
-    final preview = _dragStartLocalTransform!.clone();
-    preview.translateByVector3(_dragAccum);
+    // Preview by adding the world-space delta straight onto the transform's
+    // translation column. Adding it here (rather than translateByVector3, which
+    // applies in the node's scaled and rotated frame) keeps the preview 1:1
+    // with the pointer and matching the world-space value committed on release,
+    // so a scaled node no longer drifts.
+    final start = _dragStartLocalTransform!;
+    final preview = start.clone()
+      ..setTranslation(start.getTranslation() + _dragAccum);
     _ctrl.previewLocalTransform(primary, preview);
     _bumpView();
   }
@@ -195,19 +205,22 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   return Stack(
                     fit: StackFit.expand,
                     children: [
-                      OrbitCameraController(
-                        camera: _camera,
-                        isLocked: () => _draggingGizmo,
-                        onChanged: _bumpView,
-                        child: Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (e) => _onPointerDown(e, size),
-                          onPointerMove: _onPointerMove,
-                          onPointerUp: _onPointerUp,
-                          child: SceneView(
-                            _ctrl.scene,
-                            camera: cam,
-                            onTick: _onTick,
+                      Focus(
+                        focusNode: _focusNode,
+                        child: OrbitCameraController(
+                          camera: _camera,
+                          isLocked: () => _draggingGizmo,
+                          onChanged: _bumpView,
+                          child: Listener(
+                            behavior: HitTestBehavior.opaque,
+                            onPointerDown: (e) => _onPointerDown(e, size),
+                            onPointerMove: _onPointerMove,
+                            onPointerUp: _onPointerUp,
+                            child: SceneView(
+                              _ctrl.scene,
+                              camera: cam,
+                              onTick: _onTick,
+                            ),
                           ),
                         ),
                       ),

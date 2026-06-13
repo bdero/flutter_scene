@@ -1,91 +1,45 @@
+/// Reading and writing `.fscene` files, with native open and save dialogs.
+library;
+
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../controller/editor_controller.dart';
 
-/// Saves [controller]'s document to a `.fscene` file at [path].
+const _fsceneTypeGroup = XTypeGroup(
+  label: 'flutter_scene',
+  extensions: <String>['fscene'],
+);
+
+/// Writes [controller]'s document to a `.fscene` file at [path].
 ///
-/// Throws [IOException] on write failure.
+/// Throws an [IOException] on write failure.
 Future<void> saveFscene(EditorController controller, String path) async {
-  final json = controller.session.toFscene();
-  await File(path).writeAsString(json);
+  await File(path).writeAsString(controller.session.toFscene());
 }
 
-/// Loads a `.fscene` file from [path] and returns a fresh [EditorController].
+/// Reads a `.fscene` file from [path] and returns a fresh [EditorController].
 ///
-/// Throws [IOException] on read failure and [FormatException] on bad JSON.
+/// Throws an [IOException] on read failure and a [FormatException] on bad JSON.
 Future<EditorController> openFscene(String path) async {
   final source = await File(path).readAsString();
   return EditorController.fromFscene(source);
 }
 
-// ---------------------------------------------------------------------------
-// Path-dialog helpers.
-// ---------------------------------------------------------------------------
+/// Shows the native open dialog filtered to `.fscene`, and returns the chosen
+/// path, or null when the user cancels.
+Future<String?> pickOpenPath() async {
+  final file = await openFile(acceptedTypeGroups: const [_fsceneTypeGroup]);
+  return file?.path;
+}
 
-/// Shows a simple text-field dialog asking for a file path.
-/// Returns the entered path, or null if the user cancelled.
-Future<String?> promptFilePath(
-  BuildContext context, {
-  required String title,
-  String? initial,
-}) {
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => _FilePathDialog(title: title, initial: initial),
+/// Shows the native save dialog, and returns the chosen path, or null when the
+/// user cancels.
+Future<String?> pickSavePath({String? suggestedName}) async {
+  final location = await getSaveLocation(
+    acceptedTypeGroups: const [_fsceneTypeGroup],
+    suggestedName: suggestedName ?? 'scene.fscene',
   );
-}
-
-class _FilePathDialog extends StatefulWidget {
-  const _FilePathDialog({required this.title, this.initial});
-  final String title;
-  final String? initial;
-
-  @override
-  State<_FilePathDialog> createState() => _FilePathDialogState();
-}
-
-class _FilePathDialogState extends State<_FilePathDialog> {
-  late final TextEditingController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.initial ?? '');
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: TextField(
-        controller: _ctrl,
-        autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'File path',
-          hintText: '/path/to/scene.fscene',
-        ),
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
-        ),
-        TextButton(onPressed: _submit, child: const Text('OK')),
-      ],
-    );
-  }
-
-  void _submit() {
-    final path = _ctrl.text.trim();
-    if (path.isNotEmpty) Navigator.of(context).pop(path);
-  }
+  return location?.path;
 }
