@@ -1,0 +1,11 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    # Builds on flutter_scene's in-repo fscene model, like the editor core.
+    implementation_imports: false

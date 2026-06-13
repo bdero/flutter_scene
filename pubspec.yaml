@@ -9,6 +9,7 @@ workspace:
   - packages/flutter_scene_rapier
   - packages/flutter_scene_editor_core
   - packages/flutter_scene_editor
+  - packages/flutter_scene_mcp
   - examples/flutter_app
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render

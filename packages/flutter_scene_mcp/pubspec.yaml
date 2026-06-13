@@ -1,0 +1,24 @@
+name: flutter_scene_mcp
+description: >-
+  The MCP tool surface for the flutter_scene editor, exposing the command
+  registry and scene perception to AI agents as a tiered, discoverable set of
+  tools.
+version: 0.0.1
+# TODO(publish): drop publish_to once the MCP surface is ready for pub.dev.
+publish_to: 'none'
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter_scene: ^0.18.0
+  flutter_scene_editor_core:
+    path: ../flutter_scene_editor_core
+  meta: ^1.15.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  lints: ^5.1.0
+  test: ^1.25.0
