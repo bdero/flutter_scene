@@ -65,6 +65,12 @@ base class RenderPipeline {
   /// list, so the per-draw uniform bind avoids building lookup strings.
   final Map<String, List<web.WebGLUniformLocation?>> _structLocations = {};
 
+  /// Uniform-block binding point per struct type name. Populated when the
+  /// linked program exposes the struct as a real uniform block (GLSL ES
+  /// 3.00 bundles), in which case the per-draw bind uses bindBufferRange
+  /// instead of per-member glUniform calls.
+  final Map<String, int> _structBlockBindings = {};
+
   /// Texture unit assigned to each reflected sampler name.
   final Map<String, int> _samplerUnits = {};
 
@@ -82,9 +88,25 @@ base class RenderPipeline {
       gl.uniform1f(yFlipLocation, -1.0);
     }
     var nextUnit = 0;
+    var nextBlockBinding = 0;
     for (final shader in [vertexShader, fragmentShader]) {
       for (final struct in shader.uniformStructs) {
-        // GL uniform names use the struct's instance name; reflection and
+        if (_structBlockBindings.containsKey(struct.name) ||
+            _structLocations.containsKey(struct.name)) {
+          continue; // already resolved via the other stage
+        }
+        // GLSL ES 3.00 bundles emit uniform structs as std140 uniform
+        // blocks (named by type). Assign each block a binding point once;
+        // the per-draw bind attaches the data with bindBufferRange.
+        final blockIndex = gl.getUniformBlockIndex(_program, struct.name);
+        if (blockIndex != web.WebGL2RenderingContext.INVALID_INDEX) {
+          final binding = nextBlockBinding++;
+          gl.uniformBlockBinding(_program, blockIndex, binding);
+          _structBlockBindings[struct.name] = binding;
+          continue;
+        }
+        // GLSL ES 1.00 bundles flatten the struct to plain uniforms. GL
+        // uniform names use the struct's instance name; reflection and
         // callers use its type name. Look up via instance, key by type.
         final instance =
             shader._structInstanceNames[struct.name] ?? struct.name;

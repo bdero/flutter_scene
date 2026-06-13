@@ -314,6 +314,10 @@ Future<void> buildMaterials({
         buildOutput: buildOutput,
         manifestFileName: manifestRelativePath,
         includeDirectories: [frameworkShaders],
+        // Match the engine bundle's GLES dialect (GLSL ES 3.00); the
+        // framework radiance sampling these materials can `#include` uses
+        // textureLod, which is not available in 1.00 without an extension.
+        glesLanguageVersion: 300,
       );
     } catch (_) {
       // Roll back only when the failed compile actually disturbed the bundle;
