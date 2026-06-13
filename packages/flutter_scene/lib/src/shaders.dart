@@ -12,34 +12,27 @@ gpu.ShaderLibrary? _baseShaderLibrary;
 /// (`StandardFragment`, `UnlitFragment`). Custom [Geometry] or [Material]
 /// subclasses can pull additional shaders from this library.
 ///
-/// On native (Impeller) platforms the bundle loads synchronously on first
-/// access. On web, synchronous asset reads aren't possible, so the bundle
-/// must be loaded ahead of time by awaiting [Scene.initializeStaticResources]
-/// (which calls [loadBaseShaderLibrary]); accessing this getter before that
-/// completes throws.
+/// Reading a shader bundle from an asset is asynchronous on every backend,
+/// so the bundle must be loaded ahead of time by awaiting
+/// [Scene.initializeStaticResources] (which calls [loadBaseShaderLibrary]);
+/// accessing this getter before that completes throws.
 /// {@category Assets and loading}
 gpu.ShaderLibrary get baseShaderLibrary {
   final cached = _baseShaderLibrary;
-  if (cached != null) {
-    return cached;
-  }
-  // Native fast path preserves the old lazy behavior. On web,
-  // ShaderLibrary.fromAsset throws (asset reads are async) - callers must
-  // await Scene.initializeStaticResources() before touching shaders.
-  final lib = gpu.ShaderLibrary.fromAsset(_kBaseShaderBundlePath);
-  if (lib == null) {
+  if (cached == null) {
     throw Exception(
-      "Failed to load base shader bundle! ($_kBaseShaderBundlePath)",
+      'The base shader bundle has not been loaded yet. Await '
+      'Scene.initializeStaticResources() before constructing geometry or '
+      'materials that touch the base shader library.',
     );
   }
-  _baseShaderLibrary = lib;
-  return lib;
+  return cached;
 }
 
 /// Asynchronously loads and caches the base shader bundle. Idempotent.
 /// Called by [Scene.initializeStaticResources] so the synchronous
-/// [baseShaderLibrary] getter has a cached library to return (required on
-/// web, where shader assets can't be read synchronously).
+/// [baseShaderLibrary] getter has a cached library to return (shader assets
+/// can't be read synchronously on any backend).
 /// {@category Assets and loading}
 Future<void> loadBaseShaderLibrary() async {
   if (_baseShaderLibrary != null) {
