@@ -1,5 +1,5 @@
 name: flutter_scene
-description: A general-purpose realtime 3D rendering library for Flutter.
+description: A powerful and flexible realtime 3D engine for Flutter.
 version: 0.18.0
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
