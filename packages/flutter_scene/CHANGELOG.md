@@ -23,6 +23,14 @@
   unchanged). The web backend gained render-to-mip-level attachments and
   mip-aware sampler filtering.
 
+* Fixed dim image-based specular lighting on the web backend. The radiance
+  prefilter (a float render-to-texture) comes out degenerate on a cold
+  WebGL context, before the first frame has been composited, and is correct
+  once the context is warm. Environments built before then (the lazily
+  built default, or any an app builds up front) now retain their source and
+  re-bake their radiance once a frame has been presented, so the first frame
+  may show dim specular IBL but every frame after is correct.
+
 * Render targets serialize in `.fscene`. Documents gain a
   `renderTexture` resource kind (size, update policy, sampling) and a
   top-level `views` array binding camera nodes to targets with per-view

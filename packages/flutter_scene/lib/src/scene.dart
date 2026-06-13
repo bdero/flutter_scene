@@ -618,6 +618,16 @@ base class Scene implements SceneGraph {
       }
     }
 
+    // The web radiance prefilter is degenerate when built on a cold WebGL
+    // context (before the first frame composites); environments built then
+    // (the lazily built default below, or any the app built up front) are
+    // re-baked once a frame has been presented and the context is warm. No-op
+    // on other backends and after the one-time rebuild. See
+    // EnvironmentMap.markContextWarmAndRebakeRadiance.
+    if (_hasPresentedFrame) {
+      EnvironmentMap.markContextWarmAndRebakeRadiance();
+    }
+
     // Resolve the IBL environment up front (before building any render
     // graph): the default is built lazily here on first use, which submits
     // a one-time prefilter pass that must not be nested inside the frame's
@@ -712,7 +722,15 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
       );
     }
+
+    // A frame has now been submitted; the next one runs on a warm context (see
+    // the rebuild near the environment resolution above).
+    _hasPresentedFrame = true;
   }
+
+  // Whether at least one frame has been rendered and presented, so the web
+  // GL context is warm enough for a correct radiance prefilter.
+  static bool _hasPresentedFrame = false;
 
   // Maps a view's normalized viewport rectangle (0..1) into a canvas
   // sub-rectangle of [area]; a null viewport fills [area].
