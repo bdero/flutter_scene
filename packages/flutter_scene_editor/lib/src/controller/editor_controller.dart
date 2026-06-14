@@ -231,13 +231,21 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<SceneDocument> _loadPrefab(AssetRef ref) async {
-    final dir = baseDirectory;
-    if (dir == null) {
-      throw StateError(
-        'Cannot resolve prefab "${ref.key}" without a base directory',
-      );
+    final key = ref.key;
+    final String path;
+    if (key.startsWith('/')) {
+      // An absolute path needs no base directory (the common case for a prefab
+      // added to an unsaved scene, where the picked file is stored absolute).
+      path = key;
+    } else {
+      final dir = baseDirectory;
+      if (dir == null) {
+        throw StateError(
+          'Cannot resolve relative prefab "$key" without a base directory',
+        );
+      }
+      path = '$dir/$key';
     }
-    final path = ref.key.startsWith('/') ? ref.key : '$dir/${ref.key}';
     return readFscene(await File(path).readAsString());
   }
 
