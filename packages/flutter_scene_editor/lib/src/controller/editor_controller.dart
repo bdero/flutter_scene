@@ -53,6 +53,10 @@ class EditorController extends ChangeNotifier {
   // selects the instance the editor can actually act on.
   final Map<Node, LocalId> _sourceIdByLive = {};
 
+  // Cache of loaded prefab documents keyed by source.key, so the inspector
+  // does not re-read the file on every rebuild.
+  final Map<String, SceneDocument> _prefabCache = {};
+
   /// Opens a controller over [session], realizing its document into a fresh
   /// scene. Async because realization may upload geometry and textures.
   /// [baseDirectory] resolves prefab references relative to the scene file.
@@ -96,6 +100,21 @@ class EditorController extends ChangeNotifier {
   /// enclosing prefab instance root for a node realized from inside a prefab),
   /// or null. Used to turn a viewport raycast hit into a selectable node.
   LocalId? sourceIdForLiveNode(Node liveNode) => _sourceIdByLive[liveNode];
+
+  /// Loads and caches the prefab document referenced by [source].
+  ///
+  /// Resolves [source.key] relative to [baseDirectory] (or treats it as
+  /// absolute when it starts with `/`). Results are cached keyed by
+  /// [source.key] so repeated calls from the inspector rebuild cheaply. Throws
+  /// a [StateError] when [baseDirectory] is null and the path is relative, and
+  /// an [IOException] when the file cannot be read.
+  Future<SceneDocument> loadPrefabDocument(AssetRef source) async {
+    final cached = _prefabCache[source.key];
+    if (cached != null) return cached;
+    final doc = await _loadPrefab(source);
+    _prefabCache[source.key] = doc;
+    return doc;
+  }
 
   /// Runs the command named [name] with [params], reflects the resulting
   /// transaction onto the live scene, and notifies listeners. Returns the
