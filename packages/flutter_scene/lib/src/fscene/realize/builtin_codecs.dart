@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
@@ -46,6 +47,29 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
 class MeshCodec extends ComponentCodec {
   @override
   String get type => 'mesh';
+
+  // The single-primitive form. The multi-primitive `primitives` list is not yet
+  // schema-described; editing it stays a TODO(mesh-multiprimitive).
+  @override
+  List<ComponentPropertyDef> get propertySchema => const [
+    ComponentPropertyDef(
+      'geometry',
+      ComponentPropertyKind.resourceRef,
+      null,
+      doc: 'The geometry resource this mesh draws.',
+      resourceKind: 'geometry',
+    ),
+    ComponentPropertyDef(
+      'material',
+      ComponentPropertyKind.resourceRef,
+      null,
+      doc: 'The material the geometry is drawn with.',
+      resourceKind: 'material',
+    ),
+  ];
+
+  @override
+  bool claims(Component component) => component is MeshComponent;
 
   @override
   Component? realize(ComponentSpec spec, RealizeContext context) {
@@ -353,51 +377,173 @@ class DirectionalLightCodec extends ComponentCodec {
   @override
   String get type => 'directionalLight';
 
+  // Declared in serialize order so the derived serialize matches the format's
+  // existing key order (byte-stable round-trips). Defaults are the single source
+  // for realize's fallbacks.
+  static final List<ComponentPropertyDef> _schema = [
+    ComponentPropertyDef(
+      'direction',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(-0.3, -1.0, -0.2)),
+      doc: 'Light direction in the node\'s local space.',
+      read: (c) =>
+          Vec3Value((c as DirectionalLightComponent).light.direction.clone()),
+    ),
+    ComponentPropertyDef(
+      'color',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(1, 1, 1)),
+      doc: 'Linear RGB light color.',
+      read: (c) =>
+          Vec3Value((c as DirectionalLightComponent).light.color.clone()),
+    ),
+    ComponentPropertyDef(
+      'intensity',
+      ComponentPropertyKind.number,
+      const DoubleValue(3.0),
+      doc: 'Light brightness.',
+      min: 0,
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.intensity),
+    ),
+    ComponentPropertyDef(
+      'castsShadow',
+      ComponentPropertyKind.boolean,
+      const BoolValue(false),
+      doc: 'Whether this light renders a shadow map.',
+      read: (c) =>
+          BoolValue((c as DirectionalLightComponent).light.castsShadow),
+    ),
+    ComponentPropertyDef(
+      'shadowFadeRange',
+      ComponentPropertyKind.number,
+      const DoubleValue(2.0),
+      doc: 'Distance over which shadows fade out.',
+      min: 0,
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.shadowFadeRange),
+    ),
+    ComponentPropertyDef(
+      'shadowSoftness',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.08),
+      doc: 'Shadow edge softness.',
+      min: 0,
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.shadowSoftness),
+    ),
+    ComponentPropertyDef(
+      'shadowCascadeCount',
+      ComponentPropertyKind.integer,
+      const IntValue(4),
+      doc: 'Number of shadow cascades.',
+      min: 1,
+      read: (c) =>
+          IntValue((c as DirectionalLightComponent).light.shadowCascadeCount),
+    ),
+    ComponentPropertyDef(
+      'shadowMaxDistance',
+      ComponentPropertyKind.number,
+      const DoubleValue(150.0),
+      doc: 'Far distance shadows are rendered to.',
+      min: 0,
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.shadowMaxDistance),
+    ),
+    ComponentPropertyDef(
+      'shadowCascadeSplitLambda',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.6),
+      doc: 'Blend between uniform and logarithmic cascade splits.',
+      min: 0,
+      max: 1,
+      read: (c) => DoubleValue(
+        (c as DirectionalLightComponent).light.shadowCascadeSplitLambda,
+      ),
+    ),
+    ComponentPropertyDef(
+      'shadowMapResolution',
+      ComponentPropertyKind.integer,
+      const IntValue(1024),
+      doc: 'Shadow map resolution per cascade, in texels.',
+      min: 1,
+      read: (c) =>
+          IntValue((c as DirectionalLightComponent).light.shadowMapResolution),
+    ),
+    ComponentPropertyDef(
+      'shadowDepthBias',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.02),
+      doc: 'Depth bias applied when sampling the shadow map.',
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.shadowDepthBias),
+    ),
+    ComponentPropertyDef(
+      'shadowNormalBias',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.02),
+      doc: 'Normal bias applied when sampling the shadow map.',
+      read: (c) =>
+          DoubleValue((c as DirectionalLightComponent).light.shadowNormalBias),
+    ),
+  ];
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) => component is DirectionalLightComponent;
+
   @override
   Component realize(ComponentSpec spec, RealizeContext context) {
     final p = spec.properties;
     return DirectionalLightComponent(
       DirectionalLight(
-        direction: readVec3(p, 'direction', Vector3(-0.3, -1.0, -0.2)),
-        color: readVec3(p, 'color', Vector3(1, 1, 1)),
-        intensity: readDouble(p, 'intensity', 3.0),
-        castsShadow: readBool(p, 'castsShadow', false),
-        shadowFadeRange: readDouble(p, 'shadowFadeRange', 2.0),
-        shadowSoftness: readDouble(p, 'shadowSoftness', 0.08),
-        shadowCascadeCount: readInt(p, 'shadowCascadeCount', 4),
-        shadowMaxDistance: readDouble(p, 'shadowMaxDistance', 150.0),
+        direction: readVec3(p, 'direction', vec3Default('direction')),
+        color: readVec3(p, 'color', vec3Default('color')),
+        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
+        castsShadow: readBool(p, 'castsShadow', boolDefault('castsShadow')),
+        shadowFadeRange: readDouble(
+          p,
+          'shadowFadeRange',
+          numberDefault('shadowFadeRange'),
+        ),
+        shadowSoftness: readDouble(
+          p,
+          'shadowSoftness',
+          numberDefault('shadowSoftness'),
+        ),
+        shadowCascadeCount: readInt(
+          p,
+          'shadowCascadeCount',
+          intDefault('shadowCascadeCount'),
+        ),
+        shadowMaxDistance: readDouble(
+          p,
+          'shadowMaxDistance',
+          numberDefault('shadowMaxDistance'),
+        ),
         shadowCascadeSplitLambda: readDouble(
           p,
           'shadowCascadeSplitLambda',
-          0.6,
+          numberDefault('shadowCascadeSplitLambda'),
         ),
-        shadowMapResolution: readInt(p, 'shadowMapResolution', 1024),
-        shadowDepthBias: readDouble(p, 'shadowDepthBias', 0.02),
-        shadowNormalBias: readDouble(p, 'shadowNormalBias', 0.02),
+        shadowMapResolution: readInt(
+          p,
+          'shadowMapResolution',
+          intDefault('shadowMapResolution'),
+        ),
+        shadowDepthBias: readDouble(
+          p,
+          'shadowDepthBias',
+          numberDefault('shadowDepthBias'),
+        ),
+        shadowNormalBias: readDouble(
+          p,
+          'shadowNormalBias',
+          numberDefault('shadowNormalBias'),
+        ),
       ),
-    );
-  }
-
-  @override
-  ComponentSpec? serialize(Component component, SerializeContext context) {
-    if (component is! DirectionalLightComponent) return null;
-    final l = component.light;
-    return ComponentSpec(
-      type,
-      properties: {
-        'direction': Vec3Value(l.direction.clone()),
-        'color': Vec3Value(l.color.clone()),
-        'intensity': DoubleValue(l.intensity),
-        'castsShadow': BoolValue(l.castsShadow),
-        'shadowFadeRange': DoubleValue(l.shadowFadeRange),
-        'shadowSoftness': DoubleValue(l.shadowSoftness),
-        'shadowCascadeCount': IntValue(l.shadowCascadeCount),
-        'shadowMaxDistance': DoubleValue(l.shadowMaxDistance),
-        'shadowCascadeSplitLambda': DoubleValue(l.shadowCascadeSplitLambda),
-        'shadowMapResolution': IntValue(l.shadowMapResolution),
-        'shadowDepthBias': DoubleValue(l.shadowDepthBias),
-        'shadowNormalBias': DoubleValue(l.shadowNormalBias),
-      },
     );
   }
 }
@@ -410,33 +556,70 @@ class CameraCodec extends ComponentCodec {
   @override
   String get type => 'camera';
 
+  // Declared in serialize order. Only perspective projections are claimed; an
+  // orthographic projection (none exists yet) is not serialized.
+  // TODO(fscene): describe orthographic/off-axis projections once they exist.
+  static final List<ComponentPropertyDef> _schema = [
+    const ComponentPropertyDef(
+      'projection',
+      ComponentPropertyKind.string,
+      StringValue('perspective'),
+      doc: 'The projection model.',
+      options: ['perspective'],
+      read: _readProjection,
+    ),
+    ComponentPropertyDef(
+      'fovRadiansY',
+      ComponentPropertyKind.number,
+      DoubleValue(45 * degrees2Radians),
+      doc: 'Vertical field of view, in radians.',
+      min: 0,
+      read: (c) => DoubleValue(_perspective(c).fovRadiansY),
+    ),
+    const ComponentPropertyDef(
+      'near',
+      ComponentPropertyKind.number,
+      DoubleValue(0.1),
+      doc: 'Near clip distance.',
+      min: 0,
+      read: _readNear,
+    ),
+    const ComponentPropertyDef(
+      'far',
+      ComponentPropertyKind.number,
+      DoubleValue(1000.0),
+      doc: 'Far clip distance.',
+      min: 0,
+      read: _readFar,
+    ),
+  ];
+
+  static PerspectiveProjection _perspective(Component c) =>
+      (c as CameraComponent).projection as PerspectiveProjection;
+  static PropertyValue _readProjection(Component c) =>
+      const StringValue('perspective');
+  static PropertyValue _readNear(Component c) =>
+      DoubleValue(_perspective(c).near);
+  static PropertyValue _readFar(Component c) =>
+      DoubleValue(_perspective(c).far);
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) =>
+      component is CameraComponent &&
+      component.projection is PerspectiveProjection;
+
   @override
   Component realize(ComponentSpec spec, RealizeContext context) {
     final p = spec.properties;
     return CameraComponent(
       projection: PerspectiveProjection(
-        fovRadiansY: readDouble(p, 'fovRadiansY', 45 * degrees2Radians),
-        near: readDouble(p, 'near', 0.1),
-        far: readDouble(p, 'far', 1000.0),
+        fovRadiansY: readDouble(p, 'fovRadiansY', numberDefault('fovRadiansY')),
+        near: readDouble(p, 'near', numberDefault('near')),
+        far: readDouble(p, 'far', numberDefault('far')),
       ),
-    );
-  }
-
-  @override
-  ComponentSpec? serialize(Component component, SerializeContext context) {
-    if (component is! CameraComponent) return null;
-    final proj = component.projection;
-    if (proj is! PerspectiveProjection) {
-      return ComponentSpec(type);
-    }
-    return ComponentSpec(
-      type,
-      properties: {
-        'projection': const StringValue('perspective'),
-        'fovRadiansY': DoubleValue(proj.fovRadiansY),
-        'near': DoubleValue(proj.near),
-        'far': DoubleValue(proj.far),
-      },
     );
   }
 }

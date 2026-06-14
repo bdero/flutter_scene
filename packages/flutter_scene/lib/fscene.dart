@@ -56,6 +56,8 @@ export 'src/fscene/realize/component_codec.dart'
         FsceneComponentRegistry,
         RealizeContext,
         SerializeContext;
+export 'src/fscene/realize/component_schema.dart'
+    show ComponentPropertyDef, ComponentPropertyKind;
 export 'src/fscene/realize/loader.dart'
     show
         loadFsceneAsset,

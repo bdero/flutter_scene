@@ -1,5 +1,9 @@
+import 'package:vector_math/vector_math.dart';
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -48,14 +52,62 @@ abstract class ComponentCodec {
   /// `directionalLight`).
   String get type;
 
+  /// The component's editable properties, in display order. Drives the
+  /// inspector, agent discovery, default-filling on [realize], and the derived
+  /// [serialize]. Empty for codecs that do not declare a schema.
+  List<ComponentPropertyDef> get propertySchema => const [];
+
+  /// Whether [component] is an instance this codec serializes. Used by the
+  /// derived [serialize]; a codec that overrides [serialize] need not implement
+  /// this.
+  bool claims(Component component) => false;
+
   /// Builds a live component from [spec], or returns null when it cannot be
   /// realized in the given context (for example a mesh with no resource
   /// realizer).
   Component? realize(ComponentSpec spec, RealizeContext context);
 
-  /// Serializes [component] to a [ComponentSpec], or returns null if this
-  /// codec does not handle that component instance.
-  ComponentSpec? serialize(Component component, SerializeContext context);
+  /// Serializes [component] to a [ComponentSpec], or returns null if this codec
+  /// does not handle that component instance.
+  ///
+  /// The default implementation derives the spec from [propertySchema]: when
+  /// [claims] accepts the component, each property's value is read through its
+  /// [ComponentPropertyDef.read]. Codecs whose serialization is not a flat
+  /// field read (a mesh recovering resource ids) override this.
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (!claims(component)) return null;
+    return ComponentSpec(
+      type,
+      properties: {
+        for (final def in propertySchema) def.name: def.read!(component),
+      },
+    );
+  }
+
+  /// The declared default for property [name], or null when the property has no
+  /// default (throws when [name] is undeclared).
+  PropertyValue? defaultOf(String name) =>
+      propertySchema.firstWhere((d) => d.name == name).defaultValue;
+
+  /// The declared default for a [ComponentPropertyKind.number] (or integer)
+  /// property [name], as a double.
+  double numberDefault(String name) {
+    final v = defaultOf(name);
+    return v is IntValue ? v.value.toDouble() : (v as DoubleValue).value;
+  }
+
+  /// The declared default for an [ComponentPropertyKind.integer] property.
+  int intDefault(String name) => (defaultOf(name) as IntValue).value;
+
+  /// The declared default for a [ComponentPropertyKind.boolean] property.
+  bool boolDefault(String name) => (defaultOf(name) as BoolValue).value;
+
+  /// The declared default for a [ComponentPropertyKind.vec3] property (cloned).
+  Vector3 vec3Default(String name) =>
+      (defaultOf(name) as Vec3Value).value.clone();
+
+  /// The declared default for a [ComponentPropertyKind.string] property.
+  String stringDefault(String name) => (defaultOf(name) as StringValue).value;
 }
 
 /// A registry of [ComponentCodec]s, keyed by component type name.
@@ -68,6 +120,9 @@ class FsceneComponentRegistry {
 
   /// Registers [codec], replacing any existing codec for its type.
   void register(ComponentCodec codec) => _byType[codec.type] = codec;
+
+  /// The registered component type names, in registration order.
+  Iterable<String> get types => _byType.keys;
 
   /// The codec for [type], or null when none is registered.
   ComponentCodec? codecFor(String type) => _byType[type];
