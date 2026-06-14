@@ -27,6 +27,7 @@ pubspec.lock
 **/doc/api/
 .dart_tool/
 .packages
+.flutter-plugins-dependencies
 build/
 **/ephemeral/
 pubspec_overrides.yaml
