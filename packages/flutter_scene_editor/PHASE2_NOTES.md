@@ -134,3 +134,67 @@ from `examples/editor_example/`.
 - [ ] Camera does NOT orbit while a gizmo drag is in progress.
 - [ ] Delete key with a node selected removes it and it disappears from
       outliner and viewport.
+
+---
+
+## Prefab authoring (Phase 4.3)
+
+### What was built
+
+**`flutter_scene` (compose.dart)**: `applyPrefabOverride(SceneDocument, PropertyOverride)` is now a public API. It resolves the target node by its prefab-local id and calls the existing `_setProperty` path. Exported from `lib/fscene.dart`.
+
+**`flutter_scene_editor_core` (builtin_commands.dart)**: `clearPrefabOverrides` command (params: nodeId). Clears the entire overrides list on a prefab instance in one undoable transaction. An already-empty instance produces no transaction (silently dropped by history). Two unit tests cover the happy path and the no-op case.
+
+**`flutter_scene_editor` (editor_controller.dart)**:
+- `loadPrefabDocument(AssetRef)`: public async method that reads and returns the prefab document, caching results in `_prefabCache` keyed by `source.key`. Shares the private `_loadPrefab` path resolution logic.
+- `clearPrefabCache(String key)`: evicts one entry from the cache. Called by the inspector after Apply bakes the file.
+
+**`flutter_scene_editor` (scene_io.dart)**: `applyOverridesToSource({sourcePath, overrides})` reads the source `.fscene`, applies each override via `applyPrefabOverride`, writes the updated JSON back.
+
+**`flutter_scene_editor` (inspector_panel.dart)**: `_PrefabInstanceSection` renders below the component sections when `node.instance != null`. Layout:
+- Source path displayed.
+- "Apply to source" and "Revert all" buttons.
+- A `FutureBuilder` on `controller.loadPrefabDocument` populates a flat list of `_OverrideRow` widgets, one per overridable property of each prefab node.
+- Overridable properties: `name` (string field), `layers` (int field), `transform.trs.t/s` (Vec3Field), `transform.trs.r` (read-only quaternion text), and each `components.<type>.<prop>` value using the existing `_PropertyValueRow` switch.
+- Overridden properties show a filled blue accent circle dot to the left.
+- Each overridden property has a Revert button (runs `removePrefabOverride`).
+- Editing a property runs `setPrefabOverride` with the new value, making the change undoable.
+
+### What is stubbed or deferred
+
+- **Rotation override editing**: `transform.trs.r` (quaternion) is shown as read-only text. TODO(rotation-editor): same gap as the instance transform rotation; needs a Vec4/quaternion field before it can be edited.
+- **`visible` override**: `visible` is not in the `_setProperty` grammar in `compose.dart`, so it is not offered here to avoid creating overrides that silently no-op during composition. TODO(visible-override): add visible to `_setProperty` in compose.dart, then expose it in `_collectProps`.
+- **Prefab cache invalidation on external file change**: the `_prefabCache` is not invalidated when the prefab source file changes on disk (e.g., after another Apply from a different instance). TODO(diff-reload): wire a file watcher that calls `clearPrefabCache` when a watched .fscene changes.
+- **Godot-style editable children**: added/removed nodes on the instance (`addedNodes`/`removedNodes`) are not surfaced in the inspector yet. That needs source-to-composed id mapping for instance-internal nodes.
+
+### Verification checklist (prefab authoring)
+
+Open `examples/scenes/prefab_demo.fscene` (File > Open from the editor). The scene has two tree prefab instances ("Tree A" and "Tree B") and a ground plane.
+
+Run the app with `flutter run -d macos --enable-flutter-gpu --enable-impeller` from `examples/editor_example/`.
+
+- [ ] Both trees render in the viewport (same as before; regression check).
+- [ ] Clicking "Tree A" or "Tree B" in the outliner selects it.
+- [ ] The inspector shows a "Prefab Instance" section below the Transform section.
+- [ ] The source path `tree_prefab.fscene` is displayed.
+- [ ] After a moment the flat property list loads: Tree.name, Tree.layers,
+      Tree.transform.trs.t, Tree.transform.trs.s, Trunk.name, Trunk.layers,
+      Trunk.t, Trunk.s, Trunk.mesh.geometry, Trunk.mesh.material, etc.
+- [ ] No blue dot appears next to any property (no overrides yet).
+- [ ] Edit "Tree.name" (submit a new string): a blue dot appears next to the
+      row and the history panel shows "Set prefab override".
+- [ ] The Revert button next to that row removes the override (dot disappears,
+      value reverts to the prefab default).
+- [ ] Edit "Trunk.transform.trs.t" (change X/Y/Z): the dot appears on that
+      row. Undo reverses the edit.
+- [ ] With at least one override active, click "Revert all": all dots disappear
+      and the history panel shows "Clear prefab overrides". Undo restores them.
+- [ ] With at least one override active, click "Apply to source":
+      - A snackbar confirms success.
+      - The overrides clear (blue dots gone).
+      - Open `examples/scenes/tree_prefab.fscene` in a text editor and confirm
+        that the applied property value is now in the source file.
+      - Reopen prefab_demo.fscene; the tree now reflects the applied value
+        (baked into the source).
+- [ ] Applying without a base directory (e.g. on an unsaved scene) shows a
+      snackbar with a clear error message rather than crashing.
