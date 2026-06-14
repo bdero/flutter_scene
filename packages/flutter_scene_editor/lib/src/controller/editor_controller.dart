@@ -16,18 +16,24 @@
 /// own id tagging ([nodeFsceneId]).
 library;
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/src/fscene/compose/compose.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
+import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
-  EditorController._(this.session, this.scene);
+  EditorController._(this.session, this.scene, this.baseDirectory);
 
   /// The headless editing session (document, commands, history, selection).
   final EditorSession session;
@@ -35,12 +41,26 @@ class EditorController extends ChangeNotifier {
   /// The live scene the viewport renders.
   final Scene scene;
 
+  /// The directory the open scene was loaded from, used to resolve prefab
+  /// instance references (their source paths) relative to the scene file. Null
+  /// for a new in-memory scene, which has no prefab references to resolve.
+  final String? baseDirectory;
+
   final Map<LocalId, Node> _liveById = {};
+  // Maps every live node (including those realized from inside a prefab) to the
+  // source-document node that owns it (itself for a source node, the enclosing
+  // instance root for a prefab-internal node), so a viewport click on a prefab
+  // selects the instance the editor can actually act on.
+  final Map<Node, LocalId> _sourceIdByLive = {};
 
   /// Opens a controller over [session], realizing its document into a fresh
   /// scene. Async because realization may upload geometry and textures.
-  static Future<EditorController> open(EditorSession session) async {
-    final controller = EditorController._(session, Scene());
+  /// [baseDirectory] resolves prefab references relative to the scene file.
+  static Future<EditorController> open(
+    EditorSession session, {
+    String? baseDirectory,
+  }) async {
+    final controller = EditorController._(session, Scene(), baseDirectory);
     await controller._realizeAll();
     session.selection.addListener(controller.notifyListeners);
     return controller;
@@ -51,8 +71,11 @@ class EditorController extends ChangeNotifier {
       open(EditorSession(SceneDocument()));
 
   /// Opens a controller over a document loaded from `.fscene` [source].
-  static Future<EditorController> fromFscene(String source) =>
-      open(EditorSession.fromFscene(source));
+  /// [baseDirectory] resolves any prefab references in the document.
+  static Future<EditorController> fromFscene(
+    String source, {
+    String? baseDirectory,
+  }) => open(EditorSession.fromFscene(source), baseDirectory: baseDirectory);
 
   /// The current selection.
   Selection get selection => session.selection;
@@ -68,6 +91,11 @@ class EditorController extends ChangeNotifier {
 
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
+
+  /// The source-document node id that owns [liveNode] (the node itself, or the
+  /// enclosing prefab instance root for a node realized from inside a prefab),
+  /// or null. Used to turn a viewport raycast hit into a selectable node.
+  LocalId? sourceIdForLiveNode(Node liveNode) => _sourceIdByLive[liveNode];
 
   /// Runs the command named [name] with [params], reflects the resulting
   /// transaction onto the live scene, and notifies listeners. Returns the
@@ -150,18 +178,42 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> _realizeAll() async {
-    final root = await realizeSceneAsync(document);
+    // Expand prefab instances before realizing. Documents with no eager
+    // instance realize unchanged, so non-prefab scenes are untouched.
+    final hasEagerInstance = document.nodes.values.any(
+      (n) => n.instance != null && n.instance!.load == LoadPolicy.eager,
+    );
+    final toRealize = hasEagerInstance
+        ? await composeSceneAsync(document, load: _loadPrefab)
+        : document;
+    final root = await realizeSceneAsync(toRealize);
     scene.removeAll();
     scene.add(root);
     _liveById.clear();
-    _index(root);
+    _sourceIdByLive.clear();
+    _index(root, null);
   }
 
-  void _index(Node node) {
+  Future<SceneDocument> _loadPrefab(AssetRef ref) async {
+    final dir = baseDirectory;
+    if (dir == null) {
+      throw StateError(
+        'Cannot resolve prefab "${ref.key}" without a base directory',
+      );
+    }
+    final path = ref.key.startsWith('/') ? ref.key : '$dir/${ref.key}';
+    return readFscene(await File(path).readAsString());
+  }
+
+  void _index(Node node, LocalId? sourceAncestor) {
     final id = nodeFsceneId(node);
+    final source = (id != null && document.nodes.containsKey(id))
+        ? id
+        : sourceAncestor;
     if (id != null) _liveById[id] = node;
+    if (source != null) _sourceIdByLive[node] = source;
     for (final child in node.children) {
-      _index(child);
+      _index(child, source);
     }
   }
 

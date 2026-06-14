@@ -176,4 +176,41 @@ void main() {
     parentId: root.toToken(),
   );
   _write('examples/scenes/tree_prefab.fscene', tree);
+
+  // A scene that instances tree_prefab.fscene as a sub-scene twice, at
+  // different positions, plus a ground plane. Opening this exercises prefab
+  // composition (the referenced .fscene is loaded and inlined on open).
+  final demo = _session(104);
+  _cube(
+    demo,
+    name: 'Ground',
+    color: _color(0.5, 0.5, 0.55),
+    translation: _vec3(0, -1, 0),
+    scale: _vec3(8, 0.2, 8),
+  );
+  final treeA = demo
+      .run('instantiatePrefab', {
+        'prefabAsset': 'tree_prefab.fscene',
+        'name': 'Tree A',
+      })
+      .records
+      .first
+      .targetId;
+  demo.run('setNodeTransform', {
+    'nodeId': treeA.toToken(),
+    'translation': _vec3(-2, 0, 0),
+  });
+  final treeB = demo
+      .run('instantiatePrefab', {
+        'prefabAsset': 'tree_prefab.fscene',
+        'name': 'Tree B',
+      })
+      .records
+      .first
+      .targetId;
+  demo.run('setNodeTransform', {
+    'nodeId': treeB.toToken(),
+    'translation': _vec3(2, 0, 0),
+  });
+  _write('examples/scenes/prefab_demo.fscene', demo);
 }

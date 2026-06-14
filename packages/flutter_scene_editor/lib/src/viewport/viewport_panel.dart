@@ -1,6 +1,4 @@
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
-// ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
@@ -176,7 +174,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (hit == null) {
       _ctrl.selection.clear();
     } else {
-      final id = nodeFsceneId(hit.node);
+      // Resolve the hit to the source node the editor can act on (the node
+      // itself, or the enclosing prefab instance for prefab-internal geometry).
+      final id = _ctrl.sourceIdForLiveNode(hit.node);
       if (id != null) {
         _ctrl.selection.selectOnly(id);
       } else {

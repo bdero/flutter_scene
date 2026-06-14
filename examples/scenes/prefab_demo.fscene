@@ -1,0 +1,89 @@
+{
+  "fscene": 1,
+  "documentId": "YE0AGHWEQH6QBCGCXSXDM294ZR",
+  "stage": {
+    "upAxis": "y",
+    "handedness": "left",
+    "unitsPerMeter": 1.0,
+    "environment": {
+      "type": "studio"
+    },
+    "environmentIntensity": 1.0,
+    "exposure": 1.0,
+    "toneMapping": "pbrNeutral"
+  },
+  "resources": {
+    "geo:00000T0000000": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:00000T0000002": {
+      "kind": "material",
+      "type": "physicallyBased",
+      "properties": {
+        "baseColor": {
+          "c": [0.5, 0.5, 0.55, 1.0]
+        }
+      }
+    }
+  },
+  "nodes": {
+    "n:00000T0000004": {
+      "name": "Ground",
+      "transform": {
+        "trs": {
+          "t": [0.0, -1.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [8.0, 0.20000000298023224, 8.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:00000T0000000"
+            },
+            "material": {
+              "rref": "mat:00000T0000002"
+            }
+          }
+        }
+      ]
+    },
+    "n:00000T0000006": {
+      "name": "Tree A",
+      "transform": {
+        "trs": {
+          "t": [-2.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "instance": {
+        "source": "tree_prefab.fscene"
+      }
+    },
+    "n:00000T0000008": {
+      "name": "Tree B",
+      "transform": {
+        "trs": {
+          "t": [2.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "instance": {
+        "source": "tree_prefab.fscene"
+      }
+    }
+  },
+  "roots": [
+    "n:00000T0000004",
+    "n:00000T0000006",
+    "n:00000T0000008"
+  ]
+}

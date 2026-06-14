@@ -20,11 +20,15 @@ Future<void> saveFscene(EditorController controller, String path) async {
 }
 
 /// Reads a `.fscene` file from [path] and returns a fresh [EditorController].
+/// The file's directory becomes the base for resolving prefab references.
 ///
 /// Throws an [IOException] on read failure and a [FormatException] on bad JSON.
 Future<EditorController> openFscene(String path) async {
   final source = await File(path).readAsString();
-  return EditorController.fromFscene(source);
+  return EditorController.fromFscene(
+    source,
+    baseDirectory: File(path).parent.path,
+  );
 }
 
 /// Shows the native open dialog filtered to `.fscene`, and returns the chosen
