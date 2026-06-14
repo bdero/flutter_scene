@@ -144,6 +144,7 @@ class _EditorShellState extends State<EditorShell> {
                   onRedo: _ctrl.redo,
                   onAddCube: _addCube,
                   onAddSphere: _addSphere,
+                  onAddPrefab: _addPrefabInstance,
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
                 ),
                 Expanded(
@@ -259,6 +260,37 @@ class _EditorShellState extends State<EditorShell> {
     await _addPrimitive('createSphereGeometry');
   }
 
+  // Adds a sub-scene as a prefab instance node. The source is stored relative
+  // to the open scene's directory when possible (portable), absolute otherwise.
+  Future<void> _addPrefabInstance() async {
+    final path = await pickOpenPath();
+    if (path == null) return;
+    final base = _ctrl.baseDirectory;
+    final source = (base != null && path.startsWith('$base/'))
+        ? path.substring(base.length + 1)
+        : path;
+    final name = source
+        .split(Platform.pathSeparator)
+        .last
+        .replaceAll('.fscene', '');
+    try {
+      final tx = await _ctrl.run('instantiatePrefab', {
+        'prefabAsset': source,
+        'name': name,
+      });
+      _ctrl.selection.selectOnly(tx.records.first.targetId);
+    } catch (e) {
+      // Realizing the instance failed (for example the prefab could not be
+      // loaded). Roll the instance back so the scene stays consistent.
+      if (_ctrl.history.canUndo) await _ctrl.undo();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not add prefab: $e')));
+      }
+    }
+  }
+
   Future<void> _addPrimitive(String geoCommand) async {
     // Step 1: count resources before geometry creation.
     final beforeGeo = Set.of(_ctrl.document.resources.keys);
@@ -314,6 +346,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onRedo,
     required this.onAddCube,
     required this.onAddSphere,
+    required this.onAddPrefab,
     required this.onPaletteOpen,
   });
 
@@ -327,6 +360,7 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onRedo;
   final VoidCallback onAddCube;
   final VoidCallback onAddSphere;
+  final VoidCallback onAddPrefab;
   final VoidCallback onPaletteOpen;
 
   @override
@@ -371,6 +405,7 @@ class _EditorMenuBar extends StatelessWidget {
             items: [
               _MenuItem(label: 'Cube', onTap: onAddCube),
               _MenuItem(label: 'Sphere', onTap: onAddSphere),
+              _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
             ],
           ),
           _MenuButton(label: 'Commands', onTap: onPaletteOpen),
