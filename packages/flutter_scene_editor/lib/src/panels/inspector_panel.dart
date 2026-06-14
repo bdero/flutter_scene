@@ -714,7 +714,12 @@ class _StringRowState extends State<_StringRow> {
   }
 
   void _onFocusChange() {
-    if (!_focus.hasFocus) widget.onSubmit(_ctrl.text);
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    // Skip a no-op edit when the text is unchanged.
+    if (_ctrl.text != widget.value) widget.onSubmit(_ctrl.text);
   }
 
   @override
@@ -762,7 +767,7 @@ class _StringRowState extends State<_StringRow> {
                   ),
                   border: OutlineInputBorder(),
                 ),
-                onSubmitted: widget.onSubmit,
+                onSubmitted: (_) => _commit(),
               ),
             ),
           ),
@@ -841,6 +846,8 @@ class _IntRowState extends State<_IntRow> {
   }
 
   void _commit() {
+    // Skip a no-op edit when the text matches the current value.
+    if (_ctrl.text == widget.value.toString()) return;
     final v = int.tryParse(_ctrl.text);
     if (v != null) widget.onSubmit(v);
   }
@@ -933,6 +940,8 @@ class _DoubleRowState extends State<_DoubleRow> {
   }
 
   void _commit() {
+    // Skip when the text still matches the current value's canonical rendering.
+    if (_ctrl.text == widget.value.toStringAsFixed(3)) return;
     final v = double.tryParse(_ctrl.text);
     if (v != null) widget.onSubmit(v);
   }

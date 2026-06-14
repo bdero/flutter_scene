@@ -387,6 +387,9 @@ class _AxisFieldState extends State<_AxisField> {
   }
 
   void _commit() {
+    // Skip when the text still matches the current value's canonical rendering,
+    // so leaving a field untouched does not record a no-op edit.
+    if (_ctrl.text == widget.value.toStringAsFixed(3)) return;
     final v = double.tryParse(_ctrl.text);
     if (v != null) widget.onSubmit(v);
   }
