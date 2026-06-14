@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'change.dart';
+import 'clone.dart';
 import 'command.dart';
 import 'params.dart';
 
@@ -92,6 +93,95 @@ ChangeRecord _attach(SceneDocument doc, LocalId id, LocalId? parent) {
     oldValue: IdListChange(old),
     newValue: IdListChange([...old, id]),
   );
+}
+
+/// The current ordered id list of [parent]'s container (its children, or the
+/// document roots when [parent] is null).
+List<LocalId> _containerOf(SceneDocument doc, LocalId? parent) =>
+    parent == null ? doc.roots : doc.nodes[parent]!.children;
+
+/// A record replacing [parent]'s container (children, or roots) with [next].
+ChangeRecord _containerRecord(
+  SceneDocument doc,
+  LocalId? parent,
+  List<LocalId> old,
+  List<LocalId> next,
+) => parent == null
+    ? ChangeRecord(
+        targetId: ChangeRecord.rootsTarget,
+        slot: ChangeSlot.roots,
+        oldValue: IdListChange(old),
+        newValue: IdListChange(next),
+      )
+    : ChangeRecord(
+        targetId: parent,
+        slot: ChangeSlot.children,
+        oldValue: IdListChange(old),
+        newValue: IdListChange(next),
+      );
+
+/// A record placing [id] into [parent]'s container at [index] (appended when
+/// [index] is null), removing any existing occurrence first so this doubles as
+/// a same-container reorder. Returns null when the container is unchanged.
+ChangeRecord? _attachAt(
+  SceneDocument doc,
+  LocalId id,
+  LocalId? parent,
+  int? index,
+) {
+  final old = List.of(_containerOf(doc, parent));
+  final next = [
+    for (final e in old)
+      if (e != id) e,
+  ];
+  final at = index == null ? next.length : index.clamp(0, next.length);
+  next.insert(at, id);
+  if (_sameOrder(old, next)) return null;
+  return _containerRecord(doc, parent, old, next);
+}
+
+bool _sameOrder(List<LocalId> a, List<LocalId> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// Whether any ancestor of [id] is itself in [set] (so [id] is not a top-level
+/// member of a selection and should be skipped to avoid double-processing).
+bool _hasAncestorIn(SceneDocument doc, LocalId id, Set<LocalId> set) {
+  var parent = _parentOf(doc, id);
+  while (parent != null) {
+    if (set.contains(parent)) return true;
+    parent = _parentOf(doc, parent);
+  }
+  return false;
+}
+
+/// The top-level members of [ids] (those with no ancestor also in [ids]),
+/// returned in document order (roots first, depth-first), with duplicates
+/// dropped.
+List<LocalId> _topLevel(SceneDocument doc, List<LocalId> ids) {
+  final set = ids.toSet();
+  final tops = {
+    for (final id in ids)
+      if (doc.nodes.containsKey(id) && !_hasAncestorIn(doc, id, set)) id,
+  };
+  final ordered = <LocalId>[];
+  void visit(LocalId id) {
+    if (tops.contains(id)) ordered.add(id);
+    final node = doc.nodes[id];
+    if (node == null) return;
+    for (final child in node.children) {
+      visit(child);
+    }
+  }
+
+  for (final root in doc.roots) {
+    visit(root);
+  }
+  return ordered;
 }
 
 ChangeRecord _componentsRecord(NodeSpec node, List<ComponentSpec> next) =>
@@ -314,7 +404,10 @@ final deleteNode = CommandEntry(
 
 final reparentNode = CommandEntry(
   name: 'reparentNode',
-  doc: 'Move a node under a new parent, or to the root list.',
+  doc:
+      'Move a node under a new parent (or to the root list), optionally at a '
+      'specific index. Passing the current parent with an index reorders the '
+      'node among its siblings.',
   category: 'Node',
   paramSchema: const [
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
@@ -324,12 +417,19 @@ final reparentNode = CommandEntry(
       label: 'New parent',
       required: false,
     ),
+    ParamSpec(
+      name: 'index',
+      type: ParamType.integer,
+      label: 'Index',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final id = requireNodeId(params, 'nodeId');
     _requireNode(ctx, id);
     final doc = ctx.document;
     final newParent = optionalNodeId(params, 'newParentId');
+    final index = optionalInt(params, 'index');
     if (newParent != null) {
       _requireNode(ctx, newParent);
       if (_subtree(doc, id).contains(newParent)) {
@@ -340,12 +440,177 @@ final reparentNode = CommandEntry(
     }
     final oldParent = _parentOf(doc, id);
     if (oldParent == newParent) {
-      return Transaction(name: 'Reparent node', records: _empty);
+      // Same container: a pure reorder (or a no-op when the index is omitted
+      // or already correct).
+      final record = _attachAt(doc, id, newParent, index);
+      return Transaction(
+        name: 'Reorder node',
+        records: record == null ? _empty : [record],
+      );
     }
+    final attach = _attachAt(doc, id, newParent, index)!;
     return Transaction(
       name: 'Reparent node',
-      records: [_detach(doc, id, oldParent), _attach(doc, id, newParent)],
+      records: [_detach(doc, id, oldParent), attach],
     );
+  },
+);
+
+/// Clones one or more node subtrees in place. Each top-level node in [nodeIds]
+/// is deep-copied with fresh ids and inserted right after the original among
+/// its siblings; nodes nested under another selected node are skipped.
+final duplicateNodes = CommandEntry(
+  name: 'duplicateNodes',
+  doc: 'Duplicate node subtrees in place, each after its original.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final tops = _topLevel(doc, requireNodeIdList(params, 'nodeIds'));
+    if (tops.isEmpty) {
+      return Transaction(name: 'Duplicate', records: _empty);
+    }
+    final records = <ChangeRecord>[];
+    // One working copy per touched container, so multiple clones in the same
+    // parent land in a single id-list record (records on the same slot would
+    // otherwise overwrite each other).
+    final oldLists = <LocalId?, List<LocalId>>{};
+    final working = <LocalId?, List<LocalId>>{};
+    List<LocalId> containerFor(LocalId? parent) =>
+        working.putIfAbsent(parent, () {
+          final src = List.of(_containerOf(doc, parent));
+          oldLists[parent] = List.of(src);
+          return src;
+        });
+
+    for (final id in tops) {
+      final subtree = captureSubtree(doc, id);
+      final inst = instantiateSubtree(subtree, doc.newId);
+      for (final node in inst.nodes) {
+        records.add(
+          ChangeRecord(
+            targetId: node.id,
+            slot: ChangeSlot.poolNode,
+            oldValue: const NodeChange(null),
+            newValue: NodeChange(node),
+          ),
+        );
+      }
+      final parent = _parentOf(doc, id);
+      final list = containerFor(parent);
+      list.insert(list.indexOf(id) + 1, inst.root);
+    }
+    for (final entry in working.entries) {
+      records.add(
+        _containerRecord(doc, entry.key, oldLists[entry.key]!, entry.value),
+      );
+    }
+    return Transaction(name: 'Duplicate', records: records);
+  },
+);
+
+/// Inserts detached subtrees (clipboard content) into the document with fresh
+/// ids, appended under [parentId] (the root list when omitted). The `subtrees`
+/// param carries in-memory [NodeSubtree] objects, so this command is driven by
+/// the editor rather than serialized agent calls.
+///
+/// TODO(paste-agent-schema): accept a serialized subtree form so an agent can
+/// paste through the MCP surface, not just the in-process editor.
+final pasteNodes = CommandEntry(
+  name: 'pasteNodes',
+  doc: 'Insert copied node subtrees with fresh ids under a parent.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(
+      name: 'parentId',
+      type: ParamType.nodeRef,
+      label: 'Parent',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final parent = optionalNodeId(params, 'parentId');
+    if (parent != null) _requireNode(ctx, parent);
+    final raw = params['subtrees'];
+    if (raw is! List) {
+      throw const CommandException('Param subtrees must be a list');
+    }
+    final records = <ChangeRecord>[];
+    final old = List.of(_containerOf(doc, parent));
+    final next = List.of(old);
+    for (final item in raw) {
+      if (item is! NodeSubtree) {
+        throw const CommandException('Each subtree must be a NodeSubtree');
+      }
+      final inst = instantiateSubtree(item, doc.newId);
+      for (final node in inst.nodes) {
+        records.add(
+          ChangeRecord(
+            targetId: node.id,
+            slot: ChangeSlot.poolNode,
+            oldValue: const NodeChange(null),
+            newValue: NodeChange(node),
+          ),
+        );
+      }
+      next.add(inst.root);
+    }
+    if (records.isEmpty) return Transaction(name: 'Paste', records: _empty);
+    records.add(_containerRecord(doc, parent, old, next));
+    return Transaction(name: 'Paste', records: records);
+  },
+);
+
+/// Deletes one or more node subtrees in a single transaction. Nodes nested
+/// under another deleted node are skipped (the subtree removal covers them).
+final deleteNodes = CommandEntry(
+  name: 'deleteNodes',
+  doc: 'Delete node subtrees in one undoable step.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final tops = _topLevel(doc, requireNodeIdList(params, 'nodeIds'));
+    if (tops.isEmpty) {
+      return Transaction(name: 'Delete', records: _empty);
+    }
+    final records = <ChangeRecord>[];
+    // Detach each top-level node from its container in one record per
+    // container, then drop every node in every subtree from the pool.
+    final oldLists = <LocalId?, List<LocalId>>{};
+    final working = <LocalId?, List<LocalId>>{};
+    List<LocalId> containerFor(LocalId? parent) =>
+        working.putIfAbsent(parent, () {
+          final src = List.of(_containerOf(doc, parent));
+          oldLists[parent] = List.of(src);
+          return src;
+        });
+    for (final id in tops) {
+      containerFor(_parentOf(doc, id)).remove(id);
+    }
+    for (final entry in working.entries) {
+      records.add(
+        _containerRecord(doc, entry.key, oldLists[entry.key]!, entry.value),
+      );
+    }
+    for (final id in tops) {
+      for (final nid in _subtree(doc, id)) {
+        records.add(
+          ChangeRecord(
+            targetId: nid,
+            slot: ChangeSlot.poolNode,
+            oldValue: NodeChange(doc.nodes[nid]),
+            newValue: const NodeChange(null),
+          ),
+        );
+      }
+    }
+    return Transaction(name: 'Delete', records: records);
   },
 );
 
@@ -791,7 +1056,10 @@ final List<CommandEntry> builtinCommands = [
   setNodeTransform,
   createNode,
   deleteNode,
+  deleteNodes,
   reparentNode,
+  duplicateNodes,
+  pasteNodes,
   addComponent,
   removeComponent,
   setComponentProperties,

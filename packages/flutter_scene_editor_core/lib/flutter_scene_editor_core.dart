@@ -57,6 +57,7 @@ export 'src/params.dart'
         optionalString,
         requireBool,
         requireInt,
+        optionalInt,
         requireDouble,
         requireVec3,
         optionalVec3,
@@ -64,6 +65,7 @@ export 'src/params.dart'
         optionalQuaternion,
         requireNodeId,
         optionalNodeId,
+        requireNodeIdList,
         requireResourceId,
         optionalResourceId,
         requireAssetRef,
@@ -74,6 +76,9 @@ export 'src/params.dart'
 // The built-in command set.
 export 'src/builtin_commands.dart'
     show builtinCommands, registerBuiltinCommands;
+
+// Subtree cloning (duplicate, copy, paste).
+export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;

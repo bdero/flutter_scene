@@ -54,6 +54,14 @@ int requireInt(Map<String, Object?> params, String key) {
   return v;
 }
 
+/// Reads an optional integer [key], or null when absent.
+int? optionalInt(Map<String, Object?> params, String key) {
+  final v = _get(params, key);
+  if (v == null) return null;
+  if (v is! int) throw CommandException('Param $key must be an integer');
+  return v;
+}
+
 /// Reads a required number [key] (accepts an int or a double).
 double requireDouble(Map<String, Object?> params, String key) {
   final v = _get(params, key);
@@ -98,6 +106,25 @@ LocalId requireNodeId(Map<String, Object?> params, String key) =>
 /// Reads an optional node id token [key], or null when absent.
 LocalId? optionalNodeId(Map<String, Object?> params, String key) =>
     _optionalId(params, key, 'node');
+
+/// Reads a required list of node id tokens [key].
+List<LocalId> requireNodeIdList(Map<String, Object?> params, String key) {
+  final v = _get(params, key);
+  if (v == null) _missing(key);
+  if (v is! List) throw CommandException('Param $key must be a list');
+  final out = <LocalId>[];
+  for (final item in v) {
+    if (item is! String) {
+      throw CommandException('Each $key item must be a node id token');
+    }
+    try {
+      out.add(LocalId.parse(item));
+    } catch (_) {
+      throw CommandException('Param $key has an invalid node id token: $item');
+    }
+  }
+  return out;
+}
 
 /// Reads a required resource id token [key].
 LocalId requireResourceId(Map<String, Object?> params, String key) =>

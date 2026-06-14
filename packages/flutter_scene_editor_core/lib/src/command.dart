@@ -40,6 +40,9 @@ enum ParamType {
   /// A node id token referencing a document node.
   nodeRef,
 
+  /// A list of node id tokens.
+  nodeRefList,
+
   /// A resource id token referencing a document resource.
   resourceRef,
 
@@ -229,6 +232,12 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
       return {
         'type': 'string',
         'description': '${param.description} (node id token)'.trim(),
+      };
+    case ParamType.nodeRefList:
+      return {
+        'type': 'array',
+        'description': '${param.description} (node id tokens)'.trim(),
+        'items': {'type': 'string'},
       };
     case ParamType.resourceRef:
       return {
