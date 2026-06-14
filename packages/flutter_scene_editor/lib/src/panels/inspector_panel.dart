@@ -270,10 +270,18 @@ typedef _OverrideProp = ({
 
 /// Collects the overridable properties for every node in [prefabDoc], merged
 /// with any active [overrides] on the instance.
+///
+/// [mergedRootId] is the prefab's single root, when composition merges it into
+/// the instance node (the common case). That node is skipped here because its
+/// name, transform, and components are edited directly through the inspector's
+/// Node, Transform, and Component sections on the instance itself, so listing
+/// it again as overrides would double-edit the same node (the transform
+/// conflict).
 List<_OverrideProp> _collectProps(
   SceneDocument prefabDoc,
-  List<PropertyOverride> overrides,
-) {
+  List<PropertyOverride> overrides, {
+  LocalId? mergedRootId,
+}) {
   // Build a quick lookup of active overrides: (target.token, path) -> value.
   final activeMap = <String, PropertyValue>{
     for (final o in overrides) '${o.target.toToken()}|${o.path}': o.value,
@@ -282,6 +290,7 @@ List<_OverrideProp> _collectProps(
   final props = <_OverrideProp>[];
 
   for (final prefabNode in prefabDoc.nodes.values) {
+    if (prefabNode.id == mergedRootId) continue;
     final nodeLabel = prefabNode.name.isNotEmpty
         ? prefabNode.name
         : prefabNode.id.toToken();
@@ -409,7 +418,20 @@ class _PrefabInstanceSection extends StatelessWidget {
               );
             }
             final prefabDoc = snap.data!;
-            final props = _collectProps(prefabDoc, instance.overrides);
+            // When the prefab has a single root and the handedness matches,
+            // composition merges that root into the instance node, so it is
+            // edited via the Node/Transform sections, not as overrides.
+            final mergedRoot =
+                prefabDoc.roots.length == 1 &&
+                    prefabDoc.stage.handedness ==
+                        controller.document.stage.handedness
+                ? prefabDoc.roots.single
+                : null;
+            final props = _collectProps(
+              prefabDoc,
+              instance.overrides,
+              mergedRootId: mergedRoot,
+            );
             if (props.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.symmetric(vertical: 2),
