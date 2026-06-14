@@ -116,6 +116,11 @@ class EditorController extends ChangeNotifier {
     return doc;
   }
 
+  /// Removes the cached prefab document for [key], forcing a fresh read on
+  /// the next [loadPrefabDocument] call. Call this after applying overrides
+  /// back to the source file so the inspector reflects the updated content.
+  void clearPrefabCache(String key) => _prefabCache.remove(key);
+
   /// Runs the command named [name] with [params], reflects the resulting
   /// transaction onto the live scene, and notifies listeners. Returns the
   /// committed transaction (its records carry the ids of anything created, so
