@@ -318,6 +318,32 @@ void _applyDelta(
 
 // ---- property-path override application ----
 
+/// Applies a single [override] to [document] by resolving the target node
+/// (by its prefab-local id) and mutating the property at [override.path].
+///
+/// Call this to bake an instance override back into the prefab source document,
+/// one override at a time. The document is mutated in place. If the target node
+/// is not found the call is a no-op (a warning is printed via [debugPrint]).
+///
+/// The grammar for [PropertyOverride.path] is the same as the override grammar
+/// used during composition: `name`, `layers`, `transform.matrix`,
+/// `transform.trs.t`, `transform.trs.r`, `transform.trs.s`, and
+/// `components.<type>.<prop>`.
+///
+/// NOTE `visible` is NOT supported by the override grammar; the compose path
+/// does not handle it. TODO(visible-override): add visible support to
+/// _setProperty once compose.dart handles it.
+void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
+  final node = document.node(override.target);
+  if (node == null) {
+    debugPrint(
+      'fscene: applyPrefabOverride target "${override.target.toToken()}" not found',
+    );
+    return;
+  }
+  _setProperty(node, override.path, override.value);
+}
+
 void _setProperty(NodeSpec node, String path, PropertyValue value) {
   final parts = path.split('.');
   if (parts.length == 1) {

@@ -11,7 +11,12 @@ library;
 export 'src/fscene/binary/fsceneb.dart'
     show writeFsceneb, readFsceneb, kFscenebVersion, FscenebFormatException;
 export 'src/fscene/compose/compose.dart'
-    show composeScene, composeSceneAsync, PrefabResolver, AsyncPrefabLoader;
+    show
+        applyPrefabOverride,
+        composeScene,
+        composeSceneAsync,
+        PrefabResolver,
+        AsyncPrefabLoader;
 export 'src/fscene/id.dart'
     show DocumentId, LocalId, IdAllocator, encodeBase32, decodeBase32;
 export 'src/fscene/json/fscene_json.dart'
