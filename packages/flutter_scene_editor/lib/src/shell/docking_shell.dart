@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:multi_split_view/multi_split_view.dart';
 
 /// 4-panel docked editor shell.
 ///
-/// Layout (in-house on multi_split_view, not the `docking` package):
+/// Layout (in-house resizable splits, the `docking` and `multi_split_view`
+/// packages did not give reliably draggable dividers in this nesting, so the
+/// split is hand-rolled with a gesture this code controls directly):
 ///
 ///   +---------------------------+-------------------+
 ///   |                           |   Outliner        |
@@ -13,13 +14,9 @@ import 'package:multi_split_view/multi_split_view.dart';
 ///   |   History (bottom strip)                      |
 ///   +-----------------------------------------------+
 ///
-/// The `docking` package pins old `multi_split_view`/`tabbed_view` versions
-/// (see spike 0.4 findings) and breaks host-project resolution. This in-house
-/// layout covers the needed surfaces without the pin constraint.
-///
-/// TODO(docking-tabs): add a tab layer (tabbed_view ^3.x) for tabbed panel
-/// groups when detachable panels are needed in a later phase.
-class DockingShell extends StatefulWidget {
+/// TODO(docking-tabs): drag-to-redock and tab groups belong with the editor
+/// UX design pass.
+class DockingShell extends StatelessWidget {
   const DockingShell({
     super.key,
     required this.viewportPane,
@@ -34,106 +31,120 @@ class DockingShell extends StatefulWidget {
   final Widget historyPane;
 
   @override
-  State<DockingShell> createState() => _DockingShellState();
+  Widget build(BuildContext context) {
+    final rightColumn = ResizableSplit(
+      axis: Axis.vertical,
+      initialFraction: 0.5,
+      first: _PanelContainer(child: outlinerPane),
+      second: _PanelContainer(child: inspectorPane),
+    );
+    final mainArea = ResizableSplit(
+      axis: Axis.horizontal,
+      initialFraction: 0.72,
+      first: _PanelContainer(child: viewportPane),
+      second: rightColumn,
+    );
+    return ResizableSplit(
+      axis: Axis.vertical,
+      initialFraction: 0.78,
+      first: mainArea,
+      second: _PanelContainer(child: historyPane),
+    );
+  }
 }
 
-class _DockingShellState extends State<DockingShell> {
-  late final MultiSplitViewController _hController;
-  late final MultiSplitViewController _rightController;
-  late final MultiSplitViewController _vController;
+/// Two panes split along [axis] with a draggable divider between them. The
+/// first pane's share of the space is [initialFraction]; dragging the divider
+/// adjusts it, clamped to [minFraction] and [maxFraction].
+class ResizableSplit extends StatefulWidget {
+  const ResizableSplit({
+    super.key,
+    required this.axis,
+    required this.first,
+    required this.second,
+    this.initialFraction = 0.5,
+    this.minFraction = 0.1,
+    this.maxFraction = 0.9,
+  });
+
+  final Axis axis;
+  final Widget first;
+  final Widget second;
+  final double initialFraction;
+  final double minFraction;
+  final double maxFraction;
 
   @override
-  void initState() {
-    super.initState();
-    _hController = MultiSplitViewController(
-      areas: [
-        Area(flex: 3, min: 200), // viewport
-        Area(flex: 1, min: 160), // right column
-      ],
-    );
-    _rightController = MultiSplitViewController(
-      areas: [
-        Area(flex: 1, min: 80), // outliner
-        Area(flex: 1, min: 80), // inspector
-      ],
-    );
-    _vController = MultiSplitViewController(
-      areas: [
-        Area(flex: 4, min: 200), // main area
-        Area(flex: 1, min: 80), // history strip
-      ],
-    );
-  }
+  State<ResizableSplit> createState() => _ResizableSplitState();
+}
 
-  @override
-  void dispose() {
-    _hController.dispose();
-    _rightController.dispose();
-    _vController.dispose();
-    super.dispose();
-  }
+class _ResizableSplitState extends State<ResizableSplit> {
+  static const double _thickness = 8;
+
+  late double _fraction = widget.initialFraction;
 
   @override
   Widget build(BuildContext context) {
+    final horizontal = widget.axis == Axis.horizontal;
     final scheme = Theme.of(context).colorScheme;
-    final theme = MultiSplitViewThemeData(
-      // A wide, filled divider so the separation is clearly visible and easy
-      // to grab. The band gets a solid background; a brighter groove and a
-      // primary-tinted highlight show where to drag.
-      dividerThickness: 8,
-      // Extend the draggable hit zone a few pixels past the visible band so the
-      // divider is easy to grab.
-      dividerHandleBuffer: 6,
-      dividerPainter: DividerPainters.grooved1(
-        backgroundColor: scheme.outlineVariant,
-        highlightedBackgroundColor: scheme.primary.withValues(alpha: 0.35),
-        color: scheme.onSurfaceVariant,
-        highlightedColor: scheme.primary,
-        thickness: 2,
-        highlightedThickness: 3,
-      ),
-    );
 
-    final rightColumn = MultiSplitViewTheme(
-      data: theme,
-      child: MultiSplitView(
-        axis: Axis.vertical,
-        controller: _rightController,
-        builder: (context, area) {
-          return switch (area.index) {
-            0 => _PanelContainer(child: widget.outlinerPane),
-            _ => _PanelContainer(child: widget.inspectorPane),
-          };
-        },
-      ),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final total = horizontal ? constraints.maxWidth : constraints.maxHeight;
+        final usable = (total - _thickness).clamp(0.0, double.infinity);
+        final firstExtent = (usable * _fraction).clamp(0.0, usable);
 
-    final mainArea = MultiSplitViewTheme(
-      data: theme,
-      child: MultiSplitView(
-        axis: Axis.horizontal,
-        controller: _hController,
-        builder: (context, area) {
-          return switch (area.index) {
-            0 => _PanelContainer(child: widget.viewportPane),
-            _ => rightColumn,
-          };
-        },
-      ),
-    );
+        void onDrag(double delta) {
+          if (usable <= 0) return;
+          setState(() {
+            _fraction = (_fraction + delta / usable).clamp(
+              widget.minFraction,
+              widget.maxFraction,
+            );
+          });
+        }
 
-    return MultiSplitViewTheme(
-      data: theme,
-      child: MultiSplitView(
-        axis: Axis.vertical,
-        controller: _vController,
-        builder: (context, area) {
-          return switch (area.index) {
-            0 => mainArea,
-            _ => _PanelContainer(child: widget.historyPane),
-          };
-        },
-      ),
+        final divider = MouseRegion(
+          cursor: horizontal
+              ? SystemMouseCursors.resizeColumn
+              : SystemMouseCursors.resizeRow,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: horizontal
+                ? (d) => onDrag(d.delta.dx)
+                : null,
+            onVerticalDragUpdate: horizontal ? null : (d) => onDrag(d.delta.dy),
+            child: Container(
+              width: horizontal ? _thickness : null,
+              height: horizontal ? null : _thickness,
+              color: scheme.outlineVariant,
+              alignment: Alignment.center,
+              child: Container(
+                width: horizontal ? 2 : 24,
+                height: horizontal ? 24 : 2,
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final children = <Widget>[
+          SizedBox(
+            width: horizontal ? firstExtent : null,
+            height: horizontal ? null : firstExtent,
+            child: widget.first,
+          ),
+          divider,
+          Expanded(child: widget.second),
+        ];
+
+        return horizontal
+            ? Row(children: children)
+            : Column(children: children);
+      },
     );
   }
 }

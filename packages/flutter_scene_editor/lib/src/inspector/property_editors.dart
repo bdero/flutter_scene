@@ -373,23 +373,35 @@ class _AxisField extends StatefulWidget {
 
 class _AxisFieldState extends State<_AxisField> {
   late final TextEditingController _ctrl;
+  late final FocusNode _focus;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.value.toStringAsFixed(3));
+    _focus = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final v = double.tryParse(_ctrl.text);
+    if (v != null) widget.onSubmit(v);
   }
 
   @override
   void didUpdateWidget(_AxisField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value) {
+    if (oldWidget.value != widget.value && !_focus.hasFocus) {
       _ctrl.text = widget.value.toStringAsFixed(3);
     }
   }
 
   @override
   void dispose() {
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -409,6 +421,7 @@ class _AxisFieldState extends State<_AxisField> {
           Expanded(
             child: TextField(
               controller: _ctrl,
+              focusNode: _focus,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
                 signed: true,
@@ -422,10 +435,7 @@ class _AxisFieldState extends State<_AxisField> {
                 ),
                 border: OutlineInputBorder(),
               ),
-              onSubmitted: (text) {
-                final v = double.tryParse(text);
-                if (v != null) widget.onSubmit(v);
-              },
+              onSubmitted: (_) => _commit(),
             ),
           ),
         ],

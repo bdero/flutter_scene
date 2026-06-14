@@ -85,6 +85,39 @@ class _EditorShellState extends State<EditorShell> {
 
   EditorController get _ctrl => widget.controller;
 
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.lastError.addListener(_showError);
+  }
+
+  @override
+  void didUpdateWidget(EditorShell old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      old.controller.lastError.removeListener(_showError);
+      _ctrl.lastError.addListener(_showError);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.lastError.removeListener(_showError);
+    super.dispose();
+  }
+
+  void _showError() {
+    final message = _ctrl.lastError.value;
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Command failed, $message'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+    _ctrl.lastError.value = null;
+  }
+
   /// Whether a text field currently has focus, so the global shortcuts can
   /// step aside and let it handle the key.
   bool _isEditingText() {

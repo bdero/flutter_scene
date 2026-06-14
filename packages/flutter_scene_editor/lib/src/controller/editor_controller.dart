@@ -57,6 +57,11 @@ class EditorController extends ChangeNotifier {
   // does not re-read the file on every rebuild.
   final Map<String, SceneDocument> _prefabCache = {};
 
+  /// The message of the most recent command failure, for the UI to surface.
+  /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
+  /// menu action) does not fail silently. The shell shows it and resets it.
+  final ValueNotifier<String?> lastError = ValueNotifier<String?>(null);
+
   /// Opens a controller over [session], realizing its document into a fresh
   /// scene. Async because realization may upload geometry and textures.
   /// [baseDirectory] resolves prefab references relative to the scene file.
@@ -130,10 +135,17 @@ class EditorController extends ChangeNotifier {
     String name, [
     Map<String, Object?> params = const {},
   ]) async {
-    final transaction = session.run(name, params);
-    await _reflect(transaction);
-    notifyListeners();
-    return transaction;
+    try {
+      final transaction = session.run(name, params);
+      await _reflect(transaction);
+      notifyListeners();
+      return transaction;
+    } catch (error) {
+      // Surface the failure (a fire-and-forget caller would otherwise swallow
+      // it) and rethrow so awaiting callers can still react.
+      lastError.value = '$name, $error';
+      rethrow;
+    }
   }
 
   /// Undoes the last edit, reflecting it onto the live scene.
@@ -244,6 +256,7 @@ class EditorController extends ChangeNotifier {
   @override
   void dispose() {
     session.selection.removeListener(notifyListeners);
+    lastError.dispose();
     scene.removeAll();
     super.dispose();
   }

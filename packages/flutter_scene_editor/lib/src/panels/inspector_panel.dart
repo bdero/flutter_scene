@@ -682,21 +682,30 @@ class _StringRow extends StatefulWidget {
 
 class _StringRowState extends State<_StringRow> {
   late TextEditingController _ctrl;
+  late final FocusNode _focus;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.value);
+    _focus = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) widget.onSubmit(_ctrl.text);
   }
 
   @override
   void didUpdateWidget(_StringRow old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value) _ctrl.text = widget.value;
+    if (old.value != widget.value && !_focus.hasFocus) {
+      _ctrl.text = widget.value;
+    }
   }
 
   @override
   void dispose() {
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -721,6 +730,7 @@ class _StringRowState extends State<_StringRow> {
               height: 24,
               child: TextField(
                 controller: _ctrl,
+                focusNode: _focus,
                 style: const TextStyle(fontSize: 11),
                 decoration: const InputDecoration(
                   isDense: true,
@@ -795,21 +805,35 @@ class _IntRow extends StatefulWidget {
 
 class _IntRowState extends State<_IntRow> {
   late TextEditingController _ctrl;
+  late final FocusNode _focus;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.value.toString());
+    _focus = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final v = int.tryParse(_ctrl.text);
+    if (v != null) widget.onSubmit(v);
   }
 
   @override
   void didUpdateWidget(_IntRow old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value) _ctrl.text = widget.value.toString();
+    if (old.value != widget.value && !_focus.hasFocus) {
+      _ctrl.text = widget.value.toString();
+    }
   }
 
   @override
   void dispose() {
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -834,6 +858,7 @@ class _IntRowState extends State<_IntRow> {
               height: 24,
               child: TextField(
                 controller: _ctrl,
+                focusNode: _focus,
                 keyboardType: const TextInputType.numberWithOptions(
                   signed: true,
                 ),
@@ -846,10 +871,7 @@ class _IntRowState extends State<_IntRow> {
                   ),
                   border: OutlineInputBorder(),
                 ),
-                onSubmitted: (text) {
-                  final v = int.tryParse(text);
-                  if (v != null) widget.onSubmit(v);
-                },
+                onSubmitted: (_) => _commit(),
               ),
             ),
           ),
@@ -875,23 +897,35 @@ class _DoubleRow extends StatefulWidget {
 
 class _DoubleRowState extends State<_DoubleRow> {
   late TextEditingController _ctrl;
+  late final FocusNode _focus;
 
   @override
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.value.toStringAsFixed(3));
+    _focus = FocusNode()..addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final v = double.tryParse(_ctrl.text);
+    if (v != null) widget.onSubmit(v);
   }
 
   @override
   void didUpdateWidget(_DoubleRow old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value) {
+    if (old.value != widget.value && !_focus.hasFocus) {
       _ctrl.text = widget.value.toStringAsFixed(3);
     }
   }
 
   @override
   void dispose() {
+    _focus.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -916,6 +950,7 @@ class _DoubleRowState extends State<_DoubleRow> {
               height: 24,
               child: TextField(
                 controller: _ctrl,
+                focusNode: _focus,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                   signed: true,
@@ -929,10 +964,7 @@ class _DoubleRowState extends State<_DoubleRow> {
                   ),
                   border: OutlineInputBorder(),
                 ),
-                onSubmitted: (text) {
-                  final v = double.tryParse(text);
-                  if (v != null) widget.onSubmit(v);
-                },
+                onSubmitted: (_) => _commit(),
               ),
             ),
           ),
