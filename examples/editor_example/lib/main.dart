@@ -12,7 +12,7 @@ class EditorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'flutter_scene Editor',
+      title: 'Scene Editor',
       theme: ThemeData.dark(useMaterial3: true),
       home: const _EditorLoader(),
       debugShowCheckedModeBanner: false,

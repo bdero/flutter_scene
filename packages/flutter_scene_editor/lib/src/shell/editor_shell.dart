@@ -339,8 +339,8 @@ class _EditorMenuBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             currentPath != null
-                ? 'flutter_scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
-                : 'flutter_scene Editor',
+                ? 'Scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
+                : 'Scene Editor',
             style: Theme.of(context).textTheme.labelSmall,
           ),
           const SizedBox(width: 16),
