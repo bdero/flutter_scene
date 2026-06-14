@@ -22,6 +22,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/fscene/compose/compose.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
@@ -97,6 +99,18 @@ class EditorController extends ChangeNotifier {
 
   /// The document being edited.
   SceneDocument get document => session.document;
+
+  // The component registry, for reading component-type schemas (the editable
+  // properties each type declares). Matches the registry realize uses.
+  final FsceneComponentRegistry _componentRegistry = defaultComponentRegistry();
+
+  /// The component type names that can be added to a node.
+  List<String> componentTypes() => _componentRegistry.types.toList();
+
+  /// The declared editable properties of component [type] (empty when the type
+  /// declares none, or is unknown).
+  List<ComponentPropertyDef> componentSchema(String type) =>
+      _componentRegistry.codecFor(type)?.propertySchema ?? const [];
 
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
