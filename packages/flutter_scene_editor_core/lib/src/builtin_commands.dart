@@ -741,6 +741,37 @@ final removePrefabOverride = CommandEntry(
   },
 );
 
+final clearPrefabOverrides = CommandEntry(
+  name: 'clearPrefabOverrides',
+  doc: 'Remove all per-instance overrides from a prefab instance node.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    if (instance.overrides.isEmpty) {
+      return Transaction(name: 'Clear prefab overrides', records: _empty);
+    }
+    return Transaction(
+      name: 'Clear prefab overrides',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.instance,
+          oldValue: PrefabInstanceChange(instance),
+          newValue: PrefabInstanceChange(_withOverrides(instance, const [])),
+        ),
+      ],
+    );
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Registration.
 // ---------------------------------------------------------------------------
@@ -771,4 +802,5 @@ final List<CommandEntry> builtinCommands = [
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,
+  clearPrefabOverrides,
 ];

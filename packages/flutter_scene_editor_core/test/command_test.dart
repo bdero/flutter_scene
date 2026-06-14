@@ -209,6 +209,54 @@ void main() {
       expect(h.doc.node(id)!.instance!.overrides, isEmpty);
     });
 
+    test('clearPrefabOverrides empties the delta, undo restores overrides', () {
+      final h = _harness();
+      _run(h, 'instantiatePrefab', {
+        'prefabAsset': 'assets/tree.fscene',
+        'name': 'Tree',
+      });
+      final id = h.doc.roots.single;
+      // Add two overrides.
+      _run(h, 'setPrefabOverride', {
+        'nodeId': id.toToken(),
+        'target': id.toToken(),
+        'path': 'name',
+        'value': 'Renamed',
+      });
+      _run(h, 'setPrefabOverride', {
+        'nodeId': id.toToken(),
+        'target': id.toToken(),
+        'path': 'layers',
+        'value': 3,
+      });
+      expect(h.doc.node(id)!.instance!.overrides, hasLength(2));
+
+      // Clear all overrides.
+      _run(h, 'clearPrefabOverrides', {'nodeId': id.toToken()});
+      expect(h.doc.node(id)!.instance!.overrides, isEmpty);
+
+      // Undo restores both overrides.
+      h.history.undo();
+      expect(h.doc.node(id)!.instance!.overrides, hasLength(2));
+    });
+
+    test(
+      'clearPrefabOverrides on empty overrides is a no-op (empty transaction)',
+      () {
+        final h = _harness();
+        _run(h, 'instantiatePrefab', {
+          'prefabAsset': 'assets/tree.fscene',
+          'name': 'Tree',
+        });
+        final id = h.doc.roots.single;
+        expect(h.doc.node(id)!.instance!.overrides, isEmpty);
+        final before = h.history.transactions.length;
+        _run(h, 'clearPrefabOverrides', {'nodeId': id.toToken()});
+        // Empty transactions are not pushed onto the history stack.
+        expect(h.history.transactions.length, before);
+      },
+    );
+
     test('missing required param throws CommandException', () {
       final h = _harness();
       final entry = h.registry.lookup('setNodeName')!;
