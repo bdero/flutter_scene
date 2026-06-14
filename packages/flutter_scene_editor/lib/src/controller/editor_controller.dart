@@ -148,6 +148,109 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  // --- clipboard and selection-driven edits ------------------------------
+
+  // Detached, deep-copied subtrees captured by the last copy. Held here (not on
+  // the session) because the clipboard is transient editor state, not part of
+  // the document or its history.
+  List<NodeSubtree> _clipboard = [];
+
+  /// Whether there is clipboard content to paste.
+  bool get canPaste => _clipboard.isNotEmpty;
+
+  /// The selected nodes with no selected ancestor, in document order. Copy,
+  /// duplicate, and delete act on these so a parent and its descendant are not
+  /// processed twice.
+  List<LocalId> topLevelSelection() {
+    final selected = selection.ids;
+    bool hasSelectedAncestor(LocalId id) {
+      var parent = query.parentOf(id);
+      while (parent != null) {
+        if (selected.contains(parent)) return true;
+        parent = query.parentOf(parent);
+      }
+      return false;
+    }
+
+    final tops = {
+      for (final id in selected)
+        if (!hasSelectedAncestor(id)) id,
+    };
+    // Document order (roots first, depth-first) for stable, predictable output.
+    final ordered = <LocalId>[];
+    void visit(LocalId id) {
+      if (tops.contains(id)) ordered.add(id);
+      for (final child in query.childrenOf(id)) {
+        visit(child.id);
+      }
+    }
+
+    for (final root in query.roots) {
+      visit(root.id);
+    }
+    return ordered;
+  }
+
+  /// Captures the top-level selected subtrees into the clipboard. Does nothing
+  /// when the selection is empty.
+  void copySelection() {
+    final tops = topLevelSelection();
+    if (tops.isEmpty) return;
+    _clipboard = [for (final id in tops) captureSubtree(document, id)];
+  }
+
+  /// Duplicates the top-level selected subtrees in place, selecting the clones.
+  Future<void> duplicateSelection() async {
+    final tops = topLevelSelection();
+    if (tops.isEmpty) return;
+    final tx = await run('duplicateNodes', {
+      'nodeIds': [for (final id in tops) id.toToken()],
+    });
+    final created = attachedIds(tx);
+    if (created.isNotEmpty) selection.set(created);
+  }
+
+  /// Pastes the clipboard subtrees under the primary selection (the root list
+  /// when nothing is selected), selecting the pasted roots. Each paste mints
+  /// fresh ids, so pasting repeatedly yields distinct copies.
+  Future<void> paste() async {
+    if (_clipboard.isEmpty) return;
+    final parent = selection.primary;
+    final tx = await run('pasteNodes', {
+      if (parent != null) 'parentId': parent.toToken(),
+      'subtrees': _clipboard,
+    });
+    final created = attachedIds(tx);
+    if (created.isNotEmpty) selection.set(created);
+  }
+
+  /// Deletes the top-level selected subtrees in one undoable step.
+  Future<void> deleteSelection() async {
+    final tops = topLevelSelection();
+    if (tops.isEmpty) return;
+    await run('deleteNodes', {
+      'nodeIds': [for (final id in tops) id.toToken()],
+    });
+  }
+
+  /// The node ids newly added to a container by [transaction] (the difference
+  /// of each children/roots record's new list over its old list), in order.
+  /// These are the roots an add, duplicate, or paste created.
+  static List<LocalId> attachedIds(Transaction transaction) {
+    final out = <LocalId>[];
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots) {
+        continue;
+      }
+      final old = (record.oldValue as IdListChange).value.toSet();
+      for (final id in (record.newValue as IdListChange).value) {
+        if (!old.contains(id)) out.add(id);
+      }
+    }
+    return out;
+  }
+
   /// Undoes the last edit, reflecting it onto the live scene.
   Future<void> undo() async {
     if (!history.canUndo) return;

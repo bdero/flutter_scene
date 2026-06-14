@@ -1,16 +1,22 @@
+import 'dart:math' as math;
+
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/id.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../controller/editor_controller.dart';
 
 /// Scene-tree outliner panel.
 ///
-/// Renders the hierarchy from [EditorController.query], highlights the
-/// selection, and supports tap-to-select and drag-to-reparent (runs
-/// [reparentNode] command). Rebuilds on controller notifications.
+/// Renders the hierarchy from [EditorController.query] and supports:
+/// - click to select, Cmd/Ctrl+click to toggle, Shift+click to range-select
+///   over the flattened tree order;
+/// - drag a row onto another row to reparent into it;
+/// - drag a row onto an insertion line between rows to reorder, or onto a
+///   root-level line to unparent.
 ///
 /// The tree is a custom recursive widget. The two_dimensional_scrollables
 /// TreeView API requires a TreeController with a fixed node model that
@@ -44,6 +50,7 @@ class OutlinerPanel extends StatelessWidget {
             ),
             Expanded(
               child: roots.isEmpty
+                  // An empty scene still accepts a drop (no-op, but consistent).
                   ? const Center(
                       child: Text(
                         'Empty scene',
@@ -53,14 +60,12 @@ class OutlinerPanel extends StatelessWidget {
                   : SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final node in roots)
-                            _OutlinerNode(
-                              node: node,
-                              controller: controller,
-                              depth: 0,
-                            ),
-                        ],
+                        children: buildContainer(
+                          controller,
+                          parentId: null,
+                          children: roots,
+                          depth: 0,
+                        ),
                       ),
                     ),
             ),
@@ -71,16 +76,180 @@ class OutlinerPanel extends StatelessWidget {
   }
 }
 
+/// Builds the rows of one container (the root list when [parentId] is null, or
+/// a node's children otherwise): an insertion line before each child, the child
+/// row, and a trailing insertion line at the end.
+List<Widget> buildContainer(
+  EditorController controller, {
+  required LocalId? parentId,
+  required List<NodeSpec> children,
+  required int depth,
+}) {
+  return [
+    for (final child in children) ...[
+      _InsertionLine(
+        controller: controller,
+        container: parentId,
+        beforeId: child.id,
+        depth: depth,
+      ),
+      _OutlinerNode(
+        key: ValueKey(child.id.toToken()),
+        node: child,
+        controller: controller,
+        parentId: parentId,
+        depth: depth,
+      ),
+    ],
+    _InsertionLine(
+      controller: controller,
+      container: parentId,
+      beforeId: null,
+      depth: depth,
+    ),
+  ];
+}
+
+/// The flattened, depth-first order of every node id (ignoring collapse state),
+/// used for Shift+click range selection.
+List<LocalId> _flatten(EditorController c) {
+  final out = <LocalId>[];
+  void visit(LocalId id) {
+    out.add(id);
+    for (final child in c.query.childrenOf(id)) {
+      visit(child.id);
+    }
+  }
+
+  for (final root in c.query.roots) {
+    visit(root.id);
+  }
+  return out;
+}
+
+/// Applies the platform selection gesture for a tap on [id].
+void _handleTap(EditorController c, LocalId id) {
+  final keys = HardwareKeyboard.instance;
+  if (keys.isMetaPressed || keys.isControlPressed) {
+    c.selection.toggle(id);
+    return;
+  }
+  final primary = c.selection.primary;
+  if (keys.isShiftPressed && primary != null && primary != id) {
+    final flat = _flatten(c);
+    final a = flat.indexOf(primary);
+    final b = flat.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      final range = flat.sublist(math.min(a, b), math.max(a, b) + 1);
+      // Keep the anchor as the primary so a further Shift+click extends from it.
+      c.selection.set([
+        for (final e in range)
+          if (e != primary) e,
+        primary,
+      ]);
+      return;
+    }
+  }
+  c.selection.selectOnly(id);
+}
+
+/// A thin drop target between rows. Dropping a dragged node here moves it into
+/// [container] (the root list when null) just before [beforeId] (or at the end
+/// when [beforeId] is null), which covers reordering and unparenting.
+class _InsertionLine extends StatefulWidget {
+  const _InsertionLine({
+    required this.controller,
+    required this.container,
+    required this.beforeId,
+    required this.depth,
+  });
+
+  final EditorController controller;
+  final LocalId? container;
+  final LocalId? beforeId;
+  final int depth;
+
+  @override
+  State<_InsertionLine> createState() => _InsertionLineState();
+}
+
+class _InsertionLineState extends State<_InsertionLine> {
+  bool _hovering = false;
+
+  bool _accepts(LocalId dragged) {
+    final container = widget.container;
+    // Cannot move a node into its own subtree.
+    if (container != null &&
+        widget.controller.query.subtreeOf(dragged).contains(container)) {
+      return false;
+    }
+    return true;
+  }
+
+  void _drop(LocalId dragged) {
+    final c = widget.controller;
+    final containerIds = widget.container == null
+        ? [for (final n in c.query.roots) n.id]
+        : [for (final n in c.query.childrenOf(widget.container!)) n.id];
+    // The command removes the node from its container before inserting, so the
+    // target index is computed against the list without the dragged node.
+    final without = [
+      for (final id in containerIds)
+        if (id != dragged) id,
+    ];
+    final before = widget.beforeId;
+    final at = (before == null || !without.contains(before))
+        ? without.length
+        : without.indexOf(before);
+    c.run('reparentNode', {
+      'nodeId': dragged.toToken(),
+      if (widget.container != null) 'newParentId': widget.container!.toToken(),
+      'index': at,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<LocalId>(
+      onWillAcceptWithDetails: (details) => _accepts(details.data),
+      onMove: (_) {
+        if (!_hovering) setState(() => _hovering = true);
+      },
+      onLeave: (_) => setState(() => _hovering = false),
+      onAcceptWithDetails: (details) {
+        setState(() => _hovering = false);
+        _drop(details.data);
+      },
+      builder: (context, candidate, rejected) {
+        return Container(
+          height: 6,
+          padding: EdgeInsets.only(left: 4.0 + widget.depth * 16.0, right: 4),
+          alignment: Alignment.center,
+          child: Container(
+            height: _hovering ? 2 : 0,
+            color: _hovering
+                ? Theme.of(context).colorScheme.primary
+                : Colors.transparent,
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// One row in the outliner, possibly expanded to show children.
 class _OutlinerNode extends StatefulWidget {
   const _OutlinerNode({
+    super.key,
     required this.node,
     required this.controller,
+    required this.parentId,
     required this.depth,
   });
 
   final NodeSpec node;
   final EditorController controller;
+  final LocalId? parentId;
   final int depth;
 
   @override
@@ -109,6 +278,7 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       },
       onAcceptWithDetails: (details) {
         setState(() => _dragTarget = false);
+        // Drop onto a row reparents into that node (appended to its children).
         ctrl.run('reparentNode', {
           'nodeId': details.data.toToken(),
           'newParentId': node.id.toToken(),
@@ -117,6 +287,9 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       onLeave: (_) => setState(() => _dragTarget = false),
       onMove: (_) => setState(() => _dragTarget = true),
       builder: (context, candidateData, rejectedData) {
+        // TODO(drag-multiselect): when the dragged node is part of a
+        // multi-selection, move every top-level selected node together rather
+        // than just this one.
         return Draggable<LocalId>(
           data: node.id,
           feedback: Material(
@@ -130,7 +303,7 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
             ),
           ),
           child: InkWell(
-            onTap: () => ctrl.selection.selectOnly(node.id),
+            onTap: () => _handleTap(ctrl, node.id),
             child: Container(
               color: _dragTarget
                   ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
@@ -220,12 +393,12 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       children: [
         row,
         if (_expanded && hasChildren)
-          for (final child in children)
-            _OutlinerNode(
-              node: child,
-              controller: ctrl,
-              depth: widget.depth + 1,
-            ),
+          ...buildContainer(
+            ctrl,
+            parentId: node.id,
+            children: children,
+            depth: widget.depth + 1,
+          ),
       ],
     );
   }

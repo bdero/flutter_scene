@@ -37,6 +37,21 @@ class CommandPaletteIntent extends Intent {
   const CommandPaletteIntent();
 }
 
+/// Intent for copying the selection (Cmd+C).
+class CopyIntent extends Intent {
+  const CopyIntent();
+}
+
+/// Intent for pasting the clipboard (Cmd+V).
+class PasteIntent extends Intent {
+  const PasteIntent();
+}
+
+/// Intent for duplicating the selection (Cmd+D).
+class DuplicateIntent extends Intent {
+  const DuplicateIntent();
+}
+
 /// An action that disables itself when [enabled] returns false, so the bound
 /// key falls through to the focused widget (for example a text field) instead
 /// of being consumed.
@@ -138,6 +153,9 @@ class _EditorShellState extends State<EditorShell> {
         SingleActivator(LogicalKeyboardKey.keyS, meta: true): SaveIntent(),
         SingleActivator(LogicalKeyboardKey.keyP, meta: true):
             CommandPaletteIntent(),
+        SingleActivator(LogicalKeyboardKey.keyC, meta: true): CopyIntent(),
+        SingleActivator(LogicalKeyboardKey.keyV, meta: true): PasteIntent(),
+        SingleActivator(LogicalKeyboardKey.keyD, meta: true): DuplicateIntent(),
       },
       child: Actions(
         actions: {
@@ -155,6 +173,20 @@ class _EditorShellState extends State<EditorShell> {
           DeleteNodeIntent: _GuardedAction<DeleteNodeIntent>(
             () => !_isEditingText(),
             (_) => _deleteSelected(),
+          ),
+          // Copy/paste/duplicate also step aside while a text field is focused
+          // so the keys edit text instead of the scene.
+          CopyIntent: _GuardedAction<CopyIntent>(
+            () => !_isEditingText(),
+            (_) => _ctrl.copySelection(),
+          ),
+          PasteIntent: _GuardedAction<PasteIntent>(
+            () => !_isEditingText(),
+            (_) => _ctrl.paste(),
+          ),
+          DuplicateIntent: _GuardedAction<DuplicateIntent>(
+            () => !_isEditingText(),
+            (_) => _ctrl.duplicateSelection(),
           ),
           SaveIntent: CallbackAction<SaveIntent>(onInvoke: (_) => _save()),
           CommandPaletteIntent: CallbackAction<CommandPaletteIntent>(
@@ -175,6 +207,10 @@ class _EditorShellState extends State<EditorShell> {
                   onSaveAs: _saveAs,
                   onUndo: _ctrl.undo,
                   onRedo: _ctrl.redo,
+                  onDuplicate: _ctrl.duplicateSelection,
+                  onCopy: _ctrl.copySelection,
+                  onPaste: _ctrl.paste,
+                  onDelete: _deleteSelected,
                   onAddCube: _addCube,
                   onAddSphere: _addSphere,
                   onAddPrefab: _addPrefabInstance,
@@ -278,9 +314,7 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Future<void> _deleteSelected() async {
-    final primary = _ctrl.selection.primary;
-    if (primary == null) return;
-    await _ctrl.run('deleteNode', {'nodeId': primary.toToken()});
+    await _ctrl.deleteSelection();
   }
 
   // Adds a cube: creates geometry, material, node, and attaches a mesh
@@ -377,6 +411,10 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onSaveAs,
     required this.onUndo,
     required this.onRedo,
+    required this.onDuplicate,
+    required this.onCopy,
+    required this.onPaste,
+    required this.onDelete,
     required this.onAddCube,
     required this.onAddSphere,
     required this.onAddPrefab,
@@ -391,6 +429,10 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onSaveAs;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
+  final VoidCallback onDuplicate;
+  final VoidCallback onCopy;
+  final VoidCallback onPaste;
+  final VoidCallback onDelete;
   final VoidCallback onAddCube;
   final VoidCallback onAddSphere;
   final VoidCallback onAddPrefab;
@@ -430,6 +472,22 @@ class _EditorMenuBar extends StatelessWidget {
               _MenuItem(
                 label: 'Redo',
                 onTap: controller.history.canRedo ? onRedo : null,
+              ),
+              _MenuItem(
+                label: 'Duplicate',
+                onTap: controller.selection.isNotEmpty ? onDuplicate : null,
+              ),
+              _MenuItem(
+                label: 'Copy',
+                onTap: controller.selection.isNotEmpty ? onCopy : null,
+              ),
+              _MenuItem(
+                label: 'Paste',
+                onTap: controller.canPaste ? onPaste : null,
+              ),
+              _MenuItem(
+                label: 'Delete',
+                onTap: controller.selection.isNotEmpty ? onDelete : null,
               ),
             ],
           ),
