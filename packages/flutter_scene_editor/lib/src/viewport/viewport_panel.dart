@@ -16,9 +16,17 @@ import 'transform_gizmo.dart';
 /// setState. Each enclosing panel is behind a [RepaintBoundary] from the
 /// docking shell.
 class ViewportPanel extends StatefulWidget {
-  const ViewportPanel({super.key, required this.controller});
+  const ViewportPanel({
+    super.key,
+    required this.controller,
+    this.repaintBoundaryKey,
+  });
 
   final EditorController controller;
+
+  /// Optional key on the viewport's [RepaintBoundary], so a host can capture
+  /// the rendered viewport as an image (the MCP screenshot perception tool).
+  final GlobalKey? repaintBoundaryKey;
 
   @override
   State<ViewportPanel> createState() => _ViewportPanelState();
@@ -237,6 +245,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           children: [
             // Viewport and gizmo overlay. Repaints only when viewEpoch bumps.
             RepaintBoundary(
+              key: widget.repaintBoundaryKey,
               child: AnimatedBuilder(
                 animation: _viewEpoch,
                 builder: (context, _) {

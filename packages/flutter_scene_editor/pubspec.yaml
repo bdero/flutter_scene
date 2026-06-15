@@ -19,6 +19,8 @@ dependencies:
   flutter_scene: ^0.18.0
   flutter_scene_editor_core:
     path: ../flutter_scene_editor_core
+  flutter_scene_mcp:
+    path: ../flutter_scene_mcp
   multi_split_view: ^3.6.0
   two_dimensional_scrollables: ^0.5.0
   vector_math: ^2.1.4

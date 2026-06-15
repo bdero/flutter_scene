@@ -6,5 +6,14 @@
 /// [EditorShell] to get the full 4-panel editing surface.
 library;
 
+export 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
+    show
+        EditorMcpServer,
+        EditorToolSurface,
+        ScreenshotResult,
+        ViewportScreenshot;
+
 export 'src/controller/editor_controller.dart' show EditorController;
+export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/shell/editor_shell.dart' show EditorShell;
+export 'src/viewport/viewport_panel.dart' show ViewportPanel;
