@@ -1,8 +1,6 @@
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/id.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-// ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/property_value.dart';
@@ -30,7 +28,7 @@ class InspectorPanel extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         final primary = controller.selection.primary;
-        final node = primary != null ? controller.document.node(primary) : null;
+        final node = primary != null ? controller.displayNode(primary) : null;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -60,29 +58,41 @@ class _NodeInspector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A node inside a prefab (its edits become overrides on the instance), and
+    // the instance it belongs to (also set when the instance node itself is
+    // selected, whose merged components come from the prefab).
+    final isMember = controller.isPrefabMember(node.id);
+    final isInstance = controller.document.nodes[node.id]?.instance != null;
+    final instanceId = isMember
+        ? controller.memberOrigin(node.id)!.instanceId
+        : (isInstance ? node.id : null);
+    // Adding and removing whole components is only wired for plain scene nodes;
+    // prefab content edits property values in place (structural component edits
+    // on prefab content are a TODO(prefab-member-components)).
+    final isPrefabContent = isMember || isInstance;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (instanceId != null)
+            _PrefabBanner(
+              isMember: isMember,
+              source: _instanceSource(instanceId),
+            ),
           _SectionHeader(label: 'Node'),
           // Name field.
           _StringRow(
             label: 'Name',
             value: node.name,
-            onSubmit: (v) => controller.run('setNodeName', {
-              'nodeId': node.id.toToken(),
-              'name': v,
-            }),
+            onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
           ),
           // Visibility toggle.
           _BoolRow(
             label: 'Visible',
             value: node.visible,
-            onChanged: (v) => controller.run('setNodeVisible', {
-              'nodeId': node.id.toToken(),
-              'visible': v,
-            }),
+            onChanged: (v) => controller.setNodeVisibleRouted(node.id, v),
           ),
           const SizedBox(height: 8),
           _SectionHeader(label: 'Transform'),
@@ -94,16 +104,19 @@ class _NodeInspector extends StatelessWidget {
               node: node,
               component: component,
               controller: controller,
+              canRemove: !isPrefabContent,
             ),
           ],
-          const SizedBox(height: 8),
-          _AddComponentBar(node: node, controller: controller),
-          // Prefab instance section shown when the node has an instance.
-          if (node.instance != null) ...[
+          if (!isPrefabContent) ...[
             const SizedBox(height: 8),
-            _PrefabInstanceSection(
-              instanceNodeId: node.id,
-              instance: node.instance!,
+            _AddComponentBar(node: node, controller: controller),
+          ],
+          // Prefab actions (apply/revert) for the enclosing instance.
+          if (instanceId != null) ...[
+            const SizedBox(height: 8),
+            _PrefabActions(
+              instanceNodeId: instanceId,
+              attachTarget: node.id,
               controller: controller,
             ),
           ],
@@ -111,6 +124,9 @@ class _NodeInspector extends StatelessWidget {
       ),
     );
   }
+
+  String _instanceSource(LocalId instanceId) =>
+      controller.document.nodes[instanceId]?.instance?.source.key ?? '';
 }
 
 class _TransformEditor extends StatelessWidget {
@@ -136,20 +152,15 @@ class _TransformEditor extends StatelessWidget {
           x: t?.x ?? 0,
           y: t?.y ?? 0,
           z: t?.z ?? 0,
-          onSubmit: (v) => controller.run('setNodeTransform', {
-            'nodeId': node.id.toToken(),
-            'translation': v,
-          }),
+          onSubmit: (v) =>
+              controller.setNodeTransformRouted(node.id, translation: v),
         ),
         Vec3Field(
           label: 'Scale',
           x: s?.x ?? 1,
           y: s?.y ?? 1,
           z: s?.z ?? 1,
-          onSubmit: (v) => controller.run('setNodeTransform', {
-            'nodeId': node.id.toToken(),
-            'scale': v,
-          }),
+          onSubmit: (v) => controller.setNodeTransformRouted(node.id, scale: v),
         ),
         // TODO(rotation-editor): add a rotation editor (Euler angles or
         // quaternion fields) when a Vec4Field is available.
@@ -172,11 +183,13 @@ class _ComponentSection extends StatelessWidget {
     required this.node,
     required this.component,
     required this.controller,
+    required this.canRemove,
   });
 
   final NodeSpec node;
   final ComponentSpec component;
   final EditorController controller;
+  final bool canRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -185,14 +198,16 @@ class _ComponentSection extends StatelessWidget {
       children: [
         _SectionHeader(
           label: 'Component: ${component.type}',
-          trailing: _IconAction(
-            icon: Icons.close,
-            tooltip: 'Remove component',
-            onPressed: () => controller.run('removeComponent', {
-              'nodeId': node.id.toToken(),
-              'componentType': component.type,
-            }),
-          ),
+          trailing: canRemove
+              ? _IconAction(
+                  icon: Icons.close,
+                  tooltip: 'Remove component',
+                  onPressed: () => controller.run('removeComponent', {
+                    'nodeId': node.id.toToken(),
+                    'componentType': component.type,
+                  }),
+                )
+              : null,
         ),
         _ComponentEditor(
           node: node,
@@ -219,11 +234,8 @@ class _ComponentEditor extends StatelessWidget {
   final EditorController controller;
 
   void _set(String name, Object? value) {
-    controller.run('setComponentProperties', {
-      'nodeId': node.id.toToken(),
-      'componentType': component.type,
-      'properties': {name: value},
-    });
+    if (value == null) return;
+    controller.setComponentPropertyRouted(node.id, component.type, name, value);
   }
 
   @override
@@ -470,132 +482,99 @@ class _AddComponentBar extends StatelessWidget {
   }
 }
 
-// ---- prefab instance section ------------------------------------------------
+// ---- prefab in-context editing ----------------------------------------------
 
-/// One row of overridable-property data for a prefab node.
-///
-/// [effectiveValue] is the override value when one exists, otherwise the
-/// prefab's own value. [isOverridden] marks whether an override is in effect.
-typedef _OverrideProp = ({
-  String nodeLabel,
-  LocalId prefabNodeId,
-  String path,
-  PropertyValue effectiveValue,
-  bool isOverridden,
-});
+/// A banner shown above the inspector when the selected node is prefab content,
+/// explaining that edits become overrides on the instance.
+class _PrefabBanner extends StatelessWidget {
+  const _PrefabBanner({required this.isMember, required this.source});
 
-/// Collects the overridable properties for every node in [prefabDoc], merged
-/// with any active [overrides] on the instance.
-///
-/// [mergedRootId] is the prefab's single root, when composition merges it into
-/// the instance node (the common case). That node is skipped here because its
-/// name, transform, and components are edited directly through the inspector's
-/// Node, Transform, and Component sections on the instance itself, so listing
-/// it again as overrides would double-edit the same node (the transform
-/// conflict).
-List<_OverrideProp> _collectProps(
-  SceneDocument prefabDoc,
-  List<PropertyOverride> overrides, {
-  LocalId? mergedRootId,
-}) {
-  // Build a quick lookup of active overrides: (target.token, path) -> value.
-  final activeMap = <String, PropertyValue>{
-    for (final o in overrides) '${o.target.toToken()}|${o.path}': o.value,
-  };
+  final bool isMember;
+  final String source;
 
-  final props = <_OverrideProp>[];
-
-  for (final prefabNode in prefabDoc.nodes.values) {
-    if (prefabNode.id == mergedRootId) continue;
-    final nodeLabel = prefabNode.name.isNotEmpty
-        ? prefabNode.name
-        : prefabNode.id.toToken();
-    final tid = prefabNode.id.toToken();
-
-    void addProp(String path, PropertyValue baseValue) {
-      final key = '$tid|$path';
-      final override = activeMap[key];
-      props.add((
-        nodeLabel: nodeLabel,
-        prefabNodeId: prefabNode.id,
-        path: path,
-        effectiveValue: override ?? baseValue,
-        isOverridden: override != null,
-      ));
-    }
-
-    // name (StringValue)
-    addProp('name', StringValue(prefabNode.name));
-
-    // layers (IntValue)
-    addProp('layers', IntValue(prefabNode.layers));
-
-    // transform.trs.t / .r / .s
-    final trs = prefabNode.transform is TrsTransform
-        ? prefabNode.transform as TrsTransform
-        : null;
-    if (trs != null) {
-      addProp('transform.trs.t', Vec3Value(trs.translation));
-      addProp('transform.trs.r', QuaternionValue(trs.rotation));
-      addProp('transform.trs.s', Vec3Value(trs.scale));
-    }
-
-    // components.<type>.<prop>
-    for (final comp in prefabNode.components) {
-      for (final entry in comp.properties.entries) {
-        addProp('components.${comp.type}.${entry.key}', entry.value);
-      }
-    }
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.tertiaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.link, size: 12, color: scheme.tertiary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              isMember
+                  ? 'Prefab content from $source. Edits are saved as overrides.'
+                  : 'Prefab instance of $source.',
+              style: TextStyle(fontSize: 10, color: scheme.onTertiaryContainer),
+            ),
+          ),
+        ],
+      ),
+    );
   }
-  return props;
 }
 
-/// The prefab instance inspector section.
-///
-/// When the selected node is a prefab instance ([node.instance] != null), this
-/// shows the source path, a flat list of overridable properties (each with an
-/// override indicator and per-property Revert), and Apply/Revert All buttons.
-///
-/// Properties are loaded from the prefab document via [FutureBuilder] the
-/// first time and cached on the controller thereafter.
-class _PrefabInstanceSection extends StatelessWidget {
-  const _PrefabInstanceSection({
+/// Apply/revert actions for the enclosing prefab instance: bake the instance's
+/// delta into the prefab source, or drop all overrides.
+class _PrefabActions extends StatelessWidget {
+  const _PrefabActions({
     required this.instanceNodeId,
-    required this.instance,
+    required this.attachTarget,
     required this.controller,
   });
 
   final LocalId instanceNodeId;
-  final PrefabInstanceSpec instance;
+
+  /// The node a new attached node parents under (the selected member, or the
+  /// instance node to attach at its root).
+  final LocalId attachTarget;
   final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
+    final instance = controller.document.nodes[instanceNodeId]?.instance;
+    if (instance == null) return const SizedBox.shrink();
+    final overrides = instance.overrides.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionHeader(label: 'Prefab Instance'),
+        _SectionHeader(label: 'Prefab'),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Text(
-            instance.source.key,
+            '${instance.source.key}  ($overrides override'
+            '${overrides == 1 ? '' : 's'})',
             style: const TextStyle(fontSize: 10, color: Colors.grey),
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        // Action buttons.
         Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          padding: const EdgeInsets.only(top: 4, bottom: 2),
+          child: _SmallButton(
+            label: 'Attach node here',
+            tooltip:
+                'Adds a node attached under this node. It is a normal scene '
+                'node you can move, add components to, and delete.',
+            onPressed: () => controller.attachNodeUnder(attachTarget),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 4),
           child: Row(
             children: [
               Expanded(
                 child: _SmallButton(
-                  label: 'Apply to source',
+                  label: 'Apply to prefab',
                   tooltip:
-                      'Bakes overrides into the source .fscene, then clears '
-                      'them on this instance. All instances of the prefab will '
-                      'reflect the change.',
-                  onPressed: () => _applyToSource(context),
+                      'Bakes this instance\'s overrides into the prefab '
+                      '.fscene, then clears them. Every instance reflects it.',
+                  onPressed: () => _applyToSource(context, instance.source.key),
                 ),
               ),
               const SizedBox(width: 4),
@@ -611,238 +590,40 @@ class _PrefabInstanceSection extends StatelessWidget {
             ],
           ),
         ),
-        // Property rows loaded from the prefab document.
-        FutureBuilder<SceneDocument>(
-          future: controller.loadPrefabDocument(instance.source),
-          builder: (context, snap) {
-            if (snap.hasError) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  'Could not load prefab: ${snap.error}',
-                  style: const TextStyle(fontSize: 10, color: Colors.red),
-                ),
-              );
-            }
-            if (!snap.hasData) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  'Loading...',
-                  style: TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              );
-            }
-            final prefabDoc = snap.data!;
-            // When the prefab has a single root and the handedness matches,
-            // composition merges that root into the instance node, so it is
-            // edited via the Node/Transform sections, not as overrides.
-            final mergedRoot =
-                prefabDoc.roots.length == 1 &&
-                    prefabDoc.stage.handedness ==
-                        controller.document.stage.handedness
-                ? prefabDoc.roots.single
-                : null;
-            final props = _collectProps(
-              prefabDoc,
-              instance.overrides,
-              mergedRootId: mergedRoot,
-            );
-            if (props.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 2),
-                child: Text(
-                  '(no overridable properties)',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final prop in props)
-                  _OverrideRow(
-                    prop: prop,
-                    instanceNodeId: instanceNodeId,
-                    controller: controller,
-                  ),
-              ],
-            );
-          },
-        ),
       ],
     );
   }
 
-  Future<void> _applyToSource(BuildContext context) async {
+  Future<void> _applyToSource(BuildContext context, String key) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final instance = controller.document.nodes[instanceNodeId]?.instance;
+    if (instance == null) return;
     final dir = controller.baseDirectory;
-    final key = instance.source.key;
     if (!key.startsWith('/') && dir == null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cannot apply: the scene has no base directory (save it first).',
-            ),
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cannot apply: the scene has no base directory (save it first).',
           ),
-        );
-      }
+        ),
+      );
       return;
     }
     final path = key.startsWith('/') ? key : '$dir/$key';
     try {
-      await applyOverridesToSource(
+      await applyInstanceToSource(
         sourcePath: path,
-        overrides: instance.overrides,
+        host: controller.document,
+        instance: instance,
       );
-      // Clear the cached document so the next load re-reads the updated file.
-      controller.clearPrefabCache(instance.source.key);
+      controller.clearPrefabCache(key);
       await controller.run('clearPrefabOverrides', {
         'nodeId': instanceNodeId.toToken(),
       });
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Applied overrides to $key')));
-      }
+      messenger.showSnackBar(SnackBar(content: Text('Applied to $key')));
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Apply failed: $e')));
-      }
+      messenger.showSnackBar(SnackBar(content: Text('Apply failed: $e')));
     }
-  }
-}
-
-/// One overridable-property row: label, value editor, override dot, and Revert.
-class _OverrideRow extends StatelessWidget {
-  const _OverrideRow({
-    required this.prop,
-    required this.instanceNodeId,
-    required this.controller,
-  });
-
-  final _OverrideProp prop;
-  final LocalId instanceNodeId;
-  final EditorController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    final valueWidget = _valueEditor(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        children: [
-          // Override indicator dot.
-          SizedBox(
-            width: 8,
-            child: prop.isOverridden
-                ? Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: accent,
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                : null,
-          ),
-          Expanded(child: valueWidget),
-          // Per-property revert button (shown when overridden).
-          if (prop.isOverridden)
-            SizedBox(
-              width: 40,
-              height: 20,
-              child: TextButton(
-                onPressed: () => controller.run('removePrefabOverride', {
-                  'nodeId': instanceNodeId.toToken(),
-                  'target': prop.prefabNodeId.toToken(),
-                  'path': prop.path,
-                }),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(
-                  'Revert',
-                  style: TextStyle(fontSize: 9, color: accent),
-                ),
-              ),
-            )
-          else
-            const SizedBox(width: 40),
-        ],
-      ),
-    );
-  }
-
-  Widget _valueEditor(BuildContext context) {
-    final label = '${prop.nodeLabel}.${_shortPath(prop.path)}';
-    final v = prop.effectiveValue;
-    return switch (v) {
-      StringValue sv => _StringRow(
-        label: label,
-        value: sv.value,
-        onSubmit: (nv) => _setOverride({'s': nv}),
-      ),
-      IntValue iv => _IntRow(
-        label: label,
-        value: iv.value,
-        onSubmit: (nv) => _setOverride(nv),
-      ),
-      Vec3Value vv => Vec3Field(
-        label: label,
-        x: vv.value.x,
-        y: vv.value.y,
-        z: vv.value.z,
-        onSubmit: (nv) => _setOverride(nv),
-      ),
-      QuaternionValue qv => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Text(
-          '$label: (${qv.value.x.toStringAsFixed(2)}, '
-          '${qv.value.y.toStringAsFixed(2)}, '
-          '${qv.value.z.toStringAsFixed(2)}, '
-          '${qv.value.w.toStringAsFixed(2)})',
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
-        ),
-      ),
-      DoubleValue dv => _DoubleRow(
-        label: label,
-        value: dv.value,
-        onSubmit: (nv) => _setOverride(nv),
-      ),
-      _ => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Text(
-          '$label: (${v.runtimeType})',
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
-        ),
-      ),
-    };
-  }
-
-  void _setOverride(Object value) {
-    controller.run('setPrefabOverride', {
-      'nodeId': instanceNodeId.toToken(),
-      'target': prop.prefabNodeId.toToken(),
-      'path': prop.path,
-      'value': value,
-    });
-  }
-
-  /// Abbreviates a property path for the label column.
-  String _shortPath(String path) {
-    // transform.trs.t -> t, components.mesh.material -> mesh.material, etc.
-    final parts = path.split('.');
-    if (parts.first == 'transform' && parts.length == 3) return parts.last;
-    if (parts.first == 'components' && parts.length == 3) {
-      return '${parts[1]}.${parts[2]}';
-    }
-    return parts.last;
   }
 }
 

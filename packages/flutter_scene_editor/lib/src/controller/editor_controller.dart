@@ -59,6 +59,38 @@ class EditorController extends ChangeNotifier {
   // does not re-read the file on every rebuild.
   final Map<String, SceneDocument> _prefabCache = {};
 
+  // The composed (prefab-expanded) document last realized, and where each
+  // composed node came from. These back the outliner's display tree and the
+  // in-place editing of prefab content (edits on a member become overrides on
+  // its instance). Null/empty for a scene with no eager prefab instances.
+  SceneDocument? _composed;
+  Map<LocalId, PrefabMemberOrigin> _memberOrigins = {};
+
+  /// The tree the outliner shows: the composed document when the scene has
+  /// expanded prefab instances (so their internal nodes are visible), otherwise
+  /// the source document. Plain nodes keep their source ids in both.
+  SceneDocument get displayDocument => _composed ?? document;
+
+  /// Whether [id] is a prefab-internal node (it exists only in the composed
+  /// document, so its edits are recorded as overrides on its instance). The
+  /// instance node itself is a real source node and is not a member.
+  bool isPrefabMember(LocalId id) =>
+      _memberOrigins.containsKey(id) && !document.nodes.containsKey(id);
+
+  /// Where composed node [id] came from (its instance and prefab-local id), or
+  /// null when [id] is not prefab content.
+  PrefabMemberOrigin? memberOrigin(LocalId id) => _memberOrigins[id];
+
+  /// The node to show for [id] in the display tree.
+  NodeSpec? displayNode(LocalId id) => displayDocument.nodes[id];
+
+  /// The root node ids of the display tree.
+  List<LocalId> displayRoots() => displayDocument.roots;
+
+  /// The child node ids of [id] in the display tree.
+  List<LocalId> displayChildren(LocalId id) =>
+      displayDocument.nodes[id]?.children ?? const [];
+
   /// The message of the most recent command failure, for the UI to surface.
   /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
   /// menu action) does not fail silently. The shell shows it and resets it.
@@ -72,6 +104,10 @@ class EditorController extends ChangeNotifier {
     String? baseDirectory,
   }) async {
     final controller = EditorController._(session, Scene(), baseDirectory);
+    // Keep prefab-internal nodes (which live only in the composed document)
+    // selectable across edits, not just source nodes.
+    session.selectionValidId = (id) =>
+        controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller.notifyListeners);
     return controller;
@@ -238,13 +274,49 @@ class EditorController extends ChangeNotifier {
     if (created.isNotEmpty) selection.set(created);
   }
 
-  /// Deletes the top-level selected subtrees in one undoable step.
+  /// Deletes the selection. Prefab-internal nodes are removed through their
+  /// instance's delta (removedNodes); plain and attached nodes are deleted
+  /// normally in one undoable step.
   Future<void> deleteSelection() async {
-    final tops = topLevelSelection();
-    if (tops.isEmpty) return;
-    await run('deleteNodes', {
-      'nodeIds': [for (final id in tops) id.toToken()],
+    for (final id in selection.ids.where(isPrefabMember).toList()) {
+      final origin = memberOrigin(id)!;
+      await run('removePrefabMember', {
+        'nodeId': origin.instanceId.toToken(),
+        'target': origin.prefabLocalId.toToken(),
+      });
+    }
+    // topLevelSelection walks the source tree, so it returns only plain and
+    // attached nodes (prefab members are not source nodes).
+    final plain = topLevelSelection();
+    if (plain.isNotEmpty) {
+      await run('deleteNodes', {
+        'nodeIds': [for (final id in plain) id.toToken()],
+      });
+    }
+  }
+
+  /// Adds a new node attached under [target], which is a prefab-internal node
+  /// (the new node grafts under it) or a prefab instance node (grafts at its
+  /// root). Selects the new node, which edits and deletes like any other.
+  Future<void> attachNodeUnder(LocalId target) async {
+    final origin = memberOrigin(target);
+    final LocalId instanceId;
+    final LocalId? parent;
+    if (origin != null) {
+      instanceId = origin.instanceId;
+      parent = origin.prefabLocalId;
+    } else if (document.nodes[target]?.instance != null) {
+      instanceId = target;
+      parent = null;
+    } else {
+      return;
+    }
+    final tx = await run('attachToPrefabMember', {
+      'nodeId': instanceId.toToken(),
+      if (parent != null) 'parent': parent.toToken(),
     });
+    final created = attachedIds(tx);
+    if (created.isNotEmpty) selection.set(created);
   }
 
   /// The node ids newly added to a container by [transaction] (the difference
@@ -264,6 +336,90 @@ class EditorController extends ChangeNotifier {
     }
     return out;
   }
+
+  // --- prefab-aware edit routing -----------------------------------------
+
+  // An edit to a prefab-internal node has no source node to mutate, so it is
+  // recorded as an override on the enclosing instance. A plain node edits
+  // through its normal command. Component edits also route to an override for
+  // the instance (merged-root) node, whose components came from the prefab.
+
+  /// Sets node [id]'s name (an override when [id] is prefab content).
+  Future<void> setNodeNameRouted(LocalId id, String name) {
+    if (isPrefabMember(id)) {
+      return _override(memberOrigin(id)!, 'name', name);
+    }
+    return run('setNodeName', {'nodeId': id.toToken(), 'name': name});
+  }
+
+  /// Sets node [id]'s visibility. Prefab content has no visibility override yet.
+  Future<void> setNodeVisibleRouted(LocalId id, bool visible) {
+    if (isPrefabMember(id)) {
+      // TODO(visible-override): the override grammar has no visible path.
+      lastError.value =
+          'setNodeVisible, visibility of prefab content cannot be overridden yet';
+      return Future.value();
+    }
+    return run('setNodeVisible', {'nodeId': id.toToken(), 'visible': visible});
+  }
+
+  /// Sets node [id]'s transform (overrides per supplied component when [id] is
+  /// prefab content).
+  Future<void> setNodeTransformRouted(
+    LocalId id, {
+    Map<String, Object>? translation,
+    Map<String, Object>? scale,
+    Object? rotation,
+  }) async {
+    if (isPrefabMember(id)) {
+      final origin = memberOrigin(id)!;
+      if (translation != null) {
+        await _override(origin, 'transform.trs.t', translation);
+      }
+      if (scale != null) await _override(origin, 'transform.trs.s', scale);
+      if (rotation != null) {
+        await _override(origin, 'transform.trs.r', rotation);
+      }
+      return;
+    }
+    await run('setNodeTransform', {
+      'nodeId': id.toToken(),
+      if (translation != null) 'translation': translation,
+      if (scale != null) 'scale': scale,
+      if (rotation != null) 'rotation': rotation,
+    });
+  }
+
+  /// Sets one property of component [type] on node [id]. Routes to an override
+  /// when the component belongs to a prefab (an internal node, or the merged
+  /// instance node whose components came from the prefab root).
+  Future<void> setComponentPropertyRouted(
+    LocalId id,
+    String type,
+    String key,
+    Object value,
+  ) {
+    final origin = memberOrigin(id);
+    if (origin != null) {
+      return _override(origin, 'components.$type.$key', value);
+    }
+    return run('setComponentProperties', {
+      'nodeId': id.toToken(),
+      'componentType': type,
+      'properties': {key: value},
+    });
+  }
+
+  Future<void> _override(
+    PrefabMemberOrigin origin,
+    String path,
+    Object value,
+  ) => run('setPrefabOverride', {
+    'nodeId': origin.instanceId.toToken(),
+    'target': origin.prefabLocalId.toToken(),
+    'path': path,
+    'value': value,
+  });
 
   /// Undoes the last edit, reflecting it onto the live scene.
   Future<void> undo() async {
@@ -336,9 +492,21 @@ class EditorController extends ChangeNotifier {
     final hasEagerInstance = document.nodes.values.any(
       (n) => n.instance != null && n.instance!.load == LoadPolicy.eager,
     );
-    final toRealize = hasEagerInstance
-        ? await composeSceneAsync(document, load: _loadPrefab)
-        : document;
+    final SceneDocument toRealize;
+    if (hasEagerInstance) {
+      final origins = <LocalId, PrefabMemberOrigin>{};
+      toRealize = await composeSceneAsync(
+        document,
+        load: _loadPrefab,
+        memberOrigins: origins,
+      );
+      _composed = toRealize;
+      _memberOrigins = origins;
+    } else {
+      toRealize = document;
+      _composed = null;
+      _memberOrigins = {};
+    }
     final root = await realizeSceneAsync(toRealize);
     scene.removeAll();
     scene.add(root);

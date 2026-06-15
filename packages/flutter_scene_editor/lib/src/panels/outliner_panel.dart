@@ -11,18 +11,12 @@ import '../controller/editor_controller.dart';
 
 /// Scene-tree outliner panel.
 ///
-/// Renders the hierarchy from [EditorController.query] and supports:
-/// - click to select, Cmd/Ctrl+click to toggle, Shift+click to range-select
-///   over the flattened tree order;
-/// - drag a row onto another row to reparent into it;
-/// - drag a row onto an insertion line between rows to reorder, or onto a
-///   root-level line to unparent.
-///
-/// The tree is a custom recursive widget. The two_dimensional_scrollables
-/// TreeView API requires a TreeController with a fixed node model that
-/// conflicts with the live-document update pattern here (the document changes
-/// identity on every realization); a custom widget is the correct call and
-/// avoids fiddly adapter glue.
+/// Renders the controller's display tree (the composed document, so a prefab
+/// instance's internal nodes appear as ordinary, expandable rows). Supports:
+/// - click to select, Cmd/Ctrl+click to toggle, Shift+click to range-select;
+/// - drag a plain row onto another to reparent, or onto an insertion line to
+///   reorder/unparent. Prefab-internal rows are not drag-reorderable (their
+///   structure is owned by the prefab); they are marked and editable in place.
 ///
 /// TODO(virtualize-outliner): replace with a two_dimensional_scrollables
 /// TreeView backed by a stable-id node model for scenes with 1000+ nodes.
@@ -36,7 +30,7 @@ class OutlinerPanel extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final roots = controller.query.roots;
+        final roots = controller.displayRoots();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -50,7 +44,6 @@ class OutlinerPanel extends StatelessWidget {
             ),
             Expanded(
               child: roots.isEmpty
-                  // An empty scene still accepts a drop (no-op, but consistent).
                   ? const Center(
                       child: Text(
                         'Empty scene',
@@ -63,8 +56,9 @@ class OutlinerPanel extends StatelessWidget {
                         children: buildContainer(
                           controller,
                           parentId: null,
-                          children: roots,
+                          childIds: roots,
                           depth: 0,
+                          draggable: true,
                         ),
                       ),
                     ),
@@ -76,53 +70,66 @@ class OutlinerPanel extends StatelessWidget {
   }
 }
 
-/// Builds the rows of one container (the root list when [parentId] is null, or
-/// a node's children otherwise): an insertion line before each child, the child
-/// row, and a trailing insertion line at the end.
+/// Builds the rows of one container. When [draggable], rows carry drag handles
+/// and insertion lines (plain scene content); prefab-internal containers pass
+/// [draggable] false (their order is fixed by the prefab).
 List<Widget> buildContainer(
   EditorController controller, {
   required LocalId? parentId,
-  required List<NodeSpec> children,
+  required List<LocalId> childIds,
   required int depth,
+  required bool draggable,
 }) {
-  return [
-    for (final child in children) ...[
+  final rows = <Widget>[];
+  for (final id in childIds) {
+    final node = controller.displayNode(id);
+    if (node == null) continue;
+    if (draggable) {
+      rows.add(
+        _InsertionLine(
+          controller: controller,
+          container: parentId,
+          beforeId: id,
+          depth: depth,
+        ),
+      );
+    }
+    rows.add(
+      _OutlinerNode(
+        key: ValueKey(id.toToken()),
+        node: node,
+        controller: controller,
+        depth: depth,
+        draggable: draggable,
+      ),
+    );
+  }
+  if (draggable) {
+    rows.add(
       _InsertionLine(
         controller: controller,
         container: parentId,
-        beforeId: child.id,
+        beforeId: null,
         depth: depth,
       ),
-      _OutlinerNode(
-        key: ValueKey(child.id.toToken()),
-        node: child,
-        controller: controller,
-        parentId: parentId,
-        depth: depth,
-      ),
-    ],
-    _InsertionLine(
-      controller: controller,
-      container: parentId,
-      beforeId: null,
-      depth: depth,
-    ),
-  ];
+    );
+  }
+  return rows;
 }
 
-/// The flattened, depth-first order of every node id (ignoring collapse state),
-/// used for Shift+click range selection.
+/// The flattened, depth-first order of the display tree, for Shift+click range
+/// selection.
 List<LocalId> _flatten(EditorController c) {
   final out = <LocalId>[];
   void visit(LocalId id) {
     out.add(id);
-    for (final child in c.query.childrenOf(id)) {
-      visit(child.id);
+    for (final child in c.displayChildren(id)) {
+      visit(child);
     }
   }
 
-  for (final root in c.query.roots) {
-    visit(root.id);
+  for (final root in c.displayRoots()) {
+    visit(root);
   }
   return out;
 }
@@ -141,7 +148,6 @@ void _handleTap(EditorController c, LocalId id) {
     final b = flat.indexOf(id);
     if (a >= 0 && b >= 0) {
       final range = flat.sublist(math.min(a, b), math.max(a, b) + 1);
-      // Keep the anchor as the primary so a further Shift+click extends from it.
       c.selection.set([
         for (final e in range)
           if (e != primary) e,
@@ -155,7 +161,7 @@ void _handleTap(EditorController c, LocalId id) {
 
 /// A thin drop target between rows. Dropping a dragged node here moves it into
 /// [container] (the root list when null) just before [beforeId] (or at the end
-/// when [beforeId] is null), which covers reordering and unparenting.
+/// when [beforeId] is null), covering reordering and unparenting.
 class _InsertionLine extends StatefulWidget {
   const _InsertionLine({
     required this.controller,
@@ -178,7 +184,6 @@ class _InsertionLineState extends State<_InsertionLine> {
 
   bool _accepts(LocalId dragged) {
     final container = widget.container;
-    // Cannot move a node into its own subtree.
     if (container != null &&
         widget.controller.query.subtreeOf(dragged).contains(container)) {
       return false;
@@ -188,13 +193,11 @@ class _InsertionLineState extends State<_InsertionLine> {
 
   void _drop(LocalId dragged) {
     final c = widget.controller;
-    final containerIds = widget.container == null
-        ? [for (final n in c.query.roots) n.id]
-        : [for (final n in c.query.childrenOf(widget.container!)) n.id];
-    // The command removes the node from its container before inserting, so the
-    // target index is computed against the list without the dragged node.
+    final ids = widget.container == null
+        ? c.displayRoots()
+        : c.displayChildren(widget.container!);
     final without = [
-      for (final id in containerIds)
+      for (final id in ids)
         if (id != dragged) id,
     ];
     final before = widget.beforeId;
@@ -243,14 +246,14 @@ class _OutlinerNode extends StatefulWidget {
     super.key,
     required this.node,
     required this.controller,
-    required this.parentId,
     required this.depth,
+    required this.draggable,
   });
 
   final NodeSpec node;
   final EditorController controller;
-  final LocalId? parentId;
   final int depth;
+  final bool draggable;
 
   @override
   State<_OutlinerNode> createState() => _OutlinerNodeState();
@@ -265,128 +268,147 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
     final node = widget.node;
     final ctrl = widget.controller;
     final isSelected = ctrl.selection.contains(node.id);
-    final children = ctrl.query.childrenOf(node.id);
-    final hasChildren = children.isNotEmpty;
+    final childIds = ctrl.displayChildren(node.id);
+    final hasChildren = childIds.isNotEmpty;
+    final isMember = ctrl.isPrefabMember(node.id);
+    // The source document still carries the instance marker (the composed node
+    // does not), so detect a prefab instance node there.
+    final isInstance = ctrl.document.nodes[node.id]?.instance != null;
+    // Children of a plain node are draggable; once inside a prefab they are not.
+    final childrenDraggable = widget.draggable && !isInstance && !isMember;
 
-    final row = DragTarget<LocalId>(
-      onWillAcceptWithDetails: (details) {
-        final dragged = details.data;
-        if (dragged == node.id) return false;
-        // Prevent dragging a node onto one of its own descendants.
-        final subtree = ctrl.query.subtreeOf(dragged);
-        return !subtree.contains(node.id);
-      },
-      onAcceptWithDetails: (details) {
-        setState(() => _dragTarget = false);
-        // Drop onto a row reparents into that node (appended to its children).
-        ctrl.run('reparentNode', {
-          'nodeId': details.data.toToken(),
-          'newParentId': node.id.toToken(),
-        });
-      },
-      onLeave: (_) => setState(() => _dragTarget = false),
-      onMove: (_) => setState(() => _dragTarget = true),
-      builder: (context, candidateData, rejectedData) {
-        // TODO(drag-multiselect): when the dragged node is part of a
-        // multi-selection, move every top-level selected node together rather
-        // than just this one.
-        return Draggable<LocalId>(
-          data: node.id,
-          feedback: Material(
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Text(
-                node.name.isEmpty ? node.id.toToken() : node.name,
-                style: const TextStyle(fontSize: 12),
+    final accent = Theme.of(context).colorScheme.primary;
+    final prefabTint = Theme.of(context).colorScheme.tertiary;
+    final rowColor = _dragTarget
+        ? accent.withValues(alpha: 0.2)
+        : isSelected
+        ? accent.withValues(alpha: 0.15)
+        : null;
+
+    Widget rowContent = Container(
+      color: rowColor,
+      padding: EdgeInsets.only(
+        left: 4.0 + widget.depth * 16.0,
+        right: 4,
+        top: 2,
+        bottom: 2,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            child: hasChildren
+                ? GestureDetector(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Icon(
+                      _expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                      size: 16,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 2),
+          Icon(
+            isInstance
+                ? Icons.link
+                : isMember
+                ? Icons.subdirectory_arrow_right
+                : hasChildren
+                ? Icons.account_tree_outlined
+                : Icons.circle_outlined,
+            size: 12,
+            color: isSelected
+                ? accent
+                : isMember
+                ? prefabTint
+                : Theme.of(context).colorScheme.onSurface,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              node.name.isEmpty ? '(${node.id.toToken()})' : node.name,
+              style: TextStyle(
+                fontSize: 12,
+                fontStyle: isMember ? FontStyle.italic : FontStyle.normal,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isSelected
+                    ? accent
+                    : isMember
+                    ? prefabTint
+                    : null,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          child: InkWell(
-            onTap: () => _handleTap(ctrl, node.id),
-            child: Container(
-              color: _dragTarget
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
-                  : isSelected
-                  ? Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.15)
-                  : null,
-              padding: EdgeInsets.only(
-                left: 4.0 + widget.depth * 16.0,
-                right: 4,
-                top: 2,
-                bottom: 2,
+          // Visibility toggle (read-only for prefab content, which has no
+          // visibility override yet).
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              iconSize: 14,
+              icon: Icon(
+                node.visible
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
               ),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    child: hasChildren
-                        ? GestureDetector(
-                            onTap: () => setState(() => _expanded = !_expanded),
-                            child: Icon(
-                              _expanded
-                                  ? Icons.arrow_drop_down
-                                  : Icons.arrow_right,
-                              size: 16,
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 2),
-                  Icon(
-                    node.instance != null
-                        ? Icons.link
-                        : hasChildren
-                        ? Icons.account_tree_outlined
-                        : Icons.circle_outlined,
-                    size: 12,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      node.name.isEmpty ? '(${node.id.toToken()})' : node.name,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isSelected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // Visibility toggle.
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      iconSize: 14,
-                      icon: Icon(
-                        node.visible
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                      onPressed: () => ctrl.run('setNodeVisible', {
-                        'nodeId': node.id.toToken(),
-                        'visible': !node.visible,
-                      }),
-                    ),
-                  ),
-                ],
-              ),
+              onPressed: isMember
+                  ? null
+                  : () => ctrl.run('setNodeVisible', {
+                      'nodeId': node.id.toToken(),
+                      'visible': !node.visible,
+                    }),
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
+
+    rowContent = InkWell(
+      onTap: () => _handleTap(ctrl, node.id),
+      child: rowContent,
+    );
+
+    // Plain rows are draggable and accept drops to reparent into them; prefab
+    // content is not rearranged through the outliner.
+    final Widget row = widget.draggable
+        ? DragTarget<LocalId>(
+            onWillAcceptWithDetails: (details) {
+              final dragged = details.data;
+              if (dragged == node.id) return false;
+              return !ctrl.query.subtreeOf(dragged).contains(node.id);
+            },
+            onAcceptWithDetails: (details) {
+              setState(() => _dragTarget = false);
+              ctrl.run('reparentNode', {
+                'nodeId': details.data.toToken(),
+                'newParentId': node.id.toToken(),
+              });
+            },
+            onLeave: (_) => setState(() => _dragTarget = false),
+            onMove: (_) => setState(() => _dragTarget = true),
+            builder: (context, candidate, rejected) {
+              return Draggable<LocalId>(
+                data: node.id,
+                feedback: Material(
+                  elevation: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      node.name.isEmpty ? node.id.toToken() : node.name,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                child: rowContent,
+              );
+            },
+          )
+        : rowContent;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -396,8 +418,9 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
           ...buildContainer(
             ctrl,
             parentId: node.id,
-            children: children,
+            childIds: childIds,
             depth: widget.depth + 1,
+            draggable: childrenDraggable,
           ),
       ],
     );

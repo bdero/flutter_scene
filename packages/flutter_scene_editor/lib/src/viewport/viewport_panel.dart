@@ -144,22 +144,24 @@ class _ViewportPanelState extends State<ViewportPanel> {
       // Commit the whole drag as one undoable edit.
       final start = _dragStartLocalTransform;
       if (start != null) {
-        final doc = _ctrl.document;
-        final docNode = doc.node(primary);
+        // Read the current transform from the display node so a prefab-internal
+        // node keeps its base translation; routing records the edit as an
+        // override when the node is prefab content.
+        final docNode = _ctrl.displayNode(primary);
         TrsTransform? trs;
         if (docNode != null && docNode.transform is TrsTransform) {
           trs = docNode.transform as TrsTransform;
         }
         final oldTranslation = trs?.translation ?? vm.Vector3.zero();
         final newTranslation = oldTranslation + _dragAccum;
-        _ctrl.run('setNodeTransform', {
-          'nodeId': primary.toToken(),
-          'translation': {
+        _ctrl.setNodeTransformRouted(
+          primary,
+          translation: {
             'x': newTranslation.x,
             'y': newTranslation.y,
             'z': newTranslation.z,
           },
-        });
+        );
       }
     }
     _gizmo.endDrag();
