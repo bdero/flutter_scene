@@ -75,7 +75,7 @@ void unloadSubtree(Node node) {
 PrefabInstanceSpec _eager(PrefabInstanceSpec spec) => PrefabInstanceSpec(
   source: spec.source,
   overrides: spec.overrides,
-  addedNodes: spec.addedNodes,
+  attachments: spec.attachments,
   removedNodes: spec.removedNodes,
   addedComponents: spec.addedComponents,
   removedComponentTypes: spec.removedComponentTypes,

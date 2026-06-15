@@ -32,16 +32,46 @@ typedef PrefabResolver = SceneDocument Function(AssetRef ref);
 /// Asynchronously loads a prefab [AssetRef]'s (uncomposed) [SceneDocument].
 typedef AsyncPrefabLoader = Future<SceneDocument> Function(AssetRef ref);
 
+/// Where a composed node came from: the instance it was expanded under, the
+/// node's id in the prefab document, and that prefab's source.
+///
+/// An editor uses this to map a composed node back to the instance and the
+/// prefab-local id an override targets, so prefab content can be edited in
+/// place. For the single-root merge the instance node itself appears here with
+/// [prefabLocalId] set to the prefab root.
+class PrefabMemberOrigin {
+  /// Creates an origin record.
+  PrefabMemberOrigin({
+    required this.instanceId,
+    required this.prefabLocalId,
+    required this.source,
+  });
+
+  /// The composed instance node this member was expanded under.
+  final LocalId instanceId;
+
+  /// The member's id within the prefab document (the id an override targets).
+  final LocalId prefabLocalId;
+
+  /// The prefab the member came from.
+  final AssetRef source;
+}
+
 /// Expands every prefab instance in [document], returning a new document with
 /// no instance nodes. A document with no instances is returned unchanged.
 ///
 /// [resolve] loads a referenced prefab document. A cyclic reference (a prefab
 /// that instantiates itself, directly or transitively) is broken with a
 /// warning rather than recursing forever.
+///
+/// When [memberOrigins] is given, it is filled with one entry per composed node
+/// that came from an instance (keyed by composed id), so a caller can map
+/// composed content back to the instance and prefab-local id it edits.
 SceneDocument composeScene(
   SceneDocument document, {
   required PrefabResolver resolve,
-}) => _compose(document, resolve, <String>{});
+  Map<LocalId, PrefabMemberOrigin>? memberOrigins,
+}) => _compose(document, resolve, <String>{}, memberOrigins);
 
 /// Loads every prefab document [document] references (transitively, breadth
 /// first, each source loaded once) via [load], then composes synchronously.
@@ -52,6 +82,7 @@ SceneDocument composeScene(
 Future<SceneDocument> composeSceneAsync(
   SceneDocument document, {
   required AsyncPrefabLoader load,
+  Map<LocalId, PrefabMemberOrigin>? memberOrigins,
 }) async {
   final loaded = <String, SceneDocument>{};
   final queue = [..._prefabRefs(document)];
@@ -71,6 +102,7 @@ Future<SceneDocument> composeSceneAsync(
       }
       return prefab;
     },
+    memberOrigins: memberOrigins,
   );
 }
 
@@ -83,8 +115,9 @@ bool _isEager(NodeSpec node) =>
 SceneDocument _compose(
   SceneDocument document,
   PrefabResolver resolve,
-  Set<String> visiting,
-) {
+  Set<String> visiting, [
+  Map<LocalId, PrefabMemberOrigin>? memberOrigins,
+]) {
   // Only eager instances are expanded here; lazy instances pass through as
   // placeholders for the streaming layer to load on demand.
   if (!document.nodes.values.any(_isEager)) {
@@ -122,7 +155,7 @@ SceneDocument _compose(
   out.roots.addAll(document.roots);
 
   for (final instance in out.nodes.values.where(_isEager).toList()) {
-    _expandInstance(out, instance, resolve, visiting);
+    _expandInstance(out, instance, resolve, visiting, memberOrigins);
   }
   return out;
 }
@@ -132,6 +165,7 @@ void _expandInstance(
   NodeSpec instance,
   PrefabResolver resolve,
   Set<String> visiting,
+  Map<LocalId, PrefabMemberOrigin>? memberOrigins,
 ) {
   final spec = instance.instance!;
   instance.instance = null; // mark expanded regardless of outcome
@@ -164,6 +198,15 @@ void _expandInstance(
   final remap = <LocalId, LocalId>{};
   for (final id in prefab.nodes.keys) {
     remap[id] = id == singleRoot ? instance.id : _instanceId(instance.id, id);
+  }
+  if (memberOrigins != null) {
+    for (final id in prefab.nodes.keys) {
+      memberOrigins[remap[id]!] = PrefabMemberOrigin(
+        instanceId: instance.id,
+        prefabLocalId: id,
+        source: spec.source,
+      );
+    }
   }
   for (final id in prefab.skins.keys) {
     remap[id] = _instanceId(instance.id, id);
@@ -301,12 +344,20 @@ void _applyDelta(
   for (final removed in spec.removedNodes) {
     _removeNode(out, remapId(removed));
   }
-  // Added nodes keep their authored ids; subtree roots (those not referenced as
-  // another added node's child) parent under the instance node.
-  final addedChildren = {for (final n in spec.addedNodes) ...n.children};
-  for (final node in spec.addedNodes) {
-    out.addNode(node);
-    if (!addedChildren.contains(node.id)) instance.children.add(node.id);
+  // Graft attached host nodes (already present in [out] as real nodes) under
+  // their prefab-local parent: detach from wherever they sit, then re-parent
+  // under the composed parent (or the instance node when parent is null or
+  // missing). A dangling attachment (its node was deleted) is skipped.
+  for (final attachment in spec.attachments) {
+    final child = attachment.node;
+    if (!out.nodes.containsKey(child)) continue;
+    out.roots.remove(child);
+    for (final n in out.nodes.values) {
+      n.children.remove(child);
+    }
+    final parent = attachment.parent;
+    final parentNode = parent == null ? instance : out.node(remapId(parent));
+    (parentNode ?? instance).children.add(child);
   }
   instance.components.addAll(spec.addedComponents);
   if (spec.removedComponentTypes.isNotEmpty) {

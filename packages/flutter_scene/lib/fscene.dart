@@ -79,6 +79,7 @@ export 'src/fscene/realize/views.dart' show realizeViews, serializeViews;
 export 'src/fscene/scene_document.dart' show SceneDocument;
 export 'src/fscene/specs.dart'
     show
+        Attachment,
         AnimationChannelSpec,
         AnimationProperty,
         AnimationSpec,

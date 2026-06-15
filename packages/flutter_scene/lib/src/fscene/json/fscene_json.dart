@@ -409,10 +409,14 @@ Map<String, dynamic> _encodeInstance(
           'value': encodePropertyValue(o.value, idKey),
         },
     ],
-  if (p.addedNodes.isNotEmpty)
-    'addedNodes': {
-      for (final n in p.addedNodes) idKey(n.id): _encodeNode(n, idKey),
-    },
+  if (p.attachments.isNotEmpty)
+    'attachments': [
+      for (final a in p.attachments)
+        {
+          'node': idKey(a.node),
+          if (a.parent != null) 'parent': idKey(a.parent!),
+        },
+    ],
   if (p.removedNodes.isNotEmpty)
     'removedNodes': [for (final id in p.removedNodes) idKey(id)],
   if (p.addedComponents.isNotEmpty)
@@ -614,12 +618,9 @@ PrefabInstanceSpec _decodeInstance(Map<String, dynamic> json) =>
         for (final o in (json['overrides'] as List? ?? const []))
           _decodeOverride(Map<String, dynamic>.from(o as Map)),
       ],
-      addedNodes: [
-        for (final e in (json['addedNodes'] as Map? ?? const {}).entries)
-          _decodeNode(
-            LocalId.parse(e.key as String),
-            Map<String, dynamic>.from(e.value as Map),
-          ),
+      attachments: [
+        for (final e in (json['attachments'] as List? ?? const []))
+          _decodeAttachment(Map<String, dynamic>.from(e as Map)),
       ],
       removedNodes: [
         for (final id in (json['removedNodes'] as List? ?? const []))
@@ -632,6 +633,13 @@ PrefabInstanceSpec _decodeInstance(Map<String, dynamic> json) =>
       removedComponentTypes:
           (json['removedComponentTypes'] as List?)?.cast<String>() ?? const [],
     );
+
+Attachment _decodeAttachment(Map<String, dynamic> json) => Attachment(
+  LocalId.parse(json['node'] as String),
+  parent: json['parent'] == null
+      ? null
+      : LocalId.parse(json['parent'] as String),
+);
 
 PropertyOverride _decodeOverride(Map<String, dynamic> json) => PropertyOverride(
   target: LocalId.parse(json['target'] as String),

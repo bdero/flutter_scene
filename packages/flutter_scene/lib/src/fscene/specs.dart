@@ -94,6 +94,25 @@ class PropertyOverride {
   final PropertyValue value;
 }
 
+/// Grafts a host-scene node (and its subtree) into a prefab instance under one
+/// of the prefab's internal nodes. [node] is a real node in the host document
+/// (so it edits and deletes like any other node); [parent] is the prefab-local
+/// node it attaches under, or null to attach under the instance's root.
+///
+/// This is how content added to an instance (a prop on a rig's hand bone)
+/// stays fully editable: the node lives in the host scene, and composition
+/// moves it under the prefab node at realize time.
+class Attachment {
+  /// Attaches host node [node] under prefab-local [parent].
+  Attachment(this.node, {this.parent});
+
+  /// The host-document node id grafted into the instance.
+  final LocalId node;
+
+  /// The prefab-local node this attaches under, or null for the instance root.
+  final LocalId? parent;
+}
+
 /// The data that makes a [NodeSpec] a prefab instance: a reference to another
 /// `.fscene` plus the per-instance delta (overrides and added/removed
 /// content). The prefab composer applies these against the referenced
@@ -104,12 +123,12 @@ class PrefabInstanceSpec {
     required this.source,
     this.load = LoadPolicy.eager,
     List<PropertyOverride>? overrides,
-    List<NodeSpec>? addedNodes,
+    List<Attachment>? attachments,
     List<LocalId>? removedNodes,
     List<ComponentSpec>? addedComponents,
     List<String>? removedComponentTypes,
   }) : overrides = overrides ?? [],
-       addedNodes = addedNodes ?? [],
+       attachments = attachments ?? [],
        removedNodes = removedNodes ?? [],
        addedComponents = addedComponents ?? [],
        removedComponentTypes = removedComponentTypes ?? [];
@@ -123,8 +142,8 @@ class PrefabInstanceSpec {
   /// Per-property overrides applied on top of the prefab.
   final List<PropertyOverride> overrides;
 
-  /// Nodes added to this instance that the prefab does not have.
-  final List<NodeSpec> addedNodes;
+  /// Host-scene nodes grafted into this instance under prefab-local parents.
+  final List<Attachment> attachments;
 
   /// Prefab nodes (by their local id in the prefab) suppressed on this
   /// instance.

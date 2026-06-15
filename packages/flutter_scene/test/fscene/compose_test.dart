@@ -148,21 +148,71 @@ void main() {
     expect(composed.rootNodes.single.children, isEmpty);
   });
 
-  test('adds nodes and components, and removes component types', () {
+  test('attaches host nodes and adds/removes components', () {
     final host = SceneDocument();
-    final extra = NodeSpec(id: host.newId(), name: 'extra');
-    host.createNode(root: true).instance = PrefabInstanceSpec(
+    final extra = host.createNode(name: 'extra'); // a real host node
+    final instance = host.createNode(root: true);
+    instance.children.add(extra.id); // associated with the instance in the host
+    instance.instance = PrefabInstanceSpec(
       source: const AssetRef('p'),
-      addedNodes: [extra],
+      attachments: [Attachment(extra.id)], // graft under the instance root
       addedComponents: [ComponentSpec('camera')],
       removedComponentTypes: ['mesh'],
     );
 
     final composed = composeScene(host, resolve: _resolveTo(_prefab()));
-    final node = composed.rootNodes.single;
+    final node = composed.node(instance.id)!;
     expect(node.components.map((c) => c.type), contains('camera'));
     expect(node.components.map((c) => c.type), isNot(contains('mesh')));
     expect(node.children.map((c) => composed.node(c)!.name), contains('extra'));
+  });
+
+  test('records member origins for composed prefab nodes', () {
+    final host = SceneDocument();
+    final prefab = _prefab();
+    final bodyId = prefab.rootNodes.single.id;
+    final wheelId = prefab.rootNodes.single.children.single;
+    final instance = host.createNode(root: true)
+      ..instance = PrefabInstanceSpec(source: const AssetRef('p'));
+
+    final origins = <LocalId, PrefabMemberOrigin>{};
+    final composed = composeScene(
+      host,
+      resolve: _resolveTo(prefab),
+      memberOrigins: origins,
+    );
+    // The merged root maps to the instance node and carries the prefab root id.
+    expect(origins[instance.id]?.prefabLocalId, bodyId);
+    final composedWheel = composed
+        .node(instance.id)!
+        .children
+        .firstWhere((c) => composed.node(c)!.name == 'wheel');
+    expect(origins[composedWheel]?.instanceId, instance.id);
+    expect(origins[composedWheel]?.prefabLocalId, wheelId);
+  });
+
+  test('attaches a host node under an internal prefab node', () {
+    final host = SceneDocument();
+    final prefab = _prefab();
+    final wheelId = prefab.rootNodes.single.children.single; // prefab-local
+    final prop = host.createNode(name: 'prop');
+    final instance = host.createNode(root: true);
+    instance.children.add(prop.id);
+    instance.instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+      attachments: [Attachment(prop.id, parent: wheelId)],
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final composedWheel = composed
+        .node(instance.id)!
+        .children
+        .firstWhere((c) => composed.node(c)!.name == 'wheel');
+    expect(
+      composed.node(composedWheel)!.children.map((c) => composed.node(c)!.name),
+      contains('prop'),
+    );
+    expect(composed.node(instance.id)!.children, isNot(contains(prop.id)));
   });
 
   test('composes nested prefabs', () {
