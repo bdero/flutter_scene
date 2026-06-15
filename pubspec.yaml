@@ -14,3 +14,4 @@ workspace:
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render
   - examples/editor_example
+  - apps/flutter_scene_editor_app
