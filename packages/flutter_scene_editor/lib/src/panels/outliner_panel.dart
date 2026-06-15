@@ -204,11 +204,7 @@ class _InsertionLineState extends State<_InsertionLine> {
     final at = (before == null || !without.contains(before))
         ? without.length
         : without.indexOf(before);
-    c.run('reparentNode', {
-      'nodeId': dragged.toToken(),
-      if (widget.container != null) 'newParentId': widget.container!.toToken(),
-      'index': at,
-    });
+    c.reparentToContainer(dragged, widget.container, at);
   }
 
   @override
@@ -340,8 +336,7 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          // Visibility toggle (read-only for prefab content, which has no
-          // visibility override yet).
+          // Visibility toggle (prefab content records a visibility override).
           SizedBox(
             width: 20,
             height: 20,
@@ -353,12 +348,8 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
               ),
-              onPressed: isMember
-                  ? null
-                  : () => ctrl.run('setNodeVisible', {
-                      'nodeId': node.id.toToken(),
-                      'visible': !node.visible,
-                    }),
+              onPressed: () =>
+                  ctrl.setNodeVisibleRouted(node.id, !node.visible),
             ),
           ),
         ],
@@ -370,45 +361,45 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       child: rowContent,
     );
 
-    // Plain rows are draggable and accept drops to reparent into them; prefab
-    // content is not rearranged through the outliner.
-    final Widget row = widget.draggable
-        ? DragTarget<LocalId>(
-            onWillAcceptWithDetails: (details) {
-              final dragged = details.data;
-              if (dragged == node.id) return false;
-              return !ctrl.query.subtreeOf(dragged).contains(node.id);
-            },
-            onAcceptWithDetails: (details) {
-              setState(() => _dragTarget = false);
-              ctrl.run('reparentNode', {
-                'nodeId': details.data.toToken(),
-                'newParentId': node.id.toToken(),
-              });
-            },
-            onLeave: (_) => setState(() => _dragTarget = false),
-            onMove: (_) => setState(() => _dragTarget = true),
-            builder: (context, candidate, rejected) {
-              return Draggable<LocalId>(
-                data: node.id,
-                feedback: Material(
-                  elevation: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      node.name.isEmpty ? node.id.toToken() : node.name,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-                child: rowContent,
-              );
-            },
-          )
-        : rowContent;
+    // Every row accepts a drop: onto a prefab-internal node it attaches the
+    // dragged node there, onto any other node it reparents into it. A row can
+    // be picked up when it is a real scene node (members are owned by the
+    // prefab and are not dragged).
+    final row = DragTarget<LocalId>(
+      onWillAcceptWithDetails: (details) {
+        final dragged = details.data;
+        if (dragged == node.id) return false;
+        // No cycles when reparenting into a source node; attaching under a
+        // prefab member never forms a source cycle.
+        if (!isMember && ctrl.query.subtreeOf(dragged).contains(node.id)) {
+          return false;
+        }
+        return true;
+      },
+      onAcceptWithDetails: (details) {
+        setState(() => _dragTarget = false);
+        ctrl.dropOnNode(details.data, node.id);
+      },
+      onLeave: (_) => setState(() => _dragTarget = false),
+      onMove: (_) => setState(() => _dragTarget = true),
+      builder: (context, candidate, rejected) {
+        if (isMember) return rowContent;
+        return Draggable<LocalId>(
+          data: node.id,
+          feedback: Material(
+            elevation: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Text(
+                node.name.isEmpty ? node.id.toToken() : node.name,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ),
+          child: rowContent,
+        );
+      },
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

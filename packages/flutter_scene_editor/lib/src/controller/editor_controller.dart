@@ -295,6 +295,63 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  // The prefab instance whose attachments include [id], or null when [id] is
+  // not an attached node.
+  LocalId? _attachmentOwner(LocalId id) {
+    for (final entry in document.nodes.entries) {
+      final instance = entry.value.instance;
+      if (instance != null && instance.attachments.any((a) => a.node == id)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _detachIfAttached(LocalId id) async {
+    final owner = _attachmentOwner(id);
+    if (owner != null) {
+      await run('detachFromPrefab', {
+        'nodeId': owner.toToken(),
+        'node': id.toToken(),
+      });
+    }
+  }
+
+  /// Handles a drop of [dragged] onto [target] in the outliner: attaches under
+  /// [target] when it is a prefab-internal node, otherwise reparents into it.
+  Future<void> dropOnNode(LocalId dragged, LocalId target) async {
+    if (dragged == target) return;
+    await _detachIfAttached(dragged);
+    if (isPrefabMember(target)) {
+      final origin = memberOrigin(target)!;
+      await run('attachExistingToPrefabMember', {
+        'nodeId': origin.instanceId.toToken(),
+        'target': origin.prefabLocalId.toToken(),
+        'node': dragged.toToken(),
+      });
+    } else {
+      await run('reparentNode', {
+        'nodeId': dragged.toToken(),
+        'newParentId': target.toToken(),
+      });
+    }
+  }
+
+  /// Reparents [dragged] into [parent] (the root list when null) at [index],
+  /// dropping any prefab attachment so it does not snap back into the prefab.
+  Future<void> reparentToContainer(
+    LocalId dragged,
+    LocalId? parent,
+    int index,
+  ) async {
+    await _detachIfAttached(dragged);
+    await run('reparentNode', {
+      'nodeId': dragged.toToken(),
+      if (parent != null) 'newParentId': parent.toToken(),
+      'index': index,
+    });
+  }
+
   /// Adds a new node attached under [target], which is a prefab-internal node
   /// (the new node grafts under it) or a prefab instance node (grafts at its
   /// root). Selects the new node, which edits and deletes like any other.
@@ -352,13 +409,10 @@ class EditorController extends ChangeNotifier {
     return run('setNodeName', {'nodeId': id.toToken(), 'name': name});
   }
 
-  /// Sets node [id]'s visibility. Prefab content has no visibility override yet.
+  /// Sets node [id]'s visibility (an override when [id] is prefab content).
   Future<void> setNodeVisibleRouted(LocalId id, bool visible) {
     if (isPrefabMember(id)) {
-      // TODO(visible-override): the override grammar has no visible path.
-      lastError.value =
-          'setNodeVisible, visibility of prefab content cannot be overridden yet';
-      return Future.value();
+      return _override(memberOrigin(id)!, 'visible', visible);
     }
     return run('setNodeVisible', {'nodeId': id.toToken(), 'visible': visible});
   }
@@ -469,19 +523,28 @@ class EditorController extends ChangeNotifier {
 
   void _reflectCheap(Transaction transaction) {
     for (final record in transaction.records) {
-      final live = _liveById[record.targetId];
       final docNode = document.node(record.targetId);
-      if (live == null || docNode == null) continue;
+      if (docNode == null) continue;
+      final live = _liveById[record.targetId];
+      // Mirror the change onto the composed document too, since the outliner
+      // and inspector read the composed document as their display tree; without
+      // this they show stale values after a cheap edit (a moved gizmo, a
+      // toggled visibility) when the scene has prefab instances.
+      final composedNode = _composed?.nodes[record.targetId];
       switch (record.slot) {
         case ChangeSlot.transform:
-          live.localTransform = docNode.transform.toMatrix4();
+          live?.localTransform = docNode.transform.toMatrix4();
+          composedNode?.transform = docNode.transform;
         case ChangeSlot.visible:
-          live.visible = docNode.visible;
+          live?.visible = docNode.visible;
+          composedNode?.visible = docNode.visible;
         case ChangeSlot.layers:
-          // Node layers mirror the document node's layer mask.
-          live.layers = docNode.layers;
+          live?.layers = docNode.layers;
+          composedNode?.layers = docNode.layers;
+        case ChangeSlot.name:
+          composedNode?.name = docNode.name;
         default:
-          break; // name has no effect on the live graph
+          break;
       }
     }
   }
