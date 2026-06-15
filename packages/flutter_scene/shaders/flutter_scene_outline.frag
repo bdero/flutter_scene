@@ -52,5 +52,9 @@ void main() {
 
   // Outline where the center is outside a silhouette but a neighbor is inside.
   float edge = (center.a < 0.001 && bestCoverage > 0.001) ? 1.0 : 0.0;
-  frag_color = vec4(mix(base.rgb, outlineColor, edge), base.a);
+  // The display image is premultiplied alpha; outline pixels are opaque, so
+  // raise alpha to 1 where the outline is drawn (otherwise an outline in the
+  // transparent background region, where base.a is 0, would be invisible).
+  float a = mix(base.a, 1.0, edge);
+  frag_color = vec4(mix(base.rgb, outlineColor, edge), a);
 }

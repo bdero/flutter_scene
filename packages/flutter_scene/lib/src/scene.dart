@@ -18,6 +18,7 @@ import 'physics/physics_world.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
+import 'render/custom_render_pass.dart';
 import 'render/depth_prepass.dart';
 import 'render/fxaa_pass.dart';
 import 'render/post_effect_pass.dart';
@@ -424,6 +425,31 @@ base class Scene implements SceneGraph {
   /// How the selection outline is drawn around nodes that have a
   /// [Node.highlightColor]. No outline is drawn when no node is highlighted.
   final HighlightStyle highlightStyle = HighlightStyle();
+
+  final List<CustomRenderPass> _renderPasses = [];
+
+  /// The custom render passes inserted into the pipeline, in the order they
+  /// were added. Use [addRenderPass] / [removeRenderPass] to change the set.
+  /// {@category Rendering}
+  List<CustomRenderPass> get renderPasses =>
+      List<CustomRenderPass>.unmodifiable(_renderPasses);
+
+  /// Inserts [pass] into the render pipeline at its [CustomRenderPass.stage].
+  /// Passes at the same stage run in the order they were added. Adding the
+  /// same pass twice is a no-op.
+  /// {@category Rendering}
+  void addRenderPass(CustomRenderPass pass) {
+    if (_renderPasses.contains(pass)) return;
+    _renderPasses.add(pass);
+  }
+
+  /// Removes a previously [addRenderPass]ed [pass]. Returns whether it was
+  /// present.
+  /// {@category Rendering}
+  bool removeRenderPass(CustomRenderPass pass) => _renderPasses.remove(pass);
+
+  Iterable<CustomRenderPass> _passesAt(RenderStage stage) =>
+      _renderPasses.where((p) => p.enabled && p.stage == stage);
 
   /// Screen-space ambient occlusion settings. Off by default; set
   /// [AmbientOcclusionSettings.enabled] to turn it on. Requires a
@@ -917,6 +943,19 @@ base class Scene implements SceneGraph {
     final postTime =
         DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
 
+    // Custom HDR passes right after the scene is drawn.
+    _addHdrCustomPasses(
+      graph,
+      RenderStage.afterScene,
+      camera,
+      pixelSize,
+      pool,
+      width,
+      height,
+      view.layerMask,
+      postTime,
+    );
+
     // Custom effects on the linear HDR scene color, ping-ponging through
     // HDR buffers and republishing the scene-color handle that bloom and
     // the resolve read.
@@ -948,78 +987,68 @@ base class Scene implements SceneGraph {
       );
     }
 
-    // When any node is highlighted, a selection outline runs as the final
-    // stage, so the display chain writes into an intermediate the outline then
-    // composites onto the real output.
-    final outlineActive = sceneHasHighlights(renderScene);
-    final gpu.Texture displayTarget = outlineActive
-        ? pool.acquire(
-            TransientTextureDescriptor.color(
-              width: width,
-              height: height,
-              format: outputColor.format,
-              debugName: 'pre_outline',
-            ),
-          )
-        : outputColor;
+    // Custom HDR passes just before tone mapping.
+    _addHdrCustomPasses(
+      graph,
+      RenderStage.beforeToneMapping,
+      camera,
+      pixelSize,
+      pool,
+      width,
+      height,
+      view.layerMask,
+      postTime,
+    );
 
-    // The resolve writes the output directly unless FXAA or
-    // after-tone-mapping effects need an intermediate buffer to chain on.
-    final gpu.Texture resolveOutput = afterTonemap.isEmpty && !enableFxaa
-        ? displayTarget
-        : pool.acquire(
-            TransientTextureDescriptor.color(
-              width: width,
-              height: height,
-              format: outputColor.format,
-              debugName: 'post_ldr_resolve',
-            ),
-          );
-    graph.addPass(
-      ResolvePass(
-        outputColor: resolveOutput,
+    // The display-referred chain is an ordered list of color-writing passes.
+    // The last one writes [outputColor]; each earlier one writes a pooled
+    // transient the next pass samples. The resolve produces the first
+    // display image; FXAA, custom display passes, after-tone-mapping
+    // effects, and the selection outline composite onto it in order.
+    final outlineActive = sceneHasHighlights(renderScene);
+    final displaySteps = <RenderGraphPass Function(gpu.Texture output)>[];
+
+    displaySteps.add(
+      (output) => ResolvePass(
+        outputColor: output,
         exposure: exposure,
         toneMappingMode: toneMapping,
         postProcess: postProcess,
       ),
     );
 
-    // FXAA runs right after the resolve so custom after-tone-mapping
-    // effects receive the anti-aliased image. The resolve applies film
-    // grain and vignette first, so heavy grain is softened slightly here.
+    var userPassIndex = 0;
+    for (final pass in _passesAt(RenderStage.afterToneMapping)) {
+      final index = userPassIndex++;
+      displaySteps.add(
+        (output) => UserRenderGraphPass(
+          pass: pass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: output,
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: index,
+          time: postTime,
+        ),
+      );
+    }
+
+    // FXAA runs after the resolve so custom after-tone-mapping effects
+    // receive the anti-aliased image. The resolve applies film grain and
+    // vignette first, so heavy grain is softened slightly here.
     // TODO(antialiasing): if that softening bothers anyone, move grain
     // application after the FXAA pass.
     if (enableFxaa) {
-      final gpu.Texture fxaaOutput = afterTonemap.isEmpty
-          ? displayTarget
-          : pool.acquire(
-              TransientTextureDescriptor.color(
-                width: width,
-                height: height,
-                format: outputColor.format,
-                debugName: 'fxaa_out',
-              ),
-            );
-      graph.addPass(FxaaPass(output: fxaaOutput, dimensions: pixelSize));
+      displaySteps.add(
+        (output) => FxaaPass(output: output, dimensions: pixelSize),
+      );
     }
 
-    // Custom effects on the display-referred image. The last one writes
-    // the output texture.
-    for (var i = 0; i < afterTonemap.length; i++) {
-      final isLast = i == afterTonemap.length - 1;
-      final output = isLast
-          ? displayTarget
-          : pool.acquire(
-              TransientTextureDescriptor.color(
-                width: width,
-                height: height,
-                format: outputColor.format,
-                debugName: i.isEven ? 'post_ldr_a' : 'post_ldr_b',
-              ),
-            );
-      graph.addPass(
-        PostEffectPass(
-          effect: afterTonemap[i],
+    for (final effect in afterTonemap) {
+      displaySteps.add(
+        (output) => PostEffectPass(
+          effect: effect,
           inputKey: kDisplayColorBlackboardKey,
           outputKey: kDisplayColorBlackboardKey,
           output: output,
@@ -1029,26 +1058,100 @@ base class Scene implements SceneGraph {
       );
     }
 
+    for (final pass in _passesAt(RenderStage.afterAntiAliasing)) {
+      final index = userPassIndex++;
+      displaySteps.add(
+        (output) => UserRenderGraphPass(
+          pass: pass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: output,
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: index,
+          time: postTime,
+        ),
+      );
+    }
+
     // Selection outline runs last: draw the highlighted silhouettes into a
     // mask, then composite a uniform-width outline onto the display image.
+    // The mask only needs the scene geometry, so it can run before the
+    // display chain; the outline composite is the final display step.
     if (outlineActive) {
       graph.addPass(
         SelectionMaskPass(
           camera: camera,
           renderScene: renderScene,
           dimensions: pixelSize,
+          colorFormat: outputColor.format,
           layerMask: view.layerMask,
         ),
       );
-      graph.addPass(
-        SelectionOutlinePass(
-          output: outputColor,
+      displaySteps.add(
+        (output) => SelectionOutlinePass(
+          output: output,
           dimensions: pixelSize,
           thickness: highlightStyle.thickness,
         ),
       );
     }
 
+    for (var i = 0; i < displaySteps.length; i++) {
+      final isLast = i == displaySteps.length - 1;
+      final output = isLast
+          ? outputColor
+          : pool.acquire(
+              TransientTextureDescriptor.color(
+                width: width,
+                height: height,
+                format: outputColor.format,
+                debugName: 'display_step_$i',
+              ),
+            );
+      graph.addPass(displaySteps[i](output));
+    }
+
     graph.execute(transientsBuffer: transientsBuffer, texturePool: pool);
+  }
+
+  // Inserts the enabled custom HDR passes registered for [stage], each
+  // writing its own pooled HDR transient and republishing the scene color
+  // when it draws.
+  void _addHdrCustomPasses(
+    RenderGraph graph,
+    RenderStage stage,
+    Camera camera,
+    ui.Size pixelSize,
+    TransientTexturePool pool,
+    int width,
+    int height,
+    int viewLayerMask,
+    double time,
+  ) {
+    var i = 0;
+    for (final pass in _passesAt(stage)) {
+      final output = pool.acquire(
+        TransientTextureDescriptor.color(
+          width: width,
+          height: height,
+          format: gpu.PixelFormat.r16g16b16a16Float,
+          debugName: 'custom_hdr_${stage.name}_$i',
+        ),
+      );
+      graph.addPass(
+        UserRenderGraphPass(
+          pass: pass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: output,
+          renderScene: renderScene,
+          viewLayerMask: viewLayerMask,
+          passIndex: i,
+          time: time,
+        ),
+      );
+      i++;
+    }
   }
 }

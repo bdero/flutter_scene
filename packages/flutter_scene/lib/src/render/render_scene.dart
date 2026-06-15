@@ -23,6 +23,14 @@ class RenderItem {
   /// Shader and per-material parameters.
   final Material material;
 
+  /// The `Node` that owns this item, set once when the item is registered.
+  ///
+  /// Typed as `Object?` to keep the render layer free of a node import (the
+  /// same reason [RenderScene.widgetComponents] is loosely typed). Consumers
+  /// that need the node (the object-filtered draw's node predicate and
+  /// per-node color) cast it back to `Node`.
+  Object? sourceNode;
+
   /// Whether the owning node and all of its ancestors are visible.
   /// Refreshed each frame by the scene pre-pass.
   bool visible = false;

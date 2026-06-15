@@ -26,7 +26,7 @@ class InstancedMeshComponent extends Component {
     final item = RenderItem(
       geometry: instancedMesh.geometry,
       material: instancedMesh.material,
-    );
+    )..sourceNode = node;
     _renderItem = item;
     renderScene.add(item);
   }

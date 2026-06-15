@@ -50,7 +50,7 @@ class MeshComponent extends Component {
       final item = RenderItem(
         geometry: primitive.geometry,
         material: primitive.material,
-      );
+      )..sourceNode = node;
       _renderItems.add(item);
       renderScene.add(item);
     }
