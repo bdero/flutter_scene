@@ -96,6 +96,7 @@ class MeshComponent extends Component {
     final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
     final layers = node.layers;
+    final highlightColor = node.highlightColor;
     for (final item in _renderItems) {
       item.visible = true;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
@@ -103,6 +104,7 @@ class MeshComponent extends Component {
       item.layers = layers;
       item.worldTransform.setFrom(worldTransform);
       item.windingFlipped = windingFlipped;
+      item.highlightColor = highlightColor;
 
       final wasBounded = item.worldBounds != null;
       final boundsChanged = item.refreshWorldBounds();

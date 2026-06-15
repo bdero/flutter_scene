@@ -43,6 +43,11 @@ class RenderItem {
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
 
+  /// The owning node's highlight color (linear RGBA), or null when the node
+  /// is not highlighted. Refreshed each frame; the selection-outline pass
+  /// draws only highlighted items, using this as the mask color.
+  Vector4? highlightColor;
+
   /// Per-instance model transforms, or `null` for a non-instanced item.
   ///
   /// When set, this item draws [geometry] / [material] once per entry,

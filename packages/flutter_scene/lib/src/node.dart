@@ -40,6 +40,15 @@ base class Node implements SceneGraph {
   /// Whether this node is visible in the scene. If false, the node and its children will not be rendered.
   bool visible = true;
 
+  /// A highlight/outline color (linear RGBA) for this node, or null for none.
+  ///
+  /// When set, the scene draws a selection-style outline around this node's
+  /// geometry in that color (see `Scene.highlightStyle`). Highlighting is a
+  /// per-node property, so different nodes can use different colors. Setting it
+  /// does not affect the node's normal rendering.
+  /// {@category Rendering}
+  Vector4? highlightColor;
+
   /// Whether this node and its descendants should be tested against the
   /// camera frustum each frame. When `true` (the default), subtrees
   /// whose [combinedLocalBounds] don't intersect the frustum are
