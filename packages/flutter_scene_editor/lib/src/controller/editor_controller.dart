@@ -109,8 +109,37 @@ class EditorController extends ChangeNotifier {
     session.selectionValidId = (id) =>
         controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
-    session.selection.addListener(controller.notifyListeners);
+    session.selection.addListener(controller._onSelectionChanged);
     return controller;
+  }
+
+  // The live nodes currently carrying a highlight color, so the next sync can
+  // clear them. Highlighting is transient view state (like selection), applied
+  // straight to the live scene, not a document edit.
+  final Set<Node> _highlighted = {};
+
+  // Editor selection-highlight color (linear RGBA), a warm orange.
+  static final Vector4 _highlightColor = Vector4(1.0, 0.55, 0.1, 1.0);
+
+  void _onSelectionChanged() {
+    _syncHighlights();
+    notifyListeners();
+  }
+
+  /// Mirrors the selection onto the live scene as highlight colors, so the
+  /// renderer draws a selection outline around the selected nodes.
+  void _syncHighlights() {
+    for (final node in _highlighted) {
+      node.highlightColor = null;
+    }
+    _highlighted.clear();
+    for (final id in selection.ids) {
+      final live = _liveById[id];
+      if (live != null) {
+        live.highlightColor = _highlightColor;
+        _highlighted.add(live);
+      }
+    }
   }
 
   /// Opens a controller over a new empty document.
@@ -578,6 +607,8 @@ class EditorController extends ChangeNotifier {
     _liveById.clear();
     _sourceIdByLive.clear();
     _index(root, null);
+    // Re-apply selection highlights to the freshly realized live nodes.
+    _syncHighlights();
   }
 
   Future<SceneDocument> _loadPrefab(AssetRef ref) async {
@@ -613,7 +644,7 @@ class EditorController extends ChangeNotifier {
 
   @override
   void dispose() {
-    session.selection.removeListener(notifyListeners);
+    session.selection.removeListener(_onSelectionChanged);
     lastError.dispose();
     scene.removeAll();
     super.dispose();
