@@ -1,12 +1,11 @@
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
 import 'orbit_camera.dart';
-import 'translate_gizmo.dart';
+import 'transform_gizmo.dart';
 
 /// Interactive viewport: renders the live scene, handles selection via
 /// raycast, and drives a translate gizmo that commits one command per drag.
@@ -36,10 +35,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   bool _draggingGizmo = false;
 
-  // Accumulated world-space translation during a gizmo drag.
-  vm.Vector3 _dragAccum = vm.Vector3.zero();
-  // The local transform of the selected node at the start of the drag.
-  vm.Matrix4? _dragStartLocalTransform;
+  // The selected node's local transform components at the start of a gizmo
+  // drag, decomposed so each mode can rebuild the preview.
+  final vm.Vector3 _startT = vm.Vector3.zero();
+  final vm.Quaternion _startR = vm.Quaternion.identity();
+  final vm.Vector3 _startS = vm.Vector3(1, 1, 1);
 
   Size _viewSize = Size.zero;
 
@@ -91,16 +91,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (primary != null) {
       final live = _ctrl.liveNode(primary);
       if (live != null) {
-        final axis = _gizmo.hitTest(
+        final grabbed = _gizmo.grab(
           event.localPosition,
           live.globalTransform.getTranslation(),
           _camera.camera,
           viewSize,
         );
-        if (axis != null) {
+        if (grabbed) {
           _draggingGizmo = true;
-          _dragAccum = vm.Vector3.zero();
-          _dragStartLocalTransform = live.localTransform.clone();
+          // Decompose the node's local transform so each mode can rebuild it.
+          live.localTransform.decompose(_startT, _startR, _startS);
           return;
         }
       }
@@ -115,59 +115,98 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final live = _ctrl.liveNode(primary);
     if (live == null) return;
 
-    final delta = _gizmo.dragDelta(
+    _gizmo.update(
       event.localPosition,
       live.globalTransform.getTranslation(),
       _camera.camera,
       _viewSize,
     );
-    if (delta.length2 < 1e-10) return;
-
-    _dragAccum += delta;
-
-    // Preview by adding the world-space delta straight onto the transform's
-    // translation column. Adding it here (rather than translateByVector3, which
-    // applies in the node's scaled and rotated frame) keeps the preview 1:1
-    // with the pointer and matching the world-space value committed on release,
-    // so a scaled node no longer drifts.
-    final start = _dragStartLocalTransform!;
-    final preview = start.clone()
-      ..setTranslation(start.getTranslation() + _dragAccum);
-    _ctrl.previewLocalTransform(primary, preview);
+    _ctrl.previewLocalTransform(primary, _previewMatrix());
     _bumpView();
   }
 
   void _onPointerUp(PointerUpEvent event) {
     if (!_draggingGizmo) return;
     final primary = _ctrl.selection.primary;
-    if (primary != null && _dragAccum.length2 > 1e-10) {
-      // Commit the whole drag as one undoable edit.
-      final start = _dragStartLocalTransform;
-      if (start != null) {
-        // Read the current transform from the display node so a prefab-internal
-        // node keeps its base translation; routing records the edit as an
-        // override when the node is prefab content.
-        final docNode = _ctrl.displayNode(primary);
-        TrsTransform? trs;
-        if (docNode != null && docNode.transform is TrsTransform) {
-          trs = docNode.transform as TrsTransform;
-        }
-        final oldTranslation = trs?.translation ?? vm.Vector3.zero();
-        final newTranslation = oldTranslation + _dragAccum;
-        _ctrl.setNodeTransformRouted(
-          primary,
-          translation: {
-            'x': newTranslation.x,
-            'y': newTranslation.y,
-            'z': newTranslation.z,
-          },
-        );
+    if (primary != null) {
+      switch (_gizmo.mode) {
+        case GizmoMode.translate:
+          if (_gizmo.translation.length2 > 1e-10) {
+            final t = _startT + _gizmo.translation;
+            _ctrl.setNodeTransformRouted(
+              primary,
+              translation: {'x': t.x, 'y': t.y, 'z': t.z},
+            );
+          }
+        case GizmoMode.rotate:
+          if (_gizmo.angle.abs() > 1e-5) {
+            final r = _rotatedStart();
+            _ctrl.setNodeTransformRouted(
+              primary,
+              rotation: {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w},
+            );
+          }
+        case GizmoMode.scale:
+          final s = _scaledStart();
+          if ((s - _startS).length2 > 1e-10) {
+            _ctrl.setNodeTransformRouted(
+              primary,
+              scale: {'x': s.x, 'y': s.y, 'z': s.z},
+            );
+          }
       }
     }
-    _gizmo.endDrag();
+    _gizmo.end();
     _draggingGizmo = false;
-    _dragAccum = vm.Vector3.zero();
-    _dragStartLocalTransform = null;
+  }
+
+  vm.Quaternion _rotatedStart() =>
+      (vm.Quaternion.axisAngle(_gizmo.axisVec, _gizmo.angle) * _startR)
+        ..normalize();
+
+  vm.Vector3 _scaledStart() => vm.Vector3(
+    _startS.x * _gizmo.scale.x,
+    _startS.y * _gizmo.scale.y,
+    _startS.z * _gizmo.scale.z,
+  );
+
+  // The previewed local transform for the active drag, built from the start
+  // components plus the gizmo's accumulated delta for the current mode.
+  vm.Matrix4 _previewMatrix() {
+    final t = _gizmo.mode == GizmoMode.translate
+        ? _startT + _gizmo.translation
+        : _startT;
+    final r = _gizmo.mode == GizmoMode.rotate ? _rotatedStart() : _startR;
+    final s = _gizmo.mode == GizmoMode.scale ? _scaledStart() : _startS;
+    return vm.Matrix4.compose(t, r, s);
+  }
+
+  void _setMode(GizmoMode mode) {
+    if (_gizmo.mode == mode) return;
+    _gizmo.mode = mode;
+    _bumpView();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // Plain W/E/R switch the gizmo mode (Unity-style), ignored with modifiers
+    // so app shortcuts still work.
+    final keys = HardwareKeyboard.instance;
+    if (keys.isMetaPressed || keys.isControlPressed || keys.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.keyW:
+        _setMode(GizmoMode.translate);
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyE:
+        _setMode(GizmoMode.rotate);
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.keyR:
+        _setMode(GizmoMode.scale);
+        return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _performRaycast(Offset position, Size viewSize) {
@@ -209,6 +248,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                     children: [
                       Focus(
                         focusNode: _focusNode,
+                        onKeyEvent: _onKey,
                         child: OrbitCameraController(
                           camera: _camera,
                           isLocked: () => _draggingGizmo,
@@ -229,15 +269,23 @@ class _ViewportPanelState extends State<ViewportPanel> {
                       if (live != null)
                         IgnorePointer(
                           child: CustomPaint(
-                            painter: TranslateGizmoPainter(
-                              nodePosition: live.globalTransform
-                                  .getTranslation(),
+                            painter: TransformGizmoPainter(
+                              origin: live.globalTransform.getTranslation(),
+                              mode: _gizmo.mode,
                               camera: cam,
                               activeAxis: _gizmo.activeAxis,
                             ),
                             size: size,
                           ),
                         ),
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: _GizmoModeBar(
+                          mode: _gizmo.mode,
+                          onChanged: _setMode,
+                        ),
+                      ),
                       if (primary != null)
                         Positioned(
                           bottom: 8,
@@ -278,6 +326,50 @@ class _ViewportPanelState extends State<ViewportPanel> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Translate/rotate/scale mode selector (also bound to W/E/R).
+class _GizmoModeBar extends StatelessWidget {
+  const _GizmoModeBar({required this.mode, required this.onChanged});
+  final GizmoMode mode;
+  final void Function(GizmoMode) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(GizmoMode m, IconData icon, String tip) {
+      final active = mode == m;
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          onTap: () => onChanged(m),
+          child: Container(
+            width: 28,
+            height: 24,
+            color: active
+                ? Theme.of(context).colorScheme.primary
+                : Colors.black.withValues(alpha: 0.55),
+            child: Icon(
+              icon,
+              size: 15,
+              color: active ? Colors.black : Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          button(GizmoMode.translate, Icons.open_with, 'Move (W)'),
+          button(GizmoMode.rotate, Icons.threesixty, 'Rotate (E)'),
+          button(GizmoMode.scale, Icons.aspect_ratio, 'Scale (R)'),
+        ],
+      ),
     );
   }
 }
