@@ -1153,6 +1153,90 @@ final attachToPrefabMember = CommandEntry(
   },
 );
 
+/// Attaches an existing host node under a prefab-internal node of this instance
+/// (or the instance root when [target] is omitted), by recording an attachment.
+/// The node stays where it is in the source document; composition grafts it
+/// under the prefab node, so it edits and deletes like any other node.
+final attachExistingToPrefabMember = CommandEntry(
+  name: 'attachExistingToPrefabMember',
+  doc: 'Attach an existing node under a prefab-internal node of this instance.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(
+      name: 'target',
+      type: ParamType.nodeRef,
+      label: 'Prefab node',
+      required: false,
+    ),
+    ParamSpec(name: 'node', type: ParamType.nodeRef, label: 'Node'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final target = optionalNodeId(params, 'target');
+    final existing = requireNodeId(params, 'node');
+    _requireNode(ctx, existing);
+    final attachments = [
+      for (final a in instance.attachments)
+        if (a.node != existing) a,
+      Attachment(existing, parent: target),
+    ];
+    return Transaction(
+      name: 'Attach to prefab',
+      records: [
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(instance, attachments: attachments),
+        ),
+      ],
+    );
+  },
+);
+
+/// Removes the attachment of [node] from this instance, so the node returns to
+/// its source position (used when dragging an attached node back out).
+final detachFromPrefab = CommandEntry(
+  name: 'detachFromPrefab',
+  doc: 'Remove an attached node from this prefab instance.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(name: 'node', type: ParamType.nodeRef, label: 'Node'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final target = requireNodeId(params, 'node');
+    if (!instance.attachments.any((a) => a.node == target)) {
+      return Transaction(name: 'Detach from prefab', records: _empty);
+    }
+    final attachments = [
+      for (final a in instance.attachments)
+        if (a.node != target) a,
+    ];
+    return Transaction(
+      name: 'Detach from prefab',
+      records: [
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(instance, attachments: attachments),
+        ),
+      ],
+    );
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Registration.
 // ---------------------------------------------------------------------------
@@ -1189,4 +1273,6 @@ final List<CommandEntry> builtinCommands = [
   clearPrefabOverrides,
   removePrefabMember,
   attachToPrefabMember,
+  attachExistingToPrefabMember,
+  detachFromPrefab,
 ];
