@@ -377,13 +377,9 @@ void _applyDelta(
 /// is not found the call is a no-op (a warning is printed via [debugPrint]).
 ///
 /// The grammar for [PropertyOverride.path] is the same as the override grammar
-/// used during composition: `name`, `layers`, `transform.matrix`,
+/// used during composition: `name`, `layers`, `visible`, `transform.matrix`,
 /// `transform.trs.t`, `transform.trs.r`, `transform.trs.s`, and
 /// `components.<type>.<prop>`.
-///
-/// NOTE `visible` is NOT supported by the override grammar; the compose path
-/// does not handle it. TODO(visible-override): add visible support to
-/// _setProperty once compose.dart handles it.
 void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
   final node = document.node(override.target);
   if (node == null) {
@@ -404,6 +400,10 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     }
     if (parts[0] == 'layers' && value is IntValue) {
       node.layers = value.value;
+      return;
+    }
+    if (parts[0] == 'visible' && value is BoolValue) {
+      node.visible = value.value;
       return;
     }
   }

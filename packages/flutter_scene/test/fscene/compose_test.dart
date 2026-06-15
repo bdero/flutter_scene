@@ -215,6 +215,30 @@ void main() {
     expect(composed.node(instance.id)!.children, isNot(contains(prop.id)));
   });
 
+  test('applies a visible override to an internal prefab node', () {
+    final host = SceneDocument();
+    final prefab = _prefab();
+    final wheelId = prefab.rootNodes.single.children.single;
+    final instance = host.createNode(root: true);
+    instance.instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+      overrides: [
+        PropertyOverride(
+          target: wheelId,
+          path: 'visible',
+          value: const BoolValue(false),
+        ),
+      ],
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final wheel = composed
+        .node(instance.id)!
+        .children
+        .firstWhere((c) => composed.node(c)!.name == 'wheel');
+    expect(composed.node(wheel)!.visible, isFalse);
+  });
+
   test('composes nested prefabs', () {
     final inner = SceneDocument();
     inner.createNode(name: 'gear', root: true);
