@@ -9,6 +9,7 @@
 /// bake landing one atomic result on completion).
 library;
 
+import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 
@@ -63,6 +64,12 @@ class EditorSession {
 
   final DocumentMutator _mutator;
 
+  /// Predicate deciding which selected ids survive an edit. Defaults to "the id
+  /// is a node in the document". The editor widens this to also keep prefab
+  /// content ids (which live only in the composed document), so selecting a
+  /// node inside a prefab is not lost on the next edit.
+  bool Function(LocalId id)? selectionValidId;
+
   /// Runs the command named [name] with [params] and commits its transaction
   /// to the history. Returns the committed [Transaction] (empty when the
   /// command was a no-op). Throws [ArgumentError] for an unknown command and
@@ -100,6 +107,8 @@ class EditorSession {
   /// Serializes the current document to canonical `.fscene` JSON text.
   String toFscene() => writeFscene(document);
 
-  void _pruneSelection() =>
-      selection.retainWhere((id) => document.nodes.containsKey(id));
+  void _pruneSelection() {
+    final valid = selectionValidId ?? (id) => document.nodes.containsKey(id);
+    selection.retainWhere(valid);
+  }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';
 
@@ -21,7 +20,7 @@ void main() {
   group('reparentNode reorder and unparent', () {
     test('reorders a root to the front by index', () {
       final s = EditorSession.empty();
-      final a = _create(s, 'A');
+      _create(s, 'A');
       _create(s, 'B');
       final c = _create(s, 'C');
       expect(_names(s, s.document.roots), ['A', 'B', 'C']);

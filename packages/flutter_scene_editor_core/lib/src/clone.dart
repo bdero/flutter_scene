@@ -134,7 +134,9 @@ PrefabInstanceSpec _copyInstance(
     for (final o in i.overrides)
       PropertyOverride(target: o.target, path: o.path, value: o.value),
   ],
-  addedNodes: [for (final n in i.addedNodes) _copyNode(n, remap)],
+  attachments: [
+    for (final a in i.attachments) Attachment(remap(a.node), parent: a.parent),
+  ],
   removedNodes: List.of(i.removedNodes),
   addedComponents: [
     for (final c in i.addedComponents) _copyComponent(c, remap),

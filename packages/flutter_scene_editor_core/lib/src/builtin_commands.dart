@@ -858,17 +858,35 @@ final removeResource = CommandEntry(
 // Prefab commands.
 // ---------------------------------------------------------------------------
 
+PrefabInstanceSpec _withDelta(
+  PrefabInstanceSpec i, {
+  List<PropertyOverride>? overrides,
+  List<Attachment>? attachments,
+  List<LocalId>? removedNodes,
+}) => PrefabInstanceSpec(
+  source: i.source,
+  load: i.load,
+  overrides: overrides ?? i.overrides,
+  attachments: attachments ?? i.attachments,
+  removedNodes: removedNodes ?? i.removedNodes,
+  addedComponents: i.addedComponents,
+  removedComponentTypes: i.removedComponentTypes,
+);
+
 PrefabInstanceSpec _withOverrides(
   PrefabInstanceSpec instance,
   List<PropertyOverride> overrides,
-) => PrefabInstanceSpec(
-  source: instance.source,
-  load: instance.load,
-  overrides: overrides,
-  addedNodes: instance.addedNodes,
-  removedNodes: instance.removedNodes,
-  addedComponents: instance.addedComponents,
-  removedComponentTypes: instance.removedComponentTypes,
+) => _withDelta(instance, overrides: overrides);
+
+ChangeRecord _instanceRecord(
+  LocalId id,
+  PrefabInstanceSpec from,
+  PrefabInstanceSpec to,
+) => ChangeRecord(
+  targetId: id,
+  slot: ChangeSlot.instance,
+  oldValue: PrefabInstanceChange(from),
+  newValue: PrefabInstanceChange(to),
 );
 
 final instantiatePrefab = CommandEntry(
@@ -1037,6 +1055,104 @@ final clearPrefabOverrides = CommandEntry(
   },
 );
 
+/// Hides a prefab-internal node on this instance (records it as a removed node
+/// in the instance delta). [target] is the node's prefab-local id.
+final removePrefabMember = CommandEntry(
+  name: 'removePrefabMember',
+  doc: 'Remove a prefab-internal node from this instance.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(name: 'target', type: ParamType.nodeRef, label: 'Prefab node'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final target = requireNodeId(params, 'target');
+    if (instance.removedNodes.contains(target)) {
+      return Transaction(name: 'Remove prefab member', records: _empty);
+    }
+    return Transaction(
+      name: 'Remove prefab member',
+      records: [
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(
+            instance,
+            removedNodes: [...instance.removedNodes, target],
+          ),
+        ),
+      ],
+    );
+  },
+);
+
+/// Attaches a new host node under a prefab-internal node of this instance
+/// (a prop on a rig bone). The node is created as a real child of the instance
+/// and grafted under [parent] (the prefab-local id, omitted for the instance
+/// root) at compose time, so it edits and deletes like any other node.
+final attachToPrefabMember = CommandEntry(
+  name: 'attachToPrefabMember',
+  doc: 'Add a node attached under a prefab-internal node of this instance.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(
+      name: 'parent',
+      type: ParamType.nodeRef,
+      label: 'Prefab node',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final parent = optionalNodeId(params, 'parent');
+    final newNode = NodeSpec(
+      id: ctx.document.newId(),
+      name: optionalString(params, 'name', orElse: 'Node')!,
+    );
+    return Transaction(
+      name: 'Attach to prefab',
+      records: [
+        ChangeRecord(
+          targetId: newNode.id,
+          slot: ChangeSlot.poolNode,
+          oldValue: const NodeChange(null),
+          newValue: NodeChange(newNode),
+        ),
+        _attach(ctx.document, newNode.id, id),
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(
+            instance,
+            attachments: [
+              ...instance.attachments,
+              Attachment(newNode.id, parent: parent),
+            ],
+          ),
+        ),
+      ],
+    );
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Registration.
 // ---------------------------------------------------------------------------
@@ -1071,4 +1187,6 @@ final List<CommandEntry> builtinCommands = [
   setPrefabOverride,
   removePrefabOverride,
   clearPrefabOverrides,
+  removePrefabMember,
+  attachToPrefabMember,
 ];
