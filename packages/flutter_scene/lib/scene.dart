@@ -70,6 +70,7 @@ export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart' show DirectionalLight, Lighting, ShadowCascade;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;
+export 'src/render/selection_outline_pass.dart' show HighlightStyle;
 export 'src/render_texture.dart'
     show RenderTexture, RenderTextureSampling, RenderTextureUpdate;
 export 'src/render_view.dart' show RenderView;

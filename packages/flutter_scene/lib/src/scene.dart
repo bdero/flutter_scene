@@ -25,6 +25,7 @@ import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
+import 'render/selection_outline_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
@@ -419,6 +420,10 @@ base class Scene implements SceneGraph {
   /// Built-in post-processing settings, such as color grading. Every
   /// effect is off by default.
   final PostProcessSettings postProcess = PostProcessSettings();
+
+  /// How the selection outline is drawn around nodes that have a
+  /// [Node.highlightColor]. No outline is drawn when no node is highlighted.
+  final HighlightStyle highlightStyle = HighlightStyle();
 
   /// Screen-space ambient occlusion settings. Off by default; set
   /// [AmbientOcclusionSettings.enabled] to turn it on. Requires a
@@ -943,10 +948,25 @@ base class Scene implements SceneGraph {
       );
     }
 
+    // When any node is highlighted, a selection outline runs as the final
+    // stage, so the display chain writes into an intermediate the outline then
+    // composites onto the real output.
+    final outlineActive = sceneHasHighlights(renderScene);
+    final gpu.Texture displayTarget = outlineActive
+        ? pool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: height,
+              format: outputColor.format,
+              debugName: 'pre_outline',
+            ),
+          )
+        : outputColor;
+
     // The resolve writes the output directly unless FXAA or
     // after-tone-mapping effects need an intermediate buffer to chain on.
     final gpu.Texture resolveOutput = afterTonemap.isEmpty && !enableFxaa
-        ? outputColor
+        ? displayTarget
         : pool.acquire(
             TransientTextureDescriptor.color(
               width: width,
@@ -971,7 +991,7 @@ base class Scene implements SceneGraph {
     // application after the FXAA pass.
     if (enableFxaa) {
       final gpu.Texture fxaaOutput = afterTonemap.isEmpty
-          ? outputColor
+          ? displayTarget
           : pool.acquire(
               TransientTextureDescriptor.color(
                 width: width,
@@ -988,7 +1008,7 @@ base class Scene implements SceneGraph {
     for (var i = 0; i < afterTonemap.length; i++) {
       final isLast = i == afterTonemap.length - 1;
       final output = isLast
-          ? outputColor
+          ? displayTarget
           : pool.acquire(
               TransientTextureDescriptor.color(
                 width: width,
@@ -1005,6 +1025,26 @@ base class Scene implements SceneGraph {
           output: output,
           dimensions: pixelSize,
           time: postTime,
+        ),
+      );
+    }
+
+    // Selection outline runs last: draw the highlighted silhouettes into a
+    // mask, then composite a uniform-width outline onto the display image.
+    if (outlineActive) {
+      graph.addPass(
+        SelectionMaskPass(
+          camera: camera,
+          renderScene: renderScene,
+          dimensions: pixelSize,
+          layerMask: view.layerMask,
+        ),
+      );
+      graph.addPass(
+        SelectionOutlinePass(
+          output: outputColor,
+          dimensions: pixelSize,
+          thickness: highlightStyle.thickness,
         ),
       );
     }

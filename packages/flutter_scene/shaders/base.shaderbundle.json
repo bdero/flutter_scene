@@ -23,6 +23,14 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_linear_depth.frag"
     },
+    "MaskFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_mask.frag"
+    },
+    "OutlineFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_outline.frag"
+    },
     "SsaoFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_ssao.frag"
