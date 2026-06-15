@@ -35,6 +35,40 @@ LocalId? _parentOf(SceneDocument doc, LocalId id) {
   return null;
 }
 
+/// The world-space matrix of [id], composed from local transforms up the
+/// source hierarchy (identity for a missing node).
+Matrix4 _worldMatrix(SceneDocument doc, LocalId id) {
+  final node = doc.nodes[id];
+  if (node == null) return Matrix4.identity();
+  final local = node.transform.toMatrix4();
+  final parent = _parentOf(doc, id);
+  if (parent == null) return local;
+  return _worldMatrix(doc, parent).multiplied(local);
+}
+
+/// The local transform [id] needs under [newParent] (the root when null) to
+/// keep its current world transform, as a decomposed [TrsTransform].
+TrsTransform _worldPreservingLocal(
+  SceneDocument doc,
+  LocalId id,
+  LocalId? newParent,
+) {
+  final world = _worldMatrix(doc, id);
+  final parentWorld = newParent == null
+      ? Matrix4.identity()
+      : _worldMatrix(doc, newParent);
+  final local = Matrix4.inverted(parentWorld)..multiply(world);
+  final translation = Vector3.zero();
+  final rotation = Quaternion.identity();
+  final scale = Vector3.zero();
+  local.decompose(translation, rotation, scale);
+  return TrsTransform(
+    translation: translation,
+    rotation: rotation,
+    scale: scale,
+  );
+}
+
 /// All node ids in the subtree rooted at [root] (root first).
 List<LocalId> _subtree(SceneDocument doc, LocalId root) {
   final out = <LocalId>[];
@@ -423,10 +457,16 @@ final reparentNode = CommandEntry(
       label: 'Index',
       required: false,
     ),
+    ParamSpec(
+      name: 'keepWorldTransform',
+      type: ParamType.boolean,
+      label: 'Keep world transform',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final id = requireNodeId(params, 'nodeId');
-    _requireNode(ctx, id);
+    final node = _requireNode(ctx, id);
     final doc = ctx.document;
     final newParent = optionalNodeId(params, 'newParentId');
     final index = optionalInt(params, 'index');
@@ -448,10 +488,26 @@ final reparentNode = CommandEntry(
         records: record == null ? _empty : [record],
       );
     }
+    // By default the node keeps its world transform across the move, so it does
+    // not visually jump (its local transform is recomputed under the new
+    // parent). Pass keepWorldTransform false to keep the local transform.
+    final keepWorld = params['keepWorldTransform'] != false;
     final attach = _attachAt(doc, id, newParent, index)!;
     return Transaction(
       name: 'Reparent node',
-      records: [_detach(doc, id, oldParent), attach],
+      records: [
+        _detach(doc, id, oldParent),
+        attach,
+        if (keepWorld)
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.transform,
+            oldValue: TransformChange(node.transform),
+            newValue: TransformChange(
+              _worldPreservingLocal(doc, id, newParent),
+            ),
+          ),
+      ],
     );
   },
 );

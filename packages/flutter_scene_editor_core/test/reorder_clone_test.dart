@@ -1,5 +1,6 @@
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';
 
@@ -73,6 +74,50 @@ void main() {
       expect(_names(s, s.document.nodes[p]!.children), ['C0', 'Loose', 'C1']);
       expect(s.document.roots, isNot(contains(loose)));
       expect(s.document.nodes[p]!.children.first, c0);
+    });
+
+    test('keeps the world transform across a reparent by default', () {
+      final s = EditorSession.empty();
+      final p = _create(s, 'P');
+      s.run('setNodeTransform', {
+        'nodeId': p.toToken(),
+        'translation': {'x': 10.0, 'y': 0.0, 'z': 0.0},
+      });
+      final c = _create(s, 'C');
+      s.run('setNodeTransform', {
+        'nodeId': c.toToken(),
+        'translation': {'x': 5.0, 'y': 0.0, 'z': 0.0},
+      });
+
+      s.run('reparentNode', {
+        'nodeId': c.toToken(),
+        'newParentId': p.toToken(),
+      });
+      final trs = s.document.nodes[c]!.transform as TrsTransform;
+      // World stays (5,0,0): local becomes (5-10,0,0) under P.
+      expect(trs.translation.x, closeTo(-5.0, 1e-4));
+    });
+
+    test('keepWorldTransform false keeps the local transform', () {
+      final s = EditorSession.empty();
+      final p = _create(s, 'P');
+      s.run('setNodeTransform', {
+        'nodeId': p.toToken(),
+        'translation': {'x': 10.0, 'y': 0.0, 'z': 0.0},
+      });
+      final c = _create(s, 'C');
+      s.run('setNodeTransform', {
+        'nodeId': c.toToken(),
+        'translation': {'x': 5.0, 'y': 0.0, 'z': 0.0},
+      });
+
+      s.run('reparentNode', {
+        'nodeId': c.toToken(),
+        'newParentId': p.toToken(),
+        'keepWorldTransform': false,
+      });
+      final trs = s.document.nodes[c]!.transform as TrsTransform;
+      expect(trs.translation.x, closeTo(5.0, 1e-4));
     });
 
     test('rejects reparenting under a descendant', () {
