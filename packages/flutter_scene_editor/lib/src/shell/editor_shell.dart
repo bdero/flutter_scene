@@ -82,6 +82,7 @@ class EditorShell extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onControllerReplaced,
+    this.viewportRepaintBoundaryKey,
   });
 
   final EditorController controller;
@@ -89,6 +90,10 @@ class EditorShell extends StatefulWidget {
   /// Called when the user opens a new file or clears the scene; the parent
   /// should rebuild with the new controller.
   final void Function(EditorController newController) onControllerReplaced;
+
+  /// Optional key on the viewport's [RepaintBoundary], so a host can capture
+  /// the rendered viewport (the MCP `screenshot_viewport` perception tool).
+  final GlobalKey? viewportRepaintBoundaryKey;
 
   @override
   State<EditorShell> createState() => _EditorShellState();
@@ -221,7 +226,10 @@ class _EditorShellState extends State<EditorShell> {
                     fit: StackFit.expand,
                     children: [
                       DockingShell(
-                        viewportPane: ViewportPanel(controller: _ctrl),
+                        viewportPane: ViewportPanel(
+                          controller: _ctrl,
+                          repaintBoundaryKey: widget.viewportRepaintBoundaryKey,
+                        ),
                         outlinerPane: OutlinerPanel(controller: _ctrl),
                         inspectorPane: InspectorPanel(controller: _ctrl),
                         historyPane: HistoryPanel(controller: _ctrl),

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
+import 'package:flutter_scene_mcp/socket_host.dart';
 
 void main() {
   runApp(const EditorApp());
@@ -31,6 +34,11 @@ class _EditorLoaderState extends State<_EditorLoader> {
   EditorController? _controller;
   String? _error;
 
+  // Key on the viewport's RepaintBoundary so the MCP screenshot tool can
+  // capture exactly what the user sees.
+  final _viewportKey = GlobalKey();
+  ServerSocket? _mcpServer;
+
   @override
   void initState() {
     super.initState();
@@ -40,14 +48,45 @@ class _EditorLoaderState extends State<_EditorLoader> {
   Future<void> _open() async {
     try {
       final ctrl = await EditorController.empty();
-      if (mounted) setState(() => _controller = ctrl);
+      if (!mounted) {
+        ctrl.dispose();
+        return;
+      }
+      setState(() => _controller = ctrl);
+      await _startMcpServer();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
   }
 
+  // Serves the live editor to an agent over a localhost port. Each connection
+  // gets a surface over the current controller's session plus a viewport
+  // screenshot provider. Connect an MCP client through the stdio bridge:
+  //   dart run flutter_scene_mcp:flutter_scene_mcp_connect 7007
+  Future<void> _startMcpServer() async {
+    try {
+      final dpr = WidgetsBinding
+          .instance
+          .platformDispatcher
+          .views
+          .first
+          .devicePixelRatio;
+      _mcpServer = await serveEditorMcpOverTcp(
+        () => EditorToolSurface(
+          _controller!.session,
+          screenshot: viewportScreenshot(_viewportKey, pixelRatio: dpr),
+        ),
+      );
+      debugPrint('Editor MCP server listening on 127.0.0.1:7007');
+    } on SocketException catch (e) {
+      // A stale instance may already hold the port; the editor still runs.
+      debugPrint('Editor MCP server not started: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _mcpServer?.close();
     _controller?.dispose();
     super.dispose();
   }
@@ -63,6 +102,7 @@ class _EditorLoaderState extends State<_EditorLoader> {
     }
     return EditorShell(
       controller: ctrl,
+      viewportRepaintBoundaryKey: _viewportKey,
       onControllerReplaced: (newCtrl) {
         final old = _controller;
         setState(() => _controller = newCtrl);
