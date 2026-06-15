@@ -1,10 +1,18 @@
 /// The MCP tool surface for the flutter_scene editor.
 ///
-/// Exposes the editor's command registry and scene perception to AI agents as
-/// a tiered, discoverable set of tools. This library is transport-free and
-/// GPU-free; a dart_mcp server wraps [EditorToolSurface] to speak the protocol,
-/// and a running editor adds a viewport-screenshot perception tool.
+/// [EditorToolSurface] exposes the editor's command registry and scene
+/// perception to AI agents as a tiered, discoverable set of tools; it is
+/// transport-free and GPU-free. [EditorMcpServer] wraps it in a `dart_mcp`
+/// server to speak the protocol over any channel (stdio, a socket). A running
+/// editor passes a [ViewportScreenshot] so agents can also see the rendered
+/// viewport.
 library;
 
+export 'src/mcp_server.dart' show EditorMcpServer, serveOverChannel;
 export 'src/tool_surface.dart'
-    show ToolDefinition, ToolError, EditorToolSurface;
+    show
+        EditorToolSurface,
+        ScreenshotResult,
+        ToolDefinition,
+        ToolError,
+        ViewportScreenshot;

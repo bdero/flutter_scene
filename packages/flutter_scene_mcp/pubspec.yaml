@@ -13,10 +13,12 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
+  dart_mcp: ^0.5.1
   flutter_scene: ^0.18.0
   flutter_scene_editor_core:
     path: ../flutter_scene_editor_core
   meta: ^1.15.0
+  stream_channel: ^2.1.4
   vector_math: ^2.1.4
 
 dev_dependencies:

@@ -11,11 +11,39 @@
 /// speak the protocol; a running editor adds a viewport-screenshot tool.
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
+
+/// A captured viewport image (PNG-encoded), returned by a
+/// [ViewportScreenshot] provider.
+class ScreenshotResult {
+  /// Creates a screenshot result.
+  const ScreenshotResult({
+    required this.pngBytes,
+    required this.width,
+    required this.height,
+  });
+
+  /// PNG-encoded image bytes.
+  final Uint8List pngBytes;
+
+  /// Image width in pixels.
+  final int width;
+
+  /// Image height in pixels.
+  final int height;
+}
+
+/// Captures the running editor's viewport as a PNG. Supplied by the editor
+/// app (the headless core and the tool surface have no GPU), and exposed to
+/// agents as the `screenshot_viewport` perception tool when present.
+typedef ViewportScreenshot = Future<ScreenshotResult> Function();
 
 /// One MCP tool definition, ready to hand to a protocol server.
 class ToolDefinition {
@@ -51,16 +79,37 @@ class ToolError implements Exception {
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
   /// Creates a surface over [session].
-  EditorToolSurface(this.session);
+  ///
+  /// When [screenshot] is supplied (by a running editor), a
+  /// `screenshot_viewport` perception tool is offered and handled by
+  /// [capture].
+  EditorToolSurface(this.session, {this.screenshot});
 
   /// The editing session this surface reads and drives.
   final EditorSession session;
+
+  /// Captures the live viewport, or null in a headless session.
+  final ViewportScreenshot? screenshot;
 
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
   /// reached through `search_commands` plus `run_command`, not listed here.
-  List<ToolDefinition> bootstrapTools() => const [
+  /// The `screenshot_viewport` tool is appended only when a [screenshot]
+  /// provider is available.
+  List<ToolDefinition> bootstrapTools() => [
+    ..._baseTools,
+    if (screenshot != null)
+      const ToolDefinition(
+        name: 'screenshot_viewport',
+        description:
+            'Capture the current editor viewport as a PNG image, so you can '
+            'see the rendered scene exactly as the user does.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+  ];
+
+  static const List<ToolDefinition> _baseTools = [
     ToolDefinition(
       name: 'describe_scene',
       description:
@@ -169,9 +218,34 @@ class EditorToolSurface {
         return {'undone': session.undo(), 'canUndo': session.history.canUndo};
       case 'redo':
         return {'redone': session.redo(), 'canRedo': session.history.canRedo};
+      case 'screenshot_viewport':
+        throw const ToolError(
+          'screenshot_viewport is asynchronous; call capture() instead of '
+          'dispatch()',
+        );
       default:
         throw ToolError('Unknown tool: $tool');
     }
+  }
+
+  /// Captures the viewport as a base64 PNG, for the `screenshot_viewport`
+  /// tool. Throws a [ToolError] in a headless session (no [screenshot]
+  /// provider). Asynchronous because image encoding is, so it sits beside
+  /// the synchronous [dispatch] rather than inside it.
+  Future<Map<String, Object?>> capture() async {
+    final provider = screenshot;
+    if (provider == null) {
+      throw const ToolError(
+        'No viewport is available to screenshot in this session',
+      );
+    }
+    final shot = await provider();
+    return {
+      'mimeType': 'image/png',
+      'width': shot.width,
+      'height': shot.height,
+      'base64': base64Encode(shot.pngBytes),
+    };
   }
 
   // --- command tools ------------------------------------------------------
