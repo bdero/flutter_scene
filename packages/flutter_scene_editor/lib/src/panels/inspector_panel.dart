@@ -7,8 +7,10 @@ import 'package:flutter_scene/src/fscene/property_value.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math.dart' show Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
+import '../inspector/euler.dart';
 import '../inspector/property_editors.dart';
 import '../io/scene_io.dart';
 
@@ -162,16 +164,33 @@ class _TransformEditor extends StatelessWidget {
           z: s?.z ?? 1,
           onSubmit: (v) => controller.setNodeTransformRouted(node.id, scale: v),
         ),
-        // TODO(rotation-editor): add a rotation editor (Euler angles or
-        // quaternion fields) when a Vec4Field is available.
-        if (r != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Text(
-              'Rotation: (${r.x.toStringAsFixed(2)}, ${r.y.toStringAsFixed(2)}, ${r.z.toStringAsFixed(2)}, ${r.w.toStringAsFixed(2)})',
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
-            ),
-          ),
+        // Rotation as XYZ Euler degrees.
+        Builder(
+          builder: (context) {
+            final euler = quaternionToEulerXyzDegrees(
+              r ?? Quaternion.identity(),
+            );
+            return Vec3Field(
+              label: 'Rotation',
+              x: euler.x,
+              y: euler.y,
+              z: euler.z,
+              onSubmit: (v) {
+                final q = eulerXyzDegreesToQuaternion(
+                  Vector3(
+                    (v['x']! as num).toDouble(),
+                    (v['y']! as num).toDouble(),
+                    (v['z']! as num).toDouble(),
+                  ),
+                );
+                controller.setNodeTransformRouted(
+                  node.id,
+                  rotation: {'x': q.x, 'y': q.y, 'z': q.z, 'w': q.w},
+                );
+              },
+            );
+          },
+        ),
       ],
     );
   }

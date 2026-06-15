@@ -432,7 +432,9 @@ class EditorController extends ChangeNotifier {
       }
       if (scale != null) await _override(origin, 'transform.trs.s', scale);
       if (rotation != null) {
-        await _override(origin, 'transform.trs.r', rotation);
+        // The override value is coerced; a quaternion is tagged so it is not
+        // mistaken for a vec4.
+        await _override(origin, 'transform.trs.r', {r'$quat': rotation});
       }
       return;
     }
