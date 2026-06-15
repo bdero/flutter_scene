@@ -20,6 +20,34 @@ const _fsceneTypeGroup = XTypeGroup(
   extensions: <String>['fscene'],
 );
 
+const _glbTypeGroup = XTypeGroup(
+  label: 'glTF binary',
+  extensions: <String>['glb'],
+);
+
+/// Shows the native open dialog filtered to `.glb`, and returns the chosen
+/// path, or null when the user cancels.
+Future<String?> pickGlbPath() async {
+  final file = await openFile(acceptedTypeGroups: const [_glbTypeGroup]);
+  return file?.path;
+}
+
+/// Imports the glTF binary at [path] into a fresh editable [EditorController].
+/// [compressTextures] compresses imported textures during the import.
+///
+/// Throws an [IOException] on read failure.
+Future<EditorController> importGlb(
+  String path, {
+  bool compressTextures = false,
+}) async {
+  final bytes = await File(path).readAsBytes();
+  return EditorController.fromGlb(
+    bytes,
+    compressTextures: compressTextures,
+    baseDirectory: File(path).parent.path,
+  );
+}
+
 /// Writes [controller]'s document to a `.fscene` file at [path].
 ///
 /// Throws an [IOException] on write failure.

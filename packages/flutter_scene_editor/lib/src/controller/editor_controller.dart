@@ -30,6 +30,7 @@ import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -152,6 +153,20 @@ class EditorController extends ChangeNotifier {
     String source, {
     String? baseDirectory,
   }) => open(EditorSession.fromFscene(source), baseDirectory: baseDirectory);
+
+  /// Opens a controller over a glTF binary ([glbBytes]) imported in memory to
+  /// an editable document, ready to edit and save as `.fscene`. Set
+  /// [compressTextures] to compress imported textures during the import.
+  static Future<EditorController> fromGlb(
+    Uint8List glbBytes, {
+    bool compressTextures = false,
+    String? baseDirectory,
+  }) => open(
+    EditorSession(
+      importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
+    ),
+    baseDirectory: baseDirectory,
+  );
 
   /// The current selection.
   Selection get selection => session.selection;

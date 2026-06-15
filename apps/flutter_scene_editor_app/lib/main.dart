@@ -65,6 +65,17 @@ class _EditorHomeState extends State<_EditorHome> {
     });
   }
 
+  Future<void> _importGltf() async {
+    final path = await pickGlbPath();
+    if (path == null || !mounted) return;
+    final options = await showGlbImportOptions(context);
+    if (options == null) return;
+    await _load(
+      'Importing glTF',
+      () => importGlb(path, compressTextures: options.compressTextures),
+    );
+  }
+
   Future<void> _load(
     String label,
     Future<EditorController> Function() open,
@@ -141,6 +152,7 @@ class _EditorHomeState extends State<_EditorHome> {
       error: _error,
       onNew: _newScene,
       onOpen: _openScene,
+      onImport: _importGltf,
     );
   }
 }
@@ -151,12 +163,14 @@ class _StartScreen extends StatelessWidget {
     required this.error,
     required this.onNew,
     required this.onOpen,
+    required this.onImport,
   });
 
   final String? busy;
   final String? error;
   final VoidCallback onNew;
   final VoidCallback onOpen;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +203,12 @@ class _StartScreen extends StatelessWidget {
                   onPressed: onOpen,
                   icon: const Icon(Icons.folder_open),
                   label: const Text('Open .fscene'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: onImport,
+                  icon: const Icon(Icons.view_in_ar),
+                  label: const Text('Import glTF (.glb)'),
                 ),
               ],
               if (error != null) ...[

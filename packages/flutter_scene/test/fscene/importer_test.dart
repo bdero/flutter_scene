@@ -9,6 +9,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
@@ -142,6 +143,25 @@ void main() {
         importGlbToFscenebBytes(bytes),
         equals(importGlbToFscenebBytes(bytes)),
       );
+    });
+
+    // The editor imports a GLB to an editable document and saves it as a
+    // `.fscene`; that document must round-trip through the text codec.
+    test('imported document round-trips through writeFscene/readFscene', () {
+      final path = _resolve('examples/assets_src/fcar.glb');
+      if (!File(path).existsSync()) {
+        // ignore: avoid_print
+        print('Test data missing ($path) - skipping.');
+        return;
+      }
+      final document = importGlbToSceneDocument(File(path).readAsBytesSync());
+      final text = writeFscene(document);
+      final reparsed = readFscene(text);
+      expect(reparsed.nodes.length, document.nodes.length);
+      expect(reparsed.resources.length, document.resources.length);
+      expect(reparsed.roots, document.roots);
+      // Re-serializing the reparsed document is byte-stable.
+      expect(writeFscene(reparsed), text);
     });
   });
 

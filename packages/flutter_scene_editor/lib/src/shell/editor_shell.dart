@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controller/editor_controller.dart';
+import '../io/glb_import_options.dart';
 import '../io/scene_io.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
@@ -208,6 +209,7 @@ class _EditorShellState extends State<EditorShell> {
                   currentPath: _currentPath,
                   onNew: _newScene,
                   onOpen: _open,
+                  onImportGlb: _importGlb,
                   onSave: _save,
                   onSaveAs: _saveAs,
                   onUndo: _ctrl.undo,
@@ -278,6 +280,32 @@ class _EditorShellState extends State<EditorShell> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Could not open: $e')));
+      }
+    }
+  }
+
+  Future<void> _importGlb() async {
+    final path = await pickGlbPath();
+    if (path == null || !mounted) return;
+    final options = await showGlbImportOptions(context);
+    if (options == null) return;
+    try {
+      final ctrl = await importGlb(
+        path,
+        compressTextures: options.compressTextures,
+      );
+      widget.onControllerReplaced(ctrl);
+      setState(() {
+        // The import is a fresh, unsaved scene; Save prompts for an .fscene
+        // path rather than overwriting the source .glb.
+        _currentPath = null;
+        _paletteOpen = false;
+      });
+    } on IOException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not import: $e')));
       }
     }
   }
@@ -415,6 +443,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.currentPath,
     required this.onNew,
     required this.onOpen,
+    required this.onImportGlb,
     required this.onSave,
     required this.onSaveAs,
     required this.onUndo,
@@ -433,6 +462,7 @@ class _EditorMenuBar extends StatelessWidget {
   final String? currentPath;
   final VoidCallback onNew;
   final VoidCallback onOpen;
+  final VoidCallback onImportGlb;
   final VoidCallback onSave;
   final VoidCallback onSaveAs;
   final VoidCallback onUndo;
@@ -466,6 +496,7 @@ class _EditorMenuBar extends StatelessWidget {
             items: [
               _MenuItem(label: 'New', onTap: onNew),
               _MenuItem(label: 'Open…', onTap: onOpen),
+              _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
               _MenuItem(label: 'Save', onTap: onSave),
               _MenuItem(label: 'Save As…', onTap: onSaveAs),
             ],
