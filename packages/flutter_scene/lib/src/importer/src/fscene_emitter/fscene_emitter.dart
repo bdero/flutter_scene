@@ -58,10 +58,15 @@ SceneDocument buildSceneDocument(
   Uint8List bufferData, {
   bool compressTextures = false,
 }) {
-  final seed = _seedFrom(bufferData);
+  // The document id stays content-derived, so distinct imports get distinct
+  // ids, but local ids are minted from a fixed session: a node's id then
+  // depends only on its position in the glTF, not on the buffer bytes. So
+  // re-importing an edited model keeps the same ids for nodes whose position is
+  // unchanged, and prefab overrides keyed by those ids survive the re-import
+  // (the editor's linked-asset import relies on this).
   final document = SceneDocument(
-    documentId: DocumentId.generate(Random(seed)),
-    allocator: IdAllocator(session: seed),
+    documentId: DocumentId.generate(Random(_seedFrom(bufferData))),
+    allocator: IdAllocator(session: _kImporterIdSession),
   );
   document.stage
     ..upAxis = UpAxis.y
@@ -659,6 +664,11 @@ double _at(List<double>? values, int index, double fallback) =>
 // A 32-bit FNV-1a hash of [data], used to seed deterministic, content-derived
 // document and session ids so re-importing the same asset is reproducible.
 // Build-time only (native), so 64-bit int math is fine.
+// The fixed local-id session every import uses, so node ids are positional
+// (stable across content edits) rather than content-derived. Distinct imports
+// are still distinguished by their content-derived document id.
+const int _kImporterIdSession = 0x5ce4e5;
+
 int _seedFrom(Uint8List data) {
   var hash = 0x811c9dc5;
   for (final byte in data) {

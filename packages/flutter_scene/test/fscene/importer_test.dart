@@ -163,6 +163,35 @@ void main() {
       // Re-serializing the reparsed document is byte-stable.
       expect(writeFscene(reparsed), text);
     });
+
+    // Local ids are positional (a fixed allocator session), not content-derived,
+    // so re-importing an edited model keeps node ids stable and prefab overrides
+    // keyed by them survive. Distinct models still get distinct document ids.
+    test('node ids are positional and content-independent', () {
+      final fcarPath = _resolve('examples/assets_src/fcar.glb');
+      final logoPath = _resolve('examples/assets_src/flutter_logo_baked.glb');
+      if (!File(fcarPath).existsSync() || !File(logoPath).existsSync()) {
+        // ignore: avoid_print
+        print('Test data missing - skipping.');
+        return;
+      }
+      final fcar = importGlbToSceneDocument(File(fcarPath).readAsBytesSync());
+      final logo = importGlbToSceneDocument(File(logoPath).readAsBytesSync());
+      // Every node id in a document shares one session, and that session is the
+      // same across two different models (so ids do not depend on content).
+      final fcarSessions = fcar.nodes.keys.map((id) => id.session).toSet();
+      final logoSessions = logo.nodes.keys.map((id) => id.session).toSet();
+      expect(fcarSessions, hasLength(1));
+      expect(logoSessions, {fcarSessions.single});
+      // But the two models are still distinguished by their document id.
+      expect(fcar.documentId.toToken(), isNot(logo.documentId.toToken()));
+      // Re-importing the same model yields identical node id tokens.
+      final fcar2 = importGlbToSceneDocument(File(fcarPath).readAsBytesSync());
+      expect(
+        fcar2.nodes.keys.map((id) => id.toToken()).toSet(),
+        fcar.nodes.keys.map((id) => id.toToken()).toSet(),
+      );
+    });
   });
 
   group('geometry bounds', () {
