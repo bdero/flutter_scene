@@ -625,6 +625,63 @@ class EditorController extends ChangeNotifier {
     _liveById[id]?.localTransform = localTransform;
   }
 
+  /// Live-previews a material factor on node [id]'s realized mesh without
+  /// touching the document or history, so a slider/color drag updates the
+  /// viewport continuously. Commit the final value once with
+  /// `setMaterialProperties` on release. [key] is a material property name
+  /// (`baseColor`/`emissive`/`metallic`/`roughness`); [raw] is a double or an
+  /// `{r,g,b,a}` map.
+  void previewMaterialProperty(LocalId id, String key, Object raw) {
+    final mesh = _liveById[id]?.mesh;
+    if (mesh == null) return;
+    final color = _colorVec(raw);
+    for (final primitive in mesh.primitives) {
+      final material = primitive.material;
+      switch (key) {
+        case 'baseColor' when color != null:
+          if (material is PhysicallyBasedMaterial) {
+            material.baseColorFactor = color;
+          } else if (material is UnlitMaterial) {
+            material.baseColorFactor = color;
+          }
+        case 'emissive' when color != null:
+          if (material is PhysicallyBasedMaterial) {
+            material.emissiveFactor = color;
+          }
+        case 'metallic' when raw is num:
+          if (material is PhysicallyBasedMaterial) {
+            material.metallicFactor = raw.toDouble();
+          }
+        case 'roughness' when raw is num:
+          if (material is PhysicallyBasedMaterial) {
+            material.roughnessFactor = raw.toDouble();
+          }
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Live-previews scene-wide settings on the live scene without touching the
+  /// document or history (for stage slider drags). Commit with
+  /// `setStageProperties` on release.
+  void previewStage({double? exposure, double? environmentIntensity}) {
+    if (exposure != null) scene.exposure = exposure;
+    if (environmentIntensity != null) {
+      scene.environmentIntensity = environmentIntensity;
+    }
+    notifyListeners();
+  }
+
+  static Vector4? _colorVec(Object raw) {
+    if (raw is Map) {
+      final r = raw['r'], g = raw['g'], b = raw['b'], a = raw['a'];
+      if (r is num && g is num && b is num && a is num) {
+        return Vector4(r.toDouble(), g.toDouble(), b.toDouble(), a.toDouble());
+      }
+    }
+    return null;
+  }
+
   // --- sync ---------------------------------------------------------------
 
   static const _cheapSlots = {

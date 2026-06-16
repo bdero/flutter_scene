@@ -110,6 +110,7 @@ class _NodeInspector extends StatelessWidget {
                 component.properties['material'] is ResourceRefValue)
               MaterialSection(
                 controller: controller,
+                nodeId: node.id,
                 materialId:
                     (component.properties['material'] as ResourceRefValue).id,
               ),

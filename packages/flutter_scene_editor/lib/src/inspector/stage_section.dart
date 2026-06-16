@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
 import '../controller/editor_controller.dart';
+import 'live_fields.dart';
 
 const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
 
@@ -63,17 +64,19 @@ class StageSection extends StatelessWidget {
               style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ),
-        _StageSlider(
+        LiveSlider(
           label: 'Environment intensity',
           value: stage.environmentIntensity,
           max: 3,
-          onChanged: (v) => _set('environmentIntensity', v),
+          onPreview: (v) => controller.previewStage(environmentIntensity: v),
+          onCommit: (v) => _set('environmentIntensity', v),
         ),
-        _StageSlider(
+        LiveSlider(
           label: 'Exposure',
           value: stage.exposure,
           max: 8,
-          onChanged: (v) => _set('exposure', v),
+          onPreview: (v) => controller.previewStage(exposure: v),
+          onCommit: (v) => _set('exposure', v),
         ),
         ListTile(
           dense: true,
@@ -91,46 +94,6 @@ class StageSection extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _StageSlider extends StatefulWidget {
-  const _StageSlider({
-    required this.label,
-    required this.value,
-    required this.max,
-    required this.onChanged,
-  });
-  final String label;
-  final double value;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  @override
-  State<_StageSlider> createState() => _StageSliderState();
-}
-
-class _StageSliderState extends State<_StageSlider> {
-  double? _dragging;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = (_dragging ?? widget.value).clamp(0.0, widget.max);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(widget.label, style: const TextStyle(fontSize: 13)),
-      subtitle: Slider(
-        value: value,
-        max: widget.max,
-        onChanged: (v) => setState(() => _dragging = v),
-        onChangeEnd: (v) {
-          setState(() => _dragging = null);
-          widget.onChanged(v);
-        },
-      ),
-      trailing: Text(value.toStringAsFixed(2)),
     );
   }
 }
