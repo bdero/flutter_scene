@@ -285,7 +285,7 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Future<void> _importGlb() async {
-    final path = await pickGlbPath();
+    final path = await pickModelPath();
     if (path == null || !mounted) return;
     final options = await showGlbImportOptions(context);
     if (options == null) return;
@@ -295,10 +295,13 @@ class _EditorShellState extends State<EditorShell> {
       final parentId = _ctrl.selection.ids.length == 1
           ? _ctrl.selection.ids.first
           : null;
-      await _ctrl.importGlbIntoScene(
-        await File(path).readAsBytes(),
-        parentId: parentId,
+      final document = await importModelDocument(
+        path,
         compressTextures: options.compressTextures,
+      );
+      await _ctrl.importSceneIntoScene(
+        document,
+        parentId: parentId,
         scale: options.scale,
         upAxis: options.upAxis,
       );
@@ -308,6 +311,12 @@ class _EditorShellState extends State<EditorShell> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Could not import: $e')));
+      }
+    } on FormatException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not import: ${e.message}')),
+        );
       }
     }
   }

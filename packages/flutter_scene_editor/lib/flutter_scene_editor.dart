@@ -17,7 +17,12 @@ export 'src/controller/editor_controller.dart' show EditorController;
 export 'src/io/glb_import_options.dart'
     show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
 export 'src/io/scene_io.dart'
-    show importGlb, openFscene, pickGlbPath, pickOpenPath;
+    show
+        importModel,
+        importModelDocument,
+        openFscene,
+        pickModelPath,
+        pickOpenPath;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/shell/editor_shell.dart' show EditorShell;
 export 'src/viewport/viewport_panel.dart' show ViewportPanel;

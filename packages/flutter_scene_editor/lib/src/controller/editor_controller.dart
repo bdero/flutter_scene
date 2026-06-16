@@ -157,28 +157,37 @@ class EditorController extends ChangeNotifier {
     String? baseDirectory,
   }) => open(EditorSession.fromFscene(source), baseDirectory: baseDirectory);
 
-  /// Opens a controller over a glTF binary ([glbBytes]) imported in memory to
-  /// an editable document, ready to edit and save as `.fscene`. Set
-  /// [compressTextures] to compress imported textures during the import.
-  /// [scale] and [upAxis] apply a non-destructive transform to the imported
-  /// content (a group node wrapping the roots), leaving the source untouched.
+  /// Opens a controller over an already-imported [document] (from a `.glb` or
+  /// multi-file `.gltf`), ready to edit and save as `.fscene`. [scale] and
+  /// [upAxis] apply a non-destructive transform to the content (a group node
+  /// wrapping the roots), leaving the rest of the document untouched.
+  static Future<EditorController> fromImportedScene(
+    SceneDocument document, {
+    double scale = 1.0,
+    ImportUpAxis upAxis = ImportUpAxis.yUp,
+    String? baseDirectory,
+  }) {
+    final transform = _importTransform(scale, upAxis);
+    if (transform != null) {
+      wrapRootsUnderGroup(document, name: 'Imported', transform: transform);
+    }
+    return open(EditorSession(document), baseDirectory: baseDirectory);
+  }
+
+  /// Opens a controller over a glTF binary ([glbBytes]) imported in memory.
+  /// Set [compressTextures] to compress imported textures during the import.
   static Future<EditorController> fromGlb(
     Uint8List glbBytes, {
     bool compressTextures = false,
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
-  }) {
-    final doc = importGlbToSceneDocument(
-      glbBytes,
-      compressTextures: compressTextures,
-    );
-    final transform = _importTransform(scale, upAxis);
-    if (transform != null) {
-      wrapRootsUnderGroup(doc, name: 'Imported', transform: transform);
-    }
-    return open(EditorSession(doc), baseDirectory: baseDirectory);
-  }
+  }) => fromImportedScene(
+    importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
+    scale: scale,
+    upAxis: upAxis,
+    baseDirectory: baseDirectory,
+  );
 
   /// The current selection.
   Selection get selection => session.selection;
@@ -254,22 +263,17 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  /// Imports a glTF binary ([glbBytes]) into the current scene as a new
-  /// subtree, grafted under [parentId] (or the scene roots when null or
-  /// missing), as one undoable edit. The imported root nodes become the
-  /// selection. [compressTextures] compresses imported textures during the
-  /// import.
-  Future<void> importGlbIntoScene(
-    Uint8List glbBytes, {
+  /// Grafts an already-imported [source] document (from a `.glb` or `.gltf`)
+  /// into the current scene as a new subtree under [parentId] (or the scene
+  /// roots when null or missing), as one undoable edit. The imported root
+  /// nodes become the selection. [scale] and [upAxis] apply a non-destructive
+  /// import transform on a wrapping group node.
+  Future<void> importSceneIntoScene(
+    SceneDocument source, {
     LocalId? parentId,
-    bool compressTextures = false,
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
   }) async {
-    final source = importGlbToSceneDocument(
-      glbBytes,
-      compressTextures: compressTextures,
-    );
     final transform = _importTransform(scale, upAxis);
     if (transform != null) {
       wrapRootsUnderGroup(source, name: 'Imported', transform: transform);
@@ -290,6 +294,21 @@ class EditorController extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// Imports a glTF binary ([glbBytes]) into the current scene as a new
+  /// subtree. See [importSceneIntoScene].
+  Future<void> importGlbIntoScene(
+    Uint8List glbBytes, {
+    LocalId? parentId,
+    bool compressTextures = false,
+    double scale = 1.0,
+    ImportUpAxis upAxis = ImportUpAxis.yUp,
+  }) => importSceneIntoScene(
+    importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
+    parentId: parentId,
+    scale: scale,
+    upAxis: upAxis,
+  );
 
   // --- clipboard and selection-driven edits ------------------------------
 

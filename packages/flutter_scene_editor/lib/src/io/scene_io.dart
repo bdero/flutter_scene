@@ -12,6 +12,8 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
 
 import '../controller/editor_controller.dart';
 import 'glb_import_options.dart';
@@ -21,33 +23,59 @@ const _fsceneTypeGroup = XTypeGroup(
   extensions: <String>['fscene'],
 );
 
-const _glbTypeGroup = XTypeGroup(
-  label: 'glTF binary',
-  extensions: <String>['glb'],
+const _modelTypeGroup = XTypeGroup(
+  label: 'glTF model',
+  extensions: <String>['glb', 'gltf'],
 );
 
-/// Shows the native open dialog filtered to `.glb`, and returns the chosen
-/// path, or null when the user cancels.
-Future<String?> pickGlbPath() async {
-  final file = await openFile(acceptedTypeGroups: const [_glbTypeGroup]);
+/// Shows the native open dialog filtered to glTF models (`.glb`/`.gltf`), and
+/// returns the chosen path, or null when the user cancels.
+Future<String?> pickModelPath() async {
+  final file = await openFile(acceptedTypeGroups: const [_modelTypeGroup]);
   return file?.path;
 }
 
-/// Imports the glTF binary at [path] into a fresh editable [EditorController].
+/// Imports the glTF model at [path] (single-file `.glb` or multi-file `.gltf`
+/// with sibling `.bin`/image files) into an editable [SceneDocument].
+///
+/// For `.gltf`, external resources are read from the file's directory. Throws
+/// an [IOException] on read failure and a [FormatException] when a `.gltf`
+/// references a resource that cannot be read (for example a sibling file the
+/// sandbox did not grant access to).
+Future<SceneDocument> importModelDocument(
+  String path, {
+  bool compressTextures = false,
+}) async {
+  final bytes = await File(path).readAsBytes();
+  if (path.toLowerCase().endsWith('.gltf')) {
+    final dir = File(path).parent.path;
+    return importGltfToSceneDocument(
+      bytes,
+      compressTextures: compressTextures,
+      resolveUri: (uri) {
+        final file = File('$dir${Platform.pathSeparator}$uri');
+        return file.existsSync() ? file.readAsBytesSync() : null;
+      },
+    );
+  }
+  return importGlbToSceneDocument(bytes, compressTextures: compressTextures);
+}
+
+/// Imports the glTF model at [path] into a fresh editable [EditorController].
 /// [compressTextures] compresses imported textures; [scale] and [upAxis] apply
 /// a non-destructive import transform.
-///
-/// Throws an [IOException] on read failure.
-Future<EditorController> importGlb(
+Future<EditorController> importModel(
   String path, {
   bool compressTextures = false,
   double scale = 1.0,
   ImportUpAxis upAxis = ImportUpAxis.yUp,
 }) async {
-  final bytes = await File(path).readAsBytes();
-  return EditorController.fromGlb(
-    bytes,
+  final document = await importModelDocument(
+    path,
     compressTextures: compressTextures,
+  );
+  return EditorController.fromImportedScene(
+    document,
     scale: scale,
     upAxis: upAxis,
     baseDirectory: File(path).parent.path,

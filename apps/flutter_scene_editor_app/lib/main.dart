@@ -66,13 +66,13 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   Future<void> _importGltf() async {
-    final path = await pickGlbPath();
+    final path = await pickModelPath();
     if (path == null || !mounted) return;
     final options = await showGlbImportOptions(context);
     if (options == null) return;
     await _load(
       'Importing glTF',
-      () => importGlb(
+      () => importModel(
         path,
         compressTextures: options.compressTextures,
         scale: options.scale,
@@ -213,7 +213,7 @@ class _StartScreen extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: onImport,
                   icon: const Icon(Icons.view_in_ar),
-                  label: const Text('Import glTF (.glb)'),
+                  label: const Text('Import glTF (.glb / .gltf)'),
                 ),
               ],
               if (error != null) ...[
