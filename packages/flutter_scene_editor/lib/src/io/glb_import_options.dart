@@ -10,6 +10,7 @@ class GlbImportOptions {
     this.compressTextures = false,
     this.scale = 1.0,
     this.upAxis = ImportUpAxis.yUp,
+    this.linkToSource = true,
   });
 
   /// Whether to compress imported textures during the import.
@@ -20,6 +21,12 @@ class GlbImportOptions {
 
   /// The up axis to interpret the imported model in.
   final ImportUpAxis upAxis;
+
+  /// When true, the model is imported as a linked asset (written under
+  /// `imported/` and referenced by a prefab instance) so it can be re-imported
+  /// later and your edits survive as overrides. When false, the model is
+  /// embedded directly into the scene (self-contained, not re-importable).
+  final bool linkToSource;
 }
 
 /// Shows the glTF import configuration dialog and returns the chosen
@@ -42,6 +49,7 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
   final _scale = TextEditingController(text: '1.0');
   bool _compressTextures = false;
   ImportUpAxis _upAxis = ImportUpAxis.yUp;
+  bool _linkToSource = true;
 
   @override
   void dispose() {
@@ -57,6 +65,7 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
         compressTextures: _compressTextures,
         scale: scale,
         upAxis: _upAxis,
+        linkToSource: _linkToSource,
       ),
     );
   }
@@ -106,6 +115,17 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
             ],
           ),
           const SizedBox(height: 4),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _linkToSource,
+            onChanged: (v) => setState(() => _linkToSource = v ?? true),
+            title: const Text('Link to source (re-importable)'),
+            subtitle: const Text(
+              'Keep a reference to the model so it can be re-imported; your '
+              'edits survive as overrides. Off embeds it into the scene.',
+            ),
+          ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,

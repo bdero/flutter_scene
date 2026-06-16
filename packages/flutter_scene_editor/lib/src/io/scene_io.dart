@@ -1,9 +1,13 @@
 /// Reading and writing `.fscene` files, with native open and save dialogs.
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/compose/compose.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
@@ -14,6 +18,8 @@ import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
+import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+import 'package:vector_math/vector_math.dart';
 
 import '../controller/editor_controller.dart';
 import 'glb_import_options.dart';
@@ -179,4 +185,166 @@ void _removeSubtree(SceneDocument doc, LocalId root) {
       _removeSubtree(doc, child);
     }
   }
+}
+
+// --- Linked glTF import -----------------------------------------------------
+
+/// The non-destructive transform a glTF import applies for [options] (a uniform
+/// scale and up-axis fix), or null when scale is 1 and the up axis is the
+/// glTF-native Y (a no-op). Z-up adds a -90 degrees rotation about X.
+TransformSpec? importGroupTransform(GlbImportOptions options) {
+  if (options.scale == 1.0 && options.upAxis == ImportUpAxis.yUp) return null;
+  final rotation = options.upAxis == ImportUpAxis.zUp
+      ? Quaternion.axisAngle(Vector3(1, 0, 0), -math.pi / 2)
+      : Quaternion.identity();
+  return TrsTransform(rotation: rotation, scale: Vector3.all(options.scale));
+}
+
+/// How a linked asset was imported, recorded next to its `.fsceneb` so it can
+/// be re-imported and a changed source detected.
+class ImportRecord {
+  ImportRecord({
+    required this.source,
+    required this.scale,
+    required this.upAxis,
+    required this.compressTextures,
+    required this.sourceHash,
+  });
+
+  /// The source model path, relative to the scene directory when it lives
+  /// under it, otherwise absolute.
+  final String source;
+  final double scale;
+  final ImportUpAxis upAxis;
+  final bool compressTextures;
+
+  /// A content hash of the source file at import time (for change detection).
+  final String sourceHash;
+
+  Map<String, Object?> toJson() => {
+    'source': source,
+    'scale': scale,
+    'upAxis': upAxis.name,
+    'compressTextures': compressTextures,
+    'sourceHash': sourceHash,
+  };
+
+  factory ImportRecord.fromJson(Map<String, Object?> json) => ImportRecord(
+    source: json['source'] as String,
+    scale: (json['scale'] as num).toDouble(),
+    upAxis: ImportUpAxis.values.byName(json['upAxis'] as String),
+    compressTextures: json['compressTextures'] as bool? ?? false,
+    sourceHash: json['sourceHash'] as String? ?? '',
+  );
+
+  GlbImportOptions toOptions() => GlbImportOptions(
+    compressTextures: compressTextures,
+    scale: scale,
+    upAxis: upAxis,
+  );
+}
+
+/// Imports [modelPath] (a `.glb`/`.gltf`) as a linked asset into [controller]'s
+/// scene: converts it, writes the result under `imported/` next to the saved
+/// scene, records the import in a sidecar, and instantiates it as a prefab
+/// (under [parentId] when given). Returns the relative asset path.
+///
+/// Requires a saved scene (a non-null `baseDirectory`); throws a
+/// [FormatException] otherwise.
+Future<String> importLinkedModel(
+  EditorController controller,
+  String modelPath,
+  GlbImportOptions options, {
+  LocalId? parentId,
+}) async {
+  final sceneDir = controller.baseDirectory;
+  if (sceneDir == null) {
+    throw const FormatException(
+      'Save the scene before importing a linked asset.',
+    );
+  }
+  final document = await importModelDocument(
+    modelPath,
+    compressTextures: options.compressTextures,
+  );
+  final baseName = _modelBaseName(modelPath);
+  final transform = importGroupTransform(options);
+  if (transform != null) {
+    wrapRootsUnderGroup(document, name: baseName, transform: transform);
+  }
+
+  final importedDir = Directory('$sceneDir${Platform.pathSeparator}imported')
+    ..createSync(recursive: true);
+  final assetFile = _uniqueFile(importedDir, baseName, 'fsceneb');
+  assetFile.writeAsBytesSync(writeFsceneb(document));
+
+  final record = ImportRecord(
+    source: _relativeTo(sceneDir, modelPath),
+    scale: options.scale,
+    upAxis: options.upAxis,
+    compressTextures: options.compressTextures,
+    sourceHash: _hashBytes(File(modelPath).readAsBytesSync()),
+  );
+  File('${assetFile.path}.import.json').writeAsStringSync(
+    const JsonEncoder.withIndent('  ').convert(record.toJson()),
+  );
+
+  final relative = 'imported/${assetFile.uri.pathSegments.last}';
+  await controller.run('instantiatePrefab', {
+    'prefabAsset': relative,
+    'name': baseName,
+    if (parentId != null) 'parentId': parentId.toToken(),
+  });
+  return relative;
+}
+
+/// Reads the [ImportRecord] for a linked asset at [assetPath] (the sidecar
+/// `<assetPath>.import.json`), or null when absent or unreadable.
+ImportRecord? readImportRecord(String assetPath) {
+  final file = File('$assetPath.import.json');
+  if (!file.existsSync()) return null;
+  try {
+    return ImportRecord.fromJson(
+      jsonDecode(file.readAsStringSync()) as Map<String, Object?>,
+    );
+  } on FormatException {
+    return null;
+  }
+}
+
+String _modelBaseName(String path) {
+  final name = path.split(Platform.pathSeparator).last;
+  final dot = name.lastIndexOf('.');
+  return dot <= 0 ? name : name.substring(0, dot);
+}
+
+File _uniqueFile(Directory dir, String base, String extension) {
+  var candidate = File('${dir.path}${Platform.pathSeparator}$base.$extension');
+  var n = 1;
+  while (candidate.existsSync()) {
+    candidate = File(
+      '${dir.path}${Platform.pathSeparator}${base}_$n.$extension',
+    );
+    n++;
+  }
+  return candidate;
+}
+
+String _relativeTo(String dir, String path) {
+  final prefix = dir.endsWith(Platform.pathSeparator)
+      ? dir
+      : '$dir${Platform.pathSeparator}';
+  return path.startsWith(prefix) ? path.substring(prefix.length) : path;
+}
+
+// A fast, stable 64-bit FNV-1a content hash, hex-encoded. Enough to detect a
+// changed source file between sessions.
+String _hashBytes(List<int> bytes) {
+  var hash = 0xcbf29ce484222325;
+  const mask = 0xffffffffffffffff;
+  for (final byte in bytes) {
+    hash = (hash ^ byte) & mask;
+    hash = (hash * 0x100000001b3) & mask;
+  }
+  return hash.toRadixString(16);
 }

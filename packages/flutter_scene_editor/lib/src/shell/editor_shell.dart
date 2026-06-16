@@ -288,23 +288,41 @@ class _EditorShellState extends State<EditorShell> {
     final path = await pickModelPath();
     if (path == null || !mounted) return;
     final options = await showGlbImportOptions(context);
-    if (options == null) return;
+    if (options == null || !mounted) return;
+    // Graft under the selected node when exactly one is selected, else add to
+    // the scene roots.
+    final parentId = _ctrl.selection.ids.length == 1
+        ? _ctrl.selection.ids.first
+        : null;
+    if (options.linkToSource && _ctrl.baseDirectory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Save the scene before importing a linked asset, or turn off '
+            '"Link to source".',
+          ),
+        ),
+      );
+      return;
+    }
     try {
-      // Graft under the selected node when exactly one is selected, else add
-      // to the scene roots. Lands as one undoable edit.
-      final parentId = _ctrl.selection.ids.length == 1
-          ? _ctrl.selection.ids.first
-          : null;
-      final document = await importModelDocument(
-        path,
-        compressTextures: options.compressTextures,
-      );
-      await _ctrl.importSceneIntoScene(
-        document,
-        parentId: parentId,
-        scale: options.scale,
-        upAxis: options.upAxis,
-      );
+      if (options.linkToSource) {
+        // Linked: write the model under imported/ and reference it as a prefab
+        // instance, so it can be re-imported and edits survive as overrides.
+        await importLinkedModel(_ctrl, path, options, parentId: parentId);
+      } else {
+        // Embedded: graft the model into the scene as one undoable edit.
+        final document = await importModelDocument(
+          path,
+          compressTextures: options.compressTextures,
+        );
+        await _ctrl.importSceneIntoScene(
+          document,
+          parentId: parentId,
+          scale: options.scale,
+          upAxis: options.upAxis,
+        );
+      }
       setState(() => _paletteOpen = false);
     } on IOException catch (e) {
       if (mounted) {

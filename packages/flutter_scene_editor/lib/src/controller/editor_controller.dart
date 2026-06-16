@@ -25,6 +25,7 @@ import 'package:flutter_scene/src/fscene/compose/compose.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
+import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
@@ -709,6 +710,11 @@ class EditorController extends ChangeNotifier {
         );
       }
       path = '$dir/$key';
+    }
+    // Prefab sources may be authored `.fscene` text or imported `.fsceneb`
+    // binary (a linked glTF asset carries its geometry/texture payloads).
+    if (path.endsWith('.fsceneb')) {
+      return readFsceneb(await File(path).readAsBytes());
     }
     return readFscene(await File(path).readAsString());
   }
