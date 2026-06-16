@@ -27,6 +27,9 @@ export 'src/change.dart'
         PrefabInstanceChange,
         NodeChange,
         ResourceChange,
+        SkinChange,
+        AnimationChange,
+        PayloadChange,
         ComponentListChange,
         IdListChange,
         ChangeSlot,
@@ -79,6 +82,9 @@ export 'src/builtin_commands.dart'
 
 // Subtree cloning (duplicate, copy, paste).
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
+
+// Cross-document graft (import one document's content into another).
+export 'src/graft.dart' show graftDocumentRecords;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;

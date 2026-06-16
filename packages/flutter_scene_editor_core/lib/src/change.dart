@@ -75,6 +75,26 @@ class ResourceChange extends ChangeValue {
   final ResourceSpec? value;
 }
 
+/// A whole skin spec, carried by a pool entry. A null [value] means absent.
+class SkinChange extends ChangeValue {
+  const SkinChange(this.value);
+  final SkinSpec? value;
+}
+
+/// A whole animation spec, carried by a pool entry. A null [value] means
+/// absent.
+class AnimationChange extends ChangeValue {
+  const AnimationChange(this.value);
+  final AnimationSpec? value;
+}
+
+/// A whole payload (binary chunk) spec, carried by a pool entry. A null
+/// [value] means absent.
+class PayloadChange extends ChangeValue {
+  const PayloadChange(this.value);
+  final PayloadSpec? value;
+}
+
 /// A snapshot of a node's component list, replaced wholesale (component add,
 /// remove, and property edits all set the whole list, which keeps every list
 /// edit trivially reversible).
@@ -97,6 +117,15 @@ enum ChangeSlot {
 
   /// The resource-pool entry keyed by the record's target id.
   poolResource('pool.resource'),
+
+  /// The skin-pool entry keyed by the record's target id.
+  poolSkin('pool.skin'),
+
+  /// The animation-pool entry keyed by the record's target id.
+  poolAnimation('pool.animation'),
+
+  /// The payload-pool (binary chunk) entry keyed by the record's target id.
+  poolPayload('pool.payload'),
 
   /// A node's name.
   name('name'),
@@ -203,6 +232,12 @@ class Transaction {
         mutator.setNodeEntry(targetId, (value as NodeChange).value);
       case ChangeSlot.poolResource:
         mutator.setResourceEntry(targetId, (value as ResourceChange).value);
+      case ChangeSlot.poolSkin:
+        mutator.setSkinEntry(targetId, (value as SkinChange).value);
+      case ChangeSlot.poolAnimation:
+        mutator.setAnimationEntry(targetId, (value as AnimationChange).value);
+      case ChangeSlot.poolPayload:
+        mutator.setPayloadEntry(targetId, (value as PayloadChange).value);
       case ChangeSlot.roots:
         mutator.setRoots((value as IdListChange).value);
       case ChangeSlot.name:
@@ -262,6 +297,35 @@ class DocumentMutator {
       document.resources.remove(id);
     } else {
       document.resources[id] = resource;
+    }
+  }
+
+  /// Sets (or, when [skin] is null, removes) the skin-pool entry for [id].
+  void setSkinEntry(LocalId id, SkinSpec? skin) {
+    if (skin == null) {
+      document.skins.remove(id);
+    } else {
+      document.skins[id] = skin;
+    }
+  }
+
+  /// Sets (or, when [animation] is null, removes) the animation-pool entry for
+  /// [id].
+  void setAnimationEntry(LocalId id, AnimationSpec? animation) {
+    if (animation == null) {
+      document.animations.remove(id);
+    } else {
+      document.animations[id] = animation;
+    }
+  }
+
+  /// Sets (or, when [payload] is null, removes) the payload-pool entry for
+  /// [id].
+  void setPayloadEntry(LocalId id, PayloadSpec? payload) {
+    if (payload == null) {
+      document.payloads.remove(id);
+    } else {
+      document.payloads[id] = payload;
     }
   }
 

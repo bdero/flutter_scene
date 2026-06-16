@@ -242,6 +242,37 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Imports a glTF binary ([glbBytes]) into the current scene as a new
+  /// subtree, grafted under [parentId] (or the scene roots when null or
+  /// missing), as one undoable edit. The imported root nodes become the
+  /// selection. [compressTextures] compresses imported textures during the
+  /// import.
+  Future<void> importGlbIntoScene(
+    Uint8List glbBytes, {
+    LocalId? parentId,
+    bool compressTextures = false,
+  }) async {
+    final source = importGlbToSceneDocument(
+      glbBytes,
+      compressTextures: compressTextures,
+    );
+    final graft = graftDocumentRecords(document, source, parentId: parentId);
+    if (graft.records.isEmpty) return;
+    // An import is produced out of band, so it lands as one external
+    // transaction on the history rather than through a registry command.
+    session.commitExternal(
+      Transaction(name: 'Import glTF', records: graft.records),
+    );
+    await _realizeAll();
+    if (graft.rootIds.isNotEmpty) {
+      selection.selectOnly(graft.rootIds.first);
+      for (final id in graft.rootIds.skip(1)) {
+        selection.add(id);
+      }
+    }
+    notifyListeners();
+  }
+
   // --- clipboard and selection-driven edits ------------------------------
 
   // Detached, deep-copied subtrees captured by the last copy. Held here (not on

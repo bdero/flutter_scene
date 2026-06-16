@@ -290,17 +290,17 @@ class _EditorShellState extends State<EditorShell> {
     final options = await showGlbImportOptions(context);
     if (options == null) return;
     try {
-      final ctrl = await importGlb(
-        path,
+      // Graft under the selected node when exactly one is selected, else add
+      // to the scene roots. Lands as one undoable edit.
+      final parentId = _ctrl.selection.ids.length == 1
+          ? _ctrl.selection.ids.first
+          : null;
+      await _ctrl.importGlbIntoScene(
+        await File(path).readAsBytes(),
+        parentId: parentId,
         compressTextures: options.compressTextures,
       );
-      widget.onControllerReplaced(ctrl);
-      setState(() {
-        // The import is a fresh, unsaved scene; Save prompts for an .fscene
-        // path rather than overwriting the source .glb.
-        _currentPath = null;
-        _paletteOpen = false;
-      });
+      setState(() => _paletteOpen = false);
     } on IOException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
