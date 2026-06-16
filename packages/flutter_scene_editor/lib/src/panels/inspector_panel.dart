@@ -13,6 +13,7 @@ import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
 import '../inspector/material_section.dart';
 import '../inspector/property_editors.dart';
+import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
 
 /// Property inspector for the primary selected node.
@@ -38,12 +39,7 @@ class InspectorPanel extends StatelessWidget {
             _PanelHeader(label: 'Inspector'),
             Expanded(
               child: node == null
-                  ? const Center(
-                      child: Text(
-                        'Nothing selected',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    )
+                  ? StageSection(controller: controller)
                   : _NodeInspector(node: node, controller: controller),
             ),
           ],

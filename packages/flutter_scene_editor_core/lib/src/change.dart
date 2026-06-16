@@ -95,6 +95,12 @@ class PayloadChange extends ChangeValue {
   final PayloadSpec? value;
 }
 
+/// The document's whole stage metadata (scene-wide render settings).
+class StageMetadataChange extends ChangeValue {
+  const StageMetadataChange(this.value);
+  final StageMetadata value;
+}
+
 /// A snapshot of a node's component list, replaced wholesale (component add,
 /// remove, and property edits all set the whole list, which keeps every list
 /// edit trivially reversible).
@@ -152,7 +158,10 @@ enum ChangeSlot {
   children('children'),
 
   /// The document's ordered root id list (target id is [rootsTarget]).
-  roots('roots');
+  roots('roots'),
+
+  /// The document's scene-wide stage metadata (target id is [rootsTarget]).
+  stage('stage');
 
   const ChangeSlot(this.path);
 
@@ -240,6 +249,8 @@ class Transaction {
         mutator.setPayloadEntry(targetId, (value as PayloadChange).value);
       case ChangeSlot.roots:
         mutator.setRoots((value as IdListChange).value);
+      case ChangeSlot.stage:
+        mutator.setStage((value as StageMetadataChange).value);
       case ChangeSlot.name:
         mutator.node(targetId)?.name = (value as StringChange).value;
       case ChangeSlot.visible:
@@ -335,6 +346,9 @@ class DocumentMutator {
       ..clear()
       ..addAll(roots);
   }
+
+  /// Replaces the document's scene-wide stage metadata.
+  void setStage(StageMetadata stage) => document.stage = stage;
 
   /// Replaces node [id]'s child id list contents with [children].
   void setChildren(LocalId id, List<LocalId> children) {

@@ -959,6 +959,104 @@ final removeResource = CommandEntry(
 );
 
 // ---------------------------------------------------------------------------
+// Stage (scene-wide settings) commands.
+// ---------------------------------------------------------------------------
+
+StageMetadata _copyStage(StageMetadata s) => StageMetadata(
+  upAxis: s.upAxis,
+  handedness: s.handedness,
+  unitsPerMeter: s.unitsPerMeter,
+  environment: s.environment,
+  environmentIntensity: s.environmentIntensity,
+  exposure: s.exposure,
+  toneMapping: s.toneMapping,
+  antiAliasingMode: s.antiAliasingMode,
+  renderScale: s.renderScale,
+  filterQuality: s.filterQuality,
+  skybox: s.skybox,
+  skyEnvironment: s.skyEnvironment,
+);
+
+double _stageDouble(PropertyValue? v, double fallback) => switch (v) {
+  DoubleValue(:final value) => value,
+  IntValue(:final value) => value.toDouble(),
+  _ => fallback,
+};
+
+String _stageString(PropertyValue? v, String fallback) =>
+    v is StringValue ? v.value : fallback;
+
+/// Updates scene-wide stage settings (exposure, environment intensity, tone
+/// mapping, environment, anti-aliasing, render scale, filter quality). Only the
+/// keys present in `properties` change; the rest keep their values. The whole
+/// stage is one reversible record, so the edit is undoable. `environment` is a
+/// name (`studio`/`empty`/`asset`); for `asset`, pass `environmentAsset` (path).
+final setStageProperties = CommandEntry(
+  name: 'setStageProperties',
+  doc: 'Update scene-wide stage settings.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Settings',
+    ),
+  ],
+  execute: (ctx, params) {
+    final props = optionalPropertyMap(params, 'properties');
+    final old = ctx.document.stage;
+    final next = _copyStage(old);
+    if (props.containsKey('exposure')) {
+      next.exposure = _stageDouble(props['exposure'], old.exposure);
+    }
+    if (props.containsKey('environmentIntensity')) {
+      next.environmentIntensity = _stageDouble(
+        props['environmentIntensity'],
+        old.environmentIntensity,
+      );
+    }
+    if (props.containsKey('toneMapping')) {
+      next.toneMapping = _stageString(props['toneMapping'], old.toneMapping);
+    }
+    if (props.containsKey('antiAliasingMode')) {
+      next.antiAliasingMode = _stageString(
+        props['antiAliasingMode'],
+        old.antiAliasingMode,
+      );
+    }
+    if (props.containsKey('renderScale')) {
+      next.renderScale = _stageDouble(props['renderScale'], old.renderScale);
+    }
+    if (props.containsKey('filterQuality')) {
+      next.filterQuality = _stageString(
+        props['filterQuality'],
+        old.filterQuality,
+      );
+    }
+    if (props.containsKey('environment')) {
+      next.environment = switch (_stageString(props['environment'], 'studio')) {
+        'empty' => const EmptyEnvironment(),
+        'asset' => AssetEnvironment(
+          AssetRef(_stageString(props['environmentAsset'], '')),
+        ),
+        _ => const StudioEnvironment(),
+      };
+    }
+    return Transaction(
+      name: 'Set stage settings',
+      records: [
+        ChangeRecord(
+          targetId: ChangeRecord.rootsTarget,
+          slot: ChangeSlot.stage,
+          oldValue: StageMetadataChange(old),
+          newValue: StageMetadataChange(next),
+        ),
+      ],
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Prefab commands.
 // ---------------------------------------------------------------------------
 
@@ -1372,6 +1470,7 @@ final List<CommandEntry> builtinCommands = [
   createMaterial,
   setMaterialProperties,
   removeResource,
+  setStageProperties,
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,

@@ -30,6 +30,7 @@ import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
+import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
@@ -635,6 +636,11 @@ class EditorController extends ChangeNotifier {
 
   Future<void> _reflect(Transaction transaction) async {
     if (transaction.isEmpty) return;
+    // A stage-only edit just re-applies scene-wide settings; no re-realize.
+    if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
+      await realizeStage(document, scene);
+      return;
+    }
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -697,6 +703,9 @@ class EditorController extends ChangeNotifier {
     final root = await realizeSceneAsync(toRealize);
     scene.removeAll();
     scene.add(root);
+    // Apply the document's scene-wide settings (environment/lighting, exposure,
+    // tone mapping, anti-aliasing) to the live scene.
+    await realizeStage(document, scene);
     _liveById.clear();
     _sourceIdByLive.clear();
     _index(root, null);

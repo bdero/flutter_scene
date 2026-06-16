@@ -30,6 +30,7 @@ export 'src/change.dart'
         SkinChange,
         AnimationChange,
         PayloadChange,
+        StageMetadataChange,
         ComponentListChange,
         IdListChange,
         ChangeSlot,
