@@ -84,7 +84,7 @@ export 'src/builtin_commands.dart'
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 
 // Cross-document graft (import one document's content into another).
-export 'src/graft.dart' show graftDocumentRecords;
+export 'src/graft.dart' show graftDocumentRecords, wrapRootsUnderGroup;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;

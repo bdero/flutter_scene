@@ -72,7 +72,12 @@ class _EditorHomeState extends State<_EditorHome> {
     if (options == null) return;
     await _load(
       'Importing glTF',
-      () => importGlb(path, compressTextures: options.compressTextures),
+      () => importGlb(
+        path,
+        compressTextures: options.compressTextures,
+        scale: options.scale,
+        upAxis: options.upAxis,
+      ),
     );
   }
 

@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
 import '../controller/editor_controller.dart';
+import 'glb_import_options.dart';
 
 const _fsceneTypeGroup = XTypeGroup(
   label: 'flutter_scene',
@@ -33,17 +34,22 @@ Future<String?> pickGlbPath() async {
 }
 
 /// Imports the glTF binary at [path] into a fresh editable [EditorController].
-/// [compressTextures] compresses imported textures during the import.
+/// [compressTextures] compresses imported textures; [scale] and [upAxis] apply
+/// a non-destructive import transform.
 ///
 /// Throws an [IOException] on read failure.
 Future<EditorController> importGlb(
   String path, {
   bool compressTextures = false,
+  double scale = 1.0,
+  ImportUpAxis upAxis = ImportUpAxis.yUp,
 }) async {
   final bytes = await File(path).readAsBytes();
   return EditorController.fromGlb(
     bytes,
     compressTextures: compressTextures,
+    scale: scale,
+    upAxis: upAxis,
     baseDirectory: File(path).parent.path,
   );
 }

@@ -126,6 +126,25 @@ import 'change.dart';
   return (records: records, rootIds: rootIds);
 }
 
+/// Reparents [doc]'s current roots under a new group node named [name] that
+/// carries [transform], and returns the new group's id. The former roots
+/// become the group's children and the group becomes the document's sole root.
+/// Used to apply a non-destructive import transform (a scale or axis fix lives
+/// on an ordinary, editable node rather than baked into geometry).
+LocalId wrapRootsUnderGroup(
+  SceneDocument doc, {
+  required String name,
+  required TransformSpec transform,
+}) {
+  final group = doc.createNode(name: name, transform: transform);
+  final formerRoots = List.of(doc.roots);
+  group.children.addAll(formerRoots);
+  doc.roots
+    ..clear()
+    ..add(group.id);
+  return group.id;
+}
+
 typedef _Remap = LocalId Function(LocalId);
 
 PayloadSpec _copyPayload(PayloadSpec p, _Remap remap) => PayloadSpec(

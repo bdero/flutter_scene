@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';
+import 'package:vector_math/vector_math.dart';
 
 void main() {
   group('graftDocumentRecords', () {
@@ -93,6 +94,27 @@ void main() {
       expect(target.roots, [parent.id]);
       expect(target.nodes[parent.id]!.children, graft.rootIds);
       _expectNoDanglingRefs(target);
+    });
+
+    test('wrapRootsUnderGroup reparents roots under a transformed group', () {
+      final doc = SceneDocument(allocator: IdAllocator(session: 5));
+      final a = doc.createNode(name: 'A', root: true);
+      final b = doc.createNode(name: 'B', root: true);
+      final transform = TrsTransform(scale: Vector3.all(2.0));
+      final groupId = wrapRootsUnderGroup(
+        doc,
+        name: 'Imported',
+        transform: transform,
+      );
+
+      expect(doc.roots, [groupId]);
+      expect(doc.nodes[groupId]!.name, 'Imported');
+      expect(doc.nodes[groupId]!.children, [a.id, b.id]);
+      final t = doc.nodes[groupId]!.transform as TrsTransform;
+      expect(t.scale, Vector3.all(2.0));
+      // The former roots are kept as nodes, just no longer document roots.
+      expect(doc.nodes.containsKey(a.id), isTrue);
+      expect(doc.nodes.containsKey(b.id), isTrue);
     });
 
     test('the import transaction reverts byte-for-byte (undo)', () {

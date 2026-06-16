@@ -299,6 +299,8 @@ class _EditorShellState extends State<EditorShell> {
         await File(path).readAsBytes(),
         parentId: parentId,
         compressTextures: options.compressTextures,
+        scale: options.scale,
+        upAxis: options.upAxis,
       );
       setState(() => _paletteOpen = false);
     } on IOException catch (e) {

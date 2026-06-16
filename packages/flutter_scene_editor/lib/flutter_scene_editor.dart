@@ -15,7 +15,7 @@ export 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
 
 export 'src/controller/editor_controller.dart' show EditorController;
 export 'src/io/glb_import_options.dart'
-    show GlbImportOptions, showGlbImportOptions;
+    show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
 export 'src/io/scene_io.dart'
     show importGlb, openFscene, pickGlbPath, pickOpenPath;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;

@@ -17,6 +17,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
@@ -33,6 +34,8 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
+
+import '../io/glb_import_options.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
@@ -157,16 +160,25 @@ class EditorController extends ChangeNotifier {
   /// Opens a controller over a glTF binary ([glbBytes]) imported in memory to
   /// an editable document, ready to edit and save as `.fscene`. Set
   /// [compressTextures] to compress imported textures during the import.
+  /// [scale] and [upAxis] apply a non-destructive transform to the imported
+  /// content (a group node wrapping the roots), leaving the source untouched.
   static Future<EditorController> fromGlb(
     Uint8List glbBytes, {
     bool compressTextures = false,
+    double scale = 1.0,
+    ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
-  }) => open(
-    EditorSession(
-      importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
-    ),
-    baseDirectory: baseDirectory,
-  );
+  }) {
+    final doc = importGlbToSceneDocument(
+      glbBytes,
+      compressTextures: compressTextures,
+    );
+    final transform = _importTransform(scale, upAxis);
+    if (transform != null) {
+      wrapRootsUnderGroup(doc, name: 'Imported', transform: transform);
+    }
+    return open(EditorSession(doc), baseDirectory: baseDirectory);
+  }
 
   /// The current selection.
   Selection get selection => session.selection;
@@ -251,11 +263,17 @@ class EditorController extends ChangeNotifier {
     Uint8List glbBytes, {
     LocalId? parentId,
     bool compressTextures = false,
+    double scale = 1.0,
+    ImportUpAxis upAxis = ImportUpAxis.yUp,
   }) async {
     final source = importGlbToSceneDocument(
       glbBytes,
       compressTextures: compressTextures,
     );
+    final transform = _importTransform(scale, upAxis);
+    if (transform != null) {
+      wrapRootsUnderGroup(source, name: 'Imported', transform: transform);
+    }
     final graft = graftDocumentRecords(document, source, parentId: parentId);
     if (graft.records.isEmpty) return;
     // An import is produced out of band, so it lands as one external
@@ -695,4 +713,15 @@ class EditorController extends ChangeNotifier {
     scene.removeAll();
     super.dispose();
   }
+}
+
+// The transform an import applies to its content, or null when scale is 1 and
+// the up axis is the glTF-native Y so no wrapping group is warranted. Z-up adds
+// a -90 degrees rotation about X to bring the model into Y-up.
+TransformSpec? _importTransform(double scale, ImportUpAxis upAxis) {
+  if (scale == 1.0 && upAxis == ImportUpAxis.yUp) return null;
+  final rotation = upAxis == ImportUpAxis.zUp
+      ? Quaternion.axisAngle(Vector3(1, 0, 0), -math.pi / 2)
+      : Quaternion.identity();
+  return TrsTransform(rotation: rotation, scale: Vector3.all(scale));
 }
