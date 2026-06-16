@@ -876,6 +876,54 @@ final createMaterial = CommandEntry(
   },
 );
 
+/// Merges [properties] into an existing material resource (base color, PBR
+/// factors, alpha mode, texture refs, ...), the resource-pool counterpart of
+/// [setComponentProperties].
+final setMaterialProperties = CommandEntry(
+  name: 'setMaterialProperties',
+  doc: 'Merge properties into a material resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'materialId',
+      type: ParamType.resourceRef,
+      label: 'Material',
+    ),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Properties',
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'materialId');
+    final existing = ctx.document.resource(id);
+    if (existing is! MaterialResource) {
+      throw CommandException('Resource is not a material: ${id.toToken()}');
+    }
+    final merged = MaterialResource(
+      existing.id,
+      type: existing.type,
+      properties: {
+        ...existing.properties,
+        ...optionalPropertyMap(params, 'properties'),
+      },
+      asset: existing.asset,
+    );
+    return Transaction(
+      name: 'Set material properties',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(existing),
+          newValue: ResourceChange(merged),
+        ),
+      ],
+    );
+  },
+);
+
 final removeResource = CommandEntry(
   name: 'removeResource',
   doc: 'Remove a resource from the document.',
@@ -1322,6 +1370,7 @@ final List<CommandEntry> builtinCommands = [
   createCuboidGeometry,
   createSphereGeometry,
   createMaterial,
+  setMaterialProperties,
   removeResource,
   instantiatePrefab,
   setPrefabOverride,

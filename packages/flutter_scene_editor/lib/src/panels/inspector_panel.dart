@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart' show Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
+import '../inspector/material_section.dart';
 import '../inspector/property_editors.dart';
 import '../io/scene_io.dart';
 
@@ -108,6 +109,14 @@ class _NodeInspector extends StatelessWidget {
               controller: controller,
               canRemove: !isPrefabContent,
             ),
+            // A mesh's material is a resource; edit it inline below the mesh.
+            if (component.type == 'mesh' &&
+                component.properties['material'] is ResourceRefValue)
+              MaterialSection(
+                controller: controller,
+                materialId:
+                    (component.properties['material'] as ResourceRefValue).id,
+              ),
           ],
           if (!isPrefabContent) ...[
             const SizedBox(height: 8),
