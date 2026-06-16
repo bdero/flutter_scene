@@ -348,3 +348,113 @@ String _hashBytes(List<int> bytes) {
   }
   return hash.toRadixString(16);
 }
+
+// Resolves a prefab instance [node] to its linked-import asset path, source
+// path, and record, or null when it is not a linked glTF import.
+({String assetPath, String sourcePath, ImportRecord record})? _linkedImportOf(
+  NodeSpec node,
+  String sceneDir,
+) {
+  final instance = node.instance;
+  if (instance == null) return null;
+  final key = instance.source.key;
+  final assetPath = key.startsWith('/')
+      ? key
+      : '$sceneDir${Platform.pathSeparator}$key';
+  final record = readImportRecord(assetPath);
+  if (record == null) return null;
+  final sourcePath = record.source.startsWith('/')
+      ? record.source
+      : '$sceneDir${Platform.pathSeparator}${record.source}';
+  return (assetPath: assetPath, sourcePath: sourcePath, record: record);
+}
+
+/// The [ImportRecord] for the linked glTF import [nodeId] is an instance of, or
+/// null when [nodeId] is not a linked import (used to enable Re-import and to
+/// pre-fill its dialog with the recorded settings).
+ImportRecord? linkedImportRecordFor(
+  EditorController controller,
+  LocalId nodeId,
+) {
+  final sceneDir = controller.baseDirectory;
+  if (sceneDir == null) return null;
+  final node = controller.document.nodes[nodeId];
+  if (node == null) return null;
+  return _linkedImportOf(node, sceneDir)?.record;
+}
+
+/// Re-imports the linked glTF the instance [instanceId] references: re-converts
+/// its recorded source with [options], overwrites the `imported/` asset and its
+/// sidecar, and recomposes. The instance's overrides survive (the importer's
+/// positional ids keep node ids stable). Not an undoable edit (a file rewrite).
+Future<void> reimportLinkedModel(
+  EditorController controller,
+  LocalId instanceId,
+  GlbImportOptions options,
+) async {
+  final sceneDir = controller.baseDirectory;
+  if (sceneDir == null) {
+    throw const FormatException('Save the scene before re-importing.');
+  }
+  final node = controller.document.nodes[instanceId];
+  final linked = node == null ? null : _linkedImportOf(node, sceneDir);
+  if (linked == null) {
+    throw const FormatException('The selection is not a linked glTF import.');
+  }
+  final document = await importModelDocument(
+    linked.sourcePath,
+    compressTextures: options.compressTextures,
+  );
+  final baseName = _modelBaseName(linked.sourcePath);
+  final transform = importGroupTransform(options);
+  if (transform != null) {
+    wrapRootsUnderGroup(document, name: baseName, transform: transform);
+  }
+  File(linked.assetPath).writeAsBytesSync(writeFsceneb(document));
+
+  final updated = ImportRecord(
+    source: linked.record.source,
+    scale: options.scale,
+    upAxis: options.upAxis,
+    compressTextures: options.compressTextures,
+    sourceHash: _hashBytes(File(linked.sourcePath).readAsBytesSync()),
+  );
+  File('${linked.assetPath}.import.json').writeAsStringSync(
+    const JsonEncoder.withIndent('  ').convert(updated.toJson()),
+  );
+
+  controller.clearPrefabCache(node!.instance!.source.key);
+  await controller.recompose();
+}
+
+/// A linked instance whose source model changed on disk since it was imported.
+class LinkedSourceChange {
+  LinkedSourceChange({required this.instanceId, required this.sourcePath});
+
+  /// The instance node id (target of a Re-import).
+  final LocalId instanceId;
+
+  /// The absolute source model path that changed.
+  final String sourcePath;
+}
+
+/// Scans [controller]'s linked imports and returns those whose source model
+/// file's content differs from the hash recorded at import time. Used to prompt
+/// the user to re-import after editing the source externally.
+List<LinkedSourceChange> changedLinkedSources(EditorController controller) {
+  final sceneDir = controller.baseDirectory;
+  if (sceneDir == null) return const [];
+  final changes = <LinkedSourceChange>[];
+  for (final node in controller.document.nodes.values) {
+    final linked = _linkedImportOf(node, sceneDir);
+    if (linked == null) continue;
+    final source = File(linked.sourcePath);
+    if (!source.existsSync()) continue;
+    if (_hashBytes(source.readAsBytesSync()) != linked.record.sourceHash) {
+      changes.add(
+        LinkedSourceChange(instanceId: node.id, sourcePath: linked.sourcePath),
+      );
+    }
+  }
+  return changes;
+}

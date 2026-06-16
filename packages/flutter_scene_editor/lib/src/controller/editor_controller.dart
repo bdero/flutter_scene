@@ -296,6 +296,15 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-realizes the scene from the current document, picking up external
+  /// changes such as a prefab/imported asset rewritten on disk (call
+  /// [clearPrefabCache] first so the new bytes are read). Not an undoable edit;
+  /// the document itself is unchanged.
+  Future<void> recompose() async {
+    await _realizeAll();
+    notifyListeners();
+  }
+
   /// Imports a glTF binary ([glbBytes]) into the current scene as a new
   /// subtree. See [importSceneIntoScene].
   Future<void> importGlbIntoScene(

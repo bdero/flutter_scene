@@ -100,9 +100,12 @@ class EditorShell extends StatefulWidget {
   State<EditorShell> createState() => _EditorShellState();
 }
 
-class _EditorShellState extends State<EditorShell> {
+class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   bool _paletteOpen = false;
   String? _currentPath;
+  // Whether a "source changed on disk" banner is currently shown, so a window
+  // refocus does not stack duplicate banners.
+  bool _changeBannerShown = false;
 
   EditorController get _ctrl => widget.controller;
 
@@ -110,6 +113,14 @@ class _EditorShellState extends State<EditorShell> {
   void initState() {
     super.initState();
     _ctrl.lastError.addListener(_showError);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-focusing the editor is a natural moment to notice a source model that
+    // changed in another app.
+    if (state == AppLifecycleState.resumed) _checkSourceChanges();
   }
 
   @override
@@ -123,8 +134,87 @@ class _EditorShellState extends State<EditorShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ctrl.lastError.removeListener(_showError);
     super.dispose();
+  }
+
+  // Re-imports the linked glTF the single selected instance references, letting
+  // the user adjust the recorded import settings first.
+  Future<void> _reimportGlb() async {
+    final ids = _ctrl.selection.ids;
+    if (ids.length != 1) return;
+    final record = linkedImportRecordFor(_ctrl, ids.first);
+    if (record == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The selection is not a linked glTF.')),
+      );
+      return;
+    }
+    final options = await showGlbImportOptions(
+      context,
+      initial: record.toOptions(),
+      showLinkToggle: false,
+      title: 'Re-import glTF',
+    );
+    if (options == null || !mounted) return;
+    try {
+      await reimportLinkedModel(_ctrl, ids.first, options);
+    } on IOException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Re-import failed: $e')));
+      }
+    }
+  }
+
+  // Checks linked imports for a source model that changed on disk and offers a
+  // re-import.
+  void _checkSourceChanges() {
+    if (_changeBannerShown || !mounted) return;
+    final changes = changedLinkedSources(_ctrl);
+    if (changes.isEmpty) return;
+    _changeBannerShown = true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Text(
+          changes.length == 1
+              ? 'A linked model changed on disk.'
+              : '${changes.length} linked models changed on disk.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              _changeBannerShown = false;
+              _reimportChanged(changes);
+            },
+            child: const Text('Re-import'),
+          ),
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              _changeBannerShown = false;
+            },
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _reimportChanged(List<LinkedSourceChange> changes) async {
+    for (final change in changes) {
+      final record = linkedImportRecordFor(_ctrl, change.instanceId);
+      if (record == null) continue;
+      try {
+        await reimportLinkedModel(_ctrl, change.instanceId, record.toOptions());
+      } on IOException {
+        // Skip a model that cannot be read; the others still refresh.
+      }
+    }
   }
 
   void _showError() {
@@ -210,6 +300,7 @@ class _EditorShellState extends State<EditorShell> {
                   onNew: _newScene,
                   onOpen: _open,
                   onImportGlb: _importGlb,
+                  onReimportGlb: _reimportGlb,
                   onSave: _save,
                   onSaveAs: _saveAs,
                   onUndo: _ctrl.undo,
@@ -473,6 +564,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNew,
     required this.onOpen,
     required this.onImportGlb,
+    required this.onReimportGlb,
     required this.onSave,
     required this.onSaveAs,
     required this.onUndo,
@@ -492,6 +584,7 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onNew;
   final VoidCallback onOpen;
   final VoidCallback onImportGlb;
+  final VoidCallback onReimportGlb;
   final VoidCallback onSave;
   final VoidCallback onSaveAs;
   final VoidCallback onUndo;
@@ -507,6 +600,12 @@ class _EditorMenuBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Re-import is offered when a single prefab instance is selected (a linked
+    // glTF import). The handler confirms it is actually linked.
+    final selected = controller.selection.ids;
+    final canReimport =
+        selected.length == 1 &&
+        controller.document.nodes[selected.first]?.instance != null;
     return Container(
       height: 28,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -526,6 +625,10 @@ class _EditorMenuBar extends StatelessWidget {
               _MenuItem(label: 'New', onTap: onNew),
               _MenuItem(label: 'Open…', onTap: onOpen),
               _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
+              _MenuItem(
+                label: 'Re-import glTF…',
+                onTap: canReimport ? onReimportGlb : null,
+              ),
               _MenuItem(label: 'Save', onTap: onSave),
               _MenuItem(label: 'Save As…', onTap: onSaveAs),
             ],

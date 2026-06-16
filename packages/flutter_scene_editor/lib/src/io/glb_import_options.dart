@@ -30,26 +30,50 @@ class GlbImportOptions {
 }
 
 /// Shows the glTF import configuration dialog and returns the chosen
-/// [GlbImportOptions], or null if the user cancels.
-Future<GlbImportOptions?> showGlbImportOptions(BuildContext context) {
+/// [GlbImportOptions], or null if the user cancels. Pass [initial] to pre-fill
+/// the fields (for re-import) and [showLinkToggle] false to hide the "Link to
+/// source" option (a re-import is already linked). [title] labels the dialog.
+Future<GlbImportOptions?> showGlbImportOptions(
+  BuildContext context, {
+  GlbImportOptions? initial,
+  bool showLinkToggle = true,
+  String title = 'Import glTF',
+}) {
   return showDialog<GlbImportOptions>(
     context: context,
-    builder: (context) => const _GlbImportDialog(),
+    builder: (context) => _GlbImportDialog(
+      initial: initial ?? const GlbImportOptions(),
+      showLinkToggle: showLinkToggle,
+      title: title,
+    ),
   );
 }
 
 class _GlbImportDialog extends StatefulWidget {
-  const _GlbImportDialog();
+  const _GlbImportDialog({
+    required this.initial,
+    required this.showLinkToggle,
+    required this.title,
+  });
+
+  final GlbImportOptions initial;
+  final bool showLinkToggle;
+  final String title;
 
   @override
   State<_GlbImportDialog> createState() => _GlbImportDialogState();
 }
 
 class _GlbImportDialogState extends State<_GlbImportDialog> {
-  final _scale = TextEditingController(text: '1.0');
-  bool _compressTextures = false;
-  ImportUpAxis _upAxis = ImportUpAxis.yUp;
-  bool _linkToSource = true;
+  late final _scale = TextEditingController(
+    text: _trimZeros(widget.initial.scale),
+  );
+  late bool _compressTextures = widget.initial.compressTextures;
+  late ImportUpAxis _upAxis = widget.initial.upAxis;
+  late bool _linkToSource = widget.initial.linkToSource;
+
+  static String _trimZeros(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(1) : '$v';
 
   @override
   void dispose() {
@@ -73,16 +97,12 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Import glTF'),
+      title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Import the model into the current scene. Save it as a .fscene '
-            'when you are done.',
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
           Row(
             children: [
               const SizedBox(width: 80, child: Text('Scale')),
@@ -115,17 +135,18 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
             ],
           ),
           const SizedBox(height: 4),
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            value: _linkToSource,
-            onChanged: (v) => setState(() => _linkToSource = v ?? true),
-            title: const Text('Link to source (re-importable)'),
-            subtitle: const Text(
-              'Keep a reference to the model so it can be re-imported; your '
-              'edits survive as overrides. Off embeds it into the scene.',
+          if (widget.showLinkToggle)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _linkToSource,
+              onChanged: (v) => setState(() => _linkToSource = v ?? true),
+              title: const Text('Link to source (re-importable)'),
+              subtitle: const Text(
+                'Keep a reference to the model so it can be re-imported; your '
+                'edits survive as overrides. Off embeds it into the scene.',
+              ),
             ),
-          ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
