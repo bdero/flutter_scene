@@ -152,6 +152,24 @@ final class SceneRegistry {
     return matches.single.assetKey;
   }
 
+  /// Resolves a prefab [refKey] referenced by the scene at [hostSourcePath] to
+  /// a scene asset key. Prefab references are relative to the referencing
+  /// document (how the editor authors them), so this tries the reference joined
+  /// onto the host scene's directory first, then the reference as a
+  /// package-root-relative path (also accepted), throwing only when neither
+  /// resolves.
+  String resolveRefKey(String hostSourcePath, String refKey, String? package) {
+    final dir = _dirOf(_sceneId(hostSourcePath));
+    if (dir.isNotEmpty) {
+      try {
+        return resolveKey(_joinScenePath(dir, refKey), package: package);
+      } on StateError {
+        // Not found relative to the host; fall back to the raw reference.
+      }
+    }
+    return resolveKey(refKey, package: package);
+  }
+
   /// Loads the scene whose source is [sourcePath] as a [Node].
   ///
   /// The composed document and its realized GPU resources (geometry,
@@ -186,7 +204,7 @@ final class SceneRegistry {
           ? await composeSceneAsync(
               document,
               load: (ref) {
-                final refKey = resolveKey(ref.key, package: package);
+                final refKey = resolveRefKey(sourcePath, ref.key, package);
                 seen.add(refKey);
                 return _readDocument(refKey, assetBundle);
               },
@@ -294,6 +312,9 @@ final class SceneRegistry {
         registry: registry,
         bundle: assetBundle,
         load: (ref) {
+          // TODO(lazy-relative-refs): resolve relative to the streamed scene's
+          // directory (like resolveRefKey) once the placeholder carries it;
+          // lazy instances currently take package-root-relative refs.
           final key = resolveKey(ref.key, package: package);
           seen.add(key);
           return _readDocument(key, assetBundle);
@@ -352,6 +373,27 @@ final class SceneRegistry {
     final manifest = await AssetManifest.loadFromAssetBundle(bundle);
     return manifest.listAssets();
   }
+}
+
+// The directory part of a scene id (everything before the last `/`), or empty.
+String _dirOf(String sceneId) {
+  final slash = sceneId.lastIndexOf('/');
+  return slash < 0 ? '' : sceneId.substring(0, slash);
+}
+
+// Joins [rel] onto [dir] (both `/`-separated, package-root-relative) and
+// normalizes `.`/`..` segments.
+String _joinScenePath(String dir, String rel) {
+  final out = <String>[];
+  for (final segment in [...dir.split('/'), ...rel.split('/')]) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (out.isNotEmpty) out.removeLast();
+      continue;
+    }
+    out.add(segment);
+  }
+  return out.join('/');
 }
 
 String _sceneId(String sourcePath) {

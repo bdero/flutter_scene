@@ -4,6 +4,8 @@ import 'package:data_assets/data_assets.dart';
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:hooks/hooks.dart';
 
+import '../fscene/binary/fsceneb.dart';
+import '../fscene/json/fscene_json.dart';
 import 'offline_import.dart';
 
 /// Controls how [buildScenes] exposes generated `.fsceneb` assets.
@@ -39,10 +41,15 @@ const String _dataAssetsUnavailableMessage =
 String sceneDataAssetName(String relativeScenePath) =>
     'flutter_scene/scene/$relativeScenePath';
 
-/// Discovers `.glb` source files below [discoveryRoot] (default `assets/`,
-/// relative to [packageRoot]), returned as paths relative to [packageRoot] in
-/// stable (sorted) order.
-List<String> discoverGlbSources(
+/// The source extensions [buildScenes] discovers and registers: glTF binaries
+/// (converted), authored `.fscene` text (compiled to binary), and already-built
+/// `.fsceneb` (an editor's imported assets, registered as-is).
+const List<String> _sceneSourceExtensions = ['.glb', '.fscene', '.fsceneb'];
+
+/// Discovers scene source files (`.glb`/`.fscene`/`.fsceneb`) below
+/// [discoveryRoot] (default `assets/`, relative to [packageRoot]), returned as
+/// paths relative to [packageRoot] in stable (sorted) order.
+List<String> discoverSceneSources(
   Uri packageRoot, {
   String discoveryRoot = 'assets/',
 }) {
@@ -56,7 +63,7 @@ List<String> discoverGlbSources(
       searchDirectory
           .listSync(recursive: true, followLinks: false)
           .whereType<File>()
-          .where((file) => file.path.endsWith('.glb'))
+          .where((f) => _sceneSourceExtensions.any(f.path.endsWith))
           .map((file) {
             final path = file.uri.toFilePath(windows: false);
             return path.substring(rootPath.length);
@@ -66,9 +73,13 @@ List<String> discoverGlbSources(
   return sources;
 }
 
-/// Converts glTF (`.glb`) source assets to flutter_scene's `.fsceneb` package
-/// format and writes the result into [outputDirectory] (resolved relative to
-/// [BuildInput.packageRoot]).
+/// Registers scene assets so an app loads them by source path with `loadScene`
+/// without hand-editing the asset manifest. Discovers three source kinds under
+/// [discoveryRoot]: `.glb` (converted to `.fsceneb`), authored `.fscene`
+/// (compiled to `.fsceneb`, prefab instances intact for runtime compose), and
+/// already-built `.fsceneb` (an editor's `imported/` assets, registered as-is).
+/// Generated outputs go under [outputDirectory] (relative to
+/// [BuildInput.packageRoot]); a passthrough `.fsceneb` is registered in place.
 ///
 /// Call this from a consuming app's `hook/build.dart`:
 ///
@@ -87,14 +98,12 @@ List<String> discoverGlbSources(
 /// }
 /// ```
 ///
-/// Load the result by source path with `loadScene`. When [inputFilePaths] is
-/// omitted, every `.glb` under [discoveryRoot] (default `assets/`, relative to
-/// the package root) is discovered; each generated `.fsceneb` is written under
-/// [outputDirectory] and, in a DataAssets mode, registered as a DataAsset (key
-/// `packages/<package>/flutter_scene/scene/<name>.fsceneb`); the source `.glb`
-/// is declared as a build dependency so re-exporting it retriggers the build
-/// (and hot reload). Conversion runs in-process (no subprocess, no native
-/// binary).
+/// When [inputFilePaths] is omitted, every `.glb`/`.fscene`/`.fsceneb` under
+/// [discoveryRoot] (default `assets/`, relative to the package root) is
+/// discovered; in a DataAssets mode each is registered as a DataAsset (key
+/// `packages/<package>/flutter_scene/scene/<name>.fsceneb`), and each source is
+/// declared as a build dependency so changing it retriggers the build (and hot
+/// reload). Conversion runs in-process (no subprocess, no native binary).
 void buildScenes({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -114,7 +123,7 @@ void buildScenes({
   final packageRoot = buildInput.packageRoot;
   final inputs =
       inputFilePaths ??
-      discoverGlbSources(packageRoot, discoveryRoot: discoveryRoot);
+      discoverSceneSources(packageRoot, discoveryRoot: discoveryRoot);
   if (inputs.isEmpty) {
     return;
   }
@@ -122,11 +131,13 @@ void buildScenes({
   final scenesRoot = packageRoot.resolve(outputDirectory);
 
   for (final inputFilePath in inputs) {
-    if (!inputFilePath.endsWith('.glb')) {
-      throw Exception(
-        'Input file must be a .glb file. Given file path: $inputFilePath',
-      );
-    }
+    final extension = _sceneSourceExtensions.firstWhere(
+      inputFilePath.endsWith,
+      orElse: () => throw Exception(
+        'Scene source must be a .glb, .fscene, or .fsceneb file. Given: '
+        '$inputFilePath',
+      ),
+    );
     if (inputFilePath.startsWith('../') || inputFilePath.contains('/../')) {
       throw Exception(
         'Scene source must be inside the package: $inputFilePath. Place it '
@@ -134,36 +145,66 @@ void buildScenes({
       );
     }
 
+    final sourceUri = packageRoot.resolve(inputFilePath);
+
+    // An already-built `.fsceneb` (an editor's imported asset) is registered
+    // as-is, from its source location, with no conversion or output copy.
+    if (extension == '.fsceneb') {
+      buildOutput.dependencies.add(sourceUri);
+      if (emitDataAssets) {
+        buildOutput.assets.data.add(
+          DataAsset(
+            package: buildInput.packageName,
+            name: sceneDataAssetName(inputFilePath),
+            file: sourceUri,
+          ),
+        );
+      }
+      continue;
+    }
+
+    // `.glb` and `.fscene` produce a generated `.fsceneb` under the output dir.
     final relativeScenePath =
-        '${inputFilePath.substring(0, inputFilePath.length - '.glb'.length)}'
+        '${inputFilePath.substring(0, inputFilePath.length - extension.length)}'
         '.fsceneb';
     final outputSceneUri = scenesRoot.resolve(relativeScenePath);
     Directory.fromUri(outputSceneUri.resolve('.')).createSync(recursive: true);
 
-    // Skip the conversion when the source and settings are unchanged since
-    // the output was produced, so a hook rerun for an unrelated edit does not
-    // re-import every scene. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always
-    // convert.
+    // Skip the work when the source and settings are unchanged since the
+    // output was produced, so a hook rerun for an unrelated edit does not
+    // reconvert every scene. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always
+    // run.
     final sourceHash = contentHash(
-      File(packageRoot.resolve(inputFilePath).toFilePath()).readAsBytesSync(),
+      File(sourceUri.toFilePath()).readAsBytesSync(),
     );
     final stamp =
         'rev=$buildCacheRevision scene compress=$compressTextures '
-        'src=$sourceHash';
+        'kind=$extension src=$sourceHash';
     final stampFile = File('${outputSceneUri.toFilePath()}.inputs');
     if (!isBuildCacheFresh(stampFile, stamp, [
       File(outputSceneUri.toFilePath()),
     ])) {
-      importGltfToFsceneb(
-        inputFilePath,
-        outputSceneUri.toFilePath(),
-        workingDirectory: packageRoot.toFilePath(),
-        compressTextures: compressTextures,
-      );
+      if (extension == '.glb') {
+        importGltfToFsceneb(
+          inputFilePath,
+          outputSceneUri.toFilePath(),
+          workingDirectory: packageRoot.toFilePath(),
+          compressTextures: compressTextures,
+        );
+      } else {
+        // `.fscene` (authored text) -> `.fsceneb` (binary), keeping prefab
+        // instances intact for the runtime to compose.
+        final document = readFscene(
+          File(sourceUri.toFilePath()).readAsStringSync(),
+        );
+        File(
+          outputSceneUri.toFilePath(),
+        ).writeAsBytesSync(writeFsceneb(document));
+      }
       stampFile.writeAsStringSync(stamp);
     }
 
-    buildOutput.dependencies.add(packageRoot.resolve(inputFilePath));
+    buildOutput.dependencies.add(sourceUri);
 
     if (emitDataAssets) {
       buildOutput.assets.data.add(
