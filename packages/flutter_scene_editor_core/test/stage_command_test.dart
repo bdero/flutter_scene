@@ -54,4 +54,72 @@ void main() {
     expect(stage().skybox, isNull);
     expect(stage().skyEnvironment, isNull);
   });
+
+  test('setSkybox keeps tuned parameters across a lighting toggle', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
+
+    session.run('setSkybox', {'sky': 'physical', 'lightScene': true});
+    session.run('setSkyParameters', {
+      'properties': {'turbidity': 4.0, 'energy': 2.0},
+    });
+    expect((stage().skybox!.source as PhysicalSkySpec).turbidity, 4.0);
+
+    // Toggling lighting off (no sky param given) must not reset the sky.
+    session.run('setSkybox', {'sky': 'physical', 'lightScene': false});
+    final sky = stage().skybox!.source as PhysicalSkySpec;
+    expect(sky.turbidity, 4.0);
+    expect(sky.energy, 2.0);
+    expect(stage().skyEnvironment, isNull);
+  });
+
+  test('setSkyParameters tunes both the skybox and sky lighting, reverts', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
+
+    session.run('setSkybox', {'sky': 'gradient', 'lightScene': true});
+    final before = (stage().skybox!.source as GradientSkySpec).sunSharpness;
+
+    session.run('setSkyParameters', {
+      'properties': {
+        'sunSharpness': 900.0,
+        'sunColor': {'x': 4.0, 'y': 3.0, 'z': 2.0},
+      },
+    });
+    final skybox = stage().skybox!.source as GradientSkySpec;
+    final lighting = stage().skyEnvironment!.source as GradientSkySpec;
+    expect(skybox.sunSharpness, 900.0);
+    expect(skybox.sunColor.x, 4.0);
+    // The lighting source mirrors the same parameters.
+    expect(lighting.sunSharpness, 900.0);
+    expect(lighting.sunColor.z, 2.0);
+
+    session.undo();
+    expect((stage().skybox!.source as GradientSkySpec).sunSharpness, before);
+  });
+
+  test('setSkyParameters without a skybox throws', () {
+    final session = EditorSession.empty();
+    expect(
+      () => session.run('setSkyParameters', {
+        'properties': {'energy': 2.0},
+      }),
+      throwsA(isA<CommandException>()),
+    );
+  });
+
+  test('setSkybox carries the sun direction across a type switch', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
+
+    session.run('setSkybox', {
+      'sky': 'gradient',
+      'sunDirection': {'x': 0.1, 'y': 0.9, 'z': 0.2},
+    });
+    session.run('setSkybox', {'sky': 'physical'});
+    final sky = stage().skybox!.source as PhysicalSkySpec;
+    expect(sky.sunDirection.x, closeTo(0.1, 1e-6));
+    expect(sky.sunDirection.y, closeTo(0.9, 1e-6));
+    expect(sky.sunDirection.z, closeTo(0.2, 1e-6));
+  });
 }

@@ -103,8 +103,11 @@ class StageSection extends StatelessWidget {
 
 /// Editor for the skybox and sky-driven lighting. Procedural skies (gradient /
 /// physical) and the environment sky render with no asset loading; HDR image
-/// environments are not yet authorable here. Edits apply on release (a sky
-/// change re-bakes lighting, too heavy to preview every frame).
+/// environments are not yet authorable here. The parameter sliders and colors
+/// preview live (the background follows immediately, the lighting re-bakes as
+/// they drag); choosing a skybox type or toggling sky lighting applies on
+/// release. Per-parameter edits flow through `setSkyParameters`, structural
+/// changes through `setSkybox`.
 class SkySection extends StatelessWidget {
   const SkySection({super.key, required this.controller});
 
@@ -128,14 +131,16 @@ class SkySection extends StatelessWidget {
     final lightScene = stage.skyEnvironment != null;
     final proceduralSky = type == 'gradient' || type == 'physical';
 
-    void commit({String? newType, Vector3? newSun, bool? newLight}) {
-      final s = newSun ?? sun;
-      controller.run('setSkybox', {
-        'sky': newType ?? type,
-        'sunDirection': {'x': s.x, 'y': s.y, 'z': s.z},
-        'lightScene': newLight ?? lightScene,
-      });
-    }
+    // The type dropdown and lighting toggle are structural (setSkybox keeps
+    // the tuned parameters across them); the per-parameter fields below patch
+    // the current sky through setSkyParameters.
+    void setType(String newType) =>
+        controller.run('setSkybox', {'sky': newType});
+    void setLight(bool on) =>
+        controller.run('setSkybox', {'sky': type, 'lightScene': on});
+    void runParams(Map<String, Object> properties) =>
+        controller.run('setSkyParameters', {'properties': properties});
+    Map<String, double> vecMap(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
 
     Widget axis(String name, double value, Vector3 Function(double) make) =>
         LiveSlider(
@@ -143,10 +148,47 @@ class SkySection extends StatelessWidget {
           value: value,
           min: -1,
           max: 1,
-          // Sky edits re-bake lighting; apply on release only.
-          onPreview: (_) {},
-          onCommit: (v) => commit(newSun: make(v)),
+          // Aim the live sky as the slider drags; the background follows every
+          // frame and the lighting re-bakes (time-sliced) so it catches up.
+          onPreview: (v) =>
+              controller.previewSkyParameter('sunDirection', make(v)),
+          onCommit: (v) => runParams({'sunDirection': vecMap(make(v))}),
         );
+
+    Widget scalar(
+      String label,
+      String key,
+      double value, {
+      double min = 0,
+      double max = 1,
+    }) => LiveSlider(
+      label: label,
+      value: value,
+      min: min,
+      max: max,
+      onPreview: (v) => controller.previewSkyParameter(key, v),
+      onCommit: (v) => runParams({key: v}),
+    );
+
+    Widget colorField(
+      String label,
+      String key,
+      Vector3 value, {
+      double channelMax = 1.0,
+    }) => ColorEditor(
+      label: label,
+      r: value.x,
+      g: value.y,
+      b: value.z,
+      a: 1.0,
+      channelMax: channelMax,
+      showAlpha: false,
+      onPreview: (r, g, b, _) =>
+          controller.previewSkyParameter(key, Vector3(r, g, b)),
+      onCommit: (r, g, b, _) => runParams({
+        key: {'x': r, 'y': g, 'z': b},
+      }),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,7 +212,7 @@ class SkySection extends StatelessWidget {
               DropdownMenuItem(value: 'gradient', child: Text('Gradient')),
               DropdownMenuItem(value: 'physical', child: Text('Physical')),
             ],
-            onChanged: (v) => v == null ? null : commit(newType: v),
+            onChanged: (v) => v == null ? null : setType(v),
           ),
         ),
         if (proceduralSky) ...[
@@ -192,7 +234,60 @@ class SkySection extends StatelessWidget {
               style: TextStyle(fontSize: 13),
             ),
             value: lightScene,
-            onChanged: (v) => commit(newLight: v),
+            onChanged: setLight,
+          ),
+        ],
+        if (source is GradientSkySpec) ...[
+          const Divider(height: 12),
+          colorField('Zenith color', 'zenithColor', source.zenithColor),
+          colorField('Horizon color', 'horizonColor', source.horizonColor),
+          colorField('Ground color', 'groundColor', source.groundColor),
+          colorField('Sun color', 'sunColor', source.sunColor, channelMax: 8),
+          scalar(
+            'Sun sharpness',
+            'sunSharpness',
+            source.sunSharpness,
+            min: 1,
+            max: 2000,
+          ),
+        ],
+        if (source is PhysicalSkySpec) ...[
+          const Divider(height: 12),
+          scalar('Energy', 'energy', source.energy, max: 4),
+          scalar('Turbidity', 'turbidity', source.turbidity, min: 1, max: 20),
+          scalar(
+            'Sun size',
+            'sunAngularRadius',
+            source.sunAngularRadius,
+            min: 0.001,
+            max: 0.1,
+          ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Atmosphere', style: TextStyle(fontSize: 13)),
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            children: [
+              scalar(
+                'Rayleigh',
+                'rayleighCoefficient',
+                source.rayleighCoefficient,
+                max: 6,
+              ),
+              colorField(
+                'Rayleigh color',
+                'rayleighColor',
+                source.rayleighColor,
+              ),
+              scalar('Mie', 'mieCoefficient', source.mieCoefficient, max: 0.05),
+              scalar(
+                'Mie eccentricity',
+                'mieEccentricity',
+                source.mieEccentricity,
+                max: 0.99,
+              ),
+              colorField('Mie color', 'mieColor', source.mieColor),
+              colorField('Ground color', 'groundColor', source.groundColor),
+            ],
           ),
         ],
       ],

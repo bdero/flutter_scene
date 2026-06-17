@@ -70,6 +70,8 @@ class ColorEditor extends StatefulWidget {
     required this.a,
     required this.onPreview,
     required this.onCommit,
+    this.channelMax = 1.0,
+    this.showAlpha = true,
   });
 
   final String label;
@@ -79,6 +81,13 @@ class ColorEditor extends StatefulWidget {
   final double a;
   final void Function(double r, double g, double b, double a) onPreview;
   final void Function(double r, double g, double b, double a) onCommit;
+
+  /// Upper bound of the R/G/B (and HSV value) sliders. Raise above `1.0` for
+  /// HDR colors whose channels exceed display white.
+  final double channelMax;
+
+  /// Whether to show the alpha slider. Off for opaque colors (a sky tint).
+  final bool showAlpha;
 
   @override
   State<ColorEditor> createState() => _ColorEditorState();
@@ -147,7 +156,9 @@ class _ColorEditorState extends State<ColorEditor> {
         SizedBox(
           width: 38,
           child: Text(
-            max > 1 ? value.toStringAsFixed(0) : value.toStringAsFixed(2),
+            // Hue runs 0..360 and reads better as a whole number; channel and
+            // value sliders keep two decimals even when HDR-scaled.
+            max >= 100 ? value.toStringAsFixed(0) : value.toStringAsFixed(2),
             style: const TextStyle(fontSize: 11),
           ),
         ),
@@ -187,14 +198,19 @@ class _ColorEditorState extends State<ColorEditor> {
             padding: const EdgeInsets.only(left: 8, bottom: 8),
             child: Column(
               children: [
-                _slider('R', _r, 1, (v) => _r = v),
-                _slider('G', _g, 1, (v) => _g = v),
-                _slider('B', _b, 1, (v) => _b = v),
-                _slider('A', _a, 1, (v) => _a = v),
+                _slider('R', _r, widget.channelMax, (v) => _r = v),
+                _slider('G', _g, widget.channelMax, (v) => _g = v),
+                _slider('B', _b, widget.channelMax, (v) => _b = v),
+                if (widget.showAlpha) _slider('A', _a, 1, (v) => _a = v),
                 const Divider(height: 8),
                 _slider('H', hsv[0], 360, (v) => _setHsv(v, hsv[1], hsv[2])),
                 _slider('S', hsv[1], 1, (v) => _setHsv(hsv[0], v, hsv[2])),
-                _slider('V', hsv[2], 1, (v) => _setHsv(hsv[0], hsv[1], v)),
+                _slider(
+                  'V',
+                  hsv[2],
+                  widget.channelMax,
+                  (v) => _setHsv(hsv[0], hsv[1], v),
+                ),
               ],
             ),
           ),

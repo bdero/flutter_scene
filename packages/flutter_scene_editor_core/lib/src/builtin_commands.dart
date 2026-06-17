@@ -1056,10 +1056,73 @@ final setStageProperties = CommandEntry(
   },
 );
 
+// Builds a sky source spec of [base]'s type, overriding any field named in
+// [overrides] (a property map keyed by parameter name). Vectors are cloned so
+// the result never aliases [base]'s (or another spec's) mutable vectors;
+// unknown keys are ignored.
+SkySourceSpec _skySourceFrom(
+  SkySourceSpec base, [
+  Map<String, PropertyValue> overrides = const {},
+]) {
+  Vector3 vec(String key, Vector3 fallback) => switch (overrides[key]) {
+    Vec3Value(:final value) => value.clone(),
+    ColorValue(:final r, :final g, :final b) => Vector3(r, g, b),
+    _ => fallback.clone(),
+  };
+  double dbl(String key, double fallback) => switch (overrides[key]) {
+    DoubleValue(:final value) => value,
+    IntValue(:final value) => value.toDouble(),
+    _ => fallback,
+  };
+  return switch (base) {
+    GradientSkySpec g => GradientSkySpec(
+      zenithColor: vec('zenithColor', g.zenithColor),
+      horizonColor: vec('horizonColor', g.horizonColor),
+      groundColor: vec('groundColor', g.groundColor),
+      sunDirection: vec('sunDirection', g.sunDirection),
+      sunColor: vec('sunColor', g.sunColor),
+      sunSharpness: dbl('sunSharpness', g.sunSharpness),
+    ),
+    PhysicalSkySpec p => PhysicalSkySpec(
+      sunDirection: vec('sunDirection', p.sunDirection),
+      sunAngularRadius: dbl('sunAngularRadius', p.sunAngularRadius),
+      rayleighCoefficient: dbl('rayleighCoefficient', p.rayleighCoefficient),
+      rayleighColor: vec('rayleighColor', p.rayleighColor),
+      mieCoefficient: dbl('mieCoefficient', p.mieCoefficient),
+      mieEccentricity: dbl('mieEccentricity', p.mieEccentricity),
+      mieColor: vec('mieColor', p.mieColor),
+      turbidity: dbl('turbidity', p.turbidity),
+      groundColor: vec('groundColor', p.groundColor),
+      energy: dbl('energy', p.energy),
+    ),
+    EnvironmentSkySpec e => EnvironmentSkySpec(
+      blurriness: dbl('blurriness', e.blurriness),
+    ),
+    _ => base,
+  };
+}
+
+SkySourceSpec? _defaultSkySource(String type) => switch (type) {
+  'gradient' => GradientSkySpec(),
+  'physical' => PhysicalSkySpec(),
+  'environment' => EnvironmentSkySpec(),
+  _ => null,
+};
+
+Vector3? _specSunDirection(SkySourceSpec? source) => switch (source) {
+  GradientSkySpec(:final sunDirection) => sunDirection,
+  PhysicalSkySpec(:final sunDirection) => sunDirection,
+  _ => null,
+};
+
 /// Sets the scene skybox (`none`/`environment`/`gradient`/`physical`) and,
 /// when [lightScene] and a procedural sky are chosen, binds that sky as the
-/// scene's image-based lighting. [sunDirection] aims the gradient/physical sun.
-/// Other sky parameters take their defaults (per-field tuning is future work).
+/// scene's image-based lighting. Choosing the type the scene already has keeps
+/// its tuned parameters; switching type starts from that type's defaults (the
+/// sun direction carries across a gradient/physical switch). [sunDirection]
+/// optionally seeds the sun; finer parameter tuning goes through
+/// `setSkyParameters`. [lightScene] defaults to the scene's current
+/// sky-lighting state when omitted.
 final setSkybox = CommandEntry(
   name: 'setSkybox',
   doc: 'Set the scene skybox and optional sky-driven lighting.',
@@ -1082,20 +1145,42 @@ final setSkybox = CommandEntry(
   execute: (ctx, params) {
     final sky = requireString(params, 'sky');
     final sun = optionalVec3(params, 'sunDirection');
-    final lightScene = params['lightScene'] == true;
-    SkySourceSpec? source() => switch (sky) {
-      'gradient' => GradientSkySpec(sunDirection: sun),
-      'physical' => PhysicalSkySpec(sunDirection: sun),
-      'environment' => EnvironmentSkySpec(),
-      _ => null,
+    final old = ctx.document.stage;
+    final lightScene = params.containsKey('lightScene')
+        ? params['lightScene'] == true
+        : old.skyEnvironment != null;
+    // Preserve the current sky's parameters when the type is unchanged;
+    // otherwise start from the new type's defaults.
+    final current = old.skybox?.source;
+    final sameType =
+        (sky == 'gradient' && current is GradientSkySpec) ||
+        (sky == 'physical' && current is PhysicalSkySpec) ||
+        (sky == 'environment' && current is EnvironmentSkySpec);
+    final base = sameType ? current! : _defaultSkySource(sky);
+    // An explicit sun wins; otherwise carry the sun across a type switch.
+    final seedSun = sun ?? (sameType ? null : _specSunDirection(current));
+    final overrides = <String, PropertyValue>{
+      if (seedSun != null) 'sunDirection': Vec3Value(seedSun.clone()),
     };
-    final next = _copyStage(ctx.document.stage);
-    final skySource = source();
-    next.skybox = skySource == null ? null : SkyboxSpec(skySource);
+    SkySourceSpec? makeSource() =>
+        base == null ? null : _skySourceFrom(base, overrides);
+
+    final next = _copyStage(old);
+    final skySource = makeSource();
+    next.skybox = skySource == null
+        ? null
+        : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
     final canLight = sky == 'gradient' || sky == 'physical';
+    final priorEnv = old.skyEnvironment;
     // The sky-lighting binding needs its own shader-sky source instance.
     next.skyEnvironment = (lightScene && canLight)
-        ? SkyEnvironmentSpec(source()!)
+        ? SkyEnvironmentSpec(
+            makeSource()!,
+            refresh: priorEnv?.refresh ?? 'manual',
+            intervalSeconds: priorEnv?.intervalSeconds ?? 1.0,
+            faceResolution: priorEnv?.faceResolution ?? 128,
+            equirectWidth: priorEnv?.equirectWidth ?? 512,
+          )
         : null;
     return Transaction(
       name: 'Set skybox',
@@ -1103,7 +1188,61 @@ final setSkybox = CommandEntry(
         ChangeRecord(
           targetId: ChangeRecord.rootsTarget,
           slot: ChangeSlot.stage,
-          oldValue: StageMetadataChange(ctx.document.stage),
+          oldValue: StageMetadataChange(old),
+          newValue: StageMetadataChange(next),
+        ),
+      ],
+    );
+  },
+);
+
+/// Tunes the current procedural sky's parameters (colors, sun size, scattering,
+/// energy). Only the keys present in `properties` change; the rest are kept.
+/// Both the visible skybox and the sky-lighting binding (when present) are
+/// updated, so the background and the baked lighting stay in sync. Requires a
+/// skybox; choose one with `setSkybox` first.
+final setSkyParameters = CommandEntry(
+  name: 'setSkyParameters',
+  doc: 'Tune the current procedural sky parameters.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Sky parameters',
+    ),
+  ],
+  execute: (ctx, params) {
+    final props = optionalPropertyMap(params, 'properties');
+    final old = ctx.document.stage;
+    final skybox = old.skybox;
+    if (skybox == null) {
+      throw const CommandException(
+        'No sky to tune; choose a skybox with setSkybox first.',
+      );
+    }
+    final next = _copyStage(old);
+    next.skybox = SkyboxSpec(
+      _skySourceFrom(skybox.source, props),
+      intensity: skybox.intensity,
+    );
+    final priorEnv = old.skyEnvironment;
+    if (priorEnv != null) {
+      next.skyEnvironment = SkyEnvironmentSpec(
+        _skySourceFrom(priorEnv.source, props),
+        refresh: priorEnv.refresh,
+        intervalSeconds: priorEnv.intervalSeconds,
+        faceResolution: priorEnv.faceResolution,
+        equirectWidth: priorEnv.equirectWidth,
+      );
+    }
+    return Transaction(
+      name: 'Tune sky',
+      records: [
+        ChangeRecord(
+          targetId: ChangeRecord.rootsTarget,
+          slot: ChangeSlot.stage,
+          oldValue: StageMetadataChange(old),
           newValue: StageMetadataChange(next),
         ),
       ],
@@ -1527,6 +1666,7 @@ final List<CommandEntry> builtinCommands = [
   removeResource,
   setStageProperties,
   setSkybox,
+  setSkyParameters,
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,

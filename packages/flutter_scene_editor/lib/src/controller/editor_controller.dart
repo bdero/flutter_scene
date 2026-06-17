@@ -672,6 +672,71 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Live-previews a procedural-sky parameter on the live scene without
+  /// touching the document or history (for sky slider/color drags). Aims or
+  /// recolors the visible skybox source so the background updates immediately,
+  /// and, when the scene is lit by the sky, mirrors the change onto the
+  /// sky-lighting source and re-bakes it so reflections and diffuse lighting
+  /// follow. [key] is a sky parameter name (`sunDirection`, `energy`,
+  /// `turbidity`, color names, etc.); [raw] is a [Vector3] for a
+  /// direction/color or a [num] for a scalar. Commit with `setSkyParameters`
+  /// on release.
+  void previewSkyParameter(String key, Object raw) {
+    _applySkyParameter(scene.skybox?.source, key, raw);
+    final skyEnvironment = scene.skyEnvironment;
+    if (skyEnvironment != null) {
+      _applySkyParameter(skyEnvironment.source, key, raw);
+      // The editor binds sky lighting with the manual refresh policy, so the
+      // lighting only re-bakes when the binding is invalidated. The bake is
+      // time-sliced, so invalidating every drag tick never spikes a frame.
+      skyEnvironment.invalidate();
+    }
+    notifyListeners();
+  }
+
+  static void _applySkyParameter(SkySource? source, String key, Object raw) {
+    switch (source) {
+      case GradientSkySource g:
+        switch (key) {
+          case 'sunDirection' when raw is Vector3:
+            g.sunDirection.setFrom(raw);
+          case 'sunColor' when raw is Vector3:
+            g.sunColor.setFrom(raw);
+          case 'zenithColor' when raw is Vector3:
+            g.zenithColor.setFrom(raw);
+          case 'horizonColor' when raw is Vector3:
+            g.horizonColor.setFrom(raw);
+          case 'groundColor' when raw is Vector3:
+            g.groundColor.setFrom(raw);
+          case 'sunSharpness' when raw is num:
+            g.sunSharpness = raw.toDouble();
+        }
+      case PhysicalSkySource p:
+        switch (key) {
+          case 'sunDirection' when raw is Vector3:
+            p.sunDirection.setFrom(raw);
+          case 'sunAngularRadius' when raw is num:
+            p.sunAngularRadius = raw.toDouble();
+          case 'rayleighCoefficient' when raw is num:
+            p.rayleighCoefficient = raw.toDouble();
+          case 'rayleighColor' when raw is Vector3:
+            p.rayleighColor.setFrom(raw);
+          case 'mieCoefficient' when raw is num:
+            p.mieCoefficient = raw.toDouble();
+          case 'mieEccentricity' when raw is num:
+            p.mieEccentricity = raw.toDouble();
+          case 'mieColor' when raw is Vector3:
+            p.mieColor.setFrom(raw);
+          case 'turbidity' when raw is num:
+            p.turbidity = raw.toDouble();
+          case 'groundColor' when raw is Vector3:
+            p.groundColor.setFrom(raw);
+          case 'energy' when raw is num:
+            p.energy = raw.toDouble();
+        }
+    }
+  }
+
   static Vector4? _colorVec(Object raw) {
     if (raw is Map) {
       final r = raw['r'], g = raw['g'], b = raw['b'], a = raw['a'];
