@@ -118,12 +118,16 @@ class MaterialSection extends StatelessWidget {
     _Field field,
     PropertyValue? value,
   ) {
+    // An unset property is absent from the (sparse) material resource, so fall
+    // back to the value the realized material actually uses, never a guessed
+    // constant. Keeps every field showing the correct default.
+    final effective = controller.effectiveMaterialValue(nodeId, field.key);
     switch (field.kind) {
       case _Kind.factor:
         final current = switch (value) {
           DoubleValue(:final value) => value,
           IntValue(:final value) => value.toDouble(),
-          _ => 0.0,
+          _ => effective is num ? effective.toDouble() : 0.0,
         };
         return LiveSlider(
           label: field.label,
@@ -160,7 +164,14 @@ class MaterialSection extends StatelessWidget {
           ),
         );
       case _Kind.color:
-        final fallback = _defaultColor(field.key);
+        final fallback = effective is Map
+            ? [
+                (effective['r'] as num).toDouble(),
+                (effective['g'] as num).toDouble(),
+                (effective['b'] as num).toDouble(),
+                (effective['a'] as num).toDouble(),
+              ]
+            : _defaultColor(field.key);
         final c = value is ColorValue
             ? value
             : ColorValue(fallback[0], fallback[1], fallback[2], fallback[3]);

@@ -661,6 +661,41 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The effective (default-filled) value of material property [key] on node
+  /// [id]'s realized mesh material, or null when not applicable/available.
+  ///
+  /// Inspector fields read this so a slider or color always shows the value
+  /// the engine actually uses. A material resource stores only explicit
+  /// overrides, so an unset factor (metallic, roughness, ...) is absent from
+  /// the document; reading the realized material gives its real default
+  /// instead of a UI-guessed one. Returns a `double` for a factor or an
+  /// `{r,g,b,a}` map for a color.
+  Object? effectiveMaterialValue(LocalId id, String key) {
+    final mesh = _liveById[id]?.mesh;
+    if (mesh == null || mesh.primitives.isEmpty) return null;
+    final material = mesh.primitives.first.material;
+    Map<String, double> rgba(Vector4 v) => {
+      'r': v.r,
+      'g': v.g,
+      'b': v.b,
+      'a': v.a,
+    };
+    if (material is PhysicallyBasedMaterial) {
+      return switch (key) {
+        'metallic' => material.metallicFactor,
+        'roughness' => material.roughnessFactor,
+        'alphaCutoff' => material.alphaCutoff,
+        'baseColor' => rgba(material.baseColorFactor),
+        'emissive' => rgba(material.emissiveFactor),
+        _ => null,
+      };
+    }
+    if (material is UnlitMaterial && key == 'baseColor') {
+      return rgba(material.baseColorFactor);
+    }
+    return null;
+  }
+
   /// Live-previews scene-wide settings on the live scene without touching the
   /// document or history (for stage slider drags). Commit with
   /// `setStageProperties` on release.

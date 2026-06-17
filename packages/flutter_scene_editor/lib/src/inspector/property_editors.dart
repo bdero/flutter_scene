@@ -24,6 +24,12 @@ class PropertyField extends StatelessWidget {
   /// Called with the new typed value ready to pass to a command.
   final void Function(Object? value) onChanged;
 
+  // The seed when the document has no explicit value: the field's declared
+  // default (from the component schema), never a guessed zero/empty, so an
+  // unset field shows the value the engine actually uses.
+  double get _numberDefault =>
+      (descriptor.defaultValue as num?)?.toDouble() ?? 0.0;
+
   @override
   Widget build(BuildContext context) {
     return switch (descriptor.type) {
@@ -31,21 +37,21 @@ class PropertyField extends StatelessWidget {
         label: descriptor.label,
         initial: currentValue is StringValue
             ? (currentValue as StringValue).value
-            : '',
+            : (descriptor.defaultValue as String? ?? ''),
         onSubmit: onChanged,
       ),
       ParamType.boolean => _BoolField(
         label: descriptor.label,
         initial: currentValue is BoolValue
             ? (currentValue as BoolValue).value
-            : false,
+            : (descriptor.defaultValue as bool? ?? false),
         onChanged: onChanged,
       ),
       ParamType.integer => _NumberField(
         label: descriptor.label,
         initial: currentValue is IntValue
             ? (currentValue as IntValue).value.toDouble()
-            : 0.0,
+            : _numberDefault,
         isInt: true,
         onSubmit: onChanged,
       ),
@@ -53,7 +59,7 @@ class PropertyField extends StatelessWidget {
         label: descriptor.label,
         initial: currentValue is DoubleValue
             ? (currentValue as DoubleValue).value
-            : 0.0,
+            : _numberDefault,
         isInt: false,
         onSubmit: onChanged,
       ),
