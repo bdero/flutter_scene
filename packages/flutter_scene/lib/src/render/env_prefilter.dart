@@ -95,6 +95,122 @@ gpu.Texture prefilterEquirectRadiance(
   return atlas;
 }
 
+/// Width (and height) of the prefiltered radiance cube's base mip.
+const int kRadianceCubeSize = 256;
+
+// Cube face world bases (right, up, forward), in flutter_gpu cube slice order
+// (+X, -X, +Y, -Y, +Z, -Z). A face texel at (u, v) (v measured top-down, as
+// FullscreenVertex emits) maps to normalize(forward + (2u-1)*right +
+// (2v-1)*up), the same direction the hardware samplerCube reads back, so a
+// baked direction round-trips. Verified against rendered reflections.
+final List<(Vector3, Vector3, Vector3)> _cubeFaceBases = [
+  (Vector3(0, 0, -1), Vector3(0, -1, 0), Vector3(1, 0, 0)), // +X
+  (Vector3(0, 0, 1), Vector3(0, -1, 0), Vector3(-1, 0, 0)), // -X
+  (Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)), // +Y
+  (Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(0, -1, 0)), // -Y
+  (Vector3(1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, 1)), // +Z
+  (Vector3(-1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)), // -Z
+];
+
+/// Creates an empty prefiltered-radiance cube (one roughness band per mip
+/// level), for [prefilterEquirectRadianceToCube] and incremental cube bakes.
+gpu.Texture createRadianceCubeTexture() => gpu.gpuContext.createTexture(
+  gpu.StorageMode.devicePrivate,
+  kRadianceCubeSize,
+  kRadianceCubeSize,
+  format: gpu.PixelFormat.r16g16b16a16Float,
+  textureType: gpu.TextureType.textureCube,
+  mipLevelCount: kPrefilterBandCount,
+  enableRenderTargetUsage: true,
+  enableShaderReadUsage: true,
+);
+
+/// Prefilters an equirectangular radiance source into a roughness-mip cubemap
+/// (mip `i` = perceptual roughness `i/(kPrefilterBandCount-1)`), sampled at
+/// draw time with `textureLod(samplerCube, dir, roughness * maxLod)`. Removes
+/// the equirect pole singularity from the radiance reflections sample.
+gpu.Texture prefilterEquirectRadianceToCube(
+  gpu.Texture sourceEquirect, {
+  bool sourceIsLinear = false,
+}) {
+  final cube = createRadianceCubeTexture();
+  for (var face = 0; face < 6; face++) {
+    for (var band = 0; band < kPrefilterBandCount; band++) {
+      prefilterEquirectRadianceCubeFace(
+        sourceEquirect,
+        cube,
+        face,
+        band,
+        sourceIsLinear: sourceIsLinear,
+      );
+    }
+  }
+  return cube;
+}
+
+/// Prefilters one [face] of one roughness [band] (mip level) of [cube] from
+/// [sourceEquirect]. One pass; an incremental bake spreads the 6*bands passes
+/// across frames.
+void prefilterEquirectRadianceCubeFace(
+  gpu.Texture sourceEquirect,
+  gpu.Texture cube,
+  int face,
+  int band, {
+  bool sourceIsLinear = false,
+}) {
+  assert(face >= 0 && face < 6);
+  assert(band >= 0 && band < kPrefilterBandCount);
+  final (right, up, forward) = _cubeFaceBases[face];
+  final roughness = band / (kPrefilterBandCount - 1);
+  final vertexShader = baseShaderLibrary['FullscreenVertex']!;
+  final fragmentShader = baseShaderLibrary['PrefilterRadianceCubeFragment']!;
+  final commandBuffer = gpu.gpuContext.createCommandBuffer();
+  final renderPass = commandBuffer.createRenderPass(
+    gpu.RenderTarget.singleColor(
+      gpu.ColorAttachment(
+        texture: cube,
+        clearValue: Vector4.zero(),
+        mipLevel: band,
+        slice: face,
+      ),
+    ),
+  );
+  renderPass.bindPipeline(
+    gpu.gpuContext.createRenderPipeline(vertexShader, fragmentShader),
+  );
+  bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
+  renderPass.bindTexture(
+    fragmentShader.getUniformSlot('source_equirect'),
+    sourceEquirect,
+    sampler: gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.linear,
+      magFilter: gpu.MinMagFilter.linear,
+      widthAddressMode: gpu.SamplerAddressMode.repeat,
+      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    ),
+  );
+  // PrefilterCubeInfo: three vec4 bases + (roughness, source_is_linear) padded
+  // to std140 (64 bytes / 16 floats).
+  final info = Float32List(16)
+    ..[0] = right.x
+    ..[1] = right.y
+    ..[2] = right.z
+    ..[4] = up.x
+    ..[5] = up.y
+    ..[6] = up.z
+    ..[8] = forward.x
+    ..[9] = forward.y
+    ..[10] = forward.z
+    ..[12] = roughness
+    ..[13] = sourceIsLinear ? 1.0 : 0.0;
+  renderPass.bindUniform(
+    fragmentShader.getUniformSlot('PrefilterCubeInfo'),
+    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
+  );
+  drawCompat(renderPass, 6);
+  commandBuffer.submit();
+}
+
 /// Creates an empty prefiltered-radiance render target, for incremental
 /// prefiltering via [prefilterEquirectRadianceBand].
 ///
