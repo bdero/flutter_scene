@@ -31,7 +31,12 @@ class HdrFormatException implements Exception {
 }
 
 /// Decodes a Radiance `.hdr`/`.pic` RGBE image from [bytes].
-DecodedHdr decodeRadianceHdr(Uint8List bytes) {
+///
+/// When [maxWidth] is set and the source is wider, the image is box-downsampled
+/// by an integer factor during decode (averaging in linear space) so a very
+/// large panorama (e.g. 16K) never materializes at full resolution. A realtime
+/// environment map does not need more than a few thousand pixels wide.
+DecodedHdr decodeRadianceHdr(Uint8List bytes, {int? maxWidth}) {
   var pos = 0;
 
   String readLine() {
@@ -71,33 +76,45 @@ DecodedHdr decodeRadianceHdr(Uint8List bytes) {
     throw HdrFormatException('Invalid HDR dimensions ${width}x$height');
   }
 
-  final pixels = Float32List(width * height * 4);
-  final scanline = Uint8List(width * 4); // RGBE for one row
+  // Integer box-downsample factor: every factor x factor source block averages
+  // to one output texel. Output dimensions drop the partial trailing block.
+  final factor = (maxWidth != null && maxWidth > 0 && width > maxWidth)
+      ? (width + maxWidth - 1) ~/ maxWidth
+      : 1;
+  final outWidth = width ~/ factor;
+  final outHeight = height ~/ factor;
+
+  final pixels = Float32List(outWidth * outHeight * 4); // linear accumulator
+  final scanline = Uint8List(width * 4); // RGBE for one source row
 
   for (var y = 0; y < height; y++) {
     pos = _readScanline(bytes, pos, scanline, width);
-    final rowOffset = y * width * 4;
+    final outY = y ~/ factor;
+    if (outY >= outHeight) continue; // trailing partial block
+    final rowOffset = outY * outWidth * 4;
     for (var x = 0; x < width; x++) {
-      final r = scanline[x * 4 + 0];
-      final g = scanline[x * 4 + 1];
-      final b = scanline[x * 4 + 2];
+      final outX = x ~/ factor;
+      if (outX >= outWidth) continue;
       final e = scanline[x * 4 + 3];
-      final o = rowOffset + x * 4;
-      if (e == 0) {
-        pixels[o] = 0;
-        pixels[o + 1] = 0;
-        pixels[o + 2] = 0;
-      } else {
-        // RGBE -> linear float: component / 256 * 2^(exponent - 128).
-        final scale = _ldexp(1.0, e - (128 + 8));
-        pixels[o] = r * scale;
-        pixels[o + 1] = g * scale;
-        pixels[o + 2] = b * scale;
-      }
-      pixels[o + 3] = 1.0;
+      if (e == 0) continue;
+      // RGBE -> linear float: component / 256 * 2^(exponent - 128).
+      final scale = _ldexp(1.0, e - (128 + 8));
+      final o = rowOffset + outX * 4;
+      pixels[o] += scanline[x * 4 + 0] * scale;
+      pixels[o + 1] += scanline[x * 4 + 1] * scale;
+      pixels[o + 2] += scanline[x * 4 + 2] * scale;
     }
   }
-  return DecodedHdr(pixels, width, height);
+
+  // Normalize the box sum and set opaque alpha (factor 1 is a plain copy).
+  final norm = 1.0 / (factor * factor);
+  for (var i = 0; i < pixels.length; i += 4) {
+    pixels[i] *= norm;
+    pixels[i + 1] *= norm;
+    pixels[i + 2] *= norm;
+    pixels[i + 3] = 1.0;
+  }
+  return DecodedHdr(pixels, outWidth, outHeight);
 }
 
 // Reads one RGBE scanline (width pixels) into [out], returning the new byte

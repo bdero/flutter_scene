@@ -41,6 +41,21 @@ void main() {
     }
   });
 
+  test('box-downsamples to maxWidth during decode', () {
+    // A 4x4 flat image of linear 0.5, downsampled by factor 2 to 2x2 (each
+    // output is the average of a 2x2 block, still 0.5).
+    final bytes = _hdr(4, 4, [
+      for (var i = 0; i < 16; i++) ...[128, 128, 128, 128],
+    ]);
+    final hdr = decodeRadianceHdr(bytes, maxWidth: 2);
+    expect(hdr.width, 2);
+    expect(hdr.height, 2);
+    for (var i = 0; i < hdr.width * hdr.height; i++) {
+      expect(hdr.pixels[i * 4 + 0], closeTo(0.5, 1e-6));
+      expect(hdr.pixels[i * 4 + 3], 1.0);
+    }
+  });
+
   test('a zero exponent decodes to black', () {
     final bytes = _hdr(1, 1, [200, 200, 200, 0]);
     final hdr = decodeRadianceHdr(bytes);

@@ -88,8 +88,11 @@ gpu.Texture prefilterEquirectRadiance(
   return atlas;
 }
 
-/// Width (and height) of the prefiltered radiance cube's base mip.
-const int kRadianceCubeSize = 256;
+/// Default width (and height) of the prefiltered radiance cube's base mip.
+/// Sizes the convolved reflection/ambient cube, not the visible background
+/// (which samples the full-resolution source); see
+/// `EnvironmentMap.radianceCubeSize`.
+const int kRadianceCubeSize = 512;
 
 // Cube face world bases (right, up, forward), in flutter_gpu cube slice order
 // (+X, -X, +Y, -Y, +Z, -Z). A face texel at (u, v) (v measured top-down, as
@@ -107,26 +110,30 @@ final List<(Vector3, Vector3, Vector3)> _cubeFaceBases = [
 
 /// Creates an empty prefiltered-radiance cube (one roughness band per mip
 /// level), for [prefilterEquirectRadianceToCube] and incremental cube bakes.
-gpu.Texture createRadianceCubeTexture() => gpu.gpuContext.createTexture(
-  gpu.StorageMode.devicePrivate,
-  kRadianceCubeSize,
-  kRadianceCubeSize,
-  format: gpu.PixelFormat.r16g16b16a16Float,
-  textureType: gpu.TextureType.textureCube,
-  mipLevelCount: kPrefilterBandCount,
-  enableRenderTargetUsage: true,
-  enableShaderReadUsage: true,
-);
+/// [size] is the base-mip face size (default [kRadianceCubeSize]).
+gpu.Texture createRadianceCubeTexture({int size = kRadianceCubeSize}) =>
+    gpu.gpuContext.createTexture(
+      gpu.StorageMode.devicePrivate,
+      size,
+      size,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+      textureType: gpu.TextureType.textureCube,
+      mipLevelCount: kPrefilterBandCount,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: true,
+    );
 
 /// Prefilters an equirectangular radiance source into a roughness-mip cubemap
 /// (mip `i` = perceptual roughness `i/(kPrefilterBandCount-1)`), sampled at
 /// draw time with `textureLod(samplerCube, dir, roughness * maxLod)`. Removes
-/// the equirect pole singularity from the radiance reflections sample.
+/// the equirect pole singularity from the radiance reflections sample. [size]
+/// is the base-mip face size.
 gpu.Texture prefilterEquirectRadianceToCube(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,
+  int size = kRadianceCubeSize,
 }) {
-  final cube = createRadianceCubeTexture();
+  final cube = createRadianceCubeTexture(size: size);
   for (var face = 0; face < 6; face++) {
     for (var band = 0; band < kPrefilterBandCount; band++) {
       prefilterEquirectRadianceCubeFace(

@@ -78,6 +78,14 @@ base class EnvironmentMap {
   /// afterwards.
   static bool useMipRadianceLayout = true;
 
+  /// Base-mip face size of the prefiltered radiance cubemap new environments
+  /// build (the convolved reflection/ambient cube, not the visible background).
+  /// Higher is sharper reflections at more memory (a cube is `6 * size^2`
+  /// texels plus mips); 256-512 is a good default, up to ~2048. Equivalent to
+  /// Godot's `Sky.radiance_size`. Applies only on backends that build the cube
+  /// (see [effectiveMipRadianceLayout]); affects environments built afterward.
+  static int radianceCubeSize = kRadianceCubeSize;
+
   /// Whether the active Flutter GPU backend can build and sample the mip
   /// radiance layout: rendering into non-zero mip levels plus sampling
   /// hand-written mip chains.
@@ -634,7 +642,11 @@ base class EnvironmentMap {
     gpu.Texture source, {
     bool sourceIsLinear = false,
   }) => effectiveMipRadianceLayout
-      ? prefilterEquirectRadianceToCube(source, sourceIsLinear: sourceIsLinear)
+      ? prefilterEquirectRadianceToCube(
+          source,
+          sourceIsLinear: sourceIsLinear,
+          size: radianceCubeSize,
+        )
       : prefilterEquirectRadiance(
           source,
           sourceIsLinear: sourceIsLinear,

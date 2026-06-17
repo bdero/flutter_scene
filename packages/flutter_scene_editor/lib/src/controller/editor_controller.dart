@@ -937,7 +937,10 @@ class EditorController extends ChangeNotifier {
       final bytes = await File(path).readAsBytes();
       final EnvironmentMap env;
       if (path.toLowerCase().endsWith('.hdr')) {
-        final hdr = decodeRadianceHdr(bytes);
+        // Cap the working equirect width; a realtime environment does not need
+        // more, and a 16K source would otherwise upload ~1 GB.
+        const maxEnvironmentWidth = 4096;
+        final hdr = decodeRadianceHdr(bytes, maxWidth: maxEnvironmentWidth);
         env = await EnvironmentMap.fromEquirectHdr(
           linearPixels: hdr.pixels,
           width: hdr.width,
