@@ -1234,9 +1234,11 @@ final setSkyParameters = CommandEntry(
       );
     }
     final next = _copyStage(old);
+    // `intensity` is a skybox-level property (not a sky source field); the rest
+    // of the properties patch the source via _skySourceFrom.
     next.skybox = SkyboxSpec(
       _skySourceFrom(skybox.source, props),
-      intensity: skybox.intensity,
+      intensity: _stageDouble(props['intensity'], skybox.intensity),
     );
     final priorEnv = old.skyEnvironment;
     if (priorEnv != null) {

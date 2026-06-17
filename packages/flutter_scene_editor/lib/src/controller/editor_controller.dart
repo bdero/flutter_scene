@@ -732,6 +732,13 @@ class EditorController extends ChangeNotifier {
   /// direction/color or a [num] for a scalar. Commit with `setSkyParameters`
   /// on release.
   void previewSkyParameter(String key, Object raw) {
+    // Intensity scales the visible skybox (it lives on the Skybox, not the
+    // source), so handle it directly; it does not affect sky lighting.
+    if (key == 'intensity' && raw is num) {
+      scene.skybox?.intensity = raw.toDouble();
+      notifyListeners();
+      return;
+    }
     _applySkyParameter(scene.skybox?.source, key, raw);
     final skyEnvironment = scene.skyEnvironment;
     if (skyEnvironment != null) {
@@ -783,6 +790,10 @@ class EditorController extends ChangeNotifier {
             p.groundColor.setFrom(raw);
           case 'energy' when raw is num:
             p.energy = raw.toDouble();
+        }
+      case EnvironmentSkySource e:
+        if (key == 'blurriness' && raw is num) {
+          e.blurriness = raw.toDouble();
         }
     }
   }

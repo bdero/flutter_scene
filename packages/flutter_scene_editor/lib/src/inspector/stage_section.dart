@@ -274,6 +274,16 @@ class SkySection extends StatelessWidget {
               onChanged: setShadows,
             ),
         ],
+        if (source is EnvironmentSkySpec) ...[
+          const Divider(height: 12),
+          scalar('Blurriness', 'blurriness', source.blurriness, max: 1),
+          scalar(
+            'Intensity',
+            'intensity',
+            stage.skybox?.intensity ?? 1.0,
+            max: 4,
+          ),
+        ],
         if (source is GradientSkySpec) ...[
           const Divider(height: 12),
           colorField('Zenith color', 'zenithColor', source.zenithColor),
