@@ -15,6 +15,16 @@ uniform sampler2D face_ny;
 uniform sampler2D face_pz;
 uniform sampler2D face_nz;
 
+uniform CubeFaceInfo {
+  // Half-texel overscan inset that removes the seam between faces. The bake
+  // renders each face with a slightly wider field of view so the outermost
+  // texel centers fall exactly on the cube-edge directions; the same scale
+  // maps a sampled edge direction back onto those centers, so adjacent faces
+  // agree at the boundary. Equals (N - 1) / N for an N x N face.
+  float face_uv_scale;
+}
+cube_face_info;
+
 in vec2 v_uv;
 
 out vec4 frag_color;
@@ -22,7 +32,8 @@ out vec4 frag_color;
 #include <texture.glsl>  // EquirectangularToSpherical
 
 vec2 _faceUv(float nx, float ny) {
-  return vec2(0.5 + 0.5 * nx, 0.5 - 0.5 * ny);
+  float s = cube_face_info.face_uv_scale;
+  return vec2(0.5 + 0.5 * nx * s, 0.5 - 0.5 * ny * s);
 }
 
 vec3 _sampleFaces(vec3 d) {

@@ -60,10 +60,19 @@ gpu.Texture _hdrRenderTarget(int width, int height) {
   );
 }
 
-// Inverse view-projection for a 90-degree-FOV face looking along [forward]
-// from the origin. The near/far range is irrelevant since only the
-// reconstructed direction is used.
-Matrix4 _faceInverseViewProjection(Vector3 forward, Vector3 up) {
+// The cube-seam overscan factor for an [n] x [n] face: the face is rendered
+// with a slightly wider field of view (and sampled with the matching inset)
+// so the outermost texel centers land exactly on the cube-edge directions,
+// where adjacent faces then agree. Without it the edge texel centers sit half
+// a texel inside the 45-degree boundary and a seam shows in the assembled
+// equirect (most visibly in the dim sky away from the sun).
+double _faceOverscan(int n) => (n - 1) / n;
+
+// Inverse view-projection for a face looking along [forward] from the origin.
+// The horizontal/vertical scale [s] is the overscan factor (1.0 is an exact
+// 90-degree FOV; slightly below 1.0 widens it by half a texel). The near/far
+// range is irrelevant since only the reconstructed direction is used.
+Matrix4 _faceInverseViewProjection(Vector3 forward, Vector3 up, double s) {
   final right = up.cross(forward)..normalize();
   final u = forward.cross(right)..normalize();
   final view = Matrix4(
@@ -88,12 +97,12 @@ Matrix4 _faceInverseViewProjection(Vector3 forward, Vector3 up) {
   final a = zf / (zf - zn);
   final b = -(zf * zn) / (zf - zn);
   final proj = Matrix4(
-    1.0,
+    s,
     0.0,
     0.0,
     0.0, //
     0.0,
-    1.0,
+    s,
     0.0,
     0.0, //
     0.0,
@@ -114,6 +123,7 @@ void _renderFace(
   Vector3 forward,
   Vector3 up,
   gpu.Texture face,
+  int faceResolution,
 ) {
   final commandBuffer = gpu.gpuContext.createCommandBuffer();
   final pass = commandBuffer.createRenderPass(
@@ -132,7 +142,7 @@ void _renderFace(
     pass,
     transients,
     vertexShader,
-    _faceInverseViewProjection(forward, up),
+    _faceInverseViewProjection(forward, up, _faceOverscan(faceResolution)),
     Vector3.zero(),
     null,
   );
@@ -141,7 +151,11 @@ void _renderFace(
   commandBuffer.submit();
 }
 
-void _assembleEquirect(List<gpu.Texture> faces, gpu.Texture equirect) {
+void _assembleEquirect(
+  List<gpu.Texture> faces,
+  gpu.Texture equirect,
+  int faceResolution,
+) {
   final commandBuffer = gpu.gpuContext.createCommandBuffer();
   final pass = commandBuffer.createRenderPass(
     gpu.RenderTarget.singleColor(
@@ -167,6 +181,13 @@ void _assembleEquirect(List<gpu.Texture> faces, gpu.Texture equirect) {
       ),
     );
   }
+  // The overscan inset that matches the face render's widened FOV, so a
+  // sampled edge direction lands on the outermost texel center.
+  final faceInfo = Float32List(4)..[0] = _faceOverscan(faceResolution);
+  pass.bindUniform(
+    fragmentShader.getUniformSlot('CubeFaceInfo'),
+    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(faceInfo)),
+  );
   drawCompat(pass, 6);
   commandBuffer.submit();
 }
@@ -228,11 +249,11 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
   final faces = <gpu.Texture>[];
   for (final (forward, up) in _faceBases) {
     final face = _hdrRenderTarget(faceResolution, faceResolution);
-    _renderFace(source, noEnvironment, forward, up, face);
+    _renderFace(source, noEnvironment, forward, up, face, faceResolution);
     faces.add(face);
   }
   final equirect = _hdrRenderTarget(equirectWidth, equirectWidth ~/ 2);
-  _assembleEquirect(faces, equirect);
+  _assembleEquirect(faces, equirect, faceResolution);
   final sh = _createShTarget();
   _projectSh(equirect, sh);
   return (
@@ -313,9 +334,16 @@ class SkyBakeJob {
     final step = _step;
     if (step < _equirectStep) {
       final (forward, up) = _faceBases[step];
-      _renderFace(source, noEnvironment, forward, up, _faces![step]);
+      _renderFace(
+        source,
+        noEnvironment,
+        forward,
+        up,
+        _faces![step],
+        _faceResolution,
+      );
     } else if (step == _equirectStep) {
-      _assembleEquirect(_faces!, _equirect!);
+      _assembleEquirect(_faces!, _equirect!, _faceResolution);
     } else if (step < _shStep) {
       prefilterEquirectRadianceBand(
         _equirect!,
