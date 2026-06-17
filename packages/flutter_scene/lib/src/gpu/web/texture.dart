@@ -114,13 +114,16 @@ base class Texture {
 
     final gl = _gpuContext._gl;
     if (sampleCount == 1) {
+      final target = glTarget;
       _texture = gl.createTexture();
       if (_texture == null) {
         throw StateError('Failed to create WebGL texture');
       }
-      gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, _texture);
+      gl.bindTexture(target, _texture);
+      // texStorage2D on the cube target allocates all six faces (and their
+      // mips). A cube must be square.
       gl.texStorage2D(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         mipLevelCount,
         entry.internalFormat,
         width,
@@ -129,24 +132,24 @@ base class Texture {
       // Sensible default sampler state for sampling. Pipelines override
       // these per `bindTexture` later via sampler objects.
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
         mipLevelCount > 1
             ? web.WebGL2RenderingContext.LINEAR_MIPMAP_LINEAR
             : web.WebGL2RenderingContext.LINEAR,
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
         web.WebGL2RenderingContext.LINEAR,
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_WRAP_S,
         web.WebGL2RenderingContext.CLAMP_TO_EDGE,
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_WRAP_T,
         web.WebGL2RenderingContext.CLAMP_TO_EDGE,
       );
@@ -199,6 +202,18 @@ base class Texture {
   /// Internal: GL renderbuffer (MSAA) or null for single-sample.
   web.WebGLRenderbuffer? get glRenderbuffer => _renderbuffer;
 
+  /// Internal: the GL texture target for this texture (2D or cube map).
+  int get glTarget => textureType == TextureType.textureCube
+      ? web.WebGL2RenderingContext.TEXTURE_CUBE_MAP
+      : web.WebGL2RenderingContext.TEXTURE_2D;
+
+  /// Internal: the GL target a given [slice] addresses. For a cube each slice
+  /// is a face (`TEXTURE_CUBE_MAP_POSITIVE_X + slice`); for 2D it is the 2D
+  /// target.
+  int glSliceTarget(int slice) => textureType == TextureType.textureCube
+      ? web.WebGL2RenderingContext.TEXTURE_CUBE_MAP_POSITIVE_X + slice
+      : web.WebGL2RenderingContext.TEXTURE_2D;
+
   int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
 
   static int fullMipCount(int width, int height) {
@@ -233,8 +248,8 @@ base class Texture {
         'mipLevel ($mipLevel) must be in the range [0, $mipLevelCount)',
       );
     }
-    if (slice != 0) {
-      throw UnimplementedError('Cubemap slices not yet supported on web');
+    if (slice < 0 || slice >= sliceCount) {
+      throw Exception('slice ($slice) must be in [0, $sliceCount)');
     }
     final expectedSize = getMipLevelSizeInBytes(mipLevel);
     if (sourceBytes.lengthInBytes != expectedSize) {
@@ -246,13 +261,15 @@ base class Texture {
     final gl = _gpuContext._gl;
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
-    gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, _texture);
+    // The bind target is the texture; the upload target selects the cube face.
+    final sliceTarget = glSliceTarget(slice);
+    gl.bindTexture(glTarget, _texture);
     if (_isCompressedFormat(format)) {
       final blocks = sourceBytes.buffer
           .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
           .toJS;
       gl.compressedTexSubImage2D(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        sliceTarget,
         mipLevel,
         0,
         0,
@@ -289,7 +306,7 @@ base class Texture {
             .toJS;
     }
     gl.texSubImage2D(
-      web.WebGL2RenderingContext.TEXTURE_2D,
+      sliceTarget,
       mipLevel,
       0,
       0,

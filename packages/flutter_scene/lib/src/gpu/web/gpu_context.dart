@@ -185,16 +185,17 @@ base class GpuContext {
   // created (and leaked) a framebuffer and ran the synchronous
   // checkFramebufferStatus round trip every time; render targets recur every
   // frame, so both now happen once per attachment combination.
-  final Map<(Texture, int, Texture?), web.WebGLFramebuffer> _framebufferCache =
-      {};
+  final Map<(Texture, int, int, Texture?), web.WebGLFramebuffer>
+  _framebufferCache = {};
 
   web.WebGLFramebuffer _framebufferFor(
     Texture color,
     int mipLevel,
+    int slice,
     Texture? depth,
     web.WebGLFramebuffer Function() create,
   ) {
-    final key = (color, mipLevel, depth);
+    final key = (color, mipLevel, slice, depth);
     final cached = _framebufferCache[key];
     if (cached != null) return cached;
     if (_framebufferCache.length >= 64) {

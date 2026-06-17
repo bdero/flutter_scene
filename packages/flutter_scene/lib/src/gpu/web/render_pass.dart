@@ -210,11 +210,17 @@ base class RenderPass {
     final colorAttachment = _target.colorAttachments.first;
     final color = colorAttachment.texture;
     final mipLevel = colorAttachment.mipLevel;
+    final slice = colorAttachment.slice;
     final depth = _target.depthStencilAttachment?.texture;
-    if (colorAttachment.slice != 0 ||
-        (_target.depthStencilAttachment?.slice ?? 0) != 0) {
+    // A color slice selects a cube face; depth slices/mips are not supported.
+    if (slice != 0 && color.textureType != TextureType.textureCube) {
       throw UnsupportedError(
-        'Rendering to texture slices is not supported on the web backend',
+        'Rendering to a 2D texture slice is not supported on the web backend',
+      );
+    }
+    if ((_target.depthStencilAttachment?.slice ?? 0) != 0) {
+      throw UnsupportedError(
+        'Rendering to a depth texture slice is not supported on the web backend',
       );
     }
     if ((_target.depthStencilAttachment?.mipLevel ?? 0) != 0) {
@@ -228,8 +234,9 @@ base class RenderPass {
     final fbo = _gpuContext._framebufferFor(
       color,
       mipLevel,
+      slice,
       depth,
-      () => _createFramebuffer(gl, color, mipLevel, depth),
+      () => _createFramebuffer(gl, color, mipLevel, slice, depth),
     );
     _fbo = fbo;
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
@@ -245,6 +252,7 @@ base class RenderPass {
     web.WebGL2RenderingContext gl,
     Texture color,
     int mipLevel,
+    int slice,
     Texture? depth,
   ) {
     final fbo = gl.createFramebuffer();
@@ -254,10 +262,11 @@ base class RenderPass {
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
 
     if (color.sampleCount == 1) {
+      // For a cube the attachment target is the face; for 2D it is TEXTURE_2D.
       gl.framebufferTexture2D(
         web.WebGL2RenderingContext.FRAMEBUFFER,
         web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        color.glSliceTarget(slice),
         color.glTexture,
         mipLevel,
       );
@@ -561,28 +570,29 @@ base class RenderPass {
     if (unit == null) return;
 
     final gl = _gpuContext._gl;
+    final target = texture.glTarget;
     gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
-    gl.bindTexture(web.WebGL2RenderingContext.TEXTURE_2D, texture.glTexture);
+    gl.bindTexture(target, texture.glTexture);
     if (sampler != null) {
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
         _glMinFilter(sampler, texture),
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
         sampler.magFilter == MinMagFilter.nearest
             ? web.WebGL2RenderingContext.NEAREST
             : web.WebGL2RenderingContext.LINEAR,
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_WRAP_S,
         _glAddressMode(sampler.widthAddressMode),
       );
       gl.texParameteri(
-        web.WebGL2RenderingContext.TEXTURE_2D,
+        target,
         web.WebGL2RenderingContext.TEXTURE_WRAP_T,
         _glAddressMode(sampler.heightAddressMode),
       );
