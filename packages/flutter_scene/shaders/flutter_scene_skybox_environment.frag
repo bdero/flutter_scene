@@ -10,6 +10,7 @@
 // the sharp environment, 1.0 the fully-blurred band.
 
 uniform sampler2D prefiltered_radiance;
+uniform samplerCube prefiltered_radiance_cube;
 
 uniform SkyboxInfo {
   // 0.0 = sharp, 1.0 = fully blurred.
@@ -30,8 +31,8 @@ out vec4 frag_color;
 
 void main() {
   vec3 direction = normalize(v_ray);
-  vec3 radiance =
-      SamplePrefilteredRadiance(prefiltered_radiance, direction,
-                                clamp(skybox_info.blurriness, 0.0, 1.0));
+  vec3 radiance = SampleRadianceEnv(
+      prefiltered_radiance, prefiltered_radiance_cube, direction,
+      clamp(skybox_info.blurriness, 0.0, 1.0));
   frag_color = vec4(radiance * skybox_info.intensity, 1.0);
 }

@@ -37,18 +37,11 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
   lengthInBytes: 6 * 2 * 4,
 );
 
-// TODO(bdero): Prefilter-quality follow-ups, roughly in priority order:
-//  - Filtered importance sampling: sample a mip chain of the source
-//    equirect (mapping each GGX sample's cone solid angle to a mip LOD)
-//    so a sample integrates an area instead of a point. That removes the
-//    residual sampling noise and lets kPrefilterSamples drop back to
-//    ~32. Unblocked: textureLod compiles on every backend dialect now and
-//    mip levels can be rendered to or uploaded; the remaining work is
-//    building the source mip chain and the cone-angle-to-lod mapping.
-//  - A prefiltered cubemap instead of the equirect: removes the pole
-//    distortion (smearing on near-vertical reflections) and the
-//    resolution ceiling. Render-to-slice and mipmapped textures make this
-//    possible now (https://github.com/flutter/flutter/issues/145027).
+// TODO(bdero): Filtered importance sampling: sample a mip chain of the source
+// (mapping each GGX sample's cone solid angle to a mip LOD) so a sample
+// integrates an area instead of a point. That removes the residual sampling
+// noise and lets kPrefilterSamples drop back to ~32. The remaining work is
+// building the source mip chain and the cone-angle-to-lod mapping.
 /// Prefilters an equirectangular radiance texture for image-based
 /// specular lighting.
 ///

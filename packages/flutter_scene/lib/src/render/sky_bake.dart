@@ -257,11 +257,13 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
   final sh = _createShTarget();
   _projectSh(equirect, sh);
   return (
-    atlas: prefilterEquirectRadiance(
-      equirect,
-      sourceIsLinear: true,
-      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
-    ),
+    atlas: EnvironmentMap.effectiveMipRadianceLayout
+        ? prefilterEquirectRadianceToCube(equirect, sourceIsLinear: true)
+        : prefilterEquirectRadiance(
+            equirect,
+            sourceIsLinear: true,
+            mipLayout: false,
+          ),
     sh: sh,
   );
 }
@@ -290,6 +292,9 @@ class SkyBakeJob {
   int _writeIndex = 0;
   int _faceResolution = 0;
   int _equirectWidth = 0;
+  // Cube radiance where supported (pole-free), the equirect band atlas on
+  // backends that cannot render cube mips. Constant per backend.
+  bool _useCube = false;
 
   // The next step to run, or -1 when idle. Steps: [0..5] faces, [6] equirect,
   // [7..7+bands) prefilter bands, [7+bands] SH (the final step).
@@ -316,10 +321,11 @@ class SkyBakeJob {
       ];
       _equirect = _hdrRenderTarget(equirectWidth, equirectWidth ~/ 2);
     }
+    _useCube = EnvironmentMap.effectiveMipRadianceLayout;
     _writeIndex = 1 - _writeIndex;
-    _atlases[_writeIndex] ??= createPrefilterAtlasTexture(
-      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
-    );
+    _atlases[_writeIndex] ??= _useCube
+        ? createRadianceCubeTexture()
+        : createPrefilterAtlasTexture(mipLayout: false);
     _shs[_writeIndex] ??= _createShTarget();
     _step = 0;
   }
@@ -345,12 +351,25 @@ class SkyBakeJob {
     } else if (step == _equirectStep) {
       _assembleEquirect(_faces!, _equirect!, _faceResolution);
     } else if (step < _shStep) {
-      prefilterEquirectRadianceBand(
-        _equirect!,
-        _atlases[_writeIndex]!,
-        step - _firstBandStep,
-        sourceIsLinear: true,
-      );
+      final band = step - _firstBandStep;
+      if (_useCube) {
+        for (var face = 0; face < 6; face++) {
+          prefilterEquirectRadianceCubeFace(
+            _equirect!,
+            _atlases[_writeIndex]!,
+            face,
+            band,
+            sourceIsLinear: true,
+          );
+        }
+      } else {
+        prefilterEquirectRadianceBand(
+          _equirect!,
+          _atlases[_writeIndex]!,
+          band,
+          sourceIsLinear: true,
+        );
+      }
     } else {
       _projectSh(_equirect!, _shs[_writeIndex]!);
       _step = -1;

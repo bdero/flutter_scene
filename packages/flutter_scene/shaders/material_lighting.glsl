@@ -234,8 +234,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 irradiance = max(EvaluateDiffuseSH(env_normal), vec3(0.0)) *
                     frag_info.environment_intensity;
   vec3 prefiltered_color =
-      SamplePrefilteredRadiance(prefiltered_radiance, env_reflection,
-                                roughness) *
+      SampleRadianceEnv(prefiltered_radiance, prefiltered_radiance_cube,
+                        env_reflection, roughness) *
       frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside

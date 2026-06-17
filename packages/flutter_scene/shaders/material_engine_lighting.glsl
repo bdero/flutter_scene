@@ -73,6 +73,9 @@ uniform FragInfo {
 frag_info;
 
 uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
+// Roughness-mip prefiltered radiance cubemap (sampled instead of the 2D atlas
+// when RadianceLayoutInfo.cube_layout is set; no pole distortion).
+uniform samplerCube prefiltered_radiance_cube;
 uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
 // Diffuse irradiance SH coefficients: a 9x1 texture, coefficient i at texel i

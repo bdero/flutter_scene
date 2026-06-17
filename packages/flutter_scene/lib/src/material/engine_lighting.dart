@@ -91,12 +91,19 @@ class EngineLightingUniforms {
   // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound
   // prefiltered radiance's layout in the shader (RadianceLayoutInfo in
   // texture.glsl); device-resident so binding needs no per-frame buffer.
-  static final gpu.BufferView _mipLayoutOn = _layoutFlagBuffer(1.0);
-  static final gpu.BufferView _mipLayoutOff = _layoutFlagBuffer(0.0);
+  // (mip_layout, cube_layout). Cube: read the samplerCube. Mip: the 2D mip
+  // equirect. Atlas: the legacy 2D stacked-band equirect.
+  static final gpu.BufferView _layoutCube = _layoutFlagBuffer(0.0, 1.0);
+  static final gpu.BufferView _layoutMip = _layoutFlagBuffer(1.0, 0.0);
+  static final gpu.BufferView _layoutAtlas = _layoutFlagBuffer(0.0, 0.0);
 
-  static gpu.BufferView _layoutFlagBuffer(double flag) {
+  static gpu.BufferView _layoutFlagBuffer(double mip, double cube) {
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData.sublistView(Float32List(4)..[0] = flag),
+      ByteData.sublistView(
+        Float32List(4)
+          ..[0] = mip
+          ..[1] = cube,
+      ),
     );
     return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: 16);
   }
@@ -110,7 +117,9 @@ class EngineLightingUniforms {
     gpu.Shader shader,
     EnvironmentMap env,
   ) {
+    final cubeLayout = env.usesCubeRadianceLayout;
     final mipLayout = env.usesMipRadianceLayout;
+    // 2D atlas (real on the equirect layouts, a dummy on the cube layout).
     // Horizontal repeat (longitude wraps), vertical clamp. The mip layout
     // needs a linear mip filter for textureLod to take effect; the legacy
     // band atlas has a single level, where the mip filter is inert.
@@ -125,9 +134,22 @@ class EngineLightingUniforms {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
+    // Radiance cubemap (real on the cube layout, a dummy otherwise). Mip-linear
+    // for the roughness textureLod; clamp the faces.
+    pass.bindTexture(
+      shader.getUniformSlot('prefiltered_radiance_cube'),
+      env.prefilteredRadianceCube,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        mipFilter: gpu.MipFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
     pass.bindUniform(
       shader.getUniformSlot('RadianceLayoutInfo'),
-      mipLayout ? _mipLayoutOn : _mipLayoutOff,
+      cubeLayout ? _layoutCube : (mipLayout ? _layoutMip : _layoutAtlas),
     );
   }
 

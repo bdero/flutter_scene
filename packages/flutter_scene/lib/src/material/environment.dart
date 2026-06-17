@@ -135,10 +135,7 @@ base class EnvironmentMap {
     List<Vector3>? diffuseSphericalHarmonics,
   }) async {
     final radianceTexture = await gpuTextureFromImage(radianceImage);
-    final prefilteredRadiance = prefilterEquirectRadiance(
-      radianceTexture,
-      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
-    );
+    final prefilteredRadiance = _buildRadiance(radianceTexture);
     final sh =
         diffuseSphericalHarmonics ??
         await computeDiffuseSphericalHarmonics(radianceImage);
@@ -190,10 +187,9 @@ base class EnvironmentMap {
       height,
       format: gpu.PixelFormat.r16g16b16a16Float,
     )..overwrite(ByteData.sublistView(_floatPixelsToHalf(linearPixels)));
-    final prefilteredRadiance = prefilterEquirectRadiance(
+    final prefilteredRadiance = _buildRadiance(
       radianceTexture,
       sourceIsLinear: true,
-      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     );
     final sh =
         diffuseSphericalHarmonics ??
@@ -289,10 +285,7 @@ base class EnvironmentMap {
       _studioEnvHeight,
     )..overwrite(ByteData.sublistView(pixels));
     return EnvironmentMap._(
-      prefilterEquirectRadiance(
-        radianceTexture,
-        mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
-      ),
+      _buildRadiance(radianceTexture),
       _projectEquirectToSphericalHarmonics(
         pixels,
         _studioEnvWidth,
@@ -582,10 +575,9 @@ base class EnvironmentMap {
       return;
     }
     _rebakeSource = null;
-    _prefilteredRadianceTexture = prefilterEquirectRadiance(
+    _prefilteredRadianceTexture = _buildRadiance(
       source,
       sourceIsLinear: _rebakeSourceIsLinear,
-      mipLayout: EnvironmentMap.effectiveMipRadianceLayout,
     );
   }
 
@@ -612,22 +604,56 @@ base class EnvironmentMap {
     _coldBuiltEnvironments.clear();
   }
 
-  // TODO(bdero): Replace the equirectangular prefilter with a real
-  // prefiltered cubemap (render-to-slice and mipmapped textures make it
-  // possible now), removing the pole distortion.
-  // (https://github.com/flutter/flutter/issues/145027)
-  /// The prefiltered radiance texture sampled for specular IBL.
-  ///
-  /// Equirectangular roughness bands, stored as mip levels or as the
-  /// legacy vertical band atlas (see [prefilterEquirectRadiance] and
-  /// [usesMipRadianceLayout]); the standard fragment shader samples it
-  /// via `SamplePrefilteredRadiance`.
-  gpu.Texture get prefilteredRadianceTexture => _prefilteredRadianceTexture;
+  /// Whether the radiance is stored as a roughness-mip cubemap (sampled with
+  /// `samplerCube`) rather than an equirect 2D layout. Detected from the
+  /// texture, so an environment built either way binds correctly.
+  bool get usesCubeRadianceLayout =>
+      _prefilteredRadianceTexture.textureType == gpu.TextureType.textureCube;
 
-  /// Whether [prefilteredRadianceTexture] stores its roughness bands as
-  /// mip levels (see [useMipRadianceLayout]).
+  /// The 2D prefiltered radiance for the equirect layouts, or a dummy when the
+  /// radiance is a cube (the material's `samplerCube` is used instead). Both
+  /// the 2D and cube samplers are always bound; the layout flag selects one.
+  gpu.Texture get prefilteredRadianceTexture => usesCubeRadianceLayout
+      ? Material.getBlackPlaceholderTexture()
+      : _prefilteredRadianceTexture;
+
+  /// The prefiltered radiance cubemap (roughness band per mip), or a dummy
+  /// when the radiance is the equirect 2D layout.
+  gpu.Texture get prefilteredRadianceCube =>
+      usesCubeRadianceLayout ? _prefilteredRadianceTexture : _blackCube();
+
+  /// Whether the 2D [prefilteredRadianceTexture] stores its roughness bands as
+  /// mip levels (see [useMipRadianceLayout]). Always false for the cube layout.
   bool get usesMipRadianceLayout =>
-      _prefilteredRadianceTexture.mipLevelCount > 1;
+      !usesCubeRadianceLayout && _prefilteredRadianceTexture.mipLevelCount > 1;
+
+  /// Prefilters [source] into the radiance representation this backend uses:
+  /// a roughness-mip cubemap where supported (no pole distortion), the legacy
+  /// equirect band atlas otherwise.
+  static gpu.Texture _buildRadiance(
+    gpu.Texture source, {
+    bool sourceIsLinear = false,
+  }) => effectiveMipRadianceLayout
+      ? prefilterEquirectRadianceToCube(source, sourceIsLinear: sourceIsLinear)
+      : prefilterEquirectRadiance(
+          source,
+          sourceIsLinear: sourceIsLinear,
+          mipLayout: false,
+        );
+
+  // A 1x1 black cube bound to the material's samplerCube when the active
+  // radiance is the 2D layout (the sampler must be complete even though the
+  // layout flag makes the shader ignore it).
+  static gpu.Texture? _blackCubeTexture;
+  static gpu.Texture _blackCube() =>
+      _blackCubeTexture ??= gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        1,
+        1,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        textureType: gpu.TextureType.textureCube,
+        enableShaderReadUsage: true,
+      );
 
   /// The [kDiffuseShCoefficientCount] RGB L2 spherical-harmonic
   /// coefficients describing the diffuse (Lambertian) irradiance.

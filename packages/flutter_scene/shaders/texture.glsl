@@ -60,6 +60,9 @@ uniform RadianceLayoutInfo {
   // 1.0 when the bound prefiltered_radiance stores its roughness bands as
   // mip levels; 0.0 for the legacy stacked-band atlas.
   float mip_layout;
+  // 1.0 when the radiance is a roughness-mip cubemap (sample the bound
+  // samplerCube); 0.0 to sample the 2D prefiltered_radiance instead.
+  float cube_layout;
 }
 radiance_layout_info;
 
@@ -92,4 +95,23 @@ vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
   float v1 = (b1 + eq.y) / kPrefilterBands;
   return mix(texture(atlas, vec2(eq.x, v0)).rgb,
              texture(atlas, vec2(eq.x, v1)).rgb, t);
+}
+
+// Samples a roughness-mip prefiltered radiance cubemap (mip i = band i) for
+// reflection `direction`. The cube has no pole distortion and seamless edges.
+vec3 SamplePrefilteredRadianceCube(samplerCube radiance, vec3 direction,
+                                   float roughness) {
+  float lod = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);
+  return textureLod(radiance, direction, lod).rgb;
+}
+
+// Samples the prefiltered radiance for `direction`, dispatching on the bound
+// layout (see RadianceLayoutInfo): the cubemap when present, otherwise the 2D
+// equirect atlas. Both samplers are always bound; only one is read.
+vec3 SampleRadianceEnv(sampler2D atlas, samplerCube cube, vec3 direction,
+                       float roughness) {
+  if (radiance_layout_info.cube_layout > 0.5) {
+    return SamplePrefilteredRadianceCube(cube, direction, roughness);
+  }
+  return SamplePrefilteredRadiance(atlas, direction, roughness);
 }
