@@ -29,6 +29,7 @@ import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/sun_light.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
 /// Tags applied environments with the spec they realized from, so
@@ -113,6 +114,16 @@ Future<void> realizeStage(
         ? null
         : Skybox(source, intensity: skyboxSpec.intensity);
   }
+
+  // Drive a sun light from the sky-lighting source when shadows are enabled
+  // and that source has a sun. It shares the bound sky source, so the visible
+  // disk, the baked IBL, and the cast shadow all track one sun.
+  final boundSkySource = scene.skyEnvironment?.source;
+  if (skyEnvironmentSpec?.castShadows == true && boundSkySource is SunSky) {
+    scene.sunLight = SunLight(boundSkySource as SunSky);
+  } else {
+    scene.sunLight = null;
+  }
 }
 
 /// Reads [scene]'s stage render settings back into [document]'s stage.
@@ -156,6 +167,12 @@ void serializeStage(Scene scene, SceneDocument document) {
     }
   } else {
     final source = _serializeSkySource(skyEnvironment.source);
+    // A sun light counts as "the sky casts shadows" only when it is driven by
+    // the same sky source the lighting is, the binding this realizer produces.
+    final castsSkyShadows = identical(
+      scene.sunLight?.source,
+      skyEnvironment.source,
+    );
     stage.skyEnvironment = source == null
         ? null
         : SkyEnvironmentSpec(
@@ -164,6 +181,7 @@ void serializeStage(Scene scene, SceneDocument document) {
             intervalSeconds: skyEnvironment.interval.inMicroseconds / 1e6,
             faceResolution: skyEnvironment.faceResolution,
             equirectWidth: skyEnvironment.equirectWidth,
+            castShadows: castsSkyShadows,
           );
   }
 

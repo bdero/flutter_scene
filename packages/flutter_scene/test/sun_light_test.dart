@@ -1,6 +1,5 @@
 // Covers SunLight: deriving and updating a DirectionalLight from a sky's sun.
 
-import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/sun_light.dart';
 import 'package:flutter_test/flutter_test.dart';

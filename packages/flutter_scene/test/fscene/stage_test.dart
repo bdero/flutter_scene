@@ -64,6 +64,22 @@ void main() {
       expect((fmat.properties['sun_height'] as DoubleValue).value, 0.7);
     });
 
+    test('sky-driven shadow flag round-trips', () {
+      final doc = SceneDocument();
+      doc.stage.skyEnvironment = SkyEnvironmentSpec(
+        GradientSkySpec(),
+        castShadows: true,
+      );
+      var restored = readFscene(writeFscene(doc));
+      expect(restored.stage.skyEnvironment!.castShadows, isTrue);
+
+      // The default (off) stays off and is omitted from the JSON.
+      doc.stage.skyEnvironment = SkyEnvironmentSpec(GradientSkySpec());
+      expect(writeFscene(doc).contains('castShadows'), isFalse);
+      restored = readFscene(writeFscene(doc));
+      expect(restored.stage.skyEnvironment!.castShadows, isFalse);
+    });
+
     test('environment and physical sky sources round-trip', () {
       final doc = SceneDocument();
       doc.stage.skybox = SkyboxSpec(EnvironmentSkySpec(blurriness: 0.4));

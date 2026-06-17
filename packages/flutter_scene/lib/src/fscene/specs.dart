@@ -748,6 +748,7 @@ class SkyEnvironmentSpec {
     this.intervalSeconds = 1.0,
     this.faceResolution = 128,
     this.equirectWidth = 512,
+    this.castShadows = false,
   });
 
   /// The sky baked into the lighting. Must be a shader sky
@@ -768,6 +769,11 @@ class SkyEnvironmentSpec {
 
   /// Width of the assembled equirect the prefilter and SH projection read.
   int equirectWidth;
+
+  /// Whether the sky's sun also casts hard shadows (a sky-driven
+  /// `SunLight`). Applies only when [source] is a sky with a sun
+  /// (`GradientSkySpec`/`PhysicalSkySpec`); ignored otherwise.
+  bool castShadows;
 }
 
 /// One serialized view of the scene: a camera node bound to a target and

@@ -246,6 +246,7 @@ Map<String, dynamic> encodeStage(StageMetadata s) => {
       'intervalSeconds': s.skyEnvironment!.intervalSeconds,
       'faceResolution': s.skyEnvironment!.faceResolution,
       'equirectWidth': s.skyEnvironment!.equirectWidth,
+      if (s.skyEnvironment!.castShadows) 'castShadows': true,
     },
 };
 
@@ -840,6 +841,7 @@ SkyEnvironmentSpec? _decodeSkyEnvironment(Object? json) {
     intervalSeconds: _d(m['intervalSeconds'] ?? 1.0),
     faceResolution: (m['faceResolution'] as num?)?.toInt() ?? 128,
     equirectWidth: (m['equirectWidth'] as num?)?.toInt() ?? 512,
+    castShadows: m['castShadows'] == true,
   );
 }
 
