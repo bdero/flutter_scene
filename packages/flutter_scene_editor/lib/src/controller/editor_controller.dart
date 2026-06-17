@@ -149,8 +149,21 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Opens a controller over a new empty document.
-  static Future<EditorController> empty() =>
-      open(EditorSession(SceneDocument()));
+  ///
+  /// A new scene starts lit by a physical sky, with the sky driving the
+  /// image-based lighting and casting sun shadows, a usable look-dev default
+  /// rather than a black void. The skybox and the sky-lighting binding take
+  /// their own sky-source instances (as the `setSkybox` command does).
+  static Future<EditorController> empty() {
+    final document = SceneDocument();
+    document.stage
+      ..skybox = SkyboxSpec(PhysicalSkySpec())
+      ..skyEnvironment = SkyEnvironmentSpec(
+        PhysicalSkySpec(),
+        castShadows: true,
+      );
+    return open(EditorSession(document));
+  }
 
   /// Opens a controller over a document loaded from `.fscene` [source].
   /// [baseDirectory] resolves any prefab references in the document.
