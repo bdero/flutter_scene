@@ -18,6 +18,7 @@ library;
 
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
@@ -38,6 +39,7 @@ import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
+import '../io/hdr_decoder.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
@@ -809,6 +811,7 @@ class EditorController extends ChangeNotifier {
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
     if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
       await realizeStage(document, scene);
+      await _applyDiskEnvironment();
       return;
     }
     final cheap = transaction.records.every(
@@ -876,11 +879,70 @@ class EditorController extends ChangeNotifier {
     // Apply the document's scene-wide settings (environment/lighting, exposure,
     // tone mapping, anti-aliasing) to the live scene.
     await realizeStage(document, scene);
+    await _applyDiskEnvironment();
     _liveById.clear();
     _sourceIdByLive.clear();
     _index(root, null);
     // Re-apply selection highlights to the freshly realized live nodes.
     _syncHighlights();
+  }
+
+  // The asset path of the disk-loaded environment currently applied, so a
+  // re-realize does not reload an unchanged image, and a cache by path.
+  String? _diskEnvPath;
+  final Map<String, EnvironmentMap> _diskEnvCache = {};
+
+  /// Loads an editor `AssetEnvironment` from disk (an imported `.hdr` or an LDR
+  /// equirect image) and applies it to the live scene. `realizeStage` resolves
+  /// environments through the asset bundle, which a user-picked file is not in,
+  /// so the editor loads it here; a studio/empty environment is left to
+  /// `realizeStage`.
+  Future<void> _applyDiskEnvironment() async {
+    final env = document.stage.environment;
+    if (env is! AssetEnvironment) {
+      _diskEnvPath = null;
+      return;
+    }
+    final path = _resolveAssetPath(env.asset.key);
+    if (path == null || path == _diskEnvPath) return;
+    final loaded = await _loadDiskEnvironment(path);
+    if (loaded != null) {
+      scene.environment = loaded;
+      _diskEnvPath = path;
+      notifyListeners();
+    }
+  }
+
+  String? _resolveAssetPath(String key) {
+    if (key.startsWith('/')) return key;
+    final dir = baseDirectory;
+    return dir == null ? null : '$dir/$key';
+  }
+
+  Future<EnvironmentMap?> _loadDiskEnvironment(String path) async {
+    final cached = _diskEnvCache[path];
+    if (cached != null) return cached;
+    try {
+      final bytes = await File(path).readAsBytes();
+      final EnvironmentMap env;
+      if (path.toLowerCase().endsWith('.hdr')) {
+        final hdr = decodeRadianceHdr(bytes);
+        env = await EnvironmentMap.fromEquirectHdr(
+          linearPixels: hdr.pixels,
+          width: hdr.width,
+          height: hdr.height,
+        );
+      } else {
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        env = await EnvironmentMap.fromUIImages(radianceImage: frame.image);
+      }
+      _diskEnvCache[path] = env;
+      return env;
+    } catch (e) {
+      lastError.value = 'Failed to load environment "$path": $e';
+      return null;
+    }
   }
 
   Future<SceneDocument> _loadPrefab(AssetRef ref) async {

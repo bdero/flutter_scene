@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../controller/editor_controller.dart';
+import '../io/scene_io.dart';
 import 'live_fields.dart';
 
 const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
@@ -65,6 +66,24 @@ class StageSection extends StatelessWidget {
               style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.image_outlined, size: 16),
+            label: const Text(
+              'Import HDR environment',
+              style: TextStyle(fontSize: 12),
+            ),
+            onPressed: () async {
+              final path = await pickEnvironmentPath();
+              if (path != null) await importEnvironmentMap(controller, path);
+            },
+          ),
+        ),
         LiveSlider(
           label: 'Environment intensity',
           value: stage.environmentIntensity,
