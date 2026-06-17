@@ -522,9 +522,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       (id) => !beforeGeo.contains(id),
     );
 
-    // Step 2: create a physically-based material.
+    // Step 2: create a physically-based material. Start half metallic and half
+    // rough, a neutral look-dev default that reads better than the engine's
+    // fully-rough non-metal.
     final beforeMat = Set.of(_ctrl.document.resources.keys);
-    await _ctrl.run('createMaterial', {'type': 'physicallyBased'});
+    await _ctrl.run('createMaterial', {
+      'type': 'physicallyBased',
+      'properties': {'metallic': 0.5, 'roughness': 0.5},
+    });
     final matId = _ctrl.document.resources.keys.firstWhere(
       (id) => !beforeMat.contains(id),
     );
