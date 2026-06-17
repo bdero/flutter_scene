@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 void main() {
   test('setStageProperties updates only given keys and reverts', () {
     final session = EditorSession.empty();
-    final stage = () => session.document.stage;
+    StageMetadata stage() => session.document.stage;
     expect(stage().exposure, 1.0);
     expect(stage().toneMapping, 'pbrNeutral');
     expect(stage().environment, isA<StudioEnvironment>());
@@ -29,5 +29,29 @@ void main() {
     expect(stage().exposure, 1.0);
     expect(stage().toneMapping, 'pbrNeutral');
     expect(stage().environment, isA<StudioEnvironment>());
+  });
+
+  test('setSkybox sets a procedural sky + sky lighting and reverts', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
+    expect(stage().skybox, isNull);
+
+    session.run('setSkybox', {
+      'sky': 'gradient',
+      'sunDirection': {'x': 0.2, 'y': 0.8, 'z': 0.1},
+      'lightScene': true,
+    });
+    expect(stage().skybox?.source, isA<GradientSkySpec>());
+    expect(stage().skyEnvironment, isNotNull);
+
+    // Turning lighting off keeps the skybox but drops the sky environment.
+    session.run('setSkybox', {'sky': 'gradient', 'lightScene': false});
+    expect(stage().skybox?.source, isA<GradientSkySpec>());
+    expect(stage().skyEnvironment, isNull);
+
+    session.undo();
+    session.undo();
+    expect(stage().skybox, isNull);
+    expect(stage().skyEnvironment, isNull);
   });
 }

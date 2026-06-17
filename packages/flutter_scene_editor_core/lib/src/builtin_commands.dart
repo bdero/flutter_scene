@@ -1056,6 +1056,61 @@ final setStageProperties = CommandEntry(
   },
 );
 
+/// Sets the scene skybox (`none`/`environment`/`gradient`/`physical`) and,
+/// when [lightScene] and a procedural sky are chosen, binds that sky as the
+/// scene's image-based lighting. [sunDirection] aims the gradient/physical sun.
+/// Other sky parameters take their defaults (per-field tuning is future work).
+final setSkybox = CommandEntry(
+  name: 'setSkybox',
+  doc: 'Set the scene skybox and optional sky-driven lighting.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(name: 'sky', type: ParamType.string, label: 'Sky'),
+    ParamSpec(
+      name: 'sunDirection',
+      type: ParamType.vec3,
+      label: 'Sun direction',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'lightScene',
+      type: ParamType.boolean,
+      label: 'Light scene with sky',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final sky = requireString(params, 'sky');
+    final sun = optionalVec3(params, 'sunDirection');
+    final lightScene = params['lightScene'] == true;
+    SkySourceSpec? source() => switch (sky) {
+      'gradient' => GradientSkySpec(sunDirection: sun),
+      'physical' => PhysicalSkySpec(sunDirection: sun),
+      'environment' => EnvironmentSkySpec(),
+      _ => null,
+    };
+    final next = _copyStage(ctx.document.stage);
+    final skySource = source();
+    next.skybox = skySource == null ? null : SkyboxSpec(skySource);
+    final canLight = sky == 'gradient' || sky == 'physical';
+    // The sky-lighting binding needs its own shader-sky source instance.
+    next.skyEnvironment = (lightScene && canLight)
+        ? SkyEnvironmentSpec(source()!)
+        : null;
+    return Transaction(
+      name: 'Set skybox',
+      records: [
+        ChangeRecord(
+          targetId: ChangeRecord.rootsTarget,
+          slot: ChangeSlot.stage,
+          oldValue: StageMetadataChange(ctx.document.stage),
+          newValue: StageMetadataChange(next),
+        ),
+      ],
+    );
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Prefab commands.
 // ---------------------------------------------------------------------------
@@ -1471,6 +1526,7 @@ final List<CommandEntry> builtinCommands = [
   setMaterialProperties,
   removeResource,
   setStageProperties,
+  setSkybox,
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,

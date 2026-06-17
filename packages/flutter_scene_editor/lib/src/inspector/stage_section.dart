@@ -6,6 +6,7 @@ library;
 import 'package:flutter/material.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../controller/editor_controller.dart';
 import 'live_fields.dart';
@@ -93,6 +94,107 @@ class StageSection extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('toneMapping', v),
           ),
         ),
+        const Divider(),
+        SkySection(controller: controller),
+      ],
+    );
+  }
+}
+
+/// Editor for the skybox and sky-driven lighting. Procedural skies (gradient /
+/// physical) and the environment sky render with no asset loading; HDR image
+/// environments are not yet authorable here. Edits apply on release (a sky
+/// change re-bakes lighting, too heavy to preview every frame).
+class SkySection extends StatelessWidget {
+  const SkySection({super.key, required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = controller.document.stage;
+    final source = stage.skybox?.source;
+    final type = switch (source) {
+      GradientSkySpec() => 'gradient',
+      PhysicalSkySpec() => 'physical',
+      EnvironmentSkySpec() => 'environment',
+      _ => 'none',
+    };
+    final sun = switch (source) {
+      GradientSkySpec(:final sunDirection) => sunDirection,
+      PhysicalSkySpec(:final sunDirection) => sunDirection,
+      _ => Vector3(0.4, 0.5, 0.6),
+    };
+    final lightScene = stage.skyEnvironment != null;
+    final proceduralSky = type == 'gradient' || type == 'physical';
+
+    void commit({String? newType, Vector3? newSun, bool? newLight}) {
+      final s = newSun ?? sun;
+      controller.run('setSkybox', {
+        'sky': newType ?? type,
+        'sunDirection': {'x': s.x, 'y': s.y, 'z': s.z},
+        'lightScene': newLight ?? lightScene,
+      });
+    }
+
+    Widget axis(String name, double value, Vector3 Function(double) make) =>
+        LiveSlider(
+          label: name,
+          value: value,
+          min: -1,
+          max: 1,
+          // Sky edits re-bake lighting; apply on release only.
+          onPreview: (_) {},
+          onCommit: (v) => commit(newSun: make(v)),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 4),
+          child: Text('Sky', style: TextStyle(fontSize: 13)),
+        ),
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Skybox', style: TextStyle(fontSize: 13)),
+          trailing: DropdownButton<String>(
+            value: type,
+            items: const [
+              DropdownMenuItem(value: 'none', child: Text('None')),
+              DropdownMenuItem(
+                value: 'environment',
+                child: Text('Environment'),
+              ),
+              DropdownMenuItem(value: 'gradient', child: Text('Gradient')),
+              DropdownMenuItem(value: 'physical', child: Text('Physical')),
+            ],
+            onChanged: (v) => v == null ? null : commit(newType: v),
+          ),
+        ),
+        if (proceduralSky) ...[
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Sun direction',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ),
+          axis('X', sun.x, (v) => Vector3(v, sun.y, sun.z)),
+          axis('Y', sun.y, (v) => Vector3(sun.x, v, sun.z)),
+          axis('Z', sun.z, (v) => Vector3(sun.x, sun.y, v)),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Light scene with sky',
+              style: TextStyle(fontSize: 13),
+            ),
+            value: lightScene,
+            onChanged: (v) => commit(newLight: v),
+          ),
+        ],
       ],
     );
   }
