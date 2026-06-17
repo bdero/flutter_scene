@@ -144,7 +144,8 @@ export 'src/skin.dart' show Skin;
 export 'src/sky_environment.dart' show SkyEnvironment, SkyEnvironmentRefresh;
 export 'src/sky_sources.dart' show GradientSkySource, PhysicalSkySource;
 export 'src/skybox.dart'
-    show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox;
+    show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox, SunSky;
+export 'src/sun_light.dart' show SunLight;
 export 'src/surface.dart' show Surface;
 export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'

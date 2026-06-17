@@ -4,10 +4,33 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:vector_math/vector_math.dart';
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+
+/// A sky that exposes a directional sun, so the engine can drive a matching
+/// shadow-casting directional light from it.
+///
+/// The built-in [ShaderSkySource]s with a sun ([GradientSkySource],
+/// [PhysicalSkySource]) implement this; assign one (or any sky that does) to a
+/// `SunLight` to cast hard shadows that track the sky's sun. A custom
+/// [ShaderSkySource] participates by implementing these getters.
+/// {@category Lighting and environment}
+abstract interface class SunSky {
+  /// Direction toward the sun in world space (need not be unit length). The
+  /// derived light travels the opposite way.
+  Vector3 get sunDirection;
+
+  /// Linear-RGB color the sun contributes as a directional light. Combined
+  /// with [sunLightIntensity].
+  Vector3 get sunLightColor;
+
+  /// Scalar intensity for the derived directional light.
+  double get sunLightIntensity;
+}
 
 /// A source of skybox color as a function of world-space view direction.
 ///

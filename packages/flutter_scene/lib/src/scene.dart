@@ -35,6 +35,7 @@ import 'render_view.dart';
 import 'shaders.dart';
 import 'sky_environment.dart';
 import 'skybox.dart';
+import 'sun_light.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
 
@@ -381,6 +382,27 @@ base class Scene implements SceneGraph {
   /// frame). Setting it back to null keeps the last baked environment.
   SkyEnvironment? skyEnvironment;
 
+  SunLight? _sunLight;
+
+  /// Aims [directionalLight] at a sky's sun so cast shadows track the sky.
+  ///
+  /// While set, the binding owns [directionalLight]: each frame the engine
+  /// points the light opposite the sky's sun and recolors it. Clearing it
+  /// (setting null) removes the light the binding was driving. Pair it with a
+  /// [skyEnvironment] on the same sky so soft IBL and the hard shadow agree.
+  SunLight? get sunLight => _sunLight;
+
+  set sunLight(SunLight? value) {
+    // The binding owns the convenience light; when it is cleared, retire the
+    // light it was driving so shadows stop.
+    if (value == null &&
+        _sunLight != null &&
+        identical(directionalLight, _sunLight!.light)) {
+      directionalLight = null;
+    }
+    _sunLight = value;
+  }
+
   // The component backing the [directionalLight] convenience: a single
   // light attached to [root]. Null when no scene-level light is set.
   DirectionalLightComponent? _directionalLightComponent;
@@ -646,6 +668,17 @@ base class Scene implements SceneGraph {
       final baked = skyEnv.bakeIfDue(DateTime.now());
       if (baked != null) {
         environment = baked;
+      }
+    }
+
+    // Aim the sky-driven sun light before the tick collects lights, so its
+    // direction/color follow the sky this frame. The binding mutates one light
+    // in place, so it is registered with the graph once and updated thereafter.
+    final sun = _sunLight;
+    if (sun != null) {
+      final resolved = sun.resolve();
+      if (!identical(directionalLight, resolved)) {
+        directionalLight = resolved;
       }
     }
 

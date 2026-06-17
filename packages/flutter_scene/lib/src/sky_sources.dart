@@ -1,6 +1,8 @@
 /// Built-in procedural sky sources.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/shaders.dart';
@@ -20,7 +22,7 @@ import 'package:vector_math/vector_math.dart';
 /// Like every Geometry and Material constructor, construct only after
 /// `Scene.initializeStaticResources` completes.
 /// {@category Lighting and environment}
-class GradientSkySource extends ShaderSkySource {
+class GradientSkySource extends ShaderSkySource implements SunSky {
   GradientSkySource({
     Vector3? zenithColor,
     Vector3? horizonColor,
@@ -45,6 +47,7 @@ class GradientSkySource extends ShaderSkySource {
   Vector3 groundColor;
 
   /// Direction toward the sun (world space; normalized when used).
+  @override
   Vector3 sunDirection;
 
   /// The sun disk color, in linear HDR (values above 1.0 read as a bright
@@ -53,6 +56,18 @@ class GradientSkySource extends ShaderSkySource {
 
   /// Sharpness exponent of the sun disk; higher is tighter.
   double sunSharpness;
+
+  // The directional-light color/intensity split the HDR [sunColor] into a
+  // unit-ish hue and a magnitude, so the derived light matches the disk.
+  @override
+  Vector3 get sunLightColor {
+    final peak = sunLightIntensity;
+    return peak > 0 ? sunColor / peak : Vector3(1, 1, 1);
+  }
+
+  @override
+  double get sunLightIntensity =>
+      math.max(sunColor.x, math.max(sunColor.y, sunColor.z));
 
   @override
   void bind(
@@ -91,7 +106,7 @@ class GradientSkySource extends ShaderSkySource {
 /// Like every Geometry and Material constructor, construct only after
 /// `Scene.initializeStaticResources` completes.
 /// {@category Lighting and environment}
-class PhysicalSkySource extends ShaderSkySource {
+class PhysicalSkySource extends ShaderSkySource implements SunSky {
   PhysicalSkySource({
     Vector3? sunDirection,
     this.sunAngularRadius = 0.0175,
@@ -110,6 +125,7 @@ class PhysicalSkySource extends ShaderSkySource {
        super(fragmentShader: baseShaderLibrary['SkyPhysicalFragment']!);
 
   /// Direction toward the sun (world space; normalized when used).
+  @override
   Vector3 sunDirection;
 
   /// Angular radius of the sun disk, in radians. The physical sun is about
@@ -140,6 +156,16 @@ class PhysicalSkySource extends ShaderSkySource {
 
   /// Overall intensity multiplier.
   double energy;
+
+  // TODO(physical-sun-radiance): derive the color from the atmosphere's
+  // transmittance toward [sunDirection] so the light reddens and dims near the
+  // horizon, matching the rendered disk. For now a neutral daylight sun scaled
+  // by [energy].
+  @override
+  Vector3 get sunLightColor => Vector3(1.0, 0.98, 0.95);
+
+  @override
+  double get sunLightIntensity => 3.0 * energy;
 
   @override
   void bind(
