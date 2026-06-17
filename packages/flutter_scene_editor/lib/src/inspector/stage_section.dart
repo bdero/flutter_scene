@@ -129,15 +129,18 @@ class SkySection extends StatelessWidget {
       _ => Vector3(0.4, 0.5, 0.6),
     };
     final lightScene = stage.skyEnvironment != null;
+    final castShadows = stage.skyEnvironment?.castShadows ?? false;
     final proceduralSky = type == 'gradient' || type == 'physical';
 
-    // The type dropdown and lighting toggle are structural (setSkybox keeps
+    // The type dropdown and lighting toggles are structural (setSkybox keeps
     // the tuned parameters across them); the per-parameter fields below patch
     // the current sky through setSkyParameters.
     void setType(String newType) =>
         controller.run('setSkybox', {'sky': newType});
     void setLight(bool on) =>
         controller.run('setSkybox', {'sky': type, 'lightScene': on});
+    void setShadows(bool on) =>
+        controller.run('setSkybox', {'sky': type, 'castShadows': on});
     void runParams(Map<String, Object> properties) =>
         controller.run('setSkyParameters', {'properties': properties});
     Map<String, double> vecMap(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
@@ -236,6 +239,21 @@ class SkySection extends StatelessWidget {
             value: lightScene,
             onChanged: setLight,
           ),
+          if (lightScene)
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Cast sun shadows',
+                style: TextStyle(fontSize: 13),
+              ),
+              subtitle: const Text(
+                'Hard shadows that track the sun.',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+              value: castShadows,
+              onChanged: setShadows,
+            ),
         ],
         if (source is GradientSkySpec) ...[
           const Divider(height: 12),

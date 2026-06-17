@@ -1122,7 +1122,9 @@ Vector3? _specSunDirection(SkySourceSpec? source) => switch (source) {
 /// sun direction carries across a gradient/physical switch). [sunDirection]
 /// optionally seeds the sun; finer parameter tuning goes through
 /// `setSkyParameters`. [lightScene] defaults to the scene's current
-/// sky-lighting state when omitted.
+/// sky-lighting state when omitted. [castShadows] enables a sky-driven sun
+/// light (hard shadows tracking the sun) and applies only while [lightScene]
+/// is on; it defaults to the scene's current state when omitted.
 final setSkybox = CommandEntry(
   name: 'setSkybox',
   doc: 'Set the scene skybox and optional sky-driven lighting.',
@@ -1141,6 +1143,12 @@ final setSkybox = CommandEntry(
       label: 'Light scene with sky',
       required: false,
     ),
+    ParamSpec(
+      name: 'castShadows',
+      type: ParamType.boolean,
+      label: 'Cast sun shadows',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final sky = requireString(params, 'sky');
@@ -1149,6 +1157,9 @@ final setSkybox = CommandEntry(
     final lightScene = params.containsKey('lightScene')
         ? params['lightScene'] == true
         : old.skyEnvironment != null;
+    final castShadows = params.containsKey('castShadows')
+        ? params['castShadows'] == true
+        : (old.skyEnvironment?.castShadows ?? false);
     // Preserve the current sky's parameters when the type is unchanged;
     // otherwise start from the new type's defaults.
     final current = old.skybox?.source;
@@ -1180,6 +1191,7 @@ final setSkybox = CommandEntry(
             intervalSeconds: priorEnv?.intervalSeconds ?? 1.0,
             faceResolution: priorEnv?.faceResolution ?? 128,
             equirectWidth: priorEnv?.equirectWidth ?? 512,
+            castShadows: castShadows,
           )
         : null;
     return Transaction(
@@ -1234,6 +1246,7 @@ final setSkyParameters = CommandEntry(
         intervalSeconds: priorEnv.intervalSeconds,
         faceResolution: priorEnv.faceResolution,
         equirectWidth: priorEnv.equirectWidth,
+        castShadows: priorEnv.castShadows,
       );
     }
     return Transaction(

@@ -108,6 +108,37 @@ void main() {
     );
   });
 
+  test('setSkybox toggles sky-driven shadows and they survive tuning', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
+
+    session.run('setSkybox', {
+      'sky': 'physical',
+      'lightScene': true,
+      'castShadows': true,
+    });
+    expect(stage().skyEnvironment!.castShadows, isTrue);
+
+    // Tuning a parameter keeps shadows on.
+    session.run('setSkyParameters', {
+      'properties': {'energy': 2.0},
+    });
+    expect(stage().skyEnvironment!.castShadows, isTrue);
+
+    // Turning shadows off keeps the sky lighting.
+    session.run('setSkybox', {'sky': 'physical', 'castShadows': false});
+    expect(stage().skyEnvironment, isNotNull);
+    expect(stage().skyEnvironment!.castShadows, isFalse);
+
+    // Shadows require sky lighting; dropping it drops the binding entirely.
+    session.run('setSkybox', {
+      'sky': 'physical',
+      'lightScene': false,
+      'castShadows': true,
+    });
+    expect(stage().skyEnvironment, isNull);
+  });
+
   test('setSkybox carries the sun direction across a type switch', () {
     final session = EditorSession.empty();
     StageMetadata stage() => session.document.stage;
