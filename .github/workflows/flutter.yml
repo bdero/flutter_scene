@@ -11,7 +11,7 @@ jobs:
     name: Lint
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -36,7 +36,7 @@ jobs:
         package:
           - packages/flutter_scene
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:

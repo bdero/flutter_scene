@@ -61,7 +61,7 @@ jobs:
           - { runner: windows-latest, triple: x86_64-pc-windows-msvc, ext: dll }
           - { runner: windows-latest, triple: aarch64-pc-windows-msvc, ext: dll, optional: true }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -174,7 +174,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download all binaries
         uses: actions/download-artifact@v8

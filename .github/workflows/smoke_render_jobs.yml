@@ -46,11 +46,11 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: "1"
       GALLIUM_DRIVER: llvmpipe
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
         with:
           ref: ${{ inputs.checkout_ref }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref == '' }}
       - uses: subosito/flutter-action@v2
         with:
@@ -127,11 +127,11 @@ jobs:
             expected_backend: vulkan
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
         with:
           ref: ${{ inputs.checkout_ref }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref == '' }}
       - uses: subosito/flutter-action@v2
         with:
@@ -231,11 +231,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
         with:
           ref: ${{ inputs.checkout_ref }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref == '' }}
       - uses: subosito/flutter-action@v2
         with:
