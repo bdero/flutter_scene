@@ -240,8 +240,9 @@ Map<String, dynamic> encodeStage(StageMetadata s) => {
 };
 
 /// Encodes the look fields shared by the stage (the global base) and each
-/// environment volume: the image-based-lighting environment, its intensity and
-/// reflection size, exposure, tone mapping, the skybox, and sky lighting.
+/// environment volume. They are the image-based-lighting environment, its
+/// intensity and reflection size, exposure, tone mapping, the skybox, and sky
+/// lighting.
 Map<String, dynamic> _encodeLook({
   required EnvironmentSpec environment,
   required double environmentIntensity,

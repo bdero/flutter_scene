@@ -722,7 +722,7 @@ class EditorController extends ChangeNotifier {
   }) {
     final settings = _previewSettings(volumeIndex);
     if (settings != null) {
-      // Volumes are active: the per-frame blend recomputes the live fields, so
+      // With volumes active, the per-frame blend recomputes the live fields, so
       // preview must write the holder the blend reads from.
       if (exposure != null) settings.exposure = exposure;
       if (environmentIntensity != null) {

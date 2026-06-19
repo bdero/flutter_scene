@@ -462,7 +462,7 @@ class SkySection extends StatelessWidget {
   }
 }
 
-/// The environment-volume stack: an add control plus one expandable card per
+/// The environment-volume stack, an add control plus one expandable card per
 /// volume, each carrying its region/blend controls and the reused
 /// environment/sky inspector targeting that volume.
 class VolumesSection extends StatelessWidget {
@@ -553,8 +553,8 @@ class _VolumeCard extends StatelessWidget {
       'z': vec.z,
     };
 
-    // Center axis slider: previews live (coverage updates as it drags), commits
-    // on release.
+    // Center axis slider that previews live (coverage updates as it drags) and
+    // commits on release.
     Widget centerAxis(String name, int axis) => LiveSlider(
       label: 'Center $name',
       value: center[axis],

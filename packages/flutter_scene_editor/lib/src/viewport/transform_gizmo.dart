@@ -224,7 +224,7 @@ class VolumeBoundsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     for (var i = 0; i < volumes.length; i++) {
       final bounds = volumes[i].bounds;
-      if (bounds == null) continue; // Global volume: no region to draw.
+      if (bounds == null) continue; // Global volume has no region to draw.
       final active = i == activeIndex;
       final blend = volumes[i].blendDistance;
       _paintBounds(canvas, size, bounds, 0, _volumeColor, active ? 2.5 : 1.5);

@@ -1150,9 +1150,9 @@ class _VolumeLook implements _LookView {
   set skyEnvironment(SkyEnvironmentSpec? value) => v.skyEnvironment = value;
 }
 
-// Resolves the look-edit target on a freshly copied stage: the stage itself
-// when [index] is null, otherwise the volume at [index]. Throws when [index]
-// is out of range.
+// Resolves the look-edit target on a freshly copied stage. Returns the stage
+// itself when [index] is null, otherwise the volume at [index]. Throws when
+// [index] is out of range.
 _LookView _lookTarget(StageMetadata next, int? index) {
   if (index == null) return _StageLook(next);
   if (index < 0 || index >= next.volumes.length) {

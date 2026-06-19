@@ -811,7 +811,7 @@ class SphereBoundsSpec extends VolumeBoundsSpec {
   double radius;
 }
 
-/// A spatial environment volume: a region whose look overrides the stage's,
+/// A spatial environment volume, a region whose look overrides the stage's,
 /// blended by camera position so the environment transitions as the camera
 /// moves between areas.
 ///
