@@ -169,6 +169,8 @@ void _bindEnvironmentSource(
   final skyboxInfo = Float32List(4);
   skyboxInfo[0] = source.blurriness;
   skyboxInfo[1] = intensity;
+  skyboxInfo[2] = environment.hasBackgroundTexture ? 1.0 : 0.0;
+  skyboxInfo[3] = environment.backgroundIsLinear ? 1.0 : 0.0;
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('SkyboxInfo'),
     transientsBuffer.emplace(ByteData.sublistView(skyboxInfo)),
@@ -180,5 +182,17 @@ void _bindEnvironmentSource(
     renderPass,
     fragmentShader,
     environment,
+  );
+  // The full-res source equirect for a sharp background (a dummy when the
+  // environment has none; the SkyboxInfo flag gates its use).
+  renderPass.bindTexture(
+    fragmentShader.getUniformSlot('environment_background'),
+    environment.backgroundTexture,
+    sampler: gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.linear,
+      magFilter: gpu.MinMagFilter.linear,
+      widthAddressMode: gpu.SamplerAddressMode.repeat,
+      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    ),
   );
 }

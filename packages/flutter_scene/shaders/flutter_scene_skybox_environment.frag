@@ -11,6 +11,10 @@
 
 uniform sampler2D prefiltered_radiance;
 uniform samplerCube prefiltered_radiance_cube;
+// The full-resolution source equirect of an image environment, sampled
+// directly so the visible sky is sharp (decoupled from the small reflection
+// cube). A dummy when has_background is 0 (sky-baked environments).
+uniform sampler2D environment_background;
 
 uniform SkyboxInfo {
   // 0.0 = sharp, 1.0 = fully blurred.
@@ -18,8 +22,10 @@ uniform SkyboxInfo {
   // Scene.environmentIntensity * Skybox.intensity, so a default skybox
   // matches the brightness of image-based reflections.
   float intensity;
-  float _pad0;
-  float _pad1;
+  // 1.0 when environment_background is a real source equirect to sample sharp.
+  float has_background;
+  // 1.0 when environment_background holds linear radiance; 0.0 when sRGB.
+  float source_is_linear;
 }
 skybox_info;
 
@@ -27,12 +33,30 @@ in vec3 v_ray;
 
 out vec4 frag_color;
 
-#include <texture.glsl>  // SamplePrefilteredRadiance
+#include <pbr.glsl>      // SRGBToLinear
+#include <texture.glsl>  // SampleRadianceEnv, SphericalToEquirectangular
 
 void main() {
   vec3 direction = normalize(v_ray);
-  vec3 radiance = SampleRadianceEnv(
-      prefiltered_radiance, prefiltered_radiance_cube, direction,
-      clamp(skybox_info.blurriness, 0.0, 1.0));
+  float blurriness = clamp(skybox_info.blurriness, 0.0, 1.0);
+  // The convolved cube/atlas gives the blurred background (and reflections).
+  vec3 blurred = SampleRadianceEnv(
+      prefiltered_radiance, prefiltered_radiance_cube, direction, blurriness);
+
+  vec3 radiance;
+  if (skybox_info.has_background > 0.5) {
+    // Sample the full-res source for a sharp sky, blending toward the cube as
+    // blurriness rises (the cube already encodes the roughness blur). The
+    // source stores up at the top (V = 0), so flip V to match
+    // SphericalToEquirectangular.
+    vec2 uv = SphericalToEquirectangular(direction);
+    uv.y = 1.0 - uv.y;
+    vec3 sharp = texture(environment_background, uv).rgb;
+    sharp =
+        skybox_info.source_is_linear > 0.5 ? sharp : SRGBToLinear(sharp);
+    radiance = mix(sharp, blurred, blurriness);
+  } else {
+    radiance = blurred;
+  }
   frag_color = vec4(radiance * skybox_info.intensity, 1.0);
 }

@@ -44,6 +44,11 @@ base class EnvironmentMap {
   }) : assert(sh.length == kDiffuseShCoefficientCount),
        _diffuseSphericalHarmonics = sh,
        _diffuseShTexture = _shTextureFromList(sh) {
+    // An image environment's full-resolution source equirect, retained so the
+    // visible sky samples it directly (sharp) instead of the small reflection
+    // cube. The source is also the warm-rebake source on web.
+    _backgroundTexture = rebakeSource;
+    _backgroundIsLinear = rebakeSourceIsLinear;
     _registerForWarmupRebakeIfCold(rebakeSource, rebakeSourceIsLinear);
   }
 
@@ -547,6 +552,12 @@ base class EnvironmentMap {
   final List<Vector3> _diffuseSphericalHarmonics;
   final gpu.Texture _diffuseShTexture;
 
+  // The full-res source equirect for an image environment's background, or null
+  // (sky-baked / GPU-supplied environments have no source equirect and use the
+  // reflection cube for the background).
+  gpu.Texture? _backgroundTexture;
+  bool _backgroundIsLinear = false;
+
   // The equirect source this environment was prefiltered from, retained only
   // while it awaits a warm-context re-bake (web only); dropped once re-baked
   // or when built warm, so steady-state memory is unchanged.
@@ -629,6 +640,19 @@ base class EnvironmentMap {
   /// when the radiance is the equirect 2D layout.
   gpu.Texture get prefilteredRadianceCube =>
       usesCubeRadianceLayout ? _prefilteredRadianceTexture : _blackCube();
+
+  /// Whether this environment has a full-resolution source equirect for its
+  /// background (image environments do; sky-baked / GPU-supplied ones do not).
+  bool get hasBackgroundTexture => _backgroundTexture != null;
+
+  /// The full-res source equirect sampled for the visible background, or a dummy
+  /// when [hasBackgroundTexture] is false (the sampler must still be bound).
+  gpu.Texture get backgroundTexture =>
+      _backgroundTexture ?? Material.getBlackPlaceholderTexture();
+
+  /// Whether [backgroundTexture] holds linear radiance (an HDR source) rather
+  /// than sRGB-encoded color.
+  bool get backgroundIsLinear => _backgroundIsLinear;
 
   /// Whether the 2D [prefilteredRadianceTexture] stores its roughness bands as
   /// mip levels (see [useMipRadianceLayout]). Always false for the cube layout.
