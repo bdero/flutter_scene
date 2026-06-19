@@ -621,7 +621,15 @@ LocalId? _buildTexture(
       // base level only, so storing mips would just bloat the container. Mip
       // downsampling should then be gamma-correct for base-color (sRGB) roles,
       // which is where knowing the texture's material slot becomes relevant.
-      final bytes = compressTextures
+      // ASTC 4x4 (the compressed format) requires both dimensions to be a
+      // multiple of the 4x4 block size; a non-aligned compressed texture is
+      // rejected at GPU load and shows a placeholder. Fall back to uncompressed
+      // rgba8 for those.
+      // TODO(texture-compression): pad/rescale to a multiple of 4 (adjusting
+      // UVs) so these can stay compressed.
+      final blockAligned = rgba.width % 4 == 0 && rgba.height % 4 == 0;
+      final compress = compressTextures && blockAligned;
+      final bytes = compress
           ? encodeImageToKtx2Bytes(
               raw,
               rgba.width,
@@ -633,7 +641,7 @@ LocalId? _buildTexture(
         PayloadSpec(
           document.newId(),
           encoding: PayloadEncoding.image,
-          format: compressTextures ? 'ktx2' : 'rgba8',
+          format: compress ? 'ktx2' : 'rgba8',
           width: rgba.width,
           height: rgba.height,
           length: bytes.length,
