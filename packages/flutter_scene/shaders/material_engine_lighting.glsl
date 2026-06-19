@@ -69,6 +69,11 @@ uniform FragInfo {
   // reciprocal of the render-target size, to turn gl_FragCoord into the
   // occlusion-texture UV.
   vec4 ssao_params;
+  // Image-based-lighting cross-fade. x: blend toward the secondary environment
+  // (the *_b samplers), 0 samples only the primary. yzw reserved. Both
+  // environments share RadianceLayoutInfo (the layout is a per-backend choice,
+  // not per-environment).
+  vec4 radiance_blend;
 }
 frag_info;
 
@@ -83,6 +88,12 @@ uniform sampler2D shadow_map;
 // computed on the GPU, need no read-back. The diffuse_sh* uniform fields above
 // are unused.
 uniform sampler2D sh_coefficients;
+// The secondary environment cross-faded in by frag_info.radiance_blend.x: its
+// prefiltered radiance (2D atlas and cubemap, the same layout pair as the
+// primary) and diffuse SH. A dummy is bound when no cross-fade is active.
+uniform sampler2D prefiltered_radiance_b;
+uniform samplerCube prefiltered_radiance_cube_b;
+uniform sampler2D sh_coefficients_b;
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.

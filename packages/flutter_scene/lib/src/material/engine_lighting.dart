@@ -16,11 +16,11 @@ import 'package:flutter_scene/src/material/material.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (640 bytes / 160 floats:
-  /// the mat4 `environment_transform` ends at float 155, followed by the
-  /// `ssao_params` vec4 at floats 156..159). See the layout map in the
-  /// implementation.
-  static const fragInfoFloatCount = 160;
+  /// The float count of the full `FragInfo` block (656 bytes / 164 floats:
+  /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
+  /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
+  /// 160..163). See the layout map in the implementation.
+  static const fragInfoFloatCount = 164;
 
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
@@ -86,6 +86,11 @@ class EngineLightingUniforms {
     final viewport = lighting.viewportSize;
     fragInfo[158] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
     fragInfo[159] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
+    // radiance_blend at [160..163]: the IBL cross-fade factor toward the
+    // secondary environment, 0 (and ignored) when there is no secondary.
+    fragInfo[160] = lighting.environmentMapB != null
+        ? lighting.environmentBlend.clamp(0.0, 1.0)
+        : 0.0;
   }
 
   // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound
@@ -196,6 +201,10 @@ class EngineLightingUniforms {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
+    // The secondary cross-fade environment (the *_b samplers). When no
+    // cross-fade is active the primary is bound here too (a valid no-op, since
+    // frag_info.radiance_blend.x is 0 and the shader never reads it).
+    _bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
     // Screen-space ambient occlusion. Bilinear so a half-resolution
     // occlusion buffer upsamples smoothly; a white placeholder makes the
     // sample a no-op when occlusion is off. The shader gates it on
@@ -206,6 +215,49 @@ class EngineLightingUniforms {
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
         magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+  }
+
+  // Binds the secondary environment's prefiltered radiance and diffuse SH to
+  // the `_b` samplers, with the same options as the primary (both share the
+  // bound RadianceLayoutInfo, so the layout flag is not re-bound).
+  static void _bindSecondaryRadiance(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    EnvironmentMap env,
+  ) {
+    final mipLayout = env.usesMipRadianceLayout;
+    pass.bindTexture(
+      shader.getUniformSlot('prefiltered_radiance_b'),
+      env.prefilteredRadianceTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        mipFilter: mipLayout ? gpu.MipFilter.linear : gpu.MipFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.repeat,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    pass.bindTexture(
+      shader.getUniformSlot('prefiltered_radiance_cube_b'),
+      env.prefilteredRadianceCube,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        mipFilter: gpu.MipFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    pass.bindTexture(
+      shader.getUniformSlot('sh_coefficients_b'),
+      env.diffuseShTexture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
         widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),

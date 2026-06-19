@@ -14,21 +14,23 @@
 // The coefficients already include the cosine convolution and 1/pi, so
 // the result is E(n)/pi. Must use the same real-SH basis the CPU-side
 // projection in EnvironmentMap.computeDiffuseSphericalHarmonics uses.
-// Fetches SH coefficient i (0..8) from the 9x1 sh_coefficients texture.
-vec3 DiffuseShCoefficient(float i) {
-  return texture(sh_coefficients, vec2((i + 0.5) / 9.0, 0.5)).xyz;
+// Fetches SH coefficient i (0..8) from a 9x1 coefficient texture.
+vec3 DiffuseShCoefficient(sampler2D coefficients, float i) {
+  return texture(coefficients, vec2((i + 0.5) / 9.0, 0.5)).xyz;
 }
 
-vec3 EvaluateDiffuseSH(vec3 n) {
-  return DiffuseShCoefficient(0.0) * 0.282095 +
-         DiffuseShCoefficient(1.0) * (0.488603 * n.y) +
-         DiffuseShCoefficient(2.0) * (0.488603 * n.z) +
-         DiffuseShCoefficient(3.0) * (0.488603 * n.x) +
-         DiffuseShCoefficient(4.0) * (1.092548 * n.x * n.y) +
-         DiffuseShCoefficient(5.0) * (1.092548 * n.y * n.z) +
-         DiffuseShCoefficient(6.0) * (0.315392 * (3.0 * n.z * n.z - 1.0)) +
-         DiffuseShCoefficient(7.0) * (1.092548 * n.x * n.z) +
-         DiffuseShCoefficient(8.0) * (0.546274 * (n.x * n.x - n.y * n.y));
+vec3 EvaluateDiffuseSH(sampler2D coefficients, vec3 n) {
+  return DiffuseShCoefficient(coefficients, 0.0) * 0.282095 +
+         DiffuseShCoefficient(coefficients, 1.0) * (0.488603 * n.y) +
+         DiffuseShCoefficient(coefficients, 2.0) * (0.488603 * n.z) +
+         DiffuseShCoefficient(coefficients, 3.0) * (0.488603 * n.x) +
+         DiffuseShCoefficient(coefficients, 4.0) * (1.092548 * n.x * n.y) +
+         DiffuseShCoefficient(coefficients, 5.0) * (1.092548 * n.y * n.z) +
+         DiffuseShCoefficient(coefficients, 6.0) *
+             (0.315392 * (3.0 * n.z * n.z - 1.0)) +
+         DiffuseShCoefficient(coefficients, 7.0) * (1.092548 * n.x * n.z) +
+         DiffuseShCoefficient(coefficients, 8.0) *
+             (0.546274 * (n.x * n.x - n.y * n.y));
 }
 
 // One rotated Poisson-disk PCF tap into a cascade's atlas tile. Factored out
@@ -231,12 +233,25 @@ vec4 EvaluateLighting(MaterialInputs material) {
   mat3 environment_transform = mat3(frag_info.environment_transform);
   vec3 env_normal = environment_transform * normal;
   vec3 env_reflection = environment_transform * reflection_normal;
-  vec3 irradiance = max(EvaluateDiffuseSH(env_normal), vec3(0.0)) *
-                    frag_info.environment_intensity;
+  vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal),
+                        vec3(0.0));
   vec3 prefiltered_color =
       SampleRadianceEnv(prefiltered_radiance, prefiltered_radiance_cube,
-                        env_reflection, roughness) *
-      frag_info.environment_intensity;
+                        env_reflection, roughness);
+  // Cross-fade a secondary environment in (area transitions) when active. Both
+  // share the bound layout, so the same samplers' _b pair is read.
+  float env_blend = frag_info.radiance_blend.x;
+  if (env_blend > 0.0) {
+    vec3 irradiance_b = max(EvaluateDiffuseSH(sh_coefficients_b, env_normal),
+                            vec3(0.0));
+    vec3 prefiltered_b =
+        SampleRadianceEnv(prefiltered_radiance_b, prefiltered_radiance_cube_b,
+                          env_reflection, roughness);
+    irradiance = mix(irradiance, irradiance_b, env_blend);
+    prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
+  }
+  irradiance *= frag_info.environment_intensity;
+  prefiltered_color *= frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
   // [0, 1] to avoid edge-tap artifacts.
