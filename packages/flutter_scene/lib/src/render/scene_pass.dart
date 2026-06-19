@@ -33,6 +33,8 @@ class ScenePass extends RenderGraphPass {
     required RenderScene renderScene,
     required ui.Size dimensions,
     required EnvironmentMap environmentMap,
+    EnvironmentMap? environmentMapB,
+    double environmentBlend = 0.0,
     required double environmentIntensity,
     Matrix3? environmentTransform,
     Skybox? skybox,
@@ -47,6 +49,8 @@ class ScenePass extends RenderGraphPass {
        _renderScene = renderScene,
        _dimensions = dimensions,
        _environmentMap = environmentMap,
+       _environmentMapB = environmentMapB,
+       _environmentBlend = environmentBlend,
        _environmentIntensity = environmentIntensity,
        _environmentTransform = environmentTransform,
        _skybox = skybox,
@@ -60,6 +64,8 @@ class ScenePass extends RenderGraphPass {
   final RenderScene _renderScene;
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
+  final EnvironmentMap? _environmentMapB;
+  final double _environmentBlend;
   final double _environmentIntensity;
   final Matrix3? _environmentTransform;
   final Skybox? _skybox;
@@ -130,6 +136,8 @@ class ScenePass extends RenderGraphPass {
     );
     final lighting = Lighting(
       environmentMap: _environmentMap,
+      environmentMapB: _environmentMapB,
+      environmentBlend: _environmentBlend,
       environmentIntensity: _environmentIntensity,
       environmentTransform: _environmentTransform,
       directionalLight: _directionalLight,

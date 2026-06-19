@@ -469,17 +469,41 @@ base class Scene implements SceneGraph {
   /// [baseEnvironment] is null. See [EnvironmentVolume].
   final List<EnvironmentVolume> environmentVolumes = [];
 
+  // The secondary image-based-lighting environment and the factor blending the
+  // live [environment] toward it this frame, resolved from the volume blend so
+  // reflections and ambient cross-fade instead of switching. Null/0 when a
+  // single environment is in effect. Read by the render path into ScenePass.
+  EnvironmentMap? _crossfadeEnvironment;
+  double _crossfadeBlend = 0.0;
+
   // Applies the camera-position blend of [environmentVolumes] over
   // [baseEnvironment] to the live look fields, before the environment is used
   // this frame. A no-op unless both a base and volumes are set.
   void _applyEnvironmentVolumes(Camera camera) {
     final base = baseEnvironment;
-    if (base == null || environmentVolumes.isEmpty) return;
-    blendEnvironmentVolumes(
+    if (base == null || environmentVolumes.isEmpty) {
+      _crossfadeEnvironment = null;
+      _crossfadeBlend = 0.0;
+      return;
+    }
+    final position = camera.position;
+    blendEnvironmentVolumes(base, environmentVolumes, position).applyTo(this);
+    // Keep the image-based lighting continuous across the midpoint: hold the
+    // primary environment and pass the secondary plus a blend factor to the
+    // material, rather than letting applyTo switch it.
+    final crossfade = resolveEnvironmentCrossfade(
       base,
       environmentVolumes,
-      camera.position,
-    ).applyTo(this);
+      position,
+    );
+    if (crossfade.secondary != null) {
+      environment = crossfade.primary;
+      _crossfadeEnvironment = crossfade.secondary;
+      _crossfadeBlend = crossfade.blend;
+    } else {
+      _crossfadeEnvironment = null;
+      _crossfadeBlend = 0.0;
+    }
   }
 
   /// How the selection outline is drawn around nodes that have a
@@ -710,6 +734,14 @@ base class Scene implements SceneGraph {
       final baked = skyEnv.bakeIfDue(DateTime.now());
       if (baked != null) {
         environment = baked;
+        // When volume blending holds a sky-lit base, the base snapshot's
+        // environment is captured once and would otherwise go stale as the sky
+        // re-bakes. Refresh it, but only while the active binding is the base's
+        // own (not a volume's), so a volume's bake never overwrites the base.
+        final base = baseEnvironment;
+        if (base != null && identical(skyEnv, base.skyEnvironment)) {
+          base.environment = baked;
+        }
       }
     }
 
@@ -988,6 +1020,8 @@ base class Scene implements SceneGraph {
         renderScene: renderScene,
         dimensions: pixelSize,
         environmentMap: environmentMap,
+        environmentMapB: _crossfadeEnvironment,
+        environmentBlend: _crossfadeBlend,
         environmentIntensity: environmentIntensity,
         environmentTransform: environmentTransform,
         skybox: skybox,

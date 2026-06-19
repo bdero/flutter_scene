@@ -9,6 +9,7 @@ import 'dart:math' as math;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/environment_settings.dart';
+import 'package:flutter_scene/src/material/environment.dart';
 
 /// The shape of an [EnvironmentVolume]'s region.
 /// {@category Lighting and environment}
@@ -131,4 +132,54 @@ EnvironmentSettings blendEnvironmentVolumes(
     result = EnvironmentSettings.lerp(result, volume.settings, w);
   }
   return result;
+}
+
+/// The dominant pair of image-based-lighting environments and the factor to
+/// blend between them for a camera at [cameraPosition], so reflections and
+/// ambient can cross-fade rather than switching at the midpoint.
+///
+/// Returns `(primary, secondary, blend)`: sample `primary` and `secondary` and
+/// mix toward `secondary` by `blend`. `secondary` is null (and `blend` 0) when
+/// a single environment is in effect.
+///
+/// Only static environments cross-fade. A sky-lit look's image-based lighting
+/// comes from a per-frame bake that owns a single environment, and
+/// [EnvironmentSettings.lerp] switches that binding discretely, so when a
+/// contributing look in the transition is sky-lit this returns no secondary and
+/// the discrete switch stands. See `notes` `TODO(dual-sky-bake)`.
+({EnvironmentMap? primary, EnvironmentMap? secondary, double blend})
+resolveEnvironmentCrossfade(
+  EnvironmentSettings base,
+  List<EnvironmentVolume> volumes,
+  Vector3 cameraPosition,
+) {
+  bool isStatic(EnvironmentSettings s) =>
+      s.skyEnvironment == null && s.environment != null;
+  if (!isStatic(base)) {
+    return (primary: base.environment, secondary: null, blend: 0.0);
+  }
+
+  final contributions = <(EnvironmentVolume, double)>[];
+  for (final volume in volumes) {
+    final w = (volume.coverage(cameraPosition) * volume.weight).clamp(0.0, 1.0);
+    if (w > 0) contributions.add((volume, w));
+  }
+  contributions.sort((a, b) => a.$1.priority.compareTo(b.$1.priority));
+
+  var primary = base.environment;
+  EnvironmentMap? secondary;
+  var blend = 0.0;
+  for (final (volume, w) in contributions) {
+    if (!isStatic(volume.settings)) {
+      return (primary: base.environment, secondary: null, blend: 0.0);
+    }
+    final env = volume.settings.environment;
+    if (identical(env, primary)) continue;
+    // Collapse the running pair to its dominant member, then start a new fade
+    // toward this volume's environment.
+    primary = blend >= 0.5 ? (secondary ?? primary) : primary;
+    secondary = env;
+    blend = w;
+  }
+  return (primary: primary, secondary: secondary, blend: blend);
 }

@@ -301,6 +301,8 @@ class ShadowCascade {
 class Lighting {
   Lighting({
     required this.environmentMap,
+    this.environmentMapB,
+    this.environmentBlend = 0.0,
     this.environmentIntensity = 1.0,
     Matrix3? environmentTransform,
     this.directionalLight,
@@ -314,6 +316,15 @@ class Lighting {
 
   /// The image-based-lighting environment in effect for this draw.
   final EnvironmentMap environmentMap;
+
+  /// A secondary environment cross-faded with [environmentMap] by
+  /// [environmentBlend], or null when a single environment is in effect.
+  final EnvironmentMap? environmentMapB;
+
+  /// The factor blending [environmentMap] toward [environmentMapB] (`0` uses
+  /// only [environmentMap], `1` only [environmentMapB]). Ignored when
+  /// [environmentMapB] is null.
+  final double environmentBlend;
 
   /// Scalar multiplier applied to [environmentMap]'s contribution
   /// (the scene's `environmentIntensity`).
