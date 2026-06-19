@@ -7,6 +7,8 @@
 /// [registerBuiltinCommands].
 library;
 
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
@@ -876,6 +878,58 @@ final createMaterial = CommandEntry(
   },
 );
 
+/// Creates a texture resource from raw RGBA8 image bytes (`width * height * 4`
+/// bytes, row-major, passed as the `bytes` param). UI-driven (an importer
+/// decodes the image); not practical over MCP. Returns nothing; the caller
+/// finds the new resource id by diffing the resource pool.
+final createTextureResource = CommandEntry(
+  name: 'createTextureResource',
+  doc: 'Create a texture resource from raw RGBA8 image bytes.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'width', type: ParamType.integer, label: 'Width'),
+    ParamSpec(name: 'height', type: ParamType.integer, label: 'Height'),
+  ],
+  execute: (ctx, params) {
+    final width = requireInt(params, 'width');
+    final height = requireInt(params, 'height');
+    final bytes = params['bytes'];
+    if (bytes is! Uint8List) {
+      throw const CommandException(
+        'createTextureResource requires rgba8 bytes (Uint8List)',
+      );
+    }
+    final expected = width * height * 4;
+    if (bytes.length != expected) {
+      throw CommandException(
+        'bytes length ${bytes.length} != width*height*4 ($expected)',
+      );
+    }
+    final payload = PayloadSpec(
+      ctx.document.newId(),
+      encoding: PayloadEncoding.image,
+      format: 'rgba8',
+      width: width,
+      height: height,
+      length: bytes.length,
+      bytes: bytes,
+    );
+    final resource = TextureResource(ctx.document.newId(), payload: payload.id);
+    return Transaction(
+      name: 'Create texture',
+      records: [
+        ChangeRecord(
+          targetId: payload.id,
+          slot: ChangeSlot.poolPayload,
+          oldValue: const PayloadChange(null),
+          newValue: PayloadChange(payload),
+        ),
+        _addResourceRecord(resource),
+      ],
+    );
+  },
+);
+
 /// Merges [properties] into an existing material resource (base color, PBR
 /// factors, alpha mode, texture refs, ...), the resource-pool counterpart of
 /// [setComponentProperties].
@@ -1677,6 +1731,7 @@ final List<CommandEntry> builtinCommands = [
   createCuboidGeometry,
   createSphereGeometry,
   createMaterial,
+  createTextureResource,
   setMaterialProperties,
   removeResource,
   setStageProperties,

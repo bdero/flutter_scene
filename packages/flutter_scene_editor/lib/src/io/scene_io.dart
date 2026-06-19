@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 // ignore: implementation_imports
@@ -83,6 +84,54 @@ Future<String> importEnvironmentMap(
     'lightScene': false,
   });
   return assetRef;
+}
+
+const _imageTypeGroup = XTypeGroup(
+  label: 'Image',
+  extensions: <String>['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
+);
+
+/// Shows the native open dialog filtered to image files, and returns the chosen
+/// path, or null on cancel.
+Future<String?> pickImagePath() async {
+  final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup]);
+  return file?.path;
+}
+
+/// Imports the image at [path] as a texture resource and assigns it to [slot]
+/// (a material texture-property key, e.g. `baseColorTexture`) of material
+/// [materialId]. Decodes via the platform codec to raw RGBA8. Returns the new
+/// texture resource id, or null when the image cannot be decoded.
+Future<LocalId?> importMaterialTexture(
+  EditorController controller,
+  LocalId materialId,
+  String slot,
+  String path,
+) async {
+  final bytes = await File(path).readAsBytes();
+  final codec = await ui.instantiateImageCodec(bytes);
+  final frame = await codec.getNextFrame();
+  final image = frame.image;
+  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  if (data == null) return null;
+  final rgba = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+
+  final before = Set.of(controller.document.resources.keys);
+  await controller.run('createTextureResource', {
+    'width': image.width,
+    'height': image.height,
+    'bytes': rgba,
+  });
+  final textureId = controller.document.resources.keys.firstWhere(
+    (id) => !before.contains(id),
+  );
+  await controller.run('setMaterialProperties', {
+    'materialId': materialId.toToken(),
+    'properties': {
+      slot: {'\$resource': textureId.toToken()},
+    },
+  });
+  return textureId;
 }
 
 String _fileExtension(String path) {

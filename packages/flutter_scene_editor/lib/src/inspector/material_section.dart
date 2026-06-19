@@ -15,7 +15,24 @@ import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 
 import '../controller/editor_controller.dart';
+import '../io/scene_io.dart';
 import 'live_fields.dart';
+
+// Material texture-property slots offered per material type. The key is the
+// material property the realizer reads (a ResourceRefValue to a texture).
+const _pbrTextureSlots = [
+  ('Base color', 'baseColorTexture'),
+  ('Metallic-roughness', 'metallicRoughnessTexture'),
+  ('Normal', 'normalTexture'),
+  ('Emissive', 'emissiveTexture'),
+];
+const _unlitTextureSlots = [('Base color', 'baseColorTexture')];
+
+List<(String, String)> _textureSlotsFor(String type) => switch (type) {
+  'physicallyBased' => _pbrTextureSlots,
+  'unlit' => _unlitTextureSlots,
+  _ => const [],
+};
 
 enum _Kind { factor, color, boolean, choice }
 
@@ -109,7 +126,51 @@ class MaterialSection extends StatelessWidget {
         else
           for (final field in fields)
             _fieldEditor(context, field, resource.properties[field.key]),
+        ..._textureSlots(context, resource),
       ],
+    );
+  }
+
+  List<Widget> _textureSlots(BuildContext context, MaterialResource resource) {
+    final slots = _textureSlotsFor(resource.type);
+    if (slots.isEmpty) return const [];
+    return [
+      const Divider(),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(8, 0, 8, 4),
+        child: Text('Textures', style: TextStyle(fontSize: 12)),
+      ),
+      for (final (label, slot) in slots)
+        _textureSlotRow(label, slot, resource.properties[slot]),
+    ];
+  }
+
+  Widget _textureSlotRow(String label, String slot, PropertyValue? value) {
+    final assigned = value is ResourceRefValue;
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      title: Text(label, style: const TextStyle(fontSize: 13)),
+      subtitle: Text(
+        assigned ? 'Texture assigned' : 'No texture',
+        style: TextStyle(
+          fontSize: 11,
+          color: assigned ? Colors.lightGreen : Colors.grey,
+        ),
+      ),
+      trailing: TextButton(
+        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+        onPressed: () async {
+          final path = await pickImagePath();
+          if (path != null) {
+            await importMaterialTexture(controller, materialId, slot, path);
+          }
+        },
+        child: Text(
+          assigned ? 'Replace' : 'Add',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
     );
   }
 
