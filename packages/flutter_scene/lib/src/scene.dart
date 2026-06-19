@@ -16,6 +16,7 @@ import 'node.dart';
 import 'raycast.dart';
 import 'physics/physics_world.dart';
 import 'environment_settings.dart';
+import 'environment_volume.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
@@ -455,6 +456,32 @@ base class Scene implements SceneGraph {
       EnvironmentSettings.fromScene(this);
   set environmentSettings(EnvironmentSettings value) => value.applyTo(this);
 
+  /// The global base look that [environmentVolumes] blend over.
+  ///
+  /// Set this and add volumes to drive the scene look spatially: each frame the
+  /// engine blends the volumes over this base by the camera position and
+  /// applies the result to the live look fields. Null (the default) disables
+  /// volume blending, the live fields are used directly.
+  EnvironmentSettings? baseEnvironment;
+
+  /// Environment volumes blended over [baseEnvironment] by camera position, so
+  /// the look transitions as the camera moves between areas. Ignored when
+  /// [baseEnvironment] is null. See [EnvironmentVolume].
+  final List<EnvironmentVolume> environmentVolumes = [];
+
+  // Applies the camera-position blend of [environmentVolumes] over
+  // [baseEnvironment] to the live look fields, before the environment is used
+  // this frame. A no-op unless both a base and volumes are set.
+  void _applyEnvironmentVolumes(Camera camera) {
+    final base = baseEnvironment;
+    if (base == null || environmentVolumes.isEmpty) return;
+    blendEnvironmentVolumes(
+      base,
+      environmentVolumes,
+      camera.position,
+    ).applyTo(this);
+  }
+
   /// How the selection outline is drawn around nodes that have a
   /// [Node.highlightColor]. No outline is drawn when no node is highlighted.
   final HighlightStyle highlightStyle = HighlightStyle();
@@ -665,6 +692,10 @@ base class Scene implements SceneGraph {
     if (drawArea.isEmpty || views.isEmpty) {
       return;
     }
+
+    // Blend the environment volumes over the base by the primary view's camera
+    // position, before the environment, sky bake, and sun light are read.
+    _applyEnvironmentVolumes(views.first.camera);
 
     final dpr =
         pixelRatio ??

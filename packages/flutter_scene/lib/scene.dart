@@ -34,6 +34,13 @@ export 'src/geometry/swept_geometry.dart'
     show ExtrudeGeometry, RibbonAlignment, RibbonGeometry, TubeGeometry;
 
 export 'src/environment_settings.dart' show EnvironmentSettings;
+export 'src/environment_volume.dart'
+    show
+        BoxVolumeBounds,
+        EnvironmentVolume,
+        EnvironmentVolumeBounds,
+        SphereVolumeBounds,
+        blendEnvironmentVolumes;
 export 'src/material/environment.dart'
     show EnvironmentMap, environmentAssetPathOf, kDiffuseShCoefficientCount;
 export 'src/material/material.dart' show Material;
