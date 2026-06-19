@@ -713,13 +713,69 @@ class EditorController extends ChangeNotifier {
 
   /// Live-previews scene-wide settings on the live scene without touching the
   /// document or history (for stage slider drags). Commit with
-  /// `setStageProperties` on release.
-  void previewStage({double? exposure, double? environmentIntensity}) {
-    if (exposure != null) scene.exposure = exposure;
-    if (environmentIntensity != null) {
-      scene.environmentIntensity = environmentIntensity;
+  /// `setStageProperties` on release. With [volumeIndex] set, previews that
+  /// environment volume's look instead of the base.
+  void previewStage({
+    double? exposure,
+    double? environmentIntensity,
+    int? volumeIndex,
+  }) {
+    final settings = _previewSettings(volumeIndex);
+    if (settings != null) {
+      // Volumes are active: the per-frame blend recomputes the live fields, so
+      // preview must write the holder the blend reads from.
+      if (exposure != null) settings.exposure = exposure;
+      if (environmentIntensity != null) {
+        settings.environmentIntensity = environmentIntensity;
+      }
+    } else {
+      if (exposure != null) scene.exposure = exposure;
+      if (environmentIntensity != null) {
+        scene.environmentIntensity = environmentIntensity;
+      }
     }
     notifyListeners();
+  }
+
+  /// Live-previews an environment volume's region and blend metadata on the
+  /// live scene (so the look fades in/out as the region is dragged) without
+  /// touching the document. Commit with `setVolumeProperties` on release.
+  void previewVolumeBounds(
+    int index, {
+    Vector3? center,
+    Vector3? halfExtents,
+    double? radius,
+    double? weight,
+    double? blendDistance,
+    double? priority,
+  }) {
+    if (index < 0 || index >= scene.environmentVolumes.length) return;
+    final v = scene.environmentVolumes[index];
+    if (weight != null) v.weight = weight;
+    if (blendDistance != null) v.blendDistance = blendDistance;
+    if (priority != null) v.priority = priority;
+    final bounds = v.bounds;
+    if (bounds is BoxVolumeBounds) {
+      if (center != null) bounds.center.setFrom(center);
+      if (halfExtents != null) bounds.halfExtents.setFrom(halfExtents);
+    } else if (bounds is SphereVolumeBounds) {
+      if (center != null) bounds.center.setFrom(center);
+      if (radius != null) bounds.radius = radius;
+    }
+    notifyListeners();
+  }
+
+  // The EnvironmentSettings the volume blend reads for [volumeIndex] (a
+  // volume's settings, or the base when volumes are active), or null when no
+  // volume blending is active (the live scene fields are authoritative).
+  EnvironmentSettings? _previewSettings(int? volumeIndex) {
+    if (volumeIndex != null) {
+      if (volumeIndex < 0 || volumeIndex >= scene.environmentVolumes.length) {
+        return null;
+      }
+      return scene.environmentVolumes[volumeIndex].settings;
+    }
+    return scene.baseEnvironment;
   }
 
   /// Live-previews a procedural-sky parameter on the live scene without
@@ -731,16 +787,20 @@ class EditorController extends ChangeNotifier {
   /// `turbidity`, color names, etc.); [raw] is a [Vector3] for a
   /// direction/color or a [num] for a scalar. Commit with `setSkyParameters`
   /// on release.
-  void previewSkyParameter(String key, Object raw) {
+  void previewSkyParameter(String key, Object raw, {int? volumeIndex}) {
+    final settings = _previewSettings(volumeIndex);
+    final skybox = settings != null ? settings.skybox : scene.skybox;
+    final skyEnvironment = settings != null
+        ? settings.skyEnvironment
+        : scene.skyEnvironment;
     // Intensity scales the visible skybox (it lives on the Skybox, not the
     // source), so handle it directly; it does not affect sky lighting.
     if (key == 'intensity' && raw is num) {
-      scene.skybox?.intensity = raw.toDouble();
+      skybox?.intensity = raw.toDouble();
       notifyListeners();
       return;
     }
-    _applySkyParameter(scene.skybox?.source, key, raw);
-    final skyEnvironment = scene.skyEnvironment;
+    _applySkyParameter(skybox?.source, key, raw);
     if (skyEnvironment != null) {
       _applySkyParameter(skyEnvironment.source, key, raw);
       // The editor binds sky lighting with the manual refresh policy, so the
@@ -919,6 +979,11 @@ class EditorController extends ChangeNotifier {
     final loaded = await _loadDiskEnvironment(path);
     if (loaded != null) {
       scene.environment = loaded;
+      // realizeStage captures the base look before this runs, so when volumes
+      // are active the base's disk environment has to be folded in too.
+      // TODO(volume-hdr): a volume cannot reference a disk environment yet;
+      // teach this loader to apply imported HDRs to a volume's settings.
+      scene.baseEnvironment?.environment = loaded;
       _diskEnvPath = path;
       notifyListeners();
     }
