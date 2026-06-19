@@ -1030,8 +1030,136 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   filterQuality: s.filterQuality,
   skybox: s.skybox,
   skyEnvironment: s.skyEnvironment,
-  volumes: List.of(s.volumes),
+  volumes: [for (final v in s.volumes) _copyVolume(v)],
 );
+
+// A fresh volume spec so edits to a copied stage never alias the original's.
+// The skybox / sky-environment specs are shared by reference (commands replace
+// them wholesale, never mutate in place, like the base-stage commands);
+// bounds carry mutable vectors, so they are cloned.
+EnvironmentVolumeSpec _copyVolume(EnvironmentVolumeSpec v) =>
+    EnvironmentVolumeSpec(
+      name: v.name,
+      environment: v.environment,
+      environmentIntensity: v.environmentIntensity,
+      exposure: v.exposure,
+      toneMapping: v.toneMapping,
+      radianceCubeSize: v.radianceCubeSize,
+      skybox: v.skybox,
+      skyEnvironment: v.skyEnvironment,
+      bounds: _copyBounds(v.bounds),
+      priority: v.priority,
+      weight: v.weight,
+      blendDistance: v.blendDistance,
+    );
+
+VolumeBoundsSpec? _copyBounds(VolumeBoundsSpec? b) => switch (b) {
+  null => null,
+  BoxBoundsSpec(:final center, :final halfExtents) => BoxBoundsSpec(
+    center: center.clone(),
+    halfExtents: halfExtents.clone(),
+  ),
+  SphereBoundsSpec(:final center, :final radius) => SphereBoundsSpec(
+    center: center.clone(),
+    radius: radius,
+  ),
+};
+
+/// A unified read/write view over the look fields the base stage and each
+/// environment volume share, so the look-editing commands can target either.
+abstract class _LookView {
+  EnvironmentSpec get environment;
+  set environment(EnvironmentSpec v);
+  double get environmentIntensity;
+  set environmentIntensity(double v);
+  double get exposure;
+  set exposure(double v);
+  String get toneMapping;
+  set toneMapping(String v);
+  int? get radianceCubeSize;
+  set radianceCubeSize(int? v);
+  SkyboxSpec? get skybox;
+  set skybox(SkyboxSpec? v);
+  SkyEnvironmentSpec? get skyEnvironment;
+  set skyEnvironment(SkyEnvironmentSpec? v);
+}
+
+class _StageLook implements _LookView {
+  _StageLook(this.s);
+  final StageMetadata s;
+  @override
+  EnvironmentSpec get environment => s.environment;
+  @override
+  set environment(EnvironmentSpec v) => s.environment = v;
+  @override
+  double get environmentIntensity => s.environmentIntensity;
+  @override
+  set environmentIntensity(double v) => s.environmentIntensity = v;
+  @override
+  double get exposure => s.exposure;
+  @override
+  set exposure(double v) => s.exposure = v;
+  @override
+  String get toneMapping => s.toneMapping;
+  @override
+  set toneMapping(String v) => s.toneMapping = v;
+  @override
+  int? get radianceCubeSize => s.radianceCubeSize;
+  @override
+  set radianceCubeSize(int? v) => s.radianceCubeSize = v;
+  @override
+  SkyboxSpec? get skybox => s.skybox;
+  @override
+  set skybox(SkyboxSpec? v) => s.skybox = v;
+  @override
+  SkyEnvironmentSpec? get skyEnvironment => s.skyEnvironment;
+  @override
+  set skyEnvironment(SkyEnvironmentSpec? v) => s.skyEnvironment = v;
+}
+
+class _VolumeLook implements _LookView {
+  _VolumeLook(this.v);
+  final EnvironmentVolumeSpec v;
+  @override
+  EnvironmentSpec get environment => v.environment;
+  @override
+  set environment(EnvironmentSpec value) => v.environment = value;
+  @override
+  double get environmentIntensity => v.environmentIntensity;
+  @override
+  set environmentIntensity(double value) => v.environmentIntensity = value;
+  @override
+  double get exposure => v.exposure;
+  @override
+  set exposure(double value) => v.exposure = value;
+  @override
+  String get toneMapping => v.toneMapping;
+  @override
+  set toneMapping(String value) => v.toneMapping = value;
+  @override
+  int? get radianceCubeSize => v.radianceCubeSize;
+  @override
+  set radianceCubeSize(int? value) => v.radianceCubeSize = value;
+  @override
+  SkyboxSpec? get skybox => v.skybox;
+  @override
+  set skybox(SkyboxSpec? value) => v.skybox = value;
+  @override
+  SkyEnvironmentSpec? get skyEnvironment => v.skyEnvironment;
+  @override
+  set skyEnvironment(SkyEnvironmentSpec? value) => v.skyEnvironment = value;
+}
+
+// Resolves the look-edit target on a freshly copied stage: the stage itself
+// when [index] is null, otherwise the volume at [index]. Throws when [index]
+// is out of range.
+_LookView _lookTarget(StageMetadata next, int? index) {
+  if (index == null) return _StageLook(next);
+  if (index < 0 || index >= next.volumes.length) {
+    throw CommandException('No environment volume at index $index.');
+  }
+  return _VolumeLook(next.volumes[index]);
+}
 
 double _stageDouble(PropertyValue? v, double fallback) => switch (v) {
   DoubleValue(:final value) => value,
@@ -1041,6 +1169,17 @@ double _stageDouble(PropertyValue? v, double fallback) => switch (v) {
 
 String _stageString(PropertyValue? v, String fallback) =>
     v is StringValue ? v.value : fallback;
+
+int? _stageInt(PropertyValue? v) => switch (v) {
+  IntValue(:final value) => value,
+  DoubleValue(:final value) => value.round(),
+  _ => null,
+};
+
+Vector3? _stageVec3(PropertyValue? v) => switch (v) {
+  Vec3Value(:final value) => value.clone(),
+  _ => null,
+};
 
 /// Updates scene-wide stage settings (exposure, environment intensity, tone
 /// mapping, environment, anti-aliasing, render scale, filter quality). Only the
@@ -1057,46 +1196,63 @@ final setStageProperties = CommandEntry(
       type: ParamType.propertyMap,
       label: 'Settings',
     ),
+    ParamSpec(
+      name: 'volume',
+      type: ParamType.integer,
+      label: 'Volume index',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final props = optionalPropertyMap(params, 'properties');
+    final volumeIndex = optionalInt(params, 'volume');
     final old = ctx.document.stage;
     final next = _copyStage(old);
+    final look = _lookTarget(next, volumeIndex);
     if (props.containsKey('exposure')) {
-      next.exposure = _stageDouble(props['exposure'], old.exposure);
+      look.exposure = _stageDouble(props['exposure'], look.exposure);
     }
     if (props.containsKey('environmentIntensity')) {
-      next.environmentIntensity = _stageDouble(
+      look.environmentIntensity = _stageDouble(
         props['environmentIntensity'],
-        old.environmentIntensity,
+        look.environmentIntensity,
       );
     }
     if (props.containsKey('toneMapping')) {
-      next.toneMapping = _stageString(props['toneMapping'], old.toneMapping);
+      look.toneMapping = _stageString(props['toneMapping'], look.toneMapping);
     }
-    if (props.containsKey('antiAliasingMode')) {
-      next.antiAliasingMode = _stageString(
-        props['antiAliasingMode'],
-        old.antiAliasingMode,
-      );
-    }
-    if (props.containsKey('renderScale')) {
-      next.renderScale = _stageDouble(props['renderScale'], old.renderScale);
-    }
-    if (props.containsKey('filterQuality')) {
-      next.filterQuality = _stageString(
-        props['filterQuality'],
-        old.filterQuality,
-      );
+    if (props.containsKey('radianceCubeSize')) {
+      // A non-positive value clears the override back to the engine default.
+      final size = _stageInt(props['radianceCubeSize']);
+      look.radianceCubeSize = (size == null || size <= 0) ? null : size;
     }
     if (props.containsKey('environment')) {
-      next.environment = switch (_stageString(props['environment'], 'studio')) {
+      look.environment = switch (_stageString(props['environment'], 'studio')) {
         'empty' => const EmptyEnvironment(),
         'asset' => AssetEnvironment(
           AssetRef(_stageString(props['environmentAsset'], '')),
         ),
         _ => const StudioEnvironment(),
       };
+    }
+    // The remaining settings are scene-wide (not per-volume) and apply only to
+    // the base stage.
+    if (volumeIndex == null) {
+      if (props.containsKey('antiAliasingMode')) {
+        next.antiAliasingMode = _stageString(
+          props['antiAliasingMode'],
+          old.antiAliasingMode,
+        );
+      }
+      if (props.containsKey('renderScale')) {
+        next.renderScale = _stageDouble(props['renderScale'], old.renderScale);
+      }
+      if (props.containsKey('filterQuality')) {
+        next.filterQuality = _stageString(
+          props['filterQuality'],
+          old.filterQuality,
+        );
+      }
     }
     return Transaction(
       name: 'Set stage settings',
@@ -1205,20 +1361,28 @@ final setSkybox = CommandEntry(
       label: 'Cast sun shadows',
       required: false,
     ),
+    ParamSpec(
+      name: 'volume',
+      type: ParamType.integer,
+      label: 'Volume index',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final sky = requireString(params, 'sky');
     final sun = optionalVec3(params, 'sunDirection');
+    final volumeIndex = optionalInt(params, 'volume');
     final old = ctx.document.stage;
+    final oldLook = _lookTarget(old, volumeIndex);
     final lightScene = params.containsKey('lightScene')
         ? params['lightScene'] == true
-        : old.skyEnvironment != null;
+        : oldLook.skyEnvironment != null;
     final castShadows = params.containsKey('castShadows')
         ? params['castShadows'] == true
-        : (old.skyEnvironment?.castShadows ?? false);
+        : (oldLook.skyEnvironment?.castShadows ?? false);
     // Preserve the current sky's parameters when the type is unchanged;
     // otherwise start from the new type's defaults.
-    final current = old.skybox?.source;
+    final current = oldLook.skybox?.source;
     final sameType =
         (sky == 'gradient' && current is GradientSkySpec) ||
         (sky == 'physical' && current is PhysicalSkySpec) ||
@@ -1233,14 +1397,15 @@ final setSkybox = CommandEntry(
         base == null ? null : _skySourceFrom(base, overrides);
 
     final next = _copyStage(old);
+    final nextLook = _lookTarget(next, volumeIndex);
     final skySource = makeSource();
-    next.skybox = skySource == null
+    nextLook.skybox = skySource == null
         ? null
-        : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
+        : SkyboxSpec(skySource, intensity: oldLook.skybox?.intensity ?? 1.0);
     final canLight = sky == 'gradient' || sky == 'physical';
-    final priorEnv = old.skyEnvironment;
+    final priorEnv = oldLook.skyEnvironment;
     // The sky-lighting binding needs its own shader-sky source instance.
-    next.skyEnvironment = (lightScene && canLight)
+    nextLook.skyEnvironment = (lightScene && canLight)
         ? SkyEnvironmentSpec(
             makeSource()!,
             refresh: priorEnv?.refresh ?? 'manual',
@@ -1279,26 +1444,34 @@ final setSkyParameters = CommandEntry(
       type: ParamType.propertyMap,
       label: 'Sky parameters',
     ),
+    ParamSpec(
+      name: 'volume',
+      type: ParamType.integer,
+      label: 'Volume index',
+      required: false,
+    ),
   ],
   execute: (ctx, params) {
     final props = optionalPropertyMap(params, 'properties');
+    final volumeIndex = optionalInt(params, 'volume');
     final old = ctx.document.stage;
-    final skybox = old.skybox;
+    final skybox = _lookTarget(old, volumeIndex).skybox;
     if (skybox == null) {
       throw const CommandException(
         'No sky to tune; choose a skybox with setSkybox first.',
       );
     }
     final next = _copyStage(old);
+    final nextLook = _lookTarget(next, volumeIndex);
     // `intensity` is a skybox-level property (not a sky source field); the rest
     // of the properties patch the source via _skySourceFrom.
-    next.skybox = SkyboxSpec(
+    nextLook.skybox = SkyboxSpec(
       _skySourceFrom(skybox.source, props),
       intensity: _stageDouble(props['intensity'], skybox.intensity),
     );
-    final priorEnv = old.skyEnvironment;
+    final priorEnv = nextLook.skyEnvironment;
     if (priorEnv != null) {
-      next.skyEnvironment = SkyEnvironmentSpec(
+      nextLook.skyEnvironment = SkyEnvironmentSpec(
         _skySourceFrom(priorEnv.source, props),
         refresh: priorEnv.refresh,
         intervalSeconds: priorEnv.intervalSeconds,
@@ -1318,6 +1491,167 @@ final setSkyParameters = CommandEntry(
         ),
       ],
     );
+  },
+);
+
+VolumeBoundsSpec _defaultBounds(String type, {Vector3? center}) {
+  final c = center?.clone() ?? Vector3.zero();
+  return switch (type) {
+    'sphere' => SphereBoundsSpec(center: c, radius: 5.0),
+    _ => BoxBoundsSpec(center: c, halfExtents: Vector3.all(5.0)),
+  };
+}
+
+Vector3 _boundsCenter(VolumeBoundsSpec? b) => switch (b) {
+  BoxBoundsSpec(:final center) => center.clone(),
+  SphereBoundsSpec(:final center) => center.clone(),
+  _ => Vector3.zero(),
+};
+
+String _boundsType(VolumeBoundsSpec? b) => switch (b) {
+  BoxBoundsSpec() => 'box',
+  SphereBoundsSpec() => 'sphere',
+  _ => 'global',
+};
+
+Transaction _stageTransaction(
+  String name,
+  StageMetadata old,
+  StageMetadata next,
+) => Transaction(
+  name: name,
+  records: [
+    ChangeRecord(
+      targetId: ChangeRecord.rootsTarget,
+      slot: ChangeSlot.stage,
+      oldValue: StageMetadataChange(old),
+      newValue: StageMetadataChange(next),
+    ),
+  ],
+);
+
+/// Appends an environment volume to the stage. `bounds` picks the region shape
+/// (`box`, `sphere`, or `global`; defaults to `box`). The new volume starts
+/// from the studio look with the highest priority so it wins where it applies;
+/// tune its look with the look commands (passing its `volume` index) and its
+/// region with `setVolumeProperties`.
+final addEnvironmentVolume = CommandEntry(
+  name: 'addEnvironmentVolume',
+  doc: 'Add a spatial environment volume.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(
+      name: 'bounds',
+      type: ParamType.string,
+      label: 'Bounds',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final boundsType = optionalString(params, 'bounds') ?? 'box';
+    final old = ctx.document.stage;
+    final next = _copyStage(old);
+    final maxPriority = old.volumes.fold<double>(
+      -1.0,
+      (m, v) => v.priority > m ? v.priority : m,
+    );
+    next.volumes.add(
+      EnvironmentVolumeSpec(
+        name:
+            optionalString(params, 'name') ??
+            'Volume ${old.volumes.length + 1}',
+        bounds: boundsType == 'global' ? null : _defaultBounds(boundsType),
+        priority: old.volumes.isEmpty ? 0.0 : maxPriority + 1.0,
+        blendDistance: 1.0,
+      ),
+    );
+    return _stageTransaction('Add environment volume', old, next);
+  },
+);
+
+/// Removes the environment volume at `index`.
+final removeEnvironmentVolume = CommandEntry(
+  name: 'removeEnvironmentVolume',
+  doc: 'Remove an environment volume.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(name: 'index', type: ParamType.integer, label: 'Volume index'),
+  ],
+  execute: (ctx, params) {
+    final index = requireInt(params, 'index');
+    final old = ctx.document.stage;
+    if (index < 0 || index >= old.volumes.length) {
+      throw CommandException('No environment volume at index $index.');
+    }
+    final next = _copyStage(old);
+    next.volumes.removeAt(index);
+    return _stageTransaction('Remove environment volume', old, next);
+  },
+);
+
+/// Updates a volume's region and blend metadata (not its look, which goes
+/// through the look commands with a `volume` index). Only the keys present in
+/// `properties` change. Recognized keys: `name`, `priority`, `weight`,
+/// `blendDistance`, `boundsType` (`box`/`sphere`/`global`), `center`,
+/// `halfExtents`, `radius`.
+final setVolumeProperties = CommandEntry(
+  name: 'setVolumeProperties',
+  doc: 'Update an environment volume region and blend settings.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(name: 'index', type: ParamType.integer, label: 'Volume index'),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Settings',
+    ),
+  ],
+  execute: (ctx, params) {
+    final index = requireInt(params, 'index');
+    final props = optionalPropertyMap(params, 'properties');
+    final old = ctx.document.stage;
+    if (index < 0 || index >= old.volumes.length) {
+      throw CommandException('No environment volume at index $index.');
+    }
+    final next = _copyStage(old);
+    final v = next.volumes[index];
+    if (props.containsKey('name')) v.name = _stageString(props['name'], v.name);
+    if (props.containsKey('priority')) {
+      v.priority = _stageDouble(props['priority'], v.priority);
+    }
+    if (props.containsKey('weight')) {
+      v.weight = _stageDouble(props['weight'], v.weight);
+    }
+    if (props.containsKey('blendDistance')) {
+      v.blendDistance = _stageDouble(props['blendDistance'], v.blendDistance);
+    }
+    // Switch the region kind, carrying the center across the change.
+    if (props.containsKey('boundsType')) {
+      final type = _stageString(props['boundsType'], _boundsType(v.bounds));
+      v.bounds = type == 'global'
+          ? null
+          : _defaultBounds(type, center: _boundsCenter(v.bounds));
+    }
+    final center = _stageVec3(props['center']);
+    final halfExtents = _stageVec3(props['halfExtents']);
+    final radius = props.containsKey('radius')
+        ? _stageDouble(props['radius'], 0.0)
+        : null;
+    final bounds = v.bounds;
+    if (bounds is BoxBoundsSpec) {
+      if (center != null) bounds.center = center;
+      if (halfExtents != null) bounds.halfExtents = halfExtents;
+    } else if (bounds is SphereBoundsSpec) {
+      if (center != null) bounds.center = center;
+      if (radius != null) bounds.radius = radius;
+    }
+    return _stageTransaction('Set volume settings', old, next);
   },
 );
 
@@ -1739,6 +2073,9 @@ final List<CommandEntry> builtinCommands = [
   setStageProperties,
   setSkybox,
   setSkyParameters,
+  addEnvironmentVolume,
+  removeEnvironmentVolume,
+  setVolumeProperties,
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,
