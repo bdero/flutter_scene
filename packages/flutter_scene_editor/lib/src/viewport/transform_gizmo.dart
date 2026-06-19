@@ -201,6 +201,125 @@ class TransformGizmoPainter extends CustomPainter {
   bool shouldRepaint(CustomPainter old) => true;
 }
 
+const _volumeColor = Color(0xFF34D6C8);
+const _volumeBlendColor = Color(0x5534D6C8);
+
+/// Draws wireframe regions for the scene's environment volumes (box edges or
+/// sphere great circles), plus a fainter outer shell at the blend distance
+/// where each volume starts fading in. Drawn from the live volumes so the
+/// region follows an inspector drag immediately. The volume at [activeIndex]
+/// (when set) is drawn brighter.
+class VolumeBoundsPainter extends CustomPainter {
+  VolumeBoundsPainter({
+    required this.volumes,
+    required this.camera,
+    this.activeIndex,
+  });
+
+  final List<EnvironmentVolume> volumes;
+  final Camera camera;
+  final int? activeIndex;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (var i = 0; i < volumes.length; i++) {
+      final bounds = volumes[i].bounds;
+      if (bounds == null) continue; // Global volume: no region to draw.
+      final active = i == activeIndex;
+      final blend = volumes[i].blendDistance;
+      _paintBounds(canvas, size, bounds, 0, _volumeColor, active ? 2.5 : 1.5);
+      if (blend > 0) {
+        _paintBounds(canvas, size, bounds, blend, _volumeBlendColor, 1.0);
+      }
+    }
+  }
+
+  // Draws [bounds] expanded outward by [pad] (the blend shell when non-zero).
+  void _paintBounds(
+    Canvas canvas,
+    Size size,
+    EnvironmentVolumeBounds bounds,
+    double pad,
+    Color color,
+    double strokeWidth,
+  ) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..color = color;
+    switch (bounds) {
+      case BoxVolumeBounds(:final center, :final halfExtents):
+        _paintBox(
+          canvas,
+          size,
+          center,
+          halfExtents + vm.Vector3.all(pad),
+          paint,
+        );
+      case SphereVolumeBounds(:final center, :final radius):
+        for (var axis = 0; axis < 3; axis++) {
+          _paintPolyline(
+            canvas,
+            size,
+            _ringPoints(center, axis, radius + pad),
+            paint,
+          );
+        }
+    }
+  }
+
+  void _paintBox(
+    Canvas canvas,
+    Size size,
+    vm.Vector3 center,
+    vm.Vector3 halfExtents,
+    Paint paint,
+  ) {
+    final corners = <Offset?>[
+      for (var c = 0; c < 8; c++)
+        projectToScreen(
+          center +
+              vm.Vector3(
+                (c & 1) == 0 ? -halfExtents.x : halfExtents.x,
+                (c & 2) == 0 ? -halfExtents.y : halfExtents.y,
+                (c & 4) == 0 ? -halfExtents.z : halfExtents.z,
+              ),
+          camera,
+          size,
+        ),
+    ];
+    // Edges connect corners differing in exactly one axis bit.
+    for (var a = 0; a < 8; a++) {
+      for (final bit in const [1, 2, 4]) {
+        final b = a | bit;
+        if (b == a) continue;
+        final p = corners[a];
+        final q = corners[b];
+        if (p != null && q != null) canvas.drawLine(p, q, paint);
+      }
+    }
+  }
+
+  void _paintPolyline(
+    Canvas canvas,
+    Size size,
+    List<vm.Vector3> points,
+    Paint paint,
+  ) {
+    Offset? previous;
+    for (final point in points) {
+      final screen = projectToScreen(point, camera, size);
+      if (previous != null && screen != null) {
+        canvas.drawLine(previous, screen, paint);
+      }
+      previous = screen;
+    }
+  }
+
+  @override
+  bool shouldRepaint(VolumeBoundsPainter old) => true;
+}
+
 /// Hit-tests the gizmo and accumulates a drag as a translation, a rotation
 /// (angle about [axisVec]), or a per-axis scale, depending on [mode].
 class GizmoController {
