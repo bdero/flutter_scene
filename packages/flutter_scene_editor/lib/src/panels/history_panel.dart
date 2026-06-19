@@ -52,6 +52,8 @@ class _HistoryPanelState extends State<HistoryPanel> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.undo, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
                   tooltip: history.canUndo
                       ? 'Undo: ${history.undoLabel}'
                       : 'Nothing to undo',
@@ -59,6 +61,8 @@ class _HistoryPanelState extends State<HistoryPanel> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.redo, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
                   tooltip: history.canRedo
                       ? 'Redo: ${history.redoLabel}'
                       : 'Nothing to redo',
