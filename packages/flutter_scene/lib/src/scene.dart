@@ -15,6 +15,7 @@ import 'mesh.dart';
 import 'node.dart';
 import 'raycast.dart';
 import 'physics/physics_world.dart';
+import 'environment_settings.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
 import 'render/bloom_pass.dart';
@@ -443,6 +444,16 @@ base class Scene implements SceneGraph {
   /// Built-in post-processing settings, such as color grading. Every
   /// effect is off by default.
   final PostProcessSettings postProcess = PostProcessSettings();
+
+  /// The scene's blendable look (image-based lighting, exposure, tone mapping,
+  /// and post-processing) as a copyable value.
+  ///
+  /// Reading snapshots the current look; assigning applies one. Use
+  /// [EnvironmentSettings.lerp] to interpolate between two looks for a scripted
+  /// transition (drive `t` from an animation each frame).
+  EnvironmentSettings get environmentSettings =>
+      EnvironmentSettings.fromScene(this);
+  set environmentSettings(EnvironmentSettings value) => value.applyTo(this);
 
   /// How the selection outline is drawn around nodes that have a
   /// [Node.highlightColor]. No outline is drawn when no node is highlighted.
