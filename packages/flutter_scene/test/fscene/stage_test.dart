@@ -42,6 +42,12 @@ SceneDocument _skyDocument() {
   return doc;
 }
 
+EnvironmentVolumeSpec _skyVolume() => EnvironmentVolumeSpec(
+  name: 'lagoon',
+  skyEnvironment: SkyEnvironmentSpec(GradientSkySpec(), castShadows: true),
+  bounds: BoxBoundsSpec(center: Vector3(1, 0, 0)),
+);
+
 void main() {
   group('stage sky JSON', () {
     test('skybox and sky environment round-trip', () {
@@ -106,6 +112,105 @@ void main() {
       expect(restored.stage.skybox, isNull);
       expect(restored.stage.skyEnvironment, isNull);
     });
+  });
+
+  group('environment volumes JSON', () {
+    EnvironmentVolumeSpec boxVolume() => EnvironmentVolumeSpec(
+      name: 'cave',
+      environment: const EmptyEnvironment(),
+      exposure: 0.5,
+      toneMapping: 'aces',
+      radianceCubeSize: 1024,
+      skybox: SkyboxSpec(PhysicalSkySpec(turbidity: 6.0)),
+      bounds: BoxBoundsSpec(
+        center: Vector3(1, 2, 3),
+        halfExtents: Vector3(4, 5, 6),
+      ),
+      priority: 2.0,
+      weight: 0.75,
+      blendDistance: 1.5,
+    );
+
+    test('a box volume round-trips with its look and bounds', () {
+      final doc = SceneDocument()..stage.volumes.add(boxVolume());
+      final restored = readFscene(writeFscene(doc));
+
+      expect(restored.stage.volumes, hasLength(1));
+      final v = restored.stage.volumes.single;
+      expect(v.name, 'cave');
+      expect(v.environment, isA<EmptyEnvironment>());
+      expect(v.exposure, 0.5);
+      expect(v.toneMapping, 'aces');
+      expect(v.radianceCubeSize, 1024);
+      expect((v.skybox!.source as PhysicalSkySpec).turbidity, 6.0);
+      expect(v.priority, 2.0);
+      expect(v.weight, 0.75);
+      expect(v.blendDistance, 1.5);
+      final box = v.bounds as BoxBoundsSpec;
+      expect(box.center, Vector3(1, 2, 3));
+      expect(box.halfExtents, Vector3(4, 5, 6));
+    });
+
+    test('a sphere bound and a global volume round-trip', () {
+      final doc = SceneDocument()
+        ..stage.volumes.addAll([
+          EnvironmentVolumeSpec(
+            bounds: SphereBoundsSpec(center: Vector3(0, 1, 0), radius: 3.5),
+          ),
+          EnvironmentVolumeSpec(exposure: 2.0), // global (no bounds)
+        ]);
+      final restored = readFscene(writeFscene(doc));
+
+      expect(restored.stage.volumes, hasLength(2));
+      final sphere = restored.stage.volumes.first.bounds as SphereBoundsSpec;
+      expect(sphere.center, Vector3(0, 1, 0));
+      expect(sphere.radius, 3.5);
+      expect(restored.stage.volumes[1].bounds, isNull);
+      expect(restored.stage.volumes[1].exposure, 2.0);
+    });
+
+    test('no volumes stays empty and is omitted from the JSON', () {
+      expect(writeFscene(SceneDocument()).contains('volumes'), isFalse);
+      expect(readFscene(writeFscene(SceneDocument())).stage.volumes, isEmpty);
+    });
+
+    test('the base reflection size round-trips', () {
+      final doc = SceneDocument()..stage.radianceCubeSize = 512;
+      expect(readFscene(writeFscene(doc)).stage.radianceCubeSize, 512);
+      // Null (the engine default) is omitted.
+      expect(
+        writeFscene(SceneDocument()).contains('radianceCubeSize'),
+        isFalse,
+      );
+    });
+
+    test('a volume change flags stageChanged', () {
+      final base = SceneDocument()..stage.volumes.add(boxVolume());
+      final next = SceneDocument()..stage.volumes.add(boxVolume());
+      expect(diffScene(base, next).stageChanged, isFalse);
+      next.stage.volumes.single.weight = 0.1;
+      expect(diffScene(base, next).stageChanged, isTrue);
+    });
+  });
+
+  test('compose deep-copies the stage volumes', () {
+    final host = SceneDocument()..stage.volumes.add(_skyVolume());
+    final prefab = SceneDocument()..createNode(name: 'p', root: true);
+    host.createNode(name: 'inst', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+    );
+
+    final composed = composeScene(host, resolve: (_) => prefab);
+    final copied = composed.stage.volumes.single;
+    expect(copied.name, 'lagoon');
+    expect((copied.bounds as BoxBoundsSpec).center, Vector3(1, 0, 0));
+    // Mutating the source does not leak into the composed copy.
+    (host.stage.volumes.single.bounds as BoxBoundsSpec).center.setValues(
+      9,
+      9,
+      9,
+    );
+    expect((copied.bounds as BoxBoundsSpec).center.x, isNot(9));
   });
 
   test('compose deep-copies the stage sky', () {

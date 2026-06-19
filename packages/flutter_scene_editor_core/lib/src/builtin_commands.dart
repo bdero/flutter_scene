@@ -1024,11 +1024,13 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   environmentIntensity: s.environmentIntensity,
   exposure: s.exposure,
   toneMapping: s.toneMapping,
+  radianceCubeSize: s.radianceCubeSize,
   antiAliasingMode: s.antiAliasingMode,
   renderScale: s.renderScale,
   filterQuality: s.filterQuality,
   skybox: s.skybox,
   skyEnvironment: s.skyEnvironment,
+  volumes: List.of(s.volumes),
 );
 
 double _stageDouble(PropertyValue? v, double fallback) => switch (v) {

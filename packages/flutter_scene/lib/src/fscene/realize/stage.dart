@@ -23,6 +23,8 @@ import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/environment_settings.dart';
+import 'package:flutter_scene/src/environment_volume.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -80,7 +82,10 @@ Future<void> realizeStage(
   final skyEnvironmentSpec = stage.skyEnvironment;
   if (skyEnvironmentSpec == null) {
     scene.skyEnvironment = null;
-    await _applyEnvironment(stage.environment, scene, bundle);
+    await _withRadianceCubeSize(
+      stage.radianceCubeSize,
+      () => _applyEnvironment(stage.environment, scene, bundle),
+    );
   } else {
     final source = await sourceFor(skyEnvironmentSpec.source);
     if (source is ShaderSkySource) {
@@ -101,7 +106,10 @@ Future<void> realizeStage(
         );
       }
       scene.skyEnvironment = null;
-      await _applyEnvironment(stage.environment, scene, bundle);
+      await _withRadianceCubeSize(
+        stage.radianceCubeSize,
+        () => _applyEnvironment(stage.environment, scene, bundle),
+      );
     }
   }
 
@@ -123,6 +131,134 @@ Future<void> realizeStage(
     scene.sunLight = SunLight(boundSkySource as SunSky);
   } else {
     scene.sunLight = null;
+  }
+
+  // Spatial environment volumes blend over the stage as the global base. With
+  // none, leave the base null so the live look fields are used directly (the
+  // common case); with volumes, capture the just-applied base look and realize
+  // each volume's look into a blendable settings value.
+  if (stage.volumes.isEmpty) {
+    scene.baseEnvironment = null;
+    scene.environmentVolumes.clear();
+  } else {
+    scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
+    final volumes = <EnvironmentVolume>[];
+    for (final spec in stage.volumes) {
+      volumes.add(await _realizeVolume(spec, bundle));
+    }
+    scene.environmentVolumes
+      ..clear()
+      ..addAll(volumes);
+  }
+}
+
+/// Realizes one [EnvironmentVolumeSpec] into a live [EnvironmentVolume],
+/// building its look (environment, skybox, sky lighting, sun light) the same
+/// way [realizeStage] builds the base.
+Future<EnvironmentVolume> _realizeVolume(
+  EnvironmentVolumeSpec spec,
+  AssetBundle? bundle,
+) async {
+  final settings = EnvironmentSettings(
+    environmentIntensity: spec.environmentIntensity,
+    exposure: spec.exposure,
+    toneMapping: _toneMapping(spec.toneMapping),
+  );
+
+  // Share one live source between the skybox and sky lighting when they
+  // describe the same sky, mirroring realizeStage.
+  final realized = <String, SkySource?>{};
+  Future<SkySource?> sourceFor(SkySourceSpec s) async =>
+      realized[canonicalJson(encodeSkySource(s))] ??= await _realizeSkySource(
+        s,
+        bundle,
+      );
+
+  Future<void> applyEnvironment() async {
+    await _withRadianceCubeSize(spec.radianceCubeSize, () async {
+      settings.environment = await _buildEnvironment(spec.environment, bundle);
+    });
+  }
+
+  final skyEnvSpec = spec.skyEnvironment;
+  if (skyEnvSpec == null) {
+    await applyEnvironment();
+  } else {
+    final source = await sourceFor(skyEnvSpec.source);
+    if (source is ShaderSkySource) {
+      settings.skyEnvironment = SkyEnvironment(
+        source,
+        refresh: _refresh(skyEnvSpec.refresh),
+        interval: Duration(
+          microseconds: (skyEnvSpec.intervalSeconds * 1e6).round(),
+        ),
+        faceResolution: skyEnvSpec.faceResolution,
+        equirectWidth: skyEnvSpec.equirectWidth,
+      );
+      if (skyEnvSpec.castShadows && source is SunSky) {
+        settings.sunLight = SunLight(source as SunSky);
+      }
+    } else {
+      if (source != null) {
+        debugPrint(
+          'fscene: a volume skyEnvironment needs a shader sky (fmat, gradient, '
+          'or physical); skipping the binding',
+        );
+      }
+      await applyEnvironment();
+    }
+  }
+
+  final skyboxSpec = spec.skybox;
+  if (skyboxSpec != null) {
+    final source = await sourceFor(skyboxSpec.source);
+    settings.skybox = source == null
+        ? null
+        : Skybox(source, intensity: skyboxSpec.intensity);
+  }
+
+  return EnvironmentVolume(
+    settings: settings,
+    bounds: _realizeBounds(spec.bounds),
+    priority: spec.priority,
+    weight: spec.weight,
+    blendDistance: spec.blendDistance,
+  );
+}
+
+EnvironmentVolumeBounds? _realizeBounds(VolumeBoundsSpec? spec) =>
+    switch (spec) {
+      null => null,
+      BoxBoundsSpec(:final center, :final halfExtents) => BoxVolumeBounds(
+        center: center.clone(),
+        halfExtents: halfExtents.clone(),
+      ),
+      SphereBoundsSpec(:final center, :final radius) => SphereVolumeBounds(
+        center: center.clone(),
+        radius: radius,
+      ),
+    };
+
+/// Runs [build] with [EnvironmentMap.radianceCubeSize] set to [size],
+/// restoring it afterward. A null [size] keeps the current default.
+//
+// TODO(radiance-size-instance): radianceCubeSize is a static, so per-environment
+// sizing relies on setting it around each (sequential) build. Promote it to a
+// constructor argument on EnvironmentMap so it is genuinely per-instance.
+Future<void> _withRadianceCubeSize(
+  int? size,
+  Future<void> Function() build,
+) async {
+  if (size == null) {
+    await build();
+    return;
+  }
+  final previous = EnvironmentMap.radianceCubeSize;
+  EnvironmentMap.radianceCubeSize = size;
+  try {
+    await build();
+  } finally {
+    EnvironmentMap.radianceCubeSize = previous;
   }
 }
 
@@ -194,7 +330,84 @@ void serializeStage(Scene scene, SceneDocument document) {
         ? null
         : SkyboxSpec(source, intensity: skybox.intensity);
   }
+
+  stage.volumes
+    ..clear()
+    ..addAll([for (final v in scene.environmentVolumes) _serializeVolume(v)]);
 }
+
+/// Reads a live [EnvironmentVolume] back into a spec, the reverse of
+/// [_realizeVolume]. Recovers the look the same way [serializeStage] recovers
+/// the base; the volume's display name is not carried on the live value, so it
+/// serializes empty.
+EnvironmentVolumeSpec _serializeVolume(EnvironmentVolume v) {
+  final s = v.settings;
+  EnvironmentSpec environmentSpec = const StudioEnvironment();
+  SkyEnvironmentSpec? skyEnvironmentSpec;
+
+  final skyEnvironment = s.skyEnvironment;
+  if (skyEnvironment == null) {
+    final environment = s.environment;
+    var recovered = environment == null ? null : _environmentSpec[environment];
+    if (recovered == null && environment != null) {
+      final assetPath = environmentAssetPathOf(environment);
+      if (assetPath != null) recovered = AssetEnvironment(AssetRef(assetPath));
+    }
+    if (recovered != null) environmentSpec = recovered;
+  } else {
+    final source = _serializeSkySource(skyEnvironment.source);
+    final castsSkyShadows = identical(
+      s.sunLight?.source,
+      skyEnvironment.source,
+    );
+    skyEnvironmentSpec = source == null
+        ? null
+        : SkyEnvironmentSpec(
+            source,
+            refresh: skyEnvironment.refresh.name,
+            intervalSeconds: skyEnvironment.interval.inMicroseconds / 1e6,
+            faceResolution: skyEnvironment.faceResolution,
+            equirectWidth: skyEnvironment.equirectWidth,
+            castShadows: castsSkyShadows,
+          );
+  }
+
+  SkyboxSpec? skyboxSpec;
+  final skybox = s.skybox;
+  if (skybox != null) {
+    final source = _serializeSkySource(skybox.source);
+    skyboxSpec = source == null
+        ? null
+        : SkyboxSpec(source, intensity: skybox.intensity);
+  }
+
+  return EnvironmentVolumeSpec(
+    environment: environmentSpec,
+    environmentIntensity: s.environmentIntensity,
+    exposure: s.exposure,
+    toneMapping: s.toneMapping.name,
+    // TODO(radiance-size-roundtrip): EnvironmentMap.radianceCubeSize is static,
+    // so a volume's reflection size cannot be recovered from the live map.
+    skybox: skyboxSpec,
+    skyEnvironment: skyEnvironmentSpec,
+    bounds: _serializeBounds(v.bounds),
+    priority: v.priority,
+    weight: v.weight,
+    blendDistance: v.blendDistance,
+  );
+}
+
+VolumeBoundsSpec? _serializeBounds(EnvironmentVolumeBounds? b) => switch (b) {
+  null => null,
+  BoxVolumeBounds(:final center, :final halfExtents) => BoxBoundsSpec(
+    center: center.clone(),
+    halfExtents: halfExtents.clone(),
+  ),
+  SphereVolumeBounds(:final center, :final radius) => SphereBoundsSpec(
+    center: center.clone(),
+    radius: radius,
+  ),
+};
 
 Future<void> _applyEnvironment(
   EnvironmentSpec spec,
@@ -213,6 +426,17 @@ Future<void> _applyEnvironment(
           canonicalJson(_encodeEnvironment(spec))) {
     return;
   }
+  final environment = await _buildEnvironment(spec, bundle);
+  if (environment != null) scene.environment = environment;
+}
+
+/// Builds the [EnvironmentMap] for [spec], stamping it so [serializeStage] can
+/// recover the spec, or null when an asset fails to load. Honors the current
+/// [EnvironmentMap.radianceCubeSize].
+Future<EnvironmentMap?> _buildEnvironment(
+  EnvironmentSpec spec,
+  AssetBundle? bundle,
+) async {
   final EnvironmentMap environment;
   switch (spec) {
     case StudioEnvironment():
@@ -228,11 +452,11 @@ Future<void> _applyEnvironment(
         debugPrint(
           'fscene: failed to load environment asset "${asset.key}": $e',
         );
-        return;
+        return null;
       }
   }
   _environmentSpec[environment] = spec;
-  scene.environment = environment;
+  return environment;
 }
 
 // EnvironmentSpec has no public encoder; mirror the stage codec's shape just
