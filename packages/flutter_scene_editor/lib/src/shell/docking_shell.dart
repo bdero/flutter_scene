@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// 4-panel docked editor shell.
+/// Docked editor shell.
 ///
 /// Layout (in-house resizable splits, the `docking` and `multi_split_view`
 /// packages did not give reliably draggable dividers in this nesting, so the
@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 ///   |       Viewport            +-------------------+
 ///   |                           |   Inspector       |
 ///   +---------------------------+-------------------+
-///   |   History (bottom strip)                      |
+///   |   [Assets | History]  (tabbed bottom strip)   |
 ///   +-----------------------------------------------+
 ///
 /// TODO(docking-tabs): drag-to-redock and tab groups belong with the editor
@@ -23,12 +23,14 @@ class DockingShell extends StatelessWidget {
     required this.outlinerPane,
     required this.inspectorPane,
     required this.historyPane,
+    required this.assetBrowserPane,
   });
 
   final Widget viewportPane;
   final Widget outlinerPane;
   final Widget inspectorPane;
   final Widget historyPane;
+  final Widget assetBrowserPane;
 
   @override
   Widget build(BuildContext context) {
@@ -46,9 +48,51 @@ class DockingShell extends StatelessWidget {
     );
     return ResizableSplit(
       axis: Axis.vertical,
-      initialFraction: 0.78,
+      initialFraction: 0.74,
       first: mainArea,
-      second: _PanelContainer(child: historyPane),
+      second: _PanelContainer(
+        child: _BottomTabs(
+          assetBrowserPane: assetBrowserPane,
+          historyPane: historyPane,
+        ),
+      ),
+    );
+  }
+}
+
+/// The tabbed bottom strip carrying the asset browser and the history panel.
+class _BottomTabs extends StatelessWidget {
+  const _BottomTabs({
+    required this.assetBrowserPane,
+    required this.historyPane,
+  });
+
+  final Widget assetBrowserPane;
+  final Widget historyPane;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const SizedBox(
+            height: 30,
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelStyle: TextStyle(fontSize: 12),
+              tabs: [
+                Tab(height: 30, text: 'Assets'),
+                Tab(height: 30, text: 'History'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(children: [assetBrowserPane, historyPane]),
+          ),
+        ],
+      ),
     );
   }
 }

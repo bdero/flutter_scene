@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../controller/editor_controller.dart';
 import '../io/glb_import_options.dart';
 import '../io/scene_io.dart';
+import '../panels/asset_browser_panel.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
@@ -326,6 +327,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                         outlinerPane: OutlinerPanel(controller: _ctrl),
                         inspectorPane: InspectorPanel(controller: _ctrl),
                         historyPane: HistoryPanel(controller: _ctrl),
+                        assetBrowserPane: AssetBrowserPanel(
+                          controller: _ctrl,
+                          onImportModel: _importModelFromBrowser,
+                        ),
                       ),
                       if (_paletteOpen)
                         CommandPaletteOverlay(
@@ -378,6 +383,13 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   Future<void> _importGlb() async {
     final path = await pickModelPath();
     if (path == null || !mounted) return;
+    await _importModelFromBrowser(path);
+  }
+
+  // Imports a glTF model at a known [path] (from the asset browser), showing the
+  // same import-options dialog as the File menu's Import glTF.
+  Future<void> _importModelFromBrowser(String path) async {
+    if (!mounted) return;
     final options = await showGlbImportOptions(context);
     if (options == null || !mounted) return;
     // Graft under the selected node when exactly one is selected, else add to
