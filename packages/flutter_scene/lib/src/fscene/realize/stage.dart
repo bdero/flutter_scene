@@ -241,6 +241,145 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   return settings;
 }
 
+/// Re-applies a resource look onto live [target] settings in place, reusing the
+/// live sky bindings and the static environment (so their baked image-based
+/// lighting is kept and re-bakes smoothly instead of from zero) when the look's
+/// structure is unchanged. Returns true when the look was applied in place, and
+/// false when a structural change (a different sky source type or sky-binding
+/// configuration, or a different environment kind) means the caller must
+/// rebuild the settings from scratch with [realizeEnvironmentSettings].
+///
+/// A parameter-only edit (a dragged sun direction, a recolored sky, a scalar)
+/// keeps the existing [SkyEnvironment] binding and only mutates its source and
+/// invalidates it, so the time-sliced re-bake holds the current lighting until
+/// the new one publishes. This mirrors what the editor's live preview does
+/// during a drag, so committing the edit is then a near no-op.
+bool reapplyEnvironmentSettingsInPlace({
+  required EnvironmentSettings target,
+  required EnvironmentSpec environment,
+  required double environmentIntensity,
+  required double exposure,
+  required String toneMapping,
+  SkyboxSpec? skybox,
+  SkyEnvironmentSpec? skyEnvironment,
+}) {
+  if (!_skyEnvironmentReusable(target.skyEnvironment, skyEnvironment)) {
+    return false;
+  }
+  if (!_skyboxReusable(target.skybox, skybox)) return false;
+  // The static environment is only live when no sky binding owns it.
+  if (skyEnvironment == null &&
+      !_environmentReusable(target.environment, environment)) {
+    return false;
+  }
+
+  target
+    ..environmentIntensity = environmentIntensity
+    ..exposure = exposure
+    ..toneMapping = _toneMapping(toneMapping);
+
+  final liveSkyEnvironment = target.skyEnvironment;
+  if (liveSkyEnvironment != null && skyEnvironment != null) {
+    _applySkySourceInPlace(liveSkyEnvironment.source, skyEnvironment.source);
+    liveSkyEnvironment.invalidate();
+    final source = liveSkyEnvironment.source;
+    final wantsSun = skyEnvironment.castShadows && source is SunSky;
+    final hasSun = identical(target.sunLight?.source, source);
+    if (wantsSun && !hasSun) {
+      target.sunLight = SunLight(source as SunSky);
+    } else if (!wantsSun && target.sunLight != null) {
+      target.sunLight = null;
+    }
+  }
+
+  final liveSkybox = target.skybox;
+  if (liveSkybox != null && skybox != null) {
+    _applySkySourceInPlace(liveSkybox.source, skybox.source);
+    liveSkybox.intensity = skybox.intensity;
+  }
+  return true;
+}
+
+// Whether the [live] sky binding can be reused for [spec] without a rebuild,
+// needing the same presence, source type, and bake configuration (the binding
+// config is fixed at construction, so a change there needs a fresh binding).
+bool _skyEnvironmentReusable(SkyEnvironment? live, SkyEnvironmentSpec? spec) {
+  if (live == null || spec == null) return live == null && spec == null;
+  if (!_skySourceTypeMatches(live.source, spec.source)) return false;
+  return live.refresh == _refresh(spec.refresh) &&
+      live.interval.inMicroseconds == (spec.intervalSeconds * 1e6).round() &&
+      live.faceResolution == spec.faceResolution &&
+      live.equirectWidth == spec.equirectWidth;
+}
+
+// Whether the [live] skybox can be reused for [spec], needing the same presence
+// and source type. The intensity and source parameters are mutated in place.
+bool _skyboxReusable(Skybox? live, SkyboxSpec? spec) {
+  if (live == null || spec == null) return live == null && spec == null;
+  return _skySourceTypeMatches(live.source, spec.source);
+}
+
+// Whether [live] is a static environment this realizer built from a spec equal
+// to [spec], so it can be kept rather than rebuilt. A null or externally built
+// environment (no spec stamp, such as a disk-loaded HDR) is not reusable here,
+// so the caller falls back to a rebuild.
+//
+// TODO(radiance-size-reapply): a radianceCubeSize-only change is not detected
+// (the live map does not expose its built size), so it is ignored on reuse,
+// matching _applyEnvironment.
+bool _environmentReusable(EnvironmentMap? live, EnvironmentSpec spec) {
+  if (live == null) return false;
+  final current = _environmentSpec[live];
+  if (current == null) return false;
+  return canonicalJson(_encodeEnvironment(current)) ==
+      canonicalJson(_encodeEnvironment(spec));
+}
+
+bool _skySourceTypeMatches(SkySource live, SkySourceSpec spec) =>
+    switch (spec) {
+      EnvironmentSkySpec() => live is EnvironmentSkySource,
+      GradientSkySpec() => live is GradientSkySource,
+      PhysicalSkySpec() => live is PhysicalSkySource,
+      FmatSkySpec(:final asset) =>
+        live is PreprocessedSky && fmatSourcePathOf(live) == asset.key,
+    };
+
+// Mutates [live]'s parameters from [spec] without replacing the source object,
+// so a bound SkyEnvironment keeps its baked state and only needs invalidation.
+// A type mismatch is a no-op (the reusability checks above gate this).
+void _applySkySourceInPlace(SkySource live, SkySourceSpec spec) {
+  switch (spec) {
+    case EnvironmentSkySpec(:final blurriness):
+      if (live is EnvironmentSkySource) live.blurriness = blurriness;
+    case GradientSkySpec s:
+      if (live is GradientSkySource) {
+        live.zenithColor.setFrom(s.zenithColor);
+        live.horizonColor.setFrom(s.horizonColor);
+        live.groundColor.setFrom(s.groundColor);
+        live.sunDirection.setFrom(s.sunDirection);
+        live.sunColor.setFrom(s.sunColor);
+        live.sunSharpness = s.sunSharpness;
+      }
+    case PhysicalSkySpec s:
+      if (live is PhysicalSkySource) {
+        live.sunDirection.setFrom(s.sunDirection);
+        live.sunAngularRadius = s.sunAngularRadius;
+        live.rayleighCoefficient = s.rayleighCoefficient;
+        live.rayleighColor.setFrom(s.rayleighColor);
+        live.mieCoefficient = s.mieCoefficient;
+        live.mieEccentricity = s.mieEccentricity;
+        live.mieColor.setFrom(s.mieColor);
+        live.turbidity = s.turbidity;
+        live.groundColor.setFrom(s.groundColor);
+        live.energy = s.energy;
+      }
+    case FmatSkySpec s:
+      if (live is PreprocessedSky) {
+        applyFmatParameterOverrides(live.parameters, s.properties);
+      }
+  }
+}
+
 /// Realizes one [EnvironmentVolumeSpec] into a live [EnvironmentVolume].
 Future<EnvironmentVolume> _realizeVolume(
   EnvironmentVolumeSpec spec,

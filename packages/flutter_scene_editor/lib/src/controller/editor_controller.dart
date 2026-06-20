@@ -963,12 +963,19 @@ class EditorController extends ChangeNotifier {
   }
 
   // Re-resolves the environment resources in [ids] onto the live scene in
-  // place: the global stage environment (via realizeStage) and the settings of
-  // any mounted volume component that references one of them.
+  // place (the global stage environment and the settings of any mounted volume
+  // component that references one of them). A parameter-only edit reuses the live
+  // sky bindings (see reapplyEnvironmentSettingsInPlace) so reflections re-bake
+  // smoothly instead of from zero; a structural change falls back to a full
+  // realize.
   Future<void> _reflectEnvironmentResources(Set<LocalId> ids) async {
     final globalRef = document.stage.environmentRef;
     if (globalRef != null && ids.contains(globalRef)) {
-      await realizeStage(document, scene);
+      final resource = document.resource(globalRef);
+      if (!(resource is EnvironmentResource &&
+          _reapplyGlobalEnvironmentInPlace(resource))) {
+        await realizeStage(document, scene);
+      }
       await _applyDiskEnvironment();
     }
     for (final node in document.nodes.values) {
@@ -979,7 +986,8 @@ class EditorController extends ChangeNotifier {
         final resource = document.resource(ref.id);
         final live = _liveById[node.id]
             ?.getComponent<EnvironmentVolumeComponent>();
-        if (resource is EnvironmentResource && live != null) {
+        if (resource is! EnvironmentResource || live == null) continue;
+        if (!_reapplyResourceInPlace(resource, live.settings)) {
           live.settings = await realizeEnvironmentSettings(
             environment: resource.environment,
             environmentIntensity: resource.environmentIntensity,
@@ -994,6 +1002,37 @@ class EditorController extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  // Re-applies [resource] onto the live global look in place, returning false
+  // when a structural change means the caller must realize the stage afresh.
+  // With volumes active the blend reads scene.baseEnvironment, so mutate that;
+  // otherwise the live scene fields are authoritative.
+  bool _reapplyGlobalEnvironmentInPlace(EnvironmentResource resource) {
+    final blendActive =
+        scene.environmentVolumes.isNotEmpty ||
+        scene.renderScene.environmentVolumeComponents.isNotEmpty;
+    if (blendActive) {
+      final base = scene.baseEnvironment;
+      return base != null && _reapplyResourceInPlace(resource, base);
+    }
+    final target = EnvironmentSettings.fromScene(scene);
+    if (!_reapplyResourceInPlace(resource, target)) return false;
+    target.applyTo(scene);
+    return true;
+  }
+
+  bool _reapplyResourceInPlace(
+    EnvironmentResource resource,
+    EnvironmentSettings target,
+  ) => reapplyEnvironmentSettingsInPlace(
+    target: target,
+    environment: resource.environment,
+    environmentIntensity: resource.environmentIntensity,
+    exposure: resource.exposure,
+    toneMapping: resource.toneMapping,
+    skybox: resource.skybox,
+    skyEnvironment: resource.skyEnvironment,
+  );
 
   void _reflectCheap(Transaction transaction) {
     for (final record in transaction.records) {
