@@ -168,7 +168,13 @@ class EnvironmentSettings {
 
   /// Applies this snapshot to [scene], mutating its live look fields.
   void applyTo(Scene scene) {
-    scene.environment = environment;
+    // A sky-lit look has no static [environment]; its sky bakes the scene
+    // environment over the next frames. Keep the previously baked environment
+    // until then, so re-applying a sky-lit look (an editor edit, or the volume
+    // blend each frame) does not briefly drop to the default environment.
+    if (environment != null || skyEnvironment == null) {
+      scene.environment = environment;
+    }
     scene.skybox = skybox;
     scene.skyEnvironment = skyEnvironment;
     scene.sunLight = sunLight;
