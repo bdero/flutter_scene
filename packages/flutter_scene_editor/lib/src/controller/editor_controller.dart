@@ -158,12 +158,20 @@ class EditorController extends ChangeNotifier {
   /// their own sky-source instances (as the `setSkybox` command does).
   static Future<EditorController> empty() {
     final document = SceneDocument();
-    document.stage
-      ..skybox = SkyboxSpec(PhysicalSkySpec())
-      ..skyEnvironment = SkyEnvironmentSpec(
-        PhysicalSkySpec(),
-        castShadows: true,
-      );
+    // The global look lives in an environment resource the stage references, so
+    // it dedupes and shares the authoring path with volume environments.
+    final environment = document.addResource(
+      EnvironmentResource(
+        document.newId(),
+        name: 'Environment',
+        skybox: SkyboxSpec(PhysicalSkySpec()),
+        skyEnvironment: SkyEnvironmentSpec(
+          PhysicalSkySpec(),
+          castShadows: true,
+        ),
+      ),
+    );
+    document.stage.environmentRef = environment.id;
     return open(EditorSession(document));
   }
 

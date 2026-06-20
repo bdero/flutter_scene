@@ -1031,6 +1031,7 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   skybox: s.skybox,
   skyEnvironment: s.skyEnvironment,
   volumes: [for (final v in s.volumes) _copyVolume(v)],
+  environmentRef: s.environmentRef,
 );
 
 // A fresh volume spec so edits to a copied stage never alias the original's.
@@ -1587,6 +1588,38 @@ Transaction _environmentTransaction(
       newValue: ResourceChange(next),
     ),
   ],
+);
+
+/// Points the stage's global environment at an environment resource (or clears
+/// it back to the inline stage look when `environmentId` is omitted).
+final setStageEnvironment = CommandEntry(
+  name: 'setStageEnvironment',
+  doc: 'Set the stage global environment resource.',
+  category: 'Stage',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final old = ctx.document.stage;
+    final next = _copyStage(old);
+    next.environmentRef = optionalResourceId(params, 'environmentId');
+    return Transaction(
+      name: 'Set stage environment',
+      records: [
+        ChangeRecord(
+          targetId: ChangeRecord.rootsTarget,
+          slot: ChangeSlot.stage,
+          oldValue: StageMetadataChange(old),
+          newValue: StageMetadataChange(next),
+        ),
+      ],
+    );
+  },
 );
 
 /// Creates an environment resource (a reusable scene look) in the pool. The new
@@ -2322,6 +2355,7 @@ final List<CommandEntry> builtinCommands = [
   setEnvironmentProperties,
   setEnvironmentSkybox,
   setEnvironmentSkyParameters,
+  setStageEnvironment,
   removeResource,
   setStageProperties,
   setSkybox,

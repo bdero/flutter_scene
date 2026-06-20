@@ -980,6 +980,7 @@ class StageMetadata {
     this.exposure = 1.0,
     this.toneMapping = 'pbrNeutral',
     this.radianceCubeSize,
+    this.environmentRef,
     this.antiAliasingMode = 'auto',
     this.renderScale = 1.0,
     this.filterQuality = 'medium',
@@ -1038,4 +1039,12 @@ class StageMetadata {
   /// camera position. Empty disables volume blending. See
   /// [EnvironmentVolumeSpec].
   List<EnvironmentVolumeSpec> volumes;
+
+  /// The global environment resource the stage's look comes from. When set, it
+  /// overrides the inline look fields above (the realizer resolves it to the
+  /// base look); when null, the inline fields are used.
+  //
+  // TODO(stage-env-inline): once authoring always uses a resource, remove the
+  // inline look fields and make this the only path.
+  LocalId? environmentRef;
 }

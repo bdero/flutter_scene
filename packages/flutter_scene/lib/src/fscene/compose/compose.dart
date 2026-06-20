@@ -604,6 +604,7 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
       ? null
       : _copySkyEnvironment(s.skyEnvironment!),
   volumes: [for (final v in s.volumes) _copyVolume(v)],
+  environmentRef: s.environmentRef,
 );
 
 SkyboxSpec _copySkybox(SkyboxSpec s) =>

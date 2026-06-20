@@ -68,6 +68,11 @@ class StageSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The stage's global look comes from a referenced environment resource when
+    // set; otherwise the inline (legacy) stage fields are edited directly.
+    final ref = controller.document.stage.environmentRef;
+    final resource = ref == null ? null : controller.document.resource(ref);
+    final environment = resource is EnvironmentResource ? resource : null;
     return ListView(
       padding: const EdgeInsets.all(8),
       children: [
@@ -79,9 +84,9 @@ class StageSection extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ),
-        EnvironmentControls(controller: controller),
+        EnvironmentControls(controller: controller, environment: environment),
         const Divider(),
-        SkySection(controller: controller),
+        SkySection(controller: controller, environment: environment),
         const Divider(),
         VolumesSection(controller: controller),
       ],

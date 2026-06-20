@@ -57,9 +57,6 @@ Future<void> realizeStage(
   AssetBundle? bundle,
 }) async {
   final stage = document.stage;
-  scene.environmentIntensity = stage.environmentIntensity;
-  scene.exposure = stage.exposure;
-  scene.toneMapping = _toneMapping(stage.toneMapping);
   scene.antiAliasingMode = _byName(
     AntiAliasingMode.values,
     stage.antiAliasingMode,
@@ -72,65 +69,86 @@ Future<void> realizeStage(
     ui.FilterQuality.medium,
   );
 
-  // Realize each distinct sky source once so a skybox and sky lighting
-  // describing the same sky share one live source.
-  final realized = <String, SkySource?>{};
-  Future<SkySource?> sourceFor(SkySourceSpec spec) async =>
-      realized[canonicalJson(encodeSkySource(spec))] ??=
-          await _realizeSkySource(spec, bundle);
-
-  final skyEnvironmentSpec = stage.skyEnvironment;
-  if (skyEnvironmentSpec == null) {
-    scene.skyEnvironment = null;
-    await _withRadianceCubeSize(
-      stage.radianceCubeSize,
-      () => _applyEnvironment(stage.environment, scene, bundle),
-    );
+  // The stage's global look comes from a referenced environment resource when
+  // set; otherwise from the stage's own inline look fields (legacy).
+  final envRef = stage.environmentRef;
+  final envResource = envRef == null ? null : document.resource(envRef);
+  if (envResource is EnvironmentResource) {
+    (await realizeEnvironmentSettings(
+      environment: envResource.environment,
+      environmentIntensity: envResource.environmentIntensity,
+      exposure: envResource.exposure,
+      toneMapping: envResource.toneMapping,
+      radianceCubeSize: envResource.radianceCubeSize,
+      skybox: envResource.skybox,
+      skyEnvironment: envResource.skyEnvironment,
+      bundle: bundle,
+    )).applyTo(scene);
   } else {
-    final source = await sourceFor(skyEnvironmentSpec.source);
-    if (source is ShaderSkySource) {
-      scene.skyEnvironment = SkyEnvironment(
-        source,
-        refresh: _refresh(skyEnvironmentSpec.refresh),
-        interval: Duration(
-          microseconds: (skyEnvironmentSpec.intervalSeconds * 1e6).round(),
-        ),
-        faceResolution: skyEnvironmentSpec.faceResolution,
-        equirectWidth: skyEnvironmentSpec.equirectWidth,
-      );
-    } else {
-      if (source != null) {
-        debugPrint(
-          'fscene: skyEnvironment needs a shader sky (fmat, gradient, or '
-          'physical); skipping the binding',
-        );
-      }
+    scene.environmentIntensity = stage.environmentIntensity;
+    scene.exposure = stage.exposure;
+    scene.toneMapping = _toneMapping(stage.toneMapping);
+
+    // Realize each distinct sky source once so a skybox and sky lighting
+    // describing the same sky share one live source.
+    final realized = <String, SkySource?>{};
+    Future<SkySource?> sourceFor(SkySourceSpec spec) async =>
+        realized[canonicalJson(encodeSkySource(spec))] ??=
+            await _realizeSkySource(spec, bundle);
+
+    final skyEnvironmentSpec = stage.skyEnvironment;
+    if (skyEnvironmentSpec == null) {
       scene.skyEnvironment = null;
       await _withRadianceCubeSize(
         stage.radianceCubeSize,
         () => _applyEnvironment(stage.environment, scene, bundle),
       );
+    } else {
+      final source = await sourceFor(skyEnvironmentSpec.source);
+      if (source is ShaderSkySource) {
+        scene.skyEnvironment = SkyEnvironment(
+          source,
+          refresh: _refresh(skyEnvironmentSpec.refresh),
+          interval: Duration(
+            microseconds: (skyEnvironmentSpec.intervalSeconds * 1e6).round(),
+          ),
+          faceResolution: skyEnvironmentSpec.faceResolution,
+          equirectWidth: skyEnvironmentSpec.equirectWidth,
+        );
+      } else {
+        if (source != null) {
+          debugPrint(
+            'fscene: skyEnvironment needs a shader sky (fmat, gradient, or '
+            'physical); skipping the binding',
+          );
+        }
+        scene.skyEnvironment = null;
+        await _withRadianceCubeSize(
+          stage.radianceCubeSize,
+          () => _applyEnvironment(stage.environment, scene, bundle),
+        );
+      }
     }
-  }
 
-  final skyboxSpec = stage.skybox;
-  if (skyboxSpec == null) {
-    scene.skybox = null;
-  } else {
-    final source = await sourceFor(skyboxSpec.source);
-    scene.skybox = source == null
-        ? null
-        : Skybox(source, intensity: skyboxSpec.intensity);
-  }
+    final skyboxSpec = stage.skybox;
+    if (skyboxSpec == null) {
+      scene.skybox = null;
+    } else {
+      final source = await sourceFor(skyboxSpec.source);
+      scene.skybox = source == null
+          ? null
+          : Skybox(source, intensity: skyboxSpec.intensity);
+    }
 
-  // Drive a sun light from the sky-lighting source when shadows are enabled
-  // and that source has a sun. It shares the bound sky source, so the visible
-  // disk, the baked IBL, and the cast shadow all track one sun.
-  final boundSkySource = scene.skyEnvironment?.source;
-  if (skyEnvironmentSpec?.castShadows == true && boundSkySource is SunSky) {
-    scene.sunLight = SunLight(boundSkySource as SunSky);
-  } else {
-    scene.sunLight = null;
+    // Drive a sun light from the sky-lighting source when shadows are enabled
+    // and that source has a sun. It shares the bound sky source, so the visible
+    // disk, the baked IBL, and the cast shadow all track one sun.
+    final boundSkySource = scene.skyEnvironment?.source;
+    if (skyEnvironmentSpec?.castShadows == true && boundSkySource is SunSky) {
+      scene.sunLight = SunLight(boundSkySource as SunSky);
+    } else {
+      scene.sunLight = null;
+    }
   }
 
   // Spatial environment volumes (the legacy stage list and node components)

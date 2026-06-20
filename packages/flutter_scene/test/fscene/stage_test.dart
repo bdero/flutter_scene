@@ -191,6 +191,17 @@ void main() {
       next.stage.volumes.single.weight = 0.1;
       expect(diffScene(base, next).stageChanged, isTrue);
     });
+
+    test('the stage environment-resource reference round-trips', () {
+      final doc = SceneDocument();
+      final env = doc.addResource(
+        EnvironmentResource(doc.newId(), name: 'global'),
+      );
+      doc.stage.environmentRef = env.id;
+      final restored = readFscene(writeFscene(doc));
+      expect(restored.stage.environmentRef, env.id);
+      expect(restored.resources[env.id], isA<EnvironmentResource>());
+    });
   });
 
   test('compose deep-copies the stage volumes', () {

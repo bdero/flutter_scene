@@ -136,7 +136,7 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
     json['featuresRequired'] = doc.featuresRequired.toList()..sort();
   }
   if (doc.generator != null) json['generator'] = doc.generator;
-  json['stage'] = encodeStage(doc.stage);
+  json['stage'] = encodeStage(doc.stage, idKey);
   if (doc.resources.isNotEmpty) {
     json['resources'] = _encodeIdMap(
       doc.resources,
@@ -218,9 +218,15 @@ Map<String, dynamic> _encodeIdMap<V>(
   return {for (final e in entries) idKey(e.key): encode(e.value)};
 }
 
+String _tokenIdKey(LocalId id) => id.toToken();
+
 /// Encodes [s] to its canonical JSON map (also used to compare stages for
-/// equality in the scene diff).
-Map<String, dynamic> encodeStage(StageMetadata s) => {
+/// equality in the scene diff). [idKey] keys the environment-resource
+/// reference; the diff uses the default raw-token form.
+Map<String, dynamic> encodeStage(
+  StageMetadata s, [
+  String Function(LocalId) idKey = _tokenIdKey,
+]) => {
   'upAxis': s.upAxis.name,
   'handedness': s.handedness.name,
   'unitsPerMeter': s.unitsPerMeter,
@@ -233,6 +239,7 @@ Map<String, dynamic> encodeStage(StageMetadata s) => {
     skybox: s.skybox,
     skyEnvironment: s.skyEnvironment,
   ),
+  if (s.environmentRef != null) 'environmentRef': idKey(s.environmentRef!),
   if (s.antiAliasingMode != 'auto') 'antiAliasing': s.antiAliasingMode,
   if (s.renderScale != 1.0) 'renderScale': s.renderScale,
   if (s.filterQuality != 'medium') 'filterQuality': s.filterQuality,
@@ -905,6 +912,9 @@ StageMetadata _decodeStage(Map<String, dynamic> json) => StageMetadata(
   filterQuality: json['filterQuality'] as String? ?? 'medium',
   skybox: _decodeSkybox(json['skybox']),
   skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
+  environmentRef: json['environmentRef'] != null
+      ? LocalId.parse(json['environmentRef'] as String)
+      : null,
   volumes: [
     for (final v in (json['volumes'] as List?) ?? const [])
       _decodeVolume(v as Map<String, dynamic>),
