@@ -783,7 +783,13 @@ class EditorController extends ChangeNotifier {
       }
       return scene.environmentVolumes[volumeIndex].settings;
     }
-    return scene.baseEnvironment;
+    // baseEnvironment is the blend's global base, but the per-frame blend only
+    // runs when a volume is active; otherwise the live look fields are
+    // authoritative, so preview must mutate those (return null).
+    final blendActive =
+        scene.environmentVolumes.isNotEmpty ||
+        scene.renderScene.environmentVolumeComponents.isNotEmpty;
+    return blendActive ? scene.baseEnvironment : null;
   }
 
   /// Live-previews a procedural-sky parameter on the live scene without
@@ -976,8 +982,19 @@ class EditorController extends ChangeNotifier {
   /// environments through the asset bundle, which a user-picked file is not in,
   /// so the editor loads it here; a studio/empty environment is left to
   /// `realizeStage`.
+  // The stage's effective global environment: the referenced environment
+  // resource's when set, otherwise the inline stage environment.
+  EnvironmentSpec _globalEnvironmentSpec() {
+    final ref = document.stage.environmentRef;
+    if (ref != null) {
+      final resource = document.resource(ref);
+      if (resource is EnvironmentResource) return resource.environment;
+    }
+    return document.stage.environment;
+  }
+
   Future<void> _applyDiskEnvironment() async {
-    final env = document.stage.environment;
+    final env = _globalEnvironmentSpec();
     if (env is! AssetEnvironment) {
       _diskEnvPath = null;
       return;

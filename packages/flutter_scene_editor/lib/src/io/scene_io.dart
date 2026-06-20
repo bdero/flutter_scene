@@ -73,16 +73,31 @@ Future<String> importEnvironmentMap(
   } else {
     assetRef = path;
   }
-  await controller.run('setStageProperties', {
-    'properties': {'environment': 'asset', 'environmentAsset': assetRef},
-  });
-  // Use the HDR for both lighting and the background: sky-driven lighting owns
+  // Use the HDR for both lighting and the background. Sky-driven lighting owns
   // the scene environment, so turn it off and show the environment as the
-  // skybox instead.
-  await controller.run('setSkybox', {
-    'sky': 'environment',
-    'lightScene': false,
-  });
+  // skybox. Target the stage's global environment resource when it has one,
+  // else the legacy inline stage look.
+  final envId = controller.document.stage.environmentRef;
+  if (envId != null) {
+    final id = envId.toToken();
+    await controller.run('setEnvironmentProperties', {
+      'environmentId': id,
+      'properties': {'environment': 'asset', 'environmentAsset': assetRef},
+    });
+    await controller.run('setEnvironmentSkybox', {
+      'environmentId': id,
+      'sky': 'environment',
+      'lightScene': false,
+    });
+  } else {
+    await controller.run('setStageProperties', {
+      'properties': {'environment': 'asset', 'environmentAsset': assetRef},
+    });
+    await controller.run('setSkybox', {
+      'sky': 'environment',
+      'lightScene': false,
+    });
+  }
   return assetRef;
 }
 

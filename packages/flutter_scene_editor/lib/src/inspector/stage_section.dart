@@ -84,9 +84,18 @@ class StageSection extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ),
-        EnvironmentControls(controller: controller, environment: environment),
+        EnvironmentControls(
+          controller: controller,
+          environment: environment,
+          livePreview: true,
+          allowHdrImport: true,
+        ),
         const Divider(),
-        SkySection(controller: controller, environment: environment),
+        SkySection(
+          controller: controller,
+          environment: environment,
+          livePreview: true,
+        ),
         const Divider(),
         VolumesSection(controller: controller),
       ],
@@ -103,6 +112,8 @@ class EnvironmentControls extends StatelessWidget {
     required this.controller,
     this.volumeIndex,
     this.environment,
+    this.livePreview = false,
+    this.allowHdrImport = false,
   });
 
   final EditorController controller;
@@ -110,6 +121,15 @@ class EnvironmentControls extends StatelessWidget {
 
   /// When set, edits this environment resource instead of the stage/volume.
   final EnvironmentResource? environment;
+
+  /// Whether slider drags preview live on the scene (the stage and the global
+  /// environment resource are applied to the live scene; a volume's own
+  /// environment resource is not, so it commits on release).
+  final bool livePreview;
+
+  /// Whether to show the "Import HDR environment" action (only the global
+  /// look loads a disk environment today).
+  final bool allowHdrImport;
 
   void _set(String key, Object value) {
     final env = environment;
@@ -130,7 +150,7 @@ class EnvironmentControls extends StatelessWidget {
   // resource commits on release (a poolResource edit re-realizes).
   // TODO(env-resource-preview): live-preview environment resource edits.
   void _previewExposure({double? exposure, double? environmentIntensity}) {
-    if (environment != null) return;
+    if (environment != null && !livePreview) return;
     controller.previewStage(
       exposure: exposure,
       environmentIntensity: environmentIntensity,
@@ -174,10 +194,9 @@ class EnvironmentControls extends StatelessWidget {
               style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ),
-        // Importing an HDR drives the disk-loaded base environment; a volume
-        // or environment resource cannot reference one yet.
+        // Importing an HDR drives the disk-loaded global environment.
         // TODO(volume-hdr): allow importing an image environment per volume.
-        if (volumeIndex == null && env == null)
+        if (allowHdrImport)
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -264,6 +283,7 @@ class SkySection extends StatelessWidget {
     required this.controller,
     this.volumeIndex,
     this.environment,
+    this.livePreview = false,
   });
 
   final EditorController controller;
@@ -271,6 +291,9 @@ class SkySection extends StatelessWidget {
 
   /// When set, edits this environment resource instead of the stage/volume.
   final EnvironmentResource? environment;
+
+  /// Whether slider drags preview live (see [EnvironmentControls.livePreview]).
+  final bool livePreview;
 
   @override
   Widget build(BuildContext context) {
@@ -314,9 +337,18 @@ class SkySection extends StatelessWidget {
 
     // The type dropdown and lighting toggles are structural (the skybox command
     // keeps the tuned parameters across them); the per-parameter fields below
-    // patch the current sky.
-    void setType(String newType) =>
-        controller.run(skyboxCommand, {'sky': newType, ...target()});
+    // patch the current sky. Picking a procedural sky lights the scene and
+    // casts sun shadows by default (the user can then turn them off).
+    void setType(String newType) {
+      final procedural = newType == 'gradient' || newType == 'physical';
+      controller.run(skyboxCommand, {
+        'sky': newType,
+        if (procedural) 'lightScene': true,
+        if (procedural) 'castShadows': true,
+        ...target(),
+      });
+    }
+
     void setLight(bool on) => controller.run(skyboxCommand, {
       'sky': type,
       'lightScene': on,
@@ -332,7 +364,7 @@ class SkySection extends StatelessWidget {
     // Live preview only on the stage/volume path (an environment resource
     // commits on release). TODO(env-resource-preview).
     void preview(String key, Object raw) {
-      if (env != null) return;
+      if (env != null && !livePreview) return;
       controller.previewSkyParameter(key, raw, volumeIndex: volumeIndex);
     }
 

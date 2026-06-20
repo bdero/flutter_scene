@@ -149,19 +149,21 @@ EnvironmentSettings blendEnvironmentContributions(
 ///
 /// Returns `(primary, secondary, blend)`: sample `primary` and `secondary` and
 /// mix toward `secondary` by `blend`. `secondary` is null (and `blend` 0) when
-/// a single environment is in effect. Only static environments cross-fade; a
-/// sky-lit look's lighting comes from a per-frame bake owning a single
-/// environment, so when a contributing look is sky-lit this returns no
-/// secondary and the discrete switch stands. See `notes` `TODO(dual-sky-bake)`.
+/// a single environment is in effect.
+///
+/// The base contributes its environment as the primary, including a sky-lit
+/// base (its per-frame-baked cube is a concrete environment). A secondary must
+/// be a static environment, since the renderer can bake at most one sky; a
+/// sky-lit (or environment-less) volume is skipped for the cross-fade and still
+/// applies discretely through [blendEnvironmentContributions]. So two sky-lit
+/// looks do not cross-fade. See `notes` `TODO(dual-sky-bake)`.
 ({EnvironmentMap? primary, EnvironmentMap? secondary, double blend})
 resolveEnvironmentCrossfadeFromContributions(
   EnvironmentSettings base,
   List<EnvironmentContribution> contributions,
 ) {
-  bool isStatic(EnvironmentSettings s) =>
-      s.skyEnvironment == null && s.environment != null;
-  if (!isStatic(base)) {
-    return (primary: base.environment, secondary: null, blend: 0.0);
+  if (base.environment == null) {
+    return (primary: null, secondary: null, blend: 0.0);
   }
 
   final active = [
@@ -173,10 +175,9 @@ resolveEnvironmentCrossfadeFromContributions(
   EnvironmentMap? secondary;
   var blend = 0.0;
   for (final c in active) {
-    if (!isStatic(c.settings)) {
-      return (primary: base.environment, secondary: null, blend: 0.0);
-    }
     final env = c.settings.environment;
+    // A sky-lit or environment-less volume cannot be a cross-fade secondary.
+    if (c.settings.skyEnvironment != null || env == null) continue;
     if (identical(env, primary)) continue;
     // Collapse the running pair to its dominant member, then start a new fade.
     primary = blend >= 0.5 ? (secondary ?? primary) : primary;
