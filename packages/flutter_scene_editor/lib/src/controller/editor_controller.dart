@@ -773,6 +773,46 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // The live environment-volume component on the node, if any.
+  EnvironmentVolumeComponent? _liveVolume(LocalId nodeId) =>
+      _liveById[nodeId]?.getComponent<EnvironmentVolumeComponent>();
+
+  /// Live-previews an environment-volume component's look (the node carrying
+  /// the component) by mutating its live settings, so a slider drag shows in
+  /// the blend immediately. Commit with `setEnvironment*` on release.
+  void previewVolumeStage(
+    LocalId nodeId, {
+    double? exposure,
+    double? environmentIntensity,
+  }) {
+    final settings = _liveVolume(nodeId)?.settings;
+    if (settings == null) return;
+    if (exposure != null) settings.exposure = exposure;
+    if (environmentIntensity != null) {
+      settings.environmentIntensity = environmentIntensity;
+    }
+    notifyListeners();
+  }
+
+  /// Live-previews a procedural-sky parameter on an environment-volume
+  /// component's look. See [previewSkyParameter].
+  void previewVolumeSkyParameter(LocalId nodeId, String key, Object raw) {
+    final settings = _liveVolume(nodeId)?.settings;
+    if (settings == null) return;
+    if (key == 'intensity' && raw is num) {
+      settings.skybox?.intensity = raw.toDouble();
+      notifyListeners();
+      return;
+    }
+    _applySkyParameter(settings.skybox?.source, key, raw);
+    final skyEnvironment = settings.skyEnvironment;
+    if (skyEnvironment != null) {
+      _applySkyParameter(skyEnvironment.source, key, raw);
+      skyEnvironment.invalidate();
+    }
+    notifyListeners();
+  }
+
   // The EnvironmentSettings the volume blend reads for [volumeIndex] (a
   // volume's settings, or the base when volumes are active), or null when no
   // volume blending is active (the live scene fields are authoritative).
@@ -899,6 +939,19 @@ class EditorController extends ChangeNotifier {
       await _applyDiskEnvironment();
       return;
     }
+    // An environment-resource edit re-resolves only the affected environments
+    // in place, avoiding the full re-realize (which clears the scene, so a
+    // committed slider would flash the old look before snapping to the new).
+    if (transaction.records.every(
+      (r) =>
+          r.slot == ChangeSlot.poolResource &&
+          document.resource(r.targetId) is EnvironmentResource,
+    )) {
+      await _reflectEnvironmentResources(
+        transaction.records.map((r) => r.targetId).toSet(),
+      );
+      return;
+    }
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -907,6 +960,39 @@ class EditorController extends ChangeNotifier {
     } else {
       await _realizeAll();
     }
+  }
+
+  // Re-resolves the environment resources in [ids] onto the live scene in
+  // place: the global stage environment (via realizeStage) and the settings of
+  // any mounted volume component that references one of them.
+  Future<void> _reflectEnvironmentResources(Set<LocalId> ids) async {
+    final globalRef = document.stage.environmentRef;
+    if (globalRef != null && ids.contains(globalRef)) {
+      await realizeStage(document, scene);
+      await _applyDiskEnvironment();
+    }
+    for (final node in document.nodes.values) {
+      for (final spec in node.components) {
+        if (spec.type != 'environmentVolume') continue;
+        final ref = spec.properties['environment'];
+        if (ref is! ResourceRefValue || !ids.contains(ref.id)) continue;
+        final resource = document.resource(ref.id);
+        final live = _liveById[node.id]
+            ?.getComponent<EnvironmentVolumeComponent>();
+        if (resource is EnvironmentResource && live != null) {
+          live.settings = await realizeEnvironmentSettings(
+            environment: resource.environment,
+            environmentIntensity: resource.environmentIntensity,
+            exposure: resource.exposure,
+            toneMapping: resource.toneMapping,
+            radianceCubeSize: resource.radianceCubeSize,
+            skybox: resource.skybox,
+            skyEnvironment: resource.skyEnvironment,
+          );
+        }
+      }
+    }
+    notifyListeners();
   }
 
   void _reflectCheap(Transaction transaction) {

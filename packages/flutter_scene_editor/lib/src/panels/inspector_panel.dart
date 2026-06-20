@@ -119,6 +119,7 @@ class _NodeInspector extends StatelessWidget {
                 component.properties['environment'] is ResourceRefValue)
               _VolumeEnvironmentEditor(
                 controller: controller,
+                nodeId: node.id,
                 environmentId:
                     (component.properties['environment'] as ResourceRefValue)
                         .id,
@@ -1017,10 +1018,12 @@ class _ResourceRefRow extends StatelessWidget {
 class _VolumeEnvironmentEditor extends StatelessWidget {
   const _VolumeEnvironmentEditor({
     required this.controller,
+    required this.nodeId,
     required this.environmentId,
   });
 
   final EditorController controller;
+  final LocalId nodeId;
   final LocalId environmentId;
 
   @override
@@ -1036,9 +1039,17 @@ class _VolumeEnvironmentEditor extends StatelessWidget {
             res.name.isEmpty ? 'Environment' : 'Environment: ${res.name}',
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
-          EnvironmentControls(controller: controller, environment: res),
+          EnvironmentControls(
+            controller: controller,
+            environment: res,
+            volumeNodeId: nodeId,
+          ),
           const Divider(),
-          SkySection(controller: controller, environment: res),
+          SkySection(
+            controller: controller,
+            environment: res,
+            volumeNodeId: nodeId,
+          ),
         ],
       ),
     );

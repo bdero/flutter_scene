@@ -6,6 +6,8 @@ library;
 
 import 'package:flutter/material.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/id.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 
@@ -87,15 +89,10 @@ class StageSection extends StatelessWidget {
         EnvironmentControls(
           controller: controller,
           environment: environment,
-          livePreview: true,
           allowHdrImport: true,
         ),
         const Divider(),
-        SkySection(
-          controller: controller,
-          environment: environment,
-          livePreview: true,
-        ),
+        SkySection(controller: controller, environment: environment),
         const Divider(),
         VolumesSection(controller: controller),
       ],
@@ -112,7 +109,7 @@ class EnvironmentControls extends StatelessWidget {
     required this.controller,
     this.volumeIndex,
     this.environment,
-    this.livePreview = false,
+    this.volumeNodeId,
     this.allowHdrImport = false,
   });
 
@@ -122,10 +119,9 @@ class EnvironmentControls extends StatelessWidget {
   /// When set, edits this environment resource instead of the stage/volume.
   final EnvironmentResource? environment;
 
-  /// Whether slider drags preview live on the scene (the stage and the global
-  /// environment resource are applied to the live scene; a volume's own
-  /// environment resource is not, so it commits on release).
-  final bool livePreview;
+  /// When set (a volume component's environment), slider drags preview onto
+  /// that node's live volume; otherwise preview targets the stage/global.
+  final LocalId? volumeNodeId;
 
   /// Whether to show the "Import HDR environment" action (only the global
   /// look loads a disk environment today).
@@ -146,16 +142,21 @@ class EnvironmentControls extends StatelessWidget {
     }
   }
 
-  // Live preview is only wired for the stage/volume path; an environment
-  // resource commits on release (a poolResource edit re-realizes).
-  // TODO(env-resource-preview): live-preview environment resource edits.
   void _previewExposure({double? exposure, double? environmentIntensity}) {
-    if (environment != null && !livePreview) return;
-    controller.previewStage(
-      exposure: exposure,
-      environmentIntensity: environmentIntensity,
-      volumeIndex: volumeIndex,
-    );
+    final node = volumeNodeId;
+    if (node != null) {
+      controller.previewVolumeStage(
+        node,
+        exposure: exposure,
+        environmentIntensity: environmentIntensity,
+      );
+    } else {
+      controller.previewStage(
+        exposure: exposure,
+        environmentIntensity: environmentIntensity,
+        volumeIndex: volumeIndex,
+      );
+    }
   }
 
   @override
@@ -283,7 +284,7 @@ class SkySection extends StatelessWidget {
     required this.controller,
     this.volumeIndex,
     this.environment,
-    this.livePreview = false,
+    this.volumeNodeId,
   });
 
   final EditorController controller;
@@ -292,8 +293,9 @@ class SkySection extends StatelessWidget {
   /// When set, edits this environment resource instead of the stage/volume.
   final EnvironmentResource? environment;
 
-  /// Whether slider drags preview live (see [EnvironmentControls.livePreview]).
-  final bool livePreview;
+  /// When set, slider drags preview onto that node's live volume; otherwise
+  /// preview targets the stage/global (see [EnvironmentControls.volumeNodeId]).
+  final LocalId? volumeNodeId;
 
   @override
   Widget build(BuildContext context) {
@@ -364,8 +366,12 @@ class SkySection extends StatelessWidget {
     // Live preview only on the stage/volume path (an environment resource
     // commits on release). TODO(env-resource-preview).
     void preview(String key, Object raw) {
-      if (env != null && !livePreview) return;
-      controller.previewSkyParameter(key, raw, volumeIndex: volumeIndex);
+      final node = volumeNodeId;
+      if (node != null) {
+        controller.previewVolumeSkyParameter(node, key, raw);
+      } else {
+        controller.previewSkyParameter(key, raw, volumeIndex: volumeIndex);
+      }
     }
 
     Map<String, double> vecMap(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
