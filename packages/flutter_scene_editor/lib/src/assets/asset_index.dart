@@ -92,10 +92,10 @@ FileAssetKind? _classify(String name) {
 
 /// Scans [root] (the project directory) for referenceable assets, recursing up
 /// to [maxDepth] levels and stopping after [maxEntries] hits so a huge tree
-/// cannot stall the UI. Hidden directories and `build`/`.dart_tool` are
-/// skipped. Returns the assets sorted by kind then name. Runs off the platform
-/// thread is unnecessary here (the walk is bounded and cheap), but it is async
-/// so a slow disk does not block the caller.
+/// cannot stall the UI. Hidden directories (including `.dart_tool`) and
+/// `build`/`node_modules` are skipped. Returns the assets sorted by kind then
+/// name. The walk is bounded and cheap, but stays async so a slow disk does not
+/// block the caller.
 Future<List<FileAsset>> scanProjectAssets(
   String root, {
   int maxDepth = 6,
