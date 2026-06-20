@@ -133,23 +133,19 @@ Future<void> realizeStage(
     scene.sunLight = null;
   }
 
-  // Spatial environment volumes blend over the stage as the global base. With
-  // none, leave the base null so the live look fields are used directly (the
-  // common case); with volumes, capture the just-applied base look and realize
-  // each volume's look into a blendable settings value.
-  if (stage.volumes.isEmpty) {
-    scene.baseEnvironment = null;
-    scene.environmentVolumes.clear();
-  } else {
-    scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
-    final volumes = <EnvironmentVolume>[];
-    for (final spec in stage.volumes) {
-      volumes.add(await _realizeVolume(spec, bundle));
-    }
-    scene.environmentVolumes
-      ..clear()
-      ..addAll(volumes);
+  // Spatial environment volumes (the legacy stage list and node components)
+  // blend over the stage as the global base. Capture the just-applied stage
+  // look as that base so component volumes have something to blend over; the
+  // per-frame blend is skipped when no volume of either kind is active, so the
+  // live fields are used directly in the common case.
+  scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
+  final volumes = <EnvironmentVolume>[];
+  for (final spec in stage.volumes) {
+    volumes.add(await _realizeVolume(spec, bundle));
   }
+  scene.environmentVolumes
+    ..clear()
+    ..addAll(volumes);
 }
 
 /// Realizes a look (the fields an [EnvironmentResource] or a volume carries)

@@ -52,6 +52,15 @@ _Look _lookOf(StageMetadata stage, int? volumeIndex) {
   );
 }
 
+_Look _lookOfEnvironment(EnvironmentResource e) => (
+  environment: e.environment,
+  environmentIntensity: e.environmentIntensity,
+  exposure: e.exposure,
+  toneMapping: e.toneMapping,
+  radianceCubeSize: e.radianceCubeSize,
+  skybox: e.skybox,
+);
+
 class StageSection extends StatelessWidget {
   const StageSection({super.key, required this.controller});
 
@@ -88,21 +97,48 @@ class EnvironmentControls extends StatelessWidget {
     super.key,
     required this.controller,
     this.volumeIndex,
+    this.environment,
   });
 
   final EditorController controller;
   final int? volumeIndex;
 
+  /// When set, edits this environment resource instead of the stage/volume.
+  final EnvironmentResource? environment;
+
   void _set(String key, Object value) {
-    controller.run('setStageProperties', {
-      'properties': {key: value},
-      if (volumeIndex != null) 'volume': volumeIndex,
-    });
+    final env = environment;
+    if (env != null) {
+      controller.run('setEnvironmentProperties', {
+        'environmentId': env.id.toToken(),
+        'properties': {key: value},
+      });
+    } else {
+      controller.run('setStageProperties', {
+        'properties': {key: value},
+        if (volumeIndex != null) 'volume': volumeIndex,
+      });
+    }
+  }
+
+  // Live preview is only wired for the stage/volume path; an environment
+  // resource commits on release (a poolResource edit re-realizes).
+  // TODO(env-resource-preview): live-preview environment resource edits.
+  void _previewExposure({double? exposure, double? environmentIntensity}) {
+    if (environment != null) return;
+    controller.previewStage(
+      exposure: exposure,
+      environmentIntensity: environmentIntensity,
+      volumeIndex: volumeIndex,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final look = _lookOf(controller.document.stage, volumeIndex);
+    final env = environment;
+    final look = env != null
+        ? _lookOfEnvironment(env)
+        : _lookOf(controller.document.stage, volumeIndex);
     final envType = switch (look.environment) {
       EmptyEnvironment() => 'empty',
       AssetEnvironment() => 'asset',
@@ -134,9 +170,9 @@ class EnvironmentControls extends StatelessWidget {
             ),
           ),
         // Importing an HDR drives the disk-loaded base environment; a volume
-        // cannot reference one yet.
+        // or environment resource cannot reference one yet.
         // TODO(volume-hdr): allow importing an image environment per volume.
-        if (volumeIndex == null)
+        if (volumeIndex == null && env == null)
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -159,18 +195,14 @@ class EnvironmentControls extends StatelessWidget {
           label: 'Environment intensity',
           value: look.environmentIntensity,
           max: 3,
-          onPreview: (v) => controller.previewStage(
-            environmentIntensity: v,
-            volumeIndex: volumeIndex,
-          ),
+          onPreview: (v) => _previewExposure(environmentIntensity: v),
           onCommit: (v) => _set('environmentIntensity', v),
         ),
         LiveSlider(
           label: 'Exposure',
           value: look.exposure,
           max: 8,
-          onPreview: (v) =>
-              controller.previewStage(exposure: v, volumeIndex: volumeIndex),
+          onPreview: (v) => _previewExposure(exposure: v),
           onCommit: (v) => _set('exposure', v),
         ),
         ListTile(
@@ -222,20 +254,33 @@ class EnvironmentControls extends StatelessWidget {
 /// on release. Per-parameter edits flow through `setSkyParameters`, structural
 /// changes through `setSkybox`.
 class SkySection extends StatelessWidget {
-  const SkySection({super.key, required this.controller, this.volumeIndex});
+  const SkySection({
+    super.key,
+    required this.controller,
+    this.volumeIndex,
+    this.environment,
+  });
 
   final EditorController controller;
   final int? volumeIndex;
 
+  /// When set, edits this environment resource instead of the stage/volume.
+  final EnvironmentResource? environment;
+
   @override
   Widget build(BuildContext context) {
     final stage = controller.document.stage;
-    final skyboxSpec = volumeIndex == null
-        ? stage.skybox
-        : stage.volumes[volumeIndex!].skybox;
-    final skyEnvironmentSpec = volumeIndex == null
-        ? stage.skyEnvironment
-        : stage.volumes[volumeIndex!].skyEnvironment;
+    final env = environment;
+    final skyboxSpec = env != null
+        ? env.skybox
+        : (volumeIndex == null
+              ? stage.skybox
+              : stage.volumes[volumeIndex!].skybox);
+    final skyEnvironmentSpec = env != null
+        ? env.skyEnvironment
+        : (volumeIndex == null
+              ? stage.skyEnvironment
+              : stage.volumes[volumeIndex!].skyEnvironment);
     final source = skyboxSpec?.source;
     final type = switch (source) {
       GradientSkySpec() => 'gradient',
@@ -252,29 +297,40 @@ class SkySection extends StatelessWidget {
     final castShadows = skyEnvironmentSpec?.castShadows ?? false;
     final proceduralSky = type == 'gradient' || type == 'physical';
 
-    final volumeArg = volumeIndex == null
-        ? const <String, Object>{}
-        : {'volume': volumeIndex!};
+    // Route structural and parameter edits to the environment-resource
+    // commands when targeting a resource, else the stage/volume commands.
+    final skyboxCommand = env != null ? 'setEnvironmentSkybox' : 'setSkybox';
+    final paramsCommand = env != null
+        ? 'setEnvironmentSkyParameters'
+        : 'setSkyParameters';
+    Map<String, Object> target() => env != null
+        ? {'environmentId': env.id.toToken()}
+        : (volumeIndex == null ? const {} : {'volume': volumeIndex!});
 
-    // The type dropdown and lighting toggles are structural (setSkybox keeps
-    // the tuned parameters across them); the per-parameter fields below patch
-    // the current sky through setSkyParameters.
+    // The type dropdown and lighting toggles are structural (the skybox command
+    // keeps the tuned parameters across them); the per-parameter fields below
+    // patch the current sky.
     void setType(String newType) =>
-        controller.run('setSkybox', {'sky': newType, ...volumeArg});
-    void setLight(bool on) => controller.run('setSkybox', {
+        controller.run(skyboxCommand, {'sky': newType, ...target()});
+    void setLight(bool on) => controller.run(skyboxCommand, {
       'sky': type,
       'lightScene': on,
-      ...volumeArg,
+      ...target(),
     });
-    void setShadows(bool on) => controller.run('setSkybox', {
+    void setShadows(bool on) => controller.run(skyboxCommand, {
       'sky': type,
       'castShadows': on,
-      ...volumeArg,
+      ...target(),
     });
-    void runParams(Map<String, Object> properties) => controller.run(
-      'setSkyParameters',
-      {'properties': properties, ...volumeArg},
-    );
+    void runParams(Map<String, Object> properties) =>
+        controller.run(paramsCommand, {'properties': properties, ...target()});
+    // Live preview only on the stage/volume path (an environment resource
+    // commits on release). TODO(env-resource-preview).
+    void preview(String key, Object raw) {
+      if (env != null) return;
+      controller.previewSkyParameter(key, raw, volumeIndex: volumeIndex);
+    }
+
     Map<String, double> vecMap(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
 
     Widget axis(String name, double value, Vector3 Function(double) make) =>
@@ -285,11 +341,7 @@ class SkySection extends StatelessWidget {
           max: 1,
           // Aim the live sky as the slider drags; the background follows every
           // frame and the lighting re-bakes (time-sliced) so it catches up.
-          onPreview: (v) => controller.previewSkyParameter(
-            'sunDirection',
-            make(v),
-            volumeIndex: volumeIndex,
-          ),
+          onPreview: (v) => preview('sunDirection', make(v)),
           onCommit: (v) => runParams({'sunDirection': vecMap(make(v))}),
         );
 
@@ -304,8 +356,7 @@ class SkySection extends StatelessWidget {
       value: value,
       min: min,
       max: max,
-      onPreview: (v) =>
-          controller.previewSkyParameter(key, v, volumeIndex: volumeIndex),
+      onPreview: (v) => preview(key, v),
       onCommit: (v) => runParams({key: v}),
     );
 
@@ -322,11 +373,7 @@ class SkySection extends StatelessWidget {
       a: 1.0,
       channelMax: channelMax,
       showAlpha: false,
-      onPreview: (r, g, b, _) => controller.previewSkyParameter(
-        key,
-        Vector3(r, g, b),
-        volumeIndex: volumeIndex,
-      ),
+      onPreview: (r, g, b, _) => preview(key, Vector3(r, g, b)),
       onCommit: (r, g, b, _) => runParams({
         key: {'x': r, 'y': g, 'z': b},
       }),

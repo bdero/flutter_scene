@@ -114,6 +114,15 @@ class _NodeInspector extends StatelessWidget {
                 materialId:
                     (component.properties['material'] as ResourceRefValue).id,
               ),
+            // A volume's environment is a resource; edit its look inline.
+            if (component.type == 'environmentVolume' &&
+                component.properties['environment'] is ResourceRefValue)
+              _VolumeEnvironmentEditor(
+                controller: controller,
+                environmentId:
+                    (component.properties['environment'] as ResourceRefValue)
+                        .id,
+              ),
           ],
           if (!isPrefabContent) ...[
             const SizedBox(height: 8),
@@ -921,9 +930,24 @@ class _ResourceRefRow extends StatelessWidget {
         return r is MaterialResource;
       case 'texture':
         return r is TextureResource || r is RenderTextureResource;
+      case 'environment':
+        return r is EnvironmentResource;
       default:
         return true;
     }
+  }
+
+  // A friendly label for the dropdown: a named environment shows its name.
+  String _label(LocalId id) {
+    final r = controller.document.resource(id);
+    if (r is EnvironmentResource && r.name.isNotEmpty) return r.name;
+    return id.toToken();
+  }
+
+  Future<void> _createEnvironment() async {
+    final tx = await controller.run('createEnvironmentResource', {});
+    if (tx.records.isEmpty) return;
+    onChanged({'\$resource': tx.records.first.targetId.toToken()});
   }
 
   @override
@@ -934,6 +958,7 @@ class _ResourceRefRow extends StatelessWidget {
     ];
     // Keep the current value selectable even if it is some other kind.
     final ids = {if (value != null) value!, ...matching}.toList();
+    final canCreate = resourceKind == 'environment';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -964,7 +989,7 @@ class _ResourceRefRow extends StatelessWidget {
                         DropdownMenuItem(
                           value: id,
                           child: Text(
-                            id.toToken(),
+                            _label(id),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -974,6 +999,46 @@ class _ResourceRefRow extends StatelessWidget {
                     },
                   ),
           ),
+          if (canCreate)
+            IconButton(
+              icon: const Icon(Icons.add, size: 16),
+              tooltip: 'New environment',
+              visualDensity: VisualDensity.compact,
+              onPressed: _createEnvironment,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Edits the look of the environment resource an environment-volume component
+/// references, reusing the stage's environment and sky controls.
+class _VolumeEnvironmentEditor extends StatelessWidget {
+  const _VolumeEnvironmentEditor({
+    required this.controller,
+    required this.environmentId,
+  });
+
+  final EditorController controller;
+  final LocalId environmentId;
+
+  @override
+  Widget build(BuildContext context) {
+    final res = controller.document.resource(environmentId);
+    if (res is! EnvironmentResource) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            res.name.isEmpty ? 'Environment' : 'Environment: ${res.name}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          EnvironmentControls(controller: controller, environment: res),
+          const Divider(),
+          SkySection(controller: controller, environment: res),
         ],
       ),
     );
