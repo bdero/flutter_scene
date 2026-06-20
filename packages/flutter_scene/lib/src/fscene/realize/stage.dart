@@ -152,21 +152,31 @@ Future<void> realizeStage(
   }
 }
 
-/// Realizes one [EnvironmentVolumeSpec] into a live [EnvironmentVolume],
-/// building its look (environment, skybox, sky lighting, sun light) the same
-/// way [realizeStage] builds the base.
-Future<EnvironmentVolume> _realizeVolume(
-  EnvironmentVolumeSpec spec,
+/// Realizes a look (the fields an [EnvironmentResource] or a volume carries)
+/// into a runtime [EnvironmentSettings]: the image-based-lighting environment,
+/// or a sky-lighting binding (with a sun light when it casts shadows), plus the
+/// skybox and the scalar look. A skybox and sky lighting describing the same
+/// sky share one live source. GPU-bound and async.
+//
+// TODO(env-realize-layer): this lives in stage.dart so the resource realizer
+// can reuse its private build helpers; a leaf realize/environment file would be
+// a cleaner home.
+Future<EnvironmentSettings> realizeEnvironmentSettings({
+  required EnvironmentSpec environment,
+  required double environmentIntensity,
+  required double exposure,
+  required String toneMapping,
+  int? radianceCubeSize,
+  SkyboxSpec? skybox,
+  SkyEnvironmentSpec? skyEnvironment,
   AssetBundle? bundle,
-) async {
+}) async {
   final settings = EnvironmentSettings(
-    environmentIntensity: spec.environmentIntensity,
-    exposure: spec.exposure,
-    toneMapping: _toneMapping(spec.toneMapping),
+    environmentIntensity: environmentIntensity,
+    exposure: exposure,
+    toneMapping: _toneMapping(toneMapping),
   );
 
-  // Share one live source between the skybox and sky lighting when they
-  // describe the same sky, mirroring realizeStage.
   final realized = <String, SkySource?>{};
   Future<SkySource?> sourceFor(SkySourceSpec s) async =>
       realized[canonicalJson(encodeSkySource(s))] ??= await _realizeSkySource(
@@ -175,48 +185,63 @@ Future<EnvironmentVolume> _realizeVolume(
       );
 
   Future<void> applyEnvironment() async {
-    await _withRadianceCubeSize(spec.radianceCubeSize, () async {
-      settings.environment = await _buildEnvironment(spec.environment, bundle);
+    await _withRadianceCubeSize(radianceCubeSize, () async {
+      settings.environment = await _buildEnvironment(environment, bundle);
     });
   }
 
-  final skyEnvSpec = spec.skyEnvironment;
-  if (skyEnvSpec == null) {
+  if (skyEnvironment == null) {
     await applyEnvironment();
   } else {
-    final source = await sourceFor(skyEnvSpec.source);
+    final source = await sourceFor(skyEnvironment.source);
     if (source is ShaderSkySource) {
       settings.skyEnvironment = SkyEnvironment(
         source,
-        refresh: _refresh(skyEnvSpec.refresh),
+        refresh: _refresh(skyEnvironment.refresh),
         interval: Duration(
-          microseconds: (skyEnvSpec.intervalSeconds * 1e6).round(),
+          microseconds: (skyEnvironment.intervalSeconds * 1e6).round(),
         ),
-        faceResolution: skyEnvSpec.faceResolution,
-        equirectWidth: skyEnvSpec.equirectWidth,
+        faceResolution: skyEnvironment.faceResolution,
+        equirectWidth: skyEnvironment.equirectWidth,
       );
-      if (skyEnvSpec.castShadows && source is SunSky) {
+      if (skyEnvironment.castShadows && source is SunSky) {
         settings.sunLight = SunLight(source as SunSky);
       }
     } else {
       if (source != null) {
         debugPrint(
-          'fscene: a volume skyEnvironment needs a shader sky (fmat, gradient, '
-          'or physical); skipping the binding',
+          'fscene: a skyEnvironment needs a shader sky (fmat, gradient, or '
+          'physical); skipping the binding',
         );
       }
       await applyEnvironment();
     }
   }
 
-  final skyboxSpec = spec.skybox;
-  if (skyboxSpec != null) {
-    final source = await sourceFor(skyboxSpec.source);
+  if (skybox != null) {
+    final source = await sourceFor(skybox.source);
     settings.skybox = source == null
         ? null
-        : Skybox(source, intensity: skyboxSpec.intensity);
+        : Skybox(source, intensity: skybox.intensity);
   }
+  return settings;
+}
 
+/// Realizes one [EnvironmentVolumeSpec] into a live [EnvironmentVolume].
+Future<EnvironmentVolume> _realizeVolume(
+  EnvironmentVolumeSpec spec,
+  AssetBundle? bundle,
+) async {
+  final settings = await realizeEnvironmentSettings(
+    environment: spec.environment,
+    environmentIntensity: spec.environmentIntensity,
+    exposure: spec.exposure,
+    toneMapping: spec.toneMapping,
+    radianceCubeSize: spec.radianceCubeSize,
+    skybox: spec.skybox,
+    skyEnvironment: spec.skyEnvironment,
+    bundle: bundle,
+  );
   return EnvironmentVolume(
     settings: settings,
     bounds: _realizeBounds(spec.bounds),

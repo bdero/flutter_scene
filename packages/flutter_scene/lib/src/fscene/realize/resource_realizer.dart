@@ -3,10 +3,13 @@ import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
+import 'package:flutter_scene/src/fscene/realize/stage.dart'
+    show realizeEnvironmentSettings;
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
@@ -46,6 +49,7 @@ class ResourceRealizer {
   final Map<LocalId, Geometry> _geometries = {};
   final Map<LocalId, Material> _materials = {};
   final Map<LocalId, gpu.Texture> _textures = {};
+  final Map<LocalId, EnvironmentSettings> _environments = {};
 
   /// The live geometry for resource [id], realized and memoized on first use.
   /// The result is stamped with its origin so the serializer can recover it.
@@ -59,6 +63,11 @@ class ResourceRealizer {
   /// The live texture for resource [id], realized and memoized on first use.
   gpu.Texture texture(LocalId id) =>
       _textures[id] ??= tagResourceOrigin(_buildTexture(id), document, id);
+
+  /// The realized look for an [EnvironmentResource] [id], or null when [id] is
+  /// not an environment resource. Environments are GPU-bound and async, so they
+  /// are built in [preload]; this returns the cached result.
+  EnvironmentSettings? environment(LocalId id) => _environments[id];
 
   /// Resolves the resources that need asynchronous work (external image
   /// assets, encoded image payloads, and `fmat` materials), caching them so
@@ -86,6 +95,24 @@ class ResourceRealizer {
       }
     }
     await Future.wait(materials);
+
+    // Environments are GPU-bound and async (they build prefilter cubes and may
+    // load image assets), so realize them here and cache the result for the
+    // synchronous component realize path.
+    for (final resource in document.resources.values) {
+      if (resource is EnvironmentResource) {
+        _environments[resource.id] = await realizeEnvironmentSettings(
+          environment: resource.environment,
+          environmentIntensity: resource.environmentIntensity,
+          exposure: resource.exposure,
+          toneMapping: resource.toneMapping,
+          radianceCubeSize: resource.radianceCubeSize,
+          skybox: resource.skybox,
+          skyEnvironment: resource.skyEnvironment,
+          bundle: bundle,
+        );
+      }
+    }
   }
 
   bool _needsAsyncTexture(TextureResource res) {
