@@ -193,6 +193,7 @@ Map<LocalId, String> _buildPrefixMap(SceneDocument doc) {
       MaterialResource() => 'mat',
       TextureResource() => 'tex',
       RenderTextureResource() => 'rt',
+      EnvironmentResource() => 'env',
     };
   }
   for (final id in doc.skins.keys) {
@@ -409,6 +410,20 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             for (final e in properties.entries)
               e.key: encodePropertyValue(e.value, idKey),
           },
+      };
+    case EnvironmentResource():
+      return {
+        'kind': 'environment',
+        if (r.name.isNotEmpty) 'name': r.name,
+        ..._encodeLook(
+          environment: r.environment,
+          environmentIntensity: r.environmentIntensity,
+          exposure: r.exposure,
+          toneMapping: r.toneMapping,
+          radianceCubeSize: r.radianceCubeSize,
+          skybox: r.skybox,
+          skyEnvironment: r.skyEnvironment,
+        ),
       };
   }
 }
@@ -749,6 +764,18 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         type: json['type'] as String,
         asset: json['ref'] != null ? AssetRef(json['ref'] as String) : null,
         properties: _decodeProperties(json['properties']),
+      );
+    case 'environment':
+      return EnvironmentResource(
+        id,
+        name: json['name'] as String? ?? '',
+        environment: _decodeEnvironment(json['environment']),
+        environmentIntensity: _d(json['environmentIntensity'] ?? 1.0),
+        exposure: _d(json['exposure'] ?? 1.0),
+        toneMapping: json['toneMapping'] as String? ?? 'pbrNeutral',
+        radianceCubeSize: (json['radianceCubeSize'] as num?)?.toInt(),
+        skybox: _decodeSkybox(json['skybox']),
+        skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
       );
     default:
       throw FsceneFormatException('Unknown resource kind: $kind');

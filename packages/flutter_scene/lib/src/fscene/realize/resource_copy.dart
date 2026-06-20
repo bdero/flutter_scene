@@ -89,6 +89,23 @@ LocalId copyResourceInto(
           asset: asset,
         ),
       );
+    case EnvironmentResource():
+      // No payloads or resource refs to follow; copy the look fields. The sky
+      // specs are shared by reference, matching how a material's property
+      // values are copied.
+      dest.addResource(
+        EnvironmentResource(
+          resourceId,
+          name: res.name,
+          environment: res.environment,
+          environmentIntensity: res.environmentIntensity,
+          exposure: res.exposure,
+          toneMapping: res.toneMapping,
+          radianceCubeSize: res.radianceCubeSize,
+          skybox: res.skybox,
+          skyEnvironment: res.skyEnvironment,
+        ),
+      );
   }
   return resourceId;
 }

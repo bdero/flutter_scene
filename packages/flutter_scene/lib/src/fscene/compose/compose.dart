@@ -538,6 +538,19 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         filter: r.filter,
         wrap: r.wrap,
       ),
+      EnvironmentResource() => EnvironmentResource(
+        remap(r.id),
+        name: r.name,
+        environment: r.environment,
+        environmentIntensity: r.environmentIntensity,
+        exposure: r.exposure,
+        toneMapping: r.toneMapping,
+        radianceCubeSize: r.radianceCubeSize,
+        skybox: r.skybox == null ? null : _copySkybox(r.skybox!),
+        skyEnvironment: r.skyEnvironment == null
+            ? null
+            : _copySkyEnvironment(r.skyEnvironment!),
+      ),
     };
 
 PayloadSpec _remapPayload(PayloadSpec p, LocalId Function(LocalId) remap) =>

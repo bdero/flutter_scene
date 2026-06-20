@@ -198,4 +198,38 @@ void main() {
         .single;
     expect(geometry.topology, 'lineStrip');
   });
+
+  test('an environment resource round-trips its look', () {
+    final doc = SceneDocument();
+    doc.addResource(
+      EnvironmentResource(
+        doc.newId(),
+        name: 'dusk',
+        environment: const EmptyEnvironment(),
+        environmentIntensity: 1.5,
+        exposure: 0.5,
+        toneMapping: 'aces',
+        radianceCubeSize: 1024,
+        skybox: SkyboxSpec(PhysicalSkySpec(turbidity: 6.0), intensity: 2.0),
+        skyEnvironment: SkyEnvironmentSpec(
+          GradientSkySpec(),
+          castShadows: true,
+        ),
+      ),
+    );
+
+    final restored = readFscene(writeFscene(doc));
+    final env = restored.resources.values
+        .whereType<EnvironmentResource>()
+        .single;
+    expect(env.name, 'dusk');
+    expect(env.environment, isA<EmptyEnvironment>());
+    expect(env.environmentIntensity, 1.5);
+    expect(env.exposure, 0.5);
+    expect(env.toneMapping, 'aces');
+    expect(env.radianceCubeSize, 1024);
+    expect((env.skybox!.source as PhysicalSkySpec).turbidity, 6.0);
+    expect(env.skybox!.intensity, 2.0);
+    expect(env.skyEnvironment!.castShadows, isTrue);
+  });
 }

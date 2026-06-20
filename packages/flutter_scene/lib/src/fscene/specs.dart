@@ -405,6 +405,52 @@ class MaterialResource extends ResourceSpec {
   final AssetRef? asset;
 }
 
+/// A reusable image-based-lighting environment in the resource pool, referenced
+/// by the stage's global environment and by environment-volume components.
+///
+/// Bundles the blendable look (the same fields the stage carries): the
+/// image-based-lighting environment, its intensity and reflection-cube size,
+/// exposure, tone mapping, the skybox, and sky-driven lighting. Realizes to a
+/// runtime `EnvironmentSettings`.
+class EnvironmentResource extends ResourceSpec {
+  /// Creates an environment resource with the documented defaults.
+  EnvironmentResource(
+    super.id, {
+    this.name = '',
+    this.environment = const StudioEnvironment(),
+    this.environmentIntensity = 1.0,
+    this.exposure = 1.0,
+    this.toneMapping = 'pbrNeutral',
+    this.radianceCubeSize,
+    this.skybox,
+    this.skyEnvironment,
+  });
+
+  /// A human-readable label shown in the editor (not load-bearing).
+  String name;
+
+  /// The image-based-lighting environment.
+  EnvironmentSpec environment;
+
+  /// Scalar multiplier on the environment's contribution.
+  double environmentIntensity;
+
+  /// Linear exposure multiplier applied before tone mapping.
+  double exposure;
+
+  /// The tone-mapping operator name.
+  String toneMapping;
+
+  /// The reflection/ambient cubemap size, or null for the engine default.
+  int? radianceCubeSize;
+
+  /// The visible background sky, when set.
+  SkyboxSpec? skybox;
+
+  /// Sky-driven lighting, when set.
+  SkyEnvironmentSpec? skyEnvironment;
+}
+
 /// A skin: the joint nodes it drives, its inverse-bind matrices (a binary
 /// chunk), and the optional skeleton root.
 class SkinSpec {
