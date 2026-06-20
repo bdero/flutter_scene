@@ -1,7 +1,6 @@
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';
-import 'package:vector_math/vector_math.dart';
 
 void main() {
   test('setStageProperties updates only given keys and reverts', () {
@@ -155,146 +154,20 @@ void main() {
     expect(sky.sunDirection.z, closeTo(0.2, 1e-6));
   });
 
-  group('environment volumes', () {
-    test('addEnvironmentVolume appends a default box volume and reverts', () {
-      final session = EditorSession.empty();
-      List<EnvironmentVolumeSpec> volumes() => session.document.stage.volumes;
-      expect(volumes(), isEmpty);
+  test('setStageProperties sets and clears the base reflection size', () {
+    final session = EditorSession.empty();
+    StageMetadata stage() => session.document.stage;
 
-      session.run('addEnvironmentVolume', {});
-      expect(volumes(), hasLength(1));
-      final v = volumes().single;
-      expect(v.name, 'Volume 1');
-      expect(v.bounds, isA<BoxBoundsSpec>());
-      expect(v.blendDistance, 1.0);
-
-      session.undo();
-      expect(volumes(), isEmpty);
+    session.run('setStageProperties', {
+      'properties': {'radianceCubeSize': 1024},
     });
+    expect(stage().radianceCubeSize, 1024);
 
-    test('a new volume takes the next-highest priority', () {
-      final session = EditorSession.empty();
-      session.run('addEnvironmentVolume', {});
-      session.run('setVolumeProperties', {
-        'index': 0,
-        'properties': {'priority': 5.0},
-      });
-      session.run('addEnvironmentVolume', {'bounds': 'sphere'});
-      final volumes = session.document.stage.volumes;
-      expect(volumes[1].bounds, isA<SphereBoundsSpec>());
-      expect(volumes[1].priority, 6.0);
+    // A non-positive value clears back to the engine default (null).
+    session.run('setStageProperties', {
+      'properties': {'radianceCubeSize': 0},
     });
-
-    test('removeEnvironmentVolume removes by index and reverts', () {
-      final session = EditorSession.empty();
-      session.run('addEnvironmentVolume', {'name': 'a'});
-      session.run('addEnvironmentVolume', {'name': 'b'});
-      session.run('removeEnvironmentVolume', {'index': 0});
-      expect(session.document.stage.volumes.single.name, 'b');
-      session.undo();
-      expect(session.document.stage.volumes.map((v) => v.name), ['a', 'b']);
-    });
-
-    test('setVolumeProperties edits region and blend, switching shape', () {
-      final session = EditorSession.empty();
-      session.run('addEnvironmentVolume', {});
-      session.run('setVolumeProperties', {
-        'index': 0,
-        'properties': {
-          'name': 'cave',
-          'weight': 0.5,
-          'blendDistance': 2.0,
-          'center': {'x': 1.0, 'y': 2.0, 'z': 3.0},
-          'halfExtents': {'x': 4.0, 'y': 4.0, 'z': 4.0},
-        },
-      });
-      var v = session.document.stage.volumes.single;
-      expect(v.name, 'cave');
-      expect(v.weight, 0.5);
-      expect(v.blendDistance, 2.0);
-      expect((v.bounds as BoxBoundsSpec).center, Vector3(1, 2, 3));
-
-      // Switching to a sphere carries the center.
-      session.run('setVolumeProperties', {
-        'index': 0,
-        'properties': {'boundsType': 'sphere', 'radius': 7.0},
-      });
-      v = session.document.stage.volumes.single;
-      final sphere = v.bounds as SphereBoundsSpec;
-      expect(sphere.center, Vector3(1, 2, 3));
-      expect(sphere.radius, 7.0);
-    });
-
-    test('look commands target a volume by index, not the base', () {
-      final session = EditorSession.empty();
-      StageMetadata stage() => session.document.stage;
-      session.run('addEnvironmentVolume', {});
-
-      session.run('setStageProperties', {
-        'volume': 0,
-        'properties': {'exposure': 4.0, 'environment': 'empty'},
-      });
-      // The volume changed; the base is untouched.
-      expect(stage().volumes.single.exposure, 4.0);
-      expect(stage().volumes.single.environment, isA<EmptyEnvironment>());
-      expect(stage().exposure, 1.0);
-      expect(stage().environment, isA<StudioEnvironment>());
-
-      session.run('setSkybox', {
-        'volume': 0,
-        'sky': 'physical',
-        'lightScene': true,
-      });
-      expect(stage().volumes.single.skybox?.source, isA<PhysicalSkySpec>());
-      expect(stage().volumes.single.skyEnvironment, isNotNull);
-      expect(stage().skybox, isNull);
-
-      session.run('setSkyParameters', {
-        'volume': 0,
-        'properties': {'turbidity': 3.0},
-      });
-      expect(
-        (stage().volumes.single.skybox!.source as PhysicalSkySpec).turbidity,
-        3.0,
-      );
-    });
-
-    test('reflection size sets and clears on the base and a volume', () {
-      final session = EditorSession.empty();
-      StageMetadata stage() => session.document.stage;
-      session.run('addEnvironmentVolume', {});
-
-      session.run('setStageProperties', {
-        'properties': {'radianceCubeSize': 1024},
-      });
-      session.run('setStageProperties', {
-        'volume': 0,
-        'properties': {'radianceCubeSize': 256},
-      });
-      expect(stage().radianceCubeSize, 1024);
-      expect(stage().volumes.single.radianceCubeSize, 256);
-
-      // A non-positive value clears back to the engine default (null).
-      session.run('setStageProperties', {
-        'properties': {'radianceCubeSize': 0},
-      });
-      expect(stage().radianceCubeSize, isNull);
-    });
-
-    test('an out-of-range volume index throws', () {
-      final session = EditorSession.empty();
-      expect(
-        () => session.run('removeEnvironmentVolume', {'index': 0}),
-        throwsA(isA<CommandException>()),
-      );
-      expect(
-        () => session.run('setStageProperties', {
-          'volume': 3,
-          'properties': {'exposure': 2.0},
-        }),
-        throwsA(isA<CommandException>()),
-      );
-    });
+    expect(stage().radianceCubeSize, isNull);
   });
 
   group('environment resources', () {

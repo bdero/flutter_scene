@@ -243,8 +243,6 @@ Map<String, dynamic> encodeStage(
   if (s.antiAliasingMode != 'auto') 'antiAliasing': s.antiAliasingMode,
   if (s.renderScale != 1.0) 'renderScale': s.renderScale,
   if (s.filterQuality != 'medium') 'filterQuality': s.filterQuality,
-  if (s.volumes.isNotEmpty)
-    'volumes': [for (final v in s.volumes) _encodeVolume(v)],
 };
 
 /// Encodes the look fields shared by the stage (the global base) and each
@@ -283,36 +281,6 @@ Map<String, dynamic> _encodeLook({
       'equirectWidth': skyEnvironment.equirectWidth,
       if (skyEnvironment.castShadows) 'castShadows': true,
     },
-};
-
-Map<String, dynamic> _encodeVolume(EnvironmentVolumeSpec v) => {
-  if (v.name.isNotEmpty) 'name': v.name,
-  ..._encodeLook(
-    environment: v.environment,
-    environmentIntensity: v.environmentIntensity,
-    exposure: v.exposure,
-    toneMapping: v.toneMapping,
-    radianceCubeSize: v.radianceCubeSize,
-    skybox: v.skybox,
-    skyEnvironment: v.skyEnvironment,
-  ),
-  if (v.bounds != null) 'bounds': _encodeBounds(v.bounds!),
-  if (v.priority != 0.0) 'priority': v.priority,
-  if (v.weight != 1.0) 'weight': v.weight,
-  if (v.blendDistance != 0.0) 'blendDistance': v.blendDistance,
-};
-
-Object _encodeBounds(VolumeBoundsSpec b) => switch (b) {
-  BoxBoundsSpec(:final center, :final halfExtents) => {
-    'type': 'box',
-    'center': _vec3Json(center),
-    'halfExtents': _vec3Json(halfExtents),
-  },
-  SphereBoundsSpec(:final center, :final radius) => {
-    'type': 'sphere',
-    'center': _vec3Json(center),
-    'radius': radius,
-  },
 };
 
 /// Encodes a sky source spec to its canonical JSON form (also used to key
@@ -915,46 +883,7 @@ StageMetadata _decodeStage(Map<String, dynamic> json) => StageMetadata(
   environmentRef: json['environmentRef'] != null
       ? LocalId.parse(json['environmentRef'] as String)
       : null,
-  volumes: [
-    for (final v in (json['volumes'] as List?) ?? const [])
-      _decodeVolume(v as Map<String, dynamic>),
-  ],
 );
-
-EnvironmentVolumeSpec _decodeVolume(Map<String, dynamic> m) =>
-    EnvironmentVolumeSpec(
-      name: m['name'] as String? ?? '',
-      environment: _decodeEnvironment(m['environment']),
-      environmentIntensity: _d(m['environmentIntensity'] ?? 1.0),
-      exposure: _d(m['exposure'] ?? 1.0),
-      toneMapping: m['toneMapping'] as String? ?? 'pbrNeutral',
-      radianceCubeSize: (m['radianceCubeSize'] as num?)?.toInt(),
-      skybox: _decodeSkybox(m['skybox']),
-      skyEnvironment: _decodeSkyEnvironment(m['skyEnvironment']),
-      bounds: _decodeVolumeBounds(m['bounds']),
-      priority: _d(m['priority'] ?? 0.0),
-      weight: _d(m['weight'] ?? 1.0),
-      blendDistance: _d(m['blendDistance'] ?? 0.0),
-    );
-
-VolumeBoundsSpec? _decodeVolumeBounds(Object? json) {
-  if (json == null) return null;
-  final m = json as Map;
-  switch (m['type']) {
-    case 'box':
-      final b = BoxBoundsSpec();
-      _setVec3(m['center'], (v) => b.center = v);
-      _setVec3(m['halfExtents'], (v) => b.halfExtents = v);
-      return b;
-    case 'sphere':
-      final b = SphereBoundsSpec();
-      _setVec3(m['center'], (v) => b.center = v);
-      if (m['radius'] != null) b.radius = _d(m['radius']);
-      return b;
-    default:
-      return null;
-  }
-}
 
 SkyboxSpec? _decodeSkybox(Object? json) {
   if (json == null) return null;

@@ -24,7 +24,6 @@ import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
-import 'package:flutter_scene/src/environment_volume.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -151,19 +150,14 @@ Future<void> realizeStage(
     }
   }
 
-  // Spatial environment volumes (the legacy stage list and node components)
-  // blend over the stage as the global base. Capture the just-applied stage
-  // look as that base so component volumes have something to blend over; the
-  // per-frame blend is skipped when no volume of either kind is active, so the
-  // live fields are used directly in the common case.
+  // Spatial environment-volume components blend over the stage as the global
+  // base. Capture the just-applied stage look as that base so the components
+  // have something to blend over; the per-frame blend is skipped when no volume
+  // component is active, so the live fields are used directly in the common
+  // case. The manual `Scene.environmentVolumes` list is code-driven, not carried
+  // by the document, so a realize clears it.
   scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
-  final volumes = <EnvironmentVolume>[];
-  for (final spec in stage.volumes) {
-    volumes.add(await _realizeVolume(spec, bundle));
-  }
-  scene.environmentVolumes
-    ..clear()
-    ..addAll(volumes);
+  scene.environmentVolumes.clear();
 }
 
 /// Realizes a look (the fields an [EnvironmentResource] or a volume carries)
@@ -380,43 +374,6 @@ void _applySkySourceInPlace(SkySource live, SkySourceSpec spec) {
   }
 }
 
-/// Realizes one [EnvironmentVolumeSpec] into a live [EnvironmentVolume].
-Future<EnvironmentVolume> _realizeVolume(
-  EnvironmentVolumeSpec spec,
-  AssetBundle? bundle,
-) async {
-  final settings = await realizeEnvironmentSettings(
-    environment: spec.environment,
-    environmentIntensity: spec.environmentIntensity,
-    exposure: spec.exposure,
-    toneMapping: spec.toneMapping,
-    radianceCubeSize: spec.radianceCubeSize,
-    skybox: spec.skybox,
-    skyEnvironment: spec.skyEnvironment,
-    bundle: bundle,
-  );
-  return EnvironmentVolume(
-    settings: settings,
-    bounds: _realizeBounds(spec.bounds),
-    priority: spec.priority,
-    weight: spec.weight,
-    blendDistance: spec.blendDistance,
-  );
-}
-
-EnvironmentVolumeBounds? _realizeBounds(VolumeBoundsSpec? spec) =>
-    switch (spec) {
-      null => null,
-      BoxBoundsSpec(:final center, :final halfExtents) => BoxVolumeBounds(
-        center: center.clone(),
-        halfExtents: halfExtents.clone(),
-      ),
-      SphereBoundsSpec(:final center, :final radius) => SphereVolumeBounds(
-        center: center.clone(),
-        radius: radius,
-      ),
-    };
-
 /// Runs [build] with [EnvironmentMap.radianceCubeSize] set to [size],
 /// restoring it afterward. A null [size] keeps the current default.
 //
@@ -508,84 +465,7 @@ void serializeStage(Scene scene, SceneDocument document) {
         ? null
         : SkyboxSpec(source, intensity: skybox.intensity);
   }
-
-  stage.volumes
-    ..clear()
-    ..addAll([for (final v in scene.environmentVolumes) _serializeVolume(v)]);
 }
-
-/// Reads a live [EnvironmentVolume] back into a spec, the reverse of
-/// [_realizeVolume]. Recovers the look the same way [serializeStage] recovers
-/// the base; the volume's display name is not carried on the live value, so it
-/// serializes empty.
-EnvironmentVolumeSpec _serializeVolume(EnvironmentVolume v) {
-  final s = v.settings;
-  EnvironmentSpec environmentSpec = const StudioEnvironment();
-  SkyEnvironmentSpec? skyEnvironmentSpec;
-
-  final skyEnvironment = s.skyEnvironment;
-  if (skyEnvironment == null) {
-    final environment = s.environment;
-    var recovered = environment == null ? null : _environmentSpec[environment];
-    if (recovered == null && environment != null) {
-      final assetPath = environmentAssetPathOf(environment);
-      if (assetPath != null) recovered = AssetEnvironment(AssetRef(assetPath));
-    }
-    if (recovered != null) environmentSpec = recovered;
-  } else {
-    final source = _serializeSkySource(skyEnvironment.source);
-    final castsSkyShadows = identical(
-      s.sunLight?.source,
-      skyEnvironment.source,
-    );
-    skyEnvironmentSpec = source == null
-        ? null
-        : SkyEnvironmentSpec(
-            source,
-            refresh: skyEnvironment.refresh.name,
-            intervalSeconds: skyEnvironment.interval.inMicroseconds / 1e6,
-            faceResolution: skyEnvironment.faceResolution,
-            equirectWidth: skyEnvironment.equirectWidth,
-            castShadows: castsSkyShadows,
-          );
-  }
-
-  SkyboxSpec? skyboxSpec;
-  final skybox = s.skybox;
-  if (skybox != null) {
-    final source = _serializeSkySource(skybox.source);
-    skyboxSpec = source == null
-        ? null
-        : SkyboxSpec(source, intensity: skybox.intensity);
-  }
-
-  return EnvironmentVolumeSpec(
-    environment: environmentSpec,
-    environmentIntensity: s.environmentIntensity,
-    exposure: s.exposure,
-    toneMapping: s.toneMapping.name,
-    // TODO(radiance-size-roundtrip): EnvironmentMap.radianceCubeSize is static,
-    // so a volume's reflection size cannot be recovered from the live map.
-    skybox: skyboxSpec,
-    skyEnvironment: skyEnvironmentSpec,
-    bounds: _serializeBounds(v.bounds),
-    priority: v.priority,
-    weight: v.weight,
-    blendDistance: v.blendDistance,
-  );
-}
-
-VolumeBoundsSpec? _serializeBounds(EnvironmentVolumeBounds? b) => switch (b) {
-  null => null,
-  BoxVolumeBounds(:final center, :final halfExtents) => BoxBoundsSpec(
-    center: center.clone(),
-    halfExtents: halfExtents.clone(),
-  ),
-  SphereVolumeBounds(:final center, :final radius) => SphereBoundsSpec(
-    center: center.clone(),
-    radius: radius,
-  ),
-};
 
 Future<void> _applyEnvironment(
   EnvironmentSpec spec,

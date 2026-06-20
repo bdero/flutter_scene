@@ -603,7 +603,6 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   skyEnvironment: s.skyEnvironment == null
       ? null
       : _copySkyEnvironment(s.skyEnvironment!),
-  volumes: [for (final v in s.volumes) _copyVolume(v)],
   environmentRef: s.environmentRef,
 );
 
@@ -619,36 +618,6 @@ SkyEnvironmentSpec _copySkyEnvironment(SkyEnvironmentSpec s) =>
       equirectWidth: s.equirectWidth,
       castShadows: s.castShadows,
     );
-
-EnvironmentVolumeSpec _copyVolume(EnvironmentVolumeSpec v) =>
-    EnvironmentVolumeSpec(
-      name: v.name,
-      environment: v.environment,
-      environmentIntensity: v.environmentIntensity,
-      exposure: v.exposure,
-      toneMapping: v.toneMapping,
-      radianceCubeSize: v.radianceCubeSize,
-      skybox: v.skybox == null ? null : _copySkybox(v.skybox!),
-      skyEnvironment: v.skyEnvironment == null
-          ? null
-          : _copySkyEnvironment(v.skyEnvironment!),
-      bounds: _copyBounds(v.bounds),
-      priority: v.priority,
-      weight: v.weight,
-      blendDistance: v.blendDistance,
-    );
-
-VolumeBoundsSpec? _copyBounds(VolumeBoundsSpec? b) => switch (b) {
-  null => null,
-  BoxBoundsSpec(:final center, :final halfExtents) => BoxBoundsSpec(
-    center: center.clone(),
-    halfExtents: halfExtents.clone(),
-  ),
-  SphereBoundsSpec(:final center, :final radius) => SphereBoundsSpec(
-    center: center.clone(),
-    radius: radius,
-  ),
-};
 
 SkySourceSpec _copySkySource(SkySourceSpec source) => switch (source) {
   EnvironmentSkySpec(:final blurriness) => EnvironmentSkySpec(

@@ -721,17 +721,12 @@ class EditorController extends ChangeNotifier {
 
   /// Live-previews scene-wide settings on the live scene without touching the
   /// document or history (for stage slider drags). Commit with
-  /// `setStageProperties` on release. With [volumeIndex] set, previews that
-  /// environment volume's look instead of the base.
-  void previewStage({
-    double? exposure,
-    double? environmentIntensity,
-    int? volumeIndex,
-  }) {
-    final settings = _previewSettings(volumeIndex);
+  /// `setStageProperties` on release.
+  void previewStage({double? exposure, double? environmentIntensity}) {
+    final settings = _previewSettings();
     if (settings != null) {
-      // With volumes active, the per-frame blend recomputes the live fields, so
-      // preview must write the holder the blend reads from.
+      // With volume components active, the per-frame blend recomputes the live
+      // fields, so preview must write the holder the blend reads from.
       if (exposure != null) settings.exposure = exposure;
       if (environmentIntensity != null) {
         settings.environmentIntensity = environmentIntensity;
@@ -741,34 +736,6 @@ class EditorController extends ChangeNotifier {
       if (environmentIntensity != null) {
         scene.environmentIntensity = environmentIntensity;
       }
-    }
-    notifyListeners();
-  }
-
-  /// Live-previews an environment volume's region and blend metadata on the
-  /// live scene (so the look fades in/out as the region is dragged) without
-  /// touching the document. Commit with `setVolumeProperties` on release.
-  void previewVolumeBounds(
-    int index, {
-    Vector3? center,
-    Vector3? halfExtents,
-    double? radius,
-    double? weight,
-    double? blendDistance,
-    double? priority,
-  }) {
-    if (index < 0 || index >= scene.environmentVolumes.length) return;
-    final v = scene.environmentVolumes[index];
-    if (weight != null) v.weight = weight;
-    if (blendDistance != null) v.blendDistance = blendDistance;
-    if (priority != null) v.priority = priority;
-    final bounds = v.bounds;
-    if (bounds is BoxVolumeBounds) {
-      if (center != null) bounds.center.setFrom(center);
-      if (halfExtents != null) bounds.halfExtents.setFrom(halfExtents);
-    } else if (bounds is SphereVolumeBounds) {
-      if (center != null) bounds.center.setFrom(center);
-      if (radius != null) bounds.radius = radius;
     }
     notifyListeners();
   }
@@ -813,19 +780,10 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // The EnvironmentSettings the volume blend reads for [volumeIndex] (a
-  // volume's settings, or the base when volumes are active), or null when no
-  // volume blending is active (the live scene fields are authoritative).
-  EnvironmentSettings? _previewSettings(int? volumeIndex) {
-    if (volumeIndex != null) {
-      if (volumeIndex < 0 || volumeIndex >= scene.environmentVolumes.length) {
-        return null;
-      }
-      return scene.environmentVolumes[volumeIndex].settings;
-    }
-    // baseEnvironment is the blend's global base, but the per-frame blend only
-    // runs when a volume is active; otherwise the live look fields are
-    // authoritative, so preview must mutate those (return null).
+  // The EnvironmentSettings a global preview writes: the blend base when any
+  // volume component is active (the per-frame blend reads it), or null when the
+  // live scene fields are authoritative (no volume blending).
+  EnvironmentSettings? _previewSettings() {
     final blendActive =
         scene.environmentVolumes.isNotEmpty ||
         scene.renderScene.environmentVolumeComponents.isNotEmpty;
@@ -841,8 +799,8 @@ class EditorController extends ChangeNotifier {
   /// `turbidity`, color names, etc.); [raw] is a [Vector3] for a
   /// direction/color or a [num] for a scalar. Commit with `setSkyParameters`
   /// on release.
-  void previewSkyParameter(String key, Object raw, {int? volumeIndex}) {
-    final settings = _previewSettings(volumeIndex);
+  void previewSkyParameter(String key, Object raw) {
+    final settings = _previewSettings();
     final skybox = settings != null ? settings.skybox : scene.skybox;
     final skyEnvironment = settings != null
         ? settings.skyEnvironment

@@ -822,111 +822,6 @@ class SkyEnvironmentSpec {
   bool castShadows;
 }
 
-/// The shape of an [EnvironmentVolumeSpec]'s region, serialized.
-///
-/// Realized to a runtime `EnvironmentVolumeBounds` by the stage realizer.
-sealed class VolumeBoundsSpec {
-  /// Const base.
-  const VolumeBoundsSpec();
-}
-
-/// An axis-aligned box region.
-class BoxBoundsSpec extends VolumeBoundsSpec {
-  /// Creates a box centered at [center] with the given [halfExtents].
-  BoxBoundsSpec({Vector3? center, Vector3? halfExtents})
-    : center = center ?? Vector3.zero(),
-      halfExtents = halfExtents ?? Vector3.all(1.0);
-
-  /// World-space center.
-  Vector3 center;
-
-  /// Half the box size along each axis.
-  Vector3 halfExtents;
-}
-
-/// A sphere region.
-class SphereBoundsSpec extends VolumeBoundsSpec {
-  /// Creates a sphere centered at [center] with the given [radius].
-  SphereBoundsSpec({Vector3? center, this.radius = 1.0})
-    : center = center ?? Vector3.zero();
-
-  /// World-space center.
-  Vector3 center;
-
-  /// Sphere radius.
-  double radius;
-}
-
-/// A spatial environment volume, a region whose look overrides the stage's,
-/// blended by camera position so the environment transitions as the camera
-/// moves between areas.
-///
-/// The look fields mirror the stage's ([environment], [environmentIntensity],
-/// [exposure], [toneMapping], [radianceCubeSize], [skybox], [skyEnvironment]);
-/// the stage itself is the always-on global base these blend over. A null
-/// [bounds] makes this volume global too; otherwise it contributes fully
-/// inside [bounds] and fades to nothing across [blendDistance] outside,
-/// scaled by [weight]. Overlapping volumes apply in [priority] order.
-//
-// TODO(environment-look-spec): the look fields here duplicate StageMetadata's.
-// When post-processing becomes serialized, extract a shared look spec used by
-// both the stage (the global base) and each volume.
-class EnvironmentVolumeSpec {
-  /// Creates a volume spec with the documented defaults.
-  EnvironmentVolumeSpec({
-    this.name = '',
-    this.environment = const StudioEnvironment(),
-    this.environmentIntensity = 1.0,
-    this.exposure = 1.0,
-    this.toneMapping = 'pbrNeutral',
-    this.radianceCubeSize,
-    this.skybox,
-    this.skyEnvironment,
-    this.bounds,
-    this.priority = 0.0,
-    this.weight = 1.0,
-    this.blendDistance = 0.0,
-  });
-
-  /// A human-readable label shown in the editor (not load-bearing).
-  String name;
-
-  /// The image-based-lighting environment.
-  EnvironmentSpec environment;
-
-  /// Scalar multiplier on the environment's contribution.
-  double environmentIntensity;
-
-  /// Linear exposure multiplier applied before tone mapping.
-  double exposure;
-
-  /// The tone-mapping operator name.
-  String toneMapping;
-
-  /// The reflection/ambient cubemap size for this volume's environment, or
-  /// null to use the engine default.
-  int? radianceCubeSize;
-
-  /// The visible background sky, when set.
-  SkyboxSpec? skybox;
-
-  /// Sky-driven lighting, when set.
-  SkyEnvironmentSpec? skyEnvironment;
-
-  /// The region, or null for a global (unbounded) volume.
-  VolumeBoundsSpec? bounds;
-
-  /// Blend order; higher priority volumes are applied later (on top).
-  double priority;
-
-  /// Master contribution scale, `0`..`1`.
-  double weight;
-
-  /// World-space fade band outside the [bounds] surface over which the
-  /// contribution falls from full to zero. `0` is a hard edge.
-  double blendDistance;
-}
-
 /// One serialized view of the scene: a camera node bound to a target and
 /// the view's render settings (the runtime `RenderView`).
 class RenderViewSpec {
@@ -986,8 +881,7 @@ class StageMetadata {
     this.filterQuality = 'medium',
     this.skybox,
     this.skyEnvironment,
-    List<EnvironmentVolumeSpec>? volumes,
-  }) : volumes = volumes ?? [];
+  });
 
   /// The authored up axis.
   UpAxis upAxis;
@@ -1034,11 +928,6 @@ class StageMetadata {
   /// policy), when set. While set, it owns the scene environment, so
   /// [environment] is not applied.
   SkyEnvironmentSpec? skyEnvironment;
-
-  /// Spatial environment volumes blended over the stage (the global base) by
-  /// camera position. Empty disables volume blending. See
-  /// [EnvironmentVolumeSpec].
-  List<EnvironmentVolumeSpec> volumes;
 
   /// The global environment resource the stage's look comes from. When set, it
   /// overrides the inline look fields above (the realizer resolves it to the

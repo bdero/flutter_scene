@@ -1,7 +1,7 @@
 /// Inspector editor for scene-wide stage settings (environment/lighting,
-/// exposure, tone mapping, sky) and the spatial environment-volume stack. Shown
-/// when no node is selected. The same environment/sky controls drive either the
-/// base stage or a volume, picked by a volume index threaded into the commands.
+/// exposure, tone mapping, sky), shown when no node is selected. The same
+/// environment and sky controls drive either the stage's global environment
+/// resource or a volume component's, picked by the resource passed in.
 library;
 
 import 'package:flutter/material.dart';
@@ -21,8 +21,8 @@ const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
 // radiance-size equivalent). null is the engine default.
 const _reflectionSizes = <int?>[null, 128, 256, 512, 1024, 2048];
 
-// The look fields shared by the base stage and a volume, read for whichever a
-// section targets.
+// The look fields an environment editor reads, for whichever it targets (the
+// stage's inline legacy look or an environment resource).
 typedef _Look = ({
   EnvironmentSpec environment,
   double environmentIntensity,
@@ -32,27 +32,14 @@ typedef _Look = ({
   SkyboxSpec? skybox,
 });
 
-_Look _lookOf(StageMetadata stage, int? volumeIndex) {
-  if (volumeIndex == null) {
-    return (
-      environment: stage.environment,
-      environmentIntensity: stage.environmentIntensity,
-      exposure: stage.exposure,
-      toneMapping: stage.toneMapping,
-      radianceCubeSize: stage.radianceCubeSize,
-      skybox: stage.skybox,
-    );
-  }
-  final v = stage.volumes[volumeIndex];
-  return (
-    environment: v.environment,
-    environmentIntensity: v.environmentIntensity,
-    exposure: v.exposure,
-    toneMapping: v.toneMapping,
-    radianceCubeSize: v.radianceCubeSize,
-    skybox: v.skybox,
-  );
-}
+_Look _lookOfStage(StageMetadata stage) => (
+  environment: stage.environment,
+  environmentIntensity: stage.environmentIntensity,
+  exposure: stage.exposure,
+  toneMapping: stage.toneMapping,
+  radianceCubeSize: stage.radianceCubeSize,
+  skybox: stage.skybox,
+);
 
 _Look _lookOfEnvironment(EnvironmentResource e) => (
   environment: e.environment,
@@ -93,38 +80,34 @@ class StageSection extends StatelessWidget {
         ),
         const Divider(),
         SkySection(controller: controller, environment: environment),
-        const Divider(),
-        VolumesSection(controller: controller),
       ],
     );
   }
 }
 
 /// The environment look controls (environment kind, intensity, exposure, tone
-/// mapping, reflection resolution) for the base stage ([volumeIndex] null) or a
-/// volume.
+/// mapping, reflection resolution) for an environment resource, or the stage's
+/// inline legacy look when [environment] is null.
 class EnvironmentControls extends StatelessWidget {
   const EnvironmentControls({
     super.key,
     required this.controller,
-    this.volumeIndex,
     this.environment,
     this.volumeNodeId,
     this.allowHdrImport = false,
   });
 
   final EditorController controller;
-  final int? volumeIndex;
 
-  /// When set, edits this environment resource instead of the stage/volume.
+  /// The environment resource to edit (the stage's global one or a volume's),
+  /// or null to edit the stage's inline legacy look.
   final EnvironmentResource? environment;
 
   /// When set (a volume component's environment), slider drags preview onto
   /// that node's live volume; otherwise preview targets the stage/global.
   final LocalId? volumeNodeId;
 
-  /// Whether to show the "Import HDR environment" action (only the global
-  /// look loads a disk environment today).
+  /// Whether to show the "Import HDR environment" action.
   final bool allowHdrImport;
 
   void _set(String key, Object value) {
@@ -137,7 +120,6 @@ class EnvironmentControls extends StatelessWidget {
     } else {
       controller.run('setStageProperties', {
         'properties': {key: value},
-        if (volumeIndex != null) 'volume': volumeIndex,
       });
     }
   }
@@ -154,7 +136,6 @@ class EnvironmentControls extends StatelessWidget {
       controller.previewStage(
         exposure: exposure,
         environmentIntensity: environmentIntensity,
-        volumeIndex: volumeIndex,
       );
     }
   }
@@ -164,7 +145,7 @@ class EnvironmentControls extends StatelessWidget {
     final env = environment;
     final look = env != null
         ? _lookOfEnvironment(env)
-        : _lookOf(controller.document.stage, volumeIndex);
+        : _lookOfStage(controller.document.stage);
     final envType = switch (look.environment) {
       EmptyEnvironment() => 'empty',
       AssetEnvironment() => 'asset',
@@ -278,25 +259,23 @@ class EnvironmentControls extends StatelessWidget {
   }
 }
 
-/// Editor for the skybox and sky-driven lighting of the base stage
-/// ([volumeIndex] null) or a volume. Procedural skies (gradient/physical) and
-/// the environment sky render with no asset loading. Parameter sliders and
-/// colors preview live; choosing a skybox type or toggling sky lighting applies
-/// on release. Per-parameter edits flow through `setSkyParameters`, structural
-/// changes through `setSkybox`.
+/// Editor for the skybox and sky-driven lighting of an environment resource, or
+/// the stage's inline legacy look when [environment] is null. Procedural skies
+/// (gradient/physical) and the environment sky render with no asset loading.
+/// Parameter sliders and colors preview live; choosing a skybox type or
+/// toggling sky lighting applies on release. Per-parameter edits flow through
+/// `setSkyParameters`, structural changes through `setSkybox`.
 class SkySection extends StatelessWidget {
   const SkySection({
     super.key,
     required this.controller,
-    this.volumeIndex,
     this.environment,
     this.volumeNodeId,
   });
 
   final EditorController controller;
-  final int? volumeIndex;
 
-  /// When set, edits this environment resource instead of the stage/volume.
+  /// The environment resource to edit, or null to edit the stage's inline look.
   final EnvironmentResource? environment;
 
   /// When set, slider drags preview onto that node's live volume; otherwise
@@ -307,16 +286,10 @@ class SkySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final stage = controller.document.stage;
     final env = environment;
-    final skyboxSpec = env != null
-        ? env.skybox
-        : (volumeIndex == null
-              ? stage.skybox
-              : stage.volumes[volumeIndex!].skybox);
+    final skyboxSpec = env != null ? env.skybox : stage.skybox;
     final skyEnvironmentSpec = env != null
         ? env.skyEnvironment
-        : (volumeIndex == null
-              ? stage.skyEnvironment
-              : stage.volumes[volumeIndex!].skyEnvironment);
+        : stage.skyEnvironment;
     final source = skyboxSpec?.source;
     final type = switch (source) {
       GradientSkySpec() => 'gradient',
@@ -334,14 +307,13 @@ class SkySection extends StatelessWidget {
     final proceduralSky = type == 'gradient' || type == 'physical';
 
     // Route structural and parameter edits to the environment-resource
-    // commands when targeting a resource, else the stage/volume commands.
+    // commands when targeting a resource, else the stage commands.
     final skyboxCommand = env != null ? 'setEnvironmentSkybox' : 'setSkybox';
     final paramsCommand = env != null
         ? 'setEnvironmentSkyParameters'
         : 'setSkyParameters';
-    Map<String, Object> target() => env != null
-        ? {'environmentId': env.id.toToken()}
-        : (volumeIndex == null ? const {} : {'volume': volumeIndex!});
+    Map<String, Object> target() =>
+        env != null ? {'environmentId': env.id.toToken()} : const {};
 
     // The type dropdown and lighting toggles are structural (the skybox command
     // keeps the tuned parameters across them); the per-parameter fields below
@@ -369,14 +341,12 @@ class SkySection extends StatelessWidget {
     });
     void runParams(Map<String, Object> properties) =>
         controller.run(paramsCommand, {'properties': properties, ...target()});
-    // Live preview only on the stage/volume path (an environment resource
-    // commits on release). TODO(env-resource-preview).
     void preview(String key, Object raw) {
       final node = volumeNodeId;
       if (node != null) {
         controller.previewVolumeSkyParameter(node, key, raw);
       } else {
-        controller.previewSkyParameter(key, raw, volumeIndex: volumeIndex);
+        controller.previewSkyParameter(key, raw);
       }
     }
 
@@ -554,220 +524,6 @@ class SkySection extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-/// The environment-volume stack, an add control plus one expandable card per
-/// volume, each carrying its region/blend controls and the reused
-/// environment/sky inspector targeting that volume.
-class VolumesSection extends StatelessWidget {
-  const VolumesSection({super.key, required this.controller});
-
-  final EditorController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final volumes = controller.document.stage.volumes;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Environment volumes', style: TextStyle(fontSize: 13)),
-            PopupMenuButton<String>(
-              tooltip: 'Add volume',
-              icon: const Icon(Icons.add, size: 18),
-              onSelected: (bounds) =>
-                  controller.run('addEnvironmentVolume', {'bounds': bounds}),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'box', child: Text('Add box volume')),
-                PopupMenuItem(
-                  value: 'sphere',
-                  child: Text('Add sphere volume'),
-                ),
-                PopupMenuItem(
-                  value: 'global',
-                  child: Text('Add global volume'),
-                ),
-              ],
-            ),
-          ],
-        ),
-        if (volumes.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 4),
-            child: Text(
-              'Volumes blend their look over the scene by camera position.',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-          ),
-        for (var i = 0; i < volumes.length; i++)
-          _VolumeCard(
-            // The index is the identity here; rebuild a card when its slot
-            // changes contents.
-            key: ValueKey('volume-$i-${volumes[i].name}'),
-            controller: controller,
-            index: i,
-          ),
-      ],
-    );
-  }
-}
-
-class _VolumeCard extends StatelessWidget {
-  const _VolumeCard({super.key, required this.controller, required this.index});
-
-  final EditorController controller;
-  final int index;
-
-  void _setProps(Map<String, Object> properties) {
-    controller.run('setVolumeProperties', {
-      'index': index,
-      'properties': properties,
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final v = controller.document.stage.volumes[index];
-    final boundsType = switch (v.bounds) {
-      BoxBoundsSpec() => 'box',
-      SphereBoundsSpec() => 'sphere',
-      _ => 'global',
-    };
-    final center = switch (v.bounds) {
-      BoxBoundsSpec(:final center) => center,
-      SphereBoundsSpec(:final center) => center,
-      _ => Vector3.zero(),
-    };
-
-    Map<String, double> vecMap(Vector3 vec) => {
-      'x': vec.x,
-      'y': vec.y,
-      'z': vec.z,
-    };
-
-    // Center axis slider that previews live (coverage updates as it drags) and
-    // commits on release.
-    Widget centerAxis(String name, int axis) => LiveSlider(
-      label: 'Center $name',
-      value: center[axis],
-      min: -20,
-      max: 20,
-      onPreview: (val) {
-        final next = center.clone()..[axis] = val;
-        controller.previewVolumeBounds(index, center: next);
-      },
-      onCommit: (val) {
-        final next = center.clone()..[axis] = val;
-        _setProps({'center': vecMap(next)});
-      },
-    );
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 8),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        title: Text(
-          v.name.isEmpty ? 'Volume ${index + 1}' : v.name,
-          style: const TextStyle(fontSize: 13),
-        ),
-        subtitle: Text(
-          boundsType,
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, size: 18),
-          tooltip: 'Remove volume',
-          onPressed: () =>
-              controller.run('removeEnvironmentVolume', {'index': index}),
-        ),
-        children: [
-          TextFormField(
-            initialValue: v.name,
-            decoration: const InputDecoration(labelText: 'Name', isDense: true),
-            style: const TextStyle(fontSize: 13),
-            onFieldSubmitted: (name) => _setProps({'name': name}),
-          ),
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Bounds', style: TextStyle(fontSize: 13)),
-            trailing: DropdownButton<String>(
-              value: boundsType,
-              items: const [
-                DropdownMenuItem(value: 'box', child: Text('Box')),
-                DropdownMenuItem(value: 'sphere', child: Text('Sphere')),
-                DropdownMenuItem(value: 'global', child: Text('Global')),
-              ],
-              onChanged: (t) => t == null ? null : _setProps({'boundsType': t}),
-            ),
-          ),
-          if (boundsType != 'global') ...[
-            centerAxis('X', 0),
-            centerAxis('Y', 1),
-            centerAxis('Z', 2),
-          ],
-          if (v.bounds is BoxBoundsSpec) ...[
-            for (var axis = 0; axis < 3; axis++)
-              LiveSlider(
-                label: 'Half extent ${'XYZ'[axis]}',
-                value: (v.bounds as BoxBoundsSpec).halfExtents[axis],
-                max: 20,
-                onPreview: (val) {
-                  final next = (v.bounds as BoxBoundsSpec).halfExtents.clone()
-                    ..[axis] = val;
-                  controller.previewVolumeBounds(index, halfExtents: next);
-                },
-                onCommit: (val) {
-                  final next = (v.bounds as BoxBoundsSpec).halfExtents.clone()
-                    ..[axis] = val;
-                  _setProps({'halfExtents': vecMap(next)});
-                },
-              ),
-          ],
-          if (v.bounds is SphereBoundsSpec)
-            LiveSlider(
-              label: 'Radius',
-              value: (v.bounds as SphereBoundsSpec).radius,
-              max: 20,
-              onPreview: (val) =>
-                  controller.previewVolumeBounds(index, radius: val),
-              onCommit: (val) => _setProps({'radius': val}),
-            ),
-          if (boundsType != 'global')
-            LiveSlider(
-              label: 'Blend distance',
-              value: v.blendDistance,
-              max: 20,
-              onPreview: (val) =>
-                  controller.previewVolumeBounds(index, blendDistance: val),
-              onCommit: (val) => _setProps({'blendDistance': val}),
-            ),
-          LiveSlider(
-            label: 'Weight',
-            value: v.weight,
-            onPreview: (val) =>
-                controller.previewVolumeBounds(index, weight: val),
-            onCommit: (val) => _setProps({'weight': val}),
-          ),
-          LiveSlider(
-            label: 'Priority',
-            value: v.priority,
-            max: 10,
-            onPreview: (val) =>
-                controller.previewVolumeBounds(index, priority: val),
-            onCommit: (val) => _setProps({'priority': val}),
-          ),
-          const Divider(),
-          EnvironmentControls(controller: controller, volumeIndex: index),
-          const Divider(),
-          SkySection(controller: controller, volumeIndex: index),
-        ],
-      ),
     );
   }
 }
