@@ -66,4 +66,51 @@ void main() {
       2.0,
     );
   });
+
+  group('EnvironmentVolumeComponent coverage', () {
+    test('a box volume follows the node transform', () {
+      final node = Node(localTransform: Matrix4.translation(Vector3(10, 0, 0)));
+      final volume = EnvironmentVolumeComponent(
+        settings: EnvironmentSettings(),
+        extents: Vector3.all(2),
+        blendDistance: 0,
+      );
+      node.addComponent(volume);
+
+      // Inside the box (centered at the node's world position).
+      expect(volume.coverage(Vector3(10, 0, 0)), 1.0);
+      // Outside (hard edge with blendDistance 0).
+      expect(volume.coverage(Vector3(20, 0, 0)), 0.0);
+
+      // Two local units outside the surface fades to half across blend 4.
+      volume.blendDistance = 4;
+      expect(volume.coverage(Vector3(14, 0, 0)), closeTo(0.5, 1e-6));
+    });
+
+    test('node scale grows the box; rotation orients it', () {
+      final node = Node(localTransform: Matrix4.diagonal3(Vector3(2, 2, 2)));
+      final volume = EnvironmentVolumeComponent(
+        settings: EnvironmentSettings(),
+        extents: Vector3.all(1),
+        blendDistance: 0,
+      );
+      node.addComponent(volume);
+      // Local half-extent 1 scaled by 2 reaches world 2.
+      expect(volume.coverage(Vector3(1.9, 0, 0)), 1.0);
+      expect(volume.coverage(Vector3(2.1, 0, 0)), 0.0);
+    });
+
+    test('a sphere volume tests radial distance', () {
+      final node = Node();
+      final volume = EnvironmentVolumeComponent(
+        settings: EnvironmentSettings(),
+        shape: EnvironmentVolumeShape.sphere,
+        radius: 3,
+        blendDistance: 0,
+      );
+      node.addComponent(volume);
+      expect(volume.coverage(Vector3(0, 2.9, 0)), 1.0);
+      expect(volume.coverage(Vector3(0, 3.1, 0)), 0.0);
+    });
+  });
 }

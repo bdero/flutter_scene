@@ -70,6 +70,8 @@ export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'
     show DirectionalLightComponent;
+export 'src/components/environment_volume_component.dart'
+    show EnvironmentVolumeComponent, EnvironmentVolumeShape;
 export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;

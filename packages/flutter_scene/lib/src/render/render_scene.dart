@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_scene/src/components/directional_light_component.dart';
+import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -165,6 +166,22 @@ class RenderScene {
   /// Unregisters [light]. Called when its owning node unmounts.
   void removeDirectionalLight(DirectionalLightComponent light) {
     directionalLights.remove(light);
+  }
+
+  /// The environment volumes contributed by mounted
+  /// [EnvironmentVolumeComponent]s, in registration order. Folded into the
+  /// scene's environment blend by camera position each frame.
+  final List<EnvironmentVolumeComponent> environmentVolumeComponents = [];
+
+  /// Registers [volume] as an active environment volume. Called by an
+  /// [EnvironmentVolumeComponent] when its owning node mounts.
+  void addEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
+    environmentVolumeComponents.add(volume);
+  }
+
+  /// Unregisters [volume]. Called when its owning node unmounts.
+  void removeEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
+    environmentVolumeComponents.remove(volume);
   }
 
   Bvh _bvh = Bvh.build([]);

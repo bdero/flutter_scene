@@ -107,51 +107,56 @@ class EnvironmentVolume {
   }
 }
 
-/// Blends [volumes] over [base] for a camera at [cameraPosition].
-///
-/// Starts from [base] and applies each volume whose contribution is non-zero in
-/// ascending [EnvironmentVolume.priority] order, lerping toward the volume's
-/// settings by `coverage * weight`. Continuous fields interpolate; discrete
-/// fields (the environment/sky bindings, tone-mapping operator, effect flags)
-/// switch when a volume's contribution passes half (see [EnvironmentSettings]).
-/// {@category Lighting and environment}
-EnvironmentSettings blendEnvironmentVolumes(
-  EnvironmentSettings base,
-  List<EnvironmentVolume> volumes,
-  Vector3 cameraPosition,
-) {
-  final contributions = <(EnvironmentVolume, double)>[];
-  for (final volume in volumes) {
-    final w = volume.coverage(cameraPosition) * volume.weight;
-    if (w > 0) contributions.add((volume, w.clamp(0.0, 1.0)));
-  }
-  contributions.sort((a, b) => a.$1.priority.compareTo(b.$1.priority));
+/// One resolved environment contribution to blend over the base: a look and how
+/// strongly it applies (`weight` already folds in coverage and master weight),
+/// ordered by `priority`. The engine builds these from manual
+/// [EnvironmentVolume]s and from environment-volume components alike.
+class EnvironmentContribution {
+  /// Creates a contribution.
+  EnvironmentContribution(this.settings, this.weight, this.priority);
 
+  /// The look this contributes toward.
+  final EnvironmentSettings settings;
+
+  /// The effective `0`..`1` strength (coverage times weight).
+  final double weight;
+
+  /// Blend order; higher applies later (on top).
+  final double priority;
+}
+
+/// Folds [contributions] over [base] in ascending priority, lerping toward each
+/// by its weight. Continuous fields interpolate; discrete fields switch when a
+/// contribution passes half (see [EnvironmentSettings]).
+EnvironmentSettings blendEnvironmentContributions(
+  EnvironmentSettings base,
+  List<EnvironmentContribution> contributions,
+) {
+  final active = [
+    for (final c in contributions)
+      if (c.weight > 0) c,
+  ]..sort((a, b) => a.priority.compareTo(b.priority));
   var result = base;
-  for (final (volume, w) in contributions) {
-    result = EnvironmentSettings.lerp(result, volume.settings, w);
+  for (final c in active) {
+    result = EnvironmentSettings.lerp(result, c.settings, c.weight.clamp(0, 1));
   }
   return result;
 }
 
 /// The dominant pair of image-based-lighting environments and the factor to
-/// blend between them for a camera at [cameraPosition], so reflections and
-/// ambient can cross-fade rather than switching at the midpoint.
+/// blend between them, from [contributions] over [base], so reflections and
+/// ambient cross-fade rather than switching at the midpoint.
 ///
 /// Returns `(primary, secondary, blend)`: sample `primary` and `secondary` and
 /// mix toward `secondary` by `blend`. `secondary` is null (and `blend` 0) when
-/// a single environment is in effect.
-///
-/// Only static environments cross-fade. A sky-lit look's image-based lighting
-/// comes from a per-frame bake that owns a single environment, and
-/// [EnvironmentSettings.lerp] switches that binding discretely, so when a
-/// contributing look in the transition is sky-lit this returns no secondary and
-/// the discrete switch stands. See `notes` `TODO(dual-sky-bake)`.
+/// a single environment is in effect. Only static environments cross-fade; a
+/// sky-lit look's lighting comes from a per-frame bake owning a single
+/// environment, so when a contributing look is sky-lit this returns no
+/// secondary and the discrete switch stands. See `notes` `TODO(dual-sky-bake)`.
 ({EnvironmentMap? primary, EnvironmentMap? secondary, double blend})
-resolveEnvironmentCrossfade(
+resolveEnvironmentCrossfadeFromContributions(
   EnvironmentSettings base,
-  List<EnvironmentVolume> volumes,
-  Vector3 cameraPosition,
+  List<EnvironmentContribution> contributions,
 ) {
   bool isStatic(EnvironmentSettings s) =>
       s.skyEnvironment == null && s.environment != null;
@@ -159,27 +164,60 @@ resolveEnvironmentCrossfade(
     return (primary: base.environment, secondary: null, blend: 0.0);
   }
 
-  final contributions = <(EnvironmentVolume, double)>[];
-  for (final volume in volumes) {
-    final w = (volume.coverage(cameraPosition) * volume.weight).clamp(0.0, 1.0);
-    if (w > 0) contributions.add((volume, w));
-  }
-  contributions.sort((a, b) => a.$1.priority.compareTo(b.$1.priority));
+  final active = [
+    for (final c in contributions)
+      if (c.weight > 0) c,
+  ]..sort((a, b) => a.priority.compareTo(b.priority));
 
   var primary = base.environment;
   EnvironmentMap? secondary;
   var blend = 0.0;
-  for (final (volume, w) in contributions) {
-    if (!isStatic(volume.settings)) {
+  for (final c in active) {
+    if (!isStatic(c.settings)) {
       return (primary: base.environment, secondary: null, blend: 0.0);
     }
-    final env = volume.settings.environment;
+    final env = c.settings.environment;
     if (identical(env, primary)) continue;
-    // Collapse the running pair to its dominant member, then start a new fade
-    // toward this volume's environment.
+    // Collapse the running pair to its dominant member, then start a new fade.
     primary = blend >= 0.5 ? (secondary ?? primary) : primary;
     secondary = env;
-    blend = w;
+    blend = c.weight.clamp(0.0, 1.0);
   }
   return (primary: primary, secondary: secondary, blend: blend);
 }
+
+List<EnvironmentContribution> _volumeContributions(
+  List<EnvironmentVolume> volumes,
+  Vector3 cameraPosition,
+) => [
+  for (final v in volumes)
+    EnvironmentContribution(
+      v.settings,
+      (v.coverage(cameraPosition) * v.weight).clamp(0.0, 1.0),
+      v.priority,
+    ),
+];
+
+/// Blends [volumes] over [base] for a camera at [cameraPosition]. A thin
+/// wrapper over [blendEnvironmentContributions] for the manual volume API.
+/// {@category Lighting and environment}
+EnvironmentSettings blendEnvironmentVolumes(
+  EnvironmentSettings base,
+  List<EnvironmentVolume> volumes,
+  Vector3 cameraPosition,
+) => blendEnvironmentContributions(
+  base,
+  _volumeContributions(volumes, cameraPosition),
+);
+
+/// The cross-fade pair for [volumes] over [base] at [cameraPosition]. A thin
+/// wrapper over [resolveEnvironmentCrossfadeFromContributions].
+({EnvironmentMap? primary, EnvironmentMap? secondary, double blend})
+resolveEnvironmentCrossfade(
+  EnvironmentSettings base,
+  List<EnvironmentVolume> volumes,
+  Vector3 cameraPosition,
+) => resolveEnvironmentCrossfadeFromContributions(
+  base,
+  _volumeContributions(volumes, cameraPosition),
+);

@@ -476,25 +476,40 @@ base class Scene implements SceneGraph {
   EnvironmentMap? _crossfadeEnvironment;
   double _crossfadeBlend = 0.0;
 
-  // Applies the camera-position blend of [environmentVolumes] over
-  // [baseEnvironment] to the live look fields, before the environment is used
-  // this frame. A no-op unless both a base and volumes are set.
+  // Applies the camera-position blend of the manual [environmentVolumes] and
+  // the mounted environment-volume components over [baseEnvironment] to the
+  // live look fields, before the environment is used this frame. A no-op unless
+  // a base is set and there is at least one volume.
   void _applyEnvironmentVolumes(Camera camera) {
     final base = baseEnvironment;
-    if (base == null || environmentVolumes.isEmpty) {
+    final components = renderScene.environmentVolumeComponents;
+    if (base == null || (environmentVolumes.isEmpty && components.isEmpty)) {
       _crossfadeEnvironment = null;
       _crossfadeBlend = 0.0;
       return;
     }
     final position = camera.position;
-    blendEnvironmentVolumes(base, environmentVolumes, position).applyTo(this);
+    final contributions = <EnvironmentContribution>[
+      for (final v in environmentVolumes)
+        EnvironmentContribution(
+          v.settings,
+          (v.coverage(position) * v.weight).clamp(0.0, 1.0),
+          v.priority,
+        ),
+      for (final c in components)
+        EnvironmentContribution(
+          c.settings,
+          (c.coverage(position) * c.weight).clamp(0.0, 1.0),
+          c.priority,
+        ),
+    ];
+    blendEnvironmentContributions(base, contributions).applyTo(this);
     // Keep the image-based lighting continuous across the midpoint: hold the
     // primary environment and pass the secondary plus a blend factor to the
     // material, rather than letting applyTo switch it.
-    final crossfade = resolveEnvironmentCrossfade(
+    final crossfade = resolveEnvironmentCrossfadeFromContributions(
       base,
-      environmentVolumes,
-      position,
+      contributions,
     );
     if (crossfade.secondary != null) {
       environment = crossfade.primary;
