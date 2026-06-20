@@ -47,8 +47,10 @@ void encodeSkybox(
   double environmentIntensity,
   Matrix3? environmentTransform,
   Camera camera,
-  ui.Size dimensions,
-) {
+  ui.Size dimensions, {
+  EnvironmentMap? environmentMapB,
+  double environmentBlend = 0.0,
+}) {
   final source = skybox.source;
   final vertexShader = baseShaderLibrary['SkyboxVertex']!;
   final gpu.Shader fragmentShader;
@@ -95,6 +97,11 @@ void encodeSkybox(
       source,
       environment,
       environmentIntensity * skybox.intensity,
+      // Only a static secondary environment cross-fades the visible sky; with
+      // no cross-fade the primary is bound to the `_b` samplers (a no-op, since
+      // the blend factor is 0).
+      environmentMapB ?? environment,
+      environmentBlend,
     );
   } else if (source is ShaderSkySource) {
     source.bind(renderPass, transientsBuffer, environment);
@@ -157,7 +164,8 @@ void bindSkyboxFrameInfo(
 }
 
 // Binds the built-in environment sky fragment: SkyboxInfo (blurriness +
-// combined intensity) and the prefiltered-radiance atlas.
+// combined intensity + the IBL cross-fade blend) and the prefiltered-radiance
+// atlases (primary plus the secondary cross-fade pair).
 void _bindEnvironmentSource(
   gpu.RenderPass renderPass,
   gpu.HostBuffer transientsBuffer,
@@ -165,12 +173,17 @@ void _bindEnvironmentSource(
   EnvironmentSkySource source,
   EnvironmentMap environment,
   double intensity,
+  EnvironmentMap environmentB,
+  double blend,
 ) {
-  final skyboxInfo = Float32List(4);
+  // std140: blurriness/intensity/has_background/source_is_linear fill the first
+  // vec4; radiance_blend starts the second, so the block rounds up to 8 floats.
+  final skyboxInfo = Float32List(8);
   skyboxInfo[0] = source.blurriness;
   skyboxInfo[1] = intensity;
   skyboxInfo[2] = environment.hasBackgroundTexture ? 1.0 : 0.0;
   skyboxInfo[3] = environment.backgroundIsLinear ? 1.0 : 0.0;
+  skyboxInfo[4] = blend.clamp(0.0, 1.0);
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('SkyboxInfo'),
     transientsBuffer.emplace(ByteData.sublistView(skyboxInfo)),
@@ -182,6 +195,13 @@ void _bindEnvironmentSource(
     renderPass,
     fragmentShader,
     environment,
+  );
+  // The secondary cross-fade environment (the `_b` specular pair). The visible
+  // sky mixes toward it by radiance_blend, matching the lit IBL cross-fade.
+  EngineLightingUniforms.bindSecondaryRadiance(
+    renderPass,
+    fragmentShader,
+    environmentB,
   );
   // The full-res source equirect for a sharp background (a dummy when the
   // environment has none; the SkyboxInfo flag gates its use).

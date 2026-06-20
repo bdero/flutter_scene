@@ -221,10 +221,12 @@ class EngineLightingUniforms {
     );
   }
 
-  // Binds the secondary environment's prefiltered radiance and diffuse SH to
-  // the `_b` samplers, with the same options as the primary (both share the
-  // bound RadianceLayoutInfo, so the layout flag is not re-bound).
-  static void _bindSecondaryRadiance(
+  /// Binds the secondary cross-fade environment's prefiltered radiance to the
+  /// `prefiltered_radiance_b` / `prefiltered_radiance_cube_b` samplers (the
+  /// specular pair only, no diffuse SH). Shared by the lit material and the
+  /// environment skybox; both share the primary's [RadianceLayoutInfo], so the
+  /// layout flag is not re-bound here.
+  static void bindSecondaryRadiance(
     gpu.RenderPass pass,
     gpu.Shader shader,
     EnvironmentMap env,
@@ -252,6 +254,17 @@ class EngineLightingUniforms {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
+  }
+
+  // Binds the secondary environment's prefiltered radiance and diffuse SH to
+  // the `_b` samplers, with the same options as the primary (both share the
+  // bound RadianceLayoutInfo, so the layout flag is not re-bound).
+  static void _bindSecondaryRadiance(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    EnvironmentMap env,
+  ) {
+    bindSecondaryRadiance(pass, shader, env);
     pass.bindTexture(
       shader.getUniformSlot('sh_coefficients_b'),
       env.diffuseShTexture,
