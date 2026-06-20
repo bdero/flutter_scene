@@ -195,8 +195,8 @@ class EnvironmentControls extends StatelessWidget {
               style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ),
-        // Importing an HDR drives the disk-loaded global environment.
-        // TODO(volume-hdr): allow importing an image environment per volume.
+        // Importing an HDR drives the disk-loaded environment, targeting the
+        // resource being edited (the global stage environment or a volume's).
         if (allowHdrImport)
           Align(
             alignment: Alignment.centerLeft,
@@ -212,7 +212,13 @@ class EnvironmentControls extends StatelessWidget {
               ),
               onPressed: () async {
                 final path = await pickEnvironmentPath();
-                if (path != null) await importEnvironmentMap(controller, path);
+                if (path != null) {
+                  await importEnvironmentMap(
+                    controller,
+                    path,
+                    environmentId: environment?.id,
+                  );
+                }
               },
             ),
           ),

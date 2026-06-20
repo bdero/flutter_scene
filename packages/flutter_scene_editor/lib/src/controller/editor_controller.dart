@@ -976,7 +976,6 @@ class EditorController extends ChangeNotifier {
           _reapplyGlobalEnvironmentInPlace(resource))) {
         await realizeStage(document, scene);
       }
-      await _applyDiskEnvironment();
     }
     for (final node in document.nodes.values) {
       for (final spec in node.components) {
@@ -1000,6 +999,9 @@ class EditorController extends ChangeNotifier {
         }
       }
     }
+    // Inject any disk-referenced HDRs (global or per-volume) the realizer could
+    // not resolve through the asset bundle.
+    await _applyDiskEnvironment();
     notifyListeners();
   }
 
@@ -1119,6 +1121,11 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<void> _applyDiskEnvironment() async {
+    await _applyGlobalDiskEnvironment();
+    await _applyVolumeDiskEnvironments();
+  }
+
+  Future<void> _applyGlobalDiskEnvironment() async {
     final env = _globalEnvironmentSpec();
     if (env is! AssetEnvironment) {
       _diskEnvPath = null;
@@ -1131,12 +1138,40 @@ class EditorController extends ChangeNotifier {
       scene.environment = loaded;
       // realizeStage captures the base look before this runs, so when volumes
       // are active the base's disk environment has to be folded in too.
-      // TODO(volume-hdr): a volume cannot reference a disk environment yet;
-      // teach this loader to apply imported HDRs to a volume's settings.
       scene.baseEnvironment?.environment = loaded;
       _diskEnvPath = path;
       notifyListeners();
     }
+  }
+
+  // Loads disk-referenced HDRs into the live settings of every environment
+  // volume component whose environment resource points at an AssetEnvironment.
+  // realizeEnvironmentSettings cannot resolve a user-picked file through the
+  // asset bundle, so the editor injects it here, mirroring the global path.
+  Future<void> _applyVolumeDiskEnvironments() async {
+    var changed = false;
+    for (final node in document.nodes.values) {
+      for (final spec in node.components) {
+        if (spec.type != 'environmentVolume') continue;
+        final ref = spec.properties['environment'];
+        if (ref is! ResourceRefValue) continue;
+        final resource = document.resource(ref.id);
+        if (resource is! EnvironmentResource) continue;
+        final env = resource.environment;
+        if (env is! AssetEnvironment) continue;
+        final path = _resolveAssetPath(env.asset.key);
+        if (path == null) continue;
+        final live = _liveById[node.id]
+            ?.getComponent<EnvironmentVolumeComponent>();
+        if (live == null) continue;
+        final loaded = await _loadDiskEnvironment(path);
+        if (loaded != null && !identical(live.settings.environment, loaded)) {
+          live.settings.environment = loaded;
+          changed = true;
+        }
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   String? _resolveAssetPath(String key) {

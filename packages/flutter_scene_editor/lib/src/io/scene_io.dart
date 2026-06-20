@@ -50,17 +50,21 @@ Future<String?> pickEnvironmentPath() async {
 }
 
 /// Imports the equirectangular environment image at [path] (a `.hdr` HDR map or
-/// an LDR image) and sets it as the scene environment.
+/// an LDR image) and sets it as an environment resource's look.
 ///
-/// When the scene is saved (a non-null `baseDirectory`), the file is copied
-/// under `imported/` and referenced relatively so it persists with the scene;
+/// [environmentId] is the target environment resource (the stage's global
+/// environment or a volume's); when null the stage's global resource is used,
+/// falling back to the legacy inline stage look when there is none. When the
+/// scene is saved (a non-null `baseDirectory`), the file is copied under
+/// `imported/` and referenced relatively so it persists with the scene;
 /// otherwise the absolute path is referenced for the session. Returns the
 /// referenced asset path. The environment applies through the editor's
 /// disk-environment loader.
 Future<String> importEnvironmentMap(
   EditorController controller,
-  String path,
-) async {
+  String path, {
+  LocalId? environmentId,
+}) async {
   final sceneDir = controller.baseDirectory;
   final String assetRef;
   if (sceneDir != null) {
@@ -75,9 +79,9 @@ Future<String> importEnvironmentMap(
   }
   // Use the HDR for both lighting and the background. Sky-driven lighting owns
   // the scene environment, so turn it off and show the environment as the
-  // skybox. Target the stage's global environment resource when it has one,
-  // else the legacy inline stage look.
-  final envId = controller.document.stage.environmentRef;
+  // skybox. Target the given environment resource, else the stage's global
+  // resource, else the legacy inline stage look.
+  final envId = environmentId ?? controller.document.stage.environmentRef;
   if (envId != null) {
     final id = envId.toToken();
     await controller.run('setEnvironmentProperties', {

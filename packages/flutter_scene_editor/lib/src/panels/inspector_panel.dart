@@ -1043,6 +1043,7 @@ class _VolumeEnvironmentEditor extends StatelessWidget {
             controller: controller,
             environment: res,
             volumeNodeId: nodeId,
+            allowHdrImport: true,
           ),
           const Divider(),
           SkySection(

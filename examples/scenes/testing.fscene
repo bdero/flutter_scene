@@ -1,0 +1,137 @@
+{
+  "fscene": 1,
+  "documentId": "3BSRVY7ETX64NE60722J8ZHKGC",
+  "stage": {
+    "upAxis": "y",
+    "handedness": "left",
+    "unitsPerMeter": 1.0,
+    "environment": {
+      "type": "studio"
+    },
+    "environmentIntensity": 1.0,
+    "exposure": 1.0,
+    "toneMapping": "pbrNeutral"
+  },
+  "resources": {
+    "geo:VPSYCAR000002": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:VPSYCAR000004": {
+      "kind": "material",
+      "type": "physicallyBased"
+    },
+    "geo:VPSYCAR000008": {
+      "kind": "geometry",
+      "procedural": {
+        "shape": "cuboid",
+        "extents": [1.0, 1.0, 1.0]
+      }
+    },
+    "mat:VPSYCAR00000A": {
+      "kind": "material",
+      "type": "physicallyBased"
+    }
+  },
+  "nodes": {
+    "n:VPSYCAR000000": {
+      "name": "Light",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "directionalLight",
+          "properties": {
+            "castsShadow": {
+              "b": true
+            }
+          }
+        }
+      ]
+    },
+    "n:VPSYCAR000006": {
+      "name": "Cube",
+      "transform": {
+        "trs": {
+          "t": [0.0, -0.8355814218521118, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:VPSYCAR000002"
+            },
+            "material": {
+              "rref": "mat:VPSYCAR000004"
+            }
+          }
+        }
+      ]
+    },
+    "n:VPSYCAR00000C": {
+      "name": "Cube",
+      "transform": {
+        "trs": {
+          "t": [0.0, -2.557943105697632, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [10.0, 1.0, 10.0]
+        }
+      },
+      "components": [
+        {
+          "type": "mesh",
+          "properties": {
+            "geometry": {
+              "rref": "geo:VPSYCAR000008"
+            },
+            "material": {
+              "rref": "mat:VPSYCAR00000A"
+            }
+          }
+        }
+      ]
+    },
+    "n:WJH7GR0000000": {
+      "name": "Node",
+      "transform": {
+        "trs": {
+          "t": [0.0, 0.0, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      }
+    },
+    "n:WJH7GR0000002": {
+      "name": "testing",
+      "transform": {
+        "trs": {
+          "t": [7.24553918838501, 1.275457501411438, 0.0],
+          "r": [0.0, 0.0, 0.0, 1.0],
+          "s": [1.0, 1.0, 1.0]
+        }
+      },
+      "instance": {
+        "source": "testing.fscene"
+      }
+    }
+  },
+  "roots": [
+    "n:VPSYCAR000000",
+    "n:VPSYCAR000006",
+    "n:VPSYCAR00000C",
+    "n:WJH7GR0000000",
+    "n:WJH7GR0000002"
+  ]
+}
