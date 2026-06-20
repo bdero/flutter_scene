@@ -36,6 +36,12 @@ out vec4 frag_color;
 #include <pbr.glsl>      // SRGBToLinear
 #include <texture.glsl>  // SampleRadianceEnv, SphericalToEquirectangular
 
+// Blurriness band over which the visible sky hands off from the full-res sharp
+// source to the convolved cube. Above it the cube's roughness LOD carries the
+// blur, so the mid-range reads as a growing blur instead of a sharp/blurred
+// cross-fade.
+const float kBackgroundSharpHandoff = 0.15;
+
 void main() {
   vec3 direction = normalize(v_ray);
   float blurriness = clamp(skybox_info.blurriness, 0.0, 1.0);
@@ -54,7 +60,12 @@ void main() {
     vec3 sharp = texture(environment_background, uv).rgb;
     sharp =
         skybox_info.source_is_linear > 0.5 ? sharp : SRGBToLinear(sharp);
-    radiance = mix(sharp, blurred, blurriness);
+    // Hand off sharp -> cube over the low band, then let the cube's roughness
+    // LOD (blurred is sampled at roughness = blurriness) carry the blur. A
+    // plain mix by blurriness overlays a crisp and a blurred image across the
+    // mid-range, which looks faded rather than blurred.
+    float handoff = smoothstep(0.0, kBackgroundSharpHandoff, blurriness);
+    radiance = mix(sharp, blurred, handoff);
   } else {
     radiance = blurred;
   }
