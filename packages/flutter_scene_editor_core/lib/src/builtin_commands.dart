@@ -1150,6 +1150,60 @@ class _VolumeLook implements _LookView {
   set skyEnvironment(SkyEnvironmentSpec? value) => v.skyEnvironment = value;
 }
 
+class _EnvResourceLook implements _LookView {
+  _EnvResourceLook(this.r);
+  final EnvironmentResource r;
+  @override
+  EnvironmentSpec get environment => r.environment;
+  @override
+  set environment(EnvironmentSpec value) => r.environment = value;
+  @override
+  double get environmentIntensity => r.environmentIntensity;
+  @override
+  set environmentIntensity(double value) => r.environmentIntensity = value;
+  @override
+  double get exposure => r.exposure;
+  @override
+  set exposure(double value) => r.exposure = value;
+  @override
+  String get toneMapping => r.toneMapping;
+  @override
+  set toneMapping(String value) => r.toneMapping = value;
+  @override
+  int? get radianceCubeSize => r.radianceCubeSize;
+  @override
+  set radianceCubeSize(int? value) => r.radianceCubeSize = value;
+  @override
+  SkyboxSpec? get skybox => r.skybox;
+  @override
+  set skybox(SkyboxSpec? value) => r.skybox = value;
+  @override
+  SkyEnvironmentSpec? get skyEnvironment => r.skyEnvironment;
+  @override
+  set skyEnvironment(SkyEnvironmentSpec? value) => r.skyEnvironment = value;
+}
+
+EnvironmentResource _copyEnvironmentResource(EnvironmentResource r) =>
+    EnvironmentResource(
+      r.id,
+      name: r.name,
+      environment: r.environment,
+      environmentIntensity: r.environmentIntensity,
+      exposure: r.exposure,
+      toneMapping: r.toneMapping,
+      radianceCubeSize: r.radianceCubeSize,
+      skybox: r.skybox,
+      skyEnvironment: r.skyEnvironment,
+    );
+
+EnvironmentResource _requireEnvironment(CommandContext ctx, LocalId id) {
+  final existing = ctx.document.resource(id);
+  if (existing is! EnvironmentResource) {
+    throw CommandException('Resource is not an environment: ${id.toToken()}');
+  }
+  return existing;
+}
+
 // Resolves the look-edit target on a freshly copied stage. Returns the stage
 // itself when [index] is null, otherwise the volume at [index]. Throws when
 // [index] is out of range.
@@ -1159,6 +1213,105 @@ _LookView _lookTarget(StageMetadata next, int? index) {
     throw CommandException('No environment volume at index $index.');
   }
   return _VolumeLook(next.volumes[index]);
+}
+
+// Applies the look-scalar/environment property keys to [look]. Shared by the
+// stage, volume, and environment-resource look commands.
+void _applyLookProperties(_LookView look, Map<String, PropertyValue> props) {
+  if (props.containsKey('exposure')) {
+    look.exposure = _stageDouble(props['exposure'], look.exposure);
+  }
+  if (props.containsKey('environmentIntensity')) {
+    look.environmentIntensity = _stageDouble(
+      props['environmentIntensity'],
+      look.environmentIntensity,
+    );
+  }
+  if (props.containsKey('toneMapping')) {
+    look.toneMapping = _stageString(props['toneMapping'], look.toneMapping);
+  }
+  if (props.containsKey('radianceCubeSize')) {
+    // A non-positive value clears the override back to the engine default.
+    final size = _stageInt(props['radianceCubeSize']);
+    look.radianceCubeSize = (size == null || size <= 0) ? null : size;
+  }
+  if (props.containsKey('environment')) {
+    look.environment = switch (_stageString(props['environment'], 'studio')) {
+      'empty' => const EmptyEnvironment(),
+      'asset' => AssetEnvironment(
+        AssetRef(_stageString(props['environmentAsset'], '')),
+      ),
+      _ => const StudioEnvironment(),
+    };
+  }
+}
+
+// Applies a skybox/sky-lighting change to [next], reading the prior look from
+// [old]. Mirrors setSkybox; shared by the stage, volume, and environment
+// commands.
+void _applyLookSkybox(
+  _LookView next,
+  _LookView old, {
+  required String sky,
+  Vector3? sun,
+  required bool lightScene,
+  required bool castShadows,
+}) {
+  final current = old.skybox?.source;
+  final sameType =
+      (sky == 'gradient' && current is GradientSkySpec) ||
+      (sky == 'physical' && current is PhysicalSkySpec) ||
+      (sky == 'environment' && current is EnvironmentSkySpec);
+  final base = sameType ? current! : _defaultSkySource(sky);
+  final seedSun = sun ?? (sameType ? null : _specSunDirection(current));
+  final overrides = <String, PropertyValue>{
+    if (seedSun != null) 'sunDirection': Vec3Value(seedSun.clone()),
+  };
+  SkySourceSpec? makeSource() =>
+      base == null ? null : _skySourceFrom(base, overrides);
+
+  final skySource = makeSource();
+  next.skybox = skySource == null
+      ? null
+      : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
+  final canLight = sky == 'gradient' || sky == 'physical';
+  final priorEnv = old.skyEnvironment;
+  next.skyEnvironment = (lightScene && canLight)
+      ? SkyEnvironmentSpec(
+          makeSource()!,
+          refresh: priorEnv?.refresh ?? 'manual',
+          intervalSeconds: priorEnv?.intervalSeconds ?? 1.0,
+          faceResolution: priorEnv?.faceResolution ?? 128,
+          equirectWidth: priorEnv?.equirectWidth ?? 512,
+          castShadows: castShadows,
+        )
+      : null;
+}
+
+// Patches the current sky's parameters on [next] (both the skybox and a sky
+// lighting binding). Mirrors setSkyParameters; throws when there is no sky.
+void _applyLookSkyParameters(_LookView next, Map<String, PropertyValue> props) {
+  final skybox = next.skybox;
+  if (skybox == null) {
+    throw const CommandException(
+      'No sky to tune; choose a skybox with setSkybox first.',
+    );
+  }
+  next.skybox = SkyboxSpec(
+    _skySourceFrom(skybox.source, props),
+    intensity: _stageDouble(props['intensity'], skybox.intensity),
+  );
+  final priorEnv = next.skyEnvironment;
+  if (priorEnv != null) {
+    next.skyEnvironment = SkyEnvironmentSpec(
+      _skySourceFrom(priorEnv.source, props),
+      refresh: priorEnv.refresh,
+      intervalSeconds: priorEnv.intervalSeconds,
+      faceResolution: priorEnv.faceResolution,
+      equirectWidth: priorEnv.equirectWidth,
+      castShadows: priorEnv.castShadows,
+    );
+  }
 }
 
 double _stageDouble(PropertyValue? v, double fallback) => switch (v) {
@@ -1208,33 +1361,7 @@ final setStageProperties = CommandEntry(
     final volumeIndex = optionalInt(params, 'volume');
     final old = ctx.document.stage;
     final next = _copyStage(old);
-    final look = _lookTarget(next, volumeIndex);
-    if (props.containsKey('exposure')) {
-      look.exposure = _stageDouble(props['exposure'], look.exposure);
-    }
-    if (props.containsKey('environmentIntensity')) {
-      look.environmentIntensity = _stageDouble(
-        props['environmentIntensity'],
-        look.environmentIntensity,
-      );
-    }
-    if (props.containsKey('toneMapping')) {
-      look.toneMapping = _stageString(props['toneMapping'], look.toneMapping);
-    }
-    if (props.containsKey('radianceCubeSize')) {
-      // A non-positive value clears the override back to the engine default.
-      final size = _stageInt(props['radianceCubeSize']);
-      look.radianceCubeSize = (size == null || size <= 0) ? null : size;
-    }
-    if (props.containsKey('environment')) {
-      look.environment = switch (_stageString(props['environment'], 'studio')) {
-        'empty' => const EmptyEnvironment(),
-        'asset' => AssetEnvironment(
-          AssetRef(_stageString(props['environmentAsset'], '')),
-        ),
-        _ => const StudioEnvironment(),
-      };
-    }
+    _applyLookProperties(_lookTarget(next, volumeIndex), props);
     // The remaining settings are scene-wide (not per-volume) and apply only to
     // the base stage.
     if (volumeIndex == null) {
@@ -1380,41 +1507,15 @@ final setSkybox = CommandEntry(
     final castShadows = params.containsKey('castShadows')
         ? params['castShadows'] == true
         : (oldLook.skyEnvironment?.castShadows ?? false);
-    // Preserve the current sky's parameters when the type is unchanged;
-    // otherwise start from the new type's defaults.
-    final current = oldLook.skybox?.source;
-    final sameType =
-        (sky == 'gradient' && current is GradientSkySpec) ||
-        (sky == 'physical' && current is PhysicalSkySpec) ||
-        (sky == 'environment' && current is EnvironmentSkySpec);
-    final base = sameType ? current! : _defaultSkySource(sky);
-    // An explicit sun wins; otherwise carry the sun across a type switch.
-    final seedSun = sun ?? (sameType ? null : _specSunDirection(current));
-    final overrides = <String, PropertyValue>{
-      if (seedSun != null) 'sunDirection': Vec3Value(seedSun.clone()),
-    };
-    SkySourceSpec? makeSource() =>
-        base == null ? null : _skySourceFrom(base, overrides);
-
     final next = _copyStage(old);
-    final nextLook = _lookTarget(next, volumeIndex);
-    final skySource = makeSource();
-    nextLook.skybox = skySource == null
-        ? null
-        : SkyboxSpec(skySource, intensity: oldLook.skybox?.intensity ?? 1.0);
-    final canLight = sky == 'gradient' || sky == 'physical';
-    final priorEnv = oldLook.skyEnvironment;
-    // The sky-lighting binding needs its own shader-sky source instance.
-    nextLook.skyEnvironment = (lightScene && canLight)
-        ? SkyEnvironmentSpec(
-            makeSource()!,
-            refresh: priorEnv?.refresh ?? 'manual',
-            intervalSeconds: priorEnv?.intervalSeconds ?? 1.0,
-            faceResolution: priorEnv?.faceResolution ?? 128,
-            equirectWidth: priorEnv?.equirectWidth ?? 512,
-            castShadows: castShadows,
-          )
-        : null;
+    _applyLookSkybox(
+      _lookTarget(next, volumeIndex),
+      oldLook,
+      sky: sky,
+      sun: sun,
+      lightScene: lightScene,
+      castShadows: castShadows,
+    );
     return Transaction(
       name: 'Set skybox',
       records: [
@@ -1455,31 +1556,8 @@ final setSkyParameters = CommandEntry(
     final props = optionalPropertyMap(params, 'properties');
     final volumeIndex = optionalInt(params, 'volume');
     final old = ctx.document.stage;
-    final skybox = _lookTarget(old, volumeIndex).skybox;
-    if (skybox == null) {
-      throw const CommandException(
-        'No sky to tune; choose a skybox with setSkybox first.',
-      );
-    }
     final next = _copyStage(old);
-    final nextLook = _lookTarget(next, volumeIndex);
-    // `intensity` is a skybox-level property (not a sky source field); the rest
-    // of the properties patch the source via _skySourceFrom.
-    nextLook.skybox = SkyboxSpec(
-      _skySourceFrom(skybox.source, props),
-      intensity: _stageDouble(props['intensity'], skybox.intensity),
-    );
-    final priorEnv = nextLook.skyEnvironment;
-    if (priorEnv != null) {
-      nextLook.skyEnvironment = SkyEnvironmentSpec(
-        _skySourceFrom(priorEnv.source, props),
-        refresh: priorEnv.refresh,
-        intervalSeconds: priorEnv.intervalSeconds,
-        faceResolution: priorEnv.faceResolution,
-        equirectWidth: priorEnv.equirectWidth,
-        castShadows: priorEnv.castShadows,
-      );
-    }
+    _applyLookSkyParameters(_lookTarget(next, volumeIndex), props);
     return Transaction(
       name: 'Tune sky',
       records: [
@@ -1491,6 +1569,177 @@ final setSkyParameters = CommandEntry(
         ),
       ],
     );
+  },
+);
+
+Transaction _environmentTransaction(
+  String name,
+  LocalId id,
+  EnvironmentResource old,
+  EnvironmentResource next,
+) => Transaction(
+  name: name,
+  records: [
+    ChangeRecord(
+      targetId: id,
+      slot: ChangeSlot.poolResource,
+      oldValue: ResourceChange(old),
+      newValue: ResourceChange(next),
+    ),
+  ],
+);
+
+/// Creates an environment resource (a reusable scene look) in the pool. The new
+/// resource's id is the created record's target id. Edit its look with the
+/// `setEnvironment*` commands and reference it from an environment-volume
+/// component or the stage.
+final createEnvironmentResource = CommandEntry(
+  name: 'createEnvironmentResource',
+  doc: 'Create an environment resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = EnvironmentResource(
+      ctx.document.newId(),
+      name: optionalString(params, 'name') ?? '',
+    );
+    return Transaction(
+      name: 'Create environment',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+/// Updates an environment resource's scalar look (exposure, environment
+/// intensity, tone mapping, the environment kind, reflection size). Only the
+/// keys present in `properties` change.
+final setEnvironmentProperties = CommandEntry(
+  name: 'setEnvironmentProperties',
+  doc: 'Update an environment resource look.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+    ),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Settings',
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'environmentId');
+    final existing = _requireEnvironment(ctx, id);
+    final next = _copyEnvironmentResource(existing);
+    _applyLookProperties(
+      _EnvResourceLook(next),
+      optionalPropertyMap(params, 'properties'),
+    );
+    return _environmentTransaction(
+      'Set environment settings',
+      id,
+      existing,
+      next,
+    );
+  },
+);
+
+/// Sets an environment resource's skybox and optional sky lighting, mirroring
+/// `setSkybox` for the stage.
+final setEnvironmentSkybox = CommandEntry(
+  name: 'setEnvironmentSkybox',
+  doc: 'Set an environment resource skybox and sky lighting.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+    ),
+    ParamSpec(name: 'sky', type: ParamType.string, label: 'Sky'),
+    ParamSpec(
+      name: 'sunDirection',
+      type: ParamType.vec3,
+      label: 'Sun direction',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'lightScene',
+      type: ParamType.boolean,
+      label: 'Light scene with sky',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'castShadows',
+      type: ParamType.boolean,
+      label: 'Cast sun shadows',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'environmentId');
+    final existing = _requireEnvironment(ctx, id);
+    final oldLook = _EnvResourceLook(existing);
+    final lightScene = params.containsKey('lightScene')
+        ? params['lightScene'] == true
+        : oldLook.skyEnvironment != null;
+    final castShadows = params.containsKey('castShadows')
+        ? params['castShadows'] == true
+        : (oldLook.skyEnvironment?.castShadows ?? false);
+    final next = _copyEnvironmentResource(existing);
+    _applyLookSkybox(
+      _EnvResourceLook(next),
+      oldLook,
+      sky: requireString(params, 'sky'),
+      sun: optionalVec3(params, 'sunDirection'),
+      lightScene: lightScene,
+      castShadows: castShadows,
+    );
+    return _environmentTransaction(
+      'Set environment skybox',
+      id,
+      existing,
+      next,
+    );
+  },
+);
+
+/// Tunes an environment resource's procedural sky parameters, mirroring
+/// `setSkyParameters` for the stage.
+final setEnvironmentSkyParameters = CommandEntry(
+  name: 'setEnvironmentSkyParameters',
+  doc: 'Tune an environment resource sky parameters.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+    ),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Sky parameters',
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'environmentId');
+    final existing = _requireEnvironment(ctx, id);
+    final next = _copyEnvironmentResource(existing);
+    _applyLookSkyParameters(
+      _EnvResourceLook(next),
+      optionalPropertyMap(params, 'properties'),
+    );
+    return _environmentTransaction('Tune environment sky', id, existing, next);
   },
 );
 
@@ -2069,6 +2318,10 @@ final List<CommandEntry> builtinCommands = [
   createMaterial,
   createTextureResource,
   setMaterialProperties,
+  createEnvironmentResource,
+  setEnvironmentProperties,
+  setEnvironmentSkybox,
+  setEnvironmentSkyParameters,
   removeResource,
   setStageProperties,
   setSkybox,

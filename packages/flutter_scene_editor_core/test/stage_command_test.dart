@@ -296,4 +296,58 @@ void main() {
       );
     });
   });
+
+  group('environment resources', () {
+    EnvironmentResource only(EditorSession s) =>
+        s.document.resources.values.whereType<EnvironmentResource>().single;
+
+    test('create then edit the look, skybox, and sky parameters', () {
+      final session = EditorSession.empty();
+      session.run('createEnvironmentResource', {'name': 'cave'});
+      final id = only(session).id;
+      expect(only(session).name, 'cave');
+
+      session.run('setEnvironmentProperties', {
+        'environmentId': id.toToken(),
+        'properties': {'exposure': 0.3, 'environment': 'empty'},
+      });
+      expect(only(session).exposure, 0.3);
+      expect(only(session).environment, isA<EmptyEnvironment>());
+
+      session.run('setEnvironmentSkybox', {
+        'environmentId': id.toToken(),
+        'sky': 'physical',
+        'lightScene': true,
+      });
+      expect(only(session).skybox?.source, isA<PhysicalSkySpec>());
+      expect(only(session).skyEnvironment, isNotNull);
+
+      session.run('setEnvironmentSkyParameters', {
+        'environmentId': id.toToken(),
+        'properties': {'turbidity': 4.0},
+      });
+      expect((only(session).skybox!.source as PhysicalSkySpec).turbidity, 4.0);
+
+      session.undo();
+      expect(
+        (only(session).skybox!.source as PhysicalSkySpec).turbidity,
+        isNot(4.0),
+      );
+    });
+
+    test('editing a non-environment resource throws', () {
+      final session = EditorSession.empty();
+      session.run('createMaterial', {'type': 'physicallyBased'});
+      final material = session.document.resources.values
+          .whereType<MaterialResource>()
+          .single;
+      expect(
+        () => session.run('setEnvironmentProperties', {
+          'environmentId': material.id.toToken(),
+          'properties': {'exposure': 1.0},
+        }),
+        throwsA(isA<CommandException>()),
+      );
+    });
+  });
 }
