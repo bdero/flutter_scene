@@ -191,6 +191,8 @@ void _expectNoDanglingRefs(SceneDocument doc) {
         }
       case RenderTextureResource():
         break;
+      case EnvironmentResource():
+        break;
     }
   }
   for (final s in doc.skins.values) {

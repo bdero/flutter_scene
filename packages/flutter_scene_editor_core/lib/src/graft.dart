@@ -189,6 +189,17 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     filter: rt.filter,
     wrap: rt.wrap,
   ),
+  EnvironmentResource e => EnvironmentResource(
+    remap(e.id),
+    name: e.name,
+    environment: e.environment,
+    environmentIntensity: e.environmentIntensity,
+    exposure: e.exposure,
+    toneMapping: e.toneMapping,
+    radianceCubeSize: e.radianceCubeSize,
+    skybox: e.skybox,
+    skyEnvironment: e.skyEnvironment,
+  ),
 };
 
 SkinSpec _copySkin(SkinSpec s, _Remap remap) => SkinSpec(

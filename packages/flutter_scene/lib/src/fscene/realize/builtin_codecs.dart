@@ -13,7 +13,9 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
+import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
+import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
@@ -34,7 +36,125 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
   registry
     ..register(MeshCodec())
     ..register(DirectionalLightCodec())
-    ..register(CameraCodec());
+    ..register(CameraCodec())
+    ..register(EnvironmentVolumeCodec());
+}
+
+// The environment resource each realized volume came from, so serialize can
+// recover the reference (the live component holds only the realized settings).
+final Expando<LocalId> _volumeEnvironmentId = Expando(
+  'environment volume source resource',
+);
+
+/// Codec for [EnvironmentVolumeComponent]. Realizes the look from a referenced
+/// [EnvironmentResource] (preloaded by the resource realizer) and the region
+/// from the local-space shape fields; the node transform places it.
+class EnvironmentVolumeCodec extends ComponentCodec {
+  @override
+  String get type => 'environmentVolume';
+
+  static final List<ComponentPropertyDef> _schema = [
+    ComponentPropertyDef(
+      'environment',
+      ComponentPropertyKind.resourceRef,
+      null,
+      doc: 'The environment resource this volume blends toward.',
+      resourceKind: 'environment',
+    ),
+    ComponentPropertyDef(
+      'shape',
+      ComponentPropertyKind.string,
+      const StringValue('box'),
+      doc: 'Region shape.',
+      options: const ['box', 'sphere'],
+    ),
+    ComponentPropertyDef(
+      'extents',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3.all(5)),
+      doc: 'Box half-size in the node\'s local space.',
+    ),
+    ComponentPropertyDef(
+      'radius',
+      ComponentPropertyKind.number,
+      const DoubleValue(5.0),
+      doc: 'Sphere radius in the node\'s local space.',
+      min: 0,
+    ),
+    ComponentPropertyDef(
+      'blendDistance',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Local-space fade band outside the region.',
+      min: 0,
+    ),
+    ComponentPropertyDef(
+      'priority',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Blend order; higher applies on top.',
+    ),
+    ComponentPropertyDef(
+      'weight',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Master contribution scale.',
+      min: 0,
+      max: 1,
+    ),
+  ];
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) => component is EnvironmentVolumeComponent;
+
+  @override
+  Component realize(ComponentSpec spec, RealizeContext context) {
+    final p = spec.properties;
+    final envProp = p['environment'];
+    final envId = envProp is ResourceRefValue ? envProp.id : null;
+    final settings =
+        (envId == null ? null : context.resources?.environment(envId)) ??
+        EnvironmentSettings();
+    final shape = readString(p, 'shape', stringDefault('shape')) == 'sphere'
+        ? EnvironmentVolumeShape.sphere
+        : EnvironmentVolumeShape.box;
+    final component = EnvironmentVolumeComponent(
+      settings: settings,
+      shape: shape,
+      extents: readVec3(p, 'extents', vec3Default('extents')),
+      radius: readDouble(p, 'radius', numberDefault('radius')),
+      blendDistance: readDouble(
+        p,
+        'blendDistance',
+        numberDefault('blendDistance'),
+      ),
+      priority: readDouble(p, 'priority', numberDefault('priority')),
+      weight: readDouble(p, 'weight', numberDefault('weight')),
+    );
+    if (envId != null) _volumeEnvironmentId[component] = envId;
+    return component;
+  }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (component is! EnvironmentVolumeComponent) return null;
+    final envId = _volumeEnvironmentId[component];
+    return ComponentSpec(
+      type,
+      properties: {
+        if (envId != null) 'environment': ResourceRefValue(envId),
+        'shape': StringValue(component.shape.name),
+        'extents': Vec3Value(component.extents.clone()),
+        'radius': DoubleValue(component.radius),
+        'blendDistance': DoubleValue(component.blendDistance),
+        'priority': DoubleValue(component.priority),
+        'weight': DoubleValue(component.weight),
+      },
+    );
+  }
 }
 
 /// Codec for [MeshComponent]. Realizes a mesh from geometry/material resource
