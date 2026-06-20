@@ -275,11 +275,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           ),
                         ),
                       ),
-                      if (_ctrl.scene.environmentVolumes.isNotEmpty)
+                      if (_ctrl
+                          .scene
+                          .renderScene
+                          .environmentVolumeComponents
+                          .isNotEmpty)
                         IgnorePointer(
                           child: CustomPaint(
-                            painter: VolumeBoundsPainter(
-                              volumes: _ctrl.scene.environmentVolumes,
+                            painter: EnvironmentVolumeComponentPainter(
+                              volumes: _ctrl
+                                  .scene
+                                  .renderScene
+                                  .environmentVolumeComponents,
                               camera: cam,
                             ),
                             size: size,

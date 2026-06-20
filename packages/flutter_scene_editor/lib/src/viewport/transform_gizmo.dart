@@ -204,41 +204,47 @@ class TransformGizmoPainter extends CustomPainter {
 const _volumeColor = Color(0xFF34D6C8);
 const _volumeBlendColor = Color(0x5534D6C8);
 
-/// Draws wireframe regions for the scene's environment volumes (box edges or
-/// sphere great circles), plus a fainter outer shell at the blend distance
-/// where each volume starts fading in. Drawn from the live volumes so the
-/// region follows an inspector drag immediately. The volume at [activeIndex]
-/// (when set) is drawn brighter.
-class VolumeBoundsPainter extends CustomPainter {
-  VolumeBoundsPainter({
+/// Draws wireframe regions for the scene's environment-volume components: the
+/// node-local box edges or sphere great circles transformed by the owning
+/// node, plus a fainter shell at the blend distance where each volume starts
+/// fading in. Painted from the live components so a region follows an inspector
+/// edit or a transform-gizmo drag immediately.
+class EnvironmentVolumeComponentPainter extends CustomPainter {
+  EnvironmentVolumeComponentPainter({
     required this.volumes,
     required this.camera,
-    this.activeIndex,
   });
 
-  final List<EnvironmentVolume> volumes;
+  final List<EnvironmentVolumeComponent> volumes;
   final Camera camera;
-  final int? activeIndex;
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (var i = 0; i < volumes.length; i++) {
-      final bounds = volumes[i].bounds;
-      if (bounds == null) continue; // Global volume has no region to draw.
-      final active = i == activeIndex;
-      final blend = volumes[i].blendDistance;
-      _paintBounds(canvas, size, bounds, 0, _volumeColor, active ? 2.5 : 1.5);
-      if (blend > 0) {
-        _paintBounds(canvas, size, bounds, blend, _volumeBlendColor, 1.0);
+    for (final v in volumes) {
+      if (!v.isAttached) continue;
+      final transform = v.node.globalTransform;
+      _paintRegion(canvas, size, v, transform, 0, _volumeColor, 1.5);
+      if (v.blendDistance > 0) {
+        _paintRegion(
+          canvas,
+          size,
+          v,
+          transform,
+          v.blendDistance,
+          _volumeBlendColor,
+          1.0,
+        );
       }
     }
   }
 
-  // Draws [bounds] expanded outward by [pad] (the blend shell when non-zero).
-  void _paintBounds(
+  // Draws a volume's region (in the node's local space, mapped to world by
+  // [transform]) expanded outward by [pad] (the blend shell when non-zero).
+  void _paintRegion(
     Canvas canvas,
     Size size,
-    EnvironmentVolumeBounds bounds,
+    EnvironmentVolumeComponent v,
+    vm.Matrix4 transform,
     double pad,
     Color color,
     double strokeWidth,
@@ -247,23 +253,25 @@ class VolumeBoundsPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..color = color;
-    switch (bounds) {
-      case BoxVolumeBounds(:final center, :final halfExtents):
+    switch (v.shape) {
+      case EnvironmentVolumeShape.box:
         _paintBox(
           canvas,
           size,
-          center,
-          halfExtents + vm.Vector3.all(pad),
+          transform,
+          v.extents + vm.Vector3.all(pad),
           paint,
         );
-      case SphereVolumeBounds(:final center, :final radius):
+      case EnvironmentVolumeShape.sphere:
         for (var axis = 0; axis < 3; axis++) {
-          _paintPolyline(
-            canvas,
-            size,
-            _ringPoints(center, axis, radius + pad),
-            paint,
-          );
+          _paintPolyline(canvas, size, [
+            for (final p in _ringPoints(
+              vm.Vector3.zero(),
+              axis,
+              v.radius + pad,
+            ))
+              transform.transformed3(p),
+          ], paint);
         }
     }
   }
@@ -271,19 +279,20 @@ class VolumeBoundsPainter extends CustomPainter {
   void _paintBox(
     Canvas canvas,
     Size size,
-    vm.Vector3 center,
+    vm.Matrix4 transform,
     vm.Vector3 halfExtents,
     Paint paint,
   ) {
     final corners = <Offset?>[
       for (var c = 0; c < 8; c++)
         projectToScreen(
-          center +
-              vm.Vector3(
-                (c & 1) == 0 ? -halfExtents.x : halfExtents.x,
-                (c & 2) == 0 ? -halfExtents.y : halfExtents.y,
-                (c & 4) == 0 ? -halfExtents.z : halfExtents.z,
-              ),
+          transform.transformed3(
+            vm.Vector3(
+              (c & 1) == 0 ? -halfExtents.x : halfExtents.x,
+              (c & 2) == 0 ? -halfExtents.y : halfExtents.y,
+              (c & 4) == 0 ? -halfExtents.z : halfExtents.z,
+            ),
+          ),
           camera,
           size,
         ),
@@ -317,7 +326,7 @@ class VolumeBoundsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(VolumeBoundsPainter old) => true;
+  bool shouldRepaint(EnvironmentVolumeComponentPainter old) => true;
 }
 
 /// Hit-tests the gizmo and accumulates a drag as a translation, a rotation
