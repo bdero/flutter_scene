@@ -193,13 +193,14 @@ base class EnvironmentMap {
     // with a linear sampler, and 32-bit-float textures are not filterable
     // on several GPU backends (notably Apple Silicon), which would make
     // the prefiltered atlas read back as black. fp16 is universally
-    // filterable and carries ample range for radiance.
-    final radianceTexture = gpu.gpuContext.createTexture(
-      gpu.StorageMode.hostVisible,
+    // filterable and carries ample range for radiance. A CPU-built mip chain
+    // lets the cube prefilter pre-average bright pixels (no firefly blocks in
+    // the rough bands) where manually-mipped textures are supported.
+    final radianceTexture = _createMippedRadianceSource(
+      linearPixels,
       width,
       height,
-      format: gpu.PixelFormat.r16g16b16a16Float,
-    )..overwrite(ByteData.sublistView(_floatPixelsToHalf(linearPixels)));
+    );
     final prefilteredRadiance = _buildRadiance(
       radianceTexture,
       sourceIsLinear: true,
@@ -250,6 +251,92 @@ base class EnvironmentMap {
   // Scratch storage for reinterpreting a 32-bit float as its raw bits.
   static final Float32List _floatBits = Float32List(1);
   static final Uint32List _floatBitsView = Uint32List.view(_floatBits.buffer);
+
+  /// Creates the radiance source equirect from linear float [pixels], with a
+  /// CPU-built mip chain when the backend supports manually-mipped textures (the
+  /// same capability that selects the cube radiance layout). The cube prefilter
+  /// reads the mips per GGX sample so bright source texels are pre-averaged,
+  /// removing the firefly blocks a single bright texel leaves in the rough
+  /// bands. Falls back to a single level otherwise (the prefilter's firefly
+  /// clamp covers that path).
+  static gpu.Texture _createMippedRadianceSource(
+    Float32List pixels,
+    int width,
+    int height,
+  ) {
+    final mipCount = mipRadianceLayoutSupported
+        ? _maxMipLevels(math.max(width, height))
+        : 1;
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      width,
+      height,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+      mipLevelCount: mipCount,
+    );
+    texture.overwrite(
+      ByteData.sublistView(_floatPixelsToHalf(pixels)),
+      mipLevel: 0,
+    );
+    var level = pixels;
+    var w = width;
+    var h = height;
+    for (var mip = 1; mip < mipCount; mip++) {
+      final nw = math.max(1, w >> 1);
+      final nh = math.max(1, h >> 1);
+      level = _boxDownsampleEquirect(level, w, h, nw, nh);
+      texture.overwrite(
+        ByteData.sublistView(_floatPixelsToHalf(level)),
+        mipLevel: mip,
+      );
+      w = nw;
+      h = nh;
+    }
+    return texture;
+  }
+
+  /// The mip level count the backend accepts for a [size]-wide texture,
+  /// `floor(log2(size))` (matching the cube limit; see [kMinRadianceCubeSize]),
+  /// at least 1.
+  static int _maxMipLevels(int size) {
+    var levels = 1;
+    while ((1 << levels) < size) {
+      levels++;
+    }
+    return levels;
+  }
+
+  /// Box-downsamples a half-resolution mip of an equirect of linear RGBA float
+  /// [src] (`width` by `height`) to `newWidth` by `newHeight`. Longitude (the
+  /// horizontal axis) wraps; latitude clamps.
+  static Float32List _boxDownsampleEquirect(
+    Float32List src,
+    int width,
+    int height,
+    int newWidth,
+    int newHeight,
+  ) {
+    final dst = Float32List(newWidth * newHeight * 4);
+    for (var y = 0; y < newHeight; y++) {
+      final y0 = math.min(y * 2, height - 1);
+      final y1 = math.min(y0 + 1, height - 1);
+      for (var x = 0; x < newWidth; x++) {
+        final x0 = (x * 2) % width;
+        final x1 = (x0 + 1) % width;
+        final i00 = (y0 * width + x0) * 4;
+        final i01 = (y0 * width + x1) * 4;
+        final i10 = (y1 * width + x0) * 4;
+        final i11 = (y1 * width + x1) * 4;
+        final o = (y * newWidth + x) * 4;
+        for (var c = 0; c < 4; c++) {
+          dst[o + c] =
+              (src[i00 + c] + src[i01 + c] + src[i10 + c] + src[i11 + c]) *
+              0.25;
+        }
+      }
+    }
+    return dst;
+  }
 
   /// Converts linear RGBA float [pixels] to half-float (fp16) bit patterns
   /// for upload to an `r16g16b16a16Float` texture.

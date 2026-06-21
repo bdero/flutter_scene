@@ -192,13 +192,18 @@ void prefilterEquirectRadianceCubeFace(
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,
       magFilter: gpu.MinMagFilter.linear,
+      // A linear mip filter so the shader's textureLod reads (and interpolates)
+      // the source mip chain; inert when the source has a single level.
+      mipFilter: gpu.MipFilter.linear,
       widthAddressMode: gpu.SamplerAddressMode.repeat,
       heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
     ),
   );
-  // PrefilterCubeInfo: three vec4 bases + (roughness, source_is_linear) padded
-  // to std140 (64 bytes / 16 floats).
-  final info = Float32List(16)
+  // PrefilterCubeInfo: three vec4 bases + (roughness, source_is_linear,
+  // source_width, source_height, source_max_lod) padded to std140 (80 bytes /
+  // 20 floats). source_max_lod is the source's top mip level (0 when it has no
+  // mip chain), so the shader's lod clamp falls back to the base level.
+  final info = Float32List(20)
     ..[0] = right.x
     ..[1] = right.y
     ..[2] = right.z
@@ -209,7 +214,10 @@ void prefilterEquirectRadianceCubeFace(
     ..[9] = forward.y
     ..[10] = forward.z
     ..[12] = roughness
-    ..[13] = sourceIsLinear ? 1.0 : 0.0;
+    ..[13] = sourceIsLinear ? 1.0 : 0.0
+    ..[14] = sourceEquirect.width.toDouble()
+    ..[15] = sourceEquirect.height.toDouble()
+    ..[16] = (sourceEquirect.mipLevelCount - 1).toDouble();
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('PrefilterCubeInfo'),
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),

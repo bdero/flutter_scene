@@ -22,6 +22,15 @@ uniform PrefilterCubeInfo {
   float roughness;
   // 1.0 when source_equirect already holds linear radiance; 0.0 when sRGB.
   float source_is_linear;
+  // The source equirect's base dimensions and its top mip level. When the
+  // source carries a mip chain (source_max_lod > 0) each GGX sample reads it at
+  // a level derived from the sample's solid angle, so bright source texels are
+  // pre-averaged and the rough bands come out smooth; with no mips
+  // (source_max_lod = 0) every sample reads the base level and the firefly clamp
+  // below keeps a stray bright texel from dominating.
+  float source_width;
+  float source_height;
+  float source_max_lod;
 }
 prefilter_cube_info;
 
@@ -67,12 +76,23 @@ vec3 ImportanceSampleGGX(vec2 xi, vec3 n, float roughness) {
 }
 
 // The source equirect stores +y (up) at the top (V = 0), but
-// SphericalToEquirectangular maps up to V = 1, so flip V here.
-vec3 SampleSourceRadiance(vec3 direction) {
+// SphericalToEquirectangular maps up to V = 1, so flip V here. [lod] selects
+// the source mip level (0 = the sharp base); a textureLod with a clamped mip
+// filter samples the base when the source has no mip chain.
+vec3 SampleSourceRadianceLod(vec3 direction, float lod) {
   vec2 uv = SphericalToEquirectangular(direction);
   uv.y = 1.0 - uv.y;
-  vec3 c = texture(source_equirect, uv).rgb;
+  vec3 c = textureLod(source_equirect, uv, lod).rgb;
   return prefilter_cube_info.source_is_linear > 0.5 ? c : SRGBToLinear(c);
+}
+
+// The GGX normal distribution, for the importance-sample PDF that picks a source
+// mip level.
+float DistributionGGX(float n_dot_h, float roughness) {
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float d = (n_dot_h * n_dot_h) * (a2 - 1.0) + 1.0;
+  return a2 / (kPi * d * d);
 }
 
 void main() {
@@ -91,16 +111,24 @@ void main() {
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
 
-  // Firefly suppression. The source equirect has no mip chain, so a single very
-  // bright source texel (a sun glint) sampled by a few GGX samples in a wide
-  // rough lobe would otherwise dominate the average and leave a sharp bright
-  // block in the rough bands. Cap each sample's luminance relative to the band
+  // Mip selection. Each source texel covers, on average, 4*pi / (W*H)
+  // steradians; each GGX sample represents 1 / (N * pdf). Reading the source at
+  // the mip whose texel solid angle matches the sample's pre-averages the
+  // bright pixels a wide lobe would otherwise undersample. Only meaningful when
+  // the source carries a mip chain (source_max_lod > 0); otherwise the lod
+  // clamps to 0 and the firefly clamp below does the work.
+  float sa_texel = 4.0 * kPi /
+      max(prefilter_cube_info.source_width *
+              prefilter_cube_info.source_height,
+          1.0);
+
+  // Firefly clamp (a belt-and-suspenders fallback, the only defense when the
+  // source has no mip chain). Cap each sample's luminance relative to the band
   // center, so a rare spike cannot dominate while a uniformly bright lobe is
-  // unaffected (center ~ samples). At roughness 0 the lobe is a point, so every
-  // sample equals the center and nothing is clamped (the mirror band stays
-  // sharp). The +1 floor keeps a dark center from over-clamping real highlights.
+  // unaffected. At roughness 0 the lobe is a point, so every sample equals the
+  // center and nothing is clamped (the mirror band stays sharp).
   const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
-  vec3 center = SampleSourceRadiance(n);
+  vec3 center = SampleSourceRadianceLod(n, 0.0);
   float max_luma = max(dot(center, kLuma), 1.0) * 8.0;
 
   vec3 color = vec3(0.0);
@@ -112,7 +140,12 @@ void main() {
     vec3 l = normalize(2.0 * dot(v, h) * h - v);
     float n_dot_l = dot(n, l);
     if (n_dot_l > 0.0) {
-      vec3 s = SampleSourceRadiance(l);
+      float n_dot_h = max(dot(n, h), 1e-4);
+      float pdf = DistributionGGX(n_dot_h, roughness) * 0.25 + 1e-4;
+      float sa_sample = 1.0 / (float(kPrefilterSamples) * pdf);
+      float lod = clamp(0.5 * log2(sa_sample / sa_texel), 0.0,
+                        prefilter_cube_info.source_max_lod);
+      vec3 s = SampleSourceRadianceLod(l, lod);
       float s_luma = dot(s, kLuma);
       if (s_luma > max_luma) s *= max_luma / s_luma;
       color += s * n_dot_l;
