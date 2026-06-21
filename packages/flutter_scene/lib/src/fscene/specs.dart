@@ -654,6 +654,19 @@ class EmptyEnvironment extends EnvironmentSpec {
   const EmptyEnvironment();
 }
 
+/// An environment built from an embedded image [payload] chunk (an HDR or LDR
+/// equirect), the self-contained form a build produces by inlining an
+/// [AssetEnvironment]'s external image. The payload's `format` selects the
+/// decoder (`hdr` for Radiance HDR, an image codec otherwise). Not part of the
+/// public surface; produced by the build hook and consumed by the realizer.
+class PayloadEnvironment extends EnvironmentSpec {
+  /// An environment sourced from the embedded image [payload].
+  const PayloadEnvironment(this.payload);
+
+  /// The embedded image chunk holding the equirect environment.
+  final LocalId payload;
+}
+
 /// What a stage sky looks like, serialized.
 ///
 /// Realized to a runtime `SkySource` by the stage realizer: the environment

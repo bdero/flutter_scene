@@ -16,6 +16,7 @@ import 'dart:io';
 
 import 'package:image/image.dart' as img;
 
+import '../fscene/id.dart';
 import '../fscene/scene_document.dart';
 import '../fscene/specs.dart';
 
@@ -23,15 +24,16 @@ import '../fscene/specs.dart';
 /// resolved to a file on disk.
 typedef ExternalImageAsset = ({String key, File file});
 
-/// The distinct external image files [document]'s textures reference, resolved
-/// relative to the scene file at [sceneSourceUri].
+/// The distinct external image files [document] references, resolved relative to
+/// the scene file at [sceneSourceUri].
 ///
-/// Each [TextureResource.asset] key is resolved against the scene's directory
+/// Covers a [TextureResource.asset] and an environment resource's
+/// [AssetEnvironment] image. Each key is resolved against the scene's directory
 /// (how the editor saves them, e.g. `imported/wood.png`). A key that does not
 /// resolve to an existing file is reported and skipped, so a missing image
 /// degrades to its unresolved reference rather than failing the build. The
-/// result is deduplicated by key, so an image several textures share is returned
-/// once.
+/// result is deduplicated by key, so an image several resources share is
+/// returned once.
 List<ExternalImageAsset> resolveExternalImageAssets(
   SceneDocument document,
   Uri sceneSourceUri,
@@ -39,67 +41,132 @@ List<ExternalImageAsset> resolveExternalImageAssets(
   final baseDir = sceneSourceUri.resolve('.');
   final seen = <String>{};
   final out = <ExternalImageAsset>[];
-  for (final resource in document.resources.values) {
-    if (resource is! TextureResource) continue;
-    final key = resource.asset?.key;
-    if (key == null || !seen.add(key)) continue;
+  void consider(String? key) {
+    if (key == null || !seen.add(key)) return;
     final file = _resolveAssetFile(baseDir, key);
     if (file == null) {
       stderr.writeln(
         'flutter_scene buildScenes: image asset "$key" referenced by the scene '
         'was not found on disk; it will not be embedded',
       );
-      continue;
+      return;
     }
     out.add((key: key, file: file));
+  }
+
+  for (final resource in document.resources.values) {
+    if (resource is TextureResource) {
+      consider(resource.asset?.key);
+    } else if (resource is EnvironmentResource) {
+      final environment = resource.environment;
+      if (environment is AssetEnvironment) consider(environment.asset.key);
+    }
   }
   return out;
 }
 
-/// Inlines each resolved [assets] file into [document] as an embedded `rgba8`
-/// image payload, rewriting every [TextureResource] that referenced it to point
-/// at the payload instead of the external asset.
+/// Inlines each resolved [assets] file into [document], rewriting the resources
+/// that referenced it to read the embedded payload instead of the external
+/// asset.
 ///
-/// After this, the document carries the image bytes, so [writeFsceneb] embeds
-/// them and the realized texture needs no asset-bundle lookup. An image that
-/// fails to decode is left as its external reference (and reported).
+/// A texture's image is decoded to an `rgba8` payload (the realizer uploads it
+/// directly). An environment's image is embedded as its encoded bytes with a
+/// format tag (`hdr` for Radiance HDR, the file extension otherwise), so the
+/// realizer decodes it with the right path (HDR float decode preserves the
+/// radiance range, unlike an `rgba8` clamp). After this, [writeFsceneb] embeds
+/// the bytes and realizing needs no asset-bundle lookup. An image that fails to
+/// load is left as its external reference (and reported).
 void inlineExternalImageAssets(
   SceneDocument document,
   List<ExternalImageAsset> assets,
 ) {
-  for (final asset in assets) {
-    final decoded = img.decodeImage(asset.file.readAsBytesSync());
-    if (decoded == null) {
-      stderr.writeln(
-        'flutter_scene buildScenes: could not decode image asset '
-        '"${asset.key}"; leaving it as an external reference',
+  final fileByKey = {for (final asset in assets) asset.key: asset.file};
+  // One payload per (key, kind): a texture wants rgba8, an environment wants the
+  // encoded bytes, so a key used as both gets two payloads. A null entry caches
+  // a decode failure so it is not retried.
+  final texturePayloadByKey = <String, LocalId?>{};
+  final environmentPayloadByKey = <String, LocalId>{};
+
+  for (final entry in document.resources.entries.toList()) {
+    final resource = entry.value;
+    if (resource is TextureResource) {
+      final key = resource.asset?.key;
+      final file = key == null ? null : fileByKey[key];
+      if (key == null || file == null) continue;
+      final payload = texturePayloadByKey.putIfAbsent(
+        key,
+        () => _embedRgba8(document, key, file),
       );
-      continue;
-    }
-    final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
-    final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
-    final payload = document.addPayload(
-      PayloadSpec(
-        document.newId(),
-        encoding: PayloadEncoding.image,
-        format: 'rgba8',
-        width: rgba.width,
-        height: rgba.height,
-        length: raw.length,
-        bytes: raw,
-      ),
-    );
-    // Repoint every texture that shared this asset at the one embedded payload.
-    for (final entry in document.resources.entries.toList()) {
-      final resource = entry.value;
-      if (resource is TextureResource && resource.asset?.key == asset.key) {
-        document.resources[entry.key] = TextureResource(
-          resource.id,
-          payload: payload.id,
-        );
-      }
+      if (payload == null) continue;
+      document.resources[entry.key] = TextureResource(
+        resource.id,
+        payload: payload,
+      );
+    } else if (resource is EnvironmentResource) {
+      final environment = resource.environment;
+      if (environment is! AssetEnvironment) continue;
+      final key = environment.asset.key;
+      final file = fileByKey[key];
+      if (file == null) continue;
+      final payload = environmentPayloadByKey.putIfAbsent(
+        key,
+        () => _embedEncoded(document, key, file),
+      );
+      resource.environment = PayloadEnvironment(payload);
     }
   }
+}
+
+// Decodes [file] to an rgba8 image payload and returns its id, or null when it
+// cannot be decoded.
+LocalId? _embedRgba8(SceneDocument document, String key, File file) {
+  final decoded = img.decodeImage(file.readAsBytesSync());
+  if (decoded == null) {
+    stderr.writeln(
+      'flutter_scene buildScenes: could not decode image asset "$key"; '
+      'leaving it as an external reference',
+    );
+    return null;
+  }
+  final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
+  final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
+  return document
+      .addPayload(
+        PayloadSpec(
+          document.newId(),
+          encoding: PayloadEncoding.image,
+          format: 'rgba8',
+          width: rgba.width,
+          height: rgba.height,
+          length: raw.length,
+          bytes: raw,
+        ),
+      )
+      .id;
+}
+
+// Embeds [file]'s encoded bytes as an image payload tagged with its format
+// (`hdr` for Radiance HDR, the file extension otherwise), for an environment the
+// realizer decodes itself.
+LocalId _embedEncoded(SceneDocument document, String key, File file) {
+  final bytes = file.readAsBytesSync();
+  return document
+      .addPayload(
+        PayloadSpec(
+          document.newId(),
+          encoding: PayloadEncoding.image,
+          format: _imageFormat(key),
+          length: bytes.length,
+          bytes: bytes,
+        ),
+      )
+      .id;
+}
+
+// The format tag for an image [key], from its extension (lowercased, no dot).
+String _imageFormat(String key) {
+  final dot = key.lastIndexOf('.');
+  return dot < 0 ? 'bin' : key.substring(dot + 1).toLowerCase();
 }
 
 // Resolves an asset [key] against the scene's [baseDir], returning the file when

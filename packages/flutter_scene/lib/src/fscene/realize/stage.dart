@@ -16,6 +16,7 @@ import 'package:flutter/services.dart' show AssetBundle;
 
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
+import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/canonical.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
     show encodeSkySource;
@@ -25,6 +26,7 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
@@ -39,6 +41,17 @@ import 'package:flutter_scene/src/tone_mapping.dart';
 /// [EnvironmentMap.radianceCubeSize], set around the build by the realizer.
 typedef EnvironmentAssetLoader =
     Future<EnvironmentMap?> Function(AssetRef asset);
+
+/// Resolves a [PayloadEnvironment]'s embedded image chunk to its descriptor (the
+/// bytes plus `format`), so a self-contained build (which inlines an environment
+/// image into a payload) realizes without an asset-bundle lookup. The realizer
+/// passes the document's payload table.
+typedef EnvironmentPayloadLookup = PayloadSpec? Function(LocalId payload);
+
+/// The working width an inlined equirect environment is capped to on decode; a
+/// realtime environment needs no more, and a very large panorama would
+/// otherwise upload an enormous radiance source.
+const int _maxEnvironmentWidth = 4096;
 
 /// Tags applied environments with the spec they realized from, so
 /// [serializeStage] can recover them. (Fmat skies recover through their
@@ -70,6 +83,9 @@ Future<void> realizeStage(
   EnvironmentAssetLoader? environmentLoader,
 }) async {
   final stage = document.stage;
+  // A self-contained build inlines environment images into payload chunks; the
+  // realize resolves them from this document's payload table.
+  PayloadSpec? payloadLookup(LocalId id) => document.payload(id);
   scene.antiAliasingMode = _byName(
     AntiAliasingMode.values,
     stage.antiAliasingMode,
@@ -97,6 +113,7 @@ Future<void> realizeStage(
       skyEnvironment: envResource.skyEnvironment,
       bundle: bundle,
       environmentLoader: environmentLoader,
+      payloadLookup: payloadLookup,
     )).applyTo(scene);
   } else {
     scene.environmentIntensity = stage.environmentIntensity;
@@ -120,6 +137,7 @@ Future<void> realizeStage(
           scene,
           bundle,
           environmentLoader,
+          payloadLookup,
         ),
       );
     } else {
@@ -149,6 +167,7 @@ Future<void> realizeStage(
             scene,
             bundle,
             environmentLoader,
+            payloadLookup,
           ),
         );
       }
@@ -204,6 +223,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   SkyEnvironmentSpec? skyEnvironment,
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
+  EnvironmentPayloadLookup? payloadLookup,
 }) async {
   final settings = EnvironmentSettings(
     environmentIntensity: environmentIntensity,
@@ -224,6 +244,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
         environment,
         bundle,
         environmentLoader,
+        payloadLookup,
       );
     });
   }
@@ -502,6 +523,7 @@ Future<void> _applyEnvironment(
   Scene scene,
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
+  EnvironmentPayloadLookup? payloadLookup,
 ) async {
   // Skip rebuilding (and re-decoding an asset panorama) when the current
   // environment already realized from an identical spec, the common case on
@@ -515,7 +537,12 @@ Future<void> _applyEnvironment(
           canonicalJson(_encodeEnvironment(spec))) {
     return;
   }
-  final environment = await _buildEnvironment(spec, bundle, environmentLoader);
+  final environment = await _buildEnvironment(
+    spec,
+    bundle,
+    environmentLoader,
+    payloadLookup,
+  );
   if (environment != null) scene.environment = environment;
 }
 
@@ -532,6 +559,7 @@ Future<EnvironmentMap?> _buildEnvironment(
   EnvironmentSpec spec,
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
+  EnvironmentPayloadLookup? payloadLookup,
 ) async {
   final EnvironmentMap environment;
   switch (spec) {
@@ -539,6 +567,22 @@ Future<EnvironmentMap?> _buildEnvironment(
       environment = EnvironmentMap.studio();
     case EmptyEnvironment():
       environment = EnvironmentMap.empty();
+    case PayloadEnvironment(:final payload):
+      final chunk = payloadLookup?.call(payload);
+      final bytes = chunk?.bytes;
+      if (bytes == null) {
+        debugPrint(
+          'fscene: environment payload $payload has no bytes; load the '
+          'document from a .fsceneb container so its chunks are attached',
+        );
+        return null;
+      }
+      try {
+        environment = await _environmentFromImageBytes(bytes, chunk!.format);
+      } catch (e) {
+        debugPrint('fscene: failed to decode environment payload $payload: $e');
+        return null;
+      }
     case AssetEnvironment(:final asset):
       final loaded = environmentLoader == null
           ? null
@@ -562,11 +606,35 @@ Future<EnvironmentMap?> _buildEnvironment(
   return environment;
 }
 
+// Builds an environment map from an inlined equirect image chunk, choosing the
+// decoder by the payload's format (`hdr` for Radiance HDR, an image codec
+// otherwise). Mirrors the editor's disk loader, sourced from embedded bytes.
+Future<EnvironmentMap> _environmentFromImageBytes(
+  Uint8List bytes,
+  String? format,
+) async {
+  if (format == 'hdr') {
+    final hdr = decodeRadianceHdr(bytes, maxWidth: _maxEnvironmentWidth);
+    return EnvironmentMap.fromEquirectHdr(
+      linearPixels: hdr.pixels,
+      width: hdr.width,
+      height: hdr.height,
+    );
+  }
+  return EnvironmentMap.fromUIImages(
+    radianceImage: await imageFromBytes(bytes),
+  );
+}
+
 // EnvironmentSpec has no public encoder; mirror the stage codec's shape just
 // for equality checks.
 Map<String, Object> _encodeEnvironment(EnvironmentSpec spec) => switch (spec) {
   StudioEnvironment() => {'type': 'studio'},
   AssetEnvironment(:final asset) => {'type': 'asset', 'ref': asset.key},
+  PayloadEnvironment(:final payload) => {
+    'type': 'payload',
+    'payload': payload.toToken(),
+  },
   EmptyEnvironment() => {'type': 'empty'},
 };
 

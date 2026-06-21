@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter_scene_editor/src/io/hdr_decoder.dart';
+import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // Builds a Radiance HDR byte stream from a header plus raw scanline bytes.

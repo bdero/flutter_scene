@@ -39,11 +39,11 @@ import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
+import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
-import '../io/hdr_decoder.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {

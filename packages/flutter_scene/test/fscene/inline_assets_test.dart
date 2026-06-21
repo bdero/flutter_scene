@@ -4,8 +4,10 @@
 // travel as embedded bytes (no asset-bundle lookup at runtime).
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
+import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -79,6 +81,67 @@ void main() {
     expect(pa, isNotNull);
     expect(pa, pb, reason: 'both textures point at the one embedded payload');
     expect(document.payloads, hasLength(1));
+  });
+
+  test('embeds an environment HDR as an encoded payload tagged hdr', () {
+    final dir = Directory('${tempDir.path}/imported')
+      ..createSync(recursive: true);
+    final hdrBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+    File('${dir.path}/sky.hdr').writeAsBytesSync(hdrBytes);
+    const key = 'imported/sky.hdr';
+    final document = SceneDocument();
+    final env = document.addResource(
+      EnvironmentResource(
+        document.newId(),
+        environment: AssetEnvironment(AssetRef(key)),
+      ),
+    );
+
+    final assets = resolveExternalImageAssets(document, sceneUri());
+    expect(assets.map((a) => a.key), [key]);
+
+    inlineExternalImageAssets(document, assets);
+
+    final spec =
+        (document.resource(env.id)! as EnvironmentResource).environment;
+    expect(spec, isA<PayloadEnvironment>());
+    // The encoded HDR bytes are embedded verbatim (no rgba8 clamp that would
+    // crush the radiance range), tagged so the realizer picks the HDR decoder.
+    final payload = document.payload((spec as PayloadEnvironment).payload)!;
+    expect(payload.format, 'hdr');
+    expect(payload.bytes, hdrBytes);
+
+    final reread = readFsceneb(writeFsceneb(document));
+    final rspec = (reread.resource(env.id)! as EnvironmentResource).environment;
+    expect(rspec, isA<PayloadEnvironment>());
+    expect(
+      reread.payload((rspec as PayloadEnvironment).payload)!.bytes,
+      hdrBytes,
+    );
+  });
+
+  test('a payload environment round-trips through the json manifest', () {
+    final document = SceneDocument();
+    final payload = document.addPayload(
+      PayloadSpec(
+        document.newId(),
+        encoding: PayloadEncoding.image,
+        format: 'hdr',
+        length: 3,
+        bytes: Uint8List.fromList([9, 9, 9]),
+      ),
+    );
+    final env = document.addResource(
+      EnvironmentResource(
+        document.newId(),
+        environment: PayloadEnvironment(payload.id),
+      ),
+    );
+
+    final reread = readFscene(writeFscene(document));
+    final spec = (reread.resource(env.id)! as EnvironmentResource).environment;
+    expect(spec, isA<PayloadEnvironment>());
+    expect((spec as PayloadEnvironment).payload, payload.id);
   });
 
   test('a missing image is left as a reference, not a build failure', () {

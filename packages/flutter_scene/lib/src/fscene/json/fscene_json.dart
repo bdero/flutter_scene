@@ -231,6 +231,7 @@ Map<String, dynamic> encodeStage(
   'handedness': s.handedness.name,
   'unitsPerMeter': s.unitsPerMeter,
   ..._encodeLook(
+    idKey: idKey,
     environment: s.environment,
     environmentIntensity: s.environmentIntensity,
     exposure: s.exposure,
@@ -250,6 +251,7 @@ Map<String, dynamic> encodeStage(
 /// intensity and reflection size, exposure, tone mapping, the skybox, and sky
 /// lighting.
 Map<String, dynamic> _encodeLook({
+  required String Function(LocalId) idKey,
   required EnvironmentSpec environment,
   required double environmentIntensity,
   required double exposure,
@@ -261,6 +263,10 @@ Map<String, dynamic> _encodeLook({
   'environment': switch (environment) {
     StudioEnvironment() => {'type': 'studio'},
     AssetEnvironment(:final asset) => {'type': 'asset', 'ref': asset.key},
+    PayloadEnvironment(:final payload) => {
+      'type': 'payload',
+      'payload': idKey(payload),
+    },
     EmptyEnvironment() => {'type': 'empty'},
   },
   'environmentIntensity': environmentIntensity,
@@ -391,6 +397,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
         'kind': 'environment',
         if (r.name.isNotEmpty) 'name': r.name,
         ..._encodeLook(
+          idKey: idKey,
           environment: r.environment,
           environmentIntensity: r.environmentIntensity,
           exposure: r.exposure,
@@ -968,6 +975,8 @@ EnvironmentSpec _decodeEnvironment(Object? json) {
   switch (m['type']) {
     case 'asset':
       return AssetEnvironment(AssetRef(m['ref'] as String));
+    case 'payload':
+      return PayloadEnvironment(LocalId.parse(m['payload'] as String));
     case 'empty':
       return const EmptyEnvironment();
     case 'studio':

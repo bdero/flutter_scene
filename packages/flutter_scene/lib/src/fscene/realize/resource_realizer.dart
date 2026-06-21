@@ -174,6 +174,7 @@ class ResourceRealizer {
           skyEnvironment: resource.skyEnvironment,
           bundle: bundle,
           environmentLoader: environmentLoader,
+          payloadLookup: document.payload,
         );
       }
     }
