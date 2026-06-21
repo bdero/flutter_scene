@@ -907,8 +907,11 @@ class EditorController extends ChangeNotifier {
     if (transaction.isEmpty) return;
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
     if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
-      await realizeStage(document, scene);
-      await _applyDiskEnvironment();
+      await realizeStage(
+        document,
+        scene,
+        environmentLoader: _loadAssetEnvironment,
+      );
       return;
     }
     // An environment-resource edit re-resolves only the affected environments
@@ -998,7 +1001,11 @@ class EditorController extends ChangeNotifier {
       if (!(resource is EnvironmentResource &&
           !sizeChanged &&
           _reapplyGlobalEnvironmentInPlace(resource))) {
-        await realizeStage(document, scene);
+        await realizeStage(
+          document,
+          scene,
+          environmentLoader: _loadAssetEnvironment,
+        );
       }
       if (resource is EnvironmentResource) {
         _builtRadianceSize[globalRef] = resource.radianceCubeSize;
@@ -1024,14 +1031,12 @@ class EditorController extends ChangeNotifier {
             radianceCubeSize: resource.radianceCubeSize,
             skybox: resource.skybox,
             skyEnvironment: resource.skyEnvironment,
+            environmentLoader: _loadAssetEnvironment,
           );
         }
         _builtRadianceSize[ref.id] = resource.radianceCubeSize;
       }
     }
-    // Inject any disk-referenced HDRs (global or per-volume) the realizer could
-    // not resolve through the asset bundle.
-    await _applyDiskEnvironment();
     notifyListeners();
   }
 
@@ -1129,13 +1134,23 @@ class EditorController extends ChangeNotifier {
       _composed = null;
       _memberOrigins = {};
     }
-    final root = await realizeSceneAsync(toRealize);
+    // Build the scene graph with a realizer that loads disk environments
+    // through the environment's own realization (see _loadAssetEnvironment).
+    final realizer = ResourceRealizer(
+      toRealize,
+      environmentLoader: _loadAssetEnvironment,
+    );
+    await realizer.preload();
+    final root = await realizeSceneAsync(toRealize, resources: realizer);
     scene.removeAll();
     scene.add(root);
     // Apply the document's scene-wide settings (environment/lighting, exposure,
     // tone mapping, anti-aliasing) to the live scene.
-    await realizeStage(document, scene);
-    await _applyDiskEnvironment();
+    await realizeStage(
+      document,
+      scene,
+      environmentLoader: _loadAssetEnvironment,
+    );
     _recordBuiltRadianceSizes();
     _liveById.clear();
     _sourceIdByLive.clear();
@@ -1144,118 +1159,23 @@ class EditorController extends ChangeNotifier {
     _syncHighlights();
   }
 
-  // The asset path and reflection-cube size of the disk-loaded global
-  // environment currently applied, so a re-realize does not reload an unchanged
-  // image but a resolution change does. The cache is keyed by path + size.
-  String? _diskEnvPath;
-  int? _diskEnvSize;
+  // Caches built disk environments by path + reflection-cube size, so a
+  // re-realize reuses an unchanged map but a resolution change rebuilds.
   final Map<String, EnvironmentMap> _diskEnvCache = {};
 
-  // The reflection-cube size of the stage's global environment resource, or
-  // null for the engine default.
-  int? _globalRadianceCubeSize() {
-    final ref = document.stage.environmentRef;
-    final resource = ref == null ? null : document.resource(ref);
-    return resource is EnvironmentResource ? resource.radianceCubeSize : null;
-  }
-
-  /// Loads an editor `AssetEnvironment` from disk (an imported `.hdr` or an LDR
-  /// equirect image) and applies it to the live scene. `realizeStage` resolves
-  /// environments through the asset bundle, which a user-picked file is not in,
-  /// so the editor loads it here; a studio/empty environment is left to
-  /// `realizeStage`.
-  // The stage's effective global environment: the referenced environment
-  // resource's when set, otherwise the inline stage environment.
-  EnvironmentSpec _globalEnvironmentSpec() {
-    final ref = document.stage.environmentRef;
-    if (ref != null) {
-      final resource = document.resource(ref);
-      if (resource is EnvironmentResource) return resource.environment;
-    }
-    return document.stage.environment;
-  }
-
-  Future<void> _applyDiskEnvironment() async {
-    await _applyGlobalDiskEnvironment();
-    await _applyVolumeDiskEnvironments();
-  }
-
-  Future<void> _applyGlobalDiskEnvironment() async {
-    final env = _globalEnvironmentSpec();
-    if (env is! AssetEnvironment) {
-      _diskEnvPath = null;
-      return;
-    }
-    final path = _resolveAssetPath(env.asset.key);
-    final size = _globalRadianceCubeSize();
-    if (path == null || (path == _diskEnvPath && size == _diskEnvSize)) return;
-    final loaded = await _loadDiskEnvironment(path, size);
-    if (loaded != null) {
-      scene.environment = loaded;
-      // realizeStage captures the base look before this runs, so when volumes
-      // are active the base's disk environment has to be folded in too.
-      scene.baseEnvironment?.environment = loaded;
-      _diskEnvPath = path;
-      _diskEnvSize = size;
-      notifyListeners();
-    }
-  }
-
-  // Loads disk-referenced HDRs into the live settings of every environment
-  // volume component whose environment resource points at an AssetEnvironment.
-  // realizeEnvironmentSettings cannot resolve a user-picked file through the
-  // asset bundle, so the editor injects it here, mirroring the global path.
-  Future<void> _applyVolumeDiskEnvironments() async {
-    var changed = false;
-    for (final node in document.nodes.values) {
-      for (final spec in node.components) {
-        if (spec.type != 'environmentVolume') continue;
-        final ref = spec.properties['environment'];
-        if (ref is! ResourceRefValue) continue;
-        final resource = document.resource(ref.id);
-        if (resource is! EnvironmentResource) continue;
-        final env = resource.environment;
-        if (env is! AssetEnvironment) continue;
-        final path = _resolveAssetPath(env.asset.key);
-        if (path == null) continue;
-        final live = _liveById[node.id]
-            ?.getComponent<EnvironmentVolumeComponent>();
-        if (live == null) continue;
-        final loaded = await _loadDiskEnvironment(
-          path,
-          resource.radianceCubeSize,
-        );
-        if (loaded != null && !identical(live.settings.environment, loaded)) {
-          live.settings.environment = loaded;
-          changed = true;
-        }
-      }
-    }
-    if (changed) notifyListeners();
-  }
-
-  String? _resolveAssetPath(String key) {
-    if (key.startsWith('/')) return key;
-    final dir = baseDirectory;
-    return dir == null ? null : '$dir/$key';
-  }
-
-  // Loads (and caches) the disk environment at [path], built at reflection-cube
-  // size [radianceCubeSize] (null = the engine default). The cache key includes
-  // the size so a resolution change rebuilds rather than returning the old map.
-  Future<EnvironmentMap?> _loadDiskEnvironment(
-    String path, [
-    int? radianceCubeSize,
-  ]) async {
-    final cacheKey = '$path|${radianceCubeSize ?? 0}';
+  // The environment-asset loader handed to the realizer and to realizeStage, so
+  // an AssetEnvironment that resolves to a file on disk (an imported `.hdr` or
+  // LDR equirect) is decoded and prefiltered as part of the environment's own
+  // realization. Returns null for an asset not on disk, so the realizer falls
+  // back to the asset bundle (the in-bundle example assets). The realizer sets
+  // EnvironmentMap.radianceCubeSize around this call, so the built cube honors
+  // the reflection-resolution setting; the cache is keyed by it.
+  Future<EnvironmentMap?> _loadAssetEnvironment(AssetRef asset) async {
+    final path = _resolveAssetPath(asset.key);
+    if (path == null || !File(path).existsSync()) return null;
+    final cacheKey = '$path|${EnvironmentMap.radianceCubeSize}';
     final cached = _diskEnvCache[cacheKey];
     if (cached != null) return cached;
-    // EnvironmentMap.radianceCubeSize is a static the builders read, so set it
-    // around the (sequential, awaited) build and restore it after.
-    final previousSize = EnvironmentMap.radianceCubeSize;
-    if (radianceCubeSize != null) {
-      EnvironmentMap.radianceCubeSize = radianceCubeSize;
-    }
     try {
       final bytes = await File(path).readAsBytes();
       final EnvironmentMap env;
@@ -1279,9 +1199,13 @@ class EditorController extends ChangeNotifier {
     } catch (e) {
       lastError.value = 'Failed to load environment "$path": $e';
       return null;
-    } finally {
-      EnvironmentMap.radianceCubeSize = previousSize;
     }
+  }
+
+  String? _resolveAssetPath(String key) {
+    if (key.startsWith('/')) return key;
+    final dir = baseDirectory;
+    return dir == null ? null : '$dir/$key';
   }
 
   Future<SceneDocument> _loadPrefab(AssetRef ref) async {
