@@ -140,11 +140,17 @@ void main() {
     vec3 l = normalize(2.0 * dot(v, h) * h - v);
     float n_dot_l = dot(n, l);
     if (n_dot_l > 0.0) {
-      float n_dot_h = max(dot(n, h), 1e-4);
-      float pdf = DistributionGGX(n_dot_h, roughness) * 0.25 + 1e-4;
-      float sa_sample = 1.0 / (float(kPrefilterSamples) * pdf);
-      float lod = clamp(0.5 * log2(sa_sample / sa_texel), 0.0,
-                        prefilter_cube_info.source_max_lod);
+      // Read the base level for the mirror band: at roughness 0 the GGX
+      // distribution is a delta (its denominator collapses to 0), so the PDF
+      // and the derived lod would be NaN and textureLod would sample garbage.
+      float lod = 0.0;
+      if (roughness > 0.001) {
+        float n_dot_h = max(dot(n, h), 1e-4);
+        float pdf = DistributionGGX(n_dot_h, roughness) * 0.25 + 1e-4;
+        float sa_sample = 1.0 / (float(kPrefilterSamples) * pdf);
+        lod = clamp(0.5 * log2(sa_sample / sa_texel), 0.0,
+                    prefilter_cube_info.source_max_lod);
+      }
       vec3 s = SampleSourceRadianceLod(l, lod);
       float s_luma = dot(s, kLuma);
       if (s_luma > max_luma) s *= max_luma / s_luma;
