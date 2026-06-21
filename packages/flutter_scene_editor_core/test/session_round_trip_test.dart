@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';
 
@@ -93,6 +96,40 @@ void main() {
       expect(session.redo(), isTrue);
     }
     expect(session.toFscene(), built);
+  });
+
+  test('an externalized texture survives a lean .fscene round-trip', () {
+    final session = EditorSession.empty();
+    session.run('createTextureResourceFromAsset', {
+      'asset': 'imported/wood.png',
+    });
+    TextureResource texture(SceneDocument doc) =>
+        doc.resources.values.whereType<TextureResource>().single;
+
+    final created = texture(session.document);
+    expect(created.asset?.key, 'imported/wood.png');
+    expect(created.payload, isNull);
+
+    // The lean text save carries the asset reference (not bytes), so reopening
+    // recovers the texture intact.
+    final roundTripped = texture(readFscene(session.toFscene()));
+    expect(roundTripped.asset?.key, 'imported/wood.png');
+    expect(roundTripped.payload, isNull);
+  });
+
+  test('an embedded texture payload is dropped by a lean .fscene save', () {
+    // Documents the data loss the externalized path avoids: a raw-bytes payload
+    // texture keeps only its descriptor through a `.fscene` (text) round-trip,
+    // since lean text does not carry payload bytes. See
+    // TODO(externalize-embedded-textures).
+    final session = EditorSession.empty();
+    session.run('createTextureResource', {
+      'width': 1,
+      'height': 1,
+      'bytes': Uint8List.fromList(const [10, 20, 30, 40]),
+    });
+    final reloaded = readFscene(session.toFscene());
+    expect(reloaded.payloads.values.single.bytes, isNull);
   });
 
   test('fromFscene loads a session that can keep editing', () {

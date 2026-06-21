@@ -4,7 +4,6 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 // ignore: implementation_imports
@@ -65,18 +64,7 @@ Future<String> importEnvironmentMap(
   String path, {
   LocalId? environmentId,
 }) async {
-  final sceneDir = controller.baseDirectory;
-  final String assetRef;
-  if (sceneDir != null) {
-    final importedDir = Directory('$sceneDir${Platform.pathSeparator}imported')
-      ..createSync(recursive: true);
-    final ext = _fileExtension(path);
-    final dest = _uniqueFile(importedDir, _modelBaseName(path), ext);
-    dest.writeAsBytesSync(File(path).readAsBytesSync());
-    assetRef = 'imported/${dest.uri.pathSegments.last}';
-  } else {
-    assetRef = path;
-  }
+  final assetRef = _importFileAsset(controller.baseDirectory, path);
   // Use the HDR for both lighting and the background. Sky-driven lighting owns
   // the scene environment, so turn it off and show the environment as the
   // skybox. Target the given environment resource, else the stage's global
@@ -119,28 +107,22 @@ Future<String?> pickImagePath() async {
 
 /// Imports the image at [path] as a texture resource and assigns it to [slot]
 /// (a material texture-property key, e.g. `baseColorTexture`) of material
-/// [materialId]. Decodes via the platform codec to raw RGBA8. Returns the new
-/// texture resource id, or null when the image cannot be decoded.
+/// [materialId]. Returns the new texture resource id.
+///
+/// The image is externalized, not embedded: it is copied under `imported/` (or
+/// referenced by absolute path for an unsaved scene) and the texture references
+/// it as an asset, so the heavy image bytes persist with the scene as a file
+/// rather than an embedded payload a lean `.fscene` save would drop. The
+/// realizer decodes the asset from disk through the controller's texture loader.
 Future<LocalId?> importMaterialTexture(
   EditorController controller,
   LocalId materialId,
   String slot,
   String path,
 ) async {
-  final bytes = await File(path).readAsBytes();
-  final codec = await ui.instantiateImageCodec(bytes);
-  final frame = await codec.getNextFrame();
-  final image = frame.image;
-  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-  if (data == null) return null;
-  final rgba = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-
+  final assetRef = _importFileAsset(controller.baseDirectory, path);
   final before = Set.of(controller.document.resources.keys);
-  await controller.run('createTextureResource', {
-    'width': image.width,
-    'height': image.height,
-    'bytes': rgba,
-  });
+  await controller.run('createTextureResourceFromAsset', {'asset': assetRef});
   final textureId = controller.document.resources.keys.firstWhere(
     (id) => !before.contains(id),
   );
@@ -157,6 +139,25 @@ String _fileExtension(String path) {
   final name = path.split(Platform.pathSeparator).last;
   final dot = name.lastIndexOf('.');
   return dot <= 0 ? 'bin' : name.substring(dot + 1);
+}
+
+/// Copies the file at [sourcePath] into the scene's `imported/` directory and
+/// returns the scene-relative asset key, so an imported image/HDR persists with
+/// the scene as a referenced file. When the scene is unsaved ([sceneDir] null)
+/// the absolute source path is referenced for the session instead.
+String _importFileAsset(String? sceneDir, String sourcePath) {
+  if (sceneDir == null) {
+    // TODO(import-copy-on-save): an asset imported into an unsaved scene is
+    // referenced by absolute path; copy it under imported/ and rewrite the
+    // reference to relative on the first Save As.
+    return sourcePath;
+  }
+  final importedDir = Directory('$sceneDir${Platform.pathSeparator}imported')
+    ..createSync(recursive: true);
+  final ext = _fileExtension(sourcePath);
+  final dest = _uniqueFile(importedDir, _modelBaseName(sourcePath), ext);
+  dest.writeAsBytesSync(File(sourcePath).readAsBytesSync());
+  return 'imported/${dest.uri.pathSegments.last}';
 }
 
 /// Shows the native open dialog filtered to glTF models (`.glb`/`.gltf`), and

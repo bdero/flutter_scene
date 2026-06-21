@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:vector_math/vector_math.dart';
@@ -25,6 +27,11 @@ import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 
+/// Loads a decoded [ui.Image] for a [TextureResource.asset] from outside the
+/// asset bundle (the editor loads a user-imported image from disk). Returns
+/// null to fall back to the asset bundle (the in-bundle example assets).
+typedef TextureAssetLoader = Future<ui.Image?> Function(AssetRef asset);
+
 /// Turns a document's resources into live, GPU-backed [Geometry] and
 /// [Material] objects, memoizing each so a resource shared by many nodes is
 /// realized once.
@@ -38,9 +45,14 @@ class ResourceRealizer {
   /// Creates a realizer over [document]. [bundle] (default [rootBundle])
   /// resolves external image assets and `fmat` materials during [preload].
   /// [environmentLoader] builds an [AssetEnvironment] from outside the bundle
-  /// (the editor loads a user-picked file from disk).
-  ResourceRealizer(this.document, {AssetBundle? bundle, this.environmentLoader})
-    : bundle = bundle ?? rootBundle;
+  /// (the editor loads a user-picked file from disk). [textureLoader] decodes a
+  /// [TextureResource.asset] from outside the bundle the same way.
+  ResourceRealizer(
+    this.document, {
+    AssetBundle? bundle,
+    this.environmentLoader,
+    this.textureLoader,
+  }) : bundle = bundle ?? rootBundle;
 
   /// The document whose resources are realized.
   final SceneDocument document;
@@ -51,6 +63,10 @@ class ResourceRealizer {
   /// Loads an [AssetEnvironment] from outside the asset bundle, or null to use
   /// the bundle. See [EnvironmentAssetLoader].
   final EnvironmentAssetLoader? environmentLoader;
+
+  /// Decodes a [TextureResource.asset] from outside the asset bundle, or null
+  /// to use the bundle. See [TextureAssetLoader].
+  final TextureAssetLoader? textureLoader;
 
   final Map<LocalId, Geometry> _geometries = {};
   final Map<LocalId, Material> _materials = {};
@@ -189,8 +205,11 @@ class ResourceRealizer {
   Future<gpu.Texture> _loadTextureAsync(TextureResource res) async {
     final asset = res.asset;
     if (asset != null) {
+      // Prefer a disk-loaded image (an editor-imported texture under
+      // `imported/`); fall back to the asset bundle for in-bundle assets.
+      final loaded = await textureLoader?.call(asset);
       return gpuTextureFromImage(
-        await imageFromAsset(asset.key, bundle: bundle),
+        loaded ?? await imageFromAsset(asset.key, bundle: bundle),
       );
     }
     final bytes = _payloadBytes(res.payload!, 'image');

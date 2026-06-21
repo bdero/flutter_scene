@@ -882,6 +882,12 @@ final createMaterial = CommandEntry(
 /// bytes, row-major, passed as the `bytes` param). UI-driven (an importer
 /// decodes the image); not practical over MCP. Returns nothing; the caller
 /// finds the new resource id by diffing the resource pool.
+///
+/// TODO(externalize-embedded-textures): a payload-backed texture is embedded in
+/// the document, and `.fscene` (lean text) does not persist payload bytes, so
+/// it is lost on save/reopen. Prefer createTextureResourceFromAsset (an
+/// external image file under `imported/`), and externalize any remaining
+/// embedded image payloads to files at save time.
 final createTextureResource = CommandEntry(
   name: 'createTextureResource',
   doc: 'Create a texture resource from raw RGBA8 image bytes.',
@@ -926,6 +932,31 @@ final createTextureResource = CommandEntry(
         ),
         _addResourceRecord(resource),
       ],
+    );
+  },
+);
+
+/// Creates a texture resource backed by an external image file (the `asset`
+/// param, a source-path key like `imported/foo.png`). The heavy image bytes
+/// live in the referenced file, not in the document, so the texture survives a
+/// lean `.fscene` save. The realizer decodes the asset (from the asset bundle,
+/// or from disk via the editor's texture loader). Returns nothing; the caller
+/// finds the new resource id by diffing the resource pool.
+final createTextureResourceFromAsset = CommandEntry(
+  name: 'createTextureResourceFromAsset',
+  doc: 'Create a texture resource from an external image asset.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'asset', type: ParamType.assetRef, label: 'Image asset'),
+  ],
+  execute: (ctx, params) {
+    final resource = TextureResource(
+      ctx.document.newId(),
+      asset: requireAssetRef(params, 'asset'),
+    );
+    return Transaction(
+      name: 'Create texture',
+      records: [_addResourceRecord(resource)],
     );
   },
 );
@@ -2082,6 +2113,7 @@ final List<CommandEntry> builtinCommands = [
   createSphereGeometry,
   createMaterial,
   createTextureResource,
+  createTextureResourceFromAsset,
   setMaterialProperties,
   createEnvironmentResource,
   setEnvironmentProperties,

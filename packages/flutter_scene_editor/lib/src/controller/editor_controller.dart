@@ -998,7 +998,10 @@ class EditorController extends ChangeNotifier {
   // would leave the render item pointing at the old object until the next full
   // re-realize. Mutating in place keeps the render item's material live.
   Future<void> _reflectMaterials(Set<LocalId> ids) async {
-    final realizer = ResourceRealizer(document);
+    final realizer = ResourceRealizer(
+      document,
+      textureLoader: _loadAssetTexture,
+    );
     // TODO(material-reflect-textures): preload re-decodes every texture in the
     // document, not just the changed materials' own textures. Cheap for the
     // common factor edit (no textures), but scope it to the changed materials'
@@ -1214,6 +1217,7 @@ class EditorController extends ChangeNotifier {
     final realizer = ResourceRealizer(
       toRealize,
       environmentLoader: _loadAssetEnvironment,
+      textureLoader: _loadAssetTexture,
     );
     await realizer.preload();
     final root = await realizeSceneAsync(toRealize, resources: realizer);
@@ -1273,6 +1277,31 @@ class EditorController extends ChangeNotifier {
       return env;
     } catch (e) {
       lastError.value = 'Failed to load environment "$path": $e';
+      return null;
+    }
+  }
+
+  final Map<String, ui.Image> _diskTextureCache = {};
+
+  // The texture loader handed to the realizers, so a TextureResource.asset that
+  // resolves to a file on disk (an editor-imported image under imported/) is
+  // decoded from disk rather than the asset bundle. Returns null for an asset
+  // not on disk, so the realizer falls back to the asset bundle (the in-bundle
+  // example assets). Decoded images are cached by path so a node-structural
+  // re-realize does not re-decode every imported texture.
+  Future<ui.Image?> _loadAssetTexture(AssetRef asset) async {
+    final path = _resolveAssetPath(asset.key);
+    if (path == null || !File(path).existsSync()) return null;
+    final cached = _diskTextureCache[path];
+    if (cached != null) return cached;
+    try {
+      final bytes = await File(path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      _diskTextureCache[path] = frame.image;
+      return frame.image;
+    } catch (e) {
+      lastError.value = 'Failed to load texture "$path": $e';
       return null;
     }
   }
