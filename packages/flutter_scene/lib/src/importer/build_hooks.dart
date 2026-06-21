@@ -6,6 +6,8 @@ import 'package:hooks/hooks.dart';
 
 import '../fscene/binary/fsceneb.dart';
 import '../fscene/json/fscene_json.dart';
+import '../fscene/scene_document.dart';
+import 'inline_assets.dart';
 import 'offline_import.dart';
 
 /// Controls how [buildScenes] exposes generated `.fsceneb` assets.
@@ -76,8 +78,9 @@ List<String> discoverSceneSources(
 /// Registers scene assets so an app loads them by source path with `loadScene`
 /// without hand-editing the asset manifest. Discovers three source kinds under
 /// [discoveryRoot]: `.glb` (converted to `.fsceneb`), authored `.fscene`
-/// (compiled to `.fsceneb`, prefab instances intact for runtime compose), and
-/// already-built `.fsceneb` (an editor's `imported/` assets, registered as-is).
+/// (compiled to `.fsceneb`, with referenced images embedded and prefab instances
+/// intact for runtime compose), and already-built `.fsceneb` (an editor's
+/// `imported/` assets, registered as-is).
 /// Generated outputs go under [outputDirectory] (relative to
 /// [BuildInput.packageRoot]); a passthrough `.fsceneb` is registered in place.
 ///
@@ -170,6 +173,20 @@ void buildScenes({
     final outputSceneUri = scenesRoot.resolve(relativeScenePath);
     Directory.fromUri(outputSceneUri.resolve('.')).createSync(recursive: true);
 
+    // An authored `.fscene` references its imported images by path; read it up
+    // front so those files can be embedded into the self-contained `.fsceneb`
+    // and tracked as build dependencies (editing a referenced image then
+    // retriggers conversion and hot reload). The document is reused for the
+    // conversion below when the cache is stale.
+    SceneDocument? fsceneDocument;
+    List<ExternalImageAsset> imageAssets = const [];
+    if (extension == '.fscene') {
+      fsceneDocument = readFscene(
+        File(sourceUri.toFilePath()).readAsStringSync(),
+      );
+      imageAssets = resolveExternalImageAssets(fsceneDocument, sourceUri);
+    }
+
     // Skip the work when the source and settings are unchanged since the
     // output was produced, so a hook rerun for an unrelated edit does not
     // reconvert every scene. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always
@@ -177,9 +194,18 @@ void buildScenes({
     final sourceHash = contentHash(
       File(sourceUri.toFilePath()).readAsBytesSync(),
     );
+    // Fold each referenced image's content hash into the stamp, so editing an
+    // embedded image (not just the scene text) invalidates the cache and
+    // rebuilds the dependent `.fsceneb`.
+    final assetStamp =
+        (imageAssets
+                .map((a) => '${a.key}=${contentHash(a.file.readAsBytesSync())}')
+                .toList()
+              ..sort())
+            .join(',');
     final stamp =
         'rev=$buildCacheRevision scene compress=$compressTextures '
-        'kind=$extension src=$sourceHash';
+        'kind=$extension src=$sourceHash assets=[$assetStamp]';
     final stampFile = File('${outputSceneUri.toFilePath()}.inputs');
     if (!isBuildCacheFresh(stampFile, stamp, [
       File(outputSceneUri.toFilePath()),
@@ -192,19 +218,24 @@ void buildScenes({
           compressTextures: compressTextures,
         );
       } else {
-        // `.fscene` (authored text) -> `.fsceneb` (binary), keeping prefab
-        // instances intact for the runtime to compose.
-        final document = readFscene(
-          File(sourceUri.toFilePath()).readAsStringSync(),
-        );
+        // `.fscene` (authored text) -> `.fsceneb` (binary), embedding referenced
+        // images so the container is self-contained and keeping prefab instances
+        // intact for the runtime to compose.
+        inlineExternalImageAssets(fsceneDocument!, imageAssets);
         File(
           outputSceneUri.toFilePath(),
-        ).writeAsBytesSync(writeFsceneb(document));
+        ).writeAsBytesSync(writeFsceneb(fsceneDocument));
       }
       stampFile.writeAsStringSync(stamp);
     }
 
     buildOutput.dependencies.add(sourceUri);
+    // Declare each embedded image as a dependency every run (not only when the
+    // cache is stale), so editing it retriggers the hook and the dependent
+    // scene's hot reload.
+    for (final asset in imageAssets) {
+      buildOutput.dependencies.add(asset.file.uri);
+    }
 
     if (emitDataAssets) {
       buildOutput.assets.data.add(
