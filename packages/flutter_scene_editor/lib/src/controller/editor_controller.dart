@@ -9,11 +9,13 @@
 ///
 /// Sync strategy. Cheap, frequent edits (transform, visibility, layers) are
 /// reflected straight onto the matching live node by stable id, so a gizmo
-/// drag never pays for re-realization. Structural and resource edits
-/// (create, delete, reparent, component and material changes) re-realize the
-/// document, which is correct and fast for the procedural scenes this phase
-/// targets. The live node for a document id is found through the realizer's
-/// own id tagging ([nodeFsceneId]).
+/// drag never pays for re-realization. Environment-resource and material edits
+/// take targeted fast paths too (the environment reapplies in place without a
+/// re-bake; a material re-realizes just itself and swaps onto the live
+/// primitives), so neither rebuilds the scene or re-bakes environments.
+/// Structural edits (create, delete, reparent, component changes) re-realize
+/// the document. The live node for a document id is found through the
+/// realizer's own id tagging ([nodeFsceneId]).
 library;
 
 import 'dart:io';
@@ -31,6 +33,8 @@ import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
+import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
@@ -51,10 +55,20 @@ class EditorController extends ChangeNotifier {
   /// The live scene the viewport renders.
   final Scene scene;
 
-  /// The directory the open scene was loaded from, used to resolve prefab
-  /// instance references (their source paths) relative to the scene file. Null
-  /// for a new in-memory scene, which has no prefab references to resolve.
-  final String? baseDirectory;
+  /// The directory the open scene was loaded from (or last saved to), used to
+  /// resolve prefab instance references and project assets relative to the scene
+  /// file. Null for a new, never-saved in-memory scene. Updated by
+  /// [setBaseDirectory] after a Save As to a new location.
+  String? baseDirectory;
+
+  /// Updates [baseDirectory] after the scene is saved to a new location, so
+  /// relative references and the asset browser resolve against it. Notifies
+  /// listeners (the asset browser rescans).
+  void setBaseDirectory(String directory) {
+    if (baseDirectory == directory) return;
+    baseDirectory = directory;
+    notifyListeners();
+  }
 
   final Map<LocalId, Node> _liveById = {};
   // Maps every live node (including those realized from inside a prefab) to the
@@ -910,6 +924,20 @@ class EditorController extends ChangeNotifier {
       );
       return;
     }
+    // A material-resource edit re-realizes just the changed material(s) and
+    // swaps them onto the live primitives that use them, with no scene re-build
+    // and (crucially) no environment re-bake. This is what makes a material
+    // tweak cheap instead of a full removeAll + realize (the half-second flash).
+    if (transaction.records.every(
+      (r) =>
+          r.slot == ChangeSlot.poolResource &&
+          document.resource(r.targetId) is MaterialResource,
+    )) {
+      await _reflectMaterials(
+        transaction.records.map((r) => r.targetId).toSet(),
+      );
+      return;
+    }
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -918,6 +946,36 @@ class EditorController extends ChangeNotifier {
     } else {
       await _realizeAll();
     }
+  }
+
+  // Re-realizes the material resources in [ids] and swaps them onto every live
+  // primitive that was realized from one of them (found by resource-origin
+  // stamp). Skips environment realization (preload includeEnvironments: false),
+  // so a material edit never re-bakes the prefilter cubes.
+  Future<void> _reflectMaterials(Set<LocalId> ids) async {
+    final realizer = ResourceRealizer(document);
+    // TODO(material-reflect-textures): preload re-decodes every texture in the
+    // document, not just the changed materials' own textures. Cheap for the
+    // common factor edit (no textures), but scope it to the changed materials'
+    // dependencies for texture-heavy scenes.
+    await realizer.preload(includeEnvironments: false);
+    final rebuilt = <LocalId, Material>{};
+    for (final id in ids) {
+      if (document.resource(id) is MaterialResource) {
+        rebuilt[id] = realizer.material(id);
+      }
+    }
+    if (rebuilt.isEmpty) return;
+    for (final node in _liveById.values) {
+      for (final mesh in node.getComponents<MeshComponent>()) {
+        for (final primitive in mesh.mesh.primitives) {
+          final origin = resourceOrigin(primitive.material);
+          final next = origin == null ? null : rebuilt[origin.resourceId];
+          if (next != null) primitive.material = next;
+        }
+      }
+    }
+    notifyListeners();
   }
 
   // Re-resolves the environment resources in [ids] onto the live scene in
@@ -930,9 +988,20 @@ class EditorController extends ChangeNotifier {
     final globalRef = document.stage.environmentRef;
     if (globalRef != null && ids.contains(globalRef)) {
       final resource = document.resource(globalRef);
+      // The in-place reapply reuses the live environment when the look's
+      // structure matches, but it cannot see a reflection-resolution change
+      // (the live map does not expose its built size), so detect that here and
+      // force a structural rebuild at the new size.
+      final sizeChanged =
+          resource is EnvironmentResource &&
+          _builtRadianceSize[globalRef] != resource.radianceCubeSize;
       if (!(resource is EnvironmentResource &&
+          !sizeChanged &&
           _reapplyGlobalEnvironmentInPlace(resource))) {
         await realizeStage(document, scene);
+      }
+      if (resource is EnvironmentResource) {
+        _builtRadianceSize[globalRef] = resource.radianceCubeSize;
       }
     }
     for (final node in document.nodes.values) {
@@ -944,7 +1013,9 @@ class EditorController extends ChangeNotifier {
         final live = _liveById[node.id]
             ?.getComponent<EnvironmentVolumeComponent>();
         if (resource is! EnvironmentResource || live == null) continue;
-        if (!_reapplyResourceInPlace(resource, live.settings)) {
+        final sizeChanged =
+            _builtRadianceSize[ref.id] != resource.radianceCubeSize;
+        if (sizeChanged || !_reapplyResourceInPlace(resource, live.settings)) {
           live.settings = await realizeEnvironmentSettings(
             environment: resource.environment,
             environmentIntensity: resource.environmentIntensity,
@@ -955,12 +1026,27 @@ class EditorController extends ChangeNotifier {
             skyEnvironment: resource.skyEnvironment,
           );
         }
+        _builtRadianceSize[ref.id] = resource.radianceCubeSize;
       }
     }
     // Inject any disk-referenced HDRs (global or per-volume) the realizer could
     // not resolve through the asset bundle.
     await _applyDiskEnvironment();
     notifyListeners();
+  }
+
+  // The reflection-cube size each environment resource was last built at, so a
+  // resolution change can be detected and force a rebuild (the live map does not
+  // carry its size). Populated by _realizeAll and the env reflect.
+  final Map<LocalId, int?> _builtRadianceSize = {};
+
+  void _recordBuiltRadianceSizes() {
+    _builtRadianceSize.clear();
+    for (final resource in document.resources.values) {
+      if (resource is EnvironmentResource) {
+        _builtRadianceSize[resource.id] = resource.radianceCubeSize;
+      }
+    }
   }
 
   // Re-applies [resource] onto the live global look in place, returning false
@@ -1050,6 +1136,7 @@ class EditorController extends ChangeNotifier {
     // tone mapping, anti-aliasing) to the live scene.
     await realizeStage(document, scene);
     await _applyDiskEnvironment();
+    _recordBuiltRadianceSizes();
     _liveById.clear();
     _sourceIdByLive.clear();
     _index(root, null);
@@ -1057,10 +1144,20 @@ class EditorController extends ChangeNotifier {
     _syncHighlights();
   }
 
-  // The asset path of the disk-loaded environment currently applied, so a
-  // re-realize does not reload an unchanged image, and a cache by path.
+  // The asset path and reflection-cube size of the disk-loaded global
+  // environment currently applied, so a re-realize does not reload an unchanged
+  // image but a resolution change does. The cache is keyed by path + size.
   String? _diskEnvPath;
+  int? _diskEnvSize;
   final Map<String, EnvironmentMap> _diskEnvCache = {};
+
+  // The reflection-cube size of the stage's global environment resource, or
+  // null for the engine default.
+  int? _globalRadianceCubeSize() {
+    final ref = document.stage.environmentRef;
+    final resource = ref == null ? null : document.resource(ref);
+    return resource is EnvironmentResource ? resource.radianceCubeSize : null;
+  }
 
   /// Loads an editor `AssetEnvironment` from disk (an imported `.hdr` or an LDR
   /// equirect image) and applies it to the live scene. `realizeStage` resolves
@@ -1090,14 +1187,16 @@ class EditorController extends ChangeNotifier {
       return;
     }
     final path = _resolveAssetPath(env.asset.key);
-    if (path == null || path == _diskEnvPath) return;
-    final loaded = await _loadDiskEnvironment(path);
+    final size = _globalRadianceCubeSize();
+    if (path == null || (path == _diskEnvPath && size == _diskEnvSize)) return;
+    final loaded = await _loadDiskEnvironment(path, size);
     if (loaded != null) {
       scene.environment = loaded;
       // realizeStage captures the base look before this runs, so when volumes
       // are active the base's disk environment has to be folded in too.
       scene.baseEnvironment?.environment = loaded;
       _diskEnvPath = path;
+      _diskEnvSize = size;
       notifyListeners();
     }
   }
@@ -1122,7 +1221,10 @@ class EditorController extends ChangeNotifier {
         final live = _liveById[node.id]
             ?.getComponent<EnvironmentVolumeComponent>();
         if (live == null) continue;
-        final loaded = await _loadDiskEnvironment(path);
+        final loaded = await _loadDiskEnvironment(
+          path,
+          resource.radianceCubeSize,
+        );
         if (loaded != null && !identical(live.settings.environment, loaded)) {
           live.settings.environment = loaded;
           changed = true;
@@ -1138,9 +1240,22 @@ class EditorController extends ChangeNotifier {
     return dir == null ? null : '$dir/$key';
   }
 
-  Future<EnvironmentMap?> _loadDiskEnvironment(String path) async {
-    final cached = _diskEnvCache[path];
+  // Loads (and caches) the disk environment at [path], built at reflection-cube
+  // size [radianceCubeSize] (null = the engine default). The cache key includes
+  // the size so a resolution change rebuilds rather than returning the old map.
+  Future<EnvironmentMap?> _loadDiskEnvironment(
+    String path, [
+    int? radianceCubeSize,
+  ]) async {
+    final cacheKey = '$path|${radianceCubeSize ?? 0}';
+    final cached = _diskEnvCache[cacheKey];
     if (cached != null) return cached;
+    // EnvironmentMap.radianceCubeSize is a static the builders read, so set it
+    // around the (sequential, awaited) build and restore it after.
+    final previousSize = EnvironmentMap.radianceCubeSize;
+    if (radianceCubeSize != null) {
+      EnvironmentMap.radianceCubeSize = radianceCubeSize;
+    }
     try {
       final bytes = await File(path).readAsBytes();
       final EnvironmentMap env;
@@ -1159,11 +1274,13 @@ class EditorController extends ChangeNotifier {
         final frame = await codec.getNextFrame();
         env = await EnvironmentMap.fromUIImages(radianceImage: frame.image);
       }
-      _diskEnvCache[path] = env;
+      _diskEnvCache[cacheKey] = env;
       return env;
     } catch (e) {
       lastError.value = 'Failed to load environment "$path": $e';
       return null;
+    } finally {
+      EnvironmentMap.radianceCubeSize = previousSize;
     }
   }
 
