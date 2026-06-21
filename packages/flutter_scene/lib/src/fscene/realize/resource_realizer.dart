@@ -77,7 +77,11 @@ class ResourceRealizer {
   /// (the async loaders do). A resource that fails to load degrades to a
   /// placeholder (textures) or an unlit material (`fmat`) with a warning,
   /// rather than failing the whole scene.
-  Future<void> preload() async {
+  ///
+  /// Set [includeEnvironments] false to skip realizing [EnvironmentResource]s
+  /// (which build GPU prefilter cubes, the expensive part). The editor uses this
+  /// to re-realize just a changed material without re-baking environments.
+  Future<void> preload({bool includeEnvironments = true}) async {
     // Textures first: an fmat material's parameter overrides may reference a
     // texture resource, which must be decoded before the override resolves it.
     final textures = <Future<void>>[];
@@ -99,6 +103,7 @@ class ResourceRealizer {
     // Environments are GPU-bound and async (they build prefilter cubes and may
     // load image assets), so realize them here and cache the result for the
     // synchronous component realize path.
+    if (!includeEnvironments) return;
     for (final resource in document.resources.values) {
       if (resource is EnvironmentResource) {
         _environments[resource.id] = await realizeEnvironmentSettings(

@@ -108,14 +108,21 @@ final List<(Vector3, Vector3, Vector3)> _cubeFaceBases = [
   (Vector3(-1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)), // -Z
 ];
 
+/// The smallest cube face size that can hold [kPrefilterBandCount] mip levels.
+/// A texture of size `S` supports `floor(log2(S))` mip levels, so the cube must
+/// be at least `2^kPrefilterBandCount` to store one roughness band per mip; a
+/// smaller request would fail texture creation (`mipLevelCount out of range`).
+const int kMinRadianceCubeSize = 1 << kPrefilterBandCount;
+
 /// Creates an empty prefiltered-radiance cube (one roughness band per mip
 /// level), for [prefilterEquirectRadianceToCube] and incremental cube bakes.
-/// [size] is the base-mip face size (default [kRadianceCubeSize]).
+/// [size] is the base-mip face size (default [kRadianceCubeSize]), clamped up to
+/// [kMinRadianceCubeSize] so the [kPrefilterBandCount] mip bands always fit.
 gpu.Texture createRadianceCubeTexture({int size = kRadianceCubeSize}) =>
     gpu.gpuContext.createTexture(
       gpu.StorageMode.devicePrivate,
-      size,
-      size,
+      size < kMinRadianceCubeSize ? kMinRadianceCubeSize : size,
+      size < kMinRadianceCubeSize ? kMinRadianceCubeSize : size,
       format: gpu.PixelFormat.r16g16b16a16Float,
       textureType: gpu.TextureType.textureCube,
       mipLevelCount: kPrefilterBandCount,
