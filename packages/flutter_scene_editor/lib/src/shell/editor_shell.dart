@@ -464,6 +464,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   Future<void> _writeTo(String path) async {
     try {
       await saveFscene(_ctrl, path);
+      // A new scene had no base directory; after saving it lives next to the
+      // file, so relative references and the asset browser resolve from there.
+      _ctrl.setBaseDirectory(File(path).parent.path);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

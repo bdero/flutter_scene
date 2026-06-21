@@ -18,8 +18,10 @@ import 'live_fields.dart';
 const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
 
 // Reflection/ambient cubemap sizes offered per environment (the Godot
-// radiance-size equivalent). null is the engine default.
-const _reflectionSizes = <int?>[null, 128, 256, 512, 1024, 2048];
+// radiance-size equivalent). null is the engine default. The minimum is 256:
+// the prefiltered cube stores 8 roughness bands as mip levels, which a smaller
+// face cannot hold (see kMinRadianceCubeSize).
+const _reflectionSizes = <int?>[null, 256, 512, 1024, 2048];
 
 // The look fields an environment editor reads, for whichever it targets (the
 // stage's inline legacy look or an environment resource).
