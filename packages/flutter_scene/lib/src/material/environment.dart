@@ -265,7 +265,7 @@ base class EnvironmentMap {
     int height,
   ) {
     final mipCount = mipRadianceLayoutSupported
-        ? _maxMipLevels(math.max(width, height))
+        ? _maxMipLevels(math.min(width, height))
         : 1;
     final texture = gpu.gpuContext.createTexture(
       gpu.StorageMode.hostVisible,
@@ -295,12 +295,12 @@ base class EnvironmentMap {
     return texture;
   }
 
-  /// The mip level count the backend accepts for a [size]-wide texture,
-  /// `floor(log2(size))` (matching the cube limit; see [kMinRadianceCubeSize]),
-  /// at least 1.
+  /// `floor(log2(size))`, at least 1. Passing the smaller texture dimension
+  /// matches flutter_gpu's `Texture.fullMipCount` (`floor(log2(min(w, h)))`),
+  /// the upper bound `createTexture` accepts for `mipLevelCount`.
   static int _maxMipLevels(int size) {
     var levels = 1;
-    while ((1 << levels) < size) {
+    while ((1 << (levels + 1)) <= size) {
       levels++;
     }
     return levels;
