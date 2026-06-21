@@ -103,15 +103,45 @@ class EditorController extends ChangeNotifier {
   /// null when [id] is not prefab content.
   PrefabMemberOrigin? memberOrigin(LocalId id) => _memberOrigins[id];
 
+  /// Whether [id] can be edited: a real source node, or a prefab member backed
+  /// by an override origin. A composed-only node with no origin (the synthesized
+  /// handedness adapter compose inserts between an instance and a prefab of the
+  /// opposite handedness) is internal machinery and is not editable.
+  bool isEditableNode(LocalId id) =>
+      document.nodes.containsKey(id) || _memberOrigins.containsKey(id);
+
+  // A composed node that is neither a source node nor a prefab member: the
+  // handedness adapter. Hidden from the outliner so the user sees the actual
+  // prefab content, and never editable.
+  bool _isSyntheticComposedNode(LocalId id) =>
+      _composed != null &&
+      !document.nodes.containsKey(id) &&
+      !_memberOrigins.containsKey(id);
+
   /// The node to show for [id] in the display tree.
   NodeSpec? displayNode(LocalId id) => displayDocument.nodes[id];
 
   /// The root node ids of the display tree.
-  List<LocalId> displayRoots() => displayDocument.roots;
+  List<LocalId> displayRoots() => _splicedChildren(displayDocument.roots);
 
   /// The child node ids of [id] in the display tree.
   List<LocalId> displayChildren(LocalId id) =>
-      displayDocument.nodes[id]?.children ?? const [];
+      _splicedChildren(displayDocument.nodes[id]?.children ?? const []);
+
+  // Replaces any synthetic compose node in [ids] with its own children, so the
+  // handedness adapter is invisible and its prefab content appears in its place.
+  List<LocalId> _splicedChildren(List<LocalId> ids) {
+    if (_composed == null || !ids.any(_isSyntheticComposedNode)) return ids;
+    final out = <LocalId>[];
+    for (final id in ids) {
+      if (_isSyntheticComposedNode(id)) {
+        out.addAll(_splicedChildren(displayDocument.nodes[id]?.children ?? []));
+      } else {
+        out.add(id);
+      }
+    }
+    return out;
+  }
 
   /// The message of the most recent command failure, for the UI to surface.
   /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
@@ -127,9 +157,11 @@ class EditorController extends ChangeNotifier {
   }) async {
     final controller = EditorController._(session, Scene(), baseDirectory);
     // Keep prefab-internal nodes (which live only in the composed document)
-    // selectable across edits, not just source nodes.
+    // selectable across edits, not just source nodes; but not synthetic compose
+    // machinery (the handedness adapter), which is not editable.
     session.selectionValidId = (id) =>
-        controller.displayDocument.nodes.containsKey(id);
+        controller.displayDocument.nodes.containsKey(id) &&
+        !controller._isSyntheticComposedNode(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
     return controller;
@@ -563,6 +595,7 @@ class EditorController extends ChangeNotifier {
 
   /// Sets node [id]'s name (an override when [id] is prefab content).
   Future<void> setNodeNameRouted(LocalId id, String name) {
+    if (!isEditableNode(id)) return Future.value();
     if (isPrefabMember(id)) {
       return _override(memberOrigin(id)!, 'name', name);
     }
@@ -571,6 +604,7 @@ class EditorController extends ChangeNotifier {
 
   /// Sets node [id]'s visibility (an override when [id] is prefab content).
   Future<void> setNodeVisibleRouted(LocalId id, bool visible) {
+    if (!isEditableNode(id)) return Future.value();
     if (isPrefabMember(id)) {
       return _override(memberOrigin(id)!, 'visible', visible);
     }
@@ -585,6 +619,7 @@ class EditorController extends ChangeNotifier {
     Map<String, Object>? scale,
     Object? rotation,
   }) async {
+    if (!isEditableNode(id)) return;
     if (isPrefabMember(id)) {
       final origin = memberOrigin(id)!;
       if (translation != null) {
@@ -615,6 +650,7 @@ class EditorController extends ChangeNotifier {
     String key,
     Object value,
   ) {
+    if (!isEditableNode(id)) return Future.value();
     final origin = memberOrigin(id);
     if (origin != null) {
       return _override(origin, 'components.$type.$key', value);
