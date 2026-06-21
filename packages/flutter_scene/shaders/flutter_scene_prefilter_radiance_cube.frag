@@ -91,6 +91,18 @@ void main() {
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
 
+  // Firefly suppression. The source equirect has no mip chain, so a single very
+  // bright source texel (a sun glint) sampled by a few GGX samples in a wide
+  // rough lobe would otherwise dominate the average and leave a sharp bright
+  // block in the rough bands. Cap each sample's luminance relative to the band
+  // center, so a rare spike cannot dominate while a uniformly bright lobe is
+  // unaffected (center ~ samples). At roughness 0 the lobe is a point, so every
+  // sample equals the center and nothing is clamped (the mirror band stays
+  // sharp). The +1 floor keeps a dark center from over-clamping real highlights.
+  const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
+  vec3 center = SampleSourceRadiance(n);
+  float max_luma = max(dot(center, kLuma), 1.0) * 8.0;
+
   vec3 color = vec3(0.0);
   float total_weight = 0.0;
   for (int i = 0; i < kPrefilterSamples; i++) {
@@ -100,10 +112,13 @@ void main() {
     vec3 l = normalize(2.0 * dot(v, h) * h - v);
     float n_dot_l = dot(n, l);
     if (n_dot_l > 0.0) {
-      color += SampleSourceRadiance(l) * n_dot_l;
+      vec3 s = SampleSourceRadiance(l);
+      float s_luma = dot(s, kLuma);
+      if (s_luma > max_luma) s *= max_luma / s_luma;
+      color += s * n_dot_l;
       total_weight += n_dot_l;
     }
   }
-  color = total_weight > 0.0 ? color / total_weight : SampleSourceRadiance(n);
+  color = total_weight > 0.0 ? color / total_weight : center;
   frag_color = vec4(color, 1.0);
 }
