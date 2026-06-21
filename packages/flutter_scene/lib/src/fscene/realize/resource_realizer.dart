@@ -9,7 +9,7 @@ import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart'
-    show realizeEnvironmentSettings;
+    show EnvironmentAssetLoader, realizeEnvironmentSettings;
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
@@ -37,7 +37,9 @@ import 'package:flutter_scene/src/texture/compressed_texture.dart';
 class ResourceRealizer {
   /// Creates a realizer over [document]. [bundle] (default [rootBundle])
   /// resolves external image assets and `fmat` materials during [preload].
-  ResourceRealizer(this.document, {AssetBundle? bundle})
+  /// [environmentLoader] builds an [AssetEnvironment] from outside the bundle
+  /// (the editor loads a user-picked file from disk).
+  ResourceRealizer(this.document, {AssetBundle? bundle, this.environmentLoader})
     : bundle = bundle ?? rootBundle;
 
   /// The document whose resources are realized.
@@ -46,6 +48,10 @@ class ResourceRealizer {
   /// The asset bundle external assets and `fmat` materials load from.
   final AssetBundle bundle;
 
+  /// Loads an [AssetEnvironment] from outside the asset bundle, or null to use
+  /// the bundle. See [EnvironmentAssetLoader].
+  final EnvironmentAssetLoader? environmentLoader;
+
   final Map<LocalId, Geometry> _geometries = {};
   final Map<LocalId, Material> _materials = {};
   final Map<LocalId, gpu.Texture> _textures = {};
@@ -53,16 +59,52 @@ class ResourceRealizer {
 
   /// The live geometry for resource [id], realized and memoized on first use.
   /// The result is stamped with its origin so the serializer can recover it.
-  Geometry geometry(LocalId id) =>
-      _geometries[id] ??= tagResourceOrigin(_buildGeometry(id), document, id);
+  Geometry geometry(LocalId id) => _geometries[id] ??= tagResourceOrigin(
+    _buildGeometryOrPlaceholder(id),
+    document,
+    id,
+  );
+
+  // Builds geometry [id], degrading to a small placeholder cuboid (with a
+  // warning) rather than failing the whole scene realize when the resource is
+  // malformed. The common case is a `.fscene` (JSON) reopened without the
+  // binary payload chunks its geometry referenced (those live in a `.fsceneb`
+  // container), so one lost mesh should not break the entire scene.
+  Geometry _buildGeometryOrPlaceholder(LocalId id) {
+    try {
+      return _buildGeometry(id);
+    } on FsceneFormatException catch (e) {
+      debugPrint(
+        'fscene: geometry $id could not be realized ($e); using a placeholder',
+      );
+      return CuboidGeometry(Vector3.all(0.25));
+    }
+  }
 
   /// The live material for resource [id], realized and memoized on first use.
   Material material(LocalId id) =>
       _materials[id] ??= tagResourceOrigin(_buildMaterial(id), document, id);
 
   /// The live texture for resource [id], realized and memoized on first use.
-  gpu.Texture texture(LocalId id) =>
-      _textures[id] ??= tagResourceOrigin(_buildTexture(id), document, id);
+  gpu.Texture texture(LocalId id) => _textures[id] ??= tagResourceOrigin(
+    _buildTextureOrPlaceholder(id),
+    document,
+    id,
+  );
+
+  // Builds texture [id], degrading to a placeholder (with a warning) rather
+  // than failing the whole realize when the resource is malformed (the common
+  // case is a `.fscene` reopened without its binary payload chunks).
+  gpu.Texture _buildTextureOrPlaceholder(LocalId id) {
+    try {
+      return _buildTexture(id);
+    } on FsceneFormatException catch (e) {
+      debugPrint(
+        'fscene: texture $id could not be realized ($e); using a placeholder',
+      );
+      return _placeholderTexture();
+    }
+  }
 
   /// The realized look for an [EnvironmentResource] [id], or null when [id] is
   /// not an environment resource. Environments are GPU-bound and async, so they
@@ -115,6 +157,7 @@ class ResourceRealizer {
           skybox: resource.skybox,
           skyEnvironment: resource.skyEnvironment,
           bundle: bundle,
+          environmentLoader: environmentLoader,
         );
       }
     }

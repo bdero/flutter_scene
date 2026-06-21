@@ -33,6 +33,13 @@ import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/sun_light.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
+/// Builds the [EnvironmentMap] for an [AssetEnvironment] from outside the asset
+/// bundle (the editor loads a user-picked file from disk and prefilters it).
+/// Returns null to fall back to the asset bundle. Honors the current
+/// [EnvironmentMap.radianceCubeSize], set around the build by the realizer.
+typedef EnvironmentAssetLoader =
+    Future<EnvironmentMap?> Function(AssetRef asset);
+
 /// Tags applied environments with the spec they realized from, so
 /// [serializeStage] can recover them. (Fmat skies recover through their
 /// registry source-path stamp plus their assigned parameter values.)
@@ -50,10 +57,17 @@ final Expando<EnvironmentSpec> _environmentSpec = Expando(
 ///
 /// GPU-bound and async (an asset environment decodes its image, an fmat sky
 /// loads by source path from [bundle], default the root bundle).
+///
+/// [environmentLoader] builds an [AssetEnvironment]'s map from outside the asset
+/// bundle (the editor resolves a user-picked file from disk and builds the
+/// prefiltered cube), so a disk environment is owned by the environment's own
+/// realization rather than patched in afterwards. It honors the current
+/// [EnvironmentMap.radianceCubeSize].
 Future<void> realizeStage(
   SceneDocument document,
   Scene scene, {
   AssetBundle? bundle,
+  EnvironmentAssetLoader? environmentLoader,
 }) async {
   final stage = document.stage;
   scene.antiAliasingMode = _byName(
@@ -82,6 +96,7 @@ Future<void> realizeStage(
       skybox: envResource.skybox,
       skyEnvironment: envResource.skyEnvironment,
       bundle: bundle,
+      environmentLoader: environmentLoader,
     )).applyTo(scene);
   } else {
     scene.environmentIntensity = stage.environmentIntensity;
@@ -100,7 +115,12 @@ Future<void> realizeStage(
       scene.skyEnvironment = null;
       await _withRadianceCubeSize(
         stage.radianceCubeSize,
-        () => _applyEnvironment(stage.environment, scene, bundle),
+        () => _applyEnvironment(
+          stage.environment,
+          scene,
+          bundle,
+          environmentLoader,
+        ),
       );
     } else {
       final source = await sourceFor(skyEnvironmentSpec.source);
@@ -124,7 +144,12 @@ Future<void> realizeStage(
         scene.skyEnvironment = null;
         await _withRadianceCubeSize(
           stage.radianceCubeSize,
-          () => _applyEnvironment(stage.environment, scene, bundle),
+          () => _applyEnvironment(
+            stage.environment,
+            scene,
+            bundle,
+            environmentLoader,
+          ),
         );
       }
     }
@@ -178,6 +203,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
   AssetBundle? bundle,
+  EnvironmentAssetLoader? environmentLoader,
 }) async {
   final settings = EnvironmentSettings(
     environmentIntensity: environmentIntensity,
@@ -194,7 +220,11 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
 
   Future<void> applyEnvironment() async {
     await _withRadianceCubeSize(radianceCubeSize, () async {
-      settings.environment = await _buildEnvironment(environment, bundle);
+      settings.environment = await _buildEnvironment(
+        environment,
+        bundle,
+        environmentLoader,
+      );
     });
   }
 
@@ -471,6 +501,7 @@ Future<void> _applyEnvironment(
   EnvironmentSpec spec,
   Scene scene,
   AssetBundle? bundle,
+  EnvironmentAssetLoader? environmentLoader,
 ) async {
   // Skip rebuilding (and re-decoding an asset panorama) when the current
   // environment already realized from an identical spec, the common case on
@@ -484,16 +515,23 @@ Future<void> _applyEnvironment(
           canonicalJson(_encodeEnvironment(spec))) {
     return;
   }
-  final environment = await _buildEnvironment(spec, bundle);
+  final environment = await _buildEnvironment(spec, bundle, environmentLoader);
   if (environment != null) scene.environment = environment;
 }
 
 /// Builds the [EnvironmentMap] for [spec], stamping it so [serializeStage] can
 /// recover the spec, or null when an asset fails to load. Honors the current
 /// [EnvironmentMap.radianceCubeSize].
+///
+/// An [AssetEnvironment] is built through [environmentLoader] first (the editor
+/// loads a user-picked file from disk and prefilters it), falling back to the
+/// asset bundle when there is no loader or it declines. This keeps the disk
+/// environment's whole lifecycle (decode plus prefilter cube) inside the
+/// environment's own realization.
 Future<EnvironmentMap?> _buildEnvironment(
   EnvironmentSpec spec,
   AssetBundle? bundle,
+  EnvironmentAssetLoader? environmentLoader,
 ) async {
   final EnvironmentMap environment;
   switch (spec) {
@@ -502,15 +540,22 @@ Future<EnvironmentMap?> _buildEnvironment(
     case EmptyEnvironment():
       environment = EnvironmentMap.empty();
     case AssetEnvironment(:final asset):
-      try {
-        environment = await EnvironmentMap.fromUIImages(
-          radianceImage: await imageFromAsset(asset.key, bundle: bundle),
-        );
-      } catch (e) {
-        debugPrint(
-          'fscene: failed to load environment asset "${asset.key}": $e',
-        );
-        return null;
+      final loaded = environmentLoader == null
+          ? null
+          : await environmentLoader(asset);
+      if (loaded != null) {
+        environment = loaded;
+      } else {
+        try {
+          environment = await EnvironmentMap.fromUIImages(
+            radianceImage: await imageFromAsset(asset.key, bundle: bundle),
+          );
+        } catch (e) {
+          debugPrint(
+            'fscene: failed to load environment asset "${asset.key}": $e',
+          );
+          return null;
+        }
       }
   }
   _environmentSpec[environment] = spec;
