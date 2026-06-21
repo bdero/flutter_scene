@@ -951,10 +951,16 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  // Re-realizes the material resources in [ids] and swaps them onto every live
-  // primitive that was realized from one of them (found by resource-origin
-  // stamp). Skips environment realization (preload includeEnvironments: false),
-  // so a material edit never re-bakes the prefilter cubes.
+  // Re-realizes the material resources in [ids] and re-applies their properties
+  // onto the live materials in place (found by resource-origin stamp). Skips
+  // environment realization (preload includeEnvironments: false), so a material
+  // edit never re-bakes the prefilter cubes.
+  //
+  // The properties are copied onto the EXISTING live material object rather than
+  // swapping in a new one: a mesh component captures its material in a render
+  // item at mount and does not re-read it per frame, so swapping the reference
+  // would leave the render item pointing at the old object until the next full
+  // re-realize. Mutating in place keeps the render item's material live.
   Future<void> _reflectMaterials(Set<LocalId> ids) async {
     final realizer = ResourceRealizer(document);
     // TODO(material-reflect-textures): preload re-decodes every texture in the
@@ -969,16 +975,49 @@ class EditorController extends ChangeNotifier {
       }
     }
     if (rebuilt.isEmpty) return;
+    // Each live material object is shared across the primitives that use it, so
+    // apply once per distinct object.
+    final applied = <Material>{};
     for (final node in _liveById.values) {
       for (final mesh in node.getComponents<MeshComponent>()) {
         for (final primitive in mesh.mesh.primitives) {
           final origin = resourceOrigin(primitive.material);
           final next = origin == null ? null : rebuilt[origin.resourceId];
-          if (next != null) primitive.material = next;
+          if (next != null && applied.add(primitive.material)) {
+            _applyMaterialInto(next, primitive.material);
+          }
         }
       }
     }
     notifyListeners();
+  }
+
+  // Copies the renderable fields of the freshly realized [from] onto the live
+  // [into], in place. Only same-type materials are reconciled (a material's
+  // type does not change through setMaterialProperties).
+  static void _applyMaterialInto(Material from, Material into) {
+    if (from is PhysicallyBasedMaterial && into is PhysicallyBasedMaterial) {
+      into
+        ..baseColorFactor = from.baseColorFactor
+        ..emissiveFactor = from.emissiveFactor
+        ..metallicFactor = from.metallicFactor
+        ..roughnessFactor = from.roughnessFactor
+        ..occlusionStrength = from.occlusionStrength
+        ..normalScale = from.normalScale
+        ..doubleSided = from.doubleSided
+        ..alphaMode = from.alphaMode
+        ..alphaCutoff = from.alphaCutoff
+        ..baseColorTexture = from.baseColorTexture
+        ..metallicRoughnessTexture = from.metallicRoughnessTexture
+        ..normalTexture = from.normalTexture
+        ..occlusionTexture = from.occlusionTexture
+        ..emissiveTexture = from.emissiveTexture;
+    } else if (from is UnlitMaterial && into is UnlitMaterial) {
+      into
+        ..baseColorFactor = from.baseColorFactor
+        ..doubleSided = from.doubleSided
+        ..baseColorTexture = from.baseColorTexture;
+    }
   }
 
   // Re-resolves the environment resources in [ids] onto the live scene in
