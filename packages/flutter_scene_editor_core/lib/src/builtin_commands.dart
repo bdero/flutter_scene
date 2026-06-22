@@ -1051,16 +1051,9 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   upAxis: s.upAxis,
   handedness: s.handedness,
   unitsPerMeter: s.unitsPerMeter,
-  environment: s.environment,
-  environmentIntensity: s.environmentIntensity,
-  exposure: s.exposure,
-  toneMapping: s.toneMapping,
-  radianceCubeSize: s.radianceCubeSize,
   antiAliasingMode: s.antiAliasingMode,
   renderScale: s.renderScale,
   filterQuality: s.filterQuality,
-  skybox: s.skybox,
-  skyEnvironment: s.skyEnvironment,
   environmentRef: s.environmentRef,
 );
 
@@ -1081,39 +1074,6 @@ abstract class _LookView {
   set skybox(SkyboxSpec? v);
   SkyEnvironmentSpec? get skyEnvironment;
   set skyEnvironment(SkyEnvironmentSpec? v);
-}
-
-class _StageLook implements _LookView {
-  _StageLook(this.s);
-  final StageMetadata s;
-  @override
-  EnvironmentSpec get environment => s.environment;
-  @override
-  set environment(EnvironmentSpec v) => s.environment = v;
-  @override
-  double get environmentIntensity => s.environmentIntensity;
-  @override
-  set environmentIntensity(double v) => s.environmentIntensity = v;
-  @override
-  double get exposure => s.exposure;
-  @override
-  set exposure(double v) => s.exposure = v;
-  @override
-  String get toneMapping => s.toneMapping;
-  @override
-  set toneMapping(String v) => s.toneMapping = v;
-  @override
-  int? get radianceCubeSize => s.radianceCubeSize;
-  @override
-  set radianceCubeSize(int? v) => s.radianceCubeSize = v;
-  @override
-  SkyboxSpec? get skybox => s.skybox;
-  @override
-  set skybox(SkyboxSpec? v) => s.skybox = v;
-  @override
-  SkyEnvironmentSpec? get skyEnvironment => s.skyEnvironment;
-  @override
-  set skyEnvironment(SkyEnvironmentSpec? v) => s.skyEnvironment = v;
 }
 
 class _EnvResourceLook implements _LookView {
@@ -1284,14 +1244,15 @@ int? _stageInt(PropertyValue? v) => switch (v) {
   _ => null,
 };
 
-/// Updates scene-wide stage settings (exposure, environment intensity, tone
-/// mapping, environment, anti-aliasing, render scale, filter quality). Only the
-/// keys present in `properties` change; the rest keep their values. The whole
-/// stage is one reversible record, so the edit is undoable. `environment` is a
-/// name (`studio`/`empty`/`asset`); for `asset`, pass `environmentAsset` (path).
+/// Updates scene-wide stage render settings (anti-aliasing, render scale, filter
+/// quality). Only the keys present in `properties` change; the rest keep their
+/// values. The whole stage is one reversible record, so the edit is undoable.
+/// The scene look (environment, exposure, tone mapping, sky) lives in the stage's
+/// environment resource; edit it with `setEnvironmentProperties` /
+/// `setSkybox` / `setSkyParameters`.
 final setStageProperties = CommandEntry(
   name: 'setStageProperties',
-  doc: 'Update scene-wide stage settings.',
+  doc: 'Update scene-wide stage render settings.',
   category: 'Stage',
   paramSchema: const [
     ParamSpec(
@@ -1304,7 +1265,6 @@ final setStageProperties = CommandEntry(
     final props = optionalPropertyMap(params, 'properties');
     final old = ctx.document.stage;
     final next = _copyStage(old);
-    _applyLookProperties(_StageLook(next), props);
     if (props.containsKey('antiAliasingMode')) {
       next.antiAliasingMode = _stageString(
         props['antiAliasingMode'],
@@ -1431,36 +1391,60 @@ final setSkybox = CommandEntry(
   execute: (ctx, params) {
     final sky = requireString(params, 'sky');
     final sun = optionalVec3(params, 'sunDirection');
-    final old = ctx.document.stage;
-    final oldLook = _StageLook(old);
-    final lightScene = params.containsKey('lightScene')
-        ? params['lightScene'] == true
-        : oldLook.skyEnvironment != null;
-    final castShadows = params.containsKey('castShadows')
-        ? params['castShadows'] == true
-        : (oldLook.skyEnvironment?.castShadows ?? false);
-    final next = _copyStage(old);
-    _applyLookSkybox(
-      _StageLook(next),
-      oldLook,
-      sky: sky,
-      sun: sun,
-      lightScene: lightScene,
-      castShadows: castShadows,
-    );
-    return Transaction(
-      name: 'Set skybox',
-      records: [
-        ChangeRecord(
-          targetId: ChangeRecord.rootsTarget,
-          slot: ChangeSlot.stage,
-          oldValue: StageMetadataChange(old),
-          newValue: StageMetadataChange(next),
-        ),
-      ],
-    );
+    return _editStageLook(ctx, 'Set skybox', (next, old) {
+      final lightScene = params.containsKey('lightScene')
+          ? params['lightScene'] == true
+          : old.skyEnvironment != null;
+      final castShadows = params.containsKey('castShadows')
+          ? params['castShadows'] == true
+          : (old.skyEnvironment?.castShadows ?? false);
+      _applyLookSkybox(
+        next,
+        old,
+        sky: sky,
+        sun: sun,
+        lightScene: lightScene,
+        castShadows: castShadows,
+      );
+    });
   },
 );
+
+// Edits the stage's global environment resource, creating and linking a studio
+// default when the stage references none, so the stage-look commands (skybox,
+// sky tuning) always target a resource. [mutate] gets the working copy to write
+// and the prior look to read defaults from.
+Transaction _editStageLook(
+  CommandContext ctx,
+  String name,
+  void Function(_EnvResourceLook next, _EnvResourceLook old) mutate,
+) {
+  final stage = ctx.document.stage;
+  final ref = stage.environmentRef;
+  final existing = ref == null ? null : ctx.document.resource(ref);
+  final base = existing is EnvironmentResource
+      ? existing
+      : EnvironmentResource(ctx.document.newId(), name: 'Environment');
+  final next = _copyEnvironmentResource(base);
+  mutate(_EnvResourceLook(next), _EnvResourceLook(base));
+  if (existing is EnvironmentResource) {
+    return _environmentTransaction(name, base.id, base, next);
+  }
+  // No stage environment yet: add the new resource and link the stage to it.
+  final stageNext = _copyStage(stage)..environmentRef = base.id;
+  return Transaction(
+    name: name,
+    records: [
+      _addResourceRecord(next),
+      ChangeRecord(
+        targetId: ChangeRecord.rootsTarget,
+        slot: ChangeSlot.stage,
+        oldValue: StageMetadataChange(stage),
+        newValue: StageMetadataChange(stageNext),
+      ),
+    ],
+  );
+}
 
 /// Tunes the current procedural sky's parameters (colors, sun size, scattering,
 /// energy). Only the keys present in `properties` change; the rest are kept.
@@ -1480,19 +1464,10 @@ final setSkyParameters = CommandEntry(
   ],
   execute: (ctx, params) {
     final props = optionalPropertyMap(params, 'properties');
-    final old = ctx.document.stage;
-    final next = _copyStage(old);
-    _applyLookSkyParameters(_StageLook(next), props);
-    return Transaction(
-      name: 'Tune sky',
-      records: [
-        ChangeRecord(
-          targetId: ChangeRecord.rootsTarget,
-          slot: ChangeSlot.stage,
-          oldValue: StageMetadataChange(old),
-          newValue: StageMetadataChange(next),
-        ),
-      ],
+    return _editStageLook(
+      ctx,
+      'Tune sky',
+      (next, old) => _applyLookSkyParameters(next, props),
     );
   },
 );
@@ -1515,7 +1490,8 @@ Transaction _environmentTransaction(
 );
 
 /// Points the stage's global environment at an environment resource (or clears
-/// it back to the inline stage look when `environmentId` is omitted).
+/// the reference when `environmentId` is omitted, leaving the stage on the
+/// studio default until one is set).
 final setStageEnvironment = CommandEntry(
   name: 'setStageEnvironment',
   doc: 'Set the stage global environment resource.',

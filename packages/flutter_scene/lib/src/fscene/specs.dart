@@ -883,17 +883,10 @@ class StageMetadata {
     this.upAxis = UpAxis.y,
     this.handedness = Handedness.left,
     this.unitsPerMeter = 1.0,
-    this.environment = const StudioEnvironment(),
-    this.environmentIntensity = 1.0,
-    this.exposure = 1.0,
-    this.toneMapping = 'pbrNeutral',
-    this.radianceCubeSize,
     this.environmentRef,
     this.antiAliasingMode = 'auto',
     this.renderScale = 1.0,
     this.filterQuality = 'medium',
-    this.skybox,
-    this.skyEnvironment,
   });
 
   /// The authored up axis.
@@ -904,23 +897,6 @@ class StageMetadata {
 
   /// World units per meter.
   double unitsPerMeter;
-
-  /// The image-based-lighting environment.
-  EnvironmentSpec environment;
-
-  /// Scalar multiplier on the environment's contribution.
-  double environmentIntensity;
-
-  /// Linear exposure multiplier applied before tone mapping.
-  double exposure;
-
-  /// The tone-mapping operator name (mapped to the runtime enum at
-  /// realization).
-  String toneMapping;
-
-  /// The reflection/ambient cubemap size for the base environment, or null to
-  /// use the engine default.
-  int? radianceCubeSize;
 
   /// The anti-aliasing mode name (`none`, `msaa`, `fxaa`, `auto`), the
   /// scene-wide default views inherit.
@@ -934,19 +910,9 @@ class StageMetadata {
   /// the scene-wide default views inherit.
   String filterQuality;
 
-  /// The visible background sky, when set.
-  SkyboxSpec? skybox;
-
-  /// Sky-driven lighting (a sky baked into the environment on a refresh
-  /// policy), when set. While set, it owns the scene environment, so
-  /// [environment] is not applied.
-  SkyEnvironmentSpec? skyEnvironment;
-
-  /// The global environment resource the stage's look comes from. When set, it
-  /// overrides the inline look fields above (the realizer resolves it to the
-  /// base look); when null, the inline fields are used.
-  //
-  // TODO(stage-env-inline): once authoring always uses a resource, remove the
-  // inline look fields and make this the only path.
+  /// The global environment resource the stage's look comes from (the
+  /// image-based-lighting environment, intensity, exposure, tone mapping,
+  /// reflection size, skybox, and sky lighting). The realizer defaults to a
+  /// studio look when this is null or does not resolve.
   LocalId? environmentRef;
 }

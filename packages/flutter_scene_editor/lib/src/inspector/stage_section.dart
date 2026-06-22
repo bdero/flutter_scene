@@ -23,35 +23,6 @@ const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
 // face cannot hold (see kMinRadianceCubeSize).
 const _reflectionSizes = <int?>[null, 256, 512, 1024, 2048];
 
-// The look fields an environment editor reads, for whichever it targets (the
-// stage's inline legacy look or an environment resource).
-typedef _Look = ({
-  EnvironmentSpec environment,
-  double environmentIntensity,
-  double exposure,
-  String toneMapping,
-  int? radianceCubeSize,
-  SkyboxSpec? skybox,
-});
-
-_Look _lookOfStage(StageMetadata stage) => (
-  environment: stage.environment,
-  environmentIntensity: stage.environmentIntensity,
-  exposure: stage.exposure,
-  toneMapping: stage.toneMapping,
-  radianceCubeSize: stage.radianceCubeSize,
-  skybox: stage.skybox,
-);
-
-_Look _lookOfEnvironment(EnvironmentResource e) => (
-  environment: e.environment,
-  environmentIntensity: e.environmentIntensity,
-  exposure: e.exposure,
-  toneMapping: e.toneMapping,
-  radianceCubeSize: e.radianceCubeSize,
-  skybox: e.skybox,
-);
-
 class StageSection extends StatelessWidget {
   const StageSection({super.key, required this.controller});
 
@@ -59,8 +30,8 @@ class StageSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The stage's global look comes from a referenced environment resource when
-    // set; otherwise the inline (legacy) stage fields are edited directly.
+    // The stage's global look is its referenced environment resource (the editor
+    // guarantees one exists on open).
     final ref = controller.document.stage.environmentRef;
     final resource = ref == null ? null : controller.document.resource(ref);
     final environment = resource is EnvironmentResource ? resource : null;
@@ -88,8 +59,8 @@ class StageSection extends StatelessWidget {
 }
 
 /// The environment look controls (environment kind, intensity, exposure, tone
-/// mapping, reflection resolution) for an environment resource, or the stage's
-/// inline legacy look when [environment] is null.
+/// mapping, reflection resolution) for an environment resource (the stage's
+/// global one or a volume's).
 class EnvironmentControls extends StatelessWidget {
   const EnvironmentControls({
     super.key,
@@ -101,8 +72,7 @@ class EnvironmentControls extends StatelessWidget {
 
   final EditorController controller;
 
-  /// The environment resource to edit (the stage's global one or a volume's),
-  /// or null to edit the stage's inline legacy look.
+  /// The environment resource to edit (the stage's global one or a volume's).
   final EnvironmentResource? environment;
 
   /// When set (a volume component's environment), slider drags preview onto
@@ -114,16 +84,11 @@ class EnvironmentControls extends StatelessWidget {
 
   void _set(String key, Object value) {
     final env = environment;
-    if (env != null) {
-      controller.run('setEnvironmentProperties', {
-        'environmentId': env.id.toToken(),
-        'properties': {key: value},
-      });
-    } else {
-      controller.run('setStageProperties', {
-        'properties': {key: value},
-      });
-    }
+    if (env == null) return;
+    controller.run('setEnvironmentProperties', {
+      'environmentId': env.id.toToken(),
+      'properties': {key: value},
+    });
   }
 
   void _previewExposure({double? exposure, double? environmentIntensity}) {
@@ -145,10 +110,8 @@ class EnvironmentControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final env = environment;
-    final look = env != null
-        ? _lookOfEnvironment(env)
-        : _lookOfStage(controller.document.stage);
-    final envType = switch (look.environment) {
+    if (env == null) return const SizedBox.shrink();
+    final envType = switch (env.environment) {
       EmptyEnvironment() => 'empty',
       AssetEnvironment() => 'asset',
       _ => 'studio',
@@ -207,14 +170,14 @@ class EnvironmentControls extends StatelessWidget {
           ),
         LiveSlider(
           label: 'Environment intensity',
-          value: look.environmentIntensity,
+          value: env.environmentIntensity,
           max: 3,
           onPreview: (v) => _previewExposure(environmentIntensity: v),
           onCommit: (v) => _set('environmentIntensity', v),
         ),
         LiveSlider(
           label: 'Exposure',
-          value: look.exposure,
+          value: env.exposure,
           max: 8,
           onPreview: (v) => _previewExposure(exposure: v),
           onCommit: (v) => _set('exposure', v),
@@ -224,8 +187,8 @@ class EnvironmentControls extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           title: const Text('Tone mapping', style: TextStyle(fontSize: 13)),
           trailing: DropdownButton<String>(
-            value: _toneMappingModes.contains(look.toneMapping)
-                ? look.toneMapping
+            value: _toneMappingModes.contains(env.toneMapping)
+                ? env.toneMapping
                 : 'pbrNeutral',
             items: [
               for (final mode in _toneMappingModes)
@@ -242,8 +205,8 @@ class EnvironmentControls extends StatelessWidget {
             style: TextStyle(fontSize: 13),
           ),
           trailing: DropdownButton<int>(
-            value: _reflectionSizes.contains(look.radianceCubeSize)
-                ? (look.radianceCubeSize ?? 0)
+            value: _reflectionSizes.contains(env.radianceCubeSize)
+                ? (env.radianceCubeSize ?? 0)
                 : 0,
             items: [
               for (final size in _reflectionSizes)
@@ -261,12 +224,12 @@ class EnvironmentControls extends StatelessWidget {
   }
 }
 
-/// Editor for the skybox and sky-driven lighting of an environment resource, or
-/// the stage's inline legacy look when [environment] is null. Procedural skies
-/// (gradient/physical) and the environment sky render with no asset loading.
-/// Parameter sliders and colors preview live; choosing a skybox type or
-/// toggling sky lighting applies on release. Per-parameter edits flow through
-/// `setSkyParameters`, structural changes through `setSkybox`.
+/// Editor for the skybox and sky-driven lighting of an environment resource (the
+/// stage's global one or a volume's). Procedural skies (gradient/physical) and
+/// the environment sky render with no asset loading. Parameter sliders and
+/// colors preview live; choosing a skybox type or toggling sky lighting applies
+/// on release. Per-parameter edits flow through `setEnvironmentSkyParameters`,
+/// structural changes through `setEnvironmentSkybox`.
 class SkySection extends StatelessWidget {
   const SkySection({
     super.key,
@@ -277,7 +240,7 @@ class SkySection extends StatelessWidget {
 
   final EditorController controller;
 
-  /// The environment resource to edit, or null to edit the stage's inline look.
+  /// The environment resource to edit (the stage's global one or a volume's).
   final EnvironmentResource? environment;
 
   /// When set, slider drags preview onto that node's live volume; otherwise
@@ -286,12 +249,10 @@ class SkySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stage = controller.document.stage;
     final env = environment;
-    final skyboxSpec = env != null ? env.skybox : stage.skybox;
-    final skyEnvironmentSpec = env != null
-        ? env.skyEnvironment
-        : stage.skyEnvironment;
+    if (env == null) return const SizedBox.shrink();
+    final skyboxSpec = env.skybox;
+    final skyEnvironmentSpec = env.skyEnvironment;
     final source = skyboxSpec?.source;
     final type = switch (source) {
       GradientSkySpec() => 'gradient',
@@ -308,14 +269,11 @@ class SkySection extends StatelessWidget {
     final castShadows = skyEnvironmentSpec?.castShadows ?? false;
     final proceduralSky = type == 'gradient' || type == 'physical';
 
-    // Route structural and parameter edits to the environment-resource
-    // commands when targeting a resource, else the stage commands.
-    final skyboxCommand = env != null ? 'setEnvironmentSkybox' : 'setSkybox';
-    final paramsCommand = env != null
-        ? 'setEnvironmentSkyParameters'
-        : 'setSkyParameters';
-    Map<String, Object> target() =>
-        env != null ? {'environmentId': env.id.toToken()} : const {};
+    // The look is an environment resource (the stage's global one or a
+    // volume's); edits target it by id.
+    const skyboxCommand = 'setEnvironmentSkybox';
+    const paramsCommand = 'setEnvironmentSkyParameters';
+    Map<String, Object> target() => {'environmentId': env.id.toToken()};
 
     // The type dropdown and lighting toggles are structural (the skybox command
     // keeps the tuned parameters across them); the per-parameter fields below

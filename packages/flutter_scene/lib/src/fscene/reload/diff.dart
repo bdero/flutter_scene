@@ -176,9 +176,14 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       staleNodes,
       changed,
     ),
+    // The stage changed when its own fields differ, or when the global
+    // environment resource it references changed (the look lives there, not
+    // inline), so editing the global look re-applies the stage on hot reload.
     stageChanged:
         canonicalJson(encodeStage(oldDocument.stage)) !=
-        canonicalJson(encodeStage(newDocument.stage)),
+            canonicalJson(encodeStage(newDocument.stage)) ||
+        (newDocument.stage.environmentRef != null &&
+            changedResources.contains(newDocument.stage.environmentRef)),
   );
 }
 

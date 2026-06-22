@@ -52,13 +52,12 @@ Future<String?> pickEnvironmentPath() async {
 /// an LDR image) and sets it as an environment resource's look.
 ///
 /// [environmentId] is the target environment resource (the stage's global
-/// environment or a volume's); when null the stage's global resource is used,
-/// falling back to the legacy inline stage look when there is none. When the
-/// scene is saved (a non-null `baseDirectory`), the file is copied under
-/// `imported/` and referenced relatively so it persists with the scene;
-/// otherwise the absolute path is referenced for the session. Returns the
-/// referenced asset path. The environment applies through the editor's
-/// disk-environment loader.
+/// environment or a volume's); when null the stage's global resource is used
+/// (the editor guarantees one exists). When the scene is saved (a non-null
+/// `baseDirectory`), the file is copied under `imported/` and referenced
+/// relatively so it persists with the scene; otherwise the absolute path is
+/// referenced for the session. Returns the referenced asset path. The
+/// environment applies through the editor's disk-environment loader.
 Future<String> importEnvironmentMap(
   EditorController controller,
   String path, {
@@ -67,29 +66,19 @@ Future<String> importEnvironmentMap(
   final assetRef = _importFileAsset(controller.baseDirectory, path);
   // Use the HDR for both lighting and the background. Sky-driven lighting owns
   // the scene environment, so turn it off and show the environment as the
-  // skybox. Target the given environment resource, else the stage's global
-  // resource, else the legacy inline stage look.
+  // skybox. Target the given environment resource, else the stage's global one.
   final envId = environmentId ?? controller.document.stage.environmentRef;
-  if (envId != null) {
-    final id = envId.toToken();
-    await controller.run('setEnvironmentProperties', {
-      'environmentId': id,
-      'properties': {'environment': 'asset', 'environmentAsset': assetRef},
-    });
-    await controller.run('setEnvironmentSkybox', {
-      'environmentId': id,
-      'sky': 'environment',
-      'lightScene': false,
-    });
-  } else {
-    await controller.run('setStageProperties', {
-      'properties': {'environment': 'asset', 'environmentAsset': assetRef},
-    });
-    await controller.run('setSkybox', {
-      'sky': 'environment',
-      'lightScene': false,
-    });
-  }
+  if (envId == null) return assetRef;
+  final id = envId.toToken();
+  await controller.run('setEnvironmentProperties', {
+    'environmentId': id,
+    'properties': {'environment': 'asset', 'environmentAsset': assetRef},
+  });
+  await controller.run('setEnvironmentSkybox', {
+    'environmentId': id,
+    'sky': 'environment',
+    'lightScene': false,
+  });
   return assetRef;
 }
 

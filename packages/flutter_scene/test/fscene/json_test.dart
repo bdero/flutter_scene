@@ -22,10 +22,15 @@ SceneDocument _sampleDocument() {
   );
   doc.generator = 'test';
   doc.featuresRequired.add('skinning');
-  doc.stage
-    ..exposure = 2.5
-    ..toneMapping = 'pbrNeutral'
-    ..environment = const AssetEnvironment(AssetRef('assets/env.png'));
+  final stageEnv = doc.addResource(
+    EnvironmentResource(
+      doc.newId(),
+      exposure: 2.5,
+      toneMapping: 'pbrNeutral',
+      environment: const AssetEnvironment(AssetRef('assets/env.png')),
+    ),
+  );
+  doc.stage.environmentRef = stageEnv.id;
 
   final payload = doc.addPayload(
     PayloadSpec(
@@ -101,8 +106,11 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
   expect(b.formatVersion, a.formatVersion);
   expect(b.generator, a.generator);
   expect(b.featuresRequired, a.featuresRequired);
-  expect(b.stage.exposure, a.stage.exposure);
-  expect(b.stage.environment, isA<AssetEnvironment>());
+  expect(b.stage.environmentRef, a.stage.environmentRef);
+  final envA = a.resources[a.stage.environmentRef!]! as EnvironmentResource;
+  final envB = b.resources[b.stage.environmentRef!]! as EnvironmentResource;
+  expect(envB.exposure, envA.exposure);
+  expect(envB.environment, isA<AssetEnvironment>());
   expect(b.nodes.keys.toSet(), a.nodes.keys.toSet());
   expect(b.roots, a.roots);
   expect(b.resources.keys.toSet(), a.resources.keys.toSet());

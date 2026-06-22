@@ -19,42 +19,67 @@ import 'package:flutter_scene/src/material/material_parameters.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
+// The stage's global look lives in an environment resource it references.
+EnvironmentResource _stageEnv(SceneDocument doc) =>
+    doc.resources[doc.stage.environmentRef!]! as EnvironmentResource;
+
+// A document whose stage references an environment resource carrying a sky look.
+// A fixed allocator makes two calls produce identical ids, so the diff tests can
+// compare independent builds.
 SceneDocument _skyDocument() {
-  final doc = SceneDocument();
+  final doc = SceneDocument(allocator: IdAllocator(session: 7));
   doc.createNode(name: 'thing', root: true);
-  doc.stage
-    ..exposure = 1.5
-    ..toneMapping = 'aces'
-    ..skybox = SkyboxSpec(
-      GradientSkySpec(zenithColor: Vector3(0.1, 0.2, 0.3), sunSharpness: 250.0),
-      intensity: 2.0,
-    )
-    ..skyEnvironment = SkyEnvironmentSpec(
-      FmatSkySpec(
-        const AssetRef('assets/sky.fmat'),
-        properties: {'sun_height': const DoubleValue(0.7)},
+  final env = doc.addResource(
+    EnvironmentResource(
+      doc.newId(),
+      exposure: 1.5,
+      toneMapping: 'aces',
+      skybox: SkyboxSpec(
+        GradientSkySpec(
+          zenithColor: Vector3(0.1, 0.2, 0.3),
+          sunSharpness: 250.0,
+        ),
+        intensity: 2.0,
       ),
-      refresh: 'interval',
-      intervalSeconds: 2.5,
-      faceResolution: 64,
-      equirectWidth: 256,
-    );
+      skyEnvironment: SkyEnvironmentSpec(
+        FmatSkySpec(
+          const AssetRef('assets/sky.fmat'),
+          properties: {'sun_height': const DoubleValue(0.7)},
+        ),
+        refresh: 'interval',
+        intervalSeconds: 2.5,
+        faceResolution: 64,
+        equirectWidth: 256,
+      ),
+    ),
+  );
+  doc.stage.environmentRef = env.id;
+  return doc;
+}
+
+// A document whose stage references an environment resource built by [look].
+SceneDocument _envDocument(void Function(EnvironmentResource) look) {
+  final doc = SceneDocument();
+  final env = doc.addResource(EnvironmentResource(doc.newId()));
+  look(env);
+  doc.stage.environmentRef = env.id;
   return doc;
 }
 
 void main() {
-  group('stage sky JSON', () {
+  group('stage environment-resource sky JSON', () {
     test('skybox and sky environment round-trip', () {
       final restored = readFscene(writeFscene(_skyDocument()));
+      final env = _stageEnv(restored);
 
-      final skybox = restored.stage.skybox!;
+      final skybox = env.skybox!;
       expect(skybox.intensity, 2.0);
       final gradient = skybox.source as GradientSkySpec;
       expect(gradient.zenithColor.x, closeTo(0.1, 1e-6));
       expect(gradient.zenithColor.z, closeTo(0.3, 1e-6));
       expect(gradient.sunSharpness, 250.0);
 
-      final skyEnv = restored.stage.skyEnvironment!;
+      final skyEnv = env.skyEnvironment!;
       expect(skyEnv.refresh, 'interval');
       expect(skyEnv.intervalSeconds, 2.5);
       expect(skyEnv.faceResolution, 64);
@@ -65,56 +90,65 @@ void main() {
     });
 
     test('sky-driven shadow flag round-trips', () {
-      final doc = SceneDocument();
-      doc.stage.skyEnvironment = SkyEnvironmentSpec(
-        GradientSkySpec(),
-        castShadows: true,
+      final doc = _envDocument(
+        (e) => e.skyEnvironment = SkyEnvironmentSpec(
+          GradientSkySpec(),
+          castShadows: true,
+        ),
       );
-      var restored = readFscene(writeFscene(doc));
-      expect(restored.stage.skyEnvironment!.castShadows, isTrue);
+      expect(
+        _stageEnv(readFscene(writeFscene(doc))).skyEnvironment!.castShadows,
+        isTrue,
+      );
 
       // The default (off) stays off and is omitted from the JSON.
-      doc.stage.skyEnvironment = SkyEnvironmentSpec(GradientSkySpec());
+      _stageEnv(doc).skyEnvironment = SkyEnvironmentSpec(GradientSkySpec());
       expect(writeFscene(doc).contains('castShadows'), isFalse);
-      restored = readFscene(writeFscene(doc));
-      expect(restored.stage.skyEnvironment!.castShadows, isFalse);
+      expect(
+        _stageEnv(readFscene(writeFscene(doc))).skyEnvironment!.castShadows,
+        isFalse,
+      );
     });
 
     test('environment and physical sky sources round-trip', () {
-      final doc = SceneDocument();
-      doc.stage.skybox = SkyboxSpec(EnvironmentSkySpec(blurriness: 0.4));
-      var restored = readFscene(writeFscene(doc));
-      final envSky = restored.stage.skybox!.source as EnvironmentSkySpec;
+      final doc = _envDocument(
+        (e) => e.skybox = SkyboxSpec(EnvironmentSkySpec(blurriness: 0.4)),
+      );
+      final envSky =
+          _stageEnv(readFscene(writeFscene(doc))).skybox!.source
+              as EnvironmentSkySpec;
       expect(envSky.blurriness, 0.4);
 
-      doc.stage.skybox = SkyboxSpec(
+      _stageEnv(doc).skybox = SkyboxSpec(
         PhysicalSkySpec(
           sunDirection: Vector3(0, 1, 0),
           turbidity: 4.0,
           energy: 1.5,
         ),
       );
-      restored = readFscene(writeFscene(doc));
-      final physical = restored.stage.skybox!.source as PhysicalSkySpec;
+      final physical =
+          _stageEnv(readFscene(writeFscene(doc))).skybox!.source
+              as PhysicalSkySpec;
       expect(physical.sunDirection.y, 1.0);
       expect(physical.turbidity, 4.0);
       expect(physical.energy, 1.5);
     });
 
-    test('a stage without a sky stays empty', () {
-      final restored = readFscene(writeFscene(SceneDocument()));
-      expect(restored.stage.skybox, isNull);
-      expect(restored.stage.skyEnvironment, isNull);
+    test('an environment without a sky stays empty', () {
+      final doc = _envDocument((_) {});
+      final env = _stageEnv(readFscene(writeFscene(doc)));
+      expect(env.skybox, isNull);
+      expect(env.skyEnvironment, isNull);
     });
   });
 
   group('stage environment JSON', () {
-    test('the base reflection size round-trips', () {
-      final doc = SceneDocument()..stage.radianceCubeSize = 512;
-      expect(readFscene(writeFscene(doc)).stage.radianceCubeSize, 512);
+    test('the reflection size round-trips', () {
+      final doc = _envDocument((e) => e.radianceCubeSize = 512);
+      expect(_stageEnv(readFscene(writeFscene(doc))).radianceCubeSize, 512);
       // Null (the engine default) is omitted.
       expect(
-        writeFscene(SceneDocument()).contains('radianceCubeSize'),
+        writeFscene(_envDocument((_) {})).contains('radianceCubeSize'),
         isFalse,
       );
     });
@@ -131,7 +165,7 @@ void main() {
     });
   });
 
-  test('compose deep-copies the stage sky', () {
+  test('compose deep-copies the stage environment sky', () {
     final host = _skyDocument();
     // Give the host an instance so compose produces a new document.
     final prefab = SceneDocument();
@@ -141,12 +175,12 @@ void main() {
     );
 
     final composed = composeScene(host, resolve: (_) => prefab);
-    final copied = composed.stage.skybox!.source as GradientSkySpec;
-    final original = host.stage.skybox!.source as GradientSkySpec;
+    final copied = _stageEnv(composed).skybox!.source as GradientSkySpec;
+    final original = _stageEnv(host).skybox!.source as GradientSkySpec;
     expect(copied.zenithColor, original.zenithColor);
     original.zenithColor.setValues(9, 9, 9);
     expect(copied.zenithColor.x, isNot(9));
-    expect(composed.stage.skyEnvironment!.refresh, 'interval');
+    expect(_stageEnv(composed).skyEnvironment!.refresh, 'interval');
   });
 
   group('diffScene stage comparison', () {
@@ -156,7 +190,7 @@ void main() {
 
     test('a sky tweak flags stageChanged', () {
       final next = _skyDocument();
-      (next.stage.skybox!.source as GradientSkySpec).sunSharpness = 100.0;
+      (_stageEnv(next).skybox!.source as GradientSkySpec).sunSharpness = 100.0;
       final diff = diffScene(_skyDocument(), next);
       expect(diff.stageChanged, isTrue);
       expect(diff.isEmpty, isFalse);
@@ -165,7 +199,7 @@ void main() {
 
     test('an exposure tweak flags stageChanged', () {
       final next = _skyDocument();
-      next.stage.exposure = 3.0;
+      _stageEnv(next).exposure = 3.0;
       expect(diffScene(_skyDocument(), next).stageChanged, isTrue);
     });
   });

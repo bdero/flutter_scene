@@ -98,101 +98,23 @@ Future<void> realizeStage(
     ui.FilterQuality.medium,
   );
 
-  // The stage's global look comes from a referenced environment resource when
-  // set; otherwise from the stage's own inline look fields (legacy).
+  // The stage's global look is its referenced environment resource; a missing
+  // or unresolved reference falls back to the studio default.
   final envRef = stage.environmentRef;
-  final envResource = envRef == null ? null : document.resource(envRef);
-  if (envResource is EnvironmentResource) {
-    (await realizeEnvironmentSettings(
-      environment: envResource.environment,
-      environmentIntensity: envResource.environmentIntensity,
-      exposure: envResource.exposure,
-      toneMapping: envResource.toneMapping,
-      radianceCubeSize: envResource.radianceCubeSize,
-      skybox: envResource.skybox,
-      skyEnvironment: envResource.skyEnvironment,
-      bundle: bundle,
-      environmentLoader: environmentLoader,
-      payloadLookup: payloadLookup,
-    )).applyTo(scene);
-  } else {
-    scene.environmentIntensity = stage.environmentIntensity;
-    scene.exposure = stage.exposure;
-    scene.toneMapping = _toneMapping(stage.toneMapping);
-
-    // Realize each distinct sky source once so a skybox and sky lighting
-    // describing the same sky share one live source.
-    final realized = <String, SkySource?>{};
-    Future<SkySource?> sourceFor(SkySourceSpec spec) async =>
-        realized[canonicalJson(encodeSkySource(spec))] ??=
-            await _realizeSkySource(spec, bundle);
-
-    final skyEnvironmentSpec = stage.skyEnvironment;
-    if (skyEnvironmentSpec == null) {
-      scene.skyEnvironment = null;
-      await _withRadianceCubeSize(
-        stage.radianceCubeSize,
-        () => _applyEnvironment(
-          stage.environment,
-          scene,
-          bundle,
-          environmentLoader,
-          payloadLookup,
-        ),
-      );
-    } else {
-      final source = await sourceFor(skyEnvironmentSpec.source);
-      if (source is ShaderSkySource) {
-        scene.skyEnvironment = SkyEnvironment(
-          source,
-          refresh: _refresh(skyEnvironmentSpec.refresh),
-          interval: Duration(
-            microseconds: (skyEnvironmentSpec.intervalSeconds * 1e6).round(),
-          ),
-          faceResolution: skyEnvironmentSpec.faceResolution,
-          equirectWidth: skyEnvironmentSpec.equirectWidth,
-        );
-      } else {
-        if (source != null) {
-          debugPrint(
-            'fscene: skyEnvironment needs a shader sky (fmat, gradient, or '
-            'physical); skipping the binding',
-          );
-        }
-        scene.skyEnvironment = null;
-        await _withRadianceCubeSize(
-          stage.radianceCubeSize,
-          () => _applyEnvironment(
-            stage.environment,
-            scene,
-            bundle,
-            environmentLoader,
-            payloadLookup,
-          ),
-        );
-      }
-    }
-
-    final skyboxSpec = stage.skybox;
-    if (skyboxSpec == null) {
-      scene.skybox = null;
-    } else {
-      final source = await sourceFor(skyboxSpec.source);
-      scene.skybox = source == null
-          ? null
-          : Skybox(source, intensity: skyboxSpec.intensity);
-    }
-
-    // Drive a sun light from the sky-lighting source when shadows are enabled
-    // and that source has a sun. It shares the bound sky source, so the visible
-    // disk, the baked IBL, and the cast shadow all track one sun.
-    final boundSkySource = scene.skyEnvironment?.source;
-    if (skyEnvironmentSpec?.castShadows == true && boundSkySource is SunSky) {
-      scene.sunLight = SunLight(boundSkySource as SunSky);
-    } else {
-      scene.sunLight = null;
-    }
-  }
+  final resource = envRef == null ? null : document.resource(envRef);
+  final look = resource is EnvironmentResource ? resource : null;
+  (await realizeEnvironmentSettings(
+    environment: look?.environment ?? const StudioEnvironment(),
+    environmentIntensity: look?.environmentIntensity ?? 1.0,
+    exposure: look?.exposure ?? 1.0,
+    toneMapping: look?.toneMapping ?? 'pbrNeutral',
+    radianceCubeSize: look?.radianceCubeSize,
+    skybox: look?.skybox,
+    skyEnvironment: look?.skyEnvironment,
+    bundle: bundle,
+    environmentLoader: environmentLoader,
+    payloadLookup: payloadLookup,
+  )).applyTo(scene);
 
   // Spatial environment-volume components blend over the stage as the global
   // base. Capture the just-applied stage look as that base so the components
@@ -370,8 +292,7 @@ bool _skyboxReusable(Skybox? live, SkyboxSpec? spec) {
 // so the caller falls back to a rebuild.
 //
 // TODO(radiance-size-reapply): a radianceCubeSize-only change is not detected
-// (the live map does not expose its built size), so it is ignored on reuse,
-// matching _applyEnvironment.
+// (the live map does not expose its built size), so it is ignored on reuse.
 bool _environmentReusable(EnvironmentMap? live, EnvironmentSpec spec) {
   if (live == null) return false;
   final current = _environmentSpec[live];
@@ -448,7 +369,9 @@ Future<void> _withRadianceCubeSize(
   }
 }
 
-/// Reads [scene]'s stage render settings back into [document]'s stage.
+/// Reads [scene]'s stage render settings back into [document], writing the look
+/// into the stage's environment resource (creating and linking one when the
+/// stage has none).
 ///
 /// The reverse of [realizeStage]. An environment the realizer produced
 /// recovers its source spec, and an fmat sky loaded through `loadFmatSky`
@@ -457,16 +380,18 @@ Future<void> _withRadianceCubeSize(
 /// and a custom [ShaderSkySource] is dropped, each with a warning.
 void serializeStage(Scene scene, SceneDocument document) {
   final stage = document.stage;
-  stage.environmentIntensity = scene.environmentIntensity;
-  stage.exposure = scene.exposure;
-  stage.toneMapping = scene.toneMapping.name;
   stage.antiAliasingMode = scene.antiAliasingMode.name;
   stage.renderScale = scene.renderScale;
   stage.filterQuality = scene.filterQuality.name;
 
+  final resource = _ensureStageEnvironment(document);
+  resource.environmentIntensity = scene.environmentIntensity;
+  resource.exposure = scene.exposure;
+  resource.toneMapping = scene.toneMapping.name;
+
   final skyEnvironment = scene.skyEnvironment;
   if (skyEnvironment == null) {
-    stage.skyEnvironment = null;
+    resource.skyEnvironment = null;
     final environment = scene.environment;
     var spec = environment == null ? null : _environmentSpec[environment];
     if (spec == null && environment != null) {
@@ -476,7 +401,7 @@ void serializeStage(Scene scene, SceneDocument document) {
       if (assetPath != null) spec = AssetEnvironment(AssetRef(assetPath));
     }
     if (spec != null) {
-      stage.environment = spec;
+      resource.environment = spec;
     } else {
       if (environment != null) {
         debugPrint(
@@ -485,7 +410,7 @@ void serializeStage(Scene scene, SceneDocument document) {
           'the studio default',
         );
       }
-      stage.environment = const StudioEnvironment();
+      resource.environment = const StudioEnvironment();
     }
   } else {
     final source = _serializeSkySource(skyEnvironment.source);
@@ -495,7 +420,7 @@ void serializeStage(Scene scene, SceneDocument document) {
       scene.sunLight?.source,
       skyEnvironment.source,
     );
-    stage.skyEnvironment = source == null
+    resource.skyEnvironment = source == null
         ? null
         : SkyEnvironmentSpec(
             source,
@@ -509,41 +434,27 @@ void serializeStage(Scene scene, SceneDocument document) {
 
   final skybox = scene.skybox;
   if (skybox == null) {
-    stage.skybox = null;
+    resource.skybox = null;
   } else {
     final source = _serializeSkySource(skybox.source);
-    stage.skybox = source == null
+    resource.skybox = source == null
         ? null
         : SkyboxSpec(source, intensity: skybox.intensity);
   }
 }
 
-Future<void> _applyEnvironment(
-  EnvironmentSpec spec,
-  Scene scene,
-  AssetBundle? bundle,
-  EnvironmentAssetLoader? environmentLoader,
-  EnvironmentPayloadLookup? payloadLookup,
-) async {
-  // Skip rebuilding (and re-decoding an asset panorama) when the current
-  // environment already realized from an identical spec, the common case on
-  // a stage hot reload that only tweaked a scalar.
-  final currentEnvironment = scene.environment;
-  final current = currentEnvironment == null
-      ? null
-      : _environmentSpec[currentEnvironment];
-  if (current != null &&
-      canonicalJson(_encodeEnvironment(current)) ==
-          canonicalJson(_encodeEnvironment(spec))) {
-    return;
-  }
-  final environment = await _buildEnvironment(
-    spec,
-    bundle,
-    environmentLoader,
-    payloadLookup,
+/// The stage's global environment resource, creating and linking a studio
+/// default when the stage references none, so the look always has a resource
+/// home (the format carries no inline stage look).
+EnvironmentResource _ensureStageEnvironment(SceneDocument document) {
+  final ref = document.stage.environmentRef;
+  final existing = ref == null ? null : document.resource(ref);
+  if (existing is EnvironmentResource) return existing;
+  final resource = document.addResource(
+    EnvironmentResource(document.newId(), name: 'Environment'),
   );
-  if (environment != null) scene.environment = environment;
+  document.stage.environmentRef = resource.id;
+  return resource;
 }
 
 /// Builds the [EnvironmentMap] for [spec], stamping it so [serializeStage] can

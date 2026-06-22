@@ -594,15 +594,9 @@ StageMetadata _copyStage(StageMetadata s) => StageMetadata(
   upAxis: s.upAxis,
   handedness: s.handedness,
   unitsPerMeter: s.unitsPerMeter,
-  environment: s.environment,
-  environmentIntensity: s.environmentIntensity,
-  exposure: s.exposure,
-  toneMapping: s.toneMapping,
-  radianceCubeSize: s.radianceCubeSize,
-  skybox: s.skybox == null ? null : _copySkybox(s.skybox!),
-  skyEnvironment: s.skyEnvironment == null
-      ? null
-      : _copySkyEnvironment(s.skyEnvironment!),
+  antiAliasingMode: s.antiAliasingMode,
+  renderScale: s.renderScale,
+  filterQuality: s.filterQuality,
   environmentRef: s.environmentRef,
 );
 

@@ -155,6 +155,10 @@ class EditorController extends ChangeNotifier {
     EditorSession session, {
     String? baseDirectory,
   }) async {
+    // The global look lives in an environment resource the stage references.
+    // Guarantee one exists (a studio default for an imported or legacy scene
+    // that has none), so the look is always editable through the resource path.
+    _ensureStageEnvironment(session.document);
     final controller = EditorController._(session, Scene(), baseDirectory);
     // Keep prefab-internal nodes (which live only in the composed document)
     // selectable across edits, not just source nodes; but not synthetic compose
@@ -194,6 +198,18 @@ class EditorController extends ChangeNotifier {
         _highlighted.add(live);
       }
     }
+  }
+
+  // Ensures the stage references an environment resource, creating and linking
+  // a studio default when it does not (an imported or legacy scene). Runs before
+  // history starts, so it is part of the document's initial state.
+  static void _ensureStageEnvironment(SceneDocument document) {
+    final ref = document.stage.environmentRef;
+    if (ref != null && document.resource(ref) is EnvironmentResource) return;
+    final resource = document.addResource(
+      EnvironmentResource(document.newId(), name: 'Environment'),
+    );
+    document.stage.environmentRef = resource.id;
   }
 
   /// Opens a controller over a new empty document.
