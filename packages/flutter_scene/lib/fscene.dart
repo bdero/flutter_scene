@@ -88,6 +88,7 @@ export 'src/fscene/specs.dart'
         ComponentSpec,
         CuboidGeometrySpec,
         EmptyEnvironment,
+        EnvironmentResource,
         EnvironmentSkySpec,
         EnvironmentSpec,
         FmatSkySpec,

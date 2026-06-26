@@ -119,9 +119,15 @@ SceneDocument _buildDocument(Uint8List pngBytes) {
     sunDirection: vm.Vector3(0.3, 0.25, 0.8),
     sunColor: vm.Vector3(4.0, 2.6, 1.6),
   );
-  doc.stage
-    ..skybox = SkyboxSpec(sky)
-    ..skyEnvironment = SkyEnvironmentSpec(sky);
+  // The stage's global look lives in an environment resource it references.
+  final environment = doc.addResource(
+    EnvironmentResource(
+      doc.newId(),
+      skybox: SkyboxSpec(sky),
+      skyEnvironment: SkyEnvironmentSpec(sky),
+    ),
+  );
+  doc.stage.environmentRef = environment.id;
 
   // A sun, pitched down toward the scene.
   doc.createNode(
