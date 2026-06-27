@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -299,7 +300,7 @@ abstract class Geometry {
   /// model transform from the instance-rate vertex buffer (slot 1) rather
   /// than a per-draw uniform, so every draw must bind an instance buffer.
   @internal
-  gpu.VertexLayout? get instancedVertexLayout => null;
+  VertexLayoutDescriptor? get instancedVertexLayout => null;
 }
 
 /// Geometry whose vertices use the unskinned 48-byte layout: position
@@ -316,7 +317,8 @@ class UnskinnedGeometry extends Geometry {
   }
 
   @override
-  gpu.VertexLayout? get instancedVertexLayout => kUnskinnedInstancedLayout;
+  VertexLayoutDescriptor? get instancedVertexLayout =>
+      kUnskinnedInstancedLayout;
 
   @override
   void bind(
@@ -486,54 +488,59 @@ class SkinnedGeometry extends Geometry {
 }
 
 /// The two-buffer pipeline layout for the unskinned vertex shader: slot 0
-/// carries the interleaved 48-byte vertex stream, slot 1 carries the
-/// instance-rate model matrix as four vec4 columns (64 bytes per instance).
+/// carries the interleaved 48-byte vertex stream (position, normal, texture
+/// coords, color), slot 1 carries the instance-rate model matrix as four
+/// vec4 columns (64 bytes per instance).
+///
+/// This is the canonical described layout; its slot-0 stride is
+/// [kUnskinnedPerVertexSize] and its attribute offsets match the bytes
+/// [InterleavedLayoutAdapter.packUnskinned] emits.
 @internal
-final gpu.VertexLayout kUnskinnedInstancedLayout = gpu.VertexLayout(
-  buffers: [
-    gpu.VertexBuffer(
+final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
+  buffers: const [
+    VertexBufferDescriptor(
       strideInBytes: kUnskinnedPerVertexSize,
-      attributes: const [
-        gpu.VertexAttribute(
+      attributes: [
+        VertexAttributeDescriptor(
           name: 'position',
           format: gpu.VertexFormat.float32x3,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'normal',
           format: gpu.VertexFormat.float32x3,
           offsetInBytes: 12,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'texture_coords',
           format: gpu.VertexFormat.float32x2,
           offsetInBytes: 24,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'color',
           format: gpu.VertexFormat.float32x4,
           offsetInBytes: 32,
         ),
       ],
     ),
-    gpu.VertexBuffer(
+    VertexBufferDescriptor(
       strideInBytes: 64,
       stepMode: gpu.VertexStepMode.instance,
-      attributes: const [
-        gpu.VertexAttribute(
+      attributes: [
+        VertexAttributeDescriptor(
           name: 'model_transform_0',
           format: gpu.VertexFormat.float32x4,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'model_transform_1',
           format: gpu.VertexFormat.float32x4,
           offsetInBytes: 16,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'model_transform_2',
           format: gpu.VertexFormat.float32x4,
           offsetInBytes: 32,
         ),
-        gpu.VertexAttribute(
+        VertexAttributeDescriptor(
           name: 'model_transform_3',
           format: gpu.VertexFormat.float32x4,
           offsetInBytes: 48,

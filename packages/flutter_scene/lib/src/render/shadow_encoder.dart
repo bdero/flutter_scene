@@ -3,15 +3,8 @@ import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
-
-/// Process-lifetime cache of depth-pass render pipelines, keyed by vertex
-/// shader. The depth fragment shader is constant, so only the (skinned /
-/// unskinned) vertex shader varies; the engine loads each shader once, so
-/// the depth pass only ever needs two pipelines. Caching them keeps the
-/// shadow pass from rebuilding a pipeline for every caster, every cascade,
-/// every frame.
-final Map<gpu.Shader, gpu.RenderPipeline> _depthPipelineCache = {};
 
 /// Records each opaque shadow caster's depth into a shadow-map render
 /// pass, from a directional light's point of view.
@@ -72,13 +65,11 @@ class ShadowEncoder {
       }
     }
     _renderPass.clearBindings();
-    final pipeline = _depthPipelineCache[item.geometry.vertexShader] ??= gpu
-        .gpuContext
-        .createRenderPipeline(
-          item.geometry.vertexShader,
-          _depthShader,
-          vertexLayout: item.geometry.instancedVertexLayout,
-        );
+    final pipeline = resolvePipeline(
+      item.geometry.vertexShader,
+      _depthShader,
+      vertexLayout: item.geometry.instancedVertexLayout,
+    );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
