@@ -13,7 +13,7 @@ import 'package:flutter_scene/scene.dart' hide Material;
 // The packed-triangle intersector is test-only surface; reach it directly.
 // ignore: implementation_imports
 import 'package:flutter_scene/src/raycast.dart'
-    show PackedTriangleHit, intersectPackedTriangles;
+    show PackedTriangleHit, intersectPackedTriangles, intersectSoATriangles;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu show IndexType;
 import 'package:vector_math/vector_math.dart';
@@ -161,6 +161,71 @@ void main() {
         Ray.originDirection(Vector3(0.3, -0.2, 5), Vector3(0, 0, -1)),
       ).single;
       expect(hit.localNormal.dot(Vector3(0, 0, 1)).abs(), closeTo(1.0, 1e-6));
+    });
+  });
+
+  group('structure-of-arrays triangle intersection (GPU-free)', () {
+    // The same quad as the interleaved test, but position and texcoord come
+    // from separate tightly packed lists.
+    final positions = Float32List.fromList([
+      -0.5, -0.5, 0, //
+      0.5, -0.5, 0, //
+      0.5, 0.5, 0, //
+      -0.5, 0.5, 0, //
+    ]);
+    final texCoords = Float32List.fromList([0, 1, 1, 1, 1, 0, 0, 0]);
+    final indices = _packIndices16([0, 1, 2, 0, 2, 3]);
+
+    List<PackedTriangleHit> cast(Ray ray) {
+      final hits = <PackedTriangleHit>[];
+      intersectSoATriangles(
+        positions: positions,
+        texCoords: texCoords,
+        indices: indices,
+        indexType: gpu.IndexType.int16,
+        indexCount: 6,
+        vertexCount: 4,
+        localRay: ray,
+        maxDistance: 1e9,
+        emit: hits.add,
+      );
+      return hits;
+    }
+
+    test('matches the interleaved intersector on a center hit', () {
+      final hits = cast(
+        Ray.originDirection(Vector3(0, 0, 5), Vector3(0, 0, -1)),
+      );
+      expect(hits, isNotEmpty);
+      expect(hits.first.t, closeTo(5.0, 1e-6));
+      expect(hits.first.uv.x, closeTo(0.5, 1e-6));
+      expect(hits.first.uv.y, closeTo(0.5, 1e-6));
+    });
+
+    test('interpolates uv toward a corner like the interleaved path', () {
+      final hits = cast(
+        Ray.originDirection(Vector3(0.4, -0.1, 5), Vector3(0, 0, -1)),
+      );
+      expect(hits, hasLength(1));
+      expect(hits.first.uv.x, closeTo(0.9, 1e-5));
+      expect(hits.first.uv.y, closeTo(0.6, 1e-5));
+    });
+
+    test('reports a zero uv when texcoords are absent', () {
+      final hits = <PackedTriangleHit>[];
+      intersectSoATriangles(
+        positions: positions,
+        texCoords: null,
+        indices: indices,
+        indexType: gpu.IndexType.int16,
+        indexCount: 6,
+        vertexCount: 4,
+        localRay: Ray.originDirection(Vector3(0, 0, 5), Vector3(0, 0, -1)),
+        maxDistance: 1e9,
+        emit: hits.add,
+      );
+      expect(hits, isNotEmpty);
+      expect(hits.first.uv, Vector2.zero());
     });
   });
 

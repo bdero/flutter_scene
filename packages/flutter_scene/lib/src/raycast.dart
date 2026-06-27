@@ -177,12 +177,21 @@ void _testNodeMesh(
     final geometry = primitives[p].geometry;
     if (geometry.primitiveType != gpu.PrimitiveType.triangle) continue;
     final data = geometry.cpuMeshData;
-    final vertices = data.vertices;
-    if (vertices == null || data.vertexCount == 0) continue;
+    if (data.vertexCount == 0) continue;
 
-    final stride = vertices.lengthInBytes ~/ data.vertexCount;
-    if (stride != kUnskinnedPerVertexSize && stride != kSkinnedPerVertexSize) {
-      continue; // custom layout; not raycastable
+    // De-interleaved geometry exposes structure-of-arrays attributes;
+    // interleaved geometry exposes a single packed buffer. Either is
+    // raycastable; a custom interleaved layout (unexpected stride) is not.
+    final positions = data.positions;
+    final vertices = data.vertices;
+    int? stride;
+    if (positions == null) {
+      if (vertices == null) continue;
+      stride = vertices.lengthInBytes ~/ data.vertexCount;
+      if (stride != kUnskinnedPerVertexSize &&
+          stride != kSkinnedPerVertexSize) {
+        continue; // custom layout; not raycastable
+      }
     }
 
     // Node-local bounds early-out.
@@ -196,6 +205,8 @@ void _testNodeMesh(
       primitiveIndex: p,
       vertices: vertices,
       stride: stride,
+      positions: positions,
+      texCoords: data.texCoords,
       indices: data.indices,
       indexType: data.indexType,
       indexCount: data.indexCount,
@@ -225,13 +236,78 @@ typedef PackedTriangleHit = ({
   Vector3 localNormal,
 });
 
-/// Intersects [localRay] with the triangles of an engine-layout packed
+/// Intersects [localRay] with the triangles of an engine-layout interleaved
 /// vertex buffer (and optional index buffer), emitting one record per hit
 /// (both faces). Pure math over the packed bytes; exposed for testing.
 @visibleForTesting
 void intersectPackedTriangles({
   required ByteData vertices,
   required int stride,
+  required ByteData? indices,
+  required gpu.IndexType indexType,
+  required int indexCount,
+  required int vertexCount,
+  required Ray localRay,
+  required double maxDistance,
+  required void Function(PackedTriangleHit) emit,
+}) {
+  _intersectTriangles(
+    getPosition: (v) => Vector3(
+      vertices.getFloat32(v * stride + _positionOffset, Endian.little),
+      vertices.getFloat32(v * stride + _positionOffset + 4, Endian.little),
+      vertices.getFloat32(v * stride + _positionOffset + 8, Endian.little),
+    ),
+    getTexCoord: (v) => Vector2(
+      vertices.getFloat32(v * stride + _texCoordOffset, Endian.little),
+      vertices.getFloat32(v * stride + _texCoordOffset + 4, Endian.little),
+    ),
+    indices: indices,
+    indexType: indexType,
+    indexCount: indexCount,
+    vertexCount: vertexCount,
+    localRay: localRay,
+    maxDistance: maxDistance,
+    emit: emit,
+  );
+}
+
+/// Structure-of-arrays variant: position (3 floats/vertex) and optional
+/// texture coordinates (2 floats/vertex) come from separate lists. Exposed
+/// for testing.
+@visibleForTesting
+void intersectSoATriangles({
+  required Float32List positions,
+  Float32List? texCoords,
+  required ByteData? indices,
+  required gpu.IndexType indexType,
+  required int indexCount,
+  required int vertexCount,
+  required Ray localRay,
+  required double maxDistance,
+  required void Function(PackedTriangleHit) emit,
+}) {
+  _intersectTriangles(
+    getPosition: (v) =>
+        Vector3(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]),
+    getTexCoord: texCoords == null
+        ? null
+        : (v) => Vector2(texCoords[v * 2], texCoords[v * 2 + 1]),
+    indices: indices,
+    indexType: indexType,
+    indexCount: indexCount,
+    vertexCount: vertexCount,
+    localRay: localRay,
+    maxDistance: maxDistance,
+    emit: emit,
+  );
+}
+
+/// The layout-agnostic triangle intersection core. Reads position (and
+/// optional texcoord) through accessors so it serves both the interleaved
+/// and structure-of-arrays vertex layouts.
+void _intersectTriangles({
+  required Vector3 Function(int) getPosition,
+  Vector2 Function(int)? getTexCoord,
   required ByteData? indices,
   required gpu.IndexType indexType,
   required int indexCount,
@@ -248,12 +324,6 @@ void intersectPackedTriangles({
         : indices.getUint32(i * 4, Endian.little);
   }
 
-  Vector3 position(int v) => Vector3(
-    vertices.getFloat32(v * stride + _positionOffset, Endian.little),
-    vertices.getFloat32(v * stride + _positionOffset + 4, Endian.little),
-    vertices.getFloat32(v * stride + _positionOffset + 8, Endian.little),
-  );
-
   final origin = localRay.origin;
   final direction = localRay.direction;
 
@@ -261,9 +331,9 @@ void intersectPackedTriangles({
     final i0 = vertexIndex(t * 3);
     final i1 = vertexIndex(t * 3 + 1);
     final i2 = vertexIndex(t * 3 + 2);
-    final a = position(i0);
-    final b = position(i1);
-    final c = position(i2);
+    final a = getPosition(i0);
+    final b = getPosition(i1);
+    final c = getPosition(i2);
 
     // Moller-Trumbore, both faces.
     final edge1 = b - a;
@@ -281,20 +351,18 @@ void intersectPackedTriangles({
     final rayT = edge2.dot(qvec) * invDet;
     if (rayT <= 0.0 || rayT > maxDistance) continue;
 
-    // The engine's fixed vertex layouts always carry tex_coords, so uv is
-    // non-null for every standard-layout hit (the hit field stays nullable
-    // for future custom layouts).
     final w = 1.0 - u - v;
-    Vector2 texCoord(int vtx) => Vector2(
-      vertices.getFloat32(vtx * stride + _texCoordOffset, Endian.little),
-      vertices.getFloat32(vtx * stride + _texCoordOffset + 4, Endian.little),
-    );
+    // The engine's fixed vertex layouts always carry tex_coords; uv is zero
+    // only for a custom layout that omits them.
+    final uv = getTexCoord == null
+        ? Vector2.zero()
+        : getTexCoord(i0) * w + getTexCoord(i1) * u + getTexCoord(i2) * v;
 
     emit((
       t: rayT,
       barycentrics: Vector3(w, u, v),
       triangleIndex: t,
-      uv: texCoord(i0) * w + texCoord(i1) * u + texCoord(i2) * v,
+      uv: uv,
       localNormal: edge1.cross(edge2)..normalize(),
     ));
   }
@@ -303,8 +371,10 @@ void intersectPackedTriangles({
 void _testTriangles({
   required Node node,
   required int primitiveIndex,
-  required ByteData vertices,
-  required int stride,
+  ByteData? vertices,
+  int? stride,
+  Float32List? positions,
+  Float32List? texCoords,
   required ByteData? indices,
   required gpu.IndexType indexType,
   required int indexCount,
@@ -316,35 +386,51 @@ void _testTriangles({
   required double maxDistance,
   required void Function(SceneRaycastHit) emit,
 }) {
-  intersectPackedTriangles(
-    vertices: vertices,
-    stride: stride,
-    indices: indices,
-    indexType: indexType,
-    indexCount: indexCount,
-    vertexCount: vertexCount,
-    localRay: localRay,
-    maxDistance: maxDistance,
-    emit: (hit) {
-      // hit.t is in world units because the local direction is the
-      // transformed (unnormalized) world unit direction.
-      final worldPoint = worldOrigin + worldDirection * hit.t;
-      final worldNormal = _transformNormal(worldTransform, hit.localNormal);
-      if (worldNormal.dot(worldDirection) > 0) worldNormal.negate();
-      emit(
-        SceneRaycastHit(
-          node: node,
-          distance: hit.t,
-          worldPoint: worldPoint,
-          worldNormal: worldNormal,
-          uv: hit.uv,
-          barycentrics: hit.barycentrics,
-          triangleIndex: hit.triangleIndex,
-          primitiveIndex: primitiveIndex,
-        ),
-      );
-    },
-  );
+  void onHit(PackedTriangleHit hit) {
+    // hit.t is in world units because the local direction is the
+    // transformed (unnormalized) world unit direction.
+    final worldPoint = worldOrigin + worldDirection * hit.t;
+    final worldNormal = _transformNormal(worldTransform, hit.localNormal);
+    if (worldNormal.dot(worldDirection) > 0) worldNormal.negate();
+    emit(
+      SceneRaycastHit(
+        node: node,
+        distance: hit.t,
+        worldPoint: worldPoint,
+        worldNormal: worldNormal,
+        uv: hit.uv,
+        barycentrics: hit.barycentrics,
+        triangleIndex: hit.triangleIndex,
+        primitiveIndex: primitiveIndex,
+      ),
+    );
+  }
+
+  if (positions != null) {
+    intersectSoATriangles(
+      positions: positions,
+      texCoords: texCoords,
+      indices: indices,
+      indexType: indexType,
+      indexCount: indexCount,
+      vertexCount: vertexCount,
+      localRay: localRay,
+      maxDistance: maxDistance,
+      emit: onHit,
+    );
+  } else {
+    intersectPackedTriangles(
+      vertices: vertices!,
+      stride: stride!,
+      indices: indices,
+      indexType: indexType,
+      indexCount: indexCount,
+      vertexCount: vertexCount,
+      localRay: localRay,
+      maxDistance: maxDistance,
+      emit: onHit,
+    );
+  }
 }
 
 /// Applies the linear part of [transform]'s inverse transpose to [normal],

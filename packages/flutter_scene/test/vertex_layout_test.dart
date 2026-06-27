@@ -8,8 +8,8 @@ import 'package:flutter_scene/src/geometry/geometry.dart'
     show
         kUnskinnedInstancedLayout,
         kUnskinnedPositionOnlyLayout,
-        kUnskinnedSplitColorLayout,
-        kUnskinnedSplitDepthLayout;
+        kUnskinnedSoAColorLayout,
+        kUnskinnedSoADepthLayout;
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -114,32 +114,25 @@ void main() {
     });
   });
 
-  group('de-interleaved split layouts', () {
-    test('color layout has tight position, attribute, and instance slots', () {
-      final layout = kUnskinnedSplitColorLayout.toGpuLayout();
-      expect(layout.buffers, hasLength(3));
-
-      // Slot 0: tight 12-byte position.
-      expect(layout.buffers[0].strideInBytes, 12);
-      expect(layout.buffers[0].attributes.map((a) => a.name), ['position']);
-
-      // Slot 1: the 36-byte attribute stream, offsets matching the split
-      // (normal at 0, texcoord at 12, color at 20).
-      final rest = layout.buffers[1];
-      expect(rest.strideInBytes, 36);
-      expect(rest.attributes.map((a) => (a.name, a.offsetInBytes)), [
-        ('normal', 0),
-        ('texture_coords', 12),
-        ('color', 20),
-      ]);
-
-      // Slot 2: the instance-rate model matrix.
-      expect(layout.buffers[2].strideInBytes, 64);
-      expect(layout.buffers[2].stepMode, gpu.VertexStepMode.instance);
+  group('structure-of-arrays layouts', () {
+    test('color layout is one tight buffer per attribute plus instance', () {
+      final layout = kUnskinnedSoAColorLayout.toGpuLayout();
+      expect(layout.buffers, hasLength(5));
+      expect(
+        layout.buffers.map((b) => (b.strideInBytes, b.attributes.first.name)),
+        [
+          (12, 'position'),
+          (12, 'normal'),
+          (8, 'texture_coords'),
+          (16, 'color'),
+          (64, 'model_transform_0'),
+        ],
+      );
+      expect(layout.buffers.last.stepMode, gpu.VertexStepMode.instance);
     });
 
     test('depth layout binds only tight position plus the instance slot', () {
-      final layout = kUnskinnedSplitDepthLayout.toGpuLayout();
+      final layout = kUnskinnedSoADepthLayout.toGpuLayout();
       expect(layout.buffers, hasLength(2));
       expect(layout.buffers[0].strideInBytes, 12);
       expect(layout.buffers[0].attributes.map((a) => a.name), ['position']);
@@ -150,8 +143,8 @@ void main() {
       final ids = {
         vertexLayoutId(kUnskinnedInstancedLayout),
         vertexLayoutId(kUnskinnedPositionOnlyLayout),
-        vertexLayoutId(kUnskinnedSplitColorLayout),
-        vertexLayoutId(kUnskinnedSplitDepthLayout),
+        vertexLayoutId(kUnskinnedSoAColorLayout),
+        vertexLayoutId(kUnskinnedSoADepthLayout),
       };
       expect(ids, hasLength(4));
     });

@@ -65,8 +65,8 @@ void main() {
     });
   });
 
-  group('splitUnskinnedStreams', () {
-    test('separates position from the remaining attributes', () {
+  group('splitUnskinnedAttributes', () {
+    test('separates the interleaved buffer into four per-attribute streams', () {
       // Two vertices, all attributes distinct and exactly float-representable.
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
         positions: Float32List.fromList([1, 2, 3, 4, 5, 6]),
@@ -75,32 +75,77 @@ void main() {
         texCoords: Float32List.fromList([13, 14, 15, 16]),
         colors: Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]),
       );
-      final split = InterleavedLayoutAdapter.splitUnskinnedStreams(
+      final streams = InterleavedLayoutAdapter.splitUnskinnedAttributes(
         ByteData.sublistView(interleaved),
         2,
       );
 
-      // Position stream: 12 bytes (3 floats) per vertex.
-      expect(split.position, hasLength(2 * 12));
-      expect(Float32List.sublistView(split.position), [1, 2, 3, 4, 5, 6]);
-
-      // Attribute stream: 36 bytes (9 floats) per vertex, normal then
-      // texcoord then color, matching the de-interleaved layout's offsets.
-      expect(split.rest, hasLength(2 * 36));
-      expect(Float32List.sublistView(split.rest), [
-        7, 8, 9, 13, 14, 17, 18, 19, 20, // vertex 0
-        10, 11, 12, 15, 16, 21, 22, 23, 24, // vertex 1
+      expect(Float32List.sublistView(streams.position), [1, 2, 3, 4, 5, 6]);
+      expect(Float32List.sublistView(streams.normal), [7, 8, 9, 10, 11, 12]);
+      expect(Float32List.sublistView(streams.texCoord), [13, 14, 15, 16]);
+      expect(Float32List.sublistView(streams.color), [
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
       ]);
     });
 
     test('throws when the interleaved buffer is too short', () {
       expect(
-        () => InterleavedLayoutAdapter.splitUnskinnedStreams(
+        () => InterleavedLayoutAdapter.splitUnskinnedAttributes(
           ByteData(48),
           2, // needs 96 bytes
         ),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('unskinnedAttributeStreams', () {
+    test('packs structure-of-arrays attributes with defaults', () {
+      final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
+        positions: Float32List.fromList([1, 2, 3]),
+        vertexCount: 1,
+      );
+      expect(Float32List.sublistView(streams.position), [1, 2, 3]);
+      // Defaults: normal (0,0,1), texcoord (0,0), color opaque white.
+      expect(Float32List.sublistView(streams.normal), [0, 0, 1]);
+      expect(Float32List.sublistView(streams.texCoord), [0, 0]);
+      expect(Float32List.sublistView(streams.color), [1, 1, 1, 1]);
+    });
+
+    test('round-trips through split back to the same per-attribute bytes', () {
+      final positions = Float32List.fromList([1, 2, 3, 4, 5, 6]);
+      final normals = Float32List.fromList([7, 8, 9, 10, 11, 12]);
+      final texCoords = Float32List.fromList([13, 14, 15, 16]);
+      final colors = Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]);
+      final direct = InterleavedLayoutAdapter.unskinnedAttributeStreams(
+        positions: positions,
+        vertexCount: 2,
+        normals: normals,
+        texCoords: texCoords,
+        colors: colors,
+      );
+      final interleaved = InterleavedLayoutAdapter.packUnskinned(
+        positions: positions,
+        vertexCount: 2,
+        normals: normals,
+        texCoords: texCoords,
+        colors: colors,
+      );
+      final viaSplit = InterleavedLayoutAdapter.splitUnskinnedAttributes(
+        ByteData.sublistView(interleaved),
+        2,
+      );
+      expect(direct.position, viaSplit.position);
+      expect(direct.normal, viaSplit.normal);
+      expect(direct.texCoord, viaSplit.texCoord);
+      expect(direct.color, viaSplit.color);
     });
   });
 
