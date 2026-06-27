@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Selects which scene nodes an object-filtered draw includes.
@@ -44,11 +45,6 @@ class NodeFilter {
     return true;
   }
 }
-
-/// Process-lifetime cache of flat-fill pipelines, keyed by vertex shader
-/// (skinned vs unskinned). The fragment shader is constant, so at most two
-/// pipelines exist.
-final Map<gpu.Shader, gpu.RenderPipeline> _maskPipelineCache = {};
 
 /// Draws a filtered set of the scene's geometry flat into [target], each
 /// item filled with a solid color (coverage in alpha), with its own cleared
@@ -141,13 +137,11 @@ class _ObjectMaskEncoder {
       }
     }
     _renderPass.clearBindings();
-    final pipeline = _maskPipelineCache[item.geometry.vertexShader] ??= gpu
-        .gpuContext
-        .createRenderPipeline(
-          item.geometry.vertexShader,
-          _maskShader,
-          vertexLayout: item.geometry.instancedVertexLayout,
-        );
+    final pipeline = resolvePipeline(
+      item.geometry.vertexShader,
+      _maskShader,
+      vertexLayout: item.geometry.instancedVertexLayout,
+    );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;

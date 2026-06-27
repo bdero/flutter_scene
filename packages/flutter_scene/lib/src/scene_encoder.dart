@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
@@ -40,27 +41,37 @@ base class _TranslucentRecord {
   final bool windingFlipped;
 }
 
-/// Render pipelines keyed by their (vertex, fragment) shader pair.
+/// Render pipelines keyed by their (vertex shader, fragment shader, vertex
+/// layout) triple.
 ///
-/// A pipeline depends only on its two shaders (blend, depth, and cull
-/// state are set on the render pass, not baked into the pipeline), and
-/// shaders are loaded once and reused, so pipelines are cached for the
-/// process lifetime instead of being rebuilt per draw call.
-final Map<(gpu.Shader, gpu.Shader), gpu.RenderPipeline> _pipelineCache = {};
+/// A pipeline depends on its two shaders and its vertex layout (blend,
+/// depth, and cull state are set on the render pass, not baked into the
+/// pipeline). Shaders are loaded once and reused and layouts are interned to
+/// a small stable id, so pipelines are cached for the process lifetime
+/// instead of being rebuilt per draw call. The layout is part of the key
+/// because one vertex shader can be drawn with more than one layout (for
+/// example the same shader fed a single-buffer or a position-split layout);
+/// keying on the shader pair alone would serve the wrong pipeline.
+final Map<(gpu.Shader, gpu.Shader, int), gpu.RenderPipeline> _pipelineCache =
+    {};
 
+/// Returns the cached render pipeline for ([vertexShader], [fragmentShader],
+/// [vertexLayout]), building and caching it on first use.
+///
+/// A `null` [vertexLayout] uses the shader bundle's reflection-derived
+/// default layout (the skinned path); a described layout is lowered to the
+/// flutter_gpu layout once, on the cache miss.
 gpu.RenderPipeline resolvePipeline(
   gpu.Shader vertexShader,
   gpu.Shader fragmentShader, {
-  gpu.VertexLayout? vertexLayout,
+  VertexLayoutDescriptor? vertexLayout,
 }) {
-  // The layout is a pure function of the vertex shader (each shader has one
-  // expected layout), so the cache key stays the shader pair.
-  return _pipelineCache[(vertexShader, fragmentShader)] ??= gpu.gpuContext
-      .createRenderPipeline(
-        vertexShader,
-        fragmentShader,
-        vertexLayout: vertexLayout,
-      );
+  final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+  return _pipelineCache[key] ??= gpu.gpuContext.createRenderPipeline(
+    vertexShader,
+    fragmentShader,
+    vertexLayout: vertexLayout?.toGpuLayout(),
+  );
 }
 
 /// Drops cached pipelines that use any of [shaders] (as vertex or fragment) so

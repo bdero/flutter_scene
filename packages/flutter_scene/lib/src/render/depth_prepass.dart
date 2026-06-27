@@ -9,19 +9,13 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 
 /// Render-graph blackboard key under which [DepthPrepass] publishes the
 /// camera linear-depth texture: planar view-space depth (world units) in
 /// the red channel, with the far value where no geometry was drawn.
 const String kLinearDepthBlackboardKey = 'linear_depth';
-
-/// Process-lifetime cache of depth-prepass render pipelines, keyed by
-/// vertex shader. The fragment shader is constant, so only the (skinned /
-/// unskinned) vertex shader varies; the engine loads each shader once, so
-/// the prepass only ever needs two pipelines. Caching them avoids
-/// rebuilding a pipeline per draw, every frame.
-final Map<gpu.Shader, gpu.RenderPipeline> _depthPipelineCache = {};
 
 /// Renders the opaque scene's depth from the camera into a linear-depth
 /// color target and publishes it on the render-graph blackboard.
@@ -186,13 +180,11 @@ class _DepthPrepassEncoder {
       }
     }
     _renderPass.clearBindings();
-    final pipeline = _depthPipelineCache[item.geometry.vertexShader] ??= gpu
-        .gpuContext
-        .createRenderPipeline(
-          item.geometry.vertexShader,
-          _depthShader,
-          vertexLayout: item.geometry.instancedVertexLayout,
-        );
+    final pipeline = resolvePipeline(
+      item.geometry.vertexShader,
+      _depthShader,
+      vertexLayout: item.geometry.instancedVertexLayout,
+    );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
