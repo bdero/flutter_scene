@@ -301,6 +301,37 @@ abstract class Geometry {
   /// than a per-draw uniform, so every draw must bind an instance buffer.
   @internal
   VertexLayoutDescriptor? get instancedVertexLayout => null;
+
+  /// Binds this geometry's vertex buffer (slot 0) and index buffer onto
+  /// [pass] without binding any uniforms.
+  ///
+  /// The color path goes through [bind], which also binds per-frame
+  /// uniforms against [vertexShader]. The depth-style passes drive a
+  /// different vertex shader (see [depthOnlyVertex]), so they bind the
+  /// buffers with this and supply their own uniforms against that shader.
+  @internal
+  void bindGeometryBuffers(gpu.RenderPass pass) {
+    if (_vertices == null) {
+      throw Exception('setVertices must be called before binding Geometry.');
+    }
+    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
+    if (_indices != null) {
+      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
+    }
+  }
+
+  /// The vertex shader and layout the depth-style passes (the directional
+  /// shadow map, the camera depth prepass, and the object-selection mask)
+  /// should use for this geometry, or null to reuse [vertexShader] with
+  /// [instancedVertexLayout].
+  ///
+  /// Unskinned geometry returns a position-only shader and layout so those
+  /// passes fetch only the position attribute. Skinned geometry returns
+  /// null (its joints-driven shader has no position-only variant yet), so
+  /// the depth passes drive it through [bind] like the color pass.
+  @internal
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex =>
+      null;
 }
 
 /// Geometry whose vertices use the unskinned 48-byte layout: position
@@ -320,6 +351,18 @@ class UnskinnedGeometry extends Geometry {
   VertexLayoutDescriptor? get instancedVertexLayout =>
       kUnskinnedInstancedLayout;
 
+  // Cached once: the depth-style passes use the same position-only shader and
+  // layout for every unskinned geometry, so the record is shared rather than
+  // rebuilt per draw. The shader keeps its identity across hot reloads.
+  static ({gpu.Shader shader, VertexLayoutDescriptor layout})? _depthOnlyVertex;
+
+  @override
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex =>
+      _depthOnlyVertex ??= (
+        shader: baseShaderLibrary['UnskinnedDepthVertex']!,
+        layout: kUnskinnedPositionOnlyLayout,
+      );
+
   @override
   void bind(
     gpu.RenderPass pass,
@@ -328,46 +371,18 @@ class UnskinnedGeometry extends Geometry {
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition,
   ) {
-    if (_vertices == null) {
-      throw Exception(
-        'SetVertices must be called before GetBufferView for Geometry.',
-      );
-    }
-
-    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
-    if (_indices != null) {
-      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
-    }
+    bindGeometryBuffers(pass);
 
     // Unskinned vertex UBO. The model transform is NOT part of this block;
     // it arrives through the instance-rate vertex buffer (slot 1), bound by
     // the encoder for instanced and non-instanced draws alike.
-    final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
-    final frameInfoFloats = Float32List.fromList([
-      cameraTransform.storage[0],
-      cameraTransform.storage[1],
-      cameraTransform.storage[2],
-      cameraTransform.storage[3],
-      cameraTransform.storage[4],
-      cameraTransform.storage[5],
-      cameraTransform.storage[6],
-      cameraTransform.storage[7],
-      cameraTransform.storage[8],
-      cameraTransform.storage[9],
-      cameraTransform.storage[10],
-      cameraTransform.storage[11],
-      cameraTransform.storage[12],
-      cameraTransform.storage[13],
-      cameraTransform.storage[14],
-      cameraTransform.storage[15],
-      cameraPosition.x,
-      cameraPosition.y,
-      cameraPosition.z,
-    ]);
-    final frameInfoView = transientsBuffer.emplace(
-      frameInfoFloats.buffer.asByteData(),
+    bindUnskinnedFrameInfo(
+      pass,
+      transientsBuffer,
+      vertexShader,
+      cameraTransform,
+      cameraPosition,
     );
-    pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
 
@@ -487,6 +502,36 @@ class SkinnedGeometry extends Geometry {
   }
 }
 
+/// The instance-rate vertex buffer slot shared by every unskinned layout:
+/// the model matrix as four vec4 columns, 64 bytes per instance, advanced
+/// once per instance.
+const VertexBufferDescriptor _kInstanceModelTransformBuffer =
+    VertexBufferDescriptor(
+      strideInBytes: 64,
+      stepMode: gpu.VertexStepMode.instance,
+      attributes: [
+        VertexAttributeDescriptor(
+          name: 'model_transform_0',
+          format: gpu.VertexFormat.float32x4,
+        ),
+        VertexAttributeDescriptor(
+          name: 'model_transform_1',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 16,
+        ),
+        VertexAttributeDescriptor(
+          name: 'model_transform_2',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 32,
+        ),
+        VertexAttributeDescriptor(
+          name: 'model_transform_3',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 48,
+        ),
+      ],
+    );
+
 /// The two-buffer pipeline layout for the unskinned vertex shader: slot 0
 /// carries the interleaved 48-byte vertex stream (position, normal, texture
 /// coords, color), slot 1 carries the instance-rate model matrix as four
@@ -522,30 +567,81 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
         ),
       ],
     ),
-    VertexBufferDescriptor(
-      strideInBytes: 64,
-      stepMode: gpu.VertexStepMode.instance,
-      attributes: [
-        VertexAttributeDescriptor(
-          name: 'model_transform_0',
-          format: gpu.VertexFormat.float32x4,
-        ),
-        VertexAttributeDescriptor(
-          name: 'model_transform_1',
-          format: gpu.VertexFormat.float32x4,
-          offsetInBytes: 16,
-        ),
-        VertexAttributeDescriptor(
-          name: 'model_transform_2',
-          format: gpu.VertexFormat.float32x4,
-          offsetInBytes: 32,
-        ),
-        VertexAttributeDescriptor(
-          name: 'model_transform_3',
-          format: gpu.VertexFormat.float32x4,
-          offsetInBytes: 48,
-        ),
-      ],
-    ),
+    _kInstanceModelTransformBuffer,
   ],
 );
+
+/// The depth-style layout for the unskinned vertex shader: slot 0 reads only
+/// the position attribute from the interleaved 48-byte vertex stream (the
+/// other attributes are present in the buffer but not fetched), slot 1 the
+/// instance-rate model matrix. Paired with the `UnskinnedDepthVertex` shader
+/// by the shadow, depth-prepass, and object-mask passes so they fetch only
+/// position per vertex.
+///
+/// The bound buffers are identical to the color pass (the same interleaved
+/// vertex buffer at slot 0, the same instance buffer at slot 1); only the
+/// declared attribute set differs.
+///
+/// TODO(position-stream): once positions live in their own tightly packed
+/// 12-byte buffer (de-interleaved at upload, composing with the dynamic
+/// position-update path), drop slot 0's stride to 12 for the locality win.
+/// The descriptor and the binding stay otherwise the same.
+@internal
+final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
+    VertexLayoutDescriptor(
+      buffers: const [
+        VertexBufferDescriptor(
+          strideInBytes: kUnskinnedPerVertexSize,
+          attributes: [
+            VertexAttributeDescriptor(
+              name: 'position',
+              format: gpu.VertexFormat.float32x3,
+            ),
+          ],
+        ),
+        _kInstanceModelTransformBuffer,
+      ],
+    );
+
+/// Emplaces and binds the unskinned `FrameInfo` uniform (camera transform
+/// plus camera position) onto [pass], resolving the slot against [shader].
+///
+/// Shared by the color path ([UnskinnedGeometry.bind]) and the depth-style
+/// passes, which drive the position-only shader but use the identical
+/// `FrameInfo` block; the slot is resolved against whichever shader the bound
+/// pipeline uses.
+@internal
+void bindUnskinnedFrameInfo(
+  gpu.RenderPass pass,
+  gpu.HostBuffer transientsBuffer,
+  gpu.Shader shader,
+  vm.Matrix4 cameraTransform,
+  vm.Vector3 cameraPosition,
+) {
+  final frameInfoSlot = shader.getUniformSlot('FrameInfo');
+  final frameInfoFloats = Float32List.fromList([
+    cameraTransform.storage[0],
+    cameraTransform.storage[1],
+    cameraTransform.storage[2],
+    cameraTransform.storage[3],
+    cameraTransform.storage[4],
+    cameraTransform.storage[5],
+    cameraTransform.storage[6],
+    cameraTransform.storage[7],
+    cameraTransform.storage[8],
+    cameraTransform.storage[9],
+    cameraTransform.storage[10],
+    cameraTransform.storage[11],
+    cameraTransform.storage[12],
+    cameraTransform.storage[13],
+    cameraTransform.storage[14],
+    cameraTransform.storage[15],
+    cameraPosition.x,
+    cameraPosition.y,
+    cameraPosition.z,
+  ]);
+  pass.bindUniform(
+    frameInfoSlot,
+    transientsBuffer.emplace(frameInfoFloats.buffer.asByteData()),
+  );
+}

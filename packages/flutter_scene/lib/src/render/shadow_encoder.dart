@@ -1,3 +1,5 @@
+import 'package:flutter_scene/src/geometry/geometry.dart'
+    show bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:vector_math/vector_math.dart';
@@ -65,29 +67,51 @@ class ShadowEncoder {
       }
     }
     _renderPass.clearBindings();
+    final geometry = item.geometry;
+    // Unskinned casters draw depth through a position-only shader and layout;
+    // skinned geometry falls back to its full vertex shader and bind.
+    final depthVertex = geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
-      item.geometry.vertexShader,
+      depthVertex?.shader ?? geometry.vertexShader,
       _depthShader,
-      vertexLayout: item.geometry.instancedVertexLayout,
+      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
     }
-    _renderPass.setPrimitiveType(item.geometry.primitiveType);
+    _renderPass.setPrimitiveType(geometry.primitiveType);
+
+    // Binds the vertex/index buffers and the per-frame uniform for one draw.
+    // The light-space matrix takes the place of the camera transform; the
+    // camera position is unused by the shadow fragment shader.
+    void bindDraw(Matrix4 worldTransform) {
+      if (depthVertex != null) {
+        geometry.bindGeometryBuffers(_renderPass);
+        bindUnskinnedFrameInfo(
+          _renderPass,
+          _transientsBuffer,
+          depthVertex.shader,
+          _lightSpaceMatrix,
+          _cameraPositionPlaceholder,
+        );
+      } else {
+        geometry.bind(
+          _renderPass,
+          _transientsBuffer,
+          worldTransform,
+          _lightSpaceMatrix,
+          _cameraPositionPlaceholder,
+        );
+      }
+    }
 
     final instances = item.instanceTransforms;
     if (instances != null) {
-      if (item.geometry.instancedVertexLayout == null) {
+      if (geometry.instancedVertexLayout == null) {
         // Skinned geometry has no instance-attribute path; loop.
         for (final instanceTransform in instances) {
-          item.geometry.bind(
-            _renderPass,
-            _transientsBuffer,
-            item.worldTransform * instanceTransform,
-            _lightSpaceMatrix,
-            _cameraPositionPlaceholder,
-          );
+          bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
@@ -95,17 +119,11 @@ class ShadowEncoder {
                 ? gpu.WindingOrder.clockwise
                 : gpu.WindingOrder.counterClockwise,
           );
-          item.geometry.draw(_renderPass);
+          geometry.draw(_renderPass);
         }
         return;
       }
-      item.geometry.bind(
-        _renderPass,
-        _transientsBuffer,
-        item.worldTransform,
-        _lightSpaceMatrix,
-        _cameraPositionPlaceholder,
-      );
+      bindDraw(item.worldTransform);
       final packed = packInstanceTransforms(
         item.worldTransform,
         instances,
@@ -114,24 +132,18 @@ class ShadowEncoder {
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-        item.geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+        geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.cw);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-        item.geometry.draw(_renderPass, instanceCount: packed.cwCount);
+        geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
       return;
     }
 
-    item.geometry.bind(
-      _renderPass,
-      _transientsBuffer,
-      item.worldTransform,
-      _lightSpaceMatrix,
-      _cameraPositionPlaceholder,
-    );
-    if (item.geometry.instancedVertexLayout != null) {
+    bindDraw(item.worldTransform);
+    if (geometry.instancedVertexLayout != null) {
       bindSingleInstanceTransform(_renderPass, item.worldTransform);
     }
     // Mirrored casters reverse winding; flip the cull order so the same faces
@@ -141,6 +153,6 @@ class ShadowEncoder {
           ? gpu.WindingOrder.clockwise
           : gpu.WindingOrder.counterClockwise,
     );
-    item.geometry.draw(_renderPass);
+    geometry.draw(_renderPass);
   }
 }
