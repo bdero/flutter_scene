@@ -18,6 +18,24 @@ import 'package:flutter_scene/src/importer/constants.dart';
 ///
 /// Every method here is pure and free of GPU resources, so the packing
 /// can be exercised without a render context.
+/// Four tightly packed per-attribute unskinned vertex streams (structure of
+/// arrays): [position] (12 bytes/vertex), [normal] (12), [texCoord] (8), and
+/// [color] (16). Each is contiguous, so the depth-style passes bind only
+/// [position] and a dynamic update can rewrite only the changed attribute.
+class UnskinnedAttributeStreams {
+  const UnskinnedAttributeStreams({
+    required this.position,
+    required this.normal,
+    required this.texCoord,
+    required this.color,
+  });
+
+  final Uint8List position;
+  final Uint8List normal;
+  final Uint8List texCoord;
+  final Uint8List color;
+}
+
 abstract final class InterleavedLayoutAdapter {
   /// Floats per vertex in the interleaved unskinned layout.
   static const int floatsPerVertex = kUnskinnedPerVertexSize ~/ 4;
@@ -80,25 +98,26 @@ abstract final class InterleavedLayoutAdapter {
     return out.buffer.asUint8List();
   }
 
-  /// Bytes per vertex of the de-interleaved position stream (one `vec3`).
+  /// Bytes per vertex of each de-interleaved unskinned attribute stream:
+  /// position (`vec3`), normal (`vec3`), texture coordinates (`vec2`), color
+  /// (`vec4`). Their sum is [kUnskinnedPerVertexSize].
   static const int positionStreamBytes = 12;
+  static const int normalStreamBytes = 12;
+  static const int texCoordStreamBytes = 8;
+  static const int colorStreamBytes = 16;
 
-  /// Bytes per vertex of the de-interleaved attribute stream: normal
-  /// (`vec3`), texture coordinates (`vec2`), color (`vec4`).
-  static const int attributeStreamBytes = kUnskinnedPerVertexSize - 12;
+  /// Byte offset of each attribute within the interleaved 48-byte vertex.
+  static const int _normalByteOffset = 12;
+  static const int _texCoordByteOffset = 24;
+  static const int _colorByteOffset = 32;
 
-  /// Splits one interleaved unskinned vertex buffer into a tightly packed
-  /// position stream and an attribute stream (normal, texture coordinates,
-  /// color).
+  /// Splits one interleaved unskinned vertex buffer into the four tightly
+  /// packed per-attribute streams.
   ///
   /// The interleaved input is [kUnskinnedPerVertexSize] (48) bytes per
-  /// vertex, ordered position, normal, texture coordinates, color. The
-  /// returned [position] stream is 12 bytes per vertex and [rest] is 36,
-  /// preserving the byte order within each. This lets the depth-style passes
-  /// bind only the small position stream and dynamic updates rewrite only
-  /// positions, while the color pass binds both. Pure, so it can run off the
-  /// render isolate.
-  static ({Uint8List position, Uint8List rest}) splitUnskinnedStreams(
+  /// vertex, ordered position, normal, texture coordinates, color. Pure, so
+  /// it can run off the render isolate.
+  static UnskinnedAttributeStreams splitUnskinnedAttributes(
     ByteData interleaved,
     int vertexCount,
   ) {
@@ -114,23 +133,83 @@ abstract final class InterleavedLayoutAdapter {
       interleaved.lengthInBytes,
     );
     final position = Uint8List(positionStreamBytes * vertexCount);
-    final rest = Uint8List(attributeStreamBytes * vertexCount);
+    final normal = Uint8List(normalStreamBytes * vertexCount);
+    final texCoord = Uint8List(texCoordStreamBytes * vertexCount);
+    final color = Uint8List(colorStreamBytes * vertexCount);
     for (var v = 0; v < vertexCount; v++) {
       final s = v * kUnskinnedPerVertexSize;
-      position.setRange(
-        v * positionStreamBytes,
-        v * positionStreamBytes + positionStreamBytes,
-        src,
-        s,
-      );
-      rest.setRange(
-        v * attributeStreamBytes,
-        v * attributeStreamBytes + attributeStreamBytes,
-        src,
-        s + positionStreamBytes,
-      );
+      position.setRange(v * 12, v * 12 + 12, src, s);
+      normal.setRange(v * 12, v * 12 + 12, src, s + _normalByteOffset);
+      texCoord.setRange(v * 8, v * 8 + 8, src, s + _texCoordByteOffset);
+      color.setRange(v * 16, v * 16 + 16, src, s + _colorByteOffset);
     }
-    return (position: position, rest: rest);
+    return UnskinnedAttributeStreams(
+      position: position,
+      normal: normal,
+      texCoord: texCoord,
+      color: color,
+    );
+  }
+
+  /// Builds the four per-attribute streams directly from structure-of-arrays
+  /// attribute lists, filling defaults for absent attributes (normal
+  /// `(0, 0, 1)`, texture coordinate `(0, 0)`, color opaque white).
+  ///
+  /// This is the structure-of-arrays counterpart to [packUnskinned]; it
+  /// avoids building an interleaved buffer at all, so a structure-of-arrays
+  /// source uploads each stream with no interleave/de-interleave round trip.
+  static UnskinnedAttributeStreams unskinnedAttributeStreams({
+    required Float32List positions,
+    required int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? colors,
+  }) {
+    _checkLength('positions', positions.length, 3 * vertexCount);
+    if (normals != null) {
+      _checkLength('normals', normals.length, 3 * vertexCount);
+    }
+    if (texCoords != null) {
+      _checkLength('texCoords', texCoords.length, 2 * vertexCount);
+    }
+    if (colors != null) {
+      _checkLength('colors', colors.length, 4 * vertexCount);
+    }
+
+    final position = Float32List(3 * vertexCount)..setAll(0, positions);
+    final normal = Float32List(3 * vertexCount);
+    final texCoord = Float32List(2 * vertexCount);
+    final color = Float32List(4 * vertexCount);
+    for (var v = 0; v < vertexCount; v++) {
+      if (normals != null) {
+        normal[v * 3] = normals[v * 3];
+        normal[v * 3 + 1] = normals[v * 3 + 1];
+        normal[v * 3 + 2] = normals[v * 3 + 2];
+      } else {
+        normal[v * 3 + 2] = 1.0;
+      }
+      if (texCoords != null) {
+        texCoord[v * 2] = texCoords[v * 2];
+        texCoord[v * 2 + 1] = texCoords[v * 2 + 1];
+      }
+      if (colors != null) {
+        color[v * 4] = colors[v * 4];
+        color[v * 4 + 1] = colors[v * 4 + 1];
+        color[v * 4 + 2] = colors[v * 4 + 2];
+        color[v * 4 + 3] = colors[v * 4 + 3];
+      } else {
+        color[v * 4] = 1.0;
+        color[v * 4 + 1] = 1.0;
+        color[v * 4 + 2] = 1.0;
+        color[v * 4 + 3] = 1.0;
+      }
+    }
+    return UnskinnedAttributeStreams(
+      position: position.buffer.asUint8List(),
+      normal: normal.buffer.asUint8List(),
+      texCoord: texCoord.buffer.asUint8List(),
+      color: color.buffer.asUint8List(),
+    );
   }
 
   /// Packs triangle [indices] into the narrowest index buffer that fits.

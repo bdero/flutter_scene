@@ -149,16 +149,27 @@ class MeshGeometry extends UnskinnedGeometry {
   // CPU-side copies of every attribute stream, sized to the live vertex
   // count. Retained so a single-attribute update can re-pack the
   // interleaved buffer, which holds every attribute together.
-  Uint8List _packedVertexBytes = Uint8List(0);
+  // The interleaved vertex bytes, built lazily from the structure-of-arrays
+  // CPU streams only when the scene serializer asks for them (the fixed path
+  // never interleaves otherwise). The updatable path sets it eagerly, since
+  // it interleaves into a single buffer anyway.
+  Uint8List? _packedVertexBytes;
   Uint8List? _packedIndexBytes;
   bool _packedIndices32Bit = false;
 
   /// The packed interleaved vertex bytes (and packed index bytes with their
-  /// width) as last uploaded, retained so the scene serializer can re-emit
-  /// this geometry as payload chunks.
+  /// width), retained so the scene serializer can re-emit this geometry as
+  /// payload chunks. Interleaved lazily from the per-attribute CPU streams on
+  /// first access.
   ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
   get packedData => (
-    vertexBytes: _packedVertexBytes,
+    vertexBytes: _packedVertexBytes ??= InterleavedLayoutAdapter.packUnskinned(
+      positions: _cpuPositions,
+      vertexCount: _liveVertexCount,
+      normals: _cpuNormals,
+      texCoords: _cpuTexCoords,
+      colors: _cpuColors,
+    ),
     indexBytes: _packedIndexBytes,
     indices32Bit: _packedIndices32Bit,
   );
@@ -281,13 +292,10 @@ class MeshGeometry extends UnskinnedGeometry {
     List<int>? indices,
   ) {
     _liveVertexCount = vertexCount;
-    final vertexBytes = InterleavedLayoutAdapter.packUnskinned(
-      positions: positions,
-      vertexCount: vertexCount,
-      normals: normals,
-      texCoords: texCoords,
-      colors: colors,
-    );
+    // Retain the structure-of-arrays attributes (defaults filled). These back
+    // both lazy serialization (interleaved on demand) and raycasting, and they
+    // are uploaded straight to per-attribute GPU streams with no interleave.
+    _setCpuStreams(positions, vertexCount, normals, texCoords, colors);
     ByteData? indexBytes;
     var indexType = gpu.IndexType.int16;
     if (indices != null) {
@@ -297,13 +305,18 @@ class MeshGeometry extends UnskinnedGeometry {
       _packedIndexBytes = packed.bytes;
       _packedIndices32Bit = packed.is32Bit;
     }
-    _packedVertexBytes = vertexBytes;
-    uploadVertexData(
-      ByteData.sublistView(vertexBytes),
-      vertexCount,
-      indexBytes,
+    uploadUnskinnedAttributes(
+      positions: _cpuPositions,
+      vertexCount: vertexCount,
+      normals: _cpuNormals,
+      texCoords: _cpuTexCoords,
+      colors: _cpuColors,
+      indices: indexBytes,
       indexType: indexType,
     );
+    // Raycast off this geometry's own attribute arrays instead of the
+    // transient upload copies, so no extra position/texcoord copy lingers.
+    setRaycastAttributes(positions: _cpuPositions, texCoords: _cpuTexCoords);
   }
 
   // Re-packs the live CPU streams into the interleaved buffer and binds
@@ -339,7 +352,7 @@ class MeshGeometry extends UnskinnedGeometry {
     _packedIndexBytes = packed.bytes;
     _packedIndices32Bit = packed.is32Bit;
     retainCpuMeshData(
-      ByteData.sublistView(_packedVertexBytes),
+      ByteData.sublistView(packedData.vertexBytes),
       ByteData.sublistView(packed.bytes),
     );
     final indexType = packed.is32Bit

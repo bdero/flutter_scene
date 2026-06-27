@@ -45,6 +45,13 @@ abstract class Geometry {
   ByteData? _cpuVertices;
   ByteData? _cpuIndices;
 
+  // Structure-of-arrays CPU copies for raycasting, set by the SoA upload path
+  // instead of the interleaved [_cpuVertices]. Position is required to
+  // raycast; texture coordinates let a hit report a UV. Null for interleaved
+  // geometry (which raycasts off [_cpuVertices]) or non-raycastable geometry.
+  Float32List? _cpuPositions;
+  Float32List? _cpuTexCoords;
+
   gpu.Shader? _vertexShader;
 
   /// How the vertex/index data is assembled into primitives when drawn.
@@ -164,7 +171,29 @@ abstract class Geometry {
     _cpuVertices = vertices;
     _cpuIndices = indices;
 
-    final streams = _vertexStreamBytes(vertices, vertexCount);
+    _uploadStreams(
+      _vertexStreamBytes(vertices, vertexCount),
+      vertexCount,
+      indices,
+      indexType,
+    );
+
+    if (_localBounds == null && vertexCount > 0 && _autoScanBoundsOnUpload) {
+      _scanLocalBoundsFromVertices(vertices, vertexCount);
+    }
+  }
+
+  /// Packs [streams] (one tightly packed buffer per vertex slot) and any
+  /// [indices] back-to-back into a single host-visible [gpu.DeviceBuffer],
+  /// binding the streams via [setVertexStreams] and the indices via
+  /// [setIndices]. Shared by the interleaved and structure-of-arrays upload
+  /// paths.
+  void _uploadStreams(
+    List<ByteData> streams,
+    int vertexCount,
+    ByteData? indices,
+    gpu.IndexType indexType,
+  ) {
     var vertexBytes = 0;
     for (final stream in streams) {
       vertexBytes += stream.lengthInBytes;
@@ -201,10 +230,6 @@ abstract class Geometry {
         indexType,
       );
     }
-
-    if (_localBounds == null && vertexCount > 0 && _autoScanBoundsOnUpload) {
-      _scanLocalBoundsFromVertices(vertices, vertexCount);
-    }
   }
 
   /// Splits the interleaved [vertices] into the tightly packed vertex streams
@@ -218,21 +243,38 @@ abstract class Geometry {
     vertices,
   ];
 
-  /// Internal: retains CPU vertex/index data for scene raycasts. Subclasses
-  /// with their own upload paths (see MeshGeometry's updatable buffers) call
-  /// this when they bypass [uploadVertexData].
+  /// Internal: retains interleaved CPU vertex/index data for scene raycasts.
+  /// Subclasses with their own upload paths (see MeshGeometry's updatable
+  /// buffers) call this when they bypass [uploadVertexData].
   @internal
   void retainCpuMeshData(ByteData? vertices, ByteData? indices) {
     _cpuVertices = vertices;
     _cpuIndices = indices;
+    _cpuPositions = null;
+    _cpuTexCoords = null;
   }
 
-  /// Internal: the retained CPU vertex/index data for scene raycasts, or
-  /// null vertices when this geometry is not raycastable (caller-managed
-  /// buffers via [setVertices], or no upload yet).
+  /// Internal: retains structure-of-arrays CPU attributes for raycasts, used
+  /// by the de-interleaved upload path instead of an interleaved copy.
+  @internal
+  void setRaycastAttributes({
+    required Float32List positions,
+    Float32List? texCoords,
+  }) {
+    _cpuPositions = positions;
+    _cpuTexCoords = texCoords;
+    _cpuVertices = null;
+  }
+
+  /// Internal: the retained CPU vertex/index data for scene raycasts. Either
+  /// [vertices] (interleaved) or [positions] (structure of arrays) is set
+  /// when the geometry is raycastable; both are null for caller-managed
+  /// buffers or before the first upload.
   @internal
   ({
     ByteData? vertices,
+    Float32List? positions,
+    Float32List? texCoords,
     ByteData? indices,
     gpu.IndexType indexType,
     int vertexCount,
@@ -240,11 +282,43 @@ abstract class Geometry {
   })
   get cpuMeshData => (
     vertices: _cpuVertices,
+    positions: _cpuPositions,
+    texCoords: _cpuTexCoords,
     indices: _cpuIndices,
     indexType: _indexType,
     vertexCount: _vertexCount,
     indexCount: _indexCount,
   );
+
+  /// Internal: populate bounds from a tightly packed position list (three
+  /// floats per vertex), used by the structure-of-arrays upload path.
+  @internal
+  void scanLocalBoundsFromPositions(Float32List positions, int vertexCount) {
+    if (vertexCount == 0) return;
+    double minX = double.infinity,
+        minY = double.infinity,
+        minZ = double.infinity;
+    double maxX = double.negativeInfinity,
+        maxY = double.negativeInfinity,
+        maxZ = double.negativeInfinity;
+    for (var i = 0; i < vertexCount; i++) {
+      final x = positions[i * 3],
+          y = positions[i * 3 + 1],
+          z = positions[i * 3 + 2];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    final aabb = vm.Aabb3.minMax(
+      vm.Vector3(minX, minY, minZ),
+      vm.Vector3(maxX, maxY, maxZ),
+    );
+    _localBounds = aabb;
+    _localBoundingSphere ??= _circumscribedSphere(aabb);
+  }
 
   /// Whether [uploadVertexData] should auto-populate [localBounds] from
   /// the vertex positions when no bound has been set yet. True by
@@ -416,27 +490,78 @@ class UnskinnedGeometry extends Geometry {
     setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
   }
 
-  // Whether this geometry stores position de-interleaved into its own stream
-  // (uploaded through [uploadVertexData]) versus a single interleaved stream
-  // (a caller-managed [setVertices] buffer, or the updatable MeshGeometry
-  // path). The two store the same bytes but bind different layouts.
+  // Whether this geometry stores its attributes de-interleaved into separate
+  // per-attribute streams (uploaded through [uploadVertexData] or
+  // [uploadUnskinnedAttributes]) versus a single interleaved stream (a
+  // caller-managed [setVertices] buffer, or the updatable MeshGeometry path).
+  // The two store the same bytes but bind different layouts.
   bool get _isDeInterleaved => vertexStreamCount >= 2;
 
   @override
   List<ByteData> _vertexStreamBytes(ByteData vertices, int vertexCount) {
-    final split = InterleavedLayoutAdapter.splitUnskinnedStreams(
+    final streams = InterleavedLayoutAdapter.splitUnskinnedAttributes(
       vertices,
       vertexCount,
     );
     return [
-      ByteData.sublistView(split.position),
-      ByteData.sublistView(split.rest),
+      ByteData.sublistView(streams.position),
+      ByteData.sublistView(streams.normal),
+      ByteData.sublistView(streams.texCoord),
+      ByteData.sublistView(streams.color),
     ];
+  }
+
+  /// Uploads the four unskinned attributes from structure-of-arrays lists
+  /// directly into per-attribute streams, with no interleave step.
+  ///
+  /// This is the efficient path for a structure-of-arrays source (a
+  /// procedural mesh, a generator): each attribute is written straight to its
+  /// own buffer. Absent attributes get defaults (normal `(0, 0, 1)`, texture
+  /// coordinate `(0, 0)`, color opaque white). The position and texture
+  /// coordinate streams are retained on the CPU for raycasting.
+  @internal
+  void uploadUnskinnedAttributes({
+    required Float32List positions,
+    required int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? colors,
+    ByteData? indices,
+    gpu.IndexType indexType = gpu.IndexType.int16,
+  }) {
+    final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
+      positions: positions,
+      vertexCount: vertexCount,
+      normals: normals,
+      texCoords: texCoords,
+      colors: colors,
+    );
+    _uploadStreams(
+      [
+        ByteData.sublistView(streams.position),
+        ByteData.sublistView(streams.normal),
+        ByteData.sublistView(streams.texCoord),
+        ByteData.sublistView(streams.color),
+      ],
+      vertexCount,
+      indices,
+      indexType,
+    );
+    setRaycastAttributes(
+      positions: Float32List.sublistView(streams.position),
+      texCoords: Float32List.sublistView(streams.texCoord),
+    );
+    if (localBounds == null && vertexCount > 0) {
+      scanLocalBoundsFromPositions(
+        Float32List.sublistView(streams.position),
+        vertexCount,
+      );
+    }
   }
 
   @override
   VertexLayoutDescriptor? get instancedVertexLayout =>
-      _isDeInterleaved ? kUnskinnedSplitColorLayout : kUnskinnedInstancedLayout;
+      _isDeInterleaved ? kUnskinnedSoAColorLayout : kUnskinnedInstancedLayout;
 
   // Cached once: the depth-style passes use the same position-only shader for
   // every unskinned geometry. The layout still depends on whether position is
@@ -447,7 +572,7 @@ class UnskinnedGeometry extends Geometry {
   ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex => (
     shader: _depthVertexShader ??= baseShaderLibrary['UnskinnedDepthVertex']!,
     layout: _isDeInterleaved
-        ? kUnskinnedSplitDepthLayout
+        ? kUnskinnedSoADepthLayout
         : kUnskinnedPositionOnlyLayout,
   );
 
@@ -623,29 +748,36 @@ const VertexBufferDescriptor _kPositionBuffer = VertexBufferDescriptor(
   ],
 );
 
-/// The de-interleaved unskinned attribute stream (everything but position):
-/// normal (`vec3`), texture coordinates (`vec2`), color (`vec4`), 36 bytes
-/// per vertex. The slot-1 buffer of the de-interleaved color layout.
-const VertexBufferDescriptor _kUnskinnedAttributeBuffer =
-    VertexBufferDescriptor(
-      strideInBytes: 36,
-      attributes: [
-        VertexAttributeDescriptor(
-          name: 'normal',
-          format: gpu.VertexFormat.float32x3,
-        ),
-        VertexAttributeDescriptor(
-          name: 'texture_coords',
-          format: gpu.VertexFormat.float32x2,
-          offsetInBytes: 12,
-        ),
-        VertexAttributeDescriptor(
-          name: 'color',
-          format: gpu.VertexFormat.float32x4,
-          offsetInBytes: 20,
-        ),
-      ],
-    );
+/// The tightly packed per-attribute streams (structure of arrays) that make
+/// up the de-interleaved unskinned layout, each its own buffer slot: normal
+/// (12 bytes), texture coordinates (8 bytes), color (16 bytes).
+const VertexBufferDescriptor _kNormalBuffer = VertexBufferDescriptor(
+  strideInBytes: 12,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'normal',
+      format: gpu.VertexFormat.float32x3,
+    ),
+  ],
+);
+const VertexBufferDescriptor _kTexCoordBuffer = VertexBufferDescriptor(
+  strideInBytes: 8,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'texture_coords',
+      format: gpu.VertexFormat.float32x2,
+    ),
+  ],
+);
+const VertexBufferDescriptor _kColorBuffer = VertexBufferDescriptor(
+  strideInBytes: 16,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'color',
+      format: gpu.VertexFormat.float32x4,
+    ),
+  ],
+);
 
 /// The interleaved two-buffer pipeline layout for the unskinned vertex
 /// shader: slot 0 carries the interleaved 48-byte vertex stream (position,
@@ -695,8 +827,8 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
 /// [Geometry.setVertices] buffer, or the updatable MeshGeometry path).
 ///
 /// Geometry uploaded through [Geometry.uploadVertexData] is de-interleaved
-/// and uses [kUnskinnedSplitDepthLayout] instead, whose slot-0 stride is 12
-/// for the locality win.
+/// into per-attribute streams and uses [kUnskinnedSoADepthLayout] instead,
+/// whose slot-0 stride is 12 for the locality win.
 @internal
 final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
     VertexLayoutDescriptor(
@@ -714,32 +846,37 @@ final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
       ],
     );
 
-/// The de-interleaved color layout for the unskinned vertex shader: slot 0
-/// the tightly packed position stream (12 bytes), slot 1 the remaining
-/// attributes (normal, texture coords, color; 36 bytes), slot 2 the
-/// instance-rate model matrix. Used for geometry uploaded through
-/// [Geometry.uploadVertexData], which de-interleaves position into its own
-/// buffer.
+/// The structure-of-arrays color layout for the unskinned vertex shader: one
+/// tightly packed buffer per attribute (position 12, normal 12, texture
+/// coords 8, color 16) plus the instance-rate model matrix. Used for geometry
+/// uploaded through [Geometry.uploadVertexData] or the structure-of-arrays
+/// upload, which store each attribute in its own stream.
+///
+/// The attributes could equally be grouped into one interleaved "rest" buffer
+/// (one fetch on a tiler); because the layout is interned and the pipeline
+/// specialized per draw, that regrouping would be a layout-only change with no
+/// API impact. Per-attribute streams are the default for cheap single-
+/// attribute updates and zero-interleave uploads.
 @internal
-final VertexLayoutDescriptor kUnskinnedSplitColorLayout =
-    VertexLayoutDescriptor(
-      buffers: const [
-        _kPositionBuffer,
-        _kUnskinnedAttributeBuffer,
-        _kInstanceModelTransformBuffer,
-      ],
-    );
+final VertexLayoutDescriptor kUnskinnedSoAColorLayout = VertexLayoutDescriptor(
+  buffers: const [
+    _kPositionBuffer,
+    _kNormalBuffer,
+    _kTexCoordBuffer,
+    _kColorBuffer,
+    _kInstanceModelTransformBuffer,
+  ],
+);
 
-/// The de-interleaved depth-style layout for the unskinned vertex shader:
-/// slot 0 the tightly packed position stream (12 bytes), slot 1 the
-/// instance-rate model matrix. The attribute stream is not bound, so these
-/// passes fetch only the 12-byte position per vertex. Paired with the
+/// The structure-of-arrays depth-style layout for the unskinned vertex
+/// shader: slot 0 the tightly packed position stream (12 bytes), slot 1 the
+/// instance-rate model matrix. The other attribute streams are not bound, so
+/// these passes fetch only the 12-byte position per vertex. Paired with the
 /// `UnskinnedDepthVertex` shader.
 @internal
-final VertexLayoutDescriptor kUnskinnedSplitDepthLayout =
-    VertexLayoutDescriptor(
-      buffers: const [_kPositionBuffer, _kInstanceModelTransformBuffer],
-    );
+final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
+  buffers: const [_kPositionBuffer, _kInstanceModelTransformBuffer],
+);
 
 /// Emplaces and binds the unskinned `FrameInfo` uniform (camera transform
 /// plus camera position) onto [pass], resolving the slot against [shader].
