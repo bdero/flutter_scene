@@ -3,10 +3,11 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 void bindVertexBufferCompat(
   gpu.RenderPass pass,
   gpu.BufferView bufferView,
-  int vertexCount,
-) {
+  int vertexCount, {
+  int slot = 0,
+}) {
   try {
-    (pass as dynamic).bindVertexBuffer(bufferView);
+    (pass as dynamic).bindVertexBuffer(bufferView, slot: slot);
   } on NoSuchMethodError {
     (pass as dynamic).bindVertexBuffer(bufferView, vertexCount);
   }

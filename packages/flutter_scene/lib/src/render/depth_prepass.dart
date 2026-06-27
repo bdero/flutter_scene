@@ -208,7 +208,7 @@ class _DepthPrepassEncoder {
     // transform passed here, since skinned uses joint matrices).
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
-        geometry.bindGeometryBuffers(_renderPass);
+        geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,

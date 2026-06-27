@@ -167,7 +167,7 @@ class _ObjectMaskEncoder {
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
-        geometry.bindGeometryBuffers(_renderPass);
+        geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,

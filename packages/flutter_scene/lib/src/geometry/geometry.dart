@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
@@ -25,7 +26,12 @@ import 'package:flutter_scene/src/shaders.dart';
 /// arrays without packing vertex bytes by hand.
 /// {@category Geometry}
 abstract class Geometry {
-  gpu.BufferView? _vertices;
+  // One or more vertex buffer streams, bound to consecutive slots (0, 1, ...)
+  // in order. Most geometry has a single interleaved stream; unskinned
+  // geometry uploaded through [uploadVertexData] is de-interleaved into a
+  // tight position stream plus an attribute stream (see
+  // [UnskinnedGeometry._vertexStreamBytes]).
+  List<gpu.BufferView> _vertexStreams = const [];
   int _vertexCount = 0;
 
   gpu.BufferView? _indices;
@@ -102,9 +108,27 @@ abstract class Geometry {
   /// turn-key path that allocates and uploads in one step, see
   /// [uploadVertexData].
   void setVertices(gpu.BufferView vertices, int vertexCount) {
-    _vertices = vertices;
+    _vertexStreams = [vertices];
     _vertexCount = vertexCount;
   }
+
+  /// Binds several already-uploaded vertex streams, in slot order (the first
+  /// is slot 0, the second slot 1, and so on).
+  ///
+  /// Used by the de-interleaved unskinned path, which stores position and the
+  /// remaining attributes in separate buffer slots. Single-stream geometry
+  /// uses [setVertices].
+  @internal
+  void setVertexStreams(List<gpu.BufferView> streams, int vertexCount) {
+    _vertexStreams = streams;
+    _vertexCount = vertexCount;
+  }
+
+  /// The number of vertex buffer streams this geometry binds (one for
+  /// interleaved geometry, more when de-interleaved). The instance-rate
+  /// transform buffer of the color pass binds to this slot.
+  @internal
+  int get vertexStreamCount => _vertexStreams.length;
 
   /// Binds an already-uploaded index buffer view, with element width
   /// determined by [indexType].
@@ -125,45 +149,53 @@ abstract class Geometry {
   /// Allocates a [gpu.DeviceBuffer] and uploads [vertices] (and optional
   /// [indices]) into it in one step.
   ///
-  /// The vertices must match this geometry subclass's expected layout
-  /// (48 bytes per vertex for [UnskinnedGeometry], 80 bytes for
-  /// [SkinnedGeometry]). When [indices] is supplied, the buffer is sized
-  /// to hold both ranges back-to-back and bound via [setIndices].
+  /// The vertices must match this geometry subclass's expected interleaved
+  /// layout (48 bytes per vertex for [UnskinnedGeometry], 80 bytes for
+  /// [SkinnedGeometry]). The subclass may split the interleaved bytes into
+  /// several tightly packed streams (see [_vertexStreamBytes]); the streams
+  /// and any [indices] are packed back-to-back into one buffer, the streams
+  /// bound via [setVertexStreams] and the indices via [setIndices].
   void uploadVertexData(
     ByteData vertices,
     int vertexCount,
     ByteData? indices, {
     gpu.IndexType indexType = gpu.IndexType.int16,
   }) {
-    gpu.DeviceBuffer deviceBuffer = gpu.gpuContext.createDeviceBuffer(
-      gpu.StorageMode.hostVisible,
-      indices == null
-          ? vertices.lengthInBytes
-          : vertices.lengthInBytes + indices.lengthInBytes,
-    );
-
     _cpuVertices = vertices;
     _cpuIndices = indices;
 
-    deviceBuffer.overwrite(vertices, destinationOffsetInBytes: 0);
-    setVertices(
-      gpu.BufferView(
-        deviceBuffer,
-        offsetInBytes: 0,
-        lengthInBytes: vertices.lengthInBytes,
-      ),
-      vertexCount,
+    final streams = _vertexStreamBytes(vertices, vertexCount);
+    var vertexBytes = 0;
+    for (final stream in streams) {
+      vertexBytes += stream.lengthInBytes;
+    }
+
+    final gpu.DeviceBuffer deviceBuffer = gpu.gpuContext.createDeviceBuffer(
+      gpu.StorageMode.hostVisible,
+      vertexBytes + (indices?.lengthInBytes ?? 0),
     );
 
-    if (indices != null) {
-      deviceBuffer.overwrite(
-        indices,
-        destinationOffsetInBytes: vertices.lengthInBytes,
+    var offset = 0;
+    final views = <gpu.BufferView>[];
+    for (final stream in streams) {
+      deviceBuffer.overwrite(stream, destinationOffsetInBytes: offset);
+      views.add(
+        gpu.BufferView(
+          deviceBuffer,
+          offsetInBytes: offset,
+          lengthInBytes: stream.lengthInBytes,
+        ),
       );
+      offset += stream.lengthInBytes;
+    }
+    setVertexStreams(views, vertexCount);
+
+    if (indices != null) {
+      deviceBuffer.overwrite(indices, destinationOffsetInBytes: offset);
       setIndices(
         gpu.BufferView(
           deviceBuffer,
-          offsetInBytes: vertices.lengthInBytes,
+          offsetInBytes: offset,
           lengthInBytes: indices.lengthInBytes,
         ),
         indexType,
@@ -174,6 +206,17 @@ abstract class Geometry {
       _scanLocalBoundsFromVertices(vertices, vertexCount);
     }
   }
+
+  /// Splits the interleaved [vertices] into the tightly packed vertex streams
+  /// this geometry binds, in slot order.
+  ///
+  /// The default keeps the interleaved bytes as a single stream (slot 0);
+  /// [UnskinnedGeometry] overrides it to de-interleave position into its own
+  /// stream. Each returned [ByteData] is uploaded to its own buffer region by
+  /// [uploadVertexData].
+  List<ByteData> _vertexStreamBytes(ByteData vertices, int vertexCount) => [
+    vertices,
+  ];
 
   /// Internal: retains CPU vertex/index data for scene raycasts. Subclasses
   /// with their own upload paths (see MeshGeometry's updatable buffers) call
@@ -302,21 +345,47 @@ abstract class Geometry {
   @internal
   VertexLayoutDescriptor? get instancedVertexLayout => null;
 
-  /// Binds this geometry's vertex buffer (slot 0) and index buffer onto
-  /// [pass] without binding any uniforms.
+  /// Binds all of this geometry's vertex streams (to slots 0, 1, ...) and
+  /// its index buffer onto [pass] without binding any uniforms.
   ///
   /// The color path goes through [bind], which also binds per-frame
-  /// uniforms against [vertexShader]. The depth-style passes drive a
-  /// different vertex shader (see [depthOnlyVertex]), so they bind the
-  /// buffers with this and supply their own uniforms against that shader.
+  /// uniforms against [vertexShader]. Use this for the full attribute set;
+  /// the depth-style passes bind only the position stream with
+  /// [bindPositionStream].
   @internal
   void bindGeometryBuffers(gpu.RenderPass pass) {
-    if (_vertices == null) {
-      throw Exception('setVertices must be called before binding Geometry.');
+    _requireVertices();
+    for (var slot = 0; slot < _vertexStreams.length; slot++) {
+      bindVertexBufferCompat(
+        pass,
+        _vertexStreams[slot],
+        _vertexCount,
+        slot: slot,
+      );
     }
-    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
     if (_indices != null) {
       bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
+    }
+  }
+
+  /// Binds only this geometry's position stream (slot 0) and its index
+  /// buffer onto [pass].
+  ///
+  /// The depth-style passes use this with a position-only shader and layout
+  /// (see [depthOnlyVertex]) so they fetch only position. The first stream
+  /// holds position for both the interleaved and de-interleaved layouts.
+  @internal
+  void bindPositionStream(gpu.RenderPass pass) {
+    _requireVertices();
+    bindVertexBufferCompat(pass, _vertexStreams.first, _vertexCount, slot: 0);
+    if (_indices != null) {
+      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
+    }
+  }
+
+  void _requireVertices() {
+    if (_vertexStreams.isEmpty) {
+      throw Exception('setVertices must be called before binding Geometry.');
     }
   }
 
@@ -347,21 +416,40 @@ class UnskinnedGeometry extends Geometry {
     setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
   }
 
+  // Whether this geometry stores position de-interleaved into its own stream
+  // (uploaded through [uploadVertexData]) versus a single interleaved stream
+  // (a caller-managed [setVertices] buffer, or the updatable MeshGeometry
+  // path). The two store the same bytes but bind different layouts.
+  bool get _isDeInterleaved => vertexStreamCount >= 2;
+
+  @override
+  List<ByteData> _vertexStreamBytes(ByteData vertices, int vertexCount) {
+    final split = InterleavedLayoutAdapter.splitUnskinnedStreams(
+      vertices,
+      vertexCount,
+    );
+    return [
+      ByteData.sublistView(split.position),
+      ByteData.sublistView(split.rest),
+    ];
+  }
+
   @override
   VertexLayoutDescriptor? get instancedVertexLayout =>
-      kUnskinnedInstancedLayout;
+      _isDeInterleaved ? kUnskinnedSplitColorLayout : kUnskinnedInstancedLayout;
 
-  // Cached once: the depth-style passes use the same position-only shader and
-  // layout for every unskinned geometry, so the record is shared rather than
-  // rebuilt per draw. The shader keeps its identity across hot reloads.
-  static ({gpu.Shader shader, VertexLayoutDescriptor layout})? _depthOnlyVertex;
+  // Cached once: the depth-style passes use the same position-only shader for
+  // every unskinned geometry. The layout still depends on whether position is
+  // de-interleaved, so only the shader is cached.
+  static gpu.Shader? _depthVertexShader;
 
   @override
-  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex =>
-      _depthOnlyVertex ??= (
-        shader: baseShaderLibrary['UnskinnedDepthVertex']!,
-        layout: kUnskinnedPositionOnlyLayout,
-      );
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex => (
+    shader: _depthVertexShader ??= baseShaderLibrary['UnskinnedDepthVertex']!,
+    layout: _isDeInterleaved
+        ? kUnskinnedSplitDepthLayout
+        : kUnskinnedPositionOnlyLayout,
+  );
 
   @override
   void bind(
@@ -374,8 +462,8 @@ class UnskinnedGeometry extends Geometry {
     bindGeometryBuffers(pass);
 
     // Unskinned vertex UBO. The model transform is NOT part of this block;
-    // it arrives through the instance-rate vertex buffer (slot 1), bound by
-    // the encoder for instanced and non-instanced draws alike.
+    // it arrives through the instance-rate vertex buffer (the last slot),
+    // bound by the encoder for instanced and non-instanced draws alike.
     bindUnskinnedFrameInfo(
       pass,
       transientsBuffer,
@@ -436,16 +524,7 @@ class SkinnedGeometry extends Geometry {
       ),
     );
 
-    if (_vertices == null) {
-      throw Exception(
-        'SetVertices must be called before GetBufferView for Geometry.',
-      );
-    }
-
-    bindVertexBufferCompat(pass, _vertices!, _vertexCount);
-    if (_indices != null) {
-      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
-    }
+    bindGeometryBuffers(pass);
 
     // Skinned vertex UBO. The model transform is identity on purpose:
     // the joint matrices from Skin.getJointsTexture are already full
@@ -532,10 +611,46 @@ const VertexBufferDescriptor _kInstanceModelTransformBuffer =
       ],
     );
 
-/// The two-buffer pipeline layout for the unskinned vertex shader: slot 0
-/// carries the interleaved 48-byte vertex stream (position, normal, texture
-/// coords, color), slot 1 carries the instance-rate model matrix as four
-/// vec4 columns (64 bytes per instance).
+/// The tightly packed de-interleaved position stream: one `vec3` (12 bytes)
+/// per vertex, the slot-0 buffer of the de-interleaved unskinned layouts.
+const VertexBufferDescriptor _kPositionBuffer = VertexBufferDescriptor(
+  strideInBytes: 12,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'position',
+      format: gpu.VertexFormat.float32x3,
+    ),
+  ],
+);
+
+/// The de-interleaved unskinned attribute stream (everything but position):
+/// normal (`vec3`), texture coordinates (`vec2`), color (`vec4`), 36 bytes
+/// per vertex. The slot-1 buffer of the de-interleaved color layout.
+const VertexBufferDescriptor _kUnskinnedAttributeBuffer =
+    VertexBufferDescriptor(
+      strideInBytes: 36,
+      attributes: [
+        VertexAttributeDescriptor(
+          name: 'normal',
+          format: gpu.VertexFormat.float32x3,
+        ),
+        VertexAttributeDescriptor(
+          name: 'texture_coords',
+          format: gpu.VertexFormat.float32x2,
+          offsetInBytes: 12,
+        ),
+        VertexAttributeDescriptor(
+          name: 'color',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 20,
+        ),
+      ],
+    );
+
+/// The interleaved two-buffer pipeline layout for the unskinned vertex
+/// shader: slot 0 carries the interleaved 48-byte vertex stream (position,
+/// normal, texture coords, color), slot 1 carries the instance-rate model
+/// matrix as four vec4 columns (64 bytes per instance).
 ///
 /// This is the canonical described layout; its slot-0 stride is
 /// [kUnskinnedPerVertexSize] and its attribute offsets match the bytes
@@ -571,21 +686,17 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
   ],
 );
 
-/// The depth-style layout for the unskinned vertex shader: slot 0 reads only
-/// the position attribute from the interleaved 48-byte vertex stream (the
-/// other attributes are present in the buffer but not fetched), slot 1 the
-/// instance-rate model matrix. Paired with the `UnskinnedDepthVertex` shader
-/// by the shadow, depth-prepass, and object-mask passes so they fetch only
-/// position per vertex.
+/// The interleaved-mode depth-style layout for the unskinned vertex shader:
+/// slot 0 reads only the position attribute from the interleaved 48-byte
+/// vertex stream (the other attributes are present in the buffer but not
+/// fetched), slot 1 the instance-rate model matrix. Paired with the
+/// `UnskinnedDepthVertex` shader by the shadow, depth-prepass, and
+/// object-mask passes when position is not de-interleaved (a caller-managed
+/// [Geometry.setVertices] buffer, or the updatable MeshGeometry path).
 ///
-/// The bound buffers are identical to the color pass (the same interleaved
-/// vertex buffer at slot 0, the same instance buffer at slot 1); only the
-/// declared attribute set differs.
-///
-/// TODO(position-stream): once positions live in their own tightly packed
-/// 12-byte buffer (de-interleaved at upload, composing with the dynamic
-/// position-update path), drop slot 0's stride to 12 for the locality win.
-/// The descriptor and the binding stay otherwise the same.
+/// Geometry uploaded through [Geometry.uploadVertexData] is de-interleaved
+/// and uses [kUnskinnedSplitDepthLayout] instead, whose slot-0 stride is 12
+/// for the locality win.
 @internal
 final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
     VertexLayoutDescriptor(
@@ -601,6 +712,33 @@ final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
         ),
         _kInstanceModelTransformBuffer,
       ],
+    );
+
+/// The de-interleaved color layout for the unskinned vertex shader: slot 0
+/// the tightly packed position stream (12 bytes), slot 1 the remaining
+/// attributes (normal, texture coords, color; 36 bytes), slot 2 the
+/// instance-rate model matrix. Used for geometry uploaded through
+/// [Geometry.uploadVertexData], which de-interleaves position into its own
+/// buffer.
+@internal
+final VertexLayoutDescriptor kUnskinnedSplitColorLayout =
+    VertexLayoutDescriptor(
+      buffers: const [
+        _kPositionBuffer,
+        _kUnskinnedAttributeBuffer,
+        _kInstanceModelTransformBuffer,
+      ],
+    );
+
+/// The de-interleaved depth-style layout for the unskinned vertex shader:
+/// slot 0 the tightly packed position stream (12 bytes), slot 1 the
+/// instance-rate model matrix. The attribute stream is not bound, so these
+/// passes fetch only the 12-byte position per vertex. Paired with the
+/// `UnskinnedDepthVertex` shader.
+@internal
+final VertexLayoutDescriptor kUnskinnedSplitDepthLayout =
+    VertexLayoutDescriptor(
+      buffers: const [_kPositionBuffer, _kInstanceModelTransformBuffer],
     );
 
 /// Emplaces and binds the unskinned `FrameInfo` uniform (camera transform
