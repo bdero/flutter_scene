@@ -7,6 +7,10 @@
         "type": "vertex",
         "file": "shaders/flutter_scene_skinned.vert"
     },
+    "UnskinnedDepthVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_unskinned_depth.vert"
+    },
     "UnlitFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_unlit.frag"

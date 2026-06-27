@@ -5,7 +5,7 @@
 // without a Flutter GPU context.
 
 import 'package:flutter_scene/src/geometry/geometry.dart'
-    show kUnskinnedInstancedLayout;
+    show kUnskinnedInstancedLayout, kUnskinnedPositionOnlyLayout;
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -65,6 +65,48 @@ void main() {
       expect(cursor, kUnskinnedPerVertexSize);
       // Sanity-check that the packer agrees on the per-vertex size.
       expect(InterleavedLayoutAdapter.floatsPerVertex * 4, cursor);
+    });
+  });
+
+  group('position-only depth layout', () {
+    test('reads only position from slot 0, plus the instance slot', () {
+      final layout = kUnskinnedPositionOnlyLayout.toGpuLayout();
+      expect(layout.buffers, hasLength(2));
+
+      // Slot 0: still the 48-byte interleaved stride, but only position is
+      // declared, so the input assembler fetches only position per vertex.
+      final vertex = layout.buffers[0];
+      expect(vertex.strideInBytes, kUnskinnedPerVertexSize);
+      expect(vertex.stepMode, gpu.VertexStepMode.vertex);
+      expect(
+        vertex.attributes.map((a) => (a.name, a.format, a.offsetInBytes)),
+        [('position', gpu.VertexFormat.float32x3, 0)],
+      );
+
+      // Slot 1: the same instance-rate model matrix as the color layout, so
+      // the bound instance buffer is identical across the two passes.
+      final instance = layout.buffers[1];
+      expect(instance.strideInBytes, 64);
+      expect(instance.stepMode, gpu.VertexStepMode.instance);
+      expect(instance.attributes.map((a) => a.name), [
+        'model_transform_0',
+        'model_transform_1',
+        'model_transform_2',
+        'model_transform_3',
+      ]);
+    });
+
+    test('is a distinct layout from the color layout', () {
+      // The two layouts drive the same vertex buffer but different pipelines,
+      // so they must not share a pipeline-cache identity.
+      expect(
+        kUnskinnedPositionOnlyLayout,
+        isNot(equals(kUnskinnedInstancedLayout)),
+      );
+      expect(
+        vertexLayoutId(kUnskinnedPositionOnlyLayout),
+        isNot(vertexLayoutId(kUnskinnedInstancedLayout)),
+      );
     });
   });
 

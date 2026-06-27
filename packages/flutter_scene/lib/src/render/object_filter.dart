@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/geometry/geometry.dart'
+    show bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
@@ -137,16 +139,20 @@ class _ObjectMaskEncoder {
       }
     }
     _renderPass.clearBindings();
+    final geometry = item.geometry;
+    // Unskinned geometry fills the mask through a position-only shader and
+    // layout; skinned geometry falls back to its full vertex shader and bind.
+    final depthVertex = geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
-      item.geometry.vertexShader,
+      depthVertex?.shader ?? geometry.vertexShader,
       _maskShader,
-      vertexLayout: item.geometry.instancedVertexLayout,
+      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
     }
-    _renderPass.setPrimitiveType(item.geometry.primitiveType);
+    _renderPass.setPrimitiveType(geometry.primitiveType);
     final highlight = _colorOf(item);
     final color = Float32List(4)
       ..[0] = highlight.x
@@ -158,17 +164,33 @@ class _ObjectMaskEncoder {
       _transientsBuffer.emplace(ByteData.sublistView(color)),
     );
 
+    // Binds the vertex/index buffers and the per-frame uniform for one draw.
+    void bindDraw(Matrix4 worldTransform) {
+      if (depthVertex != null) {
+        geometry.bindGeometryBuffers(_renderPass);
+        bindUnskinnedFrameInfo(
+          _renderPass,
+          _transientsBuffer,
+          depthVertex.shader,
+          _cameraTransform,
+          _cameraPosition,
+        );
+      } else {
+        geometry.bind(
+          _renderPass,
+          _transientsBuffer,
+          worldTransform,
+          _cameraTransform,
+          _cameraPosition,
+        );
+      }
+    }
+
     final instances = item.instanceTransforms;
     if (instances != null) {
-      if (item.geometry.instancedVertexLayout == null) {
+      if (geometry.instancedVertexLayout == null) {
         for (final instanceTransform in instances) {
-          item.geometry.bind(
-            _renderPass,
-            _transientsBuffer,
-            item.worldTransform * instanceTransform,
-            _cameraTransform,
-            _cameraPosition,
-          );
+          bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
@@ -176,17 +198,11 @@ class _ObjectMaskEncoder {
                 ? gpu.WindingOrder.clockwise
                 : gpu.WindingOrder.counterClockwise,
           );
-          item.geometry.draw(_renderPass);
+          geometry.draw(_renderPass);
         }
         return;
       }
-      item.geometry.bind(
-        _renderPass,
-        _transientsBuffer,
-        item.worldTransform,
-        _cameraTransform,
-        _cameraPosition,
-      );
+      bindDraw(item.worldTransform);
       final packed = packInstanceTransforms(
         item.worldTransform,
         instances,
@@ -195,24 +211,18 @@ class _ObjectMaskEncoder {
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-        item.geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+        geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.cw);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-        item.geometry.draw(_renderPass, instanceCount: packed.cwCount);
+        geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
       return;
     }
 
-    item.geometry.bind(
-      _renderPass,
-      _transientsBuffer,
-      item.worldTransform,
-      _cameraTransform,
-      _cameraPosition,
-    );
-    if (item.geometry.instancedVertexLayout != null) {
+    bindDraw(item.worldTransform);
+    if (geometry.instancedVertexLayout != null) {
       bindSingleInstanceTransform(_renderPass, item.worldTransform);
     }
     _renderPass.setWindingOrder(
@@ -220,6 +230,6 @@ class _ObjectMaskEncoder {
           ? gpu.WindingOrder.clockwise
           : gpu.WindingOrder.counterClockwise,
     );
-    item.geometry.draw(_renderPass);
+    geometry.draw(_renderPass);
   }
 }
