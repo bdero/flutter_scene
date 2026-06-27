@@ -65,6 +65,45 @@ void main() {
     });
   });
 
+  group('splitUnskinnedStreams', () {
+    test('separates position from the remaining attributes', () {
+      // Two vertices, all attributes distinct and exactly float-representable.
+      final interleaved = InterleavedLayoutAdapter.packUnskinned(
+        positions: Float32List.fromList([1, 2, 3, 4, 5, 6]),
+        vertexCount: 2,
+        normals: Float32List.fromList([7, 8, 9, 10, 11, 12]),
+        texCoords: Float32List.fromList([13, 14, 15, 16]),
+        colors: Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]),
+      );
+      final split = InterleavedLayoutAdapter.splitUnskinnedStreams(
+        ByteData.sublistView(interleaved),
+        2,
+      );
+
+      // Position stream: 12 bytes (3 floats) per vertex.
+      expect(split.position, hasLength(2 * 12));
+      expect(Float32List.sublistView(split.position), [1, 2, 3, 4, 5, 6]);
+
+      // Attribute stream: 36 bytes (9 floats) per vertex, normal then
+      // texcoord then color, matching the de-interleaved layout's offsets.
+      expect(split.rest, hasLength(2 * 36));
+      expect(Float32List.sublistView(split.rest), [
+        7, 8, 9, 13, 14, 17, 18, 19, 20, // vertex 0
+        10, 11, 12, 15, 16, 21, 22, 23, 24, // vertex 1
+      ]);
+    });
+
+    test('throws when the interleaved buffer is too short', () {
+      expect(
+        () => InterleavedLayoutAdapter.splitUnskinnedStreams(
+          ByteData(48),
+          2, // needs 96 bytes
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('packIndices', () {
     test('uses a 16-bit buffer when every index fits', () {
       final packed = InterleavedLayoutAdapter.packIndices([0, 1, 2, 0xFFFF]);

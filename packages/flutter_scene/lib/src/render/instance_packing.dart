@@ -64,8 +64,16 @@ PackedInstanceTransforms packInstanceTransforms(
 /// Every draw through the unskinned vertex shader needs this: the model
 /// matrix arrives via instance attributes whether or not the draw is
 /// instanced.
-void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
-  bindInstanceTransforms(pass, Float32List.fromList(worldTransform.storage));
+void bindSingleInstanceTransform(
+  gpu.RenderPass pass,
+  Matrix4 worldTransform, {
+  int slot = 1,
+}) {
+  bindInstanceTransforms(
+    pass,
+    Float32List.fromList(worldTransform.storage),
+    slot: slot,
+  );
 }
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
@@ -77,13 +85,17 @@ void bindSingleInstanceTransform(gpu.RenderPass pass, Matrix4 worldTransform) {
 /// (flutter/flutter#187931, buffer writes racing the GL upload) that a
 /// dedicated buffer does not actually avoid. Kept for now since it is
 /// harmless and the engine fix has not shipped in the SDK yet.
-void bindInstanceTransforms(gpu.RenderPass pass, Float32List packed) {
+void bindInstanceTransforms(
+  gpu.RenderPass pass,
+  Float32List packed, {
+  int slot = 1,
+}) {
   // TODO(gles-dirty-range): fold instance transforms back into the shared
   // transients HostBuffer once flutter/flutter#187931 is fixed in the SDK.
   if (packed.isEmpty) return;
   pass.bindVertexBuffer(
     instanceTransformBuffers.emplace(ByteData.sublistView(packed)),
-    slot: 1,
+    slot: slot,
   );
 }
 

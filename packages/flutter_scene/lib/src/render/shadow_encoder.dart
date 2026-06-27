@@ -87,7 +87,7 @@ class ShadowEncoder {
     // camera position is unused by the shadow fragment shader.
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
-        geometry.bindGeometryBuffers(_renderPass);
+        geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,

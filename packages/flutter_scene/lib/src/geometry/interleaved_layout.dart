@@ -80,6 +80,59 @@ abstract final class InterleavedLayoutAdapter {
     return out.buffer.asUint8List();
   }
 
+  /// Bytes per vertex of the de-interleaved position stream (one `vec3`).
+  static const int positionStreamBytes = 12;
+
+  /// Bytes per vertex of the de-interleaved attribute stream: normal
+  /// (`vec3`), texture coordinates (`vec2`), color (`vec4`).
+  static const int attributeStreamBytes = kUnskinnedPerVertexSize - 12;
+
+  /// Splits one interleaved unskinned vertex buffer into a tightly packed
+  /// position stream and an attribute stream (normal, texture coordinates,
+  /// color).
+  ///
+  /// The interleaved input is [kUnskinnedPerVertexSize] (48) bytes per
+  /// vertex, ordered position, normal, texture coordinates, color. The
+  /// returned [position] stream is 12 bytes per vertex and [rest] is 36,
+  /// preserving the byte order within each. This lets the depth-style passes
+  /// bind only the small position stream and dynamic updates rewrite only
+  /// positions, while the color pass binds both. Pure, so it can run off the
+  /// render isolate.
+  static ({Uint8List position, Uint8List rest}) splitUnskinnedStreams(
+    ByteData interleaved,
+    int vertexCount,
+  ) {
+    final expected = vertexCount * kUnskinnedPerVertexSize;
+    if (interleaved.lengthInBytes < expected) {
+      throw ArgumentError(
+        'interleaved holds ${interleaved.lengthInBytes} bytes; expected at '
+        'least $expected for $vertexCount unskinned vertices',
+      );
+    }
+    final src = interleaved.buffer.asUint8List(
+      interleaved.offsetInBytes,
+      interleaved.lengthInBytes,
+    );
+    final position = Uint8List(positionStreamBytes * vertexCount);
+    final rest = Uint8List(attributeStreamBytes * vertexCount);
+    for (var v = 0; v < vertexCount; v++) {
+      final s = v * kUnskinnedPerVertexSize;
+      position.setRange(
+        v * positionStreamBytes,
+        v * positionStreamBytes + positionStreamBytes,
+        src,
+        s,
+      );
+      rest.setRange(
+        v * attributeStreamBytes,
+        v * attributeStreamBytes + attributeStreamBytes,
+        src,
+        s + positionStreamBytes,
+      );
+    }
+    return (position: position, rest: rest);
+  }
+
   /// Packs triangle [indices] into the narrowest index buffer that fits.
   ///
   /// Returns the packed bytes and whether a 32-bit element width was

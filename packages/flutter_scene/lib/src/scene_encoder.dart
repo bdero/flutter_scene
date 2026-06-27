@@ -256,8 +256,13 @@ base class SceneEncoder {
       _camera.position,
     );
     if (geometry.instancedVertexLayout != null) {
-      // The model matrix arrives through the instance-rate vertex buffer.
-      bindSingleInstanceTransform(_renderPass, worldTransform);
+      // The model matrix arrives through the instance-rate vertex buffer,
+      // bound to the slot after the geometry's vertex streams.
+      bindSingleInstanceTransform(
+        _renderPass,
+        worldTransform,
+        slot: geometry.vertexStreamCount,
+      );
     }
     material.bind(_renderPass, _transientsBuffer, _lighting);
     if (windingFlipped) {
@@ -322,13 +327,14 @@ base class SceneEncoder {
       instances,
       nodeWindingFlipped: windingFlipped,
     );
+    final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
-      bindInstanceTransforms(_renderPass, packed.ccw);
+      bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       geometry.draw(_renderPass, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
-      bindInstanceTransforms(_renderPass, packed.cw);
+      bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       geometry.draw(_renderPass, instanceCount: packed.cwCount);
     }
