@@ -4,15 +4,15 @@ name: stable smoke render
 # current 3.45 candidate branch and uploads them to Argos under stable-specific
 # build names, so stable baselines are tracked separately from the Flutter
 # master-channel smoke renders.
+#
+# Dormant: the stable branch is not being maintained or released from while
+# flutter_gpu's API is still churning, so every beta roll that touches web or
+# GLES breaks it for no actionable signal. The jobs are left intact; only the
+# automatic triggers are removed. Re-add the schedule/push/pull_request
+# triggers to revive this once a maintained stable line exists again.
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 7 * * *" # daily, 07:30 UTC
-  push:
-    branches: [stable]
-  pull_request:
-    branches: [stable]
 
 # A new push to a branch or PR supersedes its still-running render.
 concurrency:
