@@ -13,6 +13,7 @@ import 'example_fscene_import.dart';
 import 'example_fscene_prefab.dart';
 import 'example_fscene_stream.dart';
 import 'example_instancing.dart';
+import 'example_lod.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
@@ -57,6 +58,7 @@ class _MyAppState extends State<MyApp> {
       'Flutter Logo': (context) => const ExampleLogo(),
       'Cuboid': (context) => const ExampleCuboid(),
       'Instancing': (context) => const ExampleInstancing(),
+      'Geometry LOD': (context) => const ExampleLod(),
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
