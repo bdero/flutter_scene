@@ -117,4 +117,50 @@ void main() {
       );
     });
   });
+
+  group('blendLodLevels', () {
+    final thresholds = [0.5, 0.25, 0.1];
+
+    test('draws a single level at full fade away from any boundary', () {
+      final r = blendLodLevels(0.35, thresholds, blendRange: 0.1);
+      expect(r, hasLength(1));
+      expect(r.single.level, 1);
+      expect(r.single.fade, 1.0);
+    });
+
+    test('blends both adjacent levels inside a band', () {
+      // The 1<->2 boundary is 0.25; a +-10% band is [0.225, 0.275]. At the
+      // midpoint the two levels split evenly.
+      final mid = blendLodLevels(0.25, thresholds, blendRange: 0.1);
+      expect(mid.map((e) => e.level), [1, 2]);
+      expect(mid[0].fade, closeTo(0.5, 1e-9));
+      expect(mid[1].fade, closeTo(0.5, 1e-9));
+      // Fades always complement to 1.
+      expect(mid[0].fade + mid[1].fade, closeTo(1.0, 1e-9));
+      // Near the top of the band the finer level dominates.
+      final high = blendLodLevels(0.27, thresholds, blendRange: 0.1);
+      expect(high[0].level, 1);
+      expect(high[0].fade, greaterThan(0.5));
+    });
+
+    test('the last level fades out alone across the cull band', () {
+      // Cull boundary is 0.1; band [0.09, 0.11]. Inside it only level 2 draws,
+      // dissolving as the size drops.
+      final r = blendLodLevels(0.095, thresholds, blendRange: 0.1);
+      expect(r, hasLength(1));
+      expect(r.single.level, 2);
+      expect(r.single.fade, lessThan(0.5));
+    });
+
+    test('culls below the cull band', () {
+      expect(blendLodLevels(0.05, thresholds, blendRange: 0.1), isEmpty);
+    });
+
+    test('a zero blend range reduces to a hard switch', () {
+      final r = blendLodLevels(0.25, thresholds, blendRange: 0);
+      expect(r, hasLength(1));
+      expect(r.single.level, 1);
+      expect(r.single.fade, 1.0);
+    });
+  });
 }
