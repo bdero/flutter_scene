@@ -77,6 +77,7 @@ class UnlitMaterial extends Material {
       baseColorFactor.r, baseColorFactor.g,
       baseColorFactor.b, baseColorFactor.a, // color
       vertexColorWeight, // vertex_color_weight
+      lodFade, // fade
     ]);
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),

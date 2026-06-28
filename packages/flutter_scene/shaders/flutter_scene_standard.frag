@@ -5,6 +5,7 @@
 #include <material_engine_lighting.glsl>
 #include <material_inputs.glsl>
 #include <material_lighting.glsl>
+#include <lod_fade.glsl>
 
 uniform sampler2D base_color_texture;
 uniform sampler2D emissive_texture;
@@ -61,6 +62,7 @@ void Surface(inout MaterialInputs material) {
 }
 
 void main() {
+  ApplyLodFade(frag_info.fade);
   MaterialInputs material = InitMaterialInputs();
   Surface(material);
   frag_color = EvaluateLighting(material);

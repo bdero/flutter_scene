@@ -22,6 +22,10 @@ class EngineLightingUniforms {
   /// 160..163). See the layout map in the implementation.
   static const fragInfoFloatCount = 164;
 
+  /// Index of the LOD cross-fade `fade` field in `FragInfo`, occupying std140
+  /// padding before `environment_transform` (so the block size is unchanged).
+  static const fadeIndex = 137;
+
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
   /// (color, factors, alpha mode) untouched for the caller to fill.
@@ -30,6 +34,10 @@ class EngineLightingUniforms {
     Lighting lighting,
     EnvironmentMap env,
   ) {
+    // Default to fully drawn; a material with an active LOD cross-fade
+    // overwrites this. Without it the zero-initialized slot would discard
+    // every fragment.
+    fragInfo[fadeIndex] = 1.0;
     final light = lighting.directionalLight;
     final cascades = lighting.shadowMap == null
         ? const <ShadowCascade>[]

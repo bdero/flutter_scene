@@ -57,6 +57,13 @@ uniform FragInfo {
   float shadow_softness;
   // Number of valid cascades in light_space_matrix (1 to 4).
   float shadow_cascade_count;
+  // Level-of-detail cross-fade coverage. 1 draws every fragment. A value in
+  // (0, 1) keeps that fraction of fragments in a screen-space dither pattern
+  // (the rest discard); a negative value keeps the complementary pattern of
+  // |value|, so two adjacent LOD levels with fades summing to 1 tile the
+  // screen between them. Occupies std140 padding before the mat4, so the
+  // block size is unchanged. See lod_fade.glsl.
+  float fade;
   // Rotates the image-based-lighting environment: the diffuse-SH and
   // prefiltered-radiance lookup directions are transformed by this before
   // sampling. Identity leaves the environment unrotated. A mat4 (not mat3)
