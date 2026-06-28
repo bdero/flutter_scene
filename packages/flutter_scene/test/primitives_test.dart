@@ -499,5 +499,59 @@ void main() {
       expect(shape, isA<ConvexHullShape>());
       expect((shape as ConvexHullShape).points, hasLength(6 * 3));
     });
+
+    test('a torus maps to a compound of convex chunks around the ring', () {
+      final shape = torusCollisionShape(
+        radius: 1,
+        tubeRadius: 0.25,
+        segments: 12,
+        tubularSegments: 6,
+      );
+      expect(shape, isA<CompoundShape>());
+      final children = (shape as CompoundShape).children;
+      expect(children, hasLength(12));
+      // Each chunk is the convex hull of two tube cross-sections.
+      final first = children.first.shape;
+      expect(first, isA<ConvexHullShape>());
+      expect((first as ConvexHullShape).points, hasLength(2 * 6 * 3));
+      // The chunks leave the hole open: no point sits at the center.
+      for (final child in children) {
+        final pts = (child.shape as ConvexHullShape).points;
+        for (var i = 0; i < pts.length; i += 3) {
+          final r = math.sqrt(pts[i] * pts[i] + pts[i + 2] * pts[i + 2]);
+          expect(r, greaterThan(0.7)); // radius - tubeRadius
+        }
+      }
+    });
+
+    test('a disc maps to a thin cylinder', () {
+      final shape = discCollisionShape(radius: 1.5);
+      expect(shape, isA<CylinderShape>());
+      final cylinder = shape as CylinderShape;
+      expect(cylinder.radius, 1.5);
+      expect(cylinder.halfHeight, lessThan(0.2)); // thin coin
+    });
+
+    test('a ring maps to a compound of thin segments around the hole', () {
+      final shape = ringCollisionShape(
+        innerRadius: 0.5,
+        outerRadius: 1,
+        segments: 10,
+      );
+      expect(shape, isA<CompoundShape>());
+      final children = (shape as CompoundShape).children;
+      expect(children, hasLength(10));
+      // Each segment is an 8-point extruded convex hull, and none reach the
+      // hole (radius below innerRadius).
+      for (final child in children) {
+        expect(child.shape, isA<ConvexHullShape>());
+        final pts = (child.shape as ConvexHullShape).points;
+        expect(pts, hasLength(8 * 3));
+        for (var i = 0; i < pts.length; i += 3) {
+          final r = math.sqrt(pts[i] * pts[i] + pts[i + 2] * pts[i + 2]);
+          expect(r, greaterThanOrEqualTo(0.5 - 1e-9));
+        }
+      }
+    });
   });
 }

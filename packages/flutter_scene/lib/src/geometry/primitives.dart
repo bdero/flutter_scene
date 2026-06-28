@@ -277,6 +277,8 @@ class TorusGeometry extends MeshGeometry {
     int tubularSegments = 16,
   }) {
     return TorusGeometry._(
+      radius,
+      tubeRadius,
       buildTorusArrays(
         radius: radius,
         tubeRadius: tubeRadius,
@@ -286,13 +288,22 @@ class TorusGeometry extends MeshGeometry {
     );
   }
 
-  TorusGeometry._(PrimitiveArrays arrays)
+  TorusGeometry._(this._radius, this._tubeRadius, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
         texCoords: arrays.texCoords,
         indices: arrays.indices,
       );
+
+  final double _radius;
+  final double _tubeRadius;
+
+  /// The matching physics collision shape. A torus is not convex, so this
+  /// is a [CompoundShape] of convex chunks swept around the ring, which
+  /// preserves the central hole. See [torusCollisionShape].
+  Shape get collisionShape =>
+      torusCollisionShape(radius: _radius, tubeRadius: _tubeRadius);
 }
 
 /// A flat filled disc in the XZ plane, centered on the origin, facing
@@ -304,16 +315,25 @@ class TorusGeometry extends MeshGeometry {
 class DiscGeometry extends MeshGeometry {
   /// Builds a disc of the given [radius].
   factory DiscGeometry({double radius = 0.5, int segments = 32}) {
-    return DiscGeometry._(buildDiscArrays(radius: radius, segments: segments));
+    return DiscGeometry._(
+      radius,
+      buildDiscArrays(radius: radius, segments: segments),
+    );
   }
 
-  DiscGeometry._(PrimitiveArrays arrays)
+  DiscGeometry._(this._radius, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
         texCoords: arrays.texCoords,
         indices: arrays.indices,
       );
+
+  final double _radius;
+
+  /// The matching physics collision shape. A flat disc has no volume, so
+  /// this is a thin [CylinderShape] (a coin). See [discCollisionShape].
+  Shape get collisionShape => discCollisionShape(radius: _radius);
 }
 
 /// A flat annulus (a disc with a concentric hole) in the XZ plane,
@@ -330,6 +350,8 @@ class RingGeometry extends MeshGeometry {
     int segments = 32,
   }) {
     return RingGeometry._(
+      innerRadius,
+      outerRadius,
       buildRingArrays(
         innerRadius: innerRadius,
         outerRadius: outerRadius,
@@ -338,13 +360,22 @@ class RingGeometry extends MeshGeometry {
     );
   }
 
-  RingGeometry._(PrimitiveArrays arrays)
+  RingGeometry._(this._innerRadius, this._outerRadius, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
         texCoords: arrays.texCoords,
         indices: arrays.indices,
       );
+
+  final double _innerRadius;
+  final double _outerRadius;
+
+  /// The matching physics collision shape. An annulus is not convex, so
+  /// this is a [CompoundShape] of thin convex segments around the ring,
+  /// which preserves the hole. See [ringCollisionShape].
+  Shape get collisionShape =>
+      ringCollisionShape(innerRadius: _innerRadius, outerRadius: _outerRadius);
 }
 
 /// A geodesic sphere built by subdividing an icosahedron, centered on the
@@ -1183,4 +1214,94 @@ Shape cylinderCollisionShape({
   ring(bottomRadius, -height / 2);
   ring(topRadius, height / 2);
   return ConvexHullShape(points: Float32List.fromList(points));
+}
+
+// A flat shape (disc, ring) has no real thickness, so its collision hull is
+// extruded to this fraction of its radius along Y, both to give a convex
+// hull a valid (non-degenerate) volume and so a dropped disc behaves like a
+// thin coin rather than an infinitely thin sheet.
+const double _kFlatCollisionHalfThickness = 0.05;
+
+/// The collision [Shape] for a [TorusGeometry]: a [CompoundShape] of
+/// [segments] convex chunks swept around the ring, each the convex hull of
+/// two adjacent tube cross-sections sampled with [tubularSegments] points.
+/// The chunks leave the central hole open, which a single convex hull would
+/// fill. The collision tessellation is intentionally coarser than a render
+/// mesh.
+Shape torusCollisionShape({
+  required double radius,
+  required double tubeRadius,
+  int segments = 16,
+  int tubularSegments = 8,
+}) {
+  final children = <CompoundChild>[];
+  for (var i = 0; i < segments; i++) {
+    final points = <double>[];
+    for (final u in [
+      2 * math.pi * i / segments,
+      2 * math.pi * (i + 1) / segments,
+    ]) {
+      final cosU = math.cos(u);
+      final sinU = math.sin(u);
+      for (var j = 0; j < tubularSegments; j++) {
+        final v = 2 * math.pi * j / tubularSegments;
+        final ringRadius = radius + tubeRadius * math.cos(v);
+        points.addAll([
+          ringRadius * cosU,
+          tubeRadius * math.sin(v),
+          ringRadius * sinU,
+        ]);
+      }
+    }
+    children.add(
+      CompoundChild(
+        shape: ConvexHullShape(points: Float32List.fromList(points)),
+        localPose: Matrix4.identity(),
+      ),
+    );
+  }
+  return CompoundShape(children: children);
+}
+
+/// The collision [Shape] for a [DiscGeometry]: a thin [CylinderShape] (a
+/// coin), since a flat disc has no volume. The thickness is a small
+/// fraction of the [radius].
+Shape discCollisionShape({required double radius}) => CylinderShape(
+  radius: radius,
+  halfHeight: radius * _kFlatCollisionHalfThickness,
+);
+
+/// The collision [Shape] for a [RingGeometry]: a [CompoundShape] of
+/// [segments] thin convex segments around the annulus, leaving the hole
+/// open. Each segment is extruded to a small thickness so it forms a valid
+/// (non-degenerate) 3D hull.
+Shape ringCollisionShape({
+  required double innerRadius,
+  required double outerRadius,
+  int segments = 16,
+}) {
+  final halfThickness = outerRadius * _kFlatCollisionHalfThickness;
+  final children = <CompoundChild>[];
+  for (var i = 0; i < segments; i++) {
+    final points = <double>[];
+    for (final a in [
+      2 * math.pi * i / segments,
+      2 * math.pi * (i + 1) / segments,
+    ]) {
+      final cosA = math.cos(a);
+      final sinA = math.sin(a);
+      for (final r in [innerRadius, outerRadius]) {
+        points
+          ..addAll([r * cosA, halfThickness, r * sinA])
+          ..addAll([r * cosA, -halfThickness, r * sinA]);
+      }
+    }
+    children.add(
+      CompoundChild(
+        shape: ConvexHullShape(points: Float32List.fromList(points)),
+        localPose: Matrix4.identity(),
+      ),
+    );
+  }
+  return CompoundShape(children: children);
 }
