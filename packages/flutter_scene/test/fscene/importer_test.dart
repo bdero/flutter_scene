@@ -1,8 +1,11 @@
-// Covers the glTF -> .fscene importer. The load-bearing check is byte parity:
-// a primitive's packed vertex/index payload must equal packGltfPrimitive's
-// output, the same packer the runtime GLB importer uses. This is the
-// project's proven import-verification method (compare bytes against the
-// known-good packer rather than eyeballing renders).
+// Covers the glTF -> .fscene importer. The load-bearing check is byte parity
+// against packGltfPrimitive (the same packer the runtime GLB importer uses).
+// Skinned geometry is stored interleaved, so its payload equals the packer's
+// bytes directly; unskinned geometry is stored de-interleaved (structure of
+// arrays), so its payload equals the packer's interleaved bytes split into the
+// four attribute streams and concatenated. This is the project's proven
+// import-verification method (compare bytes against the known-good packer
+// rather than eyeballing renders).
 //
 // Runs only when the source GLB corpus is present (CI without it skips).
 
@@ -11,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
@@ -68,19 +72,36 @@ void main() {
           final geometry = geometries[i];
           final vertexPayload = document.payload(geometry.vertices!)!;
           final indexPayload = document.payload(geometry.indices!)!;
-          expect(
-            vertexPayload.bytes,
-            equals(packed.vertexBytes),
-            reason: '$name geometry $i vertex bytes',
-          );
+          if (packed.isSkinned) {
+            expect(vertexPayload.layout, 'skinned');
+            expect(
+              vertexPayload.bytes,
+              equals(packed.vertexBytes),
+              reason: '$name geometry $i skinned vertex bytes',
+            );
+          } else {
+            // Unskinned is de-interleaved: the packer's interleaved bytes,
+            // split into per-attribute streams and concatenated.
+            expect(
+              vertexPayload.layout,
+              InterleavedLayoutAdapter.unskinnedSoaLayout,
+            );
+            final expectedSoa = InterleavedLayoutAdapter.concatUnskinnedStreams(
+              InterleavedLayoutAdapter.splitUnskinnedAttributes(
+                ByteData.sublistView(packed.vertexBytes),
+                packed.vertexCount,
+              ),
+            );
+            expect(
+              vertexPayload.bytes,
+              equals(expectedSoa),
+              reason: '$name geometry $i unskinned SoA vertex bytes',
+            );
+          }
           expect(
             indexPayload.bytes,
             equals(packed.indexBytes),
             reason: '$name geometry $i index bytes',
-          );
-          expect(
-            vertexPayload.layout,
-            packed.isSkinned ? 'skinned' : 'unskinned',
           );
           expect(
             indexPayload.format,

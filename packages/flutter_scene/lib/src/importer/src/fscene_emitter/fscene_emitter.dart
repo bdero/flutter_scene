@@ -29,6 +29,7 @@ import '../../../fscene/binary/fsceneb.dart';
 import '../../../fscene/property_value.dart';
 import '../../../fscene/scene_document.dart';
 import '../../../fscene/specs.dart';
+import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/ktx2_image.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
@@ -396,13 +397,30 @@ LocalId _buildGeometry(
     bufferViews: doc.bufferViews,
     bufferData: bufferData,
   );
+  // Unskinned geometry is stored de-interleaved (structure of arrays) so the
+  // realizer uploads each attribute straight to its own GPU buffer with no
+  // load-time reshuffle. Skinned geometry stays interleaved.
+  final Uint8List vertexBytes;
+  final String vertexLayout;
+  if (packed.isSkinned) {
+    vertexBytes = packed.vertexBytes;
+    vertexLayout = 'skinned';
+  } else {
+    vertexBytes = InterleavedLayoutAdapter.concatUnskinnedStreams(
+      InterleavedLayoutAdapter.splitUnskinnedAttributes(
+        ByteData.sublistView(packed.vertexBytes),
+        packed.vertexCount,
+      ),
+    );
+    vertexLayout = InterleavedLayoutAdapter.unskinnedSoaLayout;
+  }
   final vertices = document.addPayload(
     PayloadSpec(
       document.newId(),
       encoding: PayloadEncoding.vertexBuffer,
-      layout: packed.isSkinned ? 'skinned' : 'unskinned',
-      length: packed.vertexBytes.length,
-      bytes: packed.vertexBytes,
+      layout: vertexLayout,
+      length: vertexBytes.length,
+      bytes: vertexBytes,
     ),
   );
   final indices = document.addPayload(

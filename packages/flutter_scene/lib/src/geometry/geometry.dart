@@ -564,6 +564,44 @@ class UnskinnedGeometry extends Geometry {
     }
   }
 
+  /// Uploads already-de-interleaved attribute streams (raw bytes) straight
+  /// into per-attribute GPU buffers, with no repacking.
+  ///
+  /// This is the realizer's path for a structure-of-arrays `.fscene` vertex
+  /// payload: the payload bytes are sliced into the four streams and uploaded
+  /// as-is. Position and texture coordinates are retained (as views into the
+  /// payload) for raycasting.
+  @internal
+  void uploadUnskinnedAttributeStreams(
+    UnskinnedAttributeStreams streams,
+    int vertexCount, {
+    ByteData? indices,
+    gpu.IndexType indexType = gpu.IndexType.int16,
+  }) {
+    _uploadStreams(
+      [
+        ByteData.sublistView(streams.position),
+        ByteData.sublistView(streams.normal),
+        ByteData.sublistView(streams.texCoord),
+        ByteData.sublistView(streams.color),
+      ],
+      vertexCount,
+      indices,
+      indexType,
+    );
+    setRaycastAttributes(
+      positions: Float32List.sublistView(streams.position),
+      texCoords: Float32List.sublistView(streams.texCoord),
+      indices: indices,
+    );
+    if (localBounds == null && vertexCount > 0) {
+      scanLocalBoundsFromPositions(
+        Float32List.sublistView(streams.position),
+        vertexCount,
+      );
+    }
+  }
+
   @override
   VertexLayoutDescriptor? get instancedVertexLayout =>
       _isDeInterleaved ? kUnskinnedSoAColorLayout : kUnskinnedInstancedLayout;

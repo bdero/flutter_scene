@@ -149,6 +149,57 @@ void main() {
     });
   });
 
+  group('concat/slice structure-of-arrays payload', () {
+    test('concat then slice round-trips the four streams', () {
+      final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
+        positions: Float32List.fromList([1, 2, 3, 4, 5, 6]),
+        vertexCount: 2,
+        normals: Float32List.fromList([7, 8, 9, 10, 11, 12]),
+        texCoords: Float32List.fromList([13, 14, 15, 16]),
+        colors: Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]),
+      );
+      final payload = InterleavedLayoutAdapter.concatUnskinnedStreams(streams);
+      // Same total size as the interleaved buffer (48 bytes per vertex).
+      expect(payload, hasLength(2 * 48));
+
+      final sliced = InterleavedLayoutAdapter.sliceUnskinnedStreams(payload, 2);
+      expect(sliced.position, streams.position);
+      expect(sliced.normal, streams.normal);
+      expect(sliced.texCoord, streams.texCoord);
+      expect(sliced.color, streams.color);
+    });
+
+    test('the SoA payload equals the split of the interleaved buffer', () {
+      final positions = Float32List.fromList([1, 2, 3, 4, 5, 6]);
+      final normals = Float32List.fromList([7, 8, 9, 10, 11, 12]);
+      final texCoords = Float32List.fromList([13, 14, 15, 16]);
+      final colors = Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]);
+      final interleaved = InterleavedLayoutAdapter.packUnskinned(
+        positions: positions,
+        vertexCount: 2,
+        normals: normals,
+        texCoords: texCoords,
+        colors: colors,
+      );
+      final fromInterleaved = InterleavedLayoutAdapter.concatUnskinnedStreams(
+        InterleavedLayoutAdapter.splitUnskinnedAttributes(
+          ByteData.sublistView(interleaved),
+          2,
+        ),
+      );
+      final fromArrays = InterleavedLayoutAdapter.concatUnskinnedStreams(
+        InterleavedLayoutAdapter.unskinnedAttributeStreams(
+          positions: positions,
+          vertexCount: 2,
+          normals: normals,
+          texCoords: texCoords,
+          colors: colors,
+        ),
+      );
+      expect(fromInterleaved, fromArrays);
+    });
+  });
+
   group('packIndices', () {
     test('uses a 16-bit buffer when every index fits', () {
       final packed = InterleavedLayoutAdapter.packIndices([0, 1, 2, 0xFFFF]);

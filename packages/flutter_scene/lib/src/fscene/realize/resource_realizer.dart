@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -288,7 +289,11 @@ class ResourceRealizer {
     }
     final vertexBytes = _payloadBytes(vertexId, 'vertex');
     final vertexPayload = document.payload(vertexId)!;
-    final skinned = vertexPayload.layout == 'skinned';
+    final layout = vertexPayload.layout;
+    final soa = layout == InterleavedLayoutAdapter.unskinnedSoaLayout;
+    final skinned = layout == 'skinned';
+    // The de-interleaved and interleaved unskinned payloads carry the same
+    // 48 bytes per vertex, just reordered; skinned is 80.
     final perVertexBytes = skinned
         ? kSkinnedPerVertexSize
         : kUnskinnedPerVertexSize;
@@ -306,7 +311,7 @@ class ResourceRealizer {
     }
 
     // Set baked bounds before upload so the position scan is skipped; without
-    // bounds, uploadVertexData scans unskinned positions (and leaves skinned
+    // bounds, the upload scans unskinned positions (and leaves skinned
     // geometry unbounded, matching the importer).
     final bounds = res.bounds;
     if (bounds != null) {
@@ -314,12 +319,28 @@ class ResourceRealizer {
       geometry.setLocalBounds(aabb, _circumscribedSphere(aabb));
     }
 
-    geometry.uploadVertexData(
-      ByteData.sublistView(vertexBytes),
-      vertexCount,
-      indexBytes,
-      indexType: indexType,
-    );
+    if (soa) {
+      // De-interleaved payload: upload each attribute stream straight to its
+      // GPU buffer, no realize-time reshuffle.
+      (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
+        InterleavedLayoutAdapter.sliceUnskinnedStreams(
+          vertexBytes,
+          vertexCount,
+        ),
+        vertexCount,
+        indices: indexBytes,
+        indexType: indexType,
+      );
+    } else {
+      // Interleaved payload (skinned, or a pre-SoA unskinned document): the
+      // unskinned path de-interleaves once here.
+      geometry.uploadVertexData(
+        ByteData.sublistView(vertexBytes),
+        vertexCount,
+        indexBytes,
+        indexType: indexType,
+      );
+    }
     geometry.primitiveType = _topology(res.topology);
     return geometry;
   }
