@@ -24,6 +24,7 @@ export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
 
 export 'src/geometry/geometry.dart'
     show Geometry, SkinnedGeometry, UnskinnedGeometry;
+export 'src/geometry/mesh_data.dart' show MeshData;
 export 'src/geometry/mesh_geometry.dart'
     show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'
