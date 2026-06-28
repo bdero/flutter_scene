@@ -44,18 +44,36 @@ import 'package:flutter_scene/src/render/lod.dart';
 /// {@category Scene graph}
 class LodComponent extends MeshComponent {
   /// Creates an LOD component over [levels] (highest detail first).
+  ///
+  /// [blendRange] above `0` cross-fades adjacent levels with a screen-space
+  /// dither across a band that wide (as a fraction of each threshold) instead
+  /// of hard-switching, removing the pop. Cross-fade is honored by the
+  /// built-in lit and unlit materials.
   LodComponent(
     List<LodLevel> levels, {
     double lodBias = 1.0,
     double hysteresis = 0.1,
+    double blendRange = 0.0,
   }) : _selection = LodSelection(
          levels,
          lodBias: lodBias,
          hysteresis: hysteresis,
+         blendRange: blendRange,
        ),
        super(Mesh(levels.first.geometry, levels.first.material));
 
   final LodSelection _selection;
+
+  /// Half-width of the cross-fade band as a fraction of each threshold. `0`
+  /// hard-switches between levels; a positive value dither-blends adjacent
+  /// levels. Settable to toggle or tune cross-fade at runtime.
+  double get blendRange => _selection.blendRange;
+  set blendRange(double value) => _selection.blendRange = value;
+
+  /// Multiplies the projected size before selection. Above `1` keeps higher
+  /// detail farther away; below `1` drops detail sooner. Settable at runtime.
+  double get lodBias => _selection.lodBias;
+  set lodBias(double value) => _selection.lodBias = value;
 
   @override
   void onMount() {
