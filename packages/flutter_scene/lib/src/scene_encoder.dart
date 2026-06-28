@@ -9,14 +9,26 @@ import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
+import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
 /// distance, all captured when [SceneEncoder.submit] is called.
 base class _OpaqueRecord {
-  _OpaqueRecord(this.item, this.pipeline, this.pipelineKey, this.depth);
+  _OpaqueRecord(
+    this.item,
+    this.geometry,
+    this.material,
+    this.pipeline,
+    this.pipelineKey,
+    this.depth,
+  );
   final RenderItem item;
+  // The geometry and material to draw, which differ from the item's own when
+  // a level of detail was selected.
+  final Geometry geometry;
+  final Material material;
   final gpu.RenderPipeline pipeline;
   final int pipelineKey;
   final double depth;
@@ -128,6 +140,10 @@ base class SceneEncoder {
       _transientsBuffer = transientsBuffer {
     _cameraTransform = _camera.getViewTransform(dimensions);
     frustum = Frustum.matrix(_cameraTransform);
+    // The screen-size LOD metric is perspective-specific; with any other
+    // projection LOD nodes draw their highest-detail level.
+    final camera = _camera;
+    _lodFovRadiansY = camera is PerspectiveCamera ? camera.fovRadiansY : null;
 
     // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
@@ -141,6 +157,9 @@ base class SceneEncoder {
   final gpu.RenderPass _renderPass;
   final gpu.HostBuffer _transientsBuffer;
   late final Matrix4 _cameraTransform;
+  // The camera's vertical field of view in radians, or null for a
+  // non-perspective camera (which disables screen-size LOD).
+  late final double? _lodFovRadiansY;
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
 
@@ -168,26 +187,47 @@ base class SceneEncoder {
   void submit(RenderItem item) {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
-    if (item.frustumCulled) {
-      final bounds = item.cullBounds;
-      if (bounds != null) {
-        cullScratchAabb
-          ..copyFrom(bounds)
-          ..transform(item.worldTransform);
-        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
-      }
+
+    // The world-space AABB is needed for frustum culling and, when the item
+    // has levels of detail, for the screen-size metric; compute it once.
+    final lod = item.lod;
+    Aabb3? worldBounds;
+    final localBounds = item.cullBounds;
+    if ((item.frustumCulled || lod != null) && localBounds != null) {
+      cullScratchAabb
+        ..copyFrom(localBounds)
+        ..transform(item.worldTransform);
+      worldBounds = cullScratchAabb;
+    }
+    if (item.frustumCulled &&
+        worldBounds != null &&
+        !frustum.intersectsWithAabb3(worldBounds)) {
+      return;
+    }
+
+    // Resolve the level of detail (or cull) before choosing a pipeline, so a
+    // distant object draws its cheaper variant or nothing at all.
+    var geometry = item.geometry;
+    var material = item.material;
+    if (lod != null) {
+      final level = _selectLod(lod, worldBounds);
+      if (level == null) return;
+      geometry = level.geometry;
+      material = level.material;
     }
 
     final pipeline = resolvePipeline(
-      item.geometry.vertexShader,
-      item.material.fragmentShader,
-      vertexLayout: item.geometry.instancedVertexLayout,
+      geometry.vertexShader,
+      material.fragmentShader,
+      vertexLayout: geometry.instancedVertexLayout,
     );
 
-    if (item.material.isOpaque()) {
+    if (material.isOpaque()) {
       _opaqueRecords.add(
         _OpaqueRecord(
           item,
+          geometry,
+          material,
           pipeline,
           identityHashCode(pipeline),
           _depthOf(item.worldTransform),
@@ -205,8 +245,8 @@ base class SceneEncoder {
         _translucentRecords.add(
           _TranslucentRecord(
             worldTransform,
-            item.geometry,
-            item.material,
+            geometry,
+            material,
             pipeline,
             _depthOf(worldTransform),
             item.windingFlipped != (instanceTransform.determinant() < 0),
@@ -217,14 +257,34 @@ base class SceneEncoder {
       _translucentRecords.add(
         _TranslucentRecord(
           item.worldTransform,
-          item.geometry,
-          item.material,
+          geometry,
+          material,
           pipeline,
           _depthOf(item.worldTransform),
           item.windingFlipped,
         ),
       );
     }
+  }
+
+  // Picks the level of detail for [lod] from the item's [worldBounds], or
+  // null to cull. Falls back to the highest detail when no screen-size metric
+  // is available (no bounds, or a non-perspective camera).
+  LodLevel? _selectLod(LodSelection lod, Aabb3? worldBounds) {
+    final fovRadiansY = _lodFovRadiansY;
+    if (worldBounds == null || fovRadiansY == null) return lod.levels.first;
+    final center = worldBounds.center;
+    // The circumscribed sphere of the world AABB (conservative, so detail is
+    // kept slightly longer than a tight sphere would).
+    final radius = worldBounds.max.distanceTo(worldBounds.min) * 0.5;
+    final size = lodScreenSize(
+      center: center,
+      radius: radius,
+      cameraPosition: _camera.position,
+      fovRadiansY: fovRadiansY,
+    );
+    final level = lod.select(size);
+    return level < 0 ? null : lod.levels[level];
   }
 
   double _depthOf(Matrix4 worldTransform) =>
@@ -361,8 +421,8 @@ base class SceneEncoder {
         _encodeInstanced(
           record.pipeline,
           item.worldTransform,
-          item.geometry,
-          item.material,
+          record.geometry,
+          record.material,
           instances,
           item.windingFlipped,
         );
@@ -370,8 +430,8 @@ base class SceneEncoder {
         _encode(
           record.pipeline,
           item.worldTransform,
-          item.geometry,
-          item.material,
+          record.geometry,
+          record.material,
           item.windingFlipped,
         );
       }
