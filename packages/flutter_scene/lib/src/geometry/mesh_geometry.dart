@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
+import 'package:flutter_scene/src/geometry/mesh_data.dart';
 
 /// How a [MeshGeometry] manages its GPU buffers over its lifetime.
 /// {@category Geometry}
@@ -134,6 +135,43 @@ class MeshGeometry extends UnskinnedGeometry {
       _uploadAllStreams();
       _recomputeBounds();
     }
+  }
+
+  /// Uploads a mesh from a [MeshData] snapshot built off the render
+  /// isolate.
+  ///
+  /// The snapshot's CPU work (vertex assembly, normal generation) can run
+  /// on a background isolate; this constructor performs only the GPU
+  /// upload. See [MeshData] for the recipe. [storage] selects whether the
+  /// mesh can later be updated in place.
+  factory MeshGeometry.fromMeshData(
+    MeshData data, {
+    GeometryStorage storage = GeometryStorage.fixed,
+  }) {
+    return MeshGeometry.fromArrays(
+      positions: data.positions,
+      normals: data.normals,
+      texCoords: data.texCoords,
+      colors: data.colors,
+      indices: data.indices,
+      primitiveType: data.primitiveType,
+      storage: storage,
+    );
+  }
+
+  /// Replaces this updatable geometry's data from a [MeshData] snapshot.
+  ///
+  /// Equivalent to passing the snapshot's arrays to [rebuild], so the same
+  /// indexed-or-not contract applies. Throws a [StateError] unless this
+  /// geometry is [GeometryStorage.updatable].
+  void applyMeshData(MeshData data) {
+    rebuild(
+      positions: data.positions,
+      normals: data.normals,
+      texCoords: data.texCoords,
+      colors: data.colors,
+      indices: data.indices,
+    );
   }
 
   /// How this geometry's GPU buffers are managed; see [GeometryStorage].
