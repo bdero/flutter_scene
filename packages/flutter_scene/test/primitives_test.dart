@@ -239,6 +239,18 @@ void main() {
       expectOutwardWinding(cylinder(bottomRadius: 0.5, topRadius: 2));
     });
 
+    test('a collapsed end produces a fan with no degenerate triangles', () {
+      for (final arrays in [
+        cylinder(topRadius: 0, radialSegments: 12),
+        cylinder(bottomRadius: 0, radialSegments: 12),
+      ]) {
+        for (var t = 0; t < arrays.indices.length ~/ 3; t++) {
+          final area = triangleNormal(arrays.positions, arrays.indices, t);
+          expect(area.length, greaterThan(1e-9), reason: 'triangle $t is flat');
+        }
+      }
+    });
+
     test('rejects degenerate parameters', () {
       expect(() => cylinder(radialSegments: 2), throwsArgumentError);
       expect(() => cylinder(heightSegments: 0), throwsArgumentError);

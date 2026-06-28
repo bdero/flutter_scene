@@ -724,9 +724,6 @@ PrimitiveArrays buildCylinderArrays({
   // (radial, y) plane the wall runs from (bottomRadius, -h/2) to
   // (topRadius, +h/2), so its outward normal is (height, bottomRadius -
   // topRadius) before normalizing.
-  // TODO(cone-apex): when an end radius is 0 its row collapses to a point,
-  // so half the triangles in the adjacent band are degenerate (zero area,
-  // harmless but wasted). Emit a triangle fan at a collapsed end instead.
   final slopeY = bottomRadius - topRadius;
   final columns = radialSegments + 1;
   for (var r = 0; r <= heightSegments; r++) {
@@ -747,14 +744,18 @@ PrimitiveArrays buildCylinderArrays({
     }
   }
   for (var r = 0; r < heightSegments; r++) {
+    // A zero-radius end collapses its whole row to a point, so the band
+    // next to it is a triangle fan, not quads: the triangle that would use
+    // two coincident apex vertices is degenerate and is skipped.
+    final topApex = r == 0 && topRadius == 0;
+    final bottomApex = r + 1 == heightSegments && bottomRadius == 0;
     for (var s = 0; s < radialSegments; s++) {
       final a = r * columns + s;
       final b = a + 1;
       final c = a + columns;
       final d = c + 1;
-      indices
-        ..addAll([a, c, b])
-        ..addAll([b, c, d]);
+      if (!topApex) indices.addAll([a, c, b]);
+      if (!bottomApex) indices.addAll([b, c, d]);
     }
   }
 
