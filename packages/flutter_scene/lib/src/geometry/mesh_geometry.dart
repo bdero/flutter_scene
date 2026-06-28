@@ -517,6 +517,8 @@ class MeshGeometry extends UnskinnedGeometry {
         indexType != _indexType) {
       _indexCapacity = nextBufferCapacity(indices.length);
       _indexType = indexType;
+      // Host-visible for the same reason as the attribute streams (see
+      // [_RingBufferStream]); a rebuild may rewrite the index buffer.
       _indexBuffer = gpu.gpuContext.createDeviceBuffer(
         gpu.StorageMode.hostVisible,
         _indexCapacity * elementBytes,
@@ -676,6 +678,16 @@ int nextBufferCapacity(int needed, {int minimum = 16}) {
   );
 }
 
+// A ring of host-visible device buffers for one updatable attribute stream.
+//
+// Vertex data must be CPU-written every update, and `hostVisible` is the
+// only storage mode that allows that: flutter_gpu has no buffer-to-buffer
+// blit or read-back, so a `devicePrivate` buffer cannot be filled after
+// allocation. On the coherent and unified-memory backends this is the
+// shared CPU/GPU region, so the `flush` after a write is a no-op; on
+// non-coherent backends `flush` uploads only the written range. The ring
+// hands each update a buffer the GPU is not currently reading, avoiding the
+// write-vs-read race.
 class _RingBufferStream {
   _RingBufferStream(this.bytesPerVertex);
 
