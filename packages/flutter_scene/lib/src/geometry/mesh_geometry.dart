@@ -316,7 +316,12 @@ class MeshGeometry extends UnskinnedGeometry {
     );
     // Raycast off this geometry's own attribute arrays instead of the
     // transient upload copies, so no extra position/texcoord copy lingers.
-    setRaycastAttributes(positions: _cpuPositions, texCoords: _cpuTexCoords);
+    // Keep the index bytes so an indexed mesh raycasts as indexed.
+    setRaycastAttributes(
+      positions: _cpuPositions,
+      texCoords: _cpuTexCoords,
+      indices: indexBytes,
+    );
   }
 
   // Re-packs the live CPU streams into the interleaved buffer and binds
