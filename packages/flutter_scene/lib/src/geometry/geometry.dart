@@ -53,6 +53,7 @@ abstract class Geometry {
   Float32List? _cpuTexCoords;
 
   gpu.Shader? _vertexShader;
+  String? _vertexShaderName;
 
   /// How the vertex/index data is assembled into primitives when drawn.
   ///
@@ -98,13 +99,20 @@ abstract class Geometry {
 
   /// The vertex shader used when rendering this geometry.
   ///
-  /// Set by subclasses (or via [setVertexShader]) before the first frame.
-  /// Throws if accessed before a shader has been assigned.
+  /// Set by subclasses, either directly with [setVertexShader] or, for a
+  /// shader from [baseShaderLibrary], by name with [setVertexShaderName]. A
+  /// name is resolved on first access and cached, so the lookup happens once
+  /// (at render time) rather than per draw. Throws if accessed before a
+  /// shader has been assigned, or before the base shader bundle has loaded
+  /// for a named shader.
   gpu.Shader get vertexShader {
-    if (_vertexShader == null) {
+    final resolved = _vertexShader ??= _vertexShaderName == null
+        ? null
+        : baseShaderLibrary[_vertexShaderName!];
+    if (resolved == null) {
       throw Exception('Vertex shader has not been set');
     }
-    return _vertexShader!;
+    return resolved;
   }
 
   /// Binds an already-uploaded vertex buffer view as this geometry's
@@ -370,6 +378,18 @@ abstract class Geometry {
   /// from [baseShaderLibrary] or another shader bundle.
   void setVertexShader(gpu.Shader shader) {
     _vertexShader = shader;
+    _vertexShaderName = null;
+  }
+
+  /// Assigns the vertex shader by [name] from [baseShaderLibrary].
+  ///
+  /// The shader is resolved lazily on first use and then cached, so a
+  /// geometry can be constructed before [Scene.initializeStaticResources]
+  /// has loaded the base shader bundle. The shader is only needed at render
+  /// time, which the engine already defers until the bundle is ready.
+  void setVertexShaderName(String name) {
+    _vertexShaderName = name;
+    _vertexShader = null;
   }
 
   /// Hook for skinned geometries to receive the joints texture computed
@@ -480,7 +500,7 @@ class UnskinnedGeometry extends Geometry {
   /// Creates an [UnskinnedGeometry] preconfigured with the
   /// `UnskinnedVertex` shader from [baseShaderLibrary].
   UnskinnedGeometry() {
-    setVertexShader(baseShaderLibrary['UnskinnedVertex']!);
+    setVertexShaderName('UnskinnedVertex');
   }
 
   // Whether this geometry stores its attributes de-interleaved into separate
@@ -645,7 +665,7 @@ class SkinnedGeometry extends Geometry {
   /// Creates a [SkinnedGeometry] preconfigured with the `SkinnedVertex`
   /// shader from [baseShaderLibrary].
   SkinnedGeometry() {
-    setVertexShader(baseShaderLibrary['SkinnedVertex']!);
+    setVertexShaderName('SkinnedVertex');
   }
 
   @override

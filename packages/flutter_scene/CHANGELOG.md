@@ -1,3 +1,18 @@
+## 0.19.0
+
+* Built-in materials and geometries can now be constructed before
+  `Scene.initializeStaticResources()` finishes loading the base shader bundle.
+  Each resolves its shader from the base library lazily on first render (which
+  the engine already defers until resources are ready) and caches it, so
+  `SceneView` handles the warm-up with no `await` or `FutureBuilder` in app
+  code. The built-in gradient and physical sky sources work the same way. To
+  show placeholder content during warm-up, await
+  `Scene.initializeStaticResources()` yourself. Custom `ShaderMaterial` and
+  `ShaderSkySource` shaders are unaffected (you still supply a loaded shader).
+  `Material` and `Geometry` gain `setFragmentShaderName` and
+  `setVertexShaderName` for custom subclasses that pull from the base library,
+  and `ShaderSkySource` gains a `fragmentShaderName` constructor argument.
+
 ## 0.18.1
 
 * No code changes. Reworded the package description, added the Flutter Scene

@@ -4,7 +4,6 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode;
-import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -15,7 +14,7 @@ import 'package:vector_math/vector_math.dart';
 /// The final color is `baseColorFactor * baseColorTexture`, optionally
 /// blended with the per-vertex color via [vertexColorWeight].
 ///
-/// Wraps the `UnlitFragment` shader from [baseShaderLibrary].
+/// Wraps the `UnlitFragment` shader from the base shader library.
 /// {@category Materials}
 class UnlitMaterial extends Material {
   /// Creates an [UnlitMaterial], optionally textured.
@@ -23,7 +22,7 @@ class UnlitMaterial extends Material {
   /// When [colorTexture] is null a 1×1 white placeholder is used so the
   /// final color reduces to [baseColorFactor].
   UnlitMaterial({gpu.Texture? colorTexture}) : _baseColorSource = colorTexture {
-    setFragmentShader(baseShaderLibrary['UnlitFragment']!);
+    setFragmentShaderName('UnlitFragment');
   }
 
   Object? _baseColorSource;

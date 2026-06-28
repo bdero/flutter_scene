@@ -5,7 +5,6 @@ import 'dart:math' as math;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/environment.dart';
-import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -35,7 +34,7 @@ class GradientSkySource extends ShaderSkySource implements SunSky {
        groundColor = groundColor ?? Vector3(0.16, 0.14, 0.12),
        sunDirection = sunDirection ?? Vector3(0.4, 0.5, 0.6),
        sunColor = sunColor ?? Vector3(3.0, 2.7, 2.2),
-       super(fragmentShader: baseShaderLibrary['SkyGradientFragment']!);
+       super(fragmentShaderName: 'SkyGradientFragment');
 
   /// The sky color straight up.
   Vector3 zenithColor;
@@ -122,7 +121,7 @@ class PhysicalSkySource extends ShaderSkySource implements SunSky {
        rayleighColor = rayleighColor ?? Vector3(0.26, 0.41, 0.58),
        mieColor = mieColor ?? Vector3(0.69, 0.73, 0.81),
        groundColor = groundColor ?? Vector3(0.12, 0.12, 0.13),
-       super(fragmentShader: baseShaderLibrary['SkyPhysicalFragment']!);
+       super(fragmentShaderName: 'SkyPhysicalFragment');
 
   /// Direction toward the sun (world space; normalized when used).
   @override

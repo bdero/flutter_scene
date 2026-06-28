@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render_texture.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// Validates a value assigned to a material texture slot.
 ///
@@ -194,22 +195,41 @@ abstract class Material {
   double lodFade = 1.0;
 
   gpu.Shader? _fragmentShader;
+  String? _fragmentShaderName;
 
   /// The fragment shader used when rendering geometry with this material.
   ///
-  /// Subclasses set this in their constructor (typically via
-  /// [setFragmentShader]). Throws if accessed before a shader has been
-  /// assigned.
+  /// Subclasses assign this in their constructor, either directly with
+  /// [setFragmentShader] or, for a shader from [baseShaderLibrary], by name
+  /// with [setFragmentShaderName]. A name is resolved on first access and
+  /// cached, so the lookup happens once (at render time) rather than per
+  /// draw. Throws if accessed before a shader has been assigned, or before
+  /// the base shader bundle has loaded for a named shader.
   gpu.Shader get fragmentShader {
-    if (_fragmentShader == null) {
+    final resolved = _fragmentShader ??= _fragmentShaderName == null
+        ? null
+        : baseShaderLibrary[_fragmentShaderName!];
+    if (resolved == null) {
       throw Exception('Fragment shader has not been set');
     }
-    return _fragmentShader!;
+    return resolved;
   }
 
   /// Assigns the fragment [shader] used when this material is drawn.
   void setFragmentShader(gpu.Shader shader) {
     _fragmentShader = shader;
+    _fragmentShaderName = null;
+  }
+
+  /// Assigns the fragment shader by [name] from [baseShaderLibrary].
+  ///
+  /// The shader is resolved lazily on first use and then cached, so a
+  /// material can be constructed before [Scene.initializeStaticResources]
+  /// has loaded the base shader bundle. The shader is only needed at render
+  /// time, which the engine already defers until the bundle is ready.
+  void setFragmentShaderName(String name) {
+    _fragmentShaderName = name;
+    _fragmentShader = null;
   }
 
   /// Binds this material's render-pass state, uniforms, and textures.
