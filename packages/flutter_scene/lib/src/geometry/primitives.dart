@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
+import 'package:flutter_scene/src/physics/shape.dart';
 
 /// Vertex attribute arrays produced by a primitive generator.
 ///
@@ -30,9 +31,12 @@ class CuboidGeometry extends MeshGeometry {
   ///
   /// When [debugColors] is true each corner carries a distinct vertex color.
   factory CuboidGeometry(Vector3 extents, {bool debugColors = false}) =>
-      CuboidGeometry._(buildCuboidArrays(extents, debugColors: debugColors));
+      CuboidGeometry._(
+        extents,
+        buildCuboidArrays(extents, debugColors: debugColors),
+      );
 
-  CuboidGeometry._(PrimitiveArrays arrays)
+  CuboidGeometry._(this._extents, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
@@ -40,6 +44,12 @@ class CuboidGeometry extends MeshGeometry {
         colors: arrays.colors,
         indices: arrays.indices,
       );
+
+  final Vector3 _extents;
+
+  /// The matching physics collision shape, a box of half the cuboid's
+  /// extents centered on the local origin.
+  Shape get collisionShape => cuboidCollisionShape(_extents);
 }
 
 /// A triangular-prism wedge (a ramp), centered on the origin in X and Z
@@ -53,9 +63,9 @@ class CuboidGeometry extends MeshGeometry {
 class WedgeGeometry extends MeshGeometry {
   /// Builds a wedge sized to [size] = `(width, height, run)`.
   factory WedgeGeometry(Vector3 size) =>
-      WedgeGeometry._(buildWedgeArrays(size));
+      WedgeGeometry._(size, buildWedgeArrays(size));
 
-  WedgeGeometry._(PrimitiveArrays arrays)
+  WedgeGeometry._(this._size, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
@@ -63,6 +73,12 @@ class WedgeGeometry extends MeshGeometry {
         colors: arrays.colors,
         indices: arrays.indices,
       );
+
+  final Vector3 _size;
+
+  /// The matching physics collision shape, the convex hull of the wedge's
+  /// six corners.
+  Shape get collisionShape => wedgeCollisionShape(_size);
 }
 
 /// A flat rectangular grid in the XZ plane, centered on the origin, with
@@ -114,17 +130,253 @@ class SphereGeometry extends MeshGeometry {
     int rings = 16,
   }) {
     return SphereGeometry._(
+      radius,
       buildSphereArrays(radius: radius, segments: segments, rings: rings),
     );
   }
 
-  SphereGeometry._(PrimitiveArrays arrays)
+  SphereGeometry._(this._radius, PrimitiveArrays arrays)
     : super.fromArrays(
         positions: arrays.positions,
         normals: arrays.normals,
         texCoords: arrays.texCoords,
         indices: arrays.indices,
       );
+
+  final double _radius;
+
+  /// The matching physics collision shape, a sphere of the same radius.
+  Shape get collisionShape => SphereShape(radius: _radius);
+}
+
+/// A cylinder aligned with the Y axis, centered on the origin.
+///
+/// [bottomRadius] and [topRadius] are the radii at `y = -height/2` and
+/// `y = +height/2`. Giving them different values produces a truncated
+/// cone, and setting [topRadius] to `0` produces a cone with its apex at
+/// the top. [radialSegments] divides the circumference and
+/// [heightSegments] divides the side along Y. [bottomCap] and [topCap]
+/// add the end discs (a zero-radius end never emits a cap).
+/// {@category Geometry}
+class CylinderGeometry extends MeshGeometry {
+  /// Builds a cylinder (or cone/truncated cone) of the given dimensions.
+  factory CylinderGeometry({
+    double bottomRadius = 0.5,
+    double topRadius = 0.5,
+    double height = 1.0,
+    int radialSegments = 32,
+    int heightSegments = 1,
+    bool bottomCap = true,
+    bool topCap = true,
+  }) {
+    return CylinderGeometry._(
+      bottomRadius,
+      topRadius,
+      height,
+      radialSegments,
+      buildCylinderArrays(
+        bottomRadius: bottomRadius,
+        topRadius: topRadius,
+        height: height,
+        radialSegments: radialSegments,
+        heightSegments: heightSegments,
+        bottomCap: bottomCap,
+        topCap: topCap,
+      ),
+    );
+  }
+
+  CylinderGeometry._(
+    this._bottomRadius,
+    this._topRadius,
+    this._height,
+    this._radialSegments,
+    PrimitiveArrays arrays,
+  ) : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+
+  final double _bottomRadius;
+  final double _topRadius;
+  final double _height;
+  final int _radialSegments;
+
+  /// The matching physics collision shape. A straight cylinder (equal
+  /// radii) maps to a [CylinderShape]; a cone or truncated cone maps to the
+  /// convex hull of its two end rings (a zero-radius end collapses to its
+  /// apex point), since there is no analytic cone collision primitive.
+  Shape get collisionShape => cylinderCollisionShape(
+    bottomRadius: _bottomRadius,
+    topRadius: _topRadius,
+    height: _height,
+    radialSegments: _radialSegments,
+  );
+}
+
+/// A capsule (a cylinder capped by two hemispheres) aligned with the Y
+/// axis, centered on the origin.
+///
+/// [radius] is the capsule radius and [height] is the length of the
+/// cylindrical mid-section, excluding the caps, so the total extent along
+/// Y is `height + 2 * radius`. This matches the convention of the physics
+/// `CapsuleShape`. [radialSegments] divides the circumference and
+/// [capRings] divides each hemispherical cap from its equator to its pole.
+/// {@category Geometry}
+class CapsuleGeometry extends MeshGeometry {
+  /// Builds a capsule of the given [radius] and mid-section [height].
+  factory CapsuleGeometry({
+    double radius = 0.5,
+    double height = 1.0,
+    int radialSegments = 32,
+    int capRings = 8,
+  }) {
+    return CapsuleGeometry._(
+      radius,
+      height,
+      buildCapsuleArrays(
+        radius: radius,
+        height: height,
+        radialSegments: radialSegments,
+        capRings: capRings,
+      ),
+    );
+  }
+
+  CapsuleGeometry._(this._radius, this._height, PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+
+  final double _radius;
+  final double _height;
+
+  /// The matching physics collision shape, a capsule with the same radius
+  /// and mid-section half-height.
+  Shape get collisionShape =>
+      capsuleCollisionShape(radius: _radius, height: _height);
+}
+
+/// A torus (ring) lying in the XZ plane, centered on the origin.
+///
+/// [radius] is the distance from the center to the center of the tube and
+/// [tubeRadius] is the radius of the tube itself. [radialSegments] divides
+/// the main ring and [tubularSegments] divides the tube's cross-section.
+/// {@category Geometry}
+class TorusGeometry extends MeshGeometry {
+  /// Builds a torus of the given [radius] and [tubeRadius].
+  factory TorusGeometry({
+    double radius = 0.5,
+    double tubeRadius = 0.2,
+    int radialSegments = 32,
+    int tubularSegments = 16,
+  }) {
+    return TorusGeometry._(
+      buildTorusArrays(
+        radius: radius,
+        tubeRadius: tubeRadius,
+        radialSegments: radialSegments,
+        tubularSegments: tubularSegments,
+      ),
+    );
+  }
+
+  TorusGeometry._(PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+}
+
+/// A flat filled disc in the XZ plane, centered on the origin, facing
+/// `+Y`.
+///
+/// [radius] is the disc radius and [segments] the number of wedges around
+/// the rim.
+/// {@category Geometry}
+class DiscGeometry extends MeshGeometry {
+  /// Builds a disc of the given [radius].
+  factory DiscGeometry({double radius = 0.5, int segments = 32}) {
+    return DiscGeometry._(buildDiscArrays(radius: radius, segments: segments));
+  }
+
+  DiscGeometry._(PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+}
+
+/// A flat annulus (a disc with a concentric hole) in the XZ plane,
+/// centered on the origin, facing `+Y`.
+///
+/// [innerRadius] is the hole radius and [outerRadius] the rim radius.
+/// [segments] is the number of wedges around the ring.
+/// {@category Geometry}
+class RingGeometry extends MeshGeometry {
+  /// Builds an annulus between [innerRadius] and [outerRadius].
+  factory RingGeometry({
+    double innerRadius = 0.25,
+    double outerRadius = 0.5,
+    int segments = 32,
+  }) {
+    return RingGeometry._(
+      buildRingArrays(
+        innerRadius: innerRadius,
+        outerRadius: outerRadius,
+        segments: segments,
+      ),
+    );
+  }
+
+  RingGeometry._(PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+}
+
+/// A geodesic sphere built by subdividing an icosahedron, centered on the
+/// origin.
+///
+/// Unlike [SphereGeometry] (a UV sphere with pinched poles), an icosphere
+/// has near-uniform triangle sizes over the whole surface. [subdivisions]
+/// controls the tessellation: each step quadruples the triangle count
+/// (`0` is the bare 20-face icosahedron). Vertex normals point radially
+/// outward.
+/// {@category Geometry}
+class IcosphereGeometry extends MeshGeometry {
+  /// Builds an icosphere of the given [radius] and [subdivisions].
+  factory IcosphereGeometry({double radius = 0.5, int subdivisions = 2}) {
+    return IcosphereGeometry._(
+      radius,
+      buildIcosphereArrays(radius: radius, subdivisions: subdivisions),
+    );
+  }
+
+  IcosphereGeometry._(this._radius, PrimitiveArrays arrays)
+    : super.fromArrays(
+        positions: arrays.positions,
+        normals: arrays.normals,
+        texCoords: arrays.texCoords,
+        indices: arrays.indices,
+      );
+
+  final double _radius;
+
+  /// The matching physics collision shape, a sphere of the same radius.
+  Shape get collisionShape => SphereShape(radius: _radius);
 }
 
 /// Generates the vertex arrays for a [CuboidGeometry] sized to [extents].
@@ -392,4 +644,543 @@ PrimitiveArrays buildSphereArrays({
     colors: null,
     indices: indices,
   );
+}
+
+/// Generates the vertex arrays for a [CylinderGeometry].
+///
+/// The side is a grid of `radialSegments + 1` columns by
+/// `heightSegments + 1` rows whose normals account for the slope when the
+/// radii differ (so a cone shades correctly). End caps are triangle fans
+/// about a center vertex, emitted only when requested and the matching
+/// radius is nonzero. Rows run from the top (`y = +height/2`) down, so the
+/// side winding matches [buildSphereArrays].
+PrimitiveArrays buildCylinderArrays({
+  required double bottomRadius,
+  required double topRadius,
+  required double height,
+  required int radialSegments,
+  required int heightSegments,
+  required bool bottomCap,
+  required bool topCap,
+}) {
+  if (radialSegments < 3) {
+    throw ArgumentError('A cylinder needs at least three radial segments');
+  }
+  if (heightSegments < 1) {
+    throw ArgumentError('A cylinder needs at least one height segment');
+  }
+  if (bottomRadius < 0 || topRadius < 0) {
+    throw ArgumentError('Cylinder radii cannot be negative');
+  }
+  if (bottomRadius == 0 && topRadius == 0) {
+    throw ArgumentError(
+      'A cylinder needs a nonzero radius on at least one end',
+    );
+  }
+
+  final positions = <double>[];
+  final normals = <double>[];
+  final texCoords = <double>[];
+  final indices = <int>[];
+
+  void addVert(Vector3 p, Vector3 n, double u, double v) {
+    positions.addAll([p.x, p.y, p.z]);
+    normals.addAll([n.x, n.y, n.z]);
+    texCoords.addAll([u, v]);
+  }
+
+  // Side surface. The outward normal tilts by the wall slope: in the
+  // (radial, y) plane the wall runs from (bottomRadius, -h/2) to
+  // (topRadius, +h/2), so its outward normal is (height, bottomRadius -
+  // topRadius) before normalizing.
+  // TODO(cone-apex): when an end radius is 0 its row collapses to a point,
+  // so half the triangles in the adjacent band are degenerate (zero area,
+  // harmless but wasted). Emit a triangle fan at a collapsed end instead.
+  final slopeY = bottomRadius - topRadius;
+  final columns = radialSegments + 1;
+  for (var r = 0; r <= heightSegments; r++) {
+    final t = r / heightSegments; // 0 at the top row, 1 at the bottom
+    final y = height / 2 - height * t;
+    final radius = topRadius + (bottomRadius - topRadius) * t;
+    for (var s = 0; s <= radialSegments; s++) {
+      final theta = 2 * math.pi * s / radialSegments;
+      final cos = math.cos(theta);
+      final sin = math.sin(theta);
+      final normal = Vector3(height * cos, slopeY, height * sin).normalized();
+      addVert(
+        Vector3(radius * cos, y, radius * sin),
+        normal,
+        s / radialSegments,
+        t,
+      );
+    }
+  }
+  for (var r = 0; r < heightSegments; r++) {
+    for (var s = 0; s < radialSegments; s++) {
+      final a = r * columns + s;
+      final b = a + 1;
+      final c = a + columns;
+      final d = c + 1;
+      indices
+        ..addAll([a, c, b])
+        ..addAll([b, c, d]);
+    }
+  }
+
+  // End cap as a triangle fan. [flip] selects the winding so the cap's
+  // front face points away along the cap's outward normal (0, ny, 0).
+  void addCap(double y, double radius, double ny, {required bool flip}) {
+    if (radius <= 0) return;
+    final center = positions.length ~/ 3;
+    addVert(Vector3(0, y, 0), Vector3(0, ny, 0), 0.5, 0.5);
+    final rimBase = positions.length ~/ 3;
+    for (var s = 0; s <= radialSegments; s++) {
+      final theta = 2 * math.pi * s / radialSegments;
+      final cos = math.cos(theta);
+      final sin = math.sin(theta);
+      addVert(
+        Vector3(radius * cos, y, radius * sin),
+        Vector3(0, ny, 0),
+        0.5 + 0.5 * cos,
+        0.5 + 0.5 * sin,
+      );
+    }
+    for (var s = 0; s < radialSegments; s++) {
+      final r0 = rimBase + s;
+      final r1 = rimBase + s + 1;
+      indices.addAll(flip ? [center, r1, r0] : [center, r0, r1]);
+    }
+  }
+
+  if (bottomCap) addCap(-height / 2, bottomRadius, -1, flip: true);
+  if (topCap) addCap(height / 2, topRadius, 1, flip: false);
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// Generates the vertex arrays for a [CapsuleGeometry].
+///
+/// Built as latitude rings from the top pole down to the bottom pole: the
+/// two hemispheres share their equator rings with the cylindrical
+/// mid-section, whose seam carries horizontal normals. Rows run top to
+/// bottom so the winding matches [buildSphereArrays].
+PrimitiveArrays buildCapsuleArrays({
+  required double radius,
+  required double height,
+  required int radialSegments,
+  required int capRings,
+}) {
+  if (radialSegments < 3) {
+    throw ArgumentError('A capsule needs at least three radial segments');
+  }
+  if (capRings < 1) {
+    throw ArgumentError('A capsule needs at least one cap ring');
+  }
+  if (radius <= 0) {
+    throw ArgumentError('A capsule needs a positive radius');
+  }
+
+  final halfH = height / 2;
+  final rings = <({double posY, double posR, double normY, double normR})>[];
+  // Top hemisphere: phi 0 (pole) to pi/2 (equator at y = +height/2).
+  for (var r = 0; r <= capRings; r++) {
+    final phi = (math.pi / 2) * (r / capRings);
+    rings.add((
+      posY: halfH + radius * math.cos(phi),
+      posR: radius * math.sin(phi),
+      normY: math.cos(phi),
+      normR: math.sin(phi),
+    ));
+  }
+  // Bottom hemisphere: phi pi/2 (equator at y = -height/2) to pi (pole).
+  for (var r = 0; r <= capRings; r++) {
+    final phi = (math.pi / 2) + (math.pi / 2) * (r / capRings);
+    rings.add((
+      posY: -halfH + radius * math.cos(phi),
+      posR: radius * math.sin(phi),
+      normY: math.cos(phi),
+      normR: math.sin(phi),
+    ));
+  }
+
+  final columns = radialSegments + 1;
+  final rowCount = rings.length;
+  final positions = <double>[];
+  final normals = <double>[];
+  final texCoords = <double>[];
+  for (var r = 0; r < rowCount; r++) {
+    final ring = rings[r];
+    for (var s = 0; s <= radialSegments; s++) {
+      final theta = 2 * math.pi * s / radialSegments;
+      final cos = math.cos(theta);
+      final sin = math.sin(theta);
+      positions.addAll([ring.posR * cos, ring.posY, ring.posR * sin]);
+      normals.addAll([ring.normR * cos, ring.normY, ring.normR * sin]);
+      texCoords.addAll([s / radialSegments, r / (rowCount - 1)]);
+    }
+  }
+  final indices = <int>[];
+  for (var r = 0; r < rowCount - 1; r++) {
+    for (var s = 0; s < radialSegments; s++) {
+      final a = r * columns + s;
+      final b = a + 1;
+      final c = a + columns;
+      final d = c + 1;
+      indices
+        ..addAll([a, c, b])
+        ..addAll([b, c, d]);
+    }
+  }
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// Generates the vertex arrays for a [TorusGeometry] lying in the XZ
+/// plane.
+PrimitiveArrays buildTorusArrays({
+  required double radius,
+  required double tubeRadius,
+  required int radialSegments,
+  required int tubularSegments,
+}) {
+  if (radialSegments < 3) {
+    throw ArgumentError('A torus needs at least three radial segments');
+  }
+  if (tubularSegments < 3) {
+    throw ArgumentError('A torus needs at least three tubular segments');
+  }
+  if (radius <= 0 || tubeRadius <= 0) {
+    throw ArgumentError('A torus needs positive radii');
+  }
+
+  final columns = tubularSegments + 1;
+  final positions = <double>[];
+  final normals = <double>[];
+  final texCoords = <double>[];
+  for (var i = 0; i <= radialSegments; i++) {
+    final u = 2 * math.pi * i / radialSegments;
+    final cosU = math.cos(u);
+    final sinU = math.sin(u);
+    for (var j = 0; j <= tubularSegments; j++) {
+      final v = 2 * math.pi * j / tubularSegments;
+      final cosV = math.cos(v);
+      final sinV = math.sin(v);
+      final ringRadius = radius + tubeRadius * cosV;
+      positions.addAll([
+        ringRadius * cosU,
+        tubeRadius * sinV,
+        ringRadius * sinU,
+      ]);
+      normals.addAll([cosV * cosU, sinV, cosV * sinU]);
+      texCoords.addAll([j / tubularSegments, i / radialSegments]);
+    }
+  }
+  final indices = <int>[];
+  for (var i = 0; i < radialSegments; i++) {
+    for (var j = 0; j < tubularSegments; j++) {
+      final a = i * columns + j;
+      final b = a + 1;
+      final c = a + columns;
+      final d = c + 1;
+      indices
+        ..addAll([a, c, b])
+        ..addAll([b, c, d]);
+    }
+  }
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// Generates the vertex arrays for a [DiscGeometry], a filled disc in the
+/// XZ plane facing +Y.
+PrimitiveArrays buildDiscArrays({
+  required double radius,
+  required int segments,
+}) {
+  if (segments < 3) {
+    throw ArgumentError('A disc needs at least three segments');
+  }
+  if (radius <= 0) {
+    throw ArgumentError('A disc needs a positive radius');
+  }
+
+  final positions = <double>[0, 0, 0];
+  final normals = <double>[0, 1, 0];
+  final texCoords = <double>[0.5, 0.5];
+  for (var s = 0; s <= segments; s++) {
+    final theta = 2 * math.pi * s / segments;
+    final cos = math.cos(theta);
+    final sin = math.sin(theta);
+    positions.addAll([radius * cos, 0, radius * sin]);
+    normals.addAll([0, 1, 0]);
+    texCoords.addAll([0.5 + 0.5 * cos, 0.5 + 0.5 * sin]);
+  }
+  final indices = <int>[];
+  for (var s = 0; s < segments; s++) {
+    // Wound so the lit surface faces +Y (front face opposite +Y normal).
+    indices.addAll([0, 1 + s, 1 + s + 1]);
+  }
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// Generates the vertex arrays for a [RingGeometry], a flat annulus in the
+/// XZ plane facing +Y.
+PrimitiveArrays buildRingArrays({
+  required double innerRadius,
+  required double outerRadius,
+  required int segments,
+}) {
+  if (segments < 3) {
+    throw ArgumentError('A ring needs at least three segments');
+  }
+  if (innerRadius < 0 || outerRadius <= 0) {
+    throw ArgumentError('A ring needs a positive outer radius');
+  }
+  if (innerRadius >= outerRadius) {
+    throw ArgumentError('A ring needs innerRadius < outerRadius');
+  }
+
+  final positions = <double>[];
+  final normals = <double>[];
+  final texCoords = <double>[];
+  // Outer rim first (indices 0..segments), then inner rim.
+  for (var s = 0; s <= segments; s++) {
+    final theta = 2 * math.pi * s / segments;
+    positions.addAll([
+      outerRadius * math.cos(theta),
+      0,
+      outerRadius * math.sin(theta),
+    ]);
+    normals.addAll([0, 1, 0]);
+    texCoords.addAll([s / segments, 1]);
+  }
+  final innerBase = segments + 1;
+  for (var s = 0; s <= segments; s++) {
+    final theta = 2 * math.pi * s / segments;
+    positions.addAll([
+      innerRadius * math.cos(theta),
+      0,
+      innerRadius * math.sin(theta),
+    ]);
+    normals.addAll([0, 1, 0]);
+    texCoords.addAll([s / segments, 0]);
+  }
+  final indices = <int>[];
+  for (var s = 0; s < segments; s++) {
+    final o0 = s;
+    final o1 = s + 1;
+    final i0 = innerBase + s;
+    final i1 = innerBase + s + 1;
+    // Wound so the lit surface faces +Y.
+    indices
+      ..addAll([o0, o1, i1])
+      ..addAll([o0, i1, i0]);
+  }
+
+  return (
+    positions: Float32List.fromList(positions),
+    normals: Float32List.fromList(normals),
+    texCoords: Float32List.fromList(texCoords),
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// Generates the vertex arrays for an [IcosphereGeometry] by subdividing
+/// an icosahedron [subdivisions] times and projecting onto the sphere.
+PrimitiveArrays buildIcosphereArrays({
+  required double radius,
+  required int subdivisions,
+}) {
+  if (subdivisions < 0) {
+    throw ArgumentError('Icosphere subdivisions cannot be negative');
+  }
+  if (radius <= 0) {
+    throw ArgumentError('An icosphere needs a positive radius');
+  }
+
+  final t = (1 + math.sqrt(5)) / 2;
+  final verts = <Vector3>[
+    Vector3(-1, t, 0),
+    Vector3(1, t, 0),
+    Vector3(-1, -t, 0),
+    Vector3(1, -t, 0),
+    Vector3(0, -1, t),
+    Vector3(0, 1, t),
+    Vector3(0, -1, -t),
+    Vector3(0, 1, -t),
+    Vector3(t, 0, -1),
+    Vector3(t, 0, 1),
+    Vector3(-t, 0, -1),
+    Vector3(-t, 0, 1),
+  ];
+  // Faces wound so the outward normal opposes the right-hand normal (the
+  // engine's front-face convention), i.e. clockwise seen from outside.
+  var faces = <List<int>>[
+    [0, 5, 11],
+    [0, 1, 5],
+    [0, 7, 1],
+    [0, 10, 7],
+    [0, 11, 10],
+    [1, 9, 5],
+    [5, 4, 11],
+    [11, 2, 10],
+    [10, 6, 7],
+    [7, 8, 1],
+    [3, 4, 9],
+    [3, 2, 4],
+    [3, 6, 2],
+    [3, 8, 6],
+    [3, 9, 8],
+    [4, 5, 9],
+    [2, 11, 4],
+    [6, 10, 2],
+    [8, 7, 6],
+    [9, 1, 8],
+  ];
+
+  // Midpoint cache: each subdivided edge contributes one shared vertex.
+  // The key is the edge's endpoint pair (low, high) so an edge shared by
+  // two faces yields a single welded midpoint.
+  final midpointCache = <({int low, int high}), int>{};
+  int midpoint(int a, int b) {
+    final key = (low: math.min(a, b), high: math.max(a, b));
+    final cached = midpointCache[key];
+    if (cached != null) return cached;
+    final index = verts.length;
+    verts.add((verts[a] + verts[b]) * 0.5);
+    midpointCache[key] = index;
+    return index;
+  }
+
+  for (var i = 0; i < subdivisions; i++) {
+    final next = <List<int>>[];
+    for (final f in faces) {
+      final a = f[0];
+      final b = f[1];
+      final c = f[2];
+      final ab = midpoint(a, b);
+      final bc = midpoint(b, c);
+      final ca = midpoint(c, a);
+      next
+        ..add([a, ab, ca])
+        ..add([b, bc, ab])
+        ..add([c, ca, bc])
+        ..add([ab, bc, ca]);
+    }
+    faces = next;
+  }
+
+  final positions = Float32List(verts.length * 3);
+  final normals = Float32List(verts.length * 3);
+  final texCoords = Float32List(verts.length * 2);
+  for (var i = 0; i < verts.length; i++) {
+    final n = verts[i].normalized();
+    positions[i * 3] = radius * n.x;
+    positions[i * 3 + 1] = radius * n.y;
+    positions[i * 3 + 2] = radius * n.z;
+    normals[i * 3] = n.x;
+    normals[i * 3 + 1] = n.y;
+    normals[i * 3 + 2] = n.z;
+    // TODO(icosphere-uv): spherical mapping leaves a seam where longitude
+    // wraps and distorts near the poles; emit per-face UVs to remove it.
+    texCoords[i * 2] = 0.5 + math.atan2(n.z, n.x) / (2 * math.pi);
+    texCoords[i * 2 + 1] = 0.5 - math.asin(n.y) / math.pi;
+  }
+  final indices = <int>[];
+  for (final f in faces) {
+    indices.addAll(f);
+  }
+
+  return (
+    positions: positions,
+    normals: normals,
+    texCoords: texCoords,
+    colors: null,
+    indices: indices,
+  );
+}
+
+/// The collision [Shape] for a [CuboidGeometry] of full [extents]: a box of
+/// half those extents, since [BoxShape] is specified by half-extents.
+Shape cuboidCollisionShape(Vector3 extents) =>
+    BoxShape(halfExtents: extents * 0.5);
+
+/// The collision [Shape] for a [WedgeGeometry] of `(width, height, run)`
+/// [size]: the convex hull of its six corners.
+Shape wedgeCollisionShape(Vector3 size) {
+  final hx = size.x / 2;
+  final hz = size.z / 2;
+  final y = size.y;
+  return ConvexHullShape(
+    points: Float32List.fromList(<double>[
+      -hx, 0, -hz, // low edge, -Z
+      hx, 0, -hz,
+      -hx, 0, hz, // back-bottom, +Z
+      hx, 0, hz,
+      -hx, y, hz, // back-top, +Z
+      hx, y, hz,
+    ]),
+  );
+}
+
+/// The collision [Shape] for a [CapsuleGeometry]: a capsule whose
+/// [CapsuleShape.halfHeight] is half the cylindrical mid-section [height]
+/// (excluding the caps), matching the geometry's height convention.
+Shape capsuleCollisionShape({required double radius, required double height}) =>
+    CapsuleShape(radius: radius, halfHeight: height / 2);
+
+/// The collision [Shape] for a [CylinderGeometry]. Equal radii map to a
+/// [CylinderShape]; a cone or truncated cone maps to the convex hull of its
+/// two end rings sampled with [radialSegments] points (a zero-radius end
+/// collapses to its apex point), since there is no analytic cone shape.
+Shape cylinderCollisionShape({
+  required double bottomRadius,
+  required double topRadius,
+  required double height,
+  required int radialSegments,
+}) {
+  if (bottomRadius == topRadius) {
+    return CylinderShape(radius: bottomRadius, halfHeight: height / 2);
+  }
+  final points = <double>[];
+  void ring(double radius, double y) {
+    if (radius <= 0) {
+      points.addAll([0, y, 0]);
+      return;
+    }
+    for (var s = 0; s < radialSegments; s++) {
+      final theta = 2 * math.pi * s / radialSegments;
+      points.addAll([radius * math.cos(theta), y, radius * math.sin(theta)]);
+    }
+  }
+
+  ring(bottomRadius, -height / 2);
+  ring(topRadius, height / 2);
+  return ConvexHullShape(points: Float32List.fromList(points));
 }
