@@ -167,9 +167,10 @@ class MeshGeometry extends UnskinnedGeometry {
   bool _packedIndices32Bit = false;
 
   /// The packed interleaved vertex bytes (and packed index bytes with their
-  /// width), retained so the scene serializer can re-emit this geometry as
-  /// payload chunks. Interleaved lazily from the per-attribute CPU streams on
-  /// first access.
+  /// width), in the engine's interleaved unskinned layout. Interleaved lazily
+  /// from the per-attribute CPU streams on first access. The scene serializer
+  /// emits the de-interleaved [soaData] instead; this stays as a convenience
+  /// for callers wanting the interleaved form.
   ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
   get packedData => (
     vertexBytes: _packedVertexBytes ??= InterleavedLayoutAdapter.packUnskinned(

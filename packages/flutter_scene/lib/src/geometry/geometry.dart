@@ -243,17 +243,6 @@ abstract class Geometry {
     vertices,
   ];
 
-  /// Internal: retains interleaved CPU vertex/index data for scene raycasts.
-  /// Subclasses with their own upload paths (see MeshGeometry's updatable
-  /// buffers) call this when they bypass [uploadVertexData].
-  @internal
-  void retainCpuMeshData(ByteData? vertices, ByteData? indices) {
-    _cpuVertices = vertices;
-    _cpuIndices = indices;
-    _cpuPositions = null;
-    _cpuTexCoords = null;
-  }
-
   /// Internal: retains structure-of-arrays CPU attributes (and the index
   /// data) for raycasts, used by the de-interleaved upload path instead of an
   /// interleaved copy. The indices must be retained too, or an indexed mesh
