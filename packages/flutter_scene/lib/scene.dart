@@ -27,7 +27,17 @@ export 'src/geometry/geometry.dart'
 export 'src/geometry/mesh_geometry.dart'
     show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'
-    show CuboidGeometry, PlaneGeometry, SphereGeometry, WedgeGeometry;
+    show
+        CapsuleGeometry,
+        CuboidGeometry,
+        CylinderGeometry,
+        DiscGeometry,
+        IcosphereGeometry,
+        PlaneGeometry,
+        RingGeometry,
+        SphereGeometry,
+        TorusGeometry,
+        WedgeGeometry;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'
