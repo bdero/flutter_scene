@@ -115,6 +115,10 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     _skyEnvironment = SkyEnvironment(
       source,
       refresh: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.manual,
+      // Bake the procedural sky at a higher resolution than the default so the
+      // sun and horizon stay crisp and the poles do not pinch into a sunburst.
+      faceResolution: 256,
+      equirectWidth: 1024,
     );
     scene.skyEnvironment = _skyEnvironment;
   }
