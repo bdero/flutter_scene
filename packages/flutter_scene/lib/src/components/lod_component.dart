@@ -21,6 +21,19 @@ import 'package:flutter_scene/src/render/lod.dart';
 /// resolution independent. The highest-detail level's bounds are used for
 /// frustum culling, so culling stays conservative.
 ///
+/// Current limitations:
+/// - The shadow and depth-prepass passes always draw the highest-detail
+///   level and ignore the LOD cull, so a tiny object culled in the color
+///   pass can still cast a shadow or write depth (a per-pass LOD bias is
+///   future work).
+/// - Selection memory (for the [hysteresis] dead-band) is shared across
+///   views, so a multi-view frame can see one view's last choice bias
+///   another's.
+/// - Hardware-instanced draws are not supported here; a [LodComponent]
+///   draws a single mesh, so it picks one level for the whole node.
+/// - A non-perspective camera disables the metric and draws the
+///   highest-detail level.
+///
 /// ```dart
 /// node.addComponent(LodComponent([
 ///   LodLevel(geometry: high, material: mat, screenSize: 0.4),
