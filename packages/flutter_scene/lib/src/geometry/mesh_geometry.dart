@@ -117,14 +117,20 @@ class MeshGeometry extends UnskinnedGeometry {
         texCoords,
         colors,
       );
-      _vertexCapacity = nextBufferCapacity(vertexCount);
-      _vertexBuffer = gpu.gpuContext.createDeviceBuffer(
-        gpu.StorageMode.hostVisible,
-        _vertexCapacity * kInterleavedVertexBytes,
+      _positionRing = _RingBufferStream(
+        InterleavedLayoutAdapter.positionStreamBytes,
       );
+      _normalRing = _RingBufferStream(
+        InterleavedLayoutAdapter.normalStreamBytes,
+      );
+      _texCoordRing = _RingBufferStream(
+        InterleavedLayoutAdapter.texCoordStreamBytes,
+      );
+      _colorRing = _RingBufferStream(InterleavedLayoutAdapter.colorStreamBytes);
       _liveVertexCount = vertexCount;
-      _uploadVertexBytes();
+      // Indices first, so the attribute upload can retain them for raycasting.
       if (_indexed) _uploadIndices(indices!);
+      _uploadAllStreams();
       _recomputeBounds();
     }
   }
@@ -132,27 +138,29 @@ class MeshGeometry extends UnskinnedGeometry {
   /// How this geometry's GPU buffers are managed; see [GeometryStorage].
   final GeometryStorage storage;
 
-  /// Bytes per vertex in the interleaved unskinned layout.
-  static const int kInterleavedVertexBytes =
-      InterleavedLayoutAdapter.floatsPerVertex * 4;
-
   // --- Updatable-storage state. Unused while [storage] is fixed. ---
 
   bool _indexed = false;
   int _liveVertexCount = 0;
-  int _vertexCapacity = 0;
   int _indexCapacity = 0;
-  gpu.DeviceBuffer? _vertexBuffer;
   gpu.DeviceBuffer? _indexBuffer;
   gpu.IndexType _indexType = gpu.IndexType.int16;
 
-  // CPU-side copies of every attribute stream, sized to the live vertex
-  // count. Retained so a single-attribute update can re-pack the
-  // interleaved buffer, which holds every attribute together.
+  // One ring of host-visible buffers per attribute, so an in-place update
+  // writes to a buffer the GPU is not currently reading (avoiding the
+  // write-vs-read race). The index buffer stays single-buffered, since
+  // topology-stable updates leave it untouched and only the slow rebuild path
+  // rewrites it. [_streamViews] holds the currently bound view of each ring,
+  // in slot order (position, normal, texcoord, color).
+  late final _RingBufferStream _positionRing;
+  late final _RingBufferStream _normalRing;
+  late final _RingBufferStream _texCoordRing;
+  late final _RingBufferStream _colorRing;
+  List<gpu.BufferView> _streamViews = const [];
+
   // The interleaved vertex bytes, built lazily from the structure-of-arrays
-  // CPU streams only when the scene serializer asks for them (the fixed path
-  // never interleaves otherwise). The updatable path sets it eagerly, since
-  // it interleaves into a single buffer anyway.
+  // CPU streams only when the scene serializer asks for them, and invalidated
+  // on every update. Nothing interleaves on the upload path anymore.
   Uint8List? _packedVertexBytes;
   Uint8List? _packedIndexBytes;
   bool _packedIndices32Bit = false;
@@ -195,7 +203,7 @@ class MeshGeometry extends UnskinnedGeometry {
     _ensureUpdatable('updatePositions');
     _checkAttributeLength('positions', positions.length, 3);
     _cpuPositions = Float32List.fromList(positions);
-    _uploadVertexBytes();
+    _writeStream(0, _positionRing, _cpuPositions);
     _recomputeBounds();
   }
 
@@ -204,7 +212,7 @@ class MeshGeometry extends UnskinnedGeometry {
     _ensureUpdatable('updateNormals');
     _checkAttributeLength('normals', normals.length, 3);
     _cpuNormals = Float32List.fromList(normals);
-    _uploadVertexBytes();
+    _writeStream(1, _normalRing, _cpuNormals);
   }
 
   /// Replaces every texture coordinate, keeping the vertex count
@@ -213,7 +221,7 @@ class MeshGeometry extends UnskinnedGeometry {
     _ensureUpdatable('updateTexCoords');
     _checkAttributeLength('texCoords', texCoords.length, 2);
     _cpuTexCoords = Float32List.fromList(texCoords);
-    _uploadVertexBytes();
+    _writeStream(2, _texCoordRing, _cpuTexCoords);
   }
 
   /// Replaces every vertex color, keeping the vertex count unchanged.
@@ -221,7 +229,7 @@ class MeshGeometry extends UnskinnedGeometry {
     _ensureUpdatable('updateColors');
     _checkAttributeLength('colors', colors.length, 4);
     _cpuColors = Float32List.fromList(colors);
-    _uploadVertexBytes();
+    _writeStream(3, _colorRing, _cpuColors);
   }
 
   /// Replaces all of this geometry's data, allowing the vertex and index
@@ -270,16 +278,10 @@ class MeshGeometry extends UnskinnedGeometry {
             : null);
 
     _setCpuStreams(positions, vertexCount, resolvedNormals, texCoords, colors);
-    if (vertexCount > _vertexCapacity) {
-      _vertexCapacity = nextBufferCapacity(vertexCount);
-      _vertexBuffer = gpu.gpuContext.createDeviceBuffer(
-        gpu.StorageMode.hostVisible,
-        _vertexCapacity * kInterleavedVertexBytes,
-      );
-    }
     _liveVertexCount = vertexCount;
-    _uploadVertexBytes();
+    // The rings reallocate themselves when the count outgrows their capacity.
     if (_indexed) _uploadIndices(indices!);
+    _uploadAllStreams();
     _recomputeBounds();
   }
 
@@ -324,42 +326,51 @@ class MeshGeometry extends UnskinnedGeometry {
     );
   }
 
-  // Re-packs the live CPU streams into the interleaved buffer and binds
-  // it. Reuses the retained DeviceBuffer; no allocation.
-  void _uploadVertexBytes() {
-    final bytes = InterleavedLayoutAdapter.packUnskinned(
+  // Writes all four attribute streams into their rings and binds them.
+  // Used at construction and on rebuild.
+  void _uploadAllStreams() {
+    _streamViews = [
+      _positionRing.write(_bytesOf(_cpuPositions), _liveVertexCount),
+      _normalRing.write(_bytesOf(_cpuNormals), _liveVertexCount),
+      _texCoordRing.write(_bytesOf(_cpuTexCoords), _liveVertexCount),
+      _colorRing.write(_bytesOf(_cpuColors), _liveVertexCount),
+    ];
+    setVertexStreams(_streamViews, _liveVertexCount);
+    _refreshRaycastData();
+    // Invalidate the lazily interleaved serialization bytes.
+    _packedVertexBytes = null;
+  }
+
+  // Writes one changed attribute into its ring's next buffer and rebinds the
+  // streams. The other attributes keep their current ring buffers, so only
+  // the dirty stream's bytes are re-uploaded.
+  void _writeStream(int slot, _RingBufferStream ring, Float32List attribute) {
+    _streamViews = List<gpu.BufferView>.of(_streamViews);
+    _streamViews[slot] = ring.write(_bytesOf(attribute), _liveVertexCount);
+    setVertexStreams(_streamViews, _liveVertexCount);
+    _refreshRaycastData();
+    _packedVertexBytes = null;
+  }
+
+  void _refreshRaycastData() {
+    setRaycastAttributes(
       positions: _cpuPositions,
-      vertexCount: _liveVertexCount,
-      normals: _cpuNormals,
       texCoords: _cpuTexCoords,
-      colors: _cpuColors,
-    );
-    _packedVertexBytes = bytes;
-    retainCpuMeshData(
-      ByteData.sublistView(bytes),
-      _packedIndexBytes == null
+      indices: _packedIndexBytes == null
           ? null
           : ByteData.sublistView(_packedIndexBytes!),
     );
-    final buffer = _vertexBuffer!;
-    if (bytes.isNotEmpty) {
-      buffer.overwrite(ByteData.sublistView(bytes));
-      buffer.flush(offsetInBytes: 0, lengthInBytes: bytes.length);
-    }
-    setVertices(
-      gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: bytes.length),
-      _liveVertexCount,
-    );
   }
+
+  static Uint8List _bytesOf(Float32List attribute) => attribute.buffer
+      .asUint8List(attribute.offsetInBytes, attribute.lengthInBytes);
 
   void _uploadIndices(List<int> indices) {
     final packed = InterleavedLayoutAdapter.packIndices(indices);
     _packedIndexBytes = packed.bytes;
     _packedIndices32Bit = packed.is32Bit;
-    retainCpuMeshData(
-      ByteData.sublistView(packedData.vertexBytes),
-      ByteData.sublistView(packed.bytes),
-    );
+    // Raycast index data is retained alongside the attribute streams by
+    // [_refreshRaycastData]; this method only manages the GPU index buffer.
     final indexType = packed.is32Bit
         ? gpu.IndexType.int32
         : gpu.IndexType.int16;
@@ -500,6 +511,60 @@ int nextBufferCapacity(int needed, {int minimum = 16}) {
     capacity <<= 1;
   }
   return capacity;
+}
+
+/// A small ring of host-visible device buffers for one updatable attribute
+/// stream.
+///
+/// Each [write] advances to the next buffer in the ring before overwriting,
+/// so the GPU keeps reading the previously bound buffer while the CPU writes
+/// the next one. The ring depth matches the frame count the engine's
+/// transient `HostBuffer` cycles through, which bounds the GPU's in-flight
+/// reads. The ring reallocates (at a power-of-two capacity) only when the
+/// vertex count outgrows it, so steady-state updates never allocate.
+class _RingBufferStream {
+  _RingBufferStream(this.bytesPerVertex);
+
+  /// Tightly packed bytes for one vertex of this attribute.
+  final int bytesPerVertex;
+
+  // Matches `gpu.HostBuffer`'s frame count, the number of frames the engine
+  // cycles transient buffers through.
+  static const int _ringDepth = 4;
+
+  final List<gpu.DeviceBuffer> _buffers = [];
+  int _capacityVertices = 0;
+  int _cursor = 0;
+
+  gpu.BufferView write(Uint8List bytes, int vertexCount) {
+    if (_buffers.isEmpty || vertexCount > _capacityVertices) {
+      _capacityVertices = nextBufferCapacity(vertexCount);
+      _buffers
+        ..clear()
+        ..addAll(
+          List.generate(
+            _ringDepth,
+            (_) => gpu.gpuContext.createDeviceBuffer(
+              gpu.StorageMode.hostVisible,
+              _capacityVertices * bytesPerVertex,
+            ),
+          ),
+        );
+      _cursor = 0;
+    } else {
+      _cursor = (_cursor + 1) % _ringDepth;
+    }
+    final length = vertexCount * bytesPerVertex;
+    final buffer = _buffers[_cursor];
+    if (length > 0) {
+      buffer.overwrite(
+        ByteData.sublistView(bytes),
+        destinationOffsetInBytes: 0,
+      );
+      buffer.flush(offsetInBytes: 0, lengthInBytes: length);
+    }
+    return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: length);
+  }
 }
 
 /// Assembles a [MeshGeometry] one vertex and triangle at a time.
