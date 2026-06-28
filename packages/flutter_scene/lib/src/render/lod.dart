@@ -2,6 +2,9 @@ import 'dart:math' as math;
 
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/material/material.dart';
+
 /// The projected on-screen size of a world-space bounding sphere, as a
 /// fraction of the viewport height.
 ///
@@ -80,4 +83,83 @@ int selectLodLevel(
   }
   // A multi-level jump (or any non-adjacent change) switches immediately.
   return naive;
+}
+
+/// One level of detail for an [LodComponent]: a drawable variant shown while
+/// the object's projected on-screen size (see [lodScreenSize]) is at least
+/// [screenSize], a fraction of the viewport height.
+///
+/// Levels are listed highest detail first, with strictly descending
+/// [screenSize] thresholds. The smallest threshold is the cull floor: below
+/// it the object is not drawn. Set the last level's [screenSize] to `0` to
+/// never cull.
+/// {@category Scene graph}
+class LodLevel {
+  /// A level drawing [geometry] with [material] down to a [screenSize]
+  /// fraction of the viewport height.
+  const LodLevel({
+    required this.geometry,
+    required this.material,
+    required this.screenSize,
+  });
+
+  /// The geometry drawn at this level.
+  final Geometry geometry;
+
+  /// The material drawn at this level.
+  final Material material;
+
+  /// The smallest projected size (fraction of viewport height) at which this
+  /// level is used.
+  final double screenSize;
+}
+
+/// The per-item level-of-detail state the encoder consults each frame: the
+/// ordered [levels], the policy ([lodBias], [hysteresis]), and the level
+/// selected last frame so the hysteresis dead-band has memory.
+///
+/// One instance is shared by the item across views, so in a multi-view frame
+/// the hysteresis memory is shared (acceptable for V1; per-view selection is
+/// a later refinement).
+class LodSelection {
+  LodSelection(this.levels, {this.lodBias = 1.0, this.hysteresis = 0.1})
+    : assert(levels.isNotEmpty, 'LOD needs at least one level'),
+      assert(
+        _strictlyDescending(levels),
+        'LOD level screenSize thresholds must strictly descend',
+      ),
+      _thresholds = [for (final level in levels) level.screenSize];
+
+  static bool _strictlyDescending(List<LodLevel> levels) {
+    for (var i = 1; i < levels.length; i++) {
+      if (levels[i].screenSize >= levels[i - 1].screenSize) return false;
+    }
+    return true;
+  }
+
+  /// The drawable variants, highest detail first.
+  final List<LodLevel> levels;
+
+  /// Multiplies the projected size before selection. Above `1` keeps higher
+  /// detail at a greater distance; below `1` drops detail sooner.
+  final double lodBias;
+
+  /// Fractional dead-band around each threshold; see [selectLodLevel].
+  final double hysteresis;
+
+  final List<double> _thresholds;
+  int _currentLevel = -1;
+
+  /// Selects the level index for a projected [screenSize], or `-1` to cull,
+  /// applying [lodBias] and the [hysteresis] dead-band, and remembering the
+  /// result for next frame.
+  int select(double screenSize) {
+    _currentLevel = selectLodLevel(
+      screenSize * lodBias,
+      _thresholds,
+      hysteresis: hysteresis,
+      currentLevel: _currentLevel,
+    );
+    return _currentLevel;
+  }
 }

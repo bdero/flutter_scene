@@ -36,6 +36,12 @@ class MeshComponent extends Component {
   // mounted.
   final List<RenderItem> _renderItems = [];
 
+  /// The render items registered for this component's mesh primitives, empty
+  /// while not mounted. Exposed so a subclass (the LOD component) can tag the
+  /// items it just registered.
+  @protected
+  List<RenderItem> get renderItems => _renderItems;
+
   @override
   void onMount() => _registerRenderItems();
 

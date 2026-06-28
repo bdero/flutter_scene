@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
+import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 
 /// One drawable primitive in the flat render layer.
@@ -23,6 +24,13 @@ class RenderItem {
 
   /// Shader and per-material parameters.
   final Material material;
+
+  /// Level-of-detail state, set by an [LodComponent] when the item is
+  /// registered. When non-null the encoder picks one of its levels per view
+  /// (or culls) from the item's projected screen size, instead of drawing
+  /// [geometry] and [material]. Those serve as the highest-detail fallback
+  /// and the source of [cullBounds].
+  LodSelection? lod;
 
   /// The `Node` that owns this item, set once when the item is registered.
   ///

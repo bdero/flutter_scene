@@ -85,7 +85,9 @@ export 'src/components/environment_volume_component.dart'
     show EnvironmentVolumeComponent, EnvironmentVolumeShape;
 export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
+export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
+export 'src/render/lod.dart' show LodLevel;
 export 'src/components/widget_component.dart' show WidgetComponent, WidgetInput;
 export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart' show DirectionalLight, Lighting, ShadowCascade;
