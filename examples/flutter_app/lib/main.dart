@@ -18,6 +18,7 @@ import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
+import 'example_shapes.dart';
 import 'example_skybox.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
@@ -72,6 +73,17 @@ class _MyAppState extends State<MyApp> {
             return const Center(child: CircularProgressIndicator());
           }
           return const ExamplePhysics();
+        },
+      ),
+      'Shapes': (context) => FutureBuilder<void>(
+        // Shares the Rapier backend with the Physics example, so it waits on
+        // the same wasm load before building its world.
+        future: _physicsReady,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return const ExampleShapes();
         },
       ),
       'fscene': (context) => const ExampleFscene(),
