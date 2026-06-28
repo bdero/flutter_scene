@@ -185,6 +185,14 @@ abstract class Material {
   /// material.
   bool doubleSided = false;
 
+  /// Per-draw level-of-detail cross-fade coverage, set by the encoder right
+  /// before [bind] and written into the material's `FragInfo.fade`. 1 draws
+  /// every fragment; a value in (0, 1) keeps that dithered fraction and a
+  /// negative value keeps the complement (see lod_fade.glsl). Only the
+  /// built-in lit and unlit materials honor it.
+  @internal
+  double lodFade = 1.0;
+
   gpu.Shader? _fragmentShader;
 
   /// The fragment shader used when rendering geometry with this material.

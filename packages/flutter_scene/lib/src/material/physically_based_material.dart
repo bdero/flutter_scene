@@ -216,6 +216,7 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[125] = occlusionStrength;
     fragInfo[132] = alphaMode.index.toDouble();
     fragInfo[133] = alphaCutoff;
+    fragInfo[EngineLightingUniforms.fadeIndex] = lodFade;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
