@@ -111,6 +111,57 @@ abstract final class InterleavedLayoutAdapter {
   static const int _texCoordByteOffset = 24;
   static const int _colorByteOffset = 32;
 
+  /// The `.fscene` payload layout string for a de-interleaved
+  /// (structure-of-arrays) unskinned vertex buffer: the four attribute
+  /// streams concatenated, position then normal then texcoord then color. The
+  /// older `unskinned` layout is the interleaved form.
+  static const String unskinnedSoaLayout = 'unskinned_soa';
+
+  /// Concatenates the four per-attribute streams into one buffer, position
+  /// then normal then texcoord then color. This is the on-disk
+  /// structure-of-arrays vertex payload; [sliceUnskinnedStreams] is the
+  /// inverse.
+  static Uint8List concatUnskinnedStreams(UnskinnedAttributeStreams streams) {
+    final out = Uint8List(
+      streams.position.length +
+          streams.normal.length +
+          streams.texCoord.length +
+          streams.color.length,
+    );
+    var offset = 0;
+    out.setAll(offset, streams.position);
+    offset += streams.position.length;
+    out.setAll(offset, streams.normal);
+    offset += streams.normal.length;
+    out.setAll(offset, streams.texCoord);
+    offset += streams.texCoord.length;
+    out.setAll(offset, streams.color);
+    return out;
+  }
+
+  /// Slices a concatenated structure-of-arrays unskinned vertex payload back
+  /// into its four attribute streams as views into [soa] (no copy). The
+  /// inverse of [concatUnskinnedStreams].
+  static UnskinnedAttributeStreams sliceUnskinnedStreams(
+    Uint8List soa,
+    int vertexCount,
+  ) {
+    final buffer = soa.buffer;
+    var offset = soa.offsetInBytes;
+    Uint8List take(int bytesPerVertex) {
+      final view = buffer.asUint8List(offset, bytesPerVertex * vertexCount);
+      offset += bytesPerVertex * vertexCount;
+      return view;
+    }
+
+    return UnskinnedAttributeStreams(
+      position: take(positionStreamBytes),
+      normal: take(normalStreamBytes),
+      texCoord: take(texCoordStreamBytes),
+      color: take(colorStreamBytes),
+    );
+  }
+
   /// Splits one interleaved unskinned vertex buffer into the four tightly
   /// packed per-attribute streams.
   ///

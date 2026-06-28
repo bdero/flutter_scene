@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -177,6 +178,26 @@ class MeshGeometry extends UnskinnedGeometry {
       normals: _cpuNormals,
       texCoords: _cpuTexCoords,
       colors: _cpuColors,
+    ),
+    indexBytes: _packedIndexBytes,
+    indices32Bit: _packedIndices32Bit,
+  );
+
+  /// The de-interleaved (structure-of-arrays) vertex bytes (the four attribute
+  /// streams concatenated) plus the packed index bytes, for re-emitting this
+  /// geometry as a `.fscene` payload with the
+  /// [InterleavedLayoutAdapter.unskinnedSoaLayout] layout. Built directly from
+  /// the per-attribute CPU streams, no interleave.
+  @internal
+  ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
+  get soaData => (
+    vertexBytes: InterleavedLayoutAdapter.concatUnskinnedStreams(
+      UnskinnedAttributeStreams(
+        position: _bytesOf(_cpuPositions),
+        normal: _bytesOf(_cpuNormals),
+        texCoord: _bytesOf(_cpuTexCoords),
+        color: _bytesOf(_cpuColors),
+      ),
     ),
     indexBytes: _packedIndexBytes,
     indices32Bit: _packedIndices32Bit,

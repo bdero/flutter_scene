@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart'
     show fmatSourcePathOf;
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
+import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/physically_based_material.dart';
@@ -312,12 +313,14 @@ class MeshCodec extends ComponentCodec {
   }
 
   LocalId? _serializeMeshGeometry(MeshGeometry geometry, SceneDocument dest) {
-    final packed = geometry.packedData;
+    // Emit the de-interleaved (structure-of-arrays) vertex payload so the
+    // realizer uploads each attribute straight to its GPU buffer.
+    final packed = geometry.soaData;
     final vertices = dest.addPayload(
       PayloadSpec(
         dest.newId(),
         encoding: PayloadEncoding.vertexBuffer,
-        layout: 'unskinned',
+        layout: InterleavedLayoutAdapter.unskinnedSoaLayout,
         length: packed.vertexBytes.length,
         bytes: packed.vertexBytes,
       ),
