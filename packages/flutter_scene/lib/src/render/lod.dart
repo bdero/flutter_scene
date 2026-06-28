@@ -160,13 +160,17 @@ class LodLevel {
 /// the hysteresis memory is shared (acceptable for V1; per-view selection is
 /// a later refinement).
 class LodSelection {
-  LodSelection(this.levels, {this.lodBias = 1.0, this.hysteresis = 0.1})
-    : assert(levels.isNotEmpty, 'LOD needs at least one level'),
-      assert(
-        _strictlyDescending(levels),
-        'LOD level screenSize thresholds must strictly descend',
-      ),
-      _thresholds = [for (final level in levels) level.screenSize];
+  LodSelection(
+    this.levels, {
+    this.lodBias = 1.0,
+    this.hysteresis = 0.1,
+    this.blendRange = 0.0,
+  }) : assert(levels.isNotEmpty, 'LOD needs at least one level'),
+       assert(
+         _strictlyDescending(levels),
+         'LOD level screenSize thresholds must strictly descend',
+       ),
+       _thresholds = [for (final level in levels) level.screenSize];
 
   static bool _strictlyDescending(List<LodLevel> levels) {
     for (var i = 1; i < levels.length; i++) {
@@ -179,25 +183,44 @@ class LodSelection {
   final List<LodLevel> levels;
 
   /// Multiplies the projected size before selection. Above `1` keeps higher
-  /// detail at a greater distance; below `1` drops detail sooner.
-  final double lodBias;
+  /// detail at a greater distance; below `1` drops detail sooner. Mutable so
+  /// the detail bias can be tuned at runtime (a quality setting).
+  double lodBias;
 
-  /// Fractional dead-band around each threshold; see [selectLodLevel].
+  /// Fractional dead-band around each threshold; see [selectLodLevel]. Used
+  /// only by the hard-switch path ([blendRange] of `0`).
   final double hysteresis;
+
+  /// Half-width of the cross-fade band as a fraction of each threshold. `0`
+  /// hard-switches; a positive value dither-blends adjacent levels across the
+  /// band. Mutable so cross-fade can be toggled at runtime. See
+  /// [blendLodLevels].
+  double blendRange;
 
   final List<double> _thresholds;
   int _currentLevel = -1;
 
-  /// Selects the level index for a projected [screenSize], or `-1` to cull,
-  /// applying [lodBias] and the [hysteresis] dead-band, and remembering the
-  /// result for next frame.
-  int select(double screenSize) {
+  /// The level(s) to draw for a projected [screenSize], each with a fade
+  /// coverage for [Material.lodFade], or an empty list to cull. Applies
+  /// [lodBias]. With [blendRange] greater than `0` a boundary crossing returns
+  /// two entries (the coarser carrying a negative complement coverage) to
+  /// dither-blend; otherwise one level chosen with the [hysteresis] dead-band.
+  List<({int level, double fade})> resolve(double screenSize) {
+    final size = screenSize * lodBias;
+    if (blendRange > 0) {
+      final blended = blendLodLevels(size, _thresholds, blendRange: blendRange);
+      if (blended.length == 2) {
+        // Draw the coarser level through the complementary dither pattern.
+        return [blended[0], (level: blended[1].level, fade: -blended[1].fade)];
+      }
+      return blended;
+    }
     _currentLevel = selectLodLevel(
-      screenSize * lodBias,
+      size,
       _thresholds,
       hysteresis: hysteresis,
       currentLevel: _currentLevel,
     );
-    return _currentLevel;
+    return _currentLevel < 0 ? const [] : [(level: _currentLevel, fade: 1.0)];
   }
 }

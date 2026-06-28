@@ -20,6 +20,7 @@ base class _OpaqueRecord {
     this.item,
     this.geometry,
     this.material,
+    this.fade,
     this.pipeline,
     this.pipelineKey,
     this.depth,
@@ -29,6 +30,9 @@ base class _OpaqueRecord {
   // a level of detail was selected.
   final Geometry geometry;
   final Material material;
+  // LOD cross-fade coverage for this draw (1 when not fading); see
+  // [Material.lodFade].
+  final double fade;
   final gpu.RenderPipeline pipeline;
   final int pipelineKey;
   final double depth;
@@ -41,6 +45,7 @@ base class _TranslucentRecord {
     this.worldTransform,
     this.geometry,
     this.material,
+    this.fade,
     this.pipeline,
     this.depth,
     this.windingFlipped,
@@ -48,6 +53,7 @@ base class _TranslucentRecord {
   final Matrix4 worldTransform;
   final Geometry geometry;
   final Material material;
+  final double fade;
   final gpu.RenderPipeline pipeline;
   final double depth;
   final bool windingFlipped;
@@ -205,17 +211,26 @@ base class SceneEncoder {
       return;
     }
 
-    // Resolve the level of detail (or cull) before choosing a pipeline, so a
-    // distant object draws its cheaper variant or nothing at all.
-    var geometry = item.geometry;
-    var material = item.material;
+    // Queue the level(s) of detail to draw (or cull). A cross-fading node
+    // returns its two adjacent levels with complementary dither coverage.
     if (lod != null) {
-      final level = _selectLod(lod, worldBounds);
-      if (level == null) return;
-      geometry = level.geometry;
-      material = level.material;
+      for (final selection in _resolveLod(lod, worldBounds)) {
+        final level = lod.levels[selection.level];
+        _record(item, level.geometry, level.material, selection.fade);
+      }
+      return;
     }
+    _record(item, item.geometry, item.material, 1.0);
+  }
 
+  // Queues a single draw for [item] using the already-LOD-resolved [geometry]
+  // and [material] at cross-fade coverage [fade].
+  void _record(
+    RenderItem item,
+    Geometry geometry,
+    Material material,
+    double fade,
+  ) {
     final pipeline = resolvePipeline(
       geometry.vertexShader,
       material.fragmentShader,
@@ -228,6 +243,7 @@ base class SceneEncoder {
           item,
           geometry,
           material,
+          fade,
           pipeline,
           identityHashCode(pipeline),
           _depthOf(item.worldTransform),
@@ -247,6 +263,7 @@ base class SceneEncoder {
             worldTransform,
             geometry,
             material,
+            fade,
             pipeline,
             _depthOf(worldTransform),
             item.windingFlipped != (instanceTransform.determinant() < 0),
@@ -259,6 +276,7 @@ base class SceneEncoder {
           item.worldTransform,
           geometry,
           material,
+          fade,
           pipeline,
           _depthOf(item.worldTransform),
           item.windingFlipped,
@@ -267,24 +285,28 @@ base class SceneEncoder {
     }
   }
 
-  // Picks the level of detail for [lod] from the item's [worldBounds], or
-  // null to cull. Falls back to the highest detail when no screen-size metric
-  // is available (no bounds, or a non-perspective camera).
-  LodLevel? _selectLod(LodSelection lod, Aabb3? worldBounds) {
+  // The level(s) of detail to draw for [lod] from the item's [worldBounds],
+  // each with a fade coverage; empty to cull. Falls back to the highest detail
+  // when no screen-size metric is available (no bounds, or a non-perspective
+  // camera).
+  List<({int level, double fade})> _resolveLod(
+    LodSelection lod,
+    Aabb3? worldBounds,
+  ) {
     final fovRadiansY = _lodFovRadiansY;
-    if (worldBounds == null || fovRadiansY == null) return lod.levels.first;
-    final center = worldBounds.center;
+    if (worldBounds == null || fovRadiansY == null) {
+      return const [(level: 0, fade: 1.0)];
+    }
     // The circumscribed sphere of the world AABB (conservative, so detail is
     // kept slightly longer than a tight sphere would).
     final radius = worldBounds.max.distanceTo(worldBounds.min) * 0.5;
     final size = lodScreenSize(
-      center: center,
+      center: worldBounds.center,
       radius: radius,
       cameraPosition: _camera.position,
       fovRadiansY: fovRadiansY,
     );
-    final level = lod.select(size);
-    return level < 0 ? null : lod.levels[level];
+    return lod.resolve(size);
   }
 
   double _depthOf(Matrix4 worldTransform) =>
@@ -305,9 +327,14 @@ base class SceneEncoder {
     Geometry geometry,
     Material material,
     bool windingFlipped,
+    double fade,
   ) {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
+    // The material reads its cross-fade coverage from this transient field as
+    // it binds; reset for every draw so a shared material does not leak a
+    // previous draw's fade.
+    material.lodFade = fade;
     geometry.bind(
       _renderPass,
       _transientsBuffer,
@@ -350,9 +377,11 @@ base class SceneEncoder {
     Material material,
     List<Matrix4> instances,
     bool windingFlipped,
+    double fade,
   ) {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
+    material.lodFade = fade;
     material.bind(_renderPass, _transientsBuffer, _lighting);
     _renderPass.setPrimitiveType(geometry.primitiveType);
 
@@ -425,6 +454,7 @@ base class SceneEncoder {
           record.material,
           instances,
           item.windingFlipped,
+          record.fade,
         );
       } else {
         _encode(
@@ -433,6 +463,7 @@ base class SceneEncoder {
           record.geometry,
           record.material,
           item.windingFlipped,
+          record.fade,
         );
       }
     }
@@ -460,6 +491,7 @@ base class SceneEncoder {
         record.geometry,
         record.material,
         record.windingFlipped,
+        record.fade,
       );
     }
     _translucentRecords.clear();
