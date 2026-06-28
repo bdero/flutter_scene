@@ -221,37 +221,84 @@ class MeshGeometry extends UnskinnedGeometry {
   /// current [vertexCount]. To change the vertex count, use [rebuild].
   /// Throws a [StateError] unless this geometry is
   /// [GeometryStorage.updatable].
-  void updatePositions(Float32List positions) {
+  ///
+  /// When only a contiguous span of vertices changed, pass [dirtyStart]
+  /// and [dirtyCount] (in vertices) to upload just that span. [positions]
+  /// must still hold every vertex (the full array backs raycasting and
+  /// bounds); the hint only narrows the GPU upload. Omit both to upload
+  /// the whole stream.
+  void updatePositions(
+    Float32List positions, {
+    int? dirtyStart,
+    int? dirtyCount,
+  }) {
     _ensureUpdatable('updatePositions');
     _checkAttributeLength('positions', positions.length, 3);
     _cpuPositions = Float32List.fromList(positions);
-    _writeStream(0, _positionRing, _cpuPositions);
+    _writeStream(
+      0,
+      _positionRing,
+      _cpuPositions,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
     _recomputeBounds();
   }
 
   /// Replaces every vertex normal, keeping the vertex count unchanged.
-  void updateNormals(Float32List normals) {
+  ///
+  /// Pass [dirtyStart]/[dirtyCount] to upload only a contiguous span; see
+  /// [updatePositions].
+  void updateNormals(Float32List normals, {int? dirtyStart, int? dirtyCount}) {
     _ensureUpdatable('updateNormals');
     _checkAttributeLength('normals', normals.length, 3);
     _cpuNormals = Float32List.fromList(normals);
-    _writeStream(1, _normalRing, _cpuNormals);
+    _writeStream(
+      1,
+      _normalRing,
+      _cpuNormals,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
   }
 
   /// Replaces every texture coordinate, keeping the vertex count
   /// unchanged.
-  void updateTexCoords(Float32List texCoords) {
+  ///
+  /// Pass [dirtyStart]/[dirtyCount] to upload only a contiguous span; see
+  /// [updatePositions].
+  void updateTexCoords(
+    Float32List texCoords, {
+    int? dirtyStart,
+    int? dirtyCount,
+  }) {
     _ensureUpdatable('updateTexCoords');
     _checkAttributeLength('texCoords', texCoords.length, 2);
     _cpuTexCoords = Float32List.fromList(texCoords);
-    _writeStream(2, _texCoordRing, _cpuTexCoords);
+    _writeStream(
+      2,
+      _texCoordRing,
+      _cpuTexCoords,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
   }
 
   /// Replaces every vertex color, keeping the vertex count unchanged.
-  void updateColors(Float32List colors) {
+  ///
+  /// Pass [dirtyStart]/[dirtyCount] to upload only a contiguous span; see
+  /// [updatePositions].
+  void updateColors(Float32List colors, {int? dirtyStart, int? dirtyCount}) {
     _ensureUpdatable('updateColors');
     _checkAttributeLength('colors', colors.length, 4);
     _cpuColors = Float32List.fromList(colors);
-    _writeStream(3, _colorRing, _cpuColors);
+    _writeStream(
+      3,
+      _colorRing,
+      _cpuColors,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
   }
 
   /// Replaces all of this geometry's data, allowing the vertex and index
@@ -366,12 +413,42 @@ class MeshGeometry extends UnskinnedGeometry {
   // Writes one changed attribute into its ring's next buffer and rebinds the
   // streams. The other attributes keep their current ring buffers, so only
   // the dirty stream's bytes are re-uploaded.
-  void _writeStream(int slot, _RingBufferStream ring, Float32List attribute) {
+  void _writeStream(
+    int slot,
+    _RingBufferStream ring,
+    Float32List attribute, {
+    int? dirtyStart,
+    int? dirtyCount,
+  }) {
+    final (start, end) = _resolveDirtyRange(dirtyStart, dirtyCount);
     _streamViews = List<gpu.BufferView>.of(_streamViews);
-    _streamViews[slot] = ring.write(_bytesOf(attribute), _liveVertexCount);
+    _streamViews[slot] = ring.writeRange(
+      _bytesOf(attribute),
+      _liveVertexCount,
+      start,
+      end,
+    );
     setVertexStreams(_streamViews, _liveVertexCount);
     _refreshRaycastData();
     _packedVertexBytes = null;
+  }
+
+  // Resolves an optional caller dirty range (in vertices) to a half-open
+  // span, defaulting to the whole stream when unspecified. Validates the
+  // span lies within the current vertex count.
+  (int, int) _resolveDirtyRange(int? dirtyStart, int? dirtyCount) {
+    if (dirtyStart == null && dirtyCount == null) {
+      return (0, _liveVertexCount);
+    }
+    final start = dirtyStart ?? 0;
+    final count = dirtyCount ?? (_liveVertexCount - start);
+    if (start < 0 || count < 0 || start + count > _liveVertexCount) {
+      throw RangeError(
+        'dirty range [$start, ${start + count}) is outside the '
+        '$_liveVertexCount vertices',
+      );
+    }
+    return (start, start + count);
   }
 
   void _refreshRaycastData() {
@@ -544,6 +621,23 @@ int nextBufferCapacity(int needed, {int minimum = 16}) {
 /// transient `HostBuffer` cycles through, which bounds the GPU's in-flight
 /// reads. The ring reallocates (at a power-of-two capacity) only when the
 /// vertex count outgrows it, so steady-state updates never allocate.
+/// The bounding vertex range that covers both [a] and [b]. An empty input
+/// (`start >= end`) contributes nothing. Ranges are half-open
+/// `[start, end)`. Used to accumulate which span of a ring buffer is stale
+/// relative to the CPU copy, so a partial update uploads only what a given
+/// buffer is missing.
+({int start, int end}) unionVertexRange(
+  ({int start, int end}) a,
+  ({int start, int end}) b,
+) {
+  if (a.start >= a.end) return b;
+  if (b.start >= b.end) return a;
+  return (
+    start: a.start < b.start ? a.start : b.start,
+    end: a.end > b.end ? a.end : b.end,
+  );
+}
+
 class _RingBufferStream {
   _RingBufferStream(this.bytesPerVertex);
 
@@ -555,10 +649,30 @@ class _RingBufferStream {
   static const int _ringDepth = 4;
 
   final List<gpu.DeviceBuffer> _buffers = [];
+  // Per-buffer span (in vertices) that is stale relative to the current CPU
+  // copy. Because the ring rotates, a buffer last written `_ringDepth`
+  // writes ago is missing every change made since, so a partial write must
+  // refresh that accumulated span, not just the caller's dirty span.
+  final List<({int start, int end})> _stale = [];
   int _capacityVertices = 0;
   int _cursor = 0;
 
-  gpu.BufferView write(Uint8List bytes, int vertexCount) {
+  /// Replaces every vertex (the full-stream write used at construction and
+  /// on rebuild).
+  gpu.BufferView write(Uint8List bytes, int vertexCount) =>
+      writeRange(bytes, vertexCount, 0, vertexCount);
+
+  /// Writes [bytes] (the full attribute array) into the ring's next buffer,
+  /// uploading only the span that buffer is missing. [dirtyStart] and
+  /// [dirtyEnd] mark the half-open vertex range the caller changed since the
+  /// last write; the accumulated stale span of the chosen buffer is unioned
+  /// in so a rotated, several-writes-old buffer is still brought current.
+  gpu.BufferView writeRange(
+    Uint8List bytes,
+    int vertexCount,
+    int dirtyStart,
+    int dirtyEnd,
+  ) {
     if (_buffers.isEmpty || vertexCount > _capacityVertices) {
       _capacityVertices = nextBufferCapacity(vertexCount);
       _buffers
@@ -572,20 +686,40 @@ class _RingBufferStream {
             ),
           ),
         );
+      // Freshly allocated buffers hold no data, so each is fully stale until
+      // it is first written.
+      _stale
+        ..clear()
+        ..addAll(List.filled(_ringDepth, (start: 0, end: vertexCount)));
       _cursor = 0;
     } else {
       _cursor = (_cursor + 1) % _ringDepth;
     }
-    final length = vertexCount * bytesPerVertex;
-    final buffer = _buffers[_cursor];
-    if (length > 0) {
-      buffer.overwrite(
-        ByteData.sublistView(bytes),
-        destinationOffsetInBytes: 0,
-      );
-      buffer.flush(offsetInBytes: 0, lengthInBytes: length);
+
+    // The caller's change makes every buffer stale over that span.
+    final change = (start: dirtyStart, end: dirtyEnd);
+    for (var i = 0; i < _stale.length; i++) {
+      _stale[i] = unionVertexRange(_stale[i], change);
     }
-    return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: length);
+
+    final buffer = _buffers[_cursor];
+    final upload = _stale[_cursor];
+    if (upload.end > upload.start) {
+      final offset = upload.start * bytesPerVertex;
+      final length = (upload.end - upload.start) * bytesPerVertex;
+      buffer.overwrite(
+        ByteData.sublistView(bytes, offset, offset + length),
+        destinationOffsetInBytes: offset,
+      );
+      buffer.flush(offsetInBytes: offset, lengthInBytes: length);
+    }
+    // This buffer now matches the CPU copy.
+    _stale[_cursor] = (start: 0, end: 0);
+    return gpu.BufferView(
+      buffer,
+      offsetInBytes: 0,
+      lengthInBytes: vertexCount * bytesPerVertex,
+    );
   }
 }
 
