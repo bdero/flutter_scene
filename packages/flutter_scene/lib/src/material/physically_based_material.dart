@@ -4,7 +4,6 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/shaders.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -63,7 +62,7 @@ class PhysicallyBasedMaterial extends Material {
        _normalSource = normalTexture,
        _emissiveSource = emissiveTexture,
        _occlusionSource = occlusionTexture {
-    setFragmentShader(baseShaderLibrary['StandardFragment']!);
+    setFragmentShaderName('StandardFragment');
   }
 
   // Texture slots hold either a gpu.Texture or a live RenderTexture; the
