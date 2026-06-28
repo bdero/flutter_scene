@@ -1,8 +1,14 @@
 name: flutter_scene
-description: A powerful and flexible realtime 3D rendering engine for Flutter.
+description: A flexible realtime 3D engine for Flutter games and apps, with glTF models, physics, skeletal animation, and PBR lighting.
 version: 0.18.1
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
+topics:
+  - graphics
+  - gltf
+  - game
+  - physics
+  - animation
 screenshots:
   - description: The Flutter Scene logo.
     path: screenshots/flutter_scene_logo.png
