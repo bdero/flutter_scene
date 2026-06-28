@@ -85,6 +85,44 @@ int selectLodLevel(
   return naive;
 }
 
+/// The level(s) to draw for a projected [screenSize] when cross-fading, each
+/// with a fade weight in `(0, 1]`. Returns one entry away from a boundary,
+/// two complementary entries (fades summing to 1) inside a boundary's blend
+/// band so the encoder can dither-blend them, the last level alone fading out
+/// across the cull band, or an empty list to cull.
+///
+/// [thresholds] are the same descending list as [selectLodLevel]. [blendRange]
+/// is the half-width of each band as a fraction of the threshold; `0` reduces
+/// to a hard switch (one level or cull). Bands must not overlap, so keep
+/// [blendRange] smaller than the relative gap between adjacent thresholds.
+List<({int level, double fade})> blendLodLevels(
+  double screenSize,
+  List<double> thresholds, {
+  double blendRange = 0.1,
+}) {
+  final count = thresholds.length;
+  if (blendRange > 0) {
+    for (var k = 0; k < count; k++) {
+      final lo = thresholds[k] * (1 - blendRange);
+      final hi = thresholds[k] * (1 + blendRange);
+      if (screenSize >= lo && screenSize < hi) {
+        // Boundary k sits between level k (above) and level k+1 or, for the
+        // last threshold, the cull floor (below). Fade from the lower to the
+        // upper level across the band.
+        final t = (screenSize - lo) / (hi - lo);
+        return [
+          (level: k, fade: t),
+          if (k + 1 < count) (level: k + 1, fade: 1 - t),
+        ];
+      }
+    }
+  }
+  for (var i = 0; i < count; i++) {
+    if (screenSize >= thresholds[i]) return [(level: i, fade: 1.0)];
+  }
+  return const [];
+}
+
 /// One level of detail for an [LodComponent]: a drawable variant shown while
 /// the object's projected on-screen size (see [lodScreenSize]) is at least
 /// [screenSize], a fraction of the viewport height.
