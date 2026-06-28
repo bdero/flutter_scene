@@ -15,8 +15,23 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene/src/raycast.dart'
     show PackedTriangleHit, intersectPackedTriangles, intersectSoATriangles;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu show IndexType;
+import 'package:flutter_scene/src/gpu/gpu.dart'
+    as gpu
+    show IndexType, RenderPass, HostBuffer;
 import 'package:vector_math/vector_math.dart';
+
+/// A bare [Geometry] whose only purpose is to exercise the CPU-side raycast
+/// data contract without a GPU upload.
+class _RaycastDataGeometry extends Geometry {
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    gpu.HostBuffer transientsBuffer,
+    Matrix4 modelTransform,
+    Matrix4 cameraTransform,
+    Vector3 cameraPosition,
+  ) {}
+}
 
 bool _gpuAvailable() {
   try {
@@ -226,6 +241,27 @@ void main() {
       );
       expect(hits, isNotEmpty);
       expect(hits.first.uv, Vector2.zero());
+    });
+  });
+
+  group('structure-of-arrays raycast data wiring (GPU-free)', () {
+    test('setRaycastAttributes retains the index data', () {
+      // Regression: the SoA upload path uploaded the index buffer to the GPU
+      // but did not retain it for the CPU raycast, so an indexed mesh was
+      // raycast as a non-indexed triangle list (picking missed the surface).
+      final geometry = _RaycastDataGeometry();
+      final indices = ByteData(6);
+      geometry.setRaycastAttributes(
+        positions: Float32List(9),
+        texCoords: Float32List(6),
+        indices: indices,
+      );
+      final data = geometry.cpuMeshData;
+      expect(data.positions, isNotNull);
+      expect(data.texCoords, isNotNull);
+      expect(data.indices, same(indices));
+      // SoA geometry does not expose the interleaved buffer.
+      expect(data.vertices, isNull);
     });
   });
 

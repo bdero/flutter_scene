@@ -254,15 +254,19 @@ abstract class Geometry {
     _cpuTexCoords = null;
   }
 
-  /// Internal: retains structure-of-arrays CPU attributes for raycasts, used
-  /// by the de-interleaved upload path instead of an interleaved copy.
+  /// Internal: retains structure-of-arrays CPU attributes (and the index
+  /// data) for raycasts, used by the de-interleaved upload path instead of an
+  /// interleaved copy. The indices must be retained too, or an indexed mesh
+  /// raycasts as a non-indexed triangle list.
   @internal
   void setRaycastAttributes({
     required Float32List positions,
     Float32List? texCoords,
+    ByteData? indices,
   }) {
     _cpuPositions = positions;
     _cpuTexCoords = texCoords;
+    _cpuIndices = indices;
     _cpuVertices = null;
   }
 
@@ -550,6 +554,7 @@ class UnskinnedGeometry extends Geometry {
     setRaycastAttributes(
       positions: Float32List.sublistView(streams.position),
       texCoords: Float32List.sublistView(streams.texCoord),
+      indices: indices,
     );
     if (localBounds == null && vertexCount > 0) {
       scanLocalBoundsFromPositions(
