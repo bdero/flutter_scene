@@ -119,4 +119,43 @@ void main() {
       expect(nextBufferCapacity(9, minimum: 8), 16);
     });
   });
+
+  group('unionVertexRange', () {
+    test('an empty range contributes nothing', () {
+      expect(unionVertexRange((start: 0, end: 0), (start: 3, end: 7)), (
+        start: 3,
+        end: 7,
+      ));
+      expect(unionVertexRange((start: 3, end: 7), (start: 5, end: 5)), (
+        start: 3,
+        end: 7,
+      ));
+      // Two empty ranges stay empty.
+      final empty = unionVertexRange((start: 0, end: 0), (start: 2, end: 2));
+      expect(empty.end <= empty.start, isTrue);
+    });
+
+    test('overlapping and disjoint ranges return the bounding span', () {
+      expect(unionVertexRange((start: 2, end: 5), (start: 4, end: 9)), (
+        start: 2,
+        end: 9,
+      ));
+      // Disjoint spans are bridged (the buffer must refresh the whole span).
+      expect(unionVertexRange((start: 0, end: 2), (start: 8, end: 10)), (
+        start: 0,
+        end: 10,
+      ));
+    });
+
+    test('unioning a stable dirty span is idempotent', () {
+      // A buffer repeatedly dirtied over the same span converges to exactly
+      // that span, which is what lets a steady partial update stay cheap.
+      const span = (start: 4, end: 6);
+      var stale = (start: 0, end: 0);
+      for (var i = 0; i < 5; i++) {
+        stale = unionVertexRange(stale, span);
+      }
+      expect(stale, span);
+    });
+  });
 }
