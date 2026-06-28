@@ -1,7 +1,12 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
-    show AntiAliasingMode, Scene, PostInsertion, SpecularAmbientOcclusionMode;
+    show
+        AntiAliasingMode,
+        EnvironmentMap,
+        Scene,
+        PostInsertion,
+        SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
 import 'package:example_app/example_animation.dart';
@@ -26,6 +31,10 @@ import 'example_toon.dart';
 import 'example_toon_fmat.dart';
 
 void main() {
+  // Prefilter image-based lighting into a larger radiance cube than the
+  // default so reflections and the panorama skybox stay sharp in the examples
+  // (the default trades resolution for memory; the editor exposes this knob).
+  EnvironmentMap.radianceCubeSize = 1024;
   runApp(const MyApp());
 }
 
