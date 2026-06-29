@@ -47,6 +47,8 @@ class SunLight {
     this.shadowNormalBias = 0.02,
     this.shadowFadeRange = 2.0,
     this.shadowCascadeSplitLambda = 0.6,
+    this.shadowAmbientStrength = 0.0,
+    this.shadowCasterFaces = ShadowCasterFaces.front,
   });
 
   /// The sky whose sun aims the light.
@@ -89,6 +91,16 @@ class SunLight {
   /// Cascade split blend; see [DirectionalLight.shadowCascadeSplitLambda].
   double shadowCascadeSplitLambda;
 
+  /// How much the shadow also darkens the IBL ambient; see
+  /// [DirectionalLight.shadowAmbientStrength]. Useful here because a
+  /// [SkyEnvironment] bakes the sun into the ambient, so a plain shadow leaves
+  /// shadowed areas reading as fully lit.
+  double shadowAmbientStrength;
+
+  /// Which faces are rendered into the shadow map; see
+  /// [DirectionalLight.shadowCasterFaces].
+  ShadowCasterFaces shadowCasterFaces;
+
   /// The managed light. Mutated in place by [resolve] each frame so the scene
   /// graph need not re-register a new light when the sun moves.
   final DirectionalLight light = DirectionalLight();
@@ -111,6 +123,8 @@ class SunLight {
     light.shadowNormalBias = shadowNormalBias;
     light.shadowFadeRange = shadowFadeRange;
     light.shadowCascadeSplitLambda = shadowCascadeSplitLambda;
+    light.shadowAmbientStrength = shadowAmbientStrength;
+    light.shadowCasterFaces = shadowCasterFaces;
     return light;
   }
 }

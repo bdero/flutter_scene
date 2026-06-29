@@ -76,10 +76,12 @@ uniform FragInfo {
   // reciprocal of the render-target size, to turn gl_FragCoord into the
   // occlusion-texture UV.
   vec4 ssao_params;
-  // Image-based-lighting cross-fade. x: blend toward the secondary environment
-  // (the *_b samplers), 0 samples only the primary. yzw reserved. Both
-  // environments share RadianceLayoutInfo (the layout is a per-backend choice,
-  // not per-environment).
+  // Image-based-lighting cross-fade and shadow-ambient control. x: blend
+  // toward the secondary environment (the *_b samplers), 0 samples only the
+  // primary. y: shadow-ambient strength, how much the cast shadow also darkens
+  // the IBL ambient (0 leaves the ambient physical, 1 darkens it as much as the
+  // direct light). zw reserved. Both environments share RadianceLayoutInfo (the
+  // layout is a per-backend choice, not per-environment).
   vec4 radiance_blend;
 }
 frag_info;
