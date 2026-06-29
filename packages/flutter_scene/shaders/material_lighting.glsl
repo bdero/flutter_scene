@@ -56,9 +56,8 @@ float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
 
 // Samples one cascade's tile of the shadow atlas strip with a rotated
 // 16-tap Poisson-disk PCF. `world_pos` and `n` are world-space.
-float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
-  float box = frag_info.cascade_box_sizes[cascade];
-
+float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
+                    vec3 world_pos, vec3 n) {
   // Normal-offset bias. A soft PCF kernel on a surface tilted relative
   // to the light straddles a depth gradient and would self-shadow, so
   // lift the receiver along its normal far enough that the whole kernel
@@ -74,8 +73,7 @@ float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
       frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
   vec3 biased = world_pos + n * normal_offset;
 
-  vec4 light_clip =
-      frag_info.light_space_matrix[cascade] * vec4(biased, 1.0);
+  vec4 light_clip = cascade_matrix * vec4(biased, 1.0);
   vec3 proj = light_clip.xyz / light_clip.w;
   vec2 uv = proj.xy * 0.5 + 0.5;
   // The depth bias is world-space; convert it to this cascade's clip-z
@@ -148,32 +146,40 @@ float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
 // shadowed). `world_pos` and `n` are world-space; `n` is the
 // (perturbed) shading normal. Picks the first (highest-resolution)
 // cascade whose box contains the fragment.
+// Tries cascade IDX (a literal): if the fragment lies inside its tile with
+// room for the PCF kernel, samples it and marks `found`. IDX is a literal so
+// no uniform array or vector is indexed with a dynamic index (invalid in GLSL
+// ES 1.00, and misread for indices past the first by some GLES drivers).
+#define _TRY_CASCADE(IDX)                                                    \
+  if (!found && count > IDX) {                                               \
+    mat4 cascade_matrix = frag_info.light_space_matrix[IDX];                 \
+    float box = frag_info.cascade_box_sizes[IDX];                            \
+    vec4 light_clip = cascade_matrix * vec4(world_pos, 1.0);                 \
+    vec3 proj = light_clip.xyz / light_clip.w;                              \
+    vec2 uv = proj.xy * 0.5 + 0.5;                                           \
+    float margin =                                                          \
+        max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);   \
+    if (!(uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||          \
+          uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0)) {           \
+      result = SampleCascade(IDX, count, cascade_matrix, box, world_pos, n); \
+      found = true;                                                          \
+    }                                                                        \
+  }
+
 float SampleShadow(vec3 world_pos, vec3 n) {
   int count = int(frag_info.shadow_cascade_count);
-  for (int c = 0; c < 4; c++) {
-    if (c >= count) {
-      break;
-    }
-    // Containment test with the unbiased position.
-    vec4 light_clip =
-        frag_info.light_space_matrix[c] * vec4(world_pos, 1.0);
-    vec3 proj = light_clip.xyz / light_clip.w;
-    vec2 uv = proj.xy * 0.5 + 0.5;
-    // Require room for the PCF kernel inside the cascade's tile, so its
-    // samples never clamp against the tile edge (which would smear the
-    // edge texel into a thin seam). A fragment closer to the edge than
-    // the kernel radius falls through to the next, larger cascade.
-    float margin =
-        max(frag_info.shadow_softness / frag_info.cascade_box_sizes[c],
-            frag_info.shadow_texel_size);
-    if (uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||
-        uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0) {
-      continue;
-    }
-    return SampleCascade(c, world_pos, n, count);
-  }
-  return 1.0;
+  // Unrolled with literal cascade indices: see _TRY_CASCADE. A single `return`
+  // (no early return inside a loop) also avoids a nested-loop pattern that
+  // crashes a Direct3D shader compiler.
+  float result = 1.0;
+  bool found = false;
+  _TRY_CASCADE(0)
+  _TRY_CASCADE(1)
+  _TRY_CASCADE(2)
+  _TRY_CASCADE(3)
+  return result;
 }
+#undef _TRY_CASCADE
 
 // Empirical specular occlusion derived from the diffuse occlusion factor,
 // the view angle, and roughness (Lagarde and de Rousiers 2014, "Physically
