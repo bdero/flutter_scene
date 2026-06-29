@@ -21,6 +21,9 @@ migration:
     - platform: android
       create_revision: 475014b679b1a9539d20290ecfc0f665bcaccfac
       base_revision: 475014b679b1a9539d20290ecfc0f665bcaccfac
+    - platform: windows
+      create_revision: 47215701bc6e238fb6781a4f702b14156540f786
+      base_revision: 47215701bc6e238fb6781a4f702b14156540f786
 
   # User provided section
 
