@@ -992,6 +992,7 @@ base class Scene implements SceneGraph {
           renderScene: renderScene,
           cascades: cascades,
           tileResolution: light!.shadowMapResolution,
+          casterFaces: light.shadowCasterFaces,
         ),
       );
     }

@@ -1,6 +1,7 @@
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -20,15 +21,22 @@ class ShadowEncoder {
     this._renderPass,
     this._transientsBuffer,
     this._lightSpaceMatrix,
+    ShadowCasterFaces casterFaces,
   ) {
     frustum = Frustum.matrix(_lightSpaceMatrix);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-    // Match the standard materials' winding / culling so the same faces
-    // that are visible cast shadows; a depth bias on the receiver handles
-    // self-shadow acne.
-    _renderPass.setCullMode(gpu.CullMode.backFace);
+    // Cull the complement of the faces that should cast: rendering front faces
+    // (the default) means culling back faces, and vice versa. With base CCW
+    // winding (flipped per-item for mirrored casters below), back-face culling
+    // keeps the light-facing faces. [ShadowCasterFaces.back] (second-depth)
+    // suits solid geometry, recording the far face to avoid self-shadow acne.
+    _renderPass.setCullMode(switch (casterFaces) {
+      ShadowCasterFaces.front => gpu.CullMode.backFace,
+      ShadowCasterFaces.back => gpu.CullMode.frontFace,
+      ShadowCasterFaces.both => gpu.CullMode.none,
+    });
     _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 

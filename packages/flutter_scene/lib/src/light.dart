@@ -7,6 +7,29 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 
+/// Which faces of a shadow caster are rendered into the shadow map (the
+/// others are culled). Trades the two shadow-map failure modes (self-shadow
+/// acne vs peter-panning) against each other.
+/// {@category Lighting and environment}
+enum ShadowCasterFaces {
+  /// Render the light-facing (front) faces; cull back faces. The
+  /// general-purpose default. Self-shadow acne on lit surfaces is held off by
+  /// the depth and normal bias, which is hard to tune at grazing light angles.
+  front,
+
+  /// Render the faces pointing away from the light (back faces); cull front
+  /// faces ("second-depth" shadow mapping). For solid, watertight geometry
+  /// this removes self-shadow acne on lit surfaces, since the recorded depth
+  /// is the far side of the body. The tradeoff is peter-panning (a shadow can
+  /// detach from a thin caster); on thick bodies the offset hides inside the
+  /// solid, so this is a good fit for blocky/voxel worlds.
+  back,
+
+  /// Render both faces (no culling). Records the nearest face, like [front]
+  /// for closed geometry, but also captures one-sided or open meshes.
+  both,
+}
+
 /// An infinitely-distant light source (e.g. the sun) that illuminates
 /// the whole scene from a single direction.
 ///
@@ -43,6 +66,8 @@ class DirectionalLight {
     this.shadowMapResolution = 1024,
     this.shadowDepthBias = 0.02,
     this.shadowNormalBias = 0.02,
+    this.shadowAmbientStrength = 0.0,
+    this.shadowCasterFaces = ShadowCasterFaces.front,
   }) : direction = direction ?? Vector3(-0.3, -1.0, -0.2),
        color = color ?? Vector3(1.0, 1.0, 1.0);
 
@@ -98,6 +123,26 @@ class DirectionalLight {
   /// no slope-scaled depth-bias rasterizer state, so this carries the
   /// load of acne removal on grazing surfaces.
   double shadowNormalBias;
+
+  /// How much the cast shadow also darkens the image-based-lighting ambient,
+  /// from `0.0` to `1.0`.
+  ///
+  /// Physically the analytic light is additive over the IBL ambient, so a
+  /// shadow only removes the direct sun and leaves the ambient (sky) fully
+  /// lighting the shadowed area. That is correct when the IBL excludes the
+  /// sun, but a sky-baked environment already contains the sun's energy, so
+  /// the ambient alone reads as fully lit. This control multiplies the ambient
+  /// by `mix(1.0, shadow, shadowAmbientStrength)`, so `0.0` leaves the ambient
+  /// untouched (the physical default) and `1.0` lets the shadow darken the
+  /// ambient as much as the direct light. A non-physical artistic control for
+  /// sky-lit scenes that want shadows to read as shadows.
+  double shadowAmbientStrength;
+
+  /// Which faces are rendered into the shadow map. Defaults to
+  /// [ShadowCasterFaces.front]; use [ShadowCasterFaces.back] for solid,
+  /// watertight geometry (e.g. voxel terrain) to remove grazing-angle
+  /// self-shadow acne.
+  ShadowCasterFaces shadowCasterFaces;
 
   /// Builds the [shadowCascadeCount] shadow cascades that cover
   /// [camera]'s view out to [shadowMaxDistance], for a render target of
@@ -185,10 +230,23 @@ class DirectionalLight {
     return cascades;
   }
 
+  // How far toward the sun (in sphere radii) a cascade's light-space box
+  // reaches, plus a small forward margin past the slice. The reach must be
+  // generous because at grazing sun angles the occluder that shadows a receiver
+  // can be far toward the sun (long shadows); too short a reach drops those
+  // occluders from the map and the shadow goes missing (lit bands, one per
+  // cascade). The depth range is decoupled from the perpendicular box, so reach
+  // costs no shadow-map resolution; the fp32 atlas keeps depth precise over the
+  // wide range. Their sum over 2 is the depthRange / boxSize ratio that
+  // material_lighting.glsl's depth-bias normalization (`... / (7.0 * box)`)
+  // must match: (12 + 2) / 2 = 7.
+  static const double _casterReachRadii = 12.0;
+  static const double _forwardMarginRadii = 2.0;
+
   // The world -> light-clip matrix for a cascade whose frustum slice is
-  // bounded by a sphere ([sphereCenter], [sphereRadius]). The
-  // orthographic box is the sphere's bounding square, extended along
-  // the light axis so casters behind the slice still reach it, and
+  // bounded by a sphere ([sphereCenter], [sphereRadius]). The orthographic box
+  // is the sphere's bounding square in the perpendicular plane, with a depth
+  // range extended far toward the sun (see [_casterReachRadii]), and
   // texel-snapped against the world origin.
   Matrix4 _cascadeLightSpaceMatrix(
     Vector3 lightDir,
@@ -198,13 +256,13 @@ class DirectionalLight {
     final up = lightDir.y.abs() > 0.99
         ? Vector3(0.0, 0.0, 1.0)
         : Vector3(0.0, 1.0, 0.0);
-    // The eye sits well behind the sphere so casters between it and the
-    // slice are captured.
-    final eye = sphereCenter - lightDir * (sphereRadius * 3.0);
+    // The eye sits far toward the sun so occluders casting long shadows still
+    // render into this cascade (see [_casterReachRadii]).
+    final eye = sphereCenter - lightDir * (sphereRadius * _casterReachRadii);
     final view = _lookAt(eye, sphereCenter, up);
 
     const near = 0.0;
-    final far = sphereRadius * 6.0;
+    final far = sphereRadius * (_casterReachRadii + _forwardMarginRadii);
     final s = sphereRadius * 2.0;
     final ortho = Matrix4(
       2.0 / s,
