@@ -12,6 +12,7 @@ import 'package:vector_math/vector_math.dart' show Quaternion, Vector3;
 import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
 import '../inspector/material_section.dart';
+import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
@@ -401,6 +402,16 @@ class _SchemaPropertyRow extends StatelessWidget {
           controller: controller,
           onChanged: onChanged,
         );
+      case ComponentPropertyKind.distribution:
+        return DistributionField(
+          label: label,
+          value: value,
+          onChanged: onChanged,
+        );
+      case ComponentPropertyKind.curve:
+        return CurveField(label: label, value: value, onChanged: onChanged);
+      case ComponentPropertyKind.gradient:
+        return GradientEditor(label: label, value: value, onChanged: onChanged);
       case ComponentPropertyKind.vec2:
       case ComponentPropertyKind.vec4:
       case ComponentPropertyKind.quaternion:
@@ -951,6 +962,13 @@ class _ResourceRefRow extends StatelessWidget {
     onChanged({'\$resource': tx.records.first.targetId.toToken()});
   }
 
+  Future<void> _importTexture() async {
+    final path = await pickImagePath();
+    if (path == null) return;
+    final id = await importTextureResource(controller, path);
+    if (id != null) onChanged({'\$resource': id.toToken()});
+  }
+
   @override
   Widget build(BuildContext context) {
     final matching = [
@@ -1006,6 +1024,13 @@ class _ResourceRefRow extends StatelessWidget {
               tooltip: 'New environment',
               visualDensity: VisualDensity.compact,
               onPressed: _createEnvironment,
+            ),
+          if (resourceKind == 'texture')
+            IconButton(
+              icon: const Icon(Icons.image, size: 16),
+              tooltip: 'Import texture',
+              visualDensity: VisualDensity.compact,
+              onPressed: _importTexture,
             ),
         ],
       ),

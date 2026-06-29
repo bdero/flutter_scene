@@ -44,6 +44,18 @@ enum ComponentPropertyKind {
 
   /// A string-keyed map ([MapValue]).
   map,
+
+  /// A scalar value generator (constant, random range, or curve-over-life),
+  /// carried as a tagged [MapValue]. See the particle distribution helpers.
+  distribution,
+
+  /// A keyframed scalar curve over normalized time, carried as a [MapValue]
+  /// holding its control points.
+  curve,
+
+  /// A keyframed RGBA color gradient over normalized time, carried as a
+  /// [MapValue] holding its color stops.
+  gradient,
 }
 
 /// A declared, editable property of a component type.
