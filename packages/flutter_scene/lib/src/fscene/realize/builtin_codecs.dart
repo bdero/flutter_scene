@@ -23,6 +23,7 @@ import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
+import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
@@ -35,6 +36,9 @@ import 'package:flutter_scene/src/mesh.dart';
 /// light, camera) into [registry].
 void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
   registry
+    // Registered before the mesh codec so serialize claims a particle emitter
+    // (which subclasses the mesh component) before the mesh codec sees it.
+    ..register(ParticleEmitterCodec())
     ..register(MeshCodec())
     ..register(DirectionalLightCodec())
     ..register(CameraCodec())

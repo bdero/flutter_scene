@@ -31,9 +31,11 @@ class ParticleCurve {
   /// list is treated as a constant `0`. [resolution] must be at least 2.
   ParticleCurve(List<ParticleKeyframe> keyframes, {this.resolution = 64})
     : assert(resolution >= 2),
+      keyframes = List<ParticleKeyframe>.unmodifiable(
+        [...keyframes]..sort((a, b) => a.t.compareTo(b.t)),
+      ),
       _lut = Float32List(resolution) {
-    final sorted = [...keyframes]..sort((a, b) => a.t.compareTo(b.t));
-    _bake(sorted);
+    _bake(this.keyframes);
   }
 
   /// A curve that is [value] everywhere.
@@ -49,6 +51,10 @@ class ParticleCurve {
 
   /// The number of baked lookup-table entries.
   final int resolution;
+
+  /// The source control points, sorted by time, retained so the curve can be
+  /// serialized and edited (the [sample] path uses the baked table).
+  final List<ParticleKeyframe> keyframes;
 
   final Float32List _lut;
 
@@ -123,9 +129,11 @@ class ColorGradient {
   /// table entry holds four floats (r, g, b, a). [resolution] must be >= 2.
   ColorGradient(List<ColorStop> stops, {this.resolution = 64})
     : assert(resolution >= 2),
+      stops = List<ColorStop>.unmodifiable(
+        [...stops]..sort((a, b) => a.t.compareTo(b.t)),
+      ),
       _lut = Float32List(resolution * 4) {
-    final sorted = [...stops]..sort((a, b) => a.t.compareTo(b.t));
-    _bake(sorted);
+    _bake(this.stops);
   }
 
   /// A gradient that is [color] everywhere.
@@ -134,6 +142,10 @@ class ColorGradient {
 
   /// The number of baked lookup-table entries (each four floats).
   final int resolution;
+
+  /// The source color stops, sorted by time, retained so the gradient can be
+  /// serialized and edited (the [sample] path uses the baked table).
+  final List<ColorStop> stops;
 
   final Float32List _lut;
 

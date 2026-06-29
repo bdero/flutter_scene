@@ -94,27 +94,38 @@ Future<String?> pickImagePath() async {
   return file?.path;
 }
 
-/// Imports the image at [path] as a texture resource and assigns it to [slot]
-/// (a material texture-property key, e.g. `baseColorTexture`) of material
-/// [materialId]. Returns the new texture resource id.
+/// Imports the image at [path] as a texture resource and returns its id (or
+/// null if nothing was created).
 ///
 /// The image is externalized, not embedded: it is copied under `imported/` (or
 /// referenced by absolute path for an unsaved scene) and the texture references
 /// it as an asset, so the heavy image bytes persist with the scene as a file
 /// rather than an embedded payload a lean `.fscene` save would drop. The
 /// realizer decodes the asset from disk through the controller's texture loader.
+Future<LocalId?> importTextureResource(
+  EditorController controller,
+  String path,
+) async {
+  final assetRef = _importFileAsset(controller.baseDirectory, path);
+  final before = Set.of(controller.document.resources.keys);
+  await controller.run('createTextureResourceFromAsset', {'asset': assetRef});
+  final added = controller.document.resources.keys.where(
+    (id) => !before.contains(id),
+  );
+  return added.isEmpty ? null : added.first;
+}
+
+/// Imports the image at [path] (see [importTextureResource]) and assigns it to
+/// [slot] (a material texture-property key, e.g. `baseColorTexture`) of material
+/// [materialId]. Returns the new texture resource id.
 Future<LocalId?> importMaterialTexture(
   EditorController controller,
   LocalId materialId,
   String slot,
   String path,
 ) async {
-  final assetRef = _importFileAsset(controller.baseDirectory, path);
-  final before = Set.of(controller.document.resources.keys);
-  await controller.run('createTextureResourceFromAsset', {'asset': assetRef});
-  final textureId = controller.document.resources.keys.firstWhere(
-    (id) => !before.contains(id),
-  );
+  final textureId = await importTextureResource(controller, path);
+  if (textureId == null) return null;
   await controller.run('setMaterialProperties', {
     'materialId': materialId.toToken(),
     'properties': {
