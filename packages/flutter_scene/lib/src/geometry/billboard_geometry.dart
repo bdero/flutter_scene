@@ -171,6 +171,11 @@ class BillboardGeometry extends Geometry {
   @override
   bool get bindsModelTransformInstance => false;
 
+  // A camera-facing quad's winding flips with the viewing angle, so the
+  // material-less passes (selection mask, depth, shadow) must not cull it.
+  @override
+  bool get isDoubleSided => true;
+
   @override
   void bind(
     gpu.RenderPass pass,

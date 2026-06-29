@@ -153,6 +153,12 @@ class _ObjectMaskEncoder {
       _boundPipeline = pipeline;
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
+    // Per item, since a double-sided geometry (a billboard) would otherwise be
+    // back-face culled out of the mask. Reset for every item so it does not
+    // leak to the next.
+    _renderPass.setCullMode(
+      geometry.isDoubleSided ? gpu.CullMode.none : gpu.CullMode.backFace,
+    );
     final highlight = _colorOf(item);
     final color = Float32List(4)
       ..[0] = highlight.x
@@ -222,7 +228,13 @@ class _ObjectMaskEncoder {
     }
 
     bindDraw(item.worldTransform);
-    if (geometry.instancedVertexLayout != null) {
+    // Only bind a model-transform instance buffer when the geometry expects one
+    // at the slot after its vertex streams. A geometry that supplies its own
+    // per-instance buffer (a billboard batch) sets this false; binding here
+    // would clobber slot 1 and the shader would read its instance attributes as
+    // a transform matrix.
+    if (geometry.instancedVertexLayout != null &&
+        geometry.bindsModelTransformInstance) {
       bindSingleInstanceTransform(_renderPass, item.worldTransform);
     }
     _renderPass.setWindingOrder(

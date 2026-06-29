@@ -143,7 +143,10 @@ class ShadowEncoder {
     }
 
     bindDraw(item.worldTransform);
-    if (geometry.instancedVertexLayout != null) {
+    // Skip the model-transform instance buffer for geometry that supplies its
+    // own per-instance buffer (see the color encoder), or it clobbers slot 1.
+    if (geometry.instancedVertexLayout != null &&
+        geometry.bindsModelTransformInstance) {
       bindSingleInstanceTransform(_renderPass, item.worldTransform);
     }
     // Mirrored casters reverse winding; flip the cull order so the same faces

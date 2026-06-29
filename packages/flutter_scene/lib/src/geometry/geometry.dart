@@ -445,6 +445,17 @@ abstract class Geometry {
   @internal
   bool get bindsModelTransformInstance => instancedVertexLayout != null;
 
+  /// Whether this geometry should be drawn without back-face culling.
+  ///
+  /// Material-driven passes (the color pass) read the cull mode from the
+  /// material, but the material-less passes (the selection mask, depth prepass,
+  /// shadow map) cull back faces by default. A geometry whose facing is not a
+  /// reliable front/back (a camera-facing billboard, whose winding flips with
+  /// the view) overrides this to true so those passes draw it from both sides
+  /// instead of culling it away.
+  @internal
+  bool get isDoubleSided => false;
+
   /// Binds all of this geometry's vertex streams (to slots 0, 1, ...) and
   /// its index buffer onto [pass] without binding any uniforms.
   ///
