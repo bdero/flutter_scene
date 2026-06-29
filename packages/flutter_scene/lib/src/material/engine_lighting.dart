@@ -94,11 +94,14 @@ class EngineLightingUniforms {
     final viewport = lighting.viewportSize;
     fragInfo[158] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
     fragInfo[159] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
-    // radiance_blend at [160..163]: the IBL cross-fade factor toward the
-    // secondary environment, 0 (and ignored) when there is no secondary.
+    // radiance_blend at [160..163]: x is the IBL cross-fade factor toward the
+    // secondary environment (0 and ignored when there is no secondary); y is
+    // the shadow-ambient strength (how much the cast shadow darkens the IBL
+    // ambient, 0 leaves it physical); zw reserved.
     fragInfo[160] = lighting.environmentMapB != null
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
+    fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
   }
 
   // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound

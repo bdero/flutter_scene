@@ -24,13 +24,16 @@ class ShadowPass extends RenderGraphPass {
     required RenderScene renderScene,
     required List<ShadowCascade> cascades,
     required int tileResolution,
+    required ShadowCasterFaces casterFaces,
   }) : _renderScene = renderScene,
        _cascades = cascades,
-       _tileResolution = tileResolution;
+       _tileResolution = tileResolution,
+       _casterFaces = casterFaces;
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
   final int _tileResolution;
+  final ShadowCasterFaces _casterFaces;
 
   @override
   String get name => 'ShadowPass';
@@ -91,6 +94,7 @@ class ShadowPass extends RenderGraphPass {
         renderPass,
         context.transientsBuffer,
         _cascades[c].lightSpaceMatrix,
+        _casterFaces,
       );
       _renderScene.cull(encoder.frustum, encoder.submit);
     }

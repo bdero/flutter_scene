@@ -78,11 +78,12 @@ float SampleCascade(int cascade, vec3 world_pos, vec3 n, int count) {
       frag_info.light_space_matrix[cascade] * vec4(biased, 1.0);
   vec3 proj = light_clip.xyz / light_clip.w;
   vec2 uv = proj.xy * 0.5 + 0.5;
-  // The depth bias is world-space; convert it to this cascade's clip-z
-  // (its orthographic depth range is 3 * box) so a caster crosses the
-  // shadow threshold at the same world height in every cascade, with
-  // no discontinuity where cascades meet.
-  float receiver_depth = proj.z - frag_info.shadow_bias / (3.0 * box);
+  // The depth bias is world-space; convert it to this cascade's clip-z (its
+  // orthographic depth range is 7 * box: the toward-sun reach + forward margin
+  // in light.dart, _casterReachRadii + _forwardMarginRadii, over the half-width
+  // that makes box) so a caster crosses the shadow threshold at the same world
+  // height in every cascade, with no discontinuity where cascades meet.
+  float receiver_depth = proj.z - frag_info.shadow_bias / (7.0 * box);
 
   // World-space penumbra -> this cascade's UV space, floored at a texel.
   float radius =
@@ -276,33 +277,56 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float specular_occlusion = frag_info.ssao_params.y > 0.5
       ? ComputeSpecularOcclusion(n_dot_v, occlusion, roughness)
       : occlusion;
+  // Sun direction and how squarely this surface faces it. `facing` ramps from
+  // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
+  // sun's influence falls off smoothly rather than at a hard line.
+  float n_dot_l = 0.0;
+  vec3 light_vector = vec3(0.0);
+  if (frag_info.has_directional_light > 0.5) {
+    light_vector = -normalize(frag_info.directional_light_direction.xyz);
+    n_dot_l = dot(normal, light_vector);
+  }
+  float facing = clamp(n_dot_l / 0.15, 0.0, 1.0);
+
+  // Sun-shadow visibility (1 lit .. 0 shadowed). The shadow map is only
+  // meaningful for sun-facing surfaces; a back face receives no sun by
+  // definition, so it is treated as fully shadowed (facing = 0) without a
+  // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
+  // and would otherwise stripe the back face with acne.
+  float shadow =
+      (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
+       facing > 0.0)
+          ? SampleShadow(v_position, normal)
+          : 1.0;
+  float sun_visibility = facing * shadow;
+
+  // When shadow_ambient_strength (radiance_blend.y) is non-zero, the sun's
+  // occlusion also darkens the IBL ambient: a sky-baked environment already
+  // contains the sun's energy, so the ambient alone otherwise reads as fully
+  // lit inside shadows.
+  float ambient_shadow = mix(1.0, sun_visibility, frag_info.radiance_blend.y);
+
   vec3 ambient =
-      indirect_diffuse * occlusion + indirect_specular * specular_occlusion;
+      (indirect_diffuse * occlusion + indirect_specular * specular_occlusion) *
+      ambient_shadow;
 
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
   // ambient term).
   vec3 direct = vec3(0.0);
-  if (frag_info.has_directional_light > 0.5) {
-    // surface -> light.
-    vec3 light_vector = -normalize(frag_info.directional_light_direction.xyz);
-    float n_dot_l = max(dot(normal, light_vector), 0.0);
-    if (n_dot_l > 0.0) {
-      vec3 half_vector = normalize(light_vector + camera_normal);
-      float n_dot_v_safe = max(n_dot_v, 1e-4);
-      float distribution = DistributionGGX(normal, half_vector, roughness);
-      float visibility =
-          VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
-      vec3 specular_fresnel =
-          FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
-      // `visibility` already folds in 1 / (4 * NoL * NoV).
-      vec3 specular = distribution * visibility * specular_fresnel;
-      vec3 diffuse = (vec3(1.0) - specular_fresnel) * (1.0 - metallic) *
-                     albedo * (1.0 / kPi);
-      float shadow =
-          frag_info.casts_shadow > 0.5 ? SampleShadow(v_position, normal) : 1.0;
-      direct = (diffuse + specular) * frag_info.directional_light_color.rgb *
-               n_dot_l * shadow;
-    }
+  if (frag_info.has_directional_light > 0.5 && n_dot_l > 0.0) {
+    vec3 half_vector = normalize(light_vector + camera_normal);
+    float n_dot_v_safe = max(n_dot_v, 1e-4);
+    float distribution = DistributionGGX(normal, half_vector, roughness);
+    float visibility =
+        VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+    vec3 specular_fresnel =
+        FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+    // `visibility` already folds in 1 / (4 * NoL * NoV).
+    vec3 specular = distribution * visibility * specular_fresnel;
+    vec3 diffuse = (vec3(1.0) - specular_fresnel) * (1.0 - metallic) *
+                   albedo * (1.0 / kPi);
+    direct = (diffuse + specular) * frag_info.directional_light_color.rgb *
+             n_dot_l * shadow;
   }
 
   vec3 emissive = material.emissive;
