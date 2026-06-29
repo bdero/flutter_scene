@@ -20,7 +20,9 @@ import 'example_physics.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
+import 'example_particles.dart';
 import 'example_skybox.dart';
+import 'example_sprites.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
@@ -57,6 +59,8 @@ class _MyAppState extends State<MyApp> {
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
       'Cuboid': (context) => const ExampleCuboid(),
+      'Sprites': (context) => const ExampleSprites(),
+      'Particles': (context) => const ExampleParticles(),
       'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
       'Navigation Route': (context) => const ExampleNavRoute(),
