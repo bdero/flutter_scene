@@ -82,15 +82,9 @@ class SpriteMaterial extends Material {
     // A camera-facing quad's winding flips with the viewing angle, so cull
     // nothing rather than guess a front face.
     pass.setCullMode(gpu.CullMode.none);
-    // TODO(flutter/flutter#188712): the engine ignores setDepthWriteEnable(false)
-    // (fixed by flutter/flutter#188715, not yet rolled into the SDK), so the
-    // encoder's translucent depth-write-off has no effect and the overlapping
-    // instances of one billboard draw self-occlude. Disable the depth test so
-    // they blend correctly. The cost is that sprites are not occluded by opaque
-    // geometry. Once the engine fix rolls, remove this line so sprites use the
-    // encoder's lessEqual test (occluded by opaque) with depth writes actually
-    // off (no self-occlusion).
-    pass.setDepthCompareOperation(gpu.CompareFunction.always);
+    // Sprites keep the encoder's translucent depth state: the lessEqual test
+    // (so opaque geometry occludes them) with depth writes off (so the
+    // overlapping instances of one instanced draw do not self-occlude).
 
     final fragInfo = Float32List(6);
     fragInfo[0] = tint.r;
