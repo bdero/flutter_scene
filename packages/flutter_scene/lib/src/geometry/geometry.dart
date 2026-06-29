@@ -412,6 +412,19 @@ abstract class Geometry {
   @internal
   VertexLayoutDescriptor? get instancedVertexLayout => null;
 
+  /// Whether the color encoder should bind the node's model transform as a
+  /// one-element instance-rate buffer at the slot after this geometry's
+  /// vertex streams.
+  ///
+  /// True by default whenever [instancedVertexLayout] is set, matching the
+  /// unskinned layouts whose shader reads the model matrix from the
+  /// instance-rate `model_transform_*` attributes. A geometry that supplies
+  /// its own instance-rate buffer (a billboard's per-particle attributes) and
+  /// takes the model transform some other way (a uniform) overrides this to
+  /// false so the encoder leaves its slot alone.
+  @internal
+  bool get bindsModelTransformInstance => instancedVertexLayout != null;
+
   /// Binds all of this geometry's vertex streams (to slots 0, 1, ...) and
   /// its index buffer onto [pass] without binding any uniforms.
   ///

@@ -22,6 +22,8 @@ library;
 
 export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
 
+export 'src/geometry/billboard_geometry.dart'
+    show BillboardFacing, BillboardGeometry;
 export 'src/geometry/geometry.dart'
     show Geometry, SkinnedGeometry, UnskinnedGeometry;
 export 'src/geometry/mesh_data.dart' show MeshData;
@@ -61,6 +63,7 @@ export 'src/material/physically_based_material.dart'
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
 export 'src/material/shader_material.dart' show ShaderMaterial;
+export 'src/material/sprite_material.dart' show SpriteBlendMode, SpriteMaterial;
 export 'src/material/unlit_material.dart' show UnlitMaterial;
 export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
@@ -103,6 +106,7 @@ export 'src/render_view.dart' show RenderView;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/node.dart' show Node;
+export 'src/sprite.dart' show Sprite;
 export 'src/physics/basic/basic_collider.dart' show BasicCollider;
 export 'src/physics/basic/basic_kinematic_body.dart' show BasicKinematicBody;
 export 'src/physics/basic/basic_world.dart' show BasicPhysicsWorld;
