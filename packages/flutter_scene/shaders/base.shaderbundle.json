@@ -15,6 +15,14 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_unlit.frag"
     },
+    "BillboardVertex": {
+        "type": "vertex",
+        "file": "shaders/flutter_scene_billboard.vert"
+    },
+    "SpriteFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_sprite.frag"
+    },
     "StandardFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_standard.frag"

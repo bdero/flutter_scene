@@ -342,7 +342,7 @@ base class SceneEncoder {
       _cameraTransform,
       _camera.position,
     );
-    if (geometry.instancedVertexLayout != null) {
+    if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
       // bound to the slot after the geometry's vertex streams.
       bindSingleInstanceTransform(

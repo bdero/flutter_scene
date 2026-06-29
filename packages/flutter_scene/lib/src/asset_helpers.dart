@@ -14,7 +14,14 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// Throws if the image can't be read as RGBA.
 /// {@category Assets and loading}
 Future<gpu.Texture> gpuTextureFromImage(ui.Image image) async {
-  final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  // Straight (non-premultiplied) alpha: the material shaders treat a sampled
+  // texture as straight and premultiply on output, so a premultiplied source
+  // (the rawRgba default) would be multiplied by alpha twice and darken every
+  // partially transparent texel. Invisible for opaque images, but it crushes
+  // soft-edged content (sprites, cutouts). Mirrors the widget-texture path.
+  final byteData = await image.toByteData(
+    format: ui.ImageByteFormat.rawStraightRgba,
+  );
   if (byteData == null) {
     throw Exception('Failed to get RGBA data from image.');
   }
