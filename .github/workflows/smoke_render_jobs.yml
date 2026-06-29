@@ -291,3 +291,73 @@ jobs:
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
+
+  windows:
+    name: ${{ inputs.argos_prefix }}windows (${{ inputs.label }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref != '' }}
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref == '' }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ inputs.flutter_channel }}
+      - name: Flutter and engine revision
+        run: flutter --version
+      - run: flutter config --enable-windows-desktop --enable-native-assets
+      - run: flutter pub get
+      - name: Render smoke scenes
+        working-directory: examples/smoke_render
+        # No GPU on the runner. Windows Impeller renders through ANGLE, which
+        # falls back to the D3D11 WARP software rasterizer when no hardware
+        # adapter is present, so no extra graphics setup is needed (unlike the
+        # Linux job, which installs Mesa's software GL/Vulkan).
+        run: >
+          flutter drive
+          --driver=test_driver/integration_test.dart
+          --target=integration_test/smoke_test.dart
+          -d windows --enable-impeller --enable-flutter-gpu
+      - name: Upload to Argos
+        id: argos
+        if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
+        working-directory: examples/smoke_render
+        shell: bash
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+        run: |
+          # Never upload an empty/partial build: a failed render must not
+          # overwrite the Argos baseline (see the android job, and
+          # notes/ci/argos_visual_baseline_tracking.md).
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
+          reference_args=()
+          if [ -n "${{ inputs.reference_branch }}" ]; then
+            reference_args=(--reference-branch "${{ inputs.reference_branch }}")
+            if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              export ARGOS_BRANCH="${{ inputs.reference_branch }}"
+              export ARGOS_COMMIT="$(git rev-parse HEAD)"
+            fi
+          fi
+          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || true
+          echo "$out"
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          echo "build_url=$url" >> "$GITHUB_OUTPUT"
+      - name: Notify Discord on failure
+        if: failure() && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ARGOS_URL: ${{ steps.argos.outputs.build_url }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CONTENT="Smoke render failed (${{ inputs.argos_prefix }}windows, ${{ inputs.label }}). Run: $RUN_URL"
+          [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
