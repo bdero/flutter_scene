@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// A sky that exposes a directional sun, so the engine can drive a matching
 /// shadow-casting directional light from it.
@@ -74,11 +75,32 @@ class EnvironmentSkySource extends SkySource {
 /// the shader controls its own output brightness.
 /// {@category Lighting and environment}
 class ShaderSkySource extends SkySource {
-  ShaderSkySource({required this.fragmentShader, this.useEnvironment = false});
+  /// Creates a sky source from a fragment shader.
+  ///
+  /// Provide exactly one of [fragmentShader] (an already-loaded shader, for
+  /// custom skies) or [fragmentShaderName] (a shader from the base library,
+  /// resolved lazily so the source can be constructed before
+  /// [Scene.initializeStaticResources] completes).
+  ShaderSkySource({
+    gpu.Shader? fragmentShader,
+    String? fragmentShaderName,
+    this.useEnvironment = false,
+  }) : assert(
+         (fragmentShader == null) != (fragmentShaderName == null),
+         'Provide exactly one of fragmentShader or fragmentShaderName.',
+       ),
+       _fragmentShader = fragmentShader,
+       _fragmentShaderName = fragmentShaderName;
+
+  gpu.Shader? _fragmentShader;
+  final String? _fragmentShaderName;
 
   /// The full-screen sky fragment shader, typically loaded from a
-  /// `.shaderbundle`.
-  gpu.Shader fragmentShader;
+  /// `.shaderbundle`. When the source was constructed by name, the shader is
+  /// resolved from the base library on first access and then cached.
+  gpu.Shader get fragmentShader =>
+      _fragmentShader ??= baseShaderLibrary[_fragmentShaderName!]!;
+  set fragmentShader(gpu.Shader shader) => _fragmentShader = shader;
 
   /// Whether the engine binds the active environment's IBL textures
   /// (`prefiltered_radiance`, `brdf_lut`) when the shader declares them.
