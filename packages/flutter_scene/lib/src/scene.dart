@@ -28,6 +28,7 @@ import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
+import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
 import 'render/shadow_pass.dart';
@@ -1008,9 +1009,14 @@ base class Scene implements SceneGraph {
     // from a camera depth prepass, so they need a perspective projection
     // (others render without them) and share the one prepass.
     final perspective = camera.projection;
-    if (perspective is PerspectiveProjection) {
+    final perspectiveCamera = perspective is PerspectiveProjection
+        ? perspective
+        : null;
+    // Reflections run after the scene is drawn (they sample the lit color),
+    // so capture whether they apply here and add the pass below.
+    final wantSsr = perspectiveCamera != null && screenSpaceReflections.enabled;
+    if (perspectiveCamera != null) {
       final wantAo = ambientOcclusion.enabled;
-      final wantSsr = screenSpaceReflections.enabled;
       if (wantAo || wantSsr) {
         // Ambient occlusion evaluates its chain (depth prepass, occlusion,
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
@@ -1028,7 +1034,7 @@ base class Scene implements SceneGraph {
             renderScene: renderScene,
             dimensions: depthDimensions,
             cameraForward: camera.forward,
-            farDepth: perspective.far,
+            farDepth: perspectiveCamera.far,
             layerMask: view.layerMask,
           ),
         );
@@ -1038,9 +1044,9 @@ base class Scene implements SceneGraph {
           SsaoPass(
             dimensions: pixelSize,
             settings: ambientOcclusion,
-            fovRadiansY: perspective.fovRadiansY,
-            near: perspective.near,
-            far: perspective.far,
+            fovRadiansY: perspectiveCamera.fovRadiansY,
+            near: perspectiveCamera.near,
+            far: perspectiveCamera.far,
           ),
         );
         graph.addPass(
@@ -1067,6 +1073,20 @@ base class Scene implements SceneGraph {
         layerMask: view.layerMask,
       ),
     );
+    // Screen-space reflections refine the lit HDR color in place, before
+    // bloom and tone mapping, so reflected highlights bloom and tone-map
+    // with the rest of the image.
+    if (wantSsr) {
+      graph.addPass(
+        SsrPass(
+          dimensions: pixelSize,
+          settings: screenSpaceReflections,
+          fovRadiansY: perspectiveCamera.fovRadiansY,
+          near: perspectiveCamera.near,
+          far: perspectiveCamera.far,
+        ),
+      );
+    }
     // Split custom effects by where they run in the chain.
     final beforeTonemap = <PostEffect>[];
     final afterTonemap = <PostEffect>[];
