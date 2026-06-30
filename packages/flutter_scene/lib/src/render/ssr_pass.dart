@@ -66,23 +66,13 @@ class SsrPass extends RenderGraphPass {
        _far = far;
 
   final ui.Size _dimensions;
-  // ignore: unused_field
   final ScreenSpaceReflectionsSettings _settings;
   final double _fovRadiansY;
   final double _near;
   final double _far;
 
-  // March defaults until the settings expose them. The reflected ray is
-  // marched out to half the view depth in a fixed number of view-space
-  // steps, accepting a hit within roughly one step's depth of a surface.
-  // TODO(ssr): expose these (max distance, thickness, bias, step count,
-  // intensity) on ScreenSpaceReflectionsSettings with mobile/desktop
-  // presets.
-  static const int _stepCount = 48;
-  static const double _intensity = 1.0;
-  // 0 = composite, 1 = reflected UV, 2 = hit mask, 3 = normal, 4 = confidence,
-  // 5 = raw depth.
-  static const double _debugView = 0.0;
+  // The shader's constant march-loop bound; user step counts clamp to this.
+  static const int _maxStepCeiling = 96;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -115,13 +105,12 @@ class SsrPass extends RenderGraphPass {
     final aspect = _dimensions.width / _dimensions.height;
     final tanHalfFovX = tanHalfFovY * aspect;
 
-    final maxDistance = _far * 0.5;
-    final stepLength = maxDistance / _stepCount;
-    // Accept a hit within roughly two steps' depth (the coarse fixed step
-    // would otherwise tunnel through thin surfaces), and start the ray off
-    // the surface by a fraction of a step to avoid self-intersection.
-    final thickness = stepLength * 2.0;
-    final startBias = stepLength * 0.5;
+    final stepCount = _settings.maxSteps.clamp(1, _maxStepCeiling);
+    final maxDistance = _settings.maxDistance;
+    final thickness = _settings.thickness;
+    // Start the ray off the surface by a fraction of a step to avoid
+    // self-intersection.
+    final startBias = (maxDistance / stepCount) * 0.5;
 
     final info = Float32List(16)
       ..[0] = width.toDouble()
@@ -135,9 +124,10 @@ class SsrPass extends RenderGraphPass {
       ..[8] = maxDistance
       ..[9] = thickness
       ..[10] = startBias
-      ..[11] = _stepCount.toDouble()
-      ..[12] = _intensity
-      ..[13] = _debugView;
+      ..[11] = stepCount.toDouble()
+      ..[12] = _settings.intensity
+      ..[13] = _settings.debugView.index.toDouble()
+      ..[14] = _settings.blur;
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
