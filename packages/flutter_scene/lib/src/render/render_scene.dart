@@ -1,6 +1,8 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -191,6 +193,31 @@ class RenderScene {
   void removeEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
     environmentVolumeComponents.remove(volume);
   }
+
+  /// The mounted [CameraComponent]s, in mount order. The first is the
+  /// auto-promoted primary when no [cameraOverride] is set.
+  final List<CameraComponent> cameras = [];
+
+  /// An explicit primary-camera override, set through `Scene.camera`. When
+  /// non-null it wins over auto-promotion; when null the primary resolves to
+  /// the first mounted [CameraComponent], or null when there are none.
+  Camera? cameraOverride;
+
+  /// Registers [camera] as a mounted camera. Called by a [CameraComponent]
+  /// when its owning node mounts.
+  void addCamera(CameraComponent camera) {
+    cameras.add(camera);
+  }
+
+  /// Unregisters [camera]. Called when its owning node unmounts.
+  void removeCamera(CameraComponent camera) {
+    cameras.remove(camera);
+  }
+
+  /// The scene's primary camera: the explicit [cameraOverride] if set, else
+  /// the first mounted [CameraComponent]'s camera, else null.
+  Camera? get primaryCamera =>
+      cameraOverride ?? (cameras.isEmpty ? null : cameras.first.toCamera());
 
   Bvh _bvh = Bvh.build([]);
   final List<RenderItem> _alwaysVisible = [];
