@@ -1,3 +1,28 @@
+/// A diagnostic visualization for [ScreenSpaceReflectionsSettings.debugView].
+///
+/// Replaces the composited image with an intermediate of the reflection
+/// trace, for tuning and debugging. [composite] is the normal output.
+/// {@category Rendering}
+enum SsrDebugView {
+  /// The normal reflection-composited image.
+  composite,
+
+  /// The screen UV the reflected ray hit (red/green), scaled by confidence.
+  reflectedUv,
+
+  /// White where a reflection hit was accepted, black otherwise.
+  hitMask,
+
+  /// The per-pixel view-space normal read from the depth prepass.
+  normal,
+
+  /// The accepted hit's confidence (the reflection blend weight).
+  confidence,
+
+  /// The raw linear depth the trace marches against.
+  depth,
+}
+
 /// Screen-space reflection settings for a [Scene].
 ///
 /// Reachable through `Scene.screenSpaceReflections`. Screen-space
@@ -23,4 +48,33 @@ class ScreenSpaceReflectionsSettings {
   /// Enabling this schedules the shared camera depth prepass (also used by
   /// ambient occlusion); the reflection trace reads it.
   bool enabled = false;
+
+  /// Overall strength of the reflections, multiplying the per-pixel blend
+  /// weight. `1.0` is the physical estimate; lower values fade reflections
+  /// out, higher values exaggerate them.
+  double intensity = 1.0;
+
+  /// How far, in world units, a reflected ray is marched before it is
+  /// considered to have missed. Larger values let reflections reach more
+  /// distant geometry at a higher trace cost.
+  double maxDistance = 25.0;
+
+  /// The assumed world-space thickness of surfaces, used to accept a ray
+  /// crossing as a hit. Too small misses thin or grazing geometry; too large
+  /// lets a ray passing behind an object falsely reflect it.
+  double thickness = 0.5;
+
+  /// Number of screen-space steps the reflected ray is marched in. More
+  /// steps give smoother, longer reflections at a higher cost. Clamped to the
+  /// shader's maximum (currently 96).
+  int maxSteps = 96;
+
+  /// Glossy blur applied to the reflected color, `0` for a sharp mirror.
+  /// Higher values soften the reflection (and hide trace noise), widening
+  /// with the hit distance.
+  double blur = 0.3;
+
+  /// A diagnostic visualization to render instead of the composited image.
+  /// Defaults to [SsrDebugView.composite] (the normal output).
+  SsrDebugView debugView = SsrDebugView.composite;
 }
