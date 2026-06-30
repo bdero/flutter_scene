@@ -23,6 +23,7 @@ import 'example_shapes.dart';
 import 'example_particles.dart';
 import 'example_skybox.dart';
 import 'example_sprites.dart';
+import 'example_ssr.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
@@ -63,6 +64,7 @@ class _MyAppState extends State<MyApp> {
       'Particles': (context) => const ExampleParticles(),
       'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
+      'Screen-space Reflections': (context) => const ExampleSsr(),
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
