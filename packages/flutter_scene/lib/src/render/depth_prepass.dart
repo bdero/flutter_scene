@@ -273,6 +273,13 @@ class _DepthPrepassEncoder {
       }
     }
 
+    // The instance-rate model transform sits in the slot after the bound
+    // vertex streams. The depth-only path binds just the position stream
+    // (slot 0), so its instance is slot 1; the normal-writing path binds the
+    // full stream set, so the instance follows them (slot
+    // [vertexStreamCount]), matching the color encoder.
+    final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
+
     final instances = item.instanceTransforms;
     if (instances != null) {
       if (geometry.instancedVertexLayout == null) {
@@ -297,12 +304,12 @@ class _DepthPrepassEncoder {
         nodeWindingFlipped: item.windingFlipped,
       );
       if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.ccw);
+        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.cw);
+        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
@@ -311,10 +318,15 @@ class _DepthPrepassEncoder {
 
     bindDraw(item.worldTransform);
     // Skip the model-transform instance buffer for geometry that supplies its
-    // own per-instance buffer (see the color encoder), or it clobbers slot 1.
+    // own per-instance buffer (see the color encoder), or it clobbers the
+    // stream slot.
     if (geometry.instancedVertexLayout != null &&
         geometry.bindsModelTransformInstance) {
-      bindSingleInstanceTransform(_renderPass, item.worldTransform);
+      bindSingleInstanceTransform(
+        _renderPass,
+        item.worldTransform,
+        slot: instanceSlot,
+      );
     }
     _renderPass.setWindingOrder(
       item.windingFlipped

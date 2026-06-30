@@ -80,7 +80,21 @@ void main() {
   int debug_view = int(ssr.params.y + 0.5);
 
   vec4 base = texture(input_color, v_uv);
+  vec4 depth_sample = texture(linear_depth, v_uv);
   vec3 origin = ViewPositionAt(v_uv);
+
+  // Debug views, evaluated before any early-out so they show what the trace
+  // actually reads.
+  if (debug_view == 5) {
+    float g = depth_sample.r / far;
+    frag_color = vec4(vec3(g), 1.0);
+    return;
+  }
+  if (debug_view == 3) {
+    vec3 dn = normalize(depth_sample.gba);
+    frag_color = vec4(dn * 0.5 + 0.5, 1.0);
+    return;
+  }
 
   // Background texels (no geometry) reflect nothing.
   if (origin.z >= far) {
@@ -92,12 +106,7 @@ void main() {
   // (in green/blue/alpha). Using the shaded vertex normal rather than one
   // reconstructed from depth keeps reflections smooth across curved
   // surfaces instead of faceted per triangle.
-  vec3 normal = normalize(texture(linear_depth, v_uv).gba);
-
-  if (debug_view == 3) {
-    frag_color = vec4(normal * 0.5 + 0.5, 1.0);
-    return;
-  }
+  vec3 normal = normalize(depth_sample.gba);
 
   // View-space reflection of the eye-to-pixel ray about the surface normal.
   vec3 incident = normalize(origin);
