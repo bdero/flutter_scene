@@ -1,8 +1,9 @@
 // Screen-space reflections, composited over the linear HDR scene color.
 //
-// Reconstructs each pixel's view-space position and a face normal from the
-// camera linear-depth prepass (no normal buffer, so it fits a forward
-// renderer), reflects the view ray about that normal, and marches the
+// Reads each pixel's view-space position and smooth view-space normal from
+// the camera depth prepass (depth in red, the interpolated normal packed
+// into green/blue/alpha), reflects the view ray about that normal, and
+// marches the
 // reflected ray through the depth buffer looking for the surface it hits.
 // On a hit it samples the already-lit scene color at the hit point and
 // blends it in, weighted by a Fresnel term and a confidence that fades at
@@ -87,14 +88,11 @@ void main() {
     return;
   }
 
-  // Face normal from the screen-space gradient of the reconstructed
-  // position, oriented toward the camera (the eye is at the origin, so the
-  // view direction is -origin). Single-pixel silhouette errors are
-  // acceptable for reflections, which the Fresnel and edge fades soften.
-  vec3 normal = normalize(cross(dFdx(origin), dFdy(origin)));
-  if (dot(normal, origin) > 0.0) {
-    normal = -normal;
-  }
+  // The smooth, interpolated view-space normal written by the depth prepass
+  // (in green/blue/alpha). Using the shaded vertex normal rather than one
+  // reconstructed from depth keeps reflections smooth across curved
+  // surfaces instead of faceted per triangle.
+  vec3 normal = normalize(texture(linear_depth, v_uv).gba);
 
   if (debug_view == 3) {
     frag_color = vec4(normal * 0.5 + 0.5, 1.0);

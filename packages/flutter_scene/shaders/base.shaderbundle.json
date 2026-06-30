@@ -55,6 +55,10 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_ssr.frag"
     },
+    "LinearDepthNormalFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_linear_depth_normal.frag"
+    },
     "FullscreenVertex": {
         "type": "vertex",
         "file": "shaders/flutter_scene_fullscreen.vert"

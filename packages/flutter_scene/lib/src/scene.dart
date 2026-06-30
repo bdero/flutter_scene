@@ -1028,14 +1028,23 @@ base class Scene implements SceneGraph {
         final depthDimensions = wantAo
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
+        // Reflections need the interpolated view-space normal, so the prepass
+        // writes it alongside depth (it carries the camera basis to rotate
+        // world normals into view space). Occlusion needs only depth.
+        final cameraForward = camera.forward;
+        final cameraRight = camera.up.cross(cameraForward)..normalize();
+        final cameraUp = cameraForward.cross(cameraRight)..normalize();
         graph.addPass(
           DepthPrepass(
             camera: camera,
             renderScene: renderScene,
             dimensions: depthDimensions,
-            cameraForward: camera.forward,
+            cameraForward: cameraForward,
             farDepth: perspectiveCamera.far,
             layerMask: view.layerMask,
+            writeNormals: wantSsr,
+            cameraRight: cameraRight,
+            cameraUp: cameraUp,
           ),
         );
       }
