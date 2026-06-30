@@ -70,8 +70,10 @@ typedef SceneTickCallback =
 class SceneView extends StatefulWidget {
   /// Renders [scene], driving a repaint each frame.
   ///
-  /// Exactly one of [camera], [cameraBuilder], or [viewsBuilder] must be
-  /// provided.
+  /// At most one of [camera], [cameraBuilder], or [viewsBuilder] may be
+  /// provided. When none is, the view renders through the scene's primary
+  /// camera (`Scene.camera`), falling back to a default camera when the scene
+  /// has none, so `SceneView(scene)` always renders something.
   const SceneView(
     this.scene, {
     super.key,
@@ -85,9 +87,9 @@ class SceneView extends StatefulWidget {
   }) : assert(
          (camera != null ? 1 : 0) +
                  (cameraBuilder != null ? 1 : 0) +
-                 (viewsBuilder != null ? 1 : 0) ==
+                 (viewsBuilder != null ? 1 : 0) <=
              1,
-         'Provide exactly one of camera, cameraBuilder, or viewsBuilder.',
+         'Provide at most one of camera, cameraBuilder, or viewsBuilder.',
        );
 
   /// The scene to render. Owned and mutated by the application.
@@ -125,9 +127,29 @@ class SceneView extends StatefulWidget {
   /// Called once per frame while ticking. See [SceneTickCallback].
   final SceneTickCallback? onTick;
 
+  /// Resolves the camera for a single-view frame.
+  ///
+  /// Precedence: the explicit [camera], then [cameraBuilder] evaluated at
+  /// [elapsed], then [sceneCamera] (the scene's primary), then a default
+  /// camera so a scene with no camera still renders. Pure given its inputs.
+  @visibleForTesting
+  static Camera resolveCamera(
+    Duration elapsed, {
+    Camera? camera,
+    SceneCameraBuilder? cameraBuilder,
+    Camera? sceneCamera,
+  }) => camera ?? cameraBuilder?.call(elapsed) ?? sceneCamera ?? _defaultCamera;
+
   @override
   State<SceneView> createState() => _SceneViewState();
 }
+
+// Used when a scene has no camera set up at all, so a bare SceneView(scene)
+// still renders. Frames the front of content placed near the origin.
+// TODO(camera): verify this placement frames the front for both
+// runtime-imported glTF (after the scene-root Z flip) and procedurally added
+// content, and adjust the sign if they disagree.
+final Camera _defaultCamera = PerspectiveCamera();
 
 /// A [Listenable] that repaints the scene; its [notify] is called each frame so
 /// only the painting layer repaints (not the whole widget subtree).
@@ -174,8 +196,12 @@ class _SceneViewState extends State<SceneView>
 
   Camera? _lastBuiltCamera;
 
-  Camera _cameraForFrame() =>
-      _lastBuiltCamera = widget.camera ?? widget.cameraBuilder!(_elapsed.value);
+  Camera _cameraForFrame() => _lastBuiltCamera = SceneView.resolveCamera(
+    _elapsed.value,
+    camera: widget.camera,
+    cameraBuilder: widget.cameraBuilder,
+    sceneCamera: widget.scene.camera,
+  );
 
   List<RenderView> _viewsForFrame() => widget.viewsBuilder!(_elapsed.value);
 

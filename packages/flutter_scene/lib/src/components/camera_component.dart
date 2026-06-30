@@ -16,22 +16,83 @@ import 'package:flutter_scene/src/node.dart';
 /// `Scene.render` or a persistent `RenderView`. (The node should not be
 /// scaled; a camera node is expected to carry only rotation and
 /// translation.)
+///
+/// When the owning node is mounted in a scene, the component registers as a
+/// candidate for the scene's primary camera (`Scene.camera`). The first
+/// camera mounted becomes the primary automatically; call [makeActive] to
+/// select this one explicitly.
 /// {@category Scene graph}
 class CameraComponent extends Component {
   /// Creates a camera component with the given [projection] (a
   /// [PerspectiveProjection] by default).
   CameraComponent({CameraProjection? projection})
-    : projection = projection ?? PerspectiveProjection();
+    : _projection = projection ?? PerspectiveProjection();
+
+  CameraProjection _projection;
 
   /// The lens projection for this camera.
-  CameraProjection projection;
+  CameraProjection get projection => _projection;
+  set projection(CameraProjection value) {
+    _projection = value;
+    // Keep the cached camera (held by RenderViews or as the scene primary) in
+    // sync so a projection change takes effect without re-fetching.
+    _camera?.projection = value;
+  }
+
+  // Memoized so repeated resolution does not allocate and so the camera has a
+  // stable identity (used by [active] and the scene primary). Invalidated when
+  // the component is detached, since a new attachment may use a new node.
+  NodeCamera? _camera;
+
+  bool _activateOnMount = false;
 
   /// Returns a [NodeCamera] backed by the owning node.
   ///
   /// The returned camera tracks the node: moving or rotating the node
   /// moves the view on the next frame, so it is safe to hold in a
-  /// persistent `RenderView`.
-  NodeCamera toCamera() => NodeCamera(node, projection);
+  /// persistent `RenderView`. The same instance is returned across calls
+  /// while the component stays attached.
+  NodeCamera toCamera() => _camera ??= NodeCamera(node, _projection);
+
+  /// Makes this the scene's primary camera, overriding auto-promotion.
+  ///
+  /// If the owning node is not yet mounted, the selection is deferred and
+  /// applied when it mounts.
+  void makeActive() {
+    final renderScene = isAttached ? node.internalRenderScene : null;
+    if (renderScene != null) {
+      renderScene.cameraOverride = toCamera();
+    } else {
+      _activateOnMount = true;
+    }
+  }
+
+  /// Whether the scene's primary camera currently resolves to this component.
+  bool get active {
+    final renderScene = isAttached ? node.internalRenderScene : null;
+    return renderScene != null &&
+        identical(renderScene.primaryCamera, toCamera());
+  }
+
+  @override
+  void onMount() {
+    node.internalRenderScene?.addCamera(this);
+    if (_activateOnMount) {
+      _activateOnMount = false;
+      node.internalRenderScene?.cameraOverride = toCamera();
+    }
+  }
+
+  @override
+  void onUnmount() {
+    node.internalRenderScene?.removeCamera(this);
+  }
+
+  @override
+  void onDetach() {
+    // A reattachment may bind a different node, so drop the cached camera.
+    _camera = null;
+  }
 }
 
 /// A [Camera] whose view comes from a [node]'s world transform: the `+Z`
@@ -51,7 +112,7 @@ class NodeCamera extends Camera {
   final Node node;
 
   @override
-  final CameraProjection projection;
+  CameraProjection projection;
 
   Matrix4 get _worldTransform => node.globalTransform;
 

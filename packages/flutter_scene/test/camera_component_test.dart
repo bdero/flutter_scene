@@ -4,6 +4,7 @@
 import 'dart:ui' show Size;
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -58,6 +59,176 @@ void main() {
       expect(camera.position.x, closeTo(1.0, 1e-6));
       expect(camera.position.y, closeTo(2.0, 1e-6));
       expect(camera.position.z, closeTo(3.0, 1e-6));
+    });
+  });
+
+  group('primary camera', () {
+    test('no cameras mounted resolves to null', () {
+      expect(RenderScene().primaryCamera, isNull);
+    });
+
+    test('the first mounted camera auto-promotes to primary', () {
+      final rs = RenderScene();
+      final root = Node();
+      final cam = CameraComponent();
+      root.add(Node()..addComponent(cam));
+      root.debugMountInto(rs);
+
+      expect(rs.cameras, hasLength(1));
+      expect(rs.primaryCamera, same(cam.toCamera()));
+      expect(cam.active, isTrue);
+    });
+
+    test('later cameras do not steal the primary', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      root.add(Node()..addComponent(a));
+      root.add(Node()..addComponent(b));
+      root.debugMountInto(rs);
+
+      expect(rs.primaryCamera, same(a.toCamera()));
+      expect(a.active, isTrue);
+      expect(b.active, isFalse);
+    });
+
+    test('makeActive overrides auto-promotion', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      root.add(Node()..addComponent(a));
+      root.add(Node()..addComponent(b));
+      root.debugMountInto(rs);
+
+      b.makeActive();
+      expect(rs.primaryCamera, same(b.toCamera()));
+      expect(a.active, isFalse);
+      expect(b.active, isTrue);
+    });
+
+    test('clearing the override reverts to the first mounted camera', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      root.add(Node()..addComponent(a));
+      root.add(Node()..addComponent(b));
+      root.debugMountInto(rs);
+
+      b.makeActive();
+      rs.cameraOverride = null;
+      expect(rs.primaryCamera, same(a.toCamera()));
+      expect(a.active, isTrue);
+    });
+
+    test('unmounting the active camera promotes the next', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      final aNode = Node()..addComponent(a);
+      root.add(aNode);
+      root.add(Node()..addComponent(b));
+      root.debugMountInto(rs);
+      expect(rs.primaryCamera, same(a.toCamera()));
+
+      root.remove(aNode);
+      expect(rs.cameras, hasLength(1));
+      expect(rs.primaryCamera, same(b.toCamera()));
+    });
+
+    test('an explicit override persists when its component unmounts', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      root.add(Node()..addComponent(a));
+      final bNode = Node()..addComponent(b);
+      root.add(bNode);
+      root.debugMountInto(rs);
+
+      final bCamera = b.toCamera();
+      b.makeActive();
+      root.remove(bNode);
+
+      // The override is independent of the mounted-camera registry.
+      expect(rs.cameras, hasLength(1));
+      expect(rs.primaryCamera, same(bCamera));
+    });
+
+    test('makeActive before mount is deferred and applied on mount', () {
+      final rs = RenderScene();
+      final root = Node();
+      final a = CameraComponent();
+      final b = CameraComponent();
+      root.add(Node()..addComponent(a));
+      root.add(Node()..addComponent(b));
+
+      // Nothing is mounted yet, so this defers until onMount.
+      b.makeActive();
+      root.debugMountInto(rs);
+
+      expect(rs.primaryCamera, same(b.toCamera()));
+      expect(b.active, isTrue);
+    });
+
+    test('changing the projection updates the cached camera in place', () {
+      final rs = RenderScene();
+      final node = Node()..addComponent(CameraComponent());
+      node.debugMountInto(rs);
+      final component = node.getComponents<CameraComponent>().first;
+
+      final camera = component.toCamera();
+      final newProjection = PerspectiveProjection(fovRadiansY: 1.0);
+      component.projection = newProjection;
+
+      expect(camera.projection, same(newProjection));
+      expect(component.toCamera(), same(camera));
+    });
+  });
+
+  group('SceneView.resolveCamera precedence', () {
+    final explicit = PerspectiveCamera();
+    final built = PerspectiveCamera();
+    final primary = PerspectiveCamera();
+
+    test('an explicit camera wins over everything', () {
+      expect(
+        SceneView.resolveCamera(
+          Duration.zero,
+          camera: explicit,
+          cameraBuilder: (_) => built,
+          sceneCamera: primary,
+        ),
+        same(explicit),
+      );
+    });
+
+    test('cameraBuilder is used when there is no explicit camera', () {
+      expect(
+        SceneView.resolveCamera(
+          Duration.zero,
+          cameraBuilder: (_) => built,
+          sceneCamera: primary,
+        ),
+        same(built),
+      );
+    });
+
+    test('the scene primary is used when no argument is given', () {
+      expect(
+        SceneView.resolveCamera(Duration.zero, sceneCamera: primary),
+        same(primary),
+      );
+    });
+
+    test('a shared default is used when nothing resolves a camera', () {
+      final a = SceneView.resolveCamera(Duration.zero);
+      final b = SceneView.resolveCamera(Duration.zero);
+      expect(a, isA<PerspectiveCamera>());
+      expect(a, same(b));
     });
   });
 }

@@ -13,6 +13,17 @@
   `setVertexShaderName` for custom subclasses that pull from the base library,
   and `ShaderSkySource` gains a `fragmentShaderName` constructor argument.
 
+* Added a scene-tracked primary camera. `Scene.camera` is the camera a
+  `SceneView` uses when it is given no `camera`, `cameraBuilder`, or
+  `viewsBuilder`. It resolves to an explicit override (assign any `Camera`),
+  else the first `CameraComponent` mounted in the scene (auto-promotion), else
+  null. `CameraComponent` gains `makeActive` (select it as the primary,
+  deferred until mount if needed) and `active`. When nothing resolves a
+  camera, `SceneView` now renders through a default camera instead of
+  asserting, so a bare `SceneView(scene)` always renders. The `SceneView`
+  constraint relaxes from exactly one to at most one of `camera`,
+  `cameraBuilder`, or `viewsBuilder`.
+
 ## 0.18.1
 
 * No code changes. Reworded the package description, added the Flutter Scene

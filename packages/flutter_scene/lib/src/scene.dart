@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
 import 'camera.dart';
+import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
 import 'light.dart';
 import 'material/environment.dart';
@@ -339,6 +340,21 @@ base class Scene implements SceneGraph {
   /// Kept in sync by the node graph as mesh-bearing nodes are added and
   /// removed. Engine-internal; not part of the stable public API.
   final RenderScene renderScene = RenderScene();
+
+  /// The scene's primary camera.
+  ///
+  /// A `SceneView` with no `camera`, `cameraBuilder`, or `viewsBuilder`
+  /// renders through this. It resolves to an explicit override (assign any
+  /// [Camera] here) if set, otherwise to the first [CameraComponent] mounted
+  /// in the scene (auto-promotion), otherwise null. When it is null, a
+  /// `SceneView` falls back to a default camera so a scene with no camera set
+  /// up still renders.
+  ///
+  /// Assigning a value sets the override; assign null to clear it and revert
+  /// to auto-promotion. See also [CameraComponent.makeActive].
+  /// {@category Rendering}
+  Camera? get camera => renderScene.primaryCamera;
+  set camera(Camera? value) => renderScene.cameraOverride = value;
 
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
