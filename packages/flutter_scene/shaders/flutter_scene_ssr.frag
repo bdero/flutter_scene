@@ -105,36 +105,48 @@ void main() {
   vec3 incident = normalize(origin);
   vec3 reflection = reflect(incident, normal);
 
-  // March the reflected ray in view space, projecting each step to a UV and
-  // testing it against the stored depth.
-  // TODO(ssr): this fixed view-space step over-samples near the camera and
-  // under-samples far away; replace with a perspective-correct screen-space
-  // DDA (McGuire & Mara) so samples are evenly spaced in pixels.
-  float step_length = max_distance / float(step_count);
-  vec3 march_pos = origin + normal * start_bias;
+  // March the reflected ray in screen space (McGuire & Mara): project the
+  // ray's start and end to UVs and walk the screen-space segment in equal
+  // steps, so samples are evenly spaced in pixels regardless of distance
+  // (a fixed view-space step would clump near the camera and skip far
+  // geometry). View-space depth is recovered per step from a
+  // perspective-correct interpolation of 1/z, which is linear across the
+  // screen.
+  vec3 ray_start = origin + normal * start_bias;
+  vec3 ray_end = ray_start + reflection * max_distance;
+  // Clip the segment to the near plane so the projection stays in front of
+  // the eye (z > 0).
+  if (ray_end.z < near) {
+    float t = (near - ray_start.z) / (ray_end.z - ray_start.z);
+    ray_end = mix(ray_start, ray_end, clamp(t, 0.0, 1.0));
+  }
+
+  vec2 uv_start = UvFromView(ray_start);
+  vec2 uv_end = UvFromView(ray_end);
+  float inv_z_start = 1.0 / ray_start.z;
+  float inv_z_end = 1.0 / ray_end.z;
+
   float confidence = 0.0;
   vec2 hit_uv = vec2(0.0);
 
-  for (int i = 0; i < MAX_SSR_STEPS; i++) {
-    if (i >= step_count) {
+  for (int i = 1; i <= MAX_SSR_STEPS; i++) {
+    if (i > step_count) {
       break;
     }
-    march_pos += reflection * step_length;
-    // Stop if the ray passes behind the near plane (nothing to sample).
-    if (march_pos.z <= near) {
-      break;
-    }
-    vec2 uv = UvFromView(march_pos);
+    float t = float(i) / float(step_count);
+    vec2 uv = mix(uv_start, uv_end, t);
     // Stop when the ray leaves the screen.
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       break;
     }
+    // Perspective-correct view-space depth of the ray at this screen point.
+    float ray_z = 1.0 / mix(inv_z_start, inv_z_end, t);
     float scene_z = texture(linear_depth, uv).r;
     // Skip background (sky) texels: no geometry to reflect there.
     if (scene_z >= far) {
       continue;
     }
-    float delta = march_pos.z - scene_z;
+    float delta = ray_z - scene_z;
     // A hit: the ray has crossed behind the sampled surface, within the
     // surface's assumed thickness.
     if (delta > 0.0 && delta < thickness) {
