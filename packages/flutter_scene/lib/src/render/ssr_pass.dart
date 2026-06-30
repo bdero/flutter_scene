@@ -80,7 +80,8 @@ class SsrPass extends RenderGraphPass {
   // presets.
   static const int _stepCount = 48;
   static const double _intensity = 1.0;
-  // 0 = composite, 1 = reflected UV, 2 = hit mask, 3 = normal, 4 = confidence.
+  // 0 = composite, 1 = reflected UV, 2 = hit mask, 3 = normal, 4 = confidence,
+  // 5 = raw depth.
   static const double _debugView = 0.0;
 
   static final gpu.Shader _vertexShader =
