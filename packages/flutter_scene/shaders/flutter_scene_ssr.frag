@@ -1,0 +1,183 @@
+// Screen-space reflections, composited over the linear HDR scene color.
+//
+// Reconstructs each pixel's view-space position and a face normal from the
+// camera linear-depth prepass (no normal buffer, so it fits a forward
+// renderer), reflects the view ray about that normal, and marches the
+// reflected ray through the depth buffer looking for the surface it hits.
+// On a hit it samples the already-lit scene color at the hit point and
+// blends it in, weighted by a Fresnel term and a confidence that fades at
+// screen edges. A ray that leaves the screen or finds no hit contributes
+// nothing, so the surface keeps the image-based reflection it was lit with.
+//
+// The scene color is premultiplied linear HDR; the output follows the same
+// contract. This pass stays entirely in render-to-texture space (it samples
+// the scene color and depth, both render targets, and writes another), so
+// like the occlusion pass it needs no Y flip; the resolve pass handles the
+// final upright orientation.
+
+uniform sampler2D input_color;
+uniform sampler2D linear_depth;
+
+uniform SsrInfo {
+  // x, y: viewport size in pixels. z, w: its reciprocal.
+  vec4 viewport;
+  // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
+  vec4 proj;
+  // x: max march distance (world units). y: thickness for hit acceptance
+  // (world units). z: starting bias off the surface (world units). w: step
+  // count.
+  vec4 march;
+  // x: reflection intensity. y: debug view (0 = composite, 1 = reflected
+  // UV, 2 = hit mask, 3 = reconstructed normal, 4 = confidence).
+  vec4 params;
+}
+ssr;
+
+in vec2 v_uv;
+out vec4 frag_color;
+
+// Constant loop bound so the march is statically bounded for the GLES 1.00
+// shader output (a uniform-bounded loop is rejected by conformant ES
+// drivers); the dynamic step count breaks out early. Matches the occlusion
+// pass's constant-loop pattern.
+#define MAX_SSR_STEPS 64
+
+const float kEpsilon = 0.0001;
+// Screen-edge fade width, as a fraction of the viewport: reflections ramp
+// out over this band as the hit approaches a screen border.
+const float kEdgeFade = 0.08;
+
+// Reconstructs a view-space position from a depth-buffer UV. Camera space
+// places the eye at the origin looking down +Z (the convention the depth
+// prepass writes), so the stored planar depth is the view-space Z and the
+// X/Y follow from the projection tangents. Mirrors the occlusion pass.
+vec3 ViewPositionAt(vec2 uv) {
+  float z = texture(linear_depth, uv).r;
+  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
+  return vec3(ndc.x * z * ssr.proj.x, ndc.y * z * ssr.proj.y, z);
+}
+
+// Projects a view-space position back to a depth-buffer UV (the inverse of
+// the X/Y mapping in ViewPositionAt). Valid for positions in front of the
+// eye (z > 0).
+vec2 UvFromView(vec3 p) {
+  vec2 ndc = vec2(p.x / (p.z * ssr.proj.x), p.y / (p.z * ssr.proj.y));
+  return vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+}
+
+// Un-premultiplies a sampled premultiplied-alpha color.
+vec3 Unpremultiply(vec4 c) { return c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
+
+void main() {
+  float near = ssr.proj.z;
+  float far = ssr.proj.w;
+  float max_distance = ssr.march.x;
+  float thickness = ssr.march.y;
+  float start_bias = ssr.march.z;
+  int step_count = int(ssr.march.w);
+  float intensity = ssr.params.x;
+  int debug_view = int(ssr.params.y + 0.5);
+
+  vec4 base = texture(input_color, v_uv);
+  vec3 origin = ViewPositionAt(v_uv);
+
+  // Background texels (no geometry) reflect nothing.
+  if (origin.z >= far) {
+    frag_color = base;
+    return;
+  }
+
+  // Face normal from the screen-space gradient of the reconstructed
+  // position, oriented toward the camera (the eye is at the origin, so the
+  // view direction is -origin). Single-pixel silhouette errors are
+  // acceptable for reflections, which the Fresnel and edge fades soften.
+  vec3 normal = normalize(cross(dFdx(origin), dFdy(origin)));
+  if (dot(normal, origin) > 0.0) {
+    normal = -normal;
+  }
+
+  if (debug_view == 3) {
+    frag_color = vec4(normal * 0.5 + 0.5, 1.0);
+    return;
+  }
+
+  // View-space reflection of the eye-to-pixel ray about the surface normal.
+  vec3 incident = normalize(origin);
+  vec3 reflection = reflect(incident, normal);
+
+  // March the reflected ray in view space, projecting each step to a UV and
+  // testing it against the stored depth.
+  // TODO(ssr): this fixed view-space step over-samples near the camera and
+  // under-samples far away; replace with a perspective-correct screen-space
+  // DDA (McGuire & Mara) so samples are evenly spaced in pixels.
+  float step_length = max_distance / float(step_count);
+  vec3 march_pos = origin + normal * start_bias;
+  float confidence = 0.0;
+  vec2 hit_uv = vec2(0.0);
+
+  for (int i = 0; i < MAX_SSR_STEPS; i++) {
+    if (i >= step_count) {
+      break;
+    }
+    march_pos += reflection * step_length;
+    // Stop if the ray passes behind the near plane (nothing to sample).
+    if (march_pos.z <= near) {
+      break;
+    }
+    vec2 uv = UvFromView(march_pos);
+    // Stop when the ray leaves the screen.
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+      break;
+    }
+    float scene_z = texture(linear_depth, uv).r;
+    // Skip background (sky) texels: no geometry to reflect there.
+    if (scene_z >= far) {
+      continue;
+    }
+    float delta = march_pos.z - scene_z;
+    // A hit: the ray has crossed behind the sampled surface, within the
+    // surface's assumed thickness.
+    if (delta > 0.0 && delta < thickness) {
+      hit_uv = uv;
+      // Edge fade: ramp confidence to zero in a thin band at the screen
+      // border so a hit near the edge does not pop.
+      vec2 edge = clamp(min(uv, 1.0 - uv) / kEdgeFade, 0.0, 1.0);
+      float edge_fade = smoothstep(0.0, 1.0, edge.x) *
+                        smoothstep(0.0, 1.0, edge.y);
+      confidence = edge_fade;
+      break;
+    }
+  }
+
+  if (debug_view == 1) {
+    frag_color = vec4(hit_uv * confidence, 0.0, 1.0);
+    return;
+  }
+  if (debug_view == 2) {
+    frag_color = vec4(vec3(confidence > 0.0 ? 1.0 : 0.0), 1.0);
+    return;
+  }
+  if (debug_view == 4) {
+    frag_color = vec4(vec3(confidence), 1.0);
+    return;
+  }
+
+  if (confidence <= 0.0) {
+    frag_color = base;
+    return;
+  }
+
+  // Fresnel weight (Schlick): reflections strengthen at grazing angles. The
+  // base reflectance stands in for a per-pixel value until a reflectivity
+  // source is available.
+  // TODO(ssr): drive the reflection strength from per-pixel reflectivity and
+  // roughness (a thin reflectivity prepass) instead of a global intensity.
+  float facing = clamp(dot(normal, -incident), 0.0, 1.0);
+  float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
+  float strength = clamp(confidence * intensity * fresnel, 0.0, 1.0);
+
+  vec3 base_rgb = Unpremultiply(base);
+  vec3 reflected_rgb = Unpremultiply(texture(input_color, hit_uv));
+  vec3 out_rgb = mix(base_rgb, reflected_rgb, strength);
+  frag_color = vec4(out_rgb * base.a, base.a);
+}
