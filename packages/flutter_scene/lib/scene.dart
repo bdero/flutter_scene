@@ -110,6 +110,7 @@ export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/node.dart' show Node;
 export 'src/sprite.dart' show Sprite;
+export 'src/texture_atlas.dart' show TextureAtlas;
 export 'src/physics/basic/basic_collider.dart' show BasicCollider;
 export 'src/physics/basic/basic_kinematic_body.dart' show BasicKinematicBody;
 export 'src/physics/basic/basic_world.dart' show BasicPhysicsWorld;
