@@ -43,6 +43,11 @@ out vec4 frag_color;
 // pass's constant-loop pattern.
 #define MAX_SSR_STEPS 64
 
+// Binary-search iterations used to refine a hit once the coarse march
+// brackets the surface crossing. Constant-bounded for the same reason as the
+// march loop.
+#define MAX_SSR_REFINE_STEPS 5
+
 const float kEpsilon = 0.0001;
 // Screen-edge fade width, as a fraction of the viewport: reflections ramp
 // out over this band as the hit approaches a screen border.
@@ -135,6 +140,9 @@ void main() {
 
   float confidence = 0.0;
   vec2 hit_uv = vec2(0.0);
+  // Parameter of the last coarse sample that was still in front of the
+  // surface, the near end of the bracket for the binary search.
+  float prev_t = 0.0;
 
   for (int i = 1; i <= MAX_SSR_STEPS; i++) {
     if (i > step_count) {
@@ -151,21 +159,45 @@ void main() {
     float scene_z = texture(linear_depth, uv).r;
     // Skip background (sky) texels: no geometry to reflect there.
     if (scene_z >= far) {
+      prev_t = t;
       continue;
     }
     float delta = ray_z - scene_z;
-    // A hit: the ray has crossed behind the sampled surface, within the
-    // surface's assumed thickness.
-    if (delta > 0.0 && delta < thickness) {
-      hit_uv = uv;
-      // Edge fade: ramp confidence to zero in a thin band at the screen
-      // border so a hit near the edge does not pop.
-      vec2 edge = clamp(min(uv, 1.0 - uv) / kEdgeFade, 0.0, 1.0);
-      float edge_fade = smoothstep(0.0, 1.0, edge.x) *
-                        smoothstep(0.0, 1.0, edge.y);
-      confidence = edge_fade;
+    if (delta > 0.0) {
+      // The ray crossed behind the sampled surface. Reject the crossing if
+      // it sits beyond the surface's assumed thickness (the ray likely
+      // passed behind a foreground occluder into open space), and stop.
+      if (delta < thickness) {
+        // Binary-search the exact crossing between the last in-front sample
+        // and this one, so the hit is pinned far more precisely than the
+        // coarse step, removing most of the per-step banding.
+        float lo = prev_t;
+        float hi = t;
+        for (int j = 0; j < MAX_SSR_REFINE_STEPS; j++) {
+          float mid = 0.5 * (lo + hi);
+          vec2 muv = mix(uv_start, uv_end, mid);
+          float mz = 1.0 / mix(inv_z_start, inv_z_end, mid);
+          if (mz - texture(linear_depth, muv).r > 0.0) {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        float hit_t = hi;
+        hit_uv = mix(uv_start, uv_end, hit_t);
+        // Confidence fades the reflection where it is least reliable: a thin
+        // band at the screen border (a hit there has no off-screen data
+        // behind it), and toward the end of the march so reflections taper
+        // off with distance instead of ending in a hard line.
+        vec2 edge = clamp(min(hit_uv, 1.0 - hit_uv) / kEdgeFade, 0.0, 1.0);
+        float edge_fade = smoothstep(0.0, 1.0, edge.x) *
+                          smoothstep(0.0, 1.0, edge.y);
+        float distance_fade = 1.0 - smoothstep(0.7, 1.0, hit_t);
+        confidence = edge_fade * distance_fade;
+      }
       break;
     }
+    prev_t = t;
   }
 
   if (debug_view == 1) {
