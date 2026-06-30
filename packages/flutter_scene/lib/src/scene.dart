@@ -28,6 +28,7 @@ import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
+import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
@@ -556,6 +557,13 @@ base class Scene implements SceneGraph {
   /// perspective depth); it is skipped for other camera types.
   final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
 
+  /// Screen-space reflection settings. Off by default; set
+  /// [ScreenSpaceReflectionsSettings.enabled] to turn it on. Requires a
+  /// [PerspectiveCamera] (the reflection trace is reconstructed from the
+  /// camera's perspective depth); it is skipped for other camera types.
+  final ScreenSpaceReflectionsSettings screenSpaceReflections =
+      ScreenSpaceReflectionsSettings();
+
   @override
   void add(Node child) {
     root.add(child);
@@ -996,39 +1004,49 @@ base class Scene implements SceneGraph {
         ),
       );
     }
-    // Ambient occlusion is reconstructed from a camera depth prepass, so it
-    // needs a perspective projection (others render without it).
+    // Ambient occlusion and screen-space reflections are both reconstructed
+    // from a camera depth prepass, so they need a perspective projection
+    // (others render without them) and share the one prepass.
     final perspective = camera.projection;
-    if (ambientOcclusion.enabled && perspective is PerspectiveProjection) {
-      // The whole occlusion chain (depth prepass, occlusion, blur) runs at one
-      // resolution so depth is sampled 1:1; sampling a full-resolution depth
-      // from the half-resolution occlusion pass would alias on fine geometry.
-      final aoDimensions = ambientOcclusionTargetSize(
-        pixelSize,
-        ambientOcclusion,
-      );
-      graph.addPass(
-        DepthPrepass(
-          camera: camera,
-          renderScene: renderScene,
-          dimensions: aoDimensions,
-          cameraForward: camera.forward,
-          farDepth: perspective.far,
-          layerMask: view.layerMask,
-        ),
-      );
-      graph.addPass(
-        SsaoPass(
-          dimensions: pixelSize,
-          settings: ambientOcclusion,
-          fovRadiansY: perspective.fovRadiansY,
-          near: perspective.near,
-          far: perspective.far,
-        ),
-      );
-      graph.addPass(
-        SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
-      );
+    if (perspective is PerspectiveProjection) {
+      final wantAo = ambientOcclusion.enabled;
+      final wantSsr = screenSpaceReflections.enabled;
+      if (wantAo || wantSsr) {
+        // Ambient occlusion evaluates its chain (depth prepass, occlusion,
+        // blur) at one resolution so depth is sampled 1:1 (a half-resolution
+        // occlusion pass reading a full-resolution depth would alias on fine
+        // geometry). Size the prepass to occlusion's target whenever it is on
+        // so its behavior is unchanged; reflections sample whatever
+        // resolution is published. With only reflections on, use full
+        // resolution.
+        final depthDimensions = wantAo
+            ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
+            : pixelSize;
+        graph.addPass(
+          DepthPrepass(
+            camera: camera,
+            renderScene: renderScene,
+            dimensions: depthDimensions,
+            cameraForward: camera.forward,
+            farDepth: perspective.far,
+            layerMask: view.layerMask,
+          ),
+        );
+      }
+      if (wantAo) {
+        graph.addPass(
+          SsaoPass(
+            dimensions: pixelSize,
+            settings: ambientOcclusion,
+            fovRadiansY: perspective.fovRadiansY,
+            near: perspective.near,
+            far: perspective.far,
+          ),
+        );
+        graph.addPass(
+          SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
+        );
+      }
     }
     graph.addPass(
       ScenePass(
