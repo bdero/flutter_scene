@@ -308,12 +308,19 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
   // sun's influence falls off smoothly rather than at a hard line.
   float n_dot_l = 0.0;
+  float geometric_n_dot_l = 0.0;
   vec3 light_vector = vec3(0.0);
   if (frag_info.has_directional_light > 0.5) {
     light_vector = -normalize(frag_info.directional_light_direction.xyz);
     n_dot_l = dot(normal, light_vector);
+    geometric_n_dot_l = dot(GetWorldNormal(), light_vector);
   }
-  float facing = clamp(n_dot_l / 0.15, 0.0, 1.0);
+  // Whether the surface faces the sun is a geometric property, so gate the
+  // shadow terms on the geometric normal. Using the perturbed normal lets a
+  // normal map's relief push n_dot_l across the terminator on a nearly sun-
+  // facing face (worst near a low sun), spuriously darkening the shadow-ambient
+  // term on bumpy top faces.
+  float facing = clamp(geometric_n_dot_l / 0.15, 0.0, 1.0);
 
   // Sun-shadow visibility (1 lit .. 0 shadowed). The shadow map is only
   // meaningful for sun-facing surfaces; a back face receives no sun by
@@ -323,7 +330,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float shadow =
       (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
        facing > 0.0)
-          ? SampleShadow(v_position, normal)
+          ? SampleShadow(v_position, GetWorldNormal())
           : 1.0;
   float sun_visibility = facing * shadow;
 
