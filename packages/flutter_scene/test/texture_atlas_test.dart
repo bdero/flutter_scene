@@ -58,6 +58,78 @@ void main() {
     });
   });
 
+  group('generateSolidColorAtlasPixels', () {
+    // RGBA byte offset of pixel (x, y) in a row-major image of the given width.
+    int at(int x, int y, int width) => (y * width + x) * 4;
+
+    test('fills each cell (content and padding) with the tile color', () {
+      final red = Vector4(1, 0, 0, 1);
+      final green = Vector4(0, 1, 0, 1);
+      final pixels = generateSolidColorAtlasPixels(
+        tileColors: [red, green],
+        columns: 2,
+        tileSize: 2,
+        padding: 1,
+      );
+      // cell = 4, width = 8, height = 4.
+      const width = 8;
+      expect(pixels.length, 8 * 4 * 4);
+      // Tile 0 (red) content center at (1, 1).
+      expect(pixels.sublist(at(1, 1, width), at(1, 1, width) + 4), [
+        255,
+        0,
+        0,
+        255,
+      ]);
+      // Tile 0 padding corner at (0, 0) is still red (no bleed).
+      expect(pixels.sublist(at(0, 0, width), at(0, 0, width) + 4), [
+        255,
+        0,
+        0,
+        255,
+      ]);
+      // Tile 1 (green) starts at cell x = 4; content at (5, 1).
+      expect(pixels.sublist(at(5, 1, width), at(5, 1, width) + 4), [
+        0,
+        255,
+        0,
+        255,
+      ]);
+    });
+
+    test('leaves cells past the color list transparent', () {
+      // 2 columns, 3 colors -> 2 rows, tile 3 (index 3) is empty.
+      final pixels = generateSolidColorAtlasPixels(
+        tileColors: [
+          Vector4(1, 1, 1, 1),
+          Vector4(1, 1, 1, 1),
+          Vector4(1, 1, 1, 1),
+        ],
+        columns: 2,
+        tileSize: 1,
+      );
+      // width = 2, height = 2. Tile 3 is bottom-right at (1, 1).
+      const width = 2;
+      expect(pixels.sublist(at(1, 1, width), at(1, 1, width) + 4), [
+        0,
+        0,
+        0,
+        0,
+      ]);
+    });
+
+    test('lays out matching a TextureAtlas of the same params', () {
+      final atlas = TextureAtlas(columns: 4, rows: 2, tileSize: 16, padding: 2);
+      final pixels = generateSolidColorAtlasPixels(
+        tileColors: List.filled(8, Vector4(1, 1, 1, 1)),
+        columns: 4,
+        tileSize: 16,
+        padding: 2,
+      );
+      expect(pixels.length, atlas.width * atlas.height * 4);
+    });
+  });
+
   group('tileUv', () {
     test('maps within-tile corners to the tile bounds', () {
       final atlas = TextureAtlas(columns: 4, rows: 2, tileSize: 16);
