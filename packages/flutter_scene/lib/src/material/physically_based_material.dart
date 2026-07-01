@@ -149,6 +149,21 @@ class PhysicallyBasedMaterial extends Material {
   /// fragments whose alpha falls below this are discarded.
   double alphaCutoff = 0.5;
 
+  /// Strength of geometric specular antialiasing.
+  ///
+  /// A normal map or high-curvature surface carries more normal detail than a
+  /// pixel can resolve, which the specular highlight turns into shimmer as the
+  /// camera or surface moves. This estimates that sub-pixel normal variation
+  /// from screen-space derivatives and widens the effective roughness to
+  /// suppress it (Kaplanyan/Tokuyoshi). `0` disables the effect; the default
+  /// (`0.15`) matches the common recommendation.
+  double specularAntiAliasingVariance = 0.15;
+
+  /// Upper bound on the extra roughness [specularAntiAliasingVariance] may add,
+  /// in the squared-roughness domain. Caps the effect so strongly varying
+  /// normals cannot over-roughen a surface. Default `0.2`.
+  double specularAntiAliasingThreshold = 0.2;
+
   @override
   void bind(
     gpu.RenderPass pass,
@@ -173,6 +188,8 @@ class PhysicallyBasedMaterial extends Material {
     //   [125]     float occlusion_strength
     //   [132]     float alpha_mode (0 opaque, 1 mask, 2 blend)
     //   [133]     float alpha_cutoff
+    //   [138]     float specular_aa_variance
+    //   [139]     float specular_aa_threshold
     final fragInfo = Float32List(EngineLightingUniforms.fragInfoFloatCount);
     EngineLightingUniforms.packInto(fragInfo, lighting, env);
     fragInfo[0] = baseColorFactor.r;
@@ -191,6 +208,8 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[125] = occlusionStrength;
     fragInfo[132] = alphaMode.index.toDouble();
     fragInfo[133] = alphaCutoff;
+    fragInfo[138] = specularAntiAliasingVariance;
+    fragInfo[139] = specularAntiAliasingThreshold;
     fragInfo[EngineLightingUniforms.fadeIndex] = lodFade;
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
