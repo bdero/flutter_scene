@@ -51,6 +51,19 @@ class ExampleSsrState extends State<ExampleSsr> {
       ),
     );
 
+    // A physical sky, both as the visible background and as the environment
+    // the floor reflects. Screen-space reflections cannot reflect the sky (it
+    // has no on-screen geometry to hit), so where a reflected ray points at
+    // the sky the trace misses and the pixel falls back to this environment;
+    // without a sky it would fall back to nothing and leave dark voids.
+    final sky = PhysicalSkySource()
+      ..sunDirection = vm.Vector3(0.5, 0.8, 0.4).normalized();
+    scene.skybox = Skybox(sky);
+    scene.skyEnvironment = SkyEnvironment(
+      sky,
+      refresh: SkyEnvironmentRefresh.manual,
+    );
+
     // A large, dark, smooth floor at y = 0.
     scene.add(
       Node(
@@ -101,7 +114,7 @@ class ExampleSsrState extends State<ExampleSsr> {
       scene.add(node);
     }
 
-    scene.environmentIntensity = 0.5;
+    scene.environmentIntensity = 1.0;
     scene.screenSpaceReflections.enabled = true;
   }
 
@@ -287,10 +300,20 @@ class _SsrPanel extends StatelessWidget {
                       },
                     ),
                     _SliderRow(
+                      label: 'Stride',
+                      value: settings.stride,
+                      min: 1,
+                      max: 12,
+                      onChanged: (v) {
+                        settings.stride = v;
+                        onChanged();
+                      },
+                    ),
+                    _SliderRow(
                       label: 'Max steps',
                       value: settings.maxSteps.toDouble(),
-                      min: 8,
-                      max: 96,
+                      min: 16,
+                      max: 256,
                       onChanged: (v) {
                         settings.maxSteps = v.round();
                         onChanged();
@@ -303,6 +326,26 @@ class _SsrPanel extends StatelessWidget {
                       max: 1,
                       onChanged: (v) {
                         settings.blur = v;
+                        onChanged();
+                      },
+                    ),
+                    _SliderRow(
+                      label: 'Fade start',
+                      value: settings.distanceFadeStart,
+                      min: 0,
+                      max: 1,
+                      onChanged: (v) {
+                        settings.distanceFadeStart = v;
+                        onChanged();
+                      },
+                    ),
+                    _SliderRow(
+                      label: 'Resolution',
+                      value: settings.resolutionScale,
+                      min: 0.25,
+                      max: 1,
+                      onChanged: (v) {
+                        settings.resolutionScale = v;
                         onChanged();
                       },
                     ),
