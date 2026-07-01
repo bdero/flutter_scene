@@ -112,6 +112,9 @@ export 'src/node.dart' show Node;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;
+export 'src/texture/texture2d.dart'
+    show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
+export 'src/texture/mipmap.dart' show TextureContent;
 export 'src/physics/basic/basic_collider.dart' show BasicCollider;
 export 'src/physics/basic/basic_kinematic_body.dart' show BasicKinematicBody;
 export 'src/physics/basic/basic_world.dart' show BasicPhysicsWorld;

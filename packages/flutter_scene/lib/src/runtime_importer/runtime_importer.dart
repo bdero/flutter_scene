@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
@@ -9,6 +8,7 @@ import '../material/unlit_material.dart';
 import '../mesh.dart';
 import '../node.dart';
 import '../skin.dart';
+import '../texture/texture2d.dart';
 import 'animation_builder.dart';
 import 'geometry_builder.dart';
 import 'gltf_resources.dart';
@@ -63,7 +63,7 @@ Future<Node> _buildScene(
 ) async {
   // Decode all textures up front so material construction can reference
   // them by index without per-material async work.
-  final List<gpu.Texture> textures = await buildTextures(
+  final List<Texture2D> textures = await buildTextures(
     doc,
     bufferData,
     resolveUri: resolveUri,
@@ -153,7 +153,7 @@ void _populateNode({
   required GltfDocument doc,
   required Uint8List bufferData,
   required List<Node> engineNodes,
-  required List<gpu.Texture> textures,
+  required List<Texture2D> textures,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
   engineNode.localTransform = _localTransformFor(gltfNode);

@@ -1,7 +1,7 @@
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/sprite_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -20,7 +20,7 @@ import 'package:vector_math/vector_math.dart';
 class Sprite {
   /// Creates a sprite, optionally textured.
   Sprite({
-    gpu.Texture? texture,
+    TextureSource? texture,
     double width = 1.0,
     double height = 1.0,
     Vector4? color,

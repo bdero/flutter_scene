@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
@@ -160,21 +161,22 @@ class WidgetComponent extends Component {
     _bind?.call(texture);
     if (!_createsSurface) return;
 
+    final source = GpuTextureSource(texture);
     final material = _material;
     if (material == null) {
       // Fully owned: unlit, alpha-blended.
       final owned = _ownedMaterial ??= UnlitMaterial()
         ..alphaMode = AlphaMode.blend;
-      owned.baseColorTexture = texture;
+      owned.baseColorTexture = source;
     } else if (_bind == null) {
       // Implicit binding for the known built-in materials; anything else
       // needs an explicit `bind` callback (typed material fields mean there
       // is no generic slot to assign).
       switch (material) {
         case UnlitMaterial():
-          material.baseColorTexture = texture;
+          material.baseColorTexture = source;
         case PhysicallyBasedMaterial():
-          material.baseColorTexture = texture;
+          material.baseColorTexture = source;
         default:
           throw StateError(
             'WidgetComponent cannot bind a ${material.runtimeType} '

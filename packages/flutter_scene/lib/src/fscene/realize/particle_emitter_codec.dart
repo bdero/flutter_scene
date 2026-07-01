@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart';
@@ -208,7 +209,9 @@ class ParticleEmitterCodec extends ComponentCodec {
     final textureRef = p['texture'];
     final resources = context.resources;
     if (textureRef is ResourceRefValue && resources != null) {
-      material.colorTexture = resources.texture(textureRef.id);
+      material.colorTexture = GpuTextureSource(
+        resources.texture(textureRef.id),
+      );
     }
 
     final component =

@@ -32,10 +32,21 @@ base class GpuContext {
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
     _gl.getExtension('OES_texture_float_linear');
+    // Anisotropic filtering. MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF.
+    if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
+      final Object? max = _gl.getParameter(0x84FF);
+      _maxSupportedAnisotropy = max is num ? max.toInt() : 1;
+    }
   }
 
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
+
+  int _maxSupportedAnisotropy = 1;
+
+  /// The device's maximum supported anisotropy (1 when the extension is
+  /// unavailable, which disables anisotropic filtering).
+  int get maxSupportedAnisotropy => _maxSupportedAnisotropy;
 
   /// The underlying `OffscreenCanvas`. Resized on demand by `snapshot`.
   web.OffscreenCanvas get canvas => _canvas;

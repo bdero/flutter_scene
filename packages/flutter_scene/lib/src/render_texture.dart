@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/surface.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 /// When a [RenderTexture] re-renders.
 ///
@@ -115,7 +116,7 @@ class RenderTextureSampling {
 /// (including the target sampling itself, a mirror facing a mirror)
 /// samples the previous frame instead of forming a feedback loop.
 /// {@category Rendering}
-class RenderTexture extends ChangeNotifier {
+class RenderTexture extends ChangeNotifier implements TextureSource {
   /// Creates a render target of [width] x [height] physical pixels.
   RenderTexture({
     required int width,
@@ -124,6 +125,12 @@ class RenderTexture extends ChangeNotifier {
     this.sampling = const RenderTextureSampling(),
   }) : assert(width > 0 && height > 0, 'RenderTexture size must be positive'),
        _size = ui.Size(width.toDouble(), height.toDouble());
+
+  @override
+  gpu.Texture? get sampledTexture => texture;
+
+  @override
+  gpu.SamplerOptions get sampledSampler => sampling.toSamplerOptions();
 
   // The ring + transient pool live in a single-view Surface, the same
   // machinery (and frames-in-flight depth) backing the screen swapchain.

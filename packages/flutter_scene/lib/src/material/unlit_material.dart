@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode;
 
@@ -21,28 +22,21 @@ class UnlitMaterial extends Material {
   ///
   /// When [colorTexture] is null a 1×1 white placeholder is used so the
   /// final color reduces to [baseColorFactor].
-  UnlitMaterial({gpu.Texture? colorTexture}) : _baseColorSource = colorTexture {
+  UnlitMaterial({TextureSource? colorTexture})
+    : baseColorTexture = colorTexture {
     setFragmentShaderName('UnlitFragment');
   }
 
-  Object? _baseColorSource;
-
-  /// The raw slot source (a gpu.Texture, a RenderTexture, or null), for
-  /// serialization, which must see the handle rather than the resolved
-  /// frame.
+  /// The raw slot source, for serialization (same value as [baseColorTexture]).
   @internal
-  Object? get baseColorTextureSource => _baseColorSource;
+  TextureSource? get baseColorTextureSource => baseColorTexture;
 
   /// The base color texture, sampled and multiplied by [baseColorFactor].
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live). The
-  /// getter never returns null; an empty slot (or a render texture with
-  /// no completed frame yet) resolves to a 1×1 white placeholder so the
-  /// final color reduces to [baseColorFactor].
-  gpu.Texture get baseColorTexture =>
-      Material.whitePlaceholder(resolveTextureSource(_baseColorSource));
-  set baseColorTexture(Object? value) =>
-      _baseColorSource = checkTextureSource(value, 'baseColorTexture');
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live). An empty slot
+  /// (or a render texture with no completed frame yet) samples a 1×1 white
+  /// placeholder so the final color reduces to [baseColorFactor].
+  TextureSource? baseColorTexture;
 
   /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
   /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
@@ -84,9 +78,9 @@ class UnlitMaterial extends Material {
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),
-      baseColorTexture,
+      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
       sampler:
-          textureSourceSampler(_baseColorSource) ??
+          textureSourceSampler(baseColorTexture) ??
           gpu.SamplerOptions(
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat,
