@@ -282,7 +282,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
   // [0, 1] to avoid edge-tap artifacts.
-  vec2 f_ab = texture(brdf_lut, clamp(vec2(n_dot_v, roughness), 0.0, 0.99)).rg;
+  vec2 f_ab =
+      texture(brdf_lut, clamp(vec2(n_dot_v, 1.0 - roughness), 0.0, 0.99)).rg;
 
   // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
   // see https://bruop.github.io/ibl/). Without the multiscatter term, rough
