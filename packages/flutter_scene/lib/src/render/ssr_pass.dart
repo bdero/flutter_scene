@@ -46,12 +46,14 @@ final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
   heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
 );
 
-/// Traces the camera linear-depth target to composite screen-space
-/// reflections onto the linear HDR scene color, then republishes the result
-/// under [kSceneColorBlackboardKey] for the rest of the pipeline.
+/// Adds screen-space reflections to the linear HDR scene color and
+/// republishes the result under [kSceneColorBlackboardKey].
 ///
-/// A single full-screen fragment pass, no compute. See
-/// `flutter_scene_ssr.frag` for the algorithm.
+/// Two full-screen fragment draws, no compute: a trace at the (possibly
+/// reduced) reflection resolution that writes a reflection buffer
+/// (`flutter_scene_ssr.frag`), then a full-resolution composite that
+/// bilinear-upscales and blends it over the scene color
+/// (`flutter_scene_ssr_composite.frag`).
 class SsrPass extends RenderGraphPass {
   SsrPass({
     required ui.Size dimensions,
@@ -72,11 +74,13 @@ class SsrPass extends RenderGraphPass {
   final double _far;
 
   // The shader's constant march-loop bound; user step counts clamp to this.
-  static const int _maxStepCeiling = 96;
+  static const int _maxStepCeiling = 256;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
   static final gpu.Shader _fragmentShader = baseShaderLibrary['SsrFragment']!;
+  static final gpu.Shader _compositeShader =
+      baseShaderLibrary['SsrCompositeFragment']!;
 
   @override
   String get name => 'SsrPass';
@@ -92,6 +96,85 @@ class SsrPass extends RenderGraphPass {
 
     final width = _dimensions.width.toInt();
     final height = _dimensions.height.toInt();
+
+    // The reflection is traced at a (possibly reduced) resolution and
+    // bilinear-upscaled by the composite, so the reflection layer scales
+    // cheaply while the scene image stays full resolution.
+    final scale = _settings.resolutionScale.clamp(0.1, 1.0);
+    final traceWidth = math.max(1, (width * scale).round());
+    final traceHeight = math.max(1, (height * scale).round());
+    final reflection = context.texturePool.acquire(
+      TransientTextureDescriptor.color(
+        width: traceWidth,
+        height: traceHeight,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        debugName: 'ssr_reflection',
+      ),
+    );
+
+    final tanHalfFovY = math.tan(_fovRadiansY * 0.5);
+    final aspect = _dimensions.width / _dimensions.height;
+    final tanHalfFovX = tanHalfFovY * aspect;
+
+    final maxSteps = _settings.maxSteps.clamp(1, _maxStepCeiling);
+    final maxDistance = _settings.maxDistance;
+    final thickness = _settings.thickness;
+    // A small offset off the surface to avoid self-intersection at the first
+    // sample. Kept independent of thickness (a scale-relative fraction of the
+    // march distance) so thickness only controls hit acceptance and does not
+    // shift the reflection geometry.
+    final startBias = maxDistance * 0.003;
+    final debugView = _settings.debugView.index.toDouble();
+
+    // Trace: the viewport is the reduced trace resolution, so the pixel-space
+    // march (stride, step budget) is measured in trace pixels.
+    final info = Float32List(20)
+      ..[0] = traceWidth.toDouble()
+      ..[1] = traceHeight.toDouble()
+      ..[2] = 1.0 / traceWidth
+      ..[3] = 1.0 / traceHeight
+      ..[4] = tanHalfFovX
+      ..[5] = tanHalfFovY
+      ..[6] = _near
+      ..[7] = _far
+      ..[8] = maxDistance
+      ..[9] = thickness
+      ..[10] = startBias
+      ..[11] = maxSteps.toDouble()
+      ..[12] = _settings.intensity
+      ..[13] = debugView
+      ..[14] = _settings.blur
+      ..[15] = _settings.stride
+      ..[16] = _settings.distanceFadeStart;
+
+    final traceCmd = gpu.gpuContext.createCommandBuffer();
+    final tracePass = traceCmd.createRenderPass(
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: reflection)),
+    );
+    tracePass.bindPipeline(
+      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
+    );
+    tracePass.setColorBlendEnable(false);
+    bindVertexBufferCompat(tracePass, _fullscreenQuad(), 6);
+    tracePass.bindUniform(
+      _fragmentShader.getUniformSlot('SsrInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+    tracePass.bindTexture(
+      _fragmentShader.getUniformSlot('input_color'),
+      sceneColor,
+      sampler: _linearClamp,
+    );
+    tracePass.bindTexture(
+      _fragmentShader.getUniformSlot('linear_depth'),
+      linearDepth,
+      sampler: _nearestClamp,
+    );
+    drawCompat(tracePass, 6);
+    traceCmd.submit();
+
+    // Composite: bilinear-upscale the reflection and blend it over the
+    // full-resolution scene color.
     final output = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
@@ -100,61 +183,32 @@ class SsrPass extends RenderGraphPass {
         debugName: 'ssr_scene_color',
       ),
     );
-
-    final tanHalfFovY = math.tan(_fovRadiansY * 0.5);
-    final aspect = _dimensions.width / _dimensions.height;
-    final tanHalfFovX = tanHalfFovY * aspect;
-
-    final stepCount = _settings.maxSteps.clamp(1, _maxStepCeiling);
-    final maxDistance = _settings.maxDistance;
-    final thickness = _settings.thickness;
-    // Start the ray off the surface by a fraction of a step to avoid
-    // self-intersection.
-    final startBias = (maxDistance / stepCount) * 0.5;
-
-    final info = Float32List(16)
-      ..[0] = width.toDouble()
-      ..[1] = height.toDouble()
-      ..[2] = 1.0 / width
-      ..[3] = 1.0 / height
-      ..[4] = tanHalfFovX
-      ..[5] = tanHalfFovY
-      ..[6] = _near
-      ..[7] = _far
-      ..[8] = maxDistance
-      ..[9] = thickness
-      ..[10] = startBias
-      ..[11] = stepCount.toDouble()
-      ..[12] = _settings.intensity
-      ..[13] = _settings.debugView.index.toDouble()
-      ..[14] = _settings.blur;
-
-    final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final renderPass = commandBuffer.createRenderPass(
+    final compositeInfo = Float32List(4)..[0] = debugView;
+    final compositeCmd = gpu.gpuContext.createCommandBuffer();
+    final compositePass = compositeCmd.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: output)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
+    compositePass.bindPipeline(
+      gpu.gpuContext.createRenderPipeline(_vertexShader, _compositeShader),
     );
-    renderPass.setColorBlendEnable(false);
-    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
-
-    renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('SsrInfo'),
-      context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    compositePass.setColorBlendEnable(false);
+    bindVertexBufferCompat(compositePass, _fullscreenQuad(), 6);
+    compositePass.bindUniform(
+      _compositeShader.getUniformSlot('CompositeInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(compositeInfo)),
     );
-    renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('input_color'),
+    compositePass.bindTexture(
+      _compositeShader.getUniformSlot('input_color'),
       sceneColor,
       sampler: _linearClamp,
     );
-    renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('linear_depth'),
-      linearDepth,
-      sampler: _nearestClamp,
+    compositePass.bindTexture(
+      _compositeShader.getUniformSlot('ssr_reflection'),
+      reflection,
+      sampler: _linearClamp,
     );
-    drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    drawCompat(compositePass, 6);
+    compositeCmd.submit();
 
     context.blackboard.set(kSceneColorBlackboardKey, output);
   }

@@ -57,22 +57,43 @@ class ScreenSpaceReflectionsSettings {
   /// How far, in world units, a reflected ray is marched before it is
   /// considered to have missed. Larger values let reflections reach more
   /// distant geometry at a higher trace cost.
-  double maxDistance = 25.0;
+  double maxDistance = 24.4;
 
   /// The assumed world-space thickness of surfaces, used to accept a ray
   /// crossing as a hit. Too small misses thin or grazing geometry; too large
   /// lets a ray passing behind an object falsely reflect it.
-  double thickness = 0.5;
+  double thickness = 0.46;
 
-  /// Number of screen-space steps the reflected ray is marched in. More
-  /// steps give smoother, longer reflections at a higher cost. Clamped to the
-  /// shader's maximum (currently 96).
-  int maxSteps = 96;
+  /// Pixels advanced along the screen per march step. `1` samples every
+  /// pixel the reflection crosses (highest quality, most costly); larger
+  /// values sample more sparsely and cheaply, but can step over thin or
+  /// grazing surfaces. This sets the reflection quality; [maxSteps] bounds
+  /// its cost.
+  double stride = 9.0;
+
+  /// The maximum number of march steps, a hard cost ceiling. Clamped to the
+  /// shader's maximum (currently 256). A reflection that reaches this budget
+  /// fades out (see [distanceFadeStart]) rather than cutting off.
+  int maxSteps = 90;
 
   /// Glossy blur applied to the reflected color, `0` for a sharp mirror.
   /// Higher values soften the reflection (and hide trace noise), widening
   /// with the hit distance.
   double blur = 0.3;
+
+  /// Where the reflection begins fading out, as a fraction (0..1) of its
+  /// reachable range (the closer of [maxDistance] and the [stride]/[maxSteps]
+  /// budget). Reflections ramp to zero from here to the range limit, so they
+  /// taper smoothly instead of hard-cutting. `1.0` disables the fade; `0.0`
+  /// fades gradually across the whole range.
+  double distanceFadeStart = 0.0;
+
+  /// The resolution the reflections are traced at, as a fraction (0..1) of
+  /// the render size. `1.0` traces at full resolution; lower values trace
+  /// (and blur) the reflection layer more cheaply and bilinear-upscale it,
+  /// leaving the rest of the image full resolution. The single biggest
+  /// performance lever, and the main one to lower on mobile.
+  double resolutionScale = 1.0;
 
   /// A diagnostic visualization to render instead of the composited image.
   /// Defaults to [SsrDebugView.composite] (the normal output).

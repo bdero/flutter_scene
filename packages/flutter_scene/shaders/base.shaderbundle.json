@@ -55,6 +55,10 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_ssr.frag"
     },
+    "SsrCompositeFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_ssr_composite.frag"
+    },
     "LinearDepthNormalFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_linear_depth_normal.frag"

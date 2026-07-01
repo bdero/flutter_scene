@@ -1,20 +1,22 @@
-// Screen-space reflections, composited over the linear HDR scene color.
+// Screen-space reflection trace. Produces a reflection buffer that the
+// separate composite pass (flutter_scene_ssr_composite.frag) upscales and
+// blends over the full-resolution scene color.
 //
 // Reads each pixel's view-space position and smooth view-space normal from
 // the camera depth prepass (depth in red, the interpolated normal packed
 // into green/blue/alpha), reflects the view ray about that normal, and
 // marches the reflected ray through the depth buffer looking for the surface
-// it hits. On a hit it samples the already-lit scene color at the hit point
-// and blends it in, weighted by a Fresnel term and a confidence that fades at
-// screen edges and with distance. A ray that leaves the screen or finds no
-// hit contributes nothing, so the surface keeps the image-based reflection it
-// was lit with.
+// it hits. On a hit it samples the already-lit scene color at the hit point,
+// weighted by a Fresnel term and a confidence that fades at screen edges and
+// with distance. A ray that leaves the screen or finds no hit contributes
+// nothing.
 //
-// The scene color is premultiplied linear HDR; the output follows the same
-// contract. This pass stays entirely in render-to-texture space (it samples
-// the scene color and depth, both render targets, and writes another), so
-// like the occlusion pass it needs no Y flip; the resolve pass handles the
-// final upright orientation.
+// The output is the reflected color premultiplied by its blend strength
+// (rgb = color * strength, a = strength), so the composite can bilinear-
+// upscale it correctly (straight color would bleed from no-hit texels). This
+// pass can run at a reduced resolution; the scene color it samples is
+// full-resolution. It stays entirely in render-to-texture space, so like the
+// occlusion pass it needs no Y flip.
 
 uniform sampler2D input_color;
 uniform sampler2D linear_depth;
@@ -25,13 +27,17 @@ uniform SsrInfo {
   // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
   vec4 proj;
   // x: max march distance (world units). y: thickness for hit acceptance
-  // (world units). z: starting bias off the surface (world units). w: step
-  // count.
+  // (world units). z: starting bias off the surface (world units). w: max
+  // step count (a cost ceiling).
   vec4 march;
   // x: reflection intensity. y: debug view (0 = composite, 1 = reflected
   // UV, 2 = hit mask, 3 = normal, 4 = confidence, 5 = raw depth). z: glossy
-  // blur strength (0 = sharp mirror).
+  // blur strength (0 = sharp mirror). w: march stride (pixels per step).
   vec4 params;
+  // x: distance fade start, as a fraction (0..1) of the reflection's
+  // reachable range. The reflection ramps to zero from here to the range
+  // limit, so it tapers out instead of hard-cutting.
+  vec4 fade;
 }
 ssr;
 
@@ -42,7 +48,7 @@ out vec4 frag_color;
 // shader output (a uniform-bounded loop is rejected by conformant ES
 // drivers); the dynamic step count breaks out early. Matches the occlusion
 // pass's constant-loop pattern.
-#define MAX_SSR_STEPS 96
+#define MAX_SSR_STEPS 256
 
 // Binary-search iterations used to refine a hit once the coarse march
 // brackets the surface crossing. Constant-bounded for the same reason as the
@@ -87,12 +93,13 @@ void main() {
   float max_distance = ssr.march.x;
   float thickness = ssr.march.y;
   float start_bias = ssr.march.z;
-  int step_count = int(ssr.march.w);
+  int max_steps = int(ssr.march.w);
   float intensity = ssr.params.x;
   int debug_view = int(ssr.params.y + 0.5);
   float blur = ssr.params.z;
+  float stride = max(ssr.params.w, 1.0);
+  float fade_start = clamp(ssr.fade.x, 0.0, 0.999);
 
-  vec4 base = texture(input_color, v_uv);
   vec4 depth_sample = texture(linear_depth, v_uv);
   vec3 origin = ViewPositionAt(v_uv);
 
@@ -111,7 +118,7 @@ void main() {
 
   // Background texels (no geometry) reflect nothing.
   if (origin.z >= far) {
-    frag_color = base;
+    frag_color = vec4(0.0);
     return;
   }
 
@@ -143,6 +150,19 @@ void main() {
   float inv_z_start = 1.0 / ray_start.z;
   float inv_z_end = 1.0 / ray_end.z;
 
+  // The ray's screen-space length in pixels. Steps advance a fixed pixel
+  // [stride] along it, so sampling density is set by the stride (not by the
+  // ray's length, which would spread a fixed step count thin on long rays
+  // and skip surfaces). The march stops at the ray's end, the screen border,
+  // or the [max_steps] ceiling, whichever comes first; a ray longer than
+  // stride * max_steps is truncated and fades out by distance.
+  vec2 res = ssr.viewport.xy;
+  float total_px = length((uv_end - uv_start) * res);
+  if (total_px < 1.0) {
+    frag_color = vec4(0.0);
+    return;
+  }
+
   float confidence = 0.0;
   vec2 hit_uv = vec2(0.0);
   // Parameter [0,1] of the accepted hit along the ray, used to widen the
@@ -152,10 +172,15 @@ void main() {
   float prev_t = 0.0;
 
   for (int i = 1; i <= MAX_SSR_STEPS; i++) {
-    if (i > step_count) {
+    if (i > max_steps) {
       break;
     }
-    float t = float(i) / float(step_count);
+    float traveled = float(i) * stride;
+    // Stop at the ray's end (the max-distance point).
+    if (traveled >= total_px) {
+      break;
+    }
+    float t = traveled / total_px;
     vec2 uv = mix(uv_start, uv_end, t);
     // Stop when the ray leaves the screen.
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
@@ -206,13 +231,19 @@ void main() {
         hit_uv = candidate_uv;
         // Confidence fades the reflection where it is least reliable: a thin
         // band at the screen border (a hit there has no off-screen data
-        // behind it), toward the end of the march so reflections taper off
-        // with distance instead of ending in a hard line, and at grazing
-        // hits where the ray skims the surface.
+        // behind it), toward the end of the reachable range so reflections
+        // taper off instead of ending in a hard line, and at grazing hits
+        // where the ray skims the surface.
         vec2 edge = clamp(min(hit_uv, 1.0 - hit_uv) / kEdgeFade, 0.0, 1.0);
         float edge_fade = smoothstep(0.0, 1.0, edge.x) *
                           smoothstep(0.0, 1.0, edge.y);
-        float distance_fade = 1.0 - smoothstep(0.7, 1.0, hit_t);
+        // The reflection is limited by whichever binds first: the world max
+        // distance (hit_t, the fraction of the ray traveled) or the step
+        // budget (i / max_steps). Fade toward whichever is nearer its limit,
+        // so lowering max steps just fades reflections sooner rather than
+        // hard-cutting them.
+        float range_fraction = max(hit_t, float(i) / float(max_steps));
+        float distance_fade = 1.0 - smoothstep(fade_start, 1.0, range_fraction);
         float face_fade = smoothstep(0.0, 0.25, facing_hit);
         confidence = edge_fade * distance_fade * face_fade;
         break;
@@ -235,7 +266,7 @@ void main() {
   }
 
   if (confidence <= 0.0) {
-    frag_color = base;
+    frag_color = vec4(0.0);
     return;
   }
 
@@ -266,7 +297,7 @@ void main() {
     reflected_rgb = sum / float(SSR_BLUR_TAPS);
   }
 
-  vec3 base_rgb = Unpremultiply(base);
-  vec3 out_rgb = mix(base_rgb, reflected_rgb, strength);
-  frag_color = vec4(out_rgb * base.a, base.a);
+  // Output premultiplied by strength so the composite pass can bilinear-
+  // upscale and blend it over the full-resolution scene color.
+  frag_color = vec4(reflected_rgb * strength, strength);
 }
