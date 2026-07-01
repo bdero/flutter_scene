@@ -38,8 +38,8 @@ void Surface(inout MaterialInputs material) {
   //       (camera_position - vertex_position).
   vec3 normal = normalize(v_normal);
   if (frag_info.has_normal_map > 0.5) {
-    normal =
-        PerturbNormal(normal_texture, normal, v_viewvector, v_texture_coords);
+    normal = PerturbNormal(normal_texture, normal, v_viewvector,
+                           v_texture_coords, frag_info.normal_scale);
   }
   material.normal = normal;
 
