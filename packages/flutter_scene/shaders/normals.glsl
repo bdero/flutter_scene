@@ -31,11 +31,14 @@ mat3 CotangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
 }
 
 vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, vec3 view_vector,
-                   vec2 texcoord) {
+                   vec2 texcoord, float scale) {
   vec3 map = texture(normal_tex, texcoord).xyz;
   map = map * 255. / 127. - 128. / 127.;
   // map.z = sqrt(1. - dot(map.xy, map.xy));
   // map.y = -map.y;
+  // glTF normalScale: attenuate the tangent-plane (xy) components, leaving z, so
+  // a scale below 1 flattens the perturbation toward the geometric normal.
+  map.xy *= scale;
   mat3 TBN = CotangentFrame(normal, -view_vector, texcoord);
   return normalize(TBN * map).xyz;
 }
