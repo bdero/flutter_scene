@@ -206,6 +206,26 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float metallic = material.metallic;
   float roughness = material.roughness;
 
+  // Geometric specular antialiasing (Kaplanyan/Tokuyoshi). A
+  // normal map or high-curvature surface carries more normal detail than a
+  // pixel can resolve; the specular lobe turns that sub-pixel variation into
+  // shimmering highlights. Estimate the variation from the screen-space
+  // derivatives of the shading normal and widen the roughness so the lobe is
+  // averaged over the pixel's cone of normals. The condition is on a uniform,
+  // so the derivatives are evaluated under uniform control flow.
+  if (frag_info.specular_aa_variance > 0.0) {
+    vec3 d_normal_x = dFdx(normal);
+    vec3 d_normal_y = dFdy(normal);
+    float variance = frag_info.specular_aa_variance *
+                     (dot(d_normal_x, d_normal_x) + dot(d_normal_y, d_normal_y));
+    float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
+    // Widen in the squared-roughness (alpha) domain, then convert back:
+    // alpha = roughness^2, so roughness^4 is the alpha^2 the kernel adds to.
+    float widened = clamp(roughness * roughness * roughness * roughness + kernel,
+                          0.0, 1.0);
+    roughness = clamp(sqrt(sqrt(widened)), kMinRoughness, 1.0);
+  }
+
   // Diffuse occlusion: the material's (baked) occlusion modulated by the
   // screen-space ambient occlusion when it is enabled. Occlusion only ever
   // affects indirect lighting, never the analytic direct light below.

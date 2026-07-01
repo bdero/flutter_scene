@@ -64,6 +64,16 @@ uniform FragInfo {
   // screen between them. Occupies std140 padding before the mat4, so the
   // block size is unchanged. See lod_fade.glsl.
   float fade;
+  // Geometric specular antialiasing (Kaplanyan/Tokuyoshi). specular_aa_variance
+  // scales the screen-space normal-derivative variance estimate; a normal map
+  // or high-curvature surface packs sub-pixel normal variation that the
+  // specular lobe otherwise turns into shimmer, so this widens roughness to
+  // average the lobe over the pixel's normal cone. specular_aa_threshold caps
+  // how much extra roughness it can add. A variance of 0 disables it. Both
+  // occupy the std140 padding after `fade` (before the mat4), so the block size
+  // is unchanged.
+  float specular_aa_variance;
+  float specular_aa_threshold;
   // Rotates the image-based-lighting environment: the diffuse-SH and
   // prefiltered-radiance lookup directions are transformed by this before
   // sampling. Identity leaves the environment unrotated. A mat4 (not mat3)

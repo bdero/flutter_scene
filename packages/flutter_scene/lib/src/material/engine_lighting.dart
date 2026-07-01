@@ -26,6 +26,13 @@ class EngineLightingUniforms {
   /// padding before `environment_transform` (so the block size is unchanged).
   static const fadeIndex = 137;
 
+  /// Default geometric-specular-antialiasing strength and threshold, matching
+  /// [PhysicallyBasedMaterial]'s defaults. Packed at [138]/[139] (the remaining
+  /// std140 padding after `fade`) so every lit material gets antialiasing by
+  /// default; a material that exposes the knobs overwrites these afterward.
+  static const defaultSpecularAaVariance = 0.15;
+  static const defaultSpecularAaThreshold = 0.2;
+
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
   /// (color, factors, alpha mode) untouched for the caller to fill.
@@ -77,6 +84,11 @@ class EngineLightingUniforms {
     fragInfo[134] = light?.shadowFadeRange ?? 0.0;
     fragInfo[135] = light?.shadowSoftness ?? 0.0;
     fragInfo[136] = cascades.length.toDouble();
+    // Geometric specular antialiasing at [138]/[139] (specular_aa_variance and
+    // specular_aa_threshold). Defaults for every lit material; a material with
+    // its own knobs overwrites these after packInto.
+    fragInfo[138] = defaultSpecularAaVariance;
+    fragInfo[139] = defaultSpecularAaThreshold;
     // environment_transform: a mat4 carrying the 3x3 rotation; std140 mat4
     // columns are 16 bytes each, at [140], [144], [148], [152].
     final envTransform = lighting.environmentTransform.storage;
