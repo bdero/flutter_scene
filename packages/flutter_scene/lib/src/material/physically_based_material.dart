@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -51,51 +52,34 @@ class PhysicallyBasedMaterial extends Material {
   /// (e.g. [metallicFactor], [roughnessFactor]) default to neutral and
   /// can be tweaked after construction.
   PhysicallyBasedMaterial({
-    gpu.Texture? baseColorTexture,
-    gpu.Texture? metallicRoughnessTexture,
-    gpu.Texture? normalTexture,
-    gpu.Texture? emissiveTexture,
-    gpu.Texture? occlusionTexture,
+    this.baseColorTexture,
+    this.metallicRoughnessTexture,
+    this.normalTexture,
+    this.emissiveTexture,
+    this.occlusionTexture,
     this.environment,
-  }) : _baseColorSource = baseColorTexture,
-       _metallicRoughnessSource = metallicRoughnessTexture,
-       _normalSource = normalTexture,
-       _emissiveSource = emissiveTexture,
-       _occlusionSource = occlusionTexture {
+  }) {
     setFragmentShaderName('StandardFragment');
   }
 
-  // Texture slots hold either a gpu.Texture or a live RenderTexture; the
-  // getters resolve to the texture sampled this frame, and the setters
-  // accept both (see checkTextureSource).
-  Object? _baseColorSource;
-  Object? _metallicRoughnessSource;
-  Object? _normalSource;
-  Object? _emissiveSource;
-  Object? _occlusionSource;
-
-  /// The raw slot sources (a gpu.Texture, a RenderTexture, or null), for
-  /// serialization, which must see the handle rather than the resolved
-  /// frame.
+  /// The raw slot sources, for serialization. Same values as the public slot
+  /// fields ([baseColorTexture] and friends).
   @internal
-  Object? get baseColorTextureSource => _baseColorSource;
+  TextureSource? get baseColorTextureSource => baseColorTexture;
   @internal
-  Object? get metallicRoughnessTextureSource => _metallicRoughnessSource;
+  TextureSource? get metallicRoughnessTextureSource => metallicRoughnessTexture;
   @internal
-  Object? get normalTextureSource => _normalSource;
+  TextureSource? get normalTextureSource => normalTexture;
   @internal
-  Object? get emissiveTextureSource => _emissiveSource;
+  TextureSource? get emissiveTextureSource => emissiveTexture;
   @internal
-  Object? get occlusionTextureSource => _occlusionSource;
+  TextureSource? get occlusionTextureSource => occlusionTexture;
 
   /// The albedo (base color) texture, sampled in linear space and
   /// multiplied by [baseColorFactor]. Defaults to white when null.
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live); the
-  /// getter resolves to the texture sampled this frame.
-  gpu.Texture? get baseColorTexture => resolveTextureSource(_baseColorSource);
-  set baseColorTexture(Object? value) =>
-      _baseColorSource = checkTextureSource(value, 'baseColorTexture');
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
+  TextureSource? baseColorTexture;
 
   /// Linear RGBA tint multiplied with [baseColorTexture]. Alpha controls
   /// translucency: values below `1` push the material into the depth-
@@ -110,11 +94,8 @@ class PhysicallyBasedMaterial extends Material {
   /// The combined metallic-roughness texture (B = metallic,
   /// G = roughness). Defaults to white when null.
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live).
-  gpu.Texture? get metallicRoughnessTexture =>
-      resolveTextureSource(_metallicRoughnessSource);
-  set metallicRoughnessTexture(Object? value) => _metallicRoughnessSource =
-      checkTextureSource(value, 'metallicRoughnessTexture');
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
+  TextureSource? metallicRoughnessTexture;
 
   /// Scalar multiplier applied to the metallic channel. `0` is fully
   /// dielectric, `1` is fully metallic.
@@ -126,10 +107,9 @@ class PhysicallyBasedMaterial extends Material {
 
   /// Tangent-space normal map. Defaults to a flat normal when null.
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live).
-  gpu.Texture? get normalTexture => resolveTextureSource(_normalSource);
-  set normalTexture(Object? value) =>
-      _normalSource = checkTextureSource(value, 'normalTexture');
+  /// Accepts a [Texture2D] (usually with [TextureContent.normal]) or a
+  /// `RenderTexture` (sampled live).
+  TextureSource? normalTexture;
 
   /// Strength of [normalTexture]'s perturbation. `1` is the unmodified
   /// map.
@@ -138,10 +118,8 @@ class PhysicallyBasedMaterial extends Material {
   /// Optional emissive texture. Defaults to white when null and is
   /// gated by [emissiveFactor].
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live).
-  gpu.Texture? get emissiveTexture => resolveTextureSource(_emissiveSource);
-  set emissiveTexture(Object? value) =>
-      _emissiveSource = checkTextureSource(value, 'emissiveTexture');
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
+  TextureSource? emissiveTexture;
 
   /// Linear RGBA emissive tint. Alpha is unused; the default
   /// `Vector4.zero()` disables emission.
@@ -150,10 +128,8 @@ class PhysicallyBasedMaterial extends Material {
   /// Optional ambient-occlusion texture (R channel). Defaults to white
   /// when null.
   ///
-  /// Accepts a [gpu.Texture] or a `RenderTexture` (sampled live).
-  gpu.Texture? get occlusionTexture => resolveTextureSource(_occlusionSource);
-  set occlusionTexture(Object? value) =>
-      _occlusionSource = checkTextureSource(value, 'occlusionTexture');
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
+  TextureSource? occlusionTexture;
 
   /// Strength of [occlusionTexture]'s effect. `0` ignores the map; `1`
   /// applies it fully.
@@ -221,11 +197,11 @@ class PhysicallyBasedMaterial extends Material {
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
     );
 
-    _bindSlot(pass, 'base_color_texture', _baseColorSource);
-    _bindSlot(pass, 'emissive_texture', _emissiveSource);
-    _bindSlot(pass, 'metallic_roughness_texture', _metallicRoughnessSource);
-    _bindSlot(pass, 'normal_texture', _normalSource, normal: true);
-    _bindSlot(pass, 'occlusion_texture', _occlusionSource);
+    _bindSlot(pass, 'base_color_texture', baseColorTexture);
+    _bindSlot(pass, 'emissive_texture', emissiveTexture);
+    _bindSlot(pass, 'metallic_roughness_texture', metallicRoughnessTexture);
+    _bindSlot(pass, 'normal_texture', normalTexture, normal: true);
+    _bindSlot(pass, 'occlusion_texture', occlusionTexture);
     // Image-based-lighting atlas, BRDF LUT, and shadow map. Shared with
     // PreprocessedMaterial: the sampler choices (radiance repeat/clamp, LUT
     // clamp/clamp, shadow bilinear/clamp) and the white shadow placeholder
@@ -250,7 +226,7 @@ class PhysicallyBasedMaterial extends Material {
   void _bindSlot(
     gpu.RenderPass pass,
     String name,
-    Object? source, {
+    TextureSource? source, {
     bool normal = false,
   }) {
     final resolved = resolveTextureSource(source);

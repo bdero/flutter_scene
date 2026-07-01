@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
@@ -482,13 +483,15 @@ class ResourceRealizer {
   // Resolves a texture property to either a gpu.Texture or, when the ref
   // points at a render-texture resource, the live RenderTexture handle
   // (material slots accept both).
-  Object? _textureRef(Map<String, PropertyValue> p, String key) {
+  // TODO(mipmaps): route offline (.fscene) textures through Texture2D so they
+  // get mipmaps too, like the runtime importer.
+  TextureSource? _textureRef(Map<String, PropertyValue> p, String key) {
     final v = p[key];
     if (v is! ResourceRefValue) return null;
     if (document.resource(v.id) is RenderTextureResource) {
       return realizeRenderTexture(document, v.id);
     }
-    return texture(v.id);
+    return GpuTextureSource(texture(v.id));
   }
 
   UnlitMaterial _unlit(Map<String, PropertyValue> p) {

@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 /// A [Material] backed by a caller-supplied fragment shader.
 ///
@@ -148,18 +149,22 @@ class ShaderMaterial extends Material {
 
   /// Assign a texture to a sampler uniform by name.
   ///
-  /// [texture] accepts a [gpu.Texture] or a `RenderTexture` (sampled
-  /// live; an explicit [sampler] overrides the render texture's own
-  /// sampling). Pass `null` to clear the binding.
+  /// [texture] accepts a raw [gpu.Texture] (the low-level custom-shader path),
+  /// a [Texture2D], or a `RenderTexture` (sampled live; an explicit [sampler]
+  /// overrides the source's own sampling). Pass `null` to clear the binding.
   void setTexture(String name, Object? texture, {gpu.SamplerOptions? sampler}) {
     if (texture == null) {
       _textures.remove(name);
-    } else {
-      _textures[name] = _BoundTexture(
-        checkTextureSource(texture, 'texture')!,
-        sampler,
+      return;
+    }
+    if (texture is! gpu.Texture && texture is! TextureSource) {
+      throw ArgumentError.value(
+        texture,
+        'texture',
+        'Expected a gpu.Texture, a Texture2D, or a RenderTexture',
       );
     }
+    _textures[name] = _BoundTexture(texture, sampler);
   }
 
   /// Read back a previously-set texture binding, or `null` when none
@@ -168,7 +173,14 @@ class ShaderMaterial extends Material {
   /// A slot holding a `RenderTexture` resolves to its latest completed
   /// frame (null before the first render).
   gpu.Texture? getTexture(String name) =>
-      resolveTextureSource(_textures[name]?.source);
+      _resolveShaderTexture(_textures[name]?.source);
+
+  // ShaderMaterial accepts a raw gpu.Texture in addition to a TextureSource, so
+  // it resolves locally rather than through the material.dart helpers.
+  static gpu.Texture? _resolveShaderTexture(Object? source) =>
+      source is TextureSource ? source.sampledTexture : source as gpu.Texture?;
+  static gpu.SamplerOptions? _shaderTextureSampler(Object? source) =>
+      source is TextureSource ? source.sampledSampler : null;
 
   /// All currently-bound sampler names. Order is insertion order.
   Iterable<String> get textureNames => _textures.keys;
@@ -195,13 +207,13 @@ class ShaderMaterial extends Material {
     for (final entry in _textures.entries) {
       // An empty render texture (no completed frame yet) binds the white
       // placeholder so the sampler slot is never left dangling.
-      final resolved = resolveTextureSource(entry.value.source);
+      final resolved = _resolveShaderTexture(entry.value.source);
       pass.bindTexture(
         fragmentShader.getUniformSlot(entry.key),
         Material.whitePlaceholder(resolved),
         sampler:
             entry.value.sampler ??
-            textureSourceSampler(entry.value.source) ??
+            _shaderTextureSampler(entry.value.source) ??
             gpu.SamplerOptions(),
       );
     }

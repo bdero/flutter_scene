@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
 
-import 'gpu/gpu.dart' as gpu;
 import 'material/physically_based_material.dart';
+import 'texture/texture2d.dart';
 
 /// A uniform grid texture atlas: one or more equally sized PBR maps packed as
 /// `columns` x `rows` square tiles, with an optional gutter of [padding] texels
@@ -52,10 +52,10 @@ class TextureAtlas {
   final int padding;
 
   /// Packed PBR maps, all sharing the same grid layout. Any may be null.
-  final gpu.Texture? baseColor;
-  final gpu.Texture? metallicRoughness;
-  final gpu.Texture? normal;
-  final gpu.Texture? occlusion;
+  final Texture2D? baseColor;
+  final Texture2D? metallicRoughness;
+  final Texture2D? normal;
+  final Texture2D? occlusion;
 
   /// Total number of tiles.
   int get tileCount => columns * rows;

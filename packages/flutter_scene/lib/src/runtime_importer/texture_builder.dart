@@ -1,11 +1,10 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
 
-import '../asset_helpers.dart';
+import '../texture/texture2d.dart';
 import 'gltf_resources.dart';
 
 /// Decode each glTF texture into a [gpu.Texture]. Each entry in the returned
@@ -17,12 +16,12 @@ import 'gltf_resources.dart';
 /// (multi-file glTF). An image that can't be sourced or decoded falls
 /// back to a 1x1 white placeholder so material binding never sees a
 /// null texture.
-Future<List<gpu.Texture>> buildTextures(
+Future<List<Texture2D>> buildTextures(
   GltfDocument doc,
   Uint8List bufferData, {
   GltfResourceResolver? resolveUri,
 }) async {
-  final results = <gpu.Texture>[];
+  final results = <Texture2D>[];
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
     final imageIdx = tex.source;
@@ -79,22 +78,27 @@ Future<List<gpu.Texture>> buildTextures(
   return results;
 }
 
-Future<gpu.Texture> _decodeAndUpload(Uint8List bytes) async {
+// TODO(mipmaps): classify each image's content (color vs normal vs data) from
+// how materials reference it, so normal/metallic-roughness maps get linear
+// (renormalized) mips instead of the sRGB-color default.
+Future<Texture2D> _decodeAndUpload(Uint8List bytes) async {
   final codec = await ui.instantiateImageCodec(bytes);
   final frame = await codec.getNextFrame();
-  return gpuTextureFromImage(frame.image);
+  try {
+    return await Texture2D.fromImage(frame.image);
+  } finally {
+    frame.image.dispose();
+  }
 }
 
-gpu.Texture _placeholder() {
-  // Re-uses the static-resource white placeholder so we never insert null
-  // entries (callers can index directly without a null check).
-  return _whitePlaceholder ??= _makeWhite();
+Texture2D _placeholder() {
+  // Re-uses a shared 1x1 white texture so we never insert null entries.
+  return _whitePlaceholder ??= Texture2D.fromPixels(
+    Uint8List.fromList(<int>[255, 255, 255, 255]),
+    1,
+    1,
+    sampling: const TextureSampling(mipmaps: false),
+  );
 }
 
-gpu.Texture? _whitePlaceholder;
-
-gpu.Texture _makeWhite() {
-  final t = gpu.gpuContext.createTexture(gpu.StorageMode.hostVisible, 1, 1);
-  t.overwrite(Uint32List.fromList(<int>[0xFFFFFFFF]).buffer.asByteData());
-  return t;
-}
+Texture2D? _whitePlaceholder;

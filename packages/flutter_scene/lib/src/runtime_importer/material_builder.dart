@@ -1,15 +1,15 @@
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../material/material.dart';
 import '../material/physically_based_material.dart';
 import '../material/unlit_material.dart';
+import '../texture/texture2d.dart';
 
 /// Builds an engine [Material] from a glTF material. Tier 2 wires up the
-/// texture slots from a pre-decoded list of [gpu.Texture]s indexed
+/// texture slots from a pre-decoded list of [Texture2D]s indexed
 /// 1:1 with `GltfDocument.textures`.
-Material buildMaterial(GltfMaterial? gm, List<gpu.Texture> textures) {
+Material buildMaterial(GltfMaterial? gm, List<Texture2D> textures) {
   if (gm == null) {
     return PhysicallyBasedMaterial();
   }
@@ -69,10 +69,7 @@ AlphaMode _alphaMode(String mode) {
   }
 }
 
-gpu.Texture? _resolveTexture(
-  GltfTextureInfo? info,
-  List<gpu.Texture> textures,
-) {
+Texture2D? _resolveTexture(GltfTextureInfo? info, List<Texture2D> textures) {
   if (info == null) return null;
   if (info.index < 0 || info.index >= textures.length) return null;
   return textures[info.index];

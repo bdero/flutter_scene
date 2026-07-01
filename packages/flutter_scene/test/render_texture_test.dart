@@ -117,28 +117,26 @@ void main() {
     return;
   }
 
-  test('material texture slots accept render textures', () async {
+  test('material texture slots accept texture sources', () async {
     await Scene.initializeStaticResources();
 
     final target = RenderTexture(width: 8, height: 8);
     final pbr = PhysicallyBasedMaterial();
 
-    // No completed frame yet resolves to null (placeholder applies at
-    // draw time).
+    // The slot holds the source; a render texture with no completed frame
+    // yet resolves (internally) to null so the placeholder applies at draw.
     pbr.baseColorTexture = target;
-    expect(pbr.baseColorTexture, isNull);
+    expect(pbr.baseColorTexture, same(target));
+    expect(target.sampledTexture, isNull);
 
-    // Static textures keep working verbatim, and bogus values throw.
-    final white = Material.getWhitePlaceholderTexture();
+    // A raw GPU texture can be bound via GpuTextureSource.
+    final white = GpuTextureSource(Material.getWhitePlaceholderTexture());
     pbr.baseColorTexture = white;
     expect(pbr.baseColorTexture, same(white));
-    expect(() => pbr.baseColorTexture = 'nope', throwsArgumentError);
 
     final unlit = UnlitMaterial();
     unlit.baseColorTexture = target;
-    // Unlit's getter never returns null; an empty render texture resolves
-    // to the white placeholder.
-    expect(unlit.baseColorTexture, same(white));
+    expect(unlit.baseColorTexture, same(target));
   });
 
   test('texture publishes on markUpdated, not on acquire', () async {

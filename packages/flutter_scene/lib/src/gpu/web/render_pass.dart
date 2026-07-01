@@ -105,6 +105,7 @@ base class SamplerOptions {
     this.mipFilter = MipFilter.nearest,
     this.widthAddressMode = SamplerAddressMode.clampToEdge,
     this.heightAddressMode = SamplerAddressMode.clampToEdge,
+    this.maxAnisotropy = 1,
   });
 
   MinMagFilter minFilter;
@@ -112,6 +113,11 @@ base class SamplerOptions {
   MipFilter mipFilter;
   SamplerAddressMode widthAddressMode;
   SamplerAddressMode heightAddressMode;
+
+  /// The maximum anisotropy clamp used when sampling. The default value of 1
+  /// disables anisotropic filtering. Mirrors `package:flutter_gpu`; applied via
+  /// `EXT_texture_filter_anisotropic` and clamped to the device maximum.
+  int maxAnisotropy;
 }
 
 base class DepthRange {
@@ -596,6 +602,15 @@ base class RenderPass {
         web.WebGL2RenderingContext.TEXTURE_WRAP_T,
         _glAddressMode(sampler.heightAddressMode),
       );
+      final maxAniso = _gpuContext.maxSupportedAnisotropy;
+      if (sampler.maxAnisotropy > 1 && maxAniso > 1) {
+        // EXT_texture_filter_anisotropic: TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE.
+        gl.texParameterf(
+          target,
+          0x84FE,
+          sampler.maxAnisotropy.clamp(1, maxAniso).toDouble(),
+        );
+      }
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
 
@@ -39,19 +40,14 @@ class SpriteMaterial extends Material {
   ///
   /// When [colorTexture] is null a 1x1 white placeholder is used, so the
   /// sprite reduces to a flat [tint] times the per-instance color.
-  SpriteMaterial({gpu.Texture? colorTexture}) : _colorSource = colorTexture {
+  SpriteMaterial({this.colorTexture}) {
     setFragmentShader(baseShaderLibrary['SpriteFragment']!);
   }
 
-  Object? _colorSource;
-
   /// The sprite's color texture, sampled and multiplied by the per-instance
-  /// color and [tint]. Accepts a [gpu.Texture] or a `RenderTexture`; an empty
+  /// color and [tint]. Accepts a [Texture2D] or a `RenderTexture`; an empty
   /// slot resolves to a 1x1 white placeholder.
-  gpu.Texture get colorTexture =>
-      Material.whitePlaceholder(resolveTextureSource(_colorSource));
-  set colorTexture(Object? value) =>
-      _colorSource = checkTextureSource(value, 'colorTexture');
+  TextureSource? colorTexture;
 
   /// Linear RGBA tint multiplied into every sprite of this material.
   Vector4 tint = Colors.white;
@@ -99,8 +95,8 @@ class SpriteMaterial extends Material {
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),
-      colorTexture,
-      sampler: textureSourceSampler(_colorSource) ?? sampler,
+      Material.whitePlaceholder(resolveTextureSource(colorTexture)),
+      sampler: textureSourceSampler(colorTexture) ?? sampler,
     );
   }
 }

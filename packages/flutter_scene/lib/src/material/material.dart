@@ -10,39 +10,21 @@ import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
-
-/// Validates a value assigned to a material texture slot.
-///
-/// Slots accept a [gpu.Texture], a [RenderTexture] (sampled live), or
-/// null; anything else throws an [ArgumentError]. Returns [value]. The
-/// setters are typed `Object?` because Dart has no overloads and the two
-/// accepted types share no usable supertype.
-@internal
-Object? checkTextureSource(Object? value, String name) {
-  if (value == null || value is gpu.Texture || value is RenderTexture) {
-    return value;
-  }
-  throw ArgumentError.value(
-    value,
-    name,
-    'Expected a gpu.Texture or a RenderTexture',
-  );
-}
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 /// Resolves a texture-slot value to the texture to sample this frame.
 ///
 /// A [RenderTexture] resolves to its latest completed frame (null before
 /// the first render, so the slot's placeholder applies).
 @internal
-gpu.Texture? resolveTextureSource(Object? source) =>
-    source is RenderTexture ? source.texture : source as gpu.Texture?;
+gpu.Texture? resolveTextureSource(TextureSource? source) =>
+    source?.sampledTexture;
 
-/// The sampler a texture-slot value asks for, or null to use the
-/// material's default. A [RenderTexture] carries its own
-/// [RenderTexture.sampling].
+/// The sampler a texture-slot value asks for, or null to use the material's
+/// default (only when there is no source; every [TextureSource] carries one).
 @internal
-gpu.SamplerOptions? textureSourceSampler(Object? source) =>
-    source is RenderTexture ? source.sampling.toSamplerOptions() : null;
+gpu.SamplerOptions? textureSourceSampler(TextureSource? source) =>
+    source?.sampledSampler;
 
 /// Base class for shading a [MeshPrimitive].
 ///

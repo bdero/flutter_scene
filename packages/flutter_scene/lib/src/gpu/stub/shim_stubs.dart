@@ -273,12 +273,14 @@ base class SamplerOptions {
     this.mipFilter = MipFilter.nearest,
     this.widthAddressMode = SamplerAddressMode.clampToEdge,
     this.heightAddressMode = SamplerAddressMode.clampToEdge,
+    this.maxAnisotropy = 1,
   });
   MinMagFilter minFilter;
   MinMagFilter magFilter;
   MipFilter mipFilter;
   SamplerAddressMode widthAddressMode;
   SamplerAddressMode heightAddressMode;
+  int maxAnisotropy;
 }
 
 base class DepthRange {
