@@ -39,12 +39,18 @@ class DepthPrepass extends RenderGraphPass {
     required Vector3 cameraForward,
     required double farDepth,
     int layerMask = kRenderLayerAll,
+    bool writeNormals = false,
+    Vector3? cameraRight,
+    Vector3? cameraUp,
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _cameraForward = cameraForward,
        _farDepth = farDepth,
-       _layerMask = layerMask;
+       _layerMask = layerMask,
+       _writeNormals = writeNormals,
+       _cameraRight = cameraRight ?? Vector3.zero(),
+       _cameraUp = cameraUp ?? Vector3.zero();
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -52,6 +58,15 @@ class DepthPrepass extends RenderGraphPass {
   final Vector3 _cameraForward;
   final double _farDepth;
   final int _layerMask;
+
+  // When set, the prepass also writes the interpolated view-space normal
+  // into the linear-depth target's green/blue/alpha channels (the depth uses
+  // only red), for screen-space reflections. This forces the full vertex
+  // shader (the depth-only position path carries no normal), so it is left
+  // off when only ambient occlusion needs the prepass.
+  final bool _writeNormals;
+  final Vector3 _cameraRight;
+  final Vector3 _cameraUp;
 
   @override
   String get name => 'DepthPrepass';
@@ -105,6 +120,9 @@ class DepthPrepass extends RenderGraphPass {
       _camera.position,
       _cameraForward,
       _layerMask,
+      writeNormals: _writeNormals,
+      cameraRight: _cameraRight,
+      cameraUp: _cameraUp,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
     commandBuffer.submit();
@@ -127,8 +145,11 @@ class _DepthPrepassEncoder {
     this._cameraTransform,
     this._cameraPosition,
     Vector3 cameraForward,
-    this._layerMask,
-  ) {
+    this._layerMask, {
+    required bool writeNormals,
+    required Vector3 cameraRight,
+    required Vector3 cameraUp,
+  }) : _writeNormals = writeNormals {
     frustum = Frustum.matrix(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
@@ -137,12 +158,27 @@ class _DepthPrepassEncoder {
     // that are visible contribute depth.
     _renderPass.setCullMode(gpu.CullMode.backFace);
     _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-    // The camera forward axis is constant across the pass. Pack it once and
-    // rebind it per draw (clearBindings drops it between draws).
-    _depthInfo = Float32List(4)
-      ..[0] = cameraForward.x
-      ..[1] = cameraForward.y
-      ..[2] = cameraForward.z;
+    // The camera axes are constant across the pass. Pack them once and
+    // rebind per draw (clearBindings drops the binding between draws). The
+    // normal-writing path also needs the right/up axes to rotate the world
+    // normal into view space; the depth-only path uses just forward.
+    if (writeNormals) {
+      _depthInfo = Float32List(12)
+        ..[0] = cameraForward.x
+        ..[1] = cameraForward.y
+        ..[2] = cameraForward.z
+        ..[4] = cameraRight.x
+        ..[5] = cameraRight.y
+        ..[6] = cameraRight.z
+        ..[8] = cameraUp.x
+        ..[9] = cameraUp.y
+        ..[10] = cameraUp.z;
+    } else {
+      _depthInfo = Float32List(4)
+        ..[0] = cameraForward.x
+        ..[1] = cameraForward.y
+        ..[2] = cameraForward.z;
+    }
   }
 
   final gpu.RenderPass _renderPass;
@@ -150,10 +186,18 @@ class _DepthPrepassEncoder {
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
   final int _layerMask;
+  final bool _writeNormals;
   late final Float32List _depthInfo;
 
   static final gpu.Shader _depthShader =
       baseShaderLibrary['LinearDepthFragment']!;
+  static final gpu.Shader _depthNormalShader =
+      baseShaderLibrary['LinearDepthNormalFragment']!;
+
+  // The fragment shader and its uniform-block name for this pass.
+  gpu.Shader get _fragmentShader =>
+      _writeNormals ? _depthNormalShader : _depthShader;
+  String get _infoBlockName => _writeNormals ? 'DepthNormalInfo' : 'DepthInfo';
 
   /// Frustum of the camera view-projection, used for per-item culling.
   late final Frustum frustum;
@@ -185,11 +229,13 @@ class _DepthPrepassEncoder {
     final geometry = item.geometry;
     // Unskinned geometry draws depth through a position-only shader and layout
     // (fetching only position); skinned geometry has no such variant, so it
-    // falls back to its full vertex shader and bind.
-    final depthVertex = geometry.depthOnlyVertex;
+    // falls back to its full vertex shader and bind. The normal-writing path
+    // always uses the full vertex shader, since the position-only path
+    // carries no normal.
+    final depthVertex = _writeNormals ? null : geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
       depthVertex?.shader ?? geometry.vertexShader,
-      _depthShader,
+      _fragmentShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
@@ -198,7 +244,7 @@ class _DepthPrepassEncoder {
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
     _renderPass.bindUniform(
-      _depthShader.getUniformSlot('DepthInfo'),
+      _fragmentShader.getUniformSlot(_infoBlockName),
       _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
     );
 
@@ -227,6 +273,13 @@ class _DepthPrepassEncoder {
       }
     }
 
+    // The instance-rate model transform sits in the slot after the bound
+    // vertex streams. The depth-only path binds just the position stream
+    // (slot 0), so its instance is slot 1; the normal-writing path binds the
+    // full stream set, so the instance follows them (slot
+    // [vertexStreamCount]), matching the color encoder.
+    final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
+
     final instances = item.instanceTransforms;
     if (instances != null) {
       if (geometry.instancedVertexLayout == null) {
@@ -251,12 +304,12 @@ class _DepthPrepassEncoder {
         nodeWindingFlipped: item.windingFlipped,
       );
       if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.ccw);
+        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.cw);
+        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
@@ -265,10 +318,15 @@ class _DepthPrepassEncoder {
 
     bindDraw(item.worldTransform);
     // Skip the model-transform instance buffer for geometry that supplies its
-    // own per-instance buffer (see the color encoder), or it clobbers slot 1.
+    // own per-instance buffer (see the color encoder), or it clobbers the
+    // stream slot.
     if (geometry.instancedVertexLayout != null &&
         geometry.bindsModelTransformInstance) {
-      bindSingleInstanceTransform(_renderPass, item.worldTransform);
+      bindSingleInstanceTransform(
+        _renderPass,
+        item.worldTransform,
+        slot: instanceSlot,
+      );
     }
     _renderPass.setWindingOrder(
       item.windingFlipped
