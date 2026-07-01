@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:vector_math/vector_math.dart';
 
 import 'gpu/gpu.dart' as gpu;
@@ -99,4 +101,50 @@ class TextureAtlas {
       occlusionTexture: occlusion,
     );
   }
+}
+
+/// Builds RGBA8888 pixels (row-major, top-left origin) for a placeholder grid
+/// atlas laid out to match a [TextureAtlas] with the same [columns], [tileSize],
+/// and [padding]. Each tile's whole cell (content plus padding gutter) is filled
+/// with its solid color from [tileColors] (`(r, g, b, a)` in `[0, 1]`), so a
+/// tile never bleeds into its neighbor. Cells past `tileColors.length` are left
+/// transparent.
+///
+/// This is a stand-in for a real texture pack: generate the pixels, upload them
+/// to a [gpu.Texture], and hand that to a [TextureAtlas]. Useful for tests and
+/// for bringing up the atlas path before final art exists.
+/// {@category Assets and loading}
+Uint8List generateSolidColorAtlasPixels({
+  required List<Vector4> tileColors,
+  required int columns,
+  required int tileSize,
+  int padding = 0,
+}) {
+  assert(columns > 0);
+  assert(tileSize > 0);
+  assert(padding >= 0);
+  final rows = (tileColors.length / columns).ceil();
+  final cell = tileSize + 2 * padding;
+  final width = columns * cell;
+  final height = rows * cell;
+  final pixels = Uint8List(width * height * 4); // Zero-filled = transparent.
+  for (var i = 0; i < tileColors.length; i++) {
+    final color = tileColors[i];
+    final r = (color.x * 255.0).round().clamp(0, 255);
+    final g = (color.y * 255.0).round().clamp(0, 255);
+    final b = (color.z * 255.0).round().clamp(0, 255);
+    final a = (color.w * 255.0).round().clamp(0, 255);
+    final x0 = (i % columns) * cell;
+    final y0 = (i ~/ columns) * cell;
+    for (var y = y0; y < y0 + cell; y++) {
+      var p = (y * width + x0) * 4;
+      for (var x = 0; x < cell; x++) {
+        pixels[p++] = r;
+        pixels[p++] = g;
+        pixels[p++] = b;
+        pixels[p++] = a;
+      }
+    }
+  }
+  return pixels;
 }
