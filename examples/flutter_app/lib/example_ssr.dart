@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'environment_menu.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 import 'quake_camera.dart';
 
 /// Demonstrates screen-space reflections: a dark floor reflects a ring of
@@ -22,6 +24,11 @@ class ExampleSsrState extends State<ExampleSsr> {
   final Scene scene = Scene();
 
   bool _panelOpen = true;
+
+  // Drives the image-based-lighting environment / skybox menu (the same one
+  // the stress-tests example uses). The environment is what a reflection
+  // falls back to on a miss, so it is worth exploring against SSR.
+  final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
   // The free "inspection" camera and whether it is active. While inactive it
   // is kept synced to the orbiting camera so toggling on does not jump.
@@ -51,18 +58,9 @@ class ExampleSsrState extends State<ExampleSsr> {
       ),
     );
 
-    // A physical sky, both as the visible background and as the environment
-    // the floor reflects. Screen-space reflections cannot reflect the sky (it
-    // has no on-screen geometry to hit), so where a reflected ray points at
-    // the sky the trace misses and the pixel falls back to this environment;
-    // without a sky it would fall back to nothing and leave dark voids.
-    final sky = PhysicalSkySource()
-      ..sunDirection = vm.Vector3(0.5, 0.8, 0.4).normalized();
-    scene.skybox = Skybox(sky);
-    scene.skyEnvironment = SkyEnvironment(
-      sky,
-      refresh: SkyEnvironmentRefresh.manual,
-    );
+    // The environment and skybox are configured live through the lighting
+    // panel below. The skybox samples the selected environment, so the floor
+    // reflects (via SSR and the miss fallback) the same backdrop it shows.
 
     // A large, dark, smooth floor at y = 0.
     scene.add(
@@ -114,7 +112,6 @@ class ExampleSsrState extends State<ExampleSsr> {
       scene.add(node);
     }
 
-    scene.environmentIntensity = 1.0;
     scene.screenSpaceReflections.enabled = true;
   }
 
@@ -181,6 +178,11 @@ class ExampleSsrState extends State<ExampleSsr> {
           ),
           Positioned(
             left: 8,
+            bottom: 8,
+            child: LightingPanel(scene: scene, selector: _environmentSelector),
+          ),
+          Positioned(
+            right: 8,
             bottom: 8,
             child: _CameraToggle(
               freeCamera: _freeCamera,
