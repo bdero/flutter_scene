@@ -79,14 +79,24 @@ class TextureSampling {
 
   final gpu.SamplerAddressMode addressMode;
 
-  gpu.SamplerOptions toSamplerOptions() => gpu.SamplerOptions(
-    minFilter: minFilter,
-    magFilter: magFilter,
-    mipFilter: mipmaps ? mipFilter : gpu.MipFilter.nearest,
-    widthAddressMode: addressMode,
-    heightAddressMode: addressMode,
-    maxAnisotropy: maxAnisotropy,
-  );
+  gpu.SamplerOptions toSamplerOptions() {
+    final effectiveMipFilter = mipmaps ? mipFilter : gpu.MipFilter.nearest;
+    // Anisotropic filtering requires linear min/mag/mip filtering; pairing it
+    // with any nearest filter is rejected, so drop it when a filter is nearest
+    // (e.g. a mipmaps-off UI texture).
+    final allLinear =
+        minFilter == gpu.MinMagFilter.linear &&
+        magFilter == gpu.MinMagFilter.linear &&
+        effectiveMipFilter == gpu.MipFilter.linear;
+    return gpu.SamplerOptions(
+      minFilter: minFilter,
+      magFilter: magFilter,
+      mipFilter: effectiveMipFilter,
+      widthAddressMode: addressMode,
+      heightAddressMode: addressMode,
+      maxAnisotropy: allLinear ? maxAnisotropy : 1,
+    );
+  }
 }
 
 /// A 2D image texture ready to bind to a material's texture slot.
@@ -132,9 +142,14 @@ class Texture2D implements TextureSource {
     var levels = sampling.mipmaps
         ? generateMipChain(pixels, width, height, content)
         : <MipLevel>[MipLevel(width, height, pixels)];
+    // The GPU allocator caps mip levels at fullMipCount (floor(log2(min(w, h)))),
+    // which is below the canonical chain length for non-square textures, so
+    // clamp before requesting the texture or creation throws a range error.
+    final maxLevels = gpu.Texture.fullMipCount(width, height);
     final cap = sampling.maxMipmapLevels;
-    if (cap != null && cap >= 1 && cap < levels.length) {
-      levels = levels.sublist(0, cap);
+    final limit = cap != null && cap >= 1 && cap < maxLevels ? cap : maxLevels;
+    if (limit < levels.length) {
+      levels = levels.sublist(0, limit);
     }
     final texture = gpu.gpuContext.createTexture(
       gpu.StorageMode.hostVisible,
