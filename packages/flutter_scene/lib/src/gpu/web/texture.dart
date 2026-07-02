@@ -176,6 +176,19 @@ base class Texture {
     _valid = true;
   }
 
+  /// Wrapping a `ui.Image`'s backing texture is not possible on this backend:
+  /// the framework rasterizes with its own WebGL context, and browsers do not
+  /// share textures across contexts. Always throws, mirroring flutter_gpu's
+  /// contract for an image that is not backed by a compatible GPU texture;
+  /// callers fall back to `Image.toByteData` plus [overwrite].
+  factory Texture.fromImage(GpuContext gpuContext, ui.Image image) {
+    throw Exception(
+      'Texture.fromImage could not wrap the image because it is not backed '
+      'by a compatible GPU texture. The web backend cannot share textures '
+      'with the framework; read the image back and upload it instead.',
+    );
+  }
+
   final GpuContext _gpuContext;
   final StorageMode storageMode;
   final PixelFormat format;

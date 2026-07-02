@@ -1,5 +1,15 @@
 ## 0.19.0
 
+* Widget-texture captures (`WidgetTexture`, `WidgetComponent`) now stay on the
+  GPU. Each capture wraps the rasterized image's backing texture directly
+  (`Texture.fromImage`) instead of reading the pixels back and re-uploading
+  them, removing the per-capture CPU round trip. Backends where the image is
+  not texture-backed (the web backend, software rendering) keep the readback
+  path automatically. The texture object published by
+  `WidgetTextureController` is now replaced across captures on the wrapped
+  path, so `WidgetComponent`'s `bind` callback re-fires per capture; listeners
+  that re-bind on change (the documented contract) are unaffected.
+
 * Built-in materials and geometries can now be constructed before
   `Scene.initializeStaticResources()` finishes loading the base shader bundle.
   Each resolves its shader from the base library lazily on first render (which
