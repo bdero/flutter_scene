@@ -71,6 +71,15 @@ base class RenderPipeline {
   /// instead of per-member glUniform calls.
   final Map<String, int> _structBlockBindings = {};
 
+  /// The largest std140 size among the active uniform blocks, used to size the
+  /// zero fallback buffer bound to every block binding point.
+  int _maxBlockSizeBytes = 0;
+
+  /// A zero-filled uniform buffer bound to every active block binding point
+  /// when this pipeline is bound (see [_bindDefaultUniformBlocks]). Created
+  /// lazily on first pipeline bind.
+  web.WebGLBuffer? _defaultBlockBuffer;
+
   /// Texture unit assigned to each reflected sampler name.
   final Map<String, int> _samplerUnits = {};
 
@@ -103,6 +112,9 @@ base class RenderPipeline {
           final binding = nextBlockBinding++;
           gl.uniformBlockBinding(_program, blockIndex, binding);
           _structBlockBindings[struct.name] = binding;
+          if (struct.sizeInBytes > _maxBlockSizeBytes) {
+            _maxBlockSizeBytes = struct.sizeInBytes;
+          }
           continue;
         }
         // GLSL ES 1.00 bundles flatten the struct to plain uniforms. GL
@@ -131,6 +143,49 @@ base class RenderPipeline {
           gl.uniform1i(loc, unit);
         }
       }
+    }
+  }
+
+  /// Binds a zero-filled fallback buffer to every active uniform block binding
+  /// point. Called when this pipeline is bound, before the caller binds its
+  /// own uniforms.
+  ///
+  /// A block that the linker keeps active but the caller never binds (for
+  /// example the framework's `RadianceLayoutInfo`, which an unlit custom
+  /// material's shader includes but never binds) is a used-but-unbound uniform
+  /// buffer. Impeller tolerates that; WebGL2 raises an error and drops the
+  /// draw. Pre-binding a zero buffer makes the unbound block read zeros
+  /// instead. Explicit [RenderPass.bindUniform] calls override the binding
+  /// points they set.
+  void _bindDefaultUniformBlocks() {
+    if (_structBlockBindings.isEmpty) return;
+    final gl = _gpuContext._gl;
+    var buffer = _defaultBlockBuffer;
+    if (buffer == null) {
+      // std140 blocks round up to 16 bytes; keep a floor so the buffer is
+      // never zero-sized, and size it to the largest block so the range is
+      // always big enough for any binding point it is attached to.
+      final size = _maxBlockSizeBytes < 16
+          ? 16
+          : (_maxBlockSizeBytes + 15) & ~15;
+      buffer = gl.createBuffer();
+      if (buffer == null) {
+        throw StateError('Failed to create WebGL buffer');
+      }
+      gl.bindBuffer(web.WebGL2RenderingContext.UNIFORM_BUFFER, buffer);
+      gl.bufferData(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+        Uint8List(size).toJS,
+        web.WebGL2RenderingContext.STATIC_DRAW,
+      );
+      _defaultBlockBuffer = buffer;
+    }
+    for (final binding in _structBlockBindings.values) {
+      gl.bindBufferBase(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+        binding,
+        buffer,
+      );
     }
   }
 }

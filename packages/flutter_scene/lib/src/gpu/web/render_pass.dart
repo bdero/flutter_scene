@@ -358,6 +358,10 @@ base class RenderPass {
     final gl = _gpuContext._gl;
     _boundPipeline = pipeline;
     gl.useProgram(pipeline._program);
+    // Give every active uniform block a valid (zeroed) buffer up front, so a
+    // block the caller never binds does not raise a used-but-unbound uniform
+    // buffer error on this backend. Explicit bindUniform calls override it.
+    pipeline._bindDefaultUniformBlocks();
   }
 
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
