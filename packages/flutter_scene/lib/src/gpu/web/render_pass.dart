@@ -671,36 +671,55 @@ base class RenderPass {
     gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
     gl.bindTexture(target, texture.glTexture);
     if (sampler != null) {
-      gl.texParameteri(
-        target,
-        web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
-        _glMinFilter(sampler, texture),
-      );
-      gl.texParameteri(
-        target,
-        web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
-        sampler.magFilter == MinMagFilter.nearest
-            ? web.WebGL2RenderingContext.NEAREST
-            : web.WebGL2RenderingContext.LINEAR,
-      );
-      gl.texParameteri(
-        target,
-        web.WebGL2RenderingContext.TEXTURE_WRAP_S,
-        _glAddressMode(sampler.widthAddressMode),
-      );
-      gl.texParameteri(
-        target,
-        web.WebGL2RenderingContext.TEXTURE_WRAP_T,
-        _glAddressMode(sampler.heightAddressMode),
-      );
+      // Sampler parameters are per-texture-object GL state; skip the ones
+      // already applied to this texture. Per-draw texParameteri calls are
+      // validated in the browser's GPU process and add up across draws.
+      final minFilter = _glMinFilter(sampler, texture);
+      if (texture._lastMinFilter != minFilter) {
+        texture._lastMinFilter = minFilter;
+        gl.texParameteri(
+          target,
+          web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
+          minFilter,
+        );
+      }
+      final magFilter = sampler.magFilter == MinMagFilter.nearest
+          ? web.WebGL2RenderingContext.NEAREST
+          : web.WebGL2RenderingContext.LINEAR;
+      if (texture._lastMagFilter != magFilter) {
+        texture._lastMagFilter = magFilter;
+        gl.texParameteri(
+          target,
+          web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
+          magFilter,
+        );
+      }
+      final wrapS = _glAddressMode(sampler.widthAddressMode);
+      if (texture._lastWrapS != wrapS) {
+        texture._lastWrapS = wrapS;
+        gl.texParameteri(
+          target,
+          web.WebGL2RenderingContext.TEXTURE_WRAP_S,
+          wrapS,
+        );
+      }
+      final wrapT = _glAddressMode(sampler.heightAddressMode);
+      if (texture._lastWrapT != wrapT) {
+        texture._lastWrapT = wrapT;
+        gl.texParameteri(
+          target,
+          web.WebGL2RenderingContext.TEXTURE_WRAP_T,
+          wrapT,
+        );
+      }
       final maxAniso = _gpuContext.maxSupportedAnisotropy;
       if (sampler.maxAnisotropy > 1 && maxAniso > 1) {
         // EXT_texture_filter_anisotropic: TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE.
-        gl.texParameterf(
-          target,
-          0x84FE,
-          sampler.maxAnisotropy.clamp(1, maxAniso).toDouble(),
-        );
+        final anisotropy = sampler.maxAnisotropy.clamp(1, maxAniso).toDouble();
+        if (texture._lastAnisotropy != anisotropy) {
+          texture._lastAnisotropy = anisotropy;
+          gl.texParameterf(target, 0x84FE, anisotropy);
+        }
       }
     }
   }
