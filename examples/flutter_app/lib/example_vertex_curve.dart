@@ -1,12 +1,10 @@
-// Vertex-stage showcase: a curved, animated ocean authored entirely in a
-// `.fmat` vertex stage (assets/vertex_curve.fmat). One material exercises the
-// whole vertex surface at once:
-//   - vertex displacement (animated waves + the Animal Crossing world curve),
-//   - a custom per-vertex attribute (wave_seed) for organic waves,
-//   - a `time` parameter updated every frame to animate the surface,
-//   - writing world_normal so lighting shades the wave shape, and
-//   - two custom varyings (foam on crests, horizon fade) read in the fragment.
-// The sliders drive the curvature and wave amplitude live.
+// Custom-vertex-stage showcase. A dropdown switches between sub-demos, each a
+// `.fmat` whose vertex stage drives the look:
+//   - Ocean: an animated, curved ocean (waves + world curve, a per-vertex
+//     wave_seed attribute, a time param, a perturbed normal, and foam/horizon
+//     varyings).
+//   - Runner: an endless road that curves down over the horizon while rows of
+//     pillars scroll toward the camera.
 
 import 'dart:typed_data';
 
@@ -16,6 +14,14 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
+enum _Demo {
+  ocean('Ocean'),
+  runner('Runner');
+
+  const _Demo(this.label);
+  final String label;
+}
+
 class ExampleVertexCurve extends StatefulWidget {
   const ExampleVertexCurve({super.key});
 
@@ -24,9 +30,62 @@ class ExampleVertexCurve extends StatefulWidget {
 }
 
 class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
+  _Demo _demo = _Demo.ocean;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // The selected sub-demo owns its own Scene and SceneView; the ValueKey
+        // rebuilds it (and disposes the old scene) when the selection changes.
+        Positioned.fill(
+          child: switch (_demo) {
+            _Demo.ocean => const _OceanDemo(key: ValueKey('ocean')),
+            _Demo.runner => const _RunnerDemo(key: ValueKey('runner')),
+          },
+        ),
+        Positioned(
+          top: 16,
+          left: 16,
+          child: Card(
+            color: Colors.black54,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: DropdownButton<_Demo>(
+                value: _demo,
+                dropdownColor: Colors.black87,
+                underline: const SizedBox.shrink(),
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                items: [
+                  for (final d in _Demo.values)
+                    DropdownMenuItem(value: d, child: Text(d.label)),
+                ],
+                onChanged: (d) {
+                  if (d != null) setState(() => _demo = d);
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ocean sub-demo.
+// ---------------------------------------------------------------------------
+
+class _OceanDemo extends StatefulWidget {
+  const _OceanDemo({super.key});
+
+  @override
+  State<_OceanDemo> createState() => _OceanDemoState();
+}
+
+class _OceanDemoState extends State<_OceanDemo> {
   final Scene scene = Scene();
   bool loaded = false;
-
   double curvature = 0.006;
   double amplitude = 0.35;
   PreprocessedMaterial? _material;
@@ -38,22 +97,20 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
   }
 
   Future<void> _load() async {
-    final material = await loadFmatMaterial('assets/vertex_curve.fmat');
+    final material = await loadFmatMaterial('assets/vertex_ocean.fmat');
     if (!mounted) return;
     _material = material;
     material.parameters
       ..setFloat('curvature', curvature)
       ..setFloat('amplitude', amplitude);
-
     scene.add(Node(mesh: Mesh(_oceanGrid(), material)));
     setState(() => loaded = true);
   }
 
-  /// A large, finely tessellated grid in the XZ plane, with a per-vertex
-  /// `wave_seed` custom attribute (a hashed pseudo-random phase) so the waves
-  /// vary organically instead of marching in a perfect grid.
+  /// A large, finely tessellated grid with a per-vertex `wave_seed` attribute
+  /// (a hashed pseudo-random phase) so the waves vary organically.
   MeshGeometry _oceanGrid() {
-    const n = 120; // cells per side; (n + 1)^2 vertices
+    const n = 120;
     const size = 90.0;
     final count = (n + 1) * (n + 1);
     final positions = Float32List(count * 3);
@@ -96,14 +153,13 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
         Positioned.fill(
           child: SceneView(
             scene,
-            // Fixed camera looking out over the ocean toward the curved
-            // horizon; the world curve is relative to this camera.
+            // Angled down over the ocean so the wave surface and the curved
+            // horizon both read clearly.
             camera: PerspectiveCamera(
-              position: vm.Vector3(0, 6.0, 14.0),
-              target: vm.Vector3(0, 0.5, -28.0),
+              position: vm.Vector3(0, 10.0, 8.0),
+              target: vm.Vector3(0, 0.0, -12.0),
             ),
             onTick: (elapsed, deltaSeconds) {
-              // Animate the waves by advancing the material's time parameter.
               _material?.parameters.setFloat(
                 'time',
                 elapsed.inMicroseconds / 1e6,
@@ -112,43 +168,161 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
             },
           ),
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SliderRow(
-                    label: 'Curvature',
-                    value: curvature,
-                    min: 0.0,
-                    max: 0.02,
-                    onChanged: (val) => setState(() {
-                      curvature = val;
-                      _material?.parameters.setFloat('curvature', val);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Wave height',
-                    value: amplitude,
-                    min: 0.0,
-                    max: 0.8,
-                    onChanged: (val) => setState(() {
-                      amplitude = val;
-                      _material?.parameters.setFloat('amplitude', val);
-                    }),
-                  ),
-                ],
-              ),
+        _Controls(
+          rows: [
+            _SliderRow(
+              label: 'Curvature',
+              value: curvature,
+              min: 0.0,
+              max: 0.02,
+              onChanged: (val) => setState(() {
+                curvature = val;
+                _material?.parameters.setFloat('curvature', val);
+              }),
             ),
-          ),
+            _SliderRow(
+              label: 'Wave height',
+              value: amplitude,
+              min: 0.0,
+              max: 0.8,
+              onChanged: (val) => setState(() {
+                amplitude = val;
+                _material?.parameters.setFloat('amplitude', val);
+              }),
+            ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Runner sub-demo.
+// ---------------------------------------------------------------------------
+
+const double _rowSpacing = 6.0;
+const int _rowCount = 26;
+
+class _RunnerDemo extends StatefulWidget {
+  const _RunnerDemo({super.key});
+
+  @override
+  State<_RunnerDemo> createState() => _RunnerDemoState();
+}
+
+class _RunnerDemoState extends State<_RunnerDemo> {
+  final Scene scene = Scene();
+  final Node _road = Node();
+  bool loaded = false;
+  double curvature = 0.008;
+  PreprocessedMaterial? _material;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final material = await loadFmatMaterial('assets/vertex_road.fmat');
+    if (!mounted) return;
+    _material = material;
+    material.parameters.setFloat('curvature', curvature);
+
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 80, depth: 160, segmentsX: 80, segmentsZ: 160),
+          material,
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0, -50)),
+    );
+    for (var row = 0; row < _rowCount; row++) {
+      final z = -row * _rowSpacing;
+      for (final x in const [-6.0, -3.0, 3.0, 6.0]) {
+        _road.add(
+          Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1.0, 2.0, 1.0)), material))
+            ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 1.0, z)),
+        );
+      }
+    }
+    scene.add(_road);
+    setState(() => loaded = true);
+  }
+
+  @override
+  void dispose() {
+    scene.removeAll();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: SceneView(
+            scene,
+            camera: PerspectiveCamera(
+              position: vm.Vector3(0, 4.0, 8.0),
+              target: vm.Vector3(0, 1.2, -12.0),
+            ),
+            onTick: (elapsed, deltaSeconds) {
+              // Scroll the pillars toward the camera, wrapping by one row.
+              final offset = (elapsed.inMicroseconds / 1e6 * 6.0) % _rowSpacing;
+              _road.localTransform = vm.Matrix4.translation(
+                vm.Vector3(0, 0, offset),
+              );
+              _road.markBoundsDirty();
+              exampleSettings.applyTo(scene);
+            },
+          ),
+        ),
+        _Controls(
+          rows: [
+            _SliderRow(
+              label: 'Curvature',
+              value: curvature,
+              min: 0.0,
+              max: 0.02,
+              onChanged: (val) => setState(() {
+                curvature = val;
+                _material?.parameters.setFloat('curvature', val);
+              }),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared controls.
+// ---------------------------------------------------------------------------
+
+class _Controls extends StatelessWidget {
+  const _Controls({required this.rows});
+
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16,
+      child: Card(
+        color: Colors.black54,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+        ),
+      ),
     );
   }
 }

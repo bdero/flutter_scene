@@ -1,0 +1,38 @@
+// The runner road: a lit material whose vertex stage bends the world down over
+// a false horizon (the Animal Crossing "round world" curve), with a varying
+// that dims geometry as it curves away. The simplest vertex-displacement case,
+// paired with the scrolling-road sub-demo.
+
+material {
+  name: "VertexRoad",
+  shading_model: lit,
+  culling: none,
+  parameters: [
+    { type: float, name: curvature, hint: range(0.0, 0.02, 0.0005), default: 0.008 },
+    { type: vec4, name: base_color, hint: source_color, default: [0.42, 0.6, 0.38, 1.0] },
+  ],
+  varyings: [
+    { type: float, name: curve_fade },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Drop each vertex by a quadratic of its horizontal distance from the
+    // camera, so distant geometry sinks below the horizon.
+    vec3 rel = vertex.world_position - vertex.camera_position;
+    float drop = material_params.curvature * dot(rel.xz, rel.xz);
+    vertex.world_position.y -= drop;
+    curve_fade = clamp(drop * 0.12, 0.0, 1.0);
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = material_params.base_color;
+    material.base_color.rgb *= mix(1.0, 0.3, curve_fade);
+    material.metallic = 0.0;
+    material.roughness = 0.8;
+    PrepareMaterial(material);
+  }
+}
