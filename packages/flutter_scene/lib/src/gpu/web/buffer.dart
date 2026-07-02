@@ -147,81 +147,76 @@ base class HostBuffer {
   static const int kDefaultBlockLengthInBytes = 1024000;
   static const int _kFrameCount = 4;
 
+  /// Pooled emplacement size classes. Each emplacement gets its own small GL
+  /// buffer, written exactly once and then only read until its frame slot
+  /// comes around again. Writing into a buffer that in-flight draws already
+  /// read forces the browser's GL implementation to ghost (copy) the buffer
+  /// per write, which dominated per-draw cost out of all proportion to the
+  /// bytes moved; one-write-per-cycle buffers never ghost.
+  static const List<int> _kPoolClassSizes = [512, 4096];
+
   HostBuffer._initialize(
     this._gpuContext, {
     this.blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
   }) {
-    for (int i = 0; i < frameCount; i++) {
-      _buffers.add([_allocateNewBlock(blockLengthInBytes)]);
+    for (var frame = 0; frame < _kFrameCount; frame++) {
+      _pools.add([for (final _ in _kPoolClassSizes) <DeviceBuffer>[]]);
+      _cursors.add(List<int>.filled(_kPoolClassSizes.length, 0));
     }
   }
 
   final GpuContext _gpuContext;
+
+  /// Retained for API compatibility with flutter_gpu's HostBuffer; the web
+  /// backend pools per-emplacement buffers instead of bump-allocating blocks.
   final int blockLengthInBytes;
 
   int get frameCount => _kFrameCount;
 
   int _frameCursor = 0;
-  int _bufferCursor = 0;
-  int _offsetCursor = 0;
-  final List<List<DeviceBuffer>> _buffers = [];
+
+  /// Pooled emplacement buffers: [frame][sizeClass] -> buffers, reused in
+  /// order each time their frame slot comes around.
+  final List<List<List<DeviceBuffer>>> _pools = [];
+  final List<List<int>> _cursors = [];
 
   DeviceBuffer _allocateNewBlock(int length) =>
       _gpuContext.createDeviceBuffer(StorageMode.hostVisible, length);
 
-  BufferView _allocateEmplacement(ByteData bytes) {
-    if (bytes.lengthInBytes > blockLengthInBytes) {
-      return BufferView(
-        _allocateNewBlock(bytes.lengthInBytes),
-        offsetInBytes: 0,
-        lengthInBytes: bytes.lengthInBytes,
-      );
-    }
-
-    final alignment = _gpuContext.minimumUniformByteAlignment;
-    int padding = alignment - (_offsetCursor % alignment);
-    padding %= alignment;
-    if (_offsetCursor + padding + bytes.lengthInBytes > blockLengthInBytes) {
-      final buffer = _allocateNewBlock(blockLengthInBytes);
-      _buffers[_frameCursor].add(buffer);
-      _bufferCursor++;
-      _offsetCursor = bytes.lengthInBytes;
-      return BufferView(
-        buffer,
-        offsetInBytes: 0,
-        lengthInBytes: bytes.lengthInBytes,
-      );
-    }
-
-    _offsetCursor += padding;
-    final view = BufferView(
-      _buffers[_frameCursor][_bufferCursor],
-      offsetInBytes: _offsetCursor,
-      lengthInBytes: bytes.lengthInBytes,
-    );
-    _offsetCursor += bytes.lengthInBytes;
-    return view;
-  }
-
   /// Append byte data and return a view at the resulting GPU offset.
   BufferView emplace(ByteData bytes) {
-    final view = _allocateEmplacement(bytes);
-    if (!view.buffer.overwrite(
-      bytes,
-      destinationOffsetInBytes: view.offsetInBytes,
-    )) {
-      throw Exception(
-        'HostBuffer emplace failed at offset ${view.offsetInBytes}',
-      );
+    final length = bytes.lengthInBytes;
+    for (var sizeClass = 0; sizeClass < _kPoolClassSizes.length; sizeClass++) {
+      if (length > _kPoolClassSizes[sizeClass]) continue;
+      final pool = _pools[_frameCursor][sizeClass];
+      final cursor = _cursors[_frameCursor][sizeClass]++;
+      final DeviceBuffer buffer;
+      if (cursor < pool.length) {
+        buffer = pool[cursor];
+      } else {
+        buffer = _allocateNewBlock(_kPoolClassSizes[sizeClass]);
+        pool.add(buffer);
+      }
+      if (!buffer.overwrite(bytes)) {
+        throw Exception('HostBuffer emplace failed');
+      }
+      return BufferView(buffer, offsetInBytes: 0, lengthInBytes: length);
     }
-    return view;
+    // Oversize emplacement: a dedicated buffer of its own.
+    final buffer = _allocateNewBlock(length);
+    if (!buffer.overwrite(bytes)) {
+      throw Exception('HostBuffer emplace failed');
+    }
+    return BufferView(buffer, offsetInBytes: 0, lengthInBytes: length);
   }
 
   /// Advance the frame cursor; subsequent [emplace] calls reuse the next
   /// frame's buffers.
   void reset() {
     _frameCursor = (_frameCursor + 1) % frameCount;
-    _bufferCursor = 0;
-    _offsetCursor = 0;
+    final cursors = _cursors[_frameCursor];
+    for (var i = 0; i < cursors.length; i++) {
+      cursors[i] = 0;
+    }
   }
 }

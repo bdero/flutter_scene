@@ -1,5 +1,16 @@
 ## 0.19.0
 
+* Large speedup for many-draw scenes on the web backend. Per-draw uniform
+  data was written into one shared GL buffer between draws that read it,
+  which forces the browser's GL implementation to copy ("ghost") the buffer
+  on every write; a scene with ~100 draw calls spent most of its frame time
+  there, in the browser's GPU process. Per-draw uniforms now go into small
+  pooled buffers written once per frame cycle (105-draw test scene, Apple
+  M3 Max Chrome, 35 fps to a 120 fps display cap). Vertex-attribute state is
+  also cached in vertex-array objects per (pipeline, geometry, index buffer)
+  instead of being re-specified every draw, and redundant per-draw texture
+  sampler-state calls are skipped.
+
 * Ambient occlusion and screen-space reflections no longer sample the wrong
   depth for double-sided (`culling: none`) materials. The depth prepass they
   read culled every material back-face regardless of its own mode, so a

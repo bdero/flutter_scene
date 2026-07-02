@@ -42,6 +42,12 @@ base class GpuContext {
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
 
+  /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
+  /// buffer), in least-recently-used order; see RenderPass._applyVertexState.
+  static const int _kMaxCachedVaos = 512;
+  final Map<String, web.WebGLVertexArrayObject> _vaoCache =
+      <String, web.WebGLVertexArrayObject>{};
+
   int _maxSupportedAnisotropy = 1;
 
   /// The device's maximum supported anisotropy (1 when the extension is
