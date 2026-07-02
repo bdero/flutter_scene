@@ -1,45 +1,73 @@
-// A lit material with a custom vertex stage that curves the world down over a
-// false horizon (the Animal Crossing "round world" look). Shows the .fmat
-// vertex { } hook: one Vertex() bends the geometry, and it composes with the
-// engine's physically based lighting in the fragment stage.
+// A curved, animated ocean, authored entirely in the vertex stage. One
+// material shows off the whole .fmat vertex surface at once:
+//   - vertex displacement: animated waves plus the Animal Crossing world curve
+//   - a custom per-vertex attribute (wave_seed) for organic, non-uniform waves
+//   - a time parameter (updated per frame) that animates the surface
+//   - writing world_normal so the engine's lighting shades the wave shape
+//   - two custom varyings forwarded to the fragment (foam on crests, and a
+//     horizon fade), colored in Surface() with physically based lighting.
 
 material {
   name: "VertexCurve",
   shading_model: lit,
   culling: none,
   parameters: [
-    // How sharply the world curves away. Driven by a slider in the example.
-    { type: float, name: curvature, hint: range(0.0, 0.03, 0.0005), default: 0.008 },
-    { type: vec4, name: base_color, hint: source_color, default: [0.42, 0.6, 0.38, 1.0] },
+    { type: float, name: curvature, hint: range(0.0, 0.02, 0.0005), default: 0.006 },
+    { type: float, name: amplitude, hint: range(0.0, 0.8, 0.01), default: 0.35 },
+    { type: float, name: time, default: 0.0 },
+    { type: vec4, name: base_color, hint: source_color, default: [0.05, 0.32, 0.55, 1.0] },
+    { type: vec4, name: crest_color, hint: source_color, default: [0.75, 0.92, 1.0, 1.0] },
   ],
-  // A custom interpolant: Vertex() computes how far each vertex dropped and
-  // forwards it so Surface() can darken geometry toward the horizon.
+  // Supplied per vertex by the mesh: a random phase so the waves are organic.
+  attributes: [
+    { type: float, name: wave_seed },
+  ],
   varyings: [
+    { type: float, name: wave_height },
     { type: float, name: curve_fade },
   ],
 }
 
 vertex {
   void Vertex(inout VertexInputs vertex) {
-    // Drop each vertex by a quadratic of its horizontal distance from the
-    // camera, so distant geometry sinks below the horizon. The engine fills
-    // world_position and camera_position before calling this and projects the
-    // modified world_position afterward.
-    vec3 rel = vertex.world_position - vertex.camera_position;
-    float drop = material_params.curvature * dot(rel.xz, rel.xz);
-    vertex.world_position.y -= drop;
-    // Forward the drop amount as a 0..1 fade to the fragment stage.
-    curve_fade = clamp(drop * 0.12, 0.0, 1.0);
+    vec3 p = vertex.world_position;
+    float t = material_params.time;
+
+    // Two crossing wave trains, offset per vertex by the custom attribute.
+    float a = t * 1.3 + p.x * 0.5 + wave_seed;
+    float b = t * 0.9 + p.z * 0.7 + wave_seed * 1.7;
+    float w = sin(a) + 0.6 * sin(b);
+    p.y += material_params.amplitude * w;
+
+    // Shade the wave shape: perturb the provided surface normal by the analytic
+    // height gradient. Derive from vertex.world_normal (rather than replacing
+    // it) so the mesh normal input stays live.
+    float dhdx = material_params.amplitude * 0.5 * cos(a);
+    float dhdz = material_params.amplitude * 0.42 * cos(b);
+    vertex.world_normal = normalize(vertex.world_normal + vec3(-dhdx, 0.0, -dhdz));
+
+    // Animal Crossing world curve, relative to the camera.
+    vec3 rel = p - vertex.camera_position;
+    float d2 = dot(rel.xz, rel.xz);
+    p.y -= material_params.curvature * d2;
+    vertex.world_position = p;
+
+    wave_height = w;
+    curve_fade = clamp(material_params.curvature * d2 * 0.12, 0.0, 1.0);
   }
 }
 
 fragment {
   void Surface(inout MaterialInputs material) {
-    material.base_color = material_params.base_color;
-    // Sink the color toward a dim horizon tone as the world curves away.
-    material.base_color.rgb *= mix(1.0, 0.3, curve_fade);
+    // Foam on the crests, deep color in the troughs.
+    float crest = smoothstep(0.5, 1.4, wave_height);
+    vec3 c = mix(
+        material_params.base_color.rgb, material_params.crest_color.rgb, crest);
+    // Sink toward a dim horizon tone as the world curves away.
+    c *= mix(1.0, 0.4, curve_fade);
+    material.base_color = vec4(c, 1.0);
     material.metallic = 0.0;
-    material.roughness = 0.8;
+    material.roughness = 0.35;
     PrepareMaterial(material);
   }
 }

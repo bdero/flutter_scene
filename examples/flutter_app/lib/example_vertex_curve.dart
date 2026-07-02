@@ -1,13 +1,14 @@
-// Vertex-stage customization example: a `.fmat` material whose `Vertex()` hook
-// bends the world down over a false horizon (the Animal Crossing "round world"
-// look). A tessellated ground plane and rows of pillars scroll toward the
-// camera and sink away over the horizon; the slider drives the material's
-// `curvature` parameter live.
-//
-// Demonstrates that a `.fmat` `vertex { }` block:
-//   1. displaces geometry per vertex (the whole world curves), and
-//   2. composes with the engine's physically based lighting in `Surface()`,
-// with the author writing one `Vertex()` the engine runs on every mesh.
+// Vertex-stage showcase: a curved, animated ocean authored entirely in a
+// `.fmat` vertex stage (assets/vertex_curve.fmat). One material exercises the
+// whole vertex surface at once:
+//   - vertex displacement (animated waves + the Animal Crossing world curve),
+//   - a custom per-vertex attribute (wave_seed) for organic waves,
+//   - a `time` parameter updated every frame to animate the surface,
+//   - writing world_normal so lighting shades the wave shape, and
+//   - two custom varyings (foam on crests, horizon fade) read in the fragment.
+// The sliders drive the curvature and wave amplitude live.
+
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
@@ -22,19 +23,12 @@ class ExampleVertexCurve extends StatefulWidget {
   State<ExampleVertexCurve> createState() => _ExampleVertexCurveState();
 }
 
-// Spacing between pillar rows, in world units. The scrolling group wraps its
-// offset by this distance so the infinite road loops seamlessly.
-const double _rowSpacing = 6.0;
-const int _rowCount = 26;
-
 class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
   final Scene scene = Scene();
   bool loaded = false;
 
-  // The pillars, scrolled toward the camera as one group.
-  final Node _road = Node();
-
-  double curvature = 0.008;
+  double curvature = 0.006;
+  double amplitude = 0.35;
   PreprocessedMaterial? _material;
 
   @override
@@ -47,33 +41,43 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
     final material = await loadFmatMaterial('assets/vertex_curve.fmat');
     if (!mounted) return;
     _material = material;
-    material.parameters.setFloat('curvature', curvature);
+    material.parameters
+      ..setFloat('curvature', curvature)
+      ..setFloat('amplitude', amplitude);
 
-    // A large, finely tessellated ground plane so the per-vertex bend reads as
-    // a smooth curve rather than moving only the corners.
-    scene.add(
-      Node(
-        mesh: Mesh(
-          PlaneGeometry(width: 80, depth: 160, segmentsX: 80, segmentsZ: 160),
-          material,
-        ),
-      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0, -50)),
-    );
+    scene.add(Node(mesh: Mesh(_oceanGrid(), material)));
+    setState(() => loaded = true);
+  }
 
-    // Rows of pillars receding down the road. As they scroll toward the camera
-    // they rise up out of the horizon; as they recede they sink below it.
-    for (var row = 0; row < _rowCount; row++) {
-      final z = -row * _rowSpacing;
-      for (final x in const [-6.0, -3.0, 3.0, 6.0]) {
-        _road.add(
-          Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1.0, 2.0, 1.0)), material))
-            ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 1.0, z)),
-        );
+  /// A large, finely tessellated grid in the XZ plane, with a per-vertex
+  /// `wave_seed` custom attribute (a hashed pseudo-random phase) so the waves
+  /// vary organically instead of marching in a perfect grid.
+  MeshGeometry _oceanGrid() {
+    const n = 120; // cells per side; (n + 1)^2 vertices
+    const size = 90.0;
+    final count = (n + 1) * (n + 1);
+    final positions = Float32List(count * 3);
+    final seeds = Float32List(count);
+    var v = 0;
+    for (var r = 0; r <= n; r++) {
+      for (var c = 0; c <= n; c++) {
+        positions[v * 3] = (c / n - 0.5) * size;
+        positions[v * 3 + 2] = (r / n - 0.5) * size;
+        final hash = (r * 73856093) ^ (c * 19349663);
+        seeds[v] = (hash & 0xffff) / 0xffff * 6.2831853;
+        v++;
       }
     }
-    scene.add(_road);
-
-    setState(() => loaded = true);
+    final indices = <int>[];
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        final i0 = r * (n + 1) + c;
+        final i2 = i0 + (n + 1);
+        indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
+      }
+    }
+    return MeshGeometry.fromArrays(positions: positions, indices: indices)
+      ..setCustomAttribute('wave_seed', seeds, components: 1);
   }
 
   @override
@@ -92,20 +96,18 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
         Positioned.fill(
           child: SceneView(
             scene,
-            // Fixed camera looking down the road; the world scrolls toward it,
-            // so the curve (which is relative to the camera) stays stable.
+            // Fixed camera looking out over the ocean toward the curved
+            // horizon; the world curve is relative to this camera.
             camera: PerspectiveCamera(
-              position: vm.Vector3(0, 4.0, 8.0),
-              target: vm.Vector3(0, 1.2, -12.0),
+              position: vm.Vector3(0, 6.0, 14.0),
+              target: vm.Vector3(0, 0.5, -28.0),
             ),
             onTick: (elapsed, deltaSeconds) {
-              // Scroll the pillars toward the camera, wrapping by one row so the
-              // road loops seamlessly.
-              final offset = (elapsed.inMicroseconds / 1e6 * 6.0) % _rowSpacing;
-              _road.localTransform = vm.Matrix4.translation(
-                vm.Vector3(0, 0, offset),
+              // Animate the waves by advancing the material's time parameter.
+              _material?.parameters.setFloat(
+                'time',
+                elapsed.inMicroseconds / 1e6,
               );
-              _road.markBoundsDirty();
               exampleSettings.applyTo(scene);
             },
           ),
@@ -118,30 +120,67 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
             color: Colors.black54,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: 130,
-                    child: Text(
-                      'Curvature: ${curvature.toStringAsFixed(4)}',
-                      style: const TextStyle(color: Colors.white),
-                    ),
+                  _SliderRow(
+                    label: 'Curvature',
+                    value: curvature,
+                    min: 0.0,
+                    max: 0.02,
+                    onChanged: (val) => setState(() {
+                      curvature = val;
+                      _material?.parameters.setFloat('curvature', val);
+                    }),
                   ),
-                  Expanded(
-                    child: Slider(
-                      value: curvature,
-                      min: 0.0,
-                      max: 0.02,
-                      onChanged: (v) => setState(() {
-                        curvature = v;
-                        _material?.parameters.setFloat('curvature', v);
-                      }),
-                    ),
+                  _SliderRow(
+                    label: 'Wave height',
+                    value: amplitude,
+                    min: 0.0,
+                    max: 0.8,
+                    onChanged: (val) => setState(() {
+                      amplitude = val;
+                      _material?.parameters.setFloat('amplitude', val);
+                    }),
                   ),
                 ],
               ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            '$label: ${value.toStringAsFixed(4)}',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        Expanded(
+          child: Slider(value: value, min: min, max: max, onChanged: onChanged),
         ),
       ],
     );
