@@ -21,6 +21,7 @@ class ShadowEncoder {
     this._renderPass,
     this._transientsBuffer,
     this._lightSpaceMatrix,
+    this._cameraPosition,
     ShadowCasterFaces casterFaces,
   ) {
     frustum = Frustum.matrix(_lightSpaceMatrix);
@@ -44,9 +45,14 @@ class ShadowEncoder {
   final gpu.HostBuffer _transientsBuffer;
   final Matrix4 _lightSpaceMatrix;
 
+  // The scene camera position, bound as FrameInfo.camera_position so a
+  // `vertex { }` material's camera-relative displacement (e.g. a world curve)
+  // bends shadow casters the same way as the color pass. The depth fragment
+  // shader ignores it, so it is harmless for materials without a vertex stage.
+  final Vector3 _cameraPosition;
+
   static final gpu.Shader _depthShader =
       baseShaderLibrary['DepthOnlyFragment']!;
-  static final Vector3 _cameraPositionPlaceholder = Vector3.zero();
 
   /// Frustum of the light-space view-projection, used for per-item
   /// culling.
@@ -78,14 +84,16 @@ class ShadowEncoder {
     final geometry = item.geometry;
     // Unskinned casters draw depth through a position-only shader and layout;
     // skinned geometry falls back to its full vertex shader and bind.
-    // TODO(vertex-materials): pair a `vertex { }` material's `depth`/`skinned`
-    // variant here (and bind its MaterialParams) so displaced geometry casts a
-    // matching shadow. A camera-relative displacement additionally needs the
-    // real camera position plumbed in place of _cameraPositionPlaceholder; only
-    // the light-space matrix reaches this pass today.
+    // A `vertex { }` material displaces geometry in the color pass, so run its
+    // vertex variant here too or the shadow detaches from the visible surface.
     final depthVertex = geometry.depthOnlyVertex;
+    final materialVertex = item.material.materialVertexShader(
+      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    );
+    final activeVertex =
+        materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
     final pipeline = resolvePipeline(
-      depthVertex?.shader ?? geometry.vertexShader,
+      activeVertex,
       _depthShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
@@ -96,17 +104,18 @@ class ShadowEncoder {
     _renderPass.setPrimitiveType(geometry.primitiveType);
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
-    // The light-space matrix takes the place of the camera transform; the
-    // camera position is unused by the shadow fragment shader.
+    // The light-space matrix takes the place of the camera transform (the depth
+    // fragment shader ignores camera_position, but a material's Vertex() hook
+    // reads it, so the real camera position is bound).
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
         geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,
-          depthVertex.shader,
+          activeVertex,
           _lightSpaceMatrix,
-          _cameraPositionPlaceholder,
+          _cameraPosition,
         );
       } else {
         geometry.bind(
@@ -114,7 +123,15 @@ class ShadowEncoder {
           _transientsBuffer,
           worldTransform,
           _lightSpaceMatrix,
-          _cameraPositionPlaceholder,
+          _cameraPosition,
+          shaderOverride: materialVertex,
+        );
+      }
+      if (materialVertex != null) {
+        item.material.bindVertexStage(
+          _renderPass,
+          materialVertex,
+          _transientsBuffer,
         );
       }
     }

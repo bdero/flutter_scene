@@ -1018,6 +1018,7 @@ base class Scene implements SceneGraph {
           cascades: cascades,
           tileResolution: light!.shadowMapResolution,
           casterFaces: light.shadowCasterFaces,
+          cameraPosition: camera.position,
         ),
       );
     }

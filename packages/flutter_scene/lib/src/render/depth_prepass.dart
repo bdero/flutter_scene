@@ -241,14 +241,21 @@ class _DepthPrepassEncoder {
     // falls back to its full vertex shader and bind. The normal-writing path
     // always uses the full vertex shader, since the position-only path
     // carries no normal.
-    // TODO(vertex-materials): pair a `vertex { }` material's variant here (and
-    // bind its MaterialParams) so the prepass depth matches the displaced color
-    // pass; otherwise a depth prepass (enabled by SSAO/SSR) mismatches a
-    // vertex-displacing material. This pass binds the real camera transform and
-    // position, so a camera-relative displacement is correct once wired.
     final depthVertex = _writeNormals ? null : geometry.depthOnlyVertex;
+    // A `vertex { }` material displaces geometry in the color pass, so the
+    // prepass must apply the same displacement or its depth mismatches. Prefer
+    // the material's vertex variant for this pass (its position-only `depth`
+    // variant when the geometry has one, else the mesh-type variant), binding
+    // its FrameInfo and MaterialParams against it below. This pass binds the
+    // real camera transform and position, so a camera-relative displacement is
+    // correct here.
+    final materialVertex = item.material.materialVertexShader(
+      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    );
+    final activeVertex =
+        materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
     final pipeline = resolvePipeline(
-      depthVertex?.shader ?? geometry.vertexShader,
+      activeVertex,
       _fragmentShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
@@ -284,7 +291,7 @@ class _DepthPrepassEncoder {
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,
-          depthVertex.shader,
+          activeVertex,
           _cameraTransform,
           _cameraPosition,
         );
@@ -295,6 +302,16 @@ class _DepthPrepassEncoder {
           worldTransform,
           _cameraTransform,
           _cameraPosition,
+          shaderOverride: materialVertex,
+        );
+      }
+      // Feed the material's parameters to its vertex variant so the same
+      // displacement runs here as in the color pass.
+      if (materialVertex != null) {
+        item.material.bindVertexStage(
+          _renderPass,
+          materialVertex,
+          _transientsBuffer,
         );
       }
     }

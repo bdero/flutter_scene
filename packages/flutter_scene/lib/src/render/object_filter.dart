@@ -142,11 +142,17 @@ class _ObjectMaskEncoder {
     final geometry = item.geometry;
     // Unskinned geometry fills the mask through a position-only shader and
     // layout; skinned geometry falls back to its full vertex shader and bind.
-    // TODO(vertex-materials): pair a `vertex { }` material's variant here (and
-    // bind its MaterialParams) so click-picking hits the displaced silhouette.
+    // A `vertex { }` material displaces geometry, so pick against its displaced
+    // silhouette by running the material's vertex variant here too. This pass
+    // binds the real camera, so a camera-relative displacement is correct.
     final depthVertex = geometry.depthOnlyVertex;
+    final materialVertex = item.material.materialVertexShader(
+      depthVertex != null ? 'depth' : geometry.materialVertexVariant,
+    );
+    final activeVertex =
+        materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
     final pipeline = resolvePipeline(
-      depthVertex?.shader ?? geometry.vertexShader,
+      activeVertex,
       _maskShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
@@ -179,7 +185,7 @@ class _ObjectMaskEncoder {
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,
-          depthVertex.shader,
+          activeVertex,
           _cameraTransform,
           _cameraPosition,
         );
@@ -190,6 +196,14 @@ class _ObjectMaskEncoder {
           worldTransform,
           _cameraTransform,
           _cameraPosition,
+          shaderOverride: materialVertex,
+        );
+      }
+      if (materialVertex != null) {
+        item.material.bindVertexStage(
+          _renderPass,
+          materialVertex,
+          _transientsBuffer,
         );
       }
     }

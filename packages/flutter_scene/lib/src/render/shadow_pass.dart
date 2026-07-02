@@ -25,15 +25,22 @@ class ShadowPass extends RenderGraphPass {
     required List<ShadowCascade> cascades,
     required int tileResolution,
     required ShadowCasterFaces casterFaces,
+    required Vector3 cameraPosition,
   }) : _renderScene = renderScene,
        _cascades = cascades,
        _tileResolution = tileResolution,
-       _casterFaces = casterFaces;
+       _casterFaces = casterFaces,
+       _cameraPosition = cameraPosition;
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
   final int _tileResolution;
   final ShadowCasterFaces _casterFaces;
+
+  // Bound as FrameInfo.camera_position so a `vertex { }` material's
+  // camera-relative displacement bends shadow casters the same way as the
+  // color pass (see ShadowEncoder).
+  final Vector3 _cameraPosition;
 
   @override
   String get name => 'ShadowPass';
@@ -94,6 +101,7 @@ class ShadowPass extends RenderGraphPass {
         renderPass,
         context.transientsBuffer,
         _cascades[c].lightSpaceMatrix,
+        _cameraPosition,
         _casterFaces,
       );
       _renderScene.cull(encoder.frustum, encoder.submit);
