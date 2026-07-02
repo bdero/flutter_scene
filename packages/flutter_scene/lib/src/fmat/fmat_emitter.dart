@@ -131,12 +131,49 @@ Map<String, String> emitVertexGlsl(FmatMaterial material) {
     result[vertexVariantEntryName(material, variant)] = _emitVertexVariant(
       material,
       bodyInclude,
+      isDepth: variant == 'depth',
     );
   });
   return result;
 }
 
-String _emitVertexVariant(FmatMaterial material, String bodyInclude) {
+/// The GLSL zero literal for a varying/attribute [type].
+String _zeroLiteral(FmatType type) =>
+    type == FmatType.float_ ? '0.0' : '${type.glslType}(0.0)';
+
+/// Writes a vertex variant's custom-attribute declarations into [sb]. In the
+/// color variants they are real vertex `in`s (bound from the mesh's streams by
+/// name); in the depth variant, which fetches only position, they are
+/// zero-initialized globals so the author's `Vertex()` still compiles.
+void _writeAttributes(
+  StringBuffer sb,
+  FmatMaterial material, {
+  required bool isDepth,
+}) {
+  if (material.attributes.isEmpty) return;
+  if (isDepth) {
+    sb.writeln(
+      '// Custom vertex attributes are not fetched in the depth pass; they '
+      'read',
+    );
+    sb.writeln('// zero here (attribute-driven displacement does not shadow).');
+    for (final a in material.attributes) {
+      sb.writeln('${a.type.glslType} ${a.name} = ${_zeroLiteral(a.type)};');
+    }
+  } else {
+    sb.writeln('// Custom per-vertex attributes supplied by the mesh.');
+    for (final a in material.attributes) {
+      sb.writeln('in ${a.type.glslType} ${a.name};');
+    }
+  }
+  sb.writeln();
+}
+
+String _emitVertexVariant(
+  FmatMaterial material,
+  String bodyInclude, {
+  required bool isDepth,
+}) {
   final sb = StringBuffer();
   sb.writeln(
     '// Generated from a .fmat material by flutter_scene. Do not edit.',
@@ -161,6 +198,10 @@ String _emitVertexVariant(FmatMaterial material, String bodyInclude) {
   sb.writeln('#define HAS_MATERIAL_VERTEX');
   sb.writeln('#include <material_vertex.glsl>');
   sb.writeln();
+
+  // Custom per-vertex attributes Vertex() reads by name (real inputs in the
+  // color variants, zero in the depth variant).
+  _writeAttributes(sb, material, isDepth: isDepth);
 
   // Custom interpolants Vertex() writes by name, read in the fragment stage.
   _writeVaryings(sb, material, 'out');

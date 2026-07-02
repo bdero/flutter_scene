@@ -6,7 +6,11 @@ void main(List<String> args) {
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
-      materials: ['assets/toon.fmat', 'assets/vertex_curve.fmat'],
+      materials: [
+        'assets/toon.fmat',
+        'assets/vertex_curve.fmat',
+        'assets/vertex_attribute.fmat',
+      ],
     );
   });
 }

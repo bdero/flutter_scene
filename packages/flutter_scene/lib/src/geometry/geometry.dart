@@ -139,11 +139,79 @@ abstract class Geometry {
     _vertexCount = vertexCount;
   }
 
-  /// The number of vertex buffer streams this geometry binds (one for
-  /// interleaved geometry, more when de-interleaved). The instance-rate
-  /// transform buffer of the color pass binds to this slot.
+  // Extra per-vertex attribute streams a material's custom `attributes` read,
+  // keyed by the shader `in` name (insertion order is the slot order). Bound
+  // after the base vertex streams in the color pass; the depth passes fetch
+  // only position and ignore them. Populated by [setCustomAttribute].
+  final Map<String, ({gpu.VertexFormat format, gpu.BufferView view})>
+  _customAttributes = {};
+
+  /// The number of vertex buffer streams this geometry binds: the built-in
+  /// streams (one interleaved, or several de-interleaved) plus any custom
+  /// attribute streams. The color pass binds the instance-rate transform
+  /// buffer to the slot after these.
   @internal
-  int get vertexStreamCount => _vertexStreams.length;
+  int get vertexStreamCount => _vertexStreams.length + _customAttributes.length;
+
+  /// Whether this geometry carries any custom attribute streams (see
+  /// [setCustomAttribute]).
+  @internal
+  bool get hasCustomAttributes => _customAttributes.isNotEmpty;
+
+  /// The described vertex-buffer slots for this geometry's custom attributes,
+  /// in slot order, one tightly packed buffer per attribute. Appended to the
+  /// color-pass layout after the built-in attribute buffers.
+  @internal
+  List<VertexBufferDescriptor> get customAttributeBuffers => [
+    for (final entry in _customAttributes.entries)
+      VertexBufferDescriptor(
+        strideInBytes: entry.value.format.bytesPerElement,
+        attributes: [
+          VertexAttributeDescriptor(
+            name: entry.key,
+            format: entry.value.format,
+          ),
+        ],
+      ),
+  ];
+
+  /// Attaches a custom per-vertex attribute stream named [name], matching a
+  /// material's `attributes` entry (and the generated shader's `in <name>`).
+  ///
+  /// [data] is a tightly packed run of [components]-component float vectors,
+  /// one per vertex (so its length is `vertexCount * components`). The stream
+  /// is uploaded to its own buffer and bound after the geometry's built-in
+  /// attributes in the color pass; the depth-style passes fetch only position,
+  /// so an attribute-driven vertex displacement is not reflected in shadows.
+  /// Re-attaching the same [name] replaces it. Custom attributes require the
+  /// described-layout (unskinned) geometry path.
+  void setCustomAttribute(
+    String name,
+    Float32List data, {
+    required int components,
+  }) {
+    if (components < 1 || components > 4) {
+      throw ArgumentError.value(
+        components,
+        'components',
+        'must be between 1 and 4',
+      );
+    }
+    final bytes = ByteData.sublistView(data);
+    final buffer = gpu.gpuContext.createDeviceBuffer(
+      gpu.StorageMode.hostVisible,
+      bytes.lengthInBytes,
+    );
+    buffer.overwrite(bytes);
+    _customAttributes[name] = (
+      format: _vertexFormatForComponents(components),
+      view: gpu.BufferView(
+        buffer,
+        offsetInBytes: 0,
+        lengthInBytes: bytes.lengthInBytes,
+      ),
+    );
+  }
 
   /// Binds an already-uploaded index buffer view, with element width
   /// determined by [indexType].
@@ -480,13 +548,19 @@ abstract class Geometry {
   @internal
   void bindGeometryBuffers(gpu.RenderPass pass) {
     _requireVertices();
-    for (var slot = 0; slot < _vertexStreams.length; slot++) {
+    var slot = 0;
+    for (; slot < _vertexStreams.length; slot++) {
       bindVertexBufferCompat(
         pass,
         _vertexStreams[slot],
         _vertexCount,
         slot: slot,
       );
+    }
+    // Custom attribute streams follow the built-in streams, one slot each, in
+    // insertion order (matching customAttributeBuffers in the layout).
+    for (final attr in _customAttributes.values) {
+      bindVertexBufferCompat(pass, attr.view, _vertexCount, slot: slot++);
     }
     if (_indices != null) {
       bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
@@ -546,7 +620,10 @@ class UnskinnedGeometry extends Geometry {
   // [uploadUnskinnedAttributes]) versus a single interleaved stream (a
   // caller-managed [setVertices] buffer, or the updatable MeshGeometry path).
   // The two store the same bytes but bind different layouts.
-  bool get _isDeInterleaved => vertexStreamCount >= 2;
+  // Counts only the built-in streams: a single interleaved stream vs the
+  // de-interleaved SoA streams. Custom attribute streams are separate and must
+  // not flip this (they never change how the built-in attributes are stored).
+  bool get _isDeInterleaved => _vertexStreams.length >= 2;
 
   @override
   List<ByteData> _vertexStreamBytes(ByteData vertices, int vertexCount) {
@@ -650,8 +727,22 @@ class UnskinnedGeometry extends Geometry {
   }
 
   @override
-  VertexLayoutDescriptor? get instancedVertexLayout =>
-      _isDeInterleaved ? kUnskinnedSoAColorLayout : kUnskinnedInstancedLayout;
+  VertexLayoutDescriptor? get instancedVertexLayout {
+    final base = _isDeInterleaved
+        ? kUnskinnedSoAColorLayout
+        : kUnskinnedInstancedLayout;
+    if (!hasCustomAttributes) return base;
+    // Splice the custom attribute buffers in before the trailing instance-rate
+    // model-transform buffer, so their slots follow the built-in streams and
+    // the instance buffer stays at the last slot (vertexStreamCount).
+    return VertexLayoutDescriptor(
+      buffers: [
+        ...base.buffers.sublist(0, base.buffers.length - 1),
+        ...customAttributeBuffers,
+        base.buffers.last,
+      ],
+    );
+  }
 
   // Cached once: the depth-style passes use the same position-only shader for
   // every unskinned geometry. The layout still depends on whether position is
@@ -804,6 +895,16 @@ class SkinnedGeometry extends Geometry {
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
+
+/// The float [gpu.VertexFormat] for a 1..4-component custom attribute.
+gpu.VertexFormat _vertexFormatForComponents(int components) =>
+    switch (components) {
+      1 => gpu.VertexFormat.float32,
+      2 => gpu.VertexFormat.float32x2,
+      3 => gpu.VertexFormat.float32x3,
+      4 => gpu.VertexFormat.float32x4,
+      _ => throw ArgumentError.value(components, 'components', 'must be 1..4'),
+    };
 
 /// The instance-rate vertex buffer slot shared by every unskinned layout:
 /// the model matrix as four vec4 columns, 64 bytes per instance, advanced

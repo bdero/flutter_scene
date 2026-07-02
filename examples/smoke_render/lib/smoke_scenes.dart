@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -68,13 +69,11 @@ Future<void> loadSmokeMaterials() async {
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
 }
 
-/// Builds a `PreprocessedMaterial` for the `VertexCurve` `.fmat` at the given
-/// [curvature], resolving its generated vertex variants from the sidecar's
-/// variant map (as the DataAssets loader does), since these scenes build the
-/// material by hand.
-PreprocessedMaterial _curveMaterial(double curvature) {
-  final metadata = (_materialsMetadata!['VertexCurve'] as Map)
-      .cast<String, Object?>();
+/// Builds a `PreprocessedMaterial` for the named `.fmat`, resolving its
+/// generated vertex variants from the sidecar's variant map (as the DataAssets
+/// loader does), since these scenes build the material by hand.
+PreprocessedMaterial _fmatMaterial(String name) {
+  final metadata = (_materialsMetadata![name] as Map).cast<String, Object?>();
   final vertexMeta = (metadata['vertex'] as Map?)?.cast<String, Object?>();
   final vertexShaders = vertexMeta == null
       ? null
@@ -83,10 +82,42 @@ PreprocessedMaterial _curveMaterial(double curvature) {
             e.key: _materialsLibrary![e.value as String]!,
         };
   return PreprocessedMaterial(
-    fragmentShader: _materialsLibrary!['VertexCurve']!,
+    fragmentShader: _materialsLibrary![name]!,
     metadata: metadata,
     vertexShaders: vertexShaders,
-  )..parameters.setFloat('curvature', curvature);
+  );
+}
+
+PreprocessedMaterial _curveMaterial(double curvature) =>
+    _fmatMaterial('VertexCurve')..parameters.setFloat('curvature', curvature);
+
+/// A flat NxN grid in the XZ plane carrying a per-vertex `phase` custom
+/// attribute (diagonal stripes), for the custom-attribute scene.
+MeshGeometry _phaseGrid() {
+  const n = 24; // cells per side; (n + 1)^2 vertices
+  const size = 3.0;
+  final vertexCount = (n + 1) * (n + 1);
+  final positions = Float32List(vertexCount * 3);
+  final phase = Float32List(vertexCount);
+  var v = 0;
+  for (var r = 0; r <= n; r++) {
+    for (var c = 0; c <= n; c++) {
+      positions[v * 3] = (c / n - 0.5) * size;
+      positions[v * 3 + 2] = (r / n - 0.5) * size;
+      phase[v] = (r + c) * 0.6;
+      v++;
+    }
+  }
+  final indices = <int>[];
+  for (var r = 0; r < n; r++) {
+    for (var c = 0; c < n; c++) {
+      final i0 = r * (n + 1) + c;
+      final i2 = i0 + (n + 1);
+      indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
+    }
+  }
+  return MeshGeometry.fromArrays(positions: positions, indices: indices)
+    ..setCustomAttribute('phase', phase, components: 1);
 }
 
 /// The smoke scene set. Mostly procedural for determinism; the final scenes
@@ -248,6 +279,22 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ),
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)),
     );
+    return (scene: scene, camera: _shadowCamera());
+  }),
+  // A material driven by a custom per-vertex attribute: the grid supplies a
+  // `phase` value per vertex, Vertex() bobs the vertex by it and forwards it
+  // through a varying, and Surface() colors by the interpolated value.
+  // Exercises the declared-attribute -> vertex -> varying -> fragment path.
+  SmokeScene('fmat_vertex_attribute', () {
+    final scene = Scene();
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
+        ),
+      ),
+    );
+    scene.add(Node(mesh: Mesh(_phaseGrid(), _fmatMaterial('VertexAttribute'))));
     return (scene: scene, camera: _shadowCamera());
   }),
 ];
