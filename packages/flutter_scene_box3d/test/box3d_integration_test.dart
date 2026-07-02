@@ -148,6 +148,29 @@ void main() {
     expect(hit.worldPoint.x, closeTo(4.5, 0.05));
   });
 
+  test('unmounting a body and collider does not crash (double-free guard)', () {
+    // box3d cascades body destruction to its shapes, and a node's components
+    // unmount in an order that can destroy the body before the collider.
+    // Repeat enough to mirror the example app's body-cap churn.
+    final root = _bootWorld(gravity: Vector3(0, -10, 0));
+    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    for (var i = 0; i < 30; i++) {
+      final node = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
+      final body = Box3dRigidBody(type: BodyType.dynamic_);
+      node.addComponent(body);
+      root.add(node);
+      body.mount();
+      final collider = Box3dCollider(
+        shape: BoxShape(halfExtents: Vector3.all(0.5)),
+      );
+      node.addComponent(collider);
+      collider.mount();
+      world.step(1 / 60);
+      root.remove(node); // unmounts body + collider
+    }
+    world.step(1 / 60);
+  });
+
   test('a compound collider rests on its lower box', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
     final world = root.getComponent<Box3dPhysicsWorld>()!;
