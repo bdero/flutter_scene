@@ -46,23 +46,29 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
         ),
         Positioned(
           top: 16,
-          left: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: DropdownButton<_Demo>(
-                value: _demo,
-                dropdownColor: Colors.black87,
-                underline: const SizedBox.shrink(),
-                style: const TextStyle(color: Colors.white, fontSize: 15),
-                items: [
-                  for (final d in _Demo.values)
-                    DropdownMenuItem(value: d, child: Text(d.label)),
-                ],
-                onChanged: (d) {
-                  if (d != null) setState(() => _demo = d);
-                },
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Card(
+              color: Colors.black54,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: DropdownButton<_Demo>(
+                  value: _demo,
+                  dropdownColor: Colors.black87,
+                  underline: const SizedBox.shrink(),
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  items: [
+                    for (final d in _Demo.values)
+                      DropdownMenuItem(value: d, child: Text(d.label)),
+                  ],
+                  onChanged: (d) {
+                    if (d != null) setState(() => _demo = d);
+                  },
+                ),
               ),
             ),
           ),
