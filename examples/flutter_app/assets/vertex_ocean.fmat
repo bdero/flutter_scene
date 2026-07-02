@@ -8,7 +8,7 @@
 //     horizon fade), colored in Surface() with physically based lighting.
 
 material {
-  name: "VertexCurve",
+  name: "VertexOcean",
   shading_model: lit,
   culling: none,
   parameters: [

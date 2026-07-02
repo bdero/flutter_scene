@@ -74,7 +74,7 @@ class _MyAppState extends State<MyApp> {
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
-      'Vertex ocean (.fmat)': (context) => const ExampleVertexCurve(),
+      'Custom vertices (.fmat)': (context) => const ExampleVertexCurve(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Render Targets': (context) => const ExampleRenderTarget(),
