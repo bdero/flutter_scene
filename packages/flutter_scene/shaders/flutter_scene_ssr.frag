@@ -87,6 +87,23 @@ vec2 UvFromView(vec3 p) {
 // Un-premultiplies a sampled premultiplied-alpha color.
 vec3 Unpremultiply(vec4 c) { return c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
 
+// Decodes a view-space normal octahedral-packed into two components by the
+// depth-normal prepass (LinearDepthNormalFragment).
+vec3 OctDecode(vec2 e) {
+  vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
+  float t = max(-n.z, 0.0);
+  n.x += n.x >= 0.0 ? -t : t;
+  n.y += n.y >= 0.0 ? -t : t;
+  return normalize(n);
+}
+
+// Perceptual-roughness window over which the trace fades out: a screen-space
+// reflection is only coherent on smooth surfaces, so below kSsrRoughnessLow it
+// is full strength and above kSsrRoughnessHigh it is gone (the surface keeps
+// the image-based reflection instead).
+const float kSsrRoughnessLow = 0.25;
+const float kSsrRoughnessHigh = 0.55;
+
 void main() {
   float near = ssr.proj.z;
   float far = ssr.proj.w;
@@ -111,7 +128,7 @@ void main() {
     return;
   }
   if (debug_view == 3) {
-    vec3 dn = normalize(depth_sample.gba);
+    vec3 dn = OctDecode(depth_sample.gb);
     frag_color = vec4(dn * 0.5 + 0.5, 1.0);
     return;
   }
@@ -122,11 +139,21 @@ void main() {
     return;
   }
 
-  // The smooth, interpolated view-space normal written by the depth prepass
-  // (in green/blue/alpha). Using the shaded vertex normal rather than one
-  // reconstructed from depth keeps reflections smooth across curved
-  // surfaces instead of faceted per triangle.
-  vec3 normal = normalize(depth_sample.gba);
+  // The smooth, interpolated view-space normal (octahedral in green/blue) and
+  // perceptual roughness (alpha) written by the depth prepass. Using the
+  // shaded vertex normal rather than one reconstructed from depth keeps
+  // reflections smooth across curved surfaces instead of faceted per triangle.
+  vec3 normal = OctDecode(depth_sample.gb);
+  float roughness = depth_sample.a;
+
+  // Screen-space reflections are only coherent on smooth surfaces; fade the
+  // whole trace out as roughness rises, leaving the image-based reflection.
+  float roughness_fade =
+      1.0 - smoothstep(kSsrRoughnessLow, kSsrRoughnessHigh, roughness);
+  if (roughness_fade <= 0.0) {
+    frag_color = vec4(0.0);
+    return;
+  }
 
   // View-space reflection of the eye-to-pixel ray about the surface normal.
   vec3 incident = normalize(origin);
@@ -224,7 +251,7 @@ void main() {
       // that occluder's, not the reflected surface's. Reject it and keep
       // marching (so a valid surface further along can still be found, and
       // if none is, the pixel falls back to its image-based reflection).
-      vec3 hit_normal = normalize(texture(linear_depth, candidate_uv).gba);
+      vec3 hit_normal = OctDecode(texture(linear_depth, candidate_uv).gb);
       float facing_hit = -dot(reflection, hit_normal);
       if (facing_hit > 0.0) {
         hit_t = hi;
@@ -275,7 +302,8 @@ void main() {
   // roughness (a thin reflectivity prepass) instead of a global intensity.
   float facing = clamp(dot(normal, -incident), 0.0, 1.0);
   float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
-  float strength = clamp(confidence * intensity * fresnel, 0.0, 1.0);
+  float strength =
+      clamp(confidence * intensity * fresnel * roughness_fade, 0.0, 1.0);
 
   // Glossy blur of the reflected color. The radius grows with the blur
   // strength and the hit distance, so a rougher surface (or a more distant

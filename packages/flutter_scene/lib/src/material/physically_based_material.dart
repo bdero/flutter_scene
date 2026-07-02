@@ -259,6 +259,13 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   @override
+  gpu.Texture? get reflectionRoughnessTexture =>
+      resolveTextureSource(metallicRoughnessTexture);
+
+  @override
+  double get reflectionRoughnessFactor => roughnessFactor;
+
+  @override
   bool isOpaque() {
     // BLEND always goes through the translucent pass. OPAQUE and MASK
     // are drawn in the opaque pass (MASK relies on the shader's

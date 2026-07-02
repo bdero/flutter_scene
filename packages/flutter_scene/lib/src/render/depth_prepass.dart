@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show bindUnskinnedFrameInfo;
+import 'package:flutter_scene/src/material/material.dart' show Material;
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -194,6 +195,14 @@ class _DepthPrepassEncoder {
   static final gpu.Shader _depthNormalShader =
       baseShaderLibrary['LinearDepthNormalFragment']!;
 
+  // The roughness map is a tiled material texture; sample it with repeat.
+  static final gpu.SamplerOptions _roughnessSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.repeat,
+  );
+
   // The fragment shader and its uniform-block name for this pass.
   gpu.Shader get _fragmentShader =>
       _writeNormals ? _depthNormalShader : _depthShader;
@@ -243,6 +252,18 @@ class _DepthPrepassEncoder {
       _boundPipeline = pipeline;
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
+    if (_writeNormals) {
+      // Carry this material's roughness so the reflection trace can fade out
+      // on rough surfaces. camera_forward.w holds the roughness factor; the
+      // map (a white placeholder when the material has none) supplies the
+      // per-pixel roughness in its green channel.
+      _depthInfo[3] = item.material.reflectionRoughnessFactor;
+      _renderPass.bindTexture(
+        _fragmentShader.getUniformSlot('metallic_roughness_texture'),
+        Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
+        sampler: _roughnessSampler,
+      );
+    }
     _renderPass.bindUniform(
       _fragmentShader.getUniformSlot(_infoBlockName),
       _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
