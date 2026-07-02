@@ -1,0 +1,35 @@
+// A lit material with a custom vertex stage that curves the world down over a
+// false horizon (the Animal Crossing "round world" look). Shows the .fmat
+// vertex { } hook: one Vertex() bends the geometry, and it composes with the
+// engine's physically based lighting in the fragment stage.
+
+material {
+  name: "VertexCurve",
+  shading_model: lit,
+  culling: none,
+  parameters: [
+    // How sharply the world curves away. Driven by a slider in the example.
+    { type: float, name: curvature, hint: range(0.0, 0.03, 0.0005), default: 0.008 },
+    { type: vec4, name: base_color, hint: source_color, default: [0.42, 0.6, 0.38, 1.0] },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Drop each vertex by a quadratic of its horizontal distance from the
+    // camera, so distant geometry sinks below the horizon. The engine fills
+    // world_position and camera_position before calling this and projects the
+    // modified world_position afterward.
+    vec3 rel = vertex.world_position - vertex.camera_position;
+    vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = material_params.base_color;
+    material.metallic = 0.0;
+    material.roughness = 0.8;
+    PrepareMaterial(material);
+  }
+}

@@ -29,6 +29,7 @@ import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
+import 'example_vertex_curve.dart';
 
 void main() {
   runApp(const MyApp());
@@ -68,6 +69,7 @@ class _MyAppState extends State<MyApp> {
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
+      'Vertex curve (.fmat)': (context) => const ExampleVertexCurve(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Render Targets': (context) => const ExampleRenderTarget(),
