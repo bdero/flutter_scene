@@ -11,6 +11,11 @@ material {
     { type: float, name: curvature, hint: range(0.0, 0.2, 0.001), default: 0.05 },
     { type: vec4, name: base_color, hint: source_color, default: [0.45, 0.55, 0.35, 1.0] },
   ],
+  // A custom interpolant Vertex() computes and Surface() reads: how far this
+  // vertex dropped, used to darken geometry toward the horizon.
+  varyings: [
+    { type: float, name: curve_fade },
+  ],
 }
 
 vertex {
@@ -20,13 +25,18 @@ vertex {
     // engine-provided world position and camera position; the engine projects
     // the modified world position after this returns.
     vec3 rel = vertex.world_position - vertex.camera_position;
-    vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+    float drop = material_params.curvature * dot(rel.xz, rel.xz);
+    vertex.world_position.y -= drop;
+    // Forward the drop amount to the fragment stage as a 0..1 fade.
+    curve_fade = clamp(drop * 0.15, 0.0, 1.0);
   }
 }
 
 fragment {
   void Surface(inout MaterialInputs material) {
     material.base_color = material_params.base_color;
+    // Darken with the interpolated fade, an atmospheric sink over the horizon.
+    material.base_color.rgb *= mix(1.0, 0.35, curve_fade);
     material.metallic = 0.0;
     material.roughness = 0.85;
     PrepareMaterial(material);

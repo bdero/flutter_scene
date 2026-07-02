@@ -468,4 +468,84 @@ sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
       );
     });
   });
+
+  group('custom varyings', () {
+    const withVaryings = '''
+material {
+  name: "Fade",
+  varyings: [
+    { type: float, name: curve_fade },
+    { type: vec3, name: local_pos },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    curve_fade = 0.5;
+    local_pos = vertex.position;
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color.rgb *= curve_fade;
+    PrepareMaterial(material);
+  }
+}
+''';
+
+    test('parses declared varyings in order', () {
+      final m = parseFmat(withVaryings);
+      expect(m.varyings.map((v) => v.name), ['curve_fade', 'local_pos']);
+      expect(m.varyings.map((v) => v.type), [FmatType.float_, FmatType.vec3]);
+    });
+
+    test('fragment declares each varying as an in', () {
+      final frag = emitFragmentGlsl(parseFmat(withVaryings));
+      expect(frag, contains('in float curve_fade;'));
+      expect(frag, contains('in vec3 local_pos;'));
+    });
+
+    test('every vertex variant declares each varying as an out', () {
+      final variants = emitVertexGlsl(parseFmat(withVaryings));
+      for (final glsl in variants.values) {
+        expect(glsl, contains('out float curve_fade;'));
+        expect(glsl, contains('out vec3 local_pos;'));
+      }
+    });
+
+    test('rejects a non-interpolatable varying type', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", varyings: [ { type: mat4, name: m } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must be one of float, vec2, vec3, vec4'),
+      );
+    });
+
+    test('rejects varyings without a vertex block', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", varyings: [ { type: float, name: f } ] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must declare a `vertex'),
+      );
+    });
+
+    test('rejects a varying that collides with a parameter name', () {
+      expect(
+        () => parseFmat('''
+material {
+  name: "X",
+  parameters: [ { type: float, name: tint } ],
+  varyings: [ { type: float, name: tint } ],
+}
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('collides with a parameter'),
+      );
+    });
+  });
 }

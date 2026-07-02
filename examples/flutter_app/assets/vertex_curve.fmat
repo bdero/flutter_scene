@@ -12,6 +12,11 @@ material {
     { type: float, name: curvature, hint: range(0.0, 0.03, 0.0005), default: 0.008 },
     { type: vec4, name: base_color, hint: source_color, default: [0.42, 0.6, 0.38, 1.0] },
   ],
+  // A custom interpolant: Vertex() computes how far each vertex dropped and
+  // forwards it so Surface() can darken geometry toward the horizon.
+  varyings: [
+    { type: float, name: curve_fade },
+  ],
 }
 
 vertex {
@@ -21,13 +26,18 @@ vertex {
     // world_position and camera_position before calling this and projects the
     // modified world_position afterward.
     vec3 rel = vertex.world_position - vertex.camera_position;
-    vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+    float drop = material_params.curvature * dot(rel.xz, rel.xz);
+    vertex.world_position.y -= drop;
+    // Forward the drop amount as a 0..1 fade to the fragment stage.
+    curve_fade = clamp(drop * 0.12, 0.0, 1.0);
   }
 }
 
 fragment {
   void Surface(inout MaterialInputs material) {
     material.base_color = material_params.base_color;
+    // Sink the color toward a dim horizon tone as the world curves away.
+    material.base_color.rgb *= mix(1.0, 0.3, curve_fade);
     material.metallic = 0.0;
     material.roughness = 0.8;
     PrepareMaterial(material);

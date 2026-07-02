@@ -26,11 +26,8 @@ in vec4 color;
 in vec4 joints;
 in vec4 weights;
 
-out vec3 v_position;
-out vec3 v_normal;
-out vec3 v_viewvector; // camera_position - vertex_position
-out vec2 v_texture_coords;
-out vec4 v_color;
+// The v_* outputs are declared in material_vertex.glsl (included first), so a
+// material's custom varyings can follow them with matching interpolant slots.
 
 const int kMatrixTexelStride = 4;
 

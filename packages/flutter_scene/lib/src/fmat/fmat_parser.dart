@@ -557,6 +557,7 @@ FmatMaterial _build(
     'blending',
     'culling',
     'parameters',
+    'varyings',
     'requires',
   };
   for (final key in tree.keys) {
@@ -596,6 +597,7 @@ FmatMaterial _build(
   );
 
   final parameters = _buildParameters(tree['parameters'], fileName);
+  final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
 
   // `requires` lists engine-provided resources the shader uses. The only
   // supported entry is `environment` (the prefiltered-radiance atlas), and
@@ -660,6 +662,15 @@ FmatMaterial _build(
     );
   }
 
+  // A custom varying is written in `Vertex()`, so it needs a vertex block.
+  if (varyings.isNotEmpty && vertex == null) {
+    throw FmatException(
+      'A material with `varyings` must declare a `vertex { }` block that '
+      'writes them.',
+      fileName: fileName,
+    );
+  }
+
   return FmatMaterial(
     name: name,
     domain: domain,
@@ -672,7 +683,83 @@ FmatMaterial _build(
     fragmentSourceLine: body.startLine,
     vertexSource: vertex?.content,
     vertexSourceLine: vertex?.startLine ?? 0,
+    varyings: varyings,
   );
+}
+
+/// Interpolant types allowed for a `varyings` entry (int/mat/sampler are not
+/// interpolatable across the rasterizer without a `flat` qualifier).
+const _varyingTypes = <FmatType>{
+  FmatType.float_,
+  FmatType.vec2,
+  FmatType.vec3,
+  FmatType.vec4,
+};
+
+List<FmatVarying> _buildVaryings(
+  Object? raw,
+  List<FmatParameter> parameters,
+  String? fileName,
+) {
+  if (raw == null) return const [];
+  if (raw is! List) {
+    throw FmatException('`varyings` must be a list.', fileName: fileName);
+  }
+  final paramNames = {for (final p in parameters) p.name};
+  final varyings = <FmatVarying>[];
+  final seen = <String>{};
+  for (final entry in raw) {
+    if (entry is! Map<String, Object?>) {
+      throw FmatException(
+        'Each varying must be an object.',
+        fileName: fileName,
+      );
+    }
+    for (final key in entry.keys) {
+      if (key != 'type' && key != 'name') {
+        throw FmatException('Unknown varying key `$key`.', fileName: fileName);
+      }
+    }
+
+    final typeTok = entry['type'];
+    if (typeTok is! _Ident) {
+      throw FmatException('Varying `type` is required.', fileName: fileName);
+    }
+    final type = FmatType.fromToken(typeTok.name);
+    if (type == null || !_varyingTypes.contains(type)) {
+      throw FmatException(
+        'Varying `${typeTok.name}` must be one of float, vec2, vec3, vec4.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
+    }
+
+    final nameVal = entry['name'];
+    final name = switch (nameVal) {
+      String s => s,
+      _Ident id => id.name,
+      _ => throw FmatException(
+        'Varying `name` is required.',
+        fileName: fileName,
+      ),
+    };
+    _validateParamName(name, fileName);
+    if (!seen.add(name)) {
+      throw FmatException(
+        'Duplicate varying name `$name`.',
+        fileName: fileName,
+      );
+    }
+    if (paramNames.contains(name)) {
+      throw FmatException(
+        'Varying `$name` collides with a parameter of the same name.',
+        fileName: fileName,
+      );
+    }
+
+    varyings.add(FmatVarying(type: type, name: name));
+  }
+  return varyings;
 }
 
 T _enum<T extends Enum>(
