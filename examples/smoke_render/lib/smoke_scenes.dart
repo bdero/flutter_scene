@@ -113,6 +113,13 @@ MeshGeometry _phaseGrid() {
       indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
     }
   }
+  // TODO(gles-swiftshader): the x86_64 SwiftShader GLES stack the Android
+  // emulator uses (the CI android_gles job) mis-reads this custom vertex
+  // attribute, so the material renders colorless (depth-only) there. It is
+  // correct on every other backend: Metal, Vulkan, llvmpipe and ANGLE GLES,
+  // WebGL2, and arm64 SwiftShader. Widening the attribute to a vec4 did not
+  // help. Investigate the Impeller GLES custom-attribute path and file upstream
+  // against SwiftShader if the fault is there.
   return MeshGeometry.fromArrays(positions: positions, indices: indices)
     ..setCustomAttribute('phase', phase, components: 1);
 }
