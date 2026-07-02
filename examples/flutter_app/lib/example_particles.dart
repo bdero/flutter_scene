@@ -9,7 +9,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/gpu.dart' as fgpu;
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart' as shape;
@@ -52,7 +51,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ),
     );
 
-    final dot = await gpuTextureFromImage(await _softDotImage());
+    final dot = GpuTextureSource(
+      await gpuTextureFromImage(await _softDotImage()),
+    );
 
     scene.add(_smoke(dot)..localTransform = _at(-6.0));
     scene.add(_fire(dot)..localTransform = _at(-2.0));
@@ -67,7 +68,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
 
   // A rising alpha-blended smoke column: a slow upward cone, buoyant, swelling
   // and fading over life.
-  Node _smoke(fgpu.Texture dot) {
+  Node _smoke(TextureSource dot) {
     final system = ParticleSystem(
       maxParticles: 400,
       shape: const shape.ConeShape(angle: 0.25, radius: 0.25),
@@ -108,7 +109,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
 
   // An additive flame: a narrow upward cone that rises, swells then shrinks, and
   // shifts yellow -> orange -> red as it fades.
-  Node _fire(fgpu.Texture dot) {
+  Node _fire(TextureSource dot) {
     final system = ParticleSystem(
       maxParticles: 600,
       shape: const shape.ConeShape(angle: 0.22, radius: 0.22),
@@ -147,7 +148,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
 
   // An additive water fountain: a fast tight cone under gravity, fading from
   // bright cyan to deep blue.
-  Node _fountain(fgpu.Texture dot) {
+  Node _fountain(TextureSource dot) {
     final system = ParticleSystem(
       maxParticles: 500,
       shape: const shape.ConeShape(angle: 0.18, radius: 0.05),
@@ -176,7 +177,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
 
   // An additive spark burst: an explosion from a point every 1.4s, gravity plus
   // drag, short-lived, rendered as velocity-stretched streaks.
-  Node _sparks(fgpu.Texture dot) {
+  Node _sparks(TextureSource dot) {
     final system = ParticleSystem(
       maxParticles: 800,
       shape: const shape.SphereShape(
