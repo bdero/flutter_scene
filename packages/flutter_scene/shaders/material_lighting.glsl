@@ -248,13 +248,21 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // camera.
   float n_dot_v = max(dot(normal, camera_normal), 0.0);
 
+  // The view angle for the image-based specular energy (Fresnel and the split-
+  // sum LUT) uses the geometric normal, not the perturbed one. That energy term
+  // is a macro-surface quantity, and near grazing the Fresnel is steep, so
+  // feeding it the normal-mapped n_dot_v turns sub-pixel normal detail into a
+  // blotchy brightness aliasing. The reflection direction below still uses the
+  // perturbed normal, so surface relief is preserved where it belongs.
+  float n_dot_v_energy = max(dot(GetWorldNormal(), camera_normal), 0.0);
+
   // reflect() needs the incident ray (camera -> surface); camera_normal
   // points surface -> camera, so negate it. Sampling the environment with
   // the un-negated vector would mirror reflections to the opposite side.
   vec3 reflection_normal = reflect(-camera_normal, normal);
 
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
-  vec3 k_S = FresnelSchlickRoughness(n_dot_v, reflectance, roughness);
+  vec3 k_S = FresnelSchlickRoughness(n_dot_v_energy, reflectance, roughness);
 
   // The IBL environment can be rotated; transform the lookup directions.
   mat3 environment_transform = mat3(frag_info.environment_transform);
@@ -282,8 +290,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
 
   // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
   // [0, 1] to avoid edge-tap artifacts.
-  vec2 f_ab =
-      texture(brdf_lut, clamp(vec2(n_dot_v, 1.0 - roughness), 0.0, 0.99)).rg;
+  vec2 f_ab = texture(
+                  brdf_lut,
+                  clamp(vec2(n_dot_v_energy, 1.0 - roughness), 0.0, 0.99))
+                  .rg;
 
   // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
   // see https://bruop.github.io/ibl/). Without the multiscatter term, rough
