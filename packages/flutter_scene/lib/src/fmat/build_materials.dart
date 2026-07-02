@@ -93,6 +93,11 @@ const _frameworkShaderFiles = <String>[
   'material_inputs.glsl',
   'material_engine_lighting.glsl',
   'material_lighting.glsl',
+  // The vertex-stage includes a material's generated vertex variants pull in.
+  'material_vertex.glsl',
+  'flutter_scene_unskinned_body.glsl',
+  'flutter_scene_skinned_body.glsl',
+  'flutter_scene_unskinned_depth_body.glsl',
 ];
 
 /// Compiles `.fmat` custom-material files into a Flutter GPU shader bundle plus
@@ -289,6 +294,28 @@ Future<void> buildMaterials({
         // there, not relative to the manifest.
         'file': 'build/fmat/$bundleName/$fragFileName',
       };
+
+      // A material with a `vertex { }` block also contributes one vertex shader
+      // per mesh-type/pass variant, compiled into the same bundle and selected
+      // at render time by the runtime.
+      compiled.vertexGlsl.forEach((vertexEntry, vertexGlsl) {
+        if (manifest.containsKey(vertexEntry)) {
+          throw Exception(
+            'Generated vertex entry "$vertexEntry" for material "$entryName" '
+            'in bundle "$bundleName" collides with another entry; rename the '
+            'material.',
+          );
+        }
+        final vertFileName = '$vertexEntry.vert';
+        File(
+          generatedDir.uri.resolve(vertFileName).toFilePath(),
+        ).writeAsStringSync(vertexGlsl);
+        manifest[vertexEntry] = <String, Object?>{
+          'type': 'vertex',
+          'file': 'build/fmat/$bundleName/$vertFileName',
+        };
+      });
+
       sidecars[entryName] = compiled.sidecar;
       materialSources[entryName] = materialPath;
     }

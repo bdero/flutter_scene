@@ -148,6 +148,8 @@ class FmatMaterial {
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
+    this.vertexSource,
+    this.vertexSourceLine = 0,
   });
 
   final String name;
@@ -171,6 +173,19 @@ class FmatMaterial {
   /// The 1-based line in the source where [fragmentSource] begins, used to
   /// emit a `#line` directive so compiler errors map back to the `.fmat`.
   final int fragmentSourceLine;
+
+  /// The verbatim contents of the optional `vertex { }` block (the author's
+  /// `void Vertex(inout VertexInputs vertex)` hook and any helpers), or `null`
+  /// when the material does not customize the vertex stage. Only surface
+  /// materials may declare a vertex stage.
+  final String? vertexSource;
+
+  /// The 1-based line where [vertexSource] begins, for the `#line` directive.
+  /// Zero when there is no vertex stage.
+  final int vertexSourceLine;
+
+  /// Whether this material customizes the vertex stage.
+  bool get hasVertexStage => vertexSource != null;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.

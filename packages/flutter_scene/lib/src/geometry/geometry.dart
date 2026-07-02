@@ -392,6 +392,13 @@ abstract class Geometry {
     _vertexShader = null;
   }
 
+  /// The `.fmat` vertex-variant key for this geometry's mesh type, used to
+  /// select a custom material's generated vertex shader (see
+  /// [Material.materialVertexShader]). Unskinned geometry is `'unskinned'`;
+  /// [SkinnedGeometry] overrides this to `'skinned'`.
+  @internal
+  String get materialVertexVariant => 'unskinned';
+
   /// Hook for skinned geometries to receive the joints texture computed
   /// by [Skin.getJointsTexture].
   ///
@@ -691,6 +698,9 @@ class SkinnedGeometry extends Geometry {
   SkinnedGeometry() {
     setVertexShaderName('SkinnedVertex');
   }
+
+  @override
+  String get materialVertexVariant => 'skinned';
 
   @override
   bool get _autoScanBoundsOnUpload => false;

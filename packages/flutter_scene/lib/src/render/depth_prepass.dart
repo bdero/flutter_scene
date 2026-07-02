@@ -241,6 +241,11 @@ class _DepthPrepassEncoder {
     // falls back to its full vertex shader and bind. The normal-writing path
     // always uses the full vertex shader, since the position-only path
     // carries no normal.
+    // TODO(vertex-materials): pair a `vertex { }` material's variant here (and
+    // bind its MaterialParams) so the prepass depth matches the displaced color
+    // pass; otherwise a depth prepass (enabled by SSAO/SSR) mismatches a
+    // vertex-displacing material. This pass binds the real camera transform and
+    // position, so a camera-relative displacement is correct once wired.
     final depthVertex = _writeNormals ? null : geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
       depthVertex?.shader ?? geometry.vertexShader,

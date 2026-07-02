@@ -214,6 +214,29 @@ abstract class Material {
     _fragmentShader = null;
   }
 
+  /// The vertex shader this material supplies for a geometry's [variant]
+  /// (`'unskinned'` / `'skinned'` for the color pass, `'depth'` for the
+  /// position-only depth/shadow pass; see [Geometry.materialVertexVariant]),
+  /// or null to use the engine's standard vertex shader for the geometry.
+  ///
+  /// The base class supplies none, so drawing is unchanged. A `.fmat` with a
+  /// `vertex { }` block (see [PreprocessedMaterial]) returns the matching
+  /// generated variant, which the encoder pairs with this material's fragment
+  /// shader.
+  @internal
+  gpu.Shader? materialVertexShader(String variant) => null;
+
+  /// Binds this material's vertex-stage uniforms to [vertexShader], called by
+  /// the encoder only when it used a material-supplied vertex shader (see
+  /// [materialVertexShader]). The base implementation is a no-op; a material
+  /// with vertex-stage parameters binds them here.
+  @internal
+  void bindVertexStage(
+    gpu.RenderPass pass,
+    gpu.Shader vertexShader,
+    gpu.HostBuffer transientsBuffer,
+  ) {}
+
   /// Binds this material's render-pass state, uniforms, and textures.
   ///
   /// The base implementation enables back-face culling with

@@ -12,22 +12,31 @@ export 'package:flutter_scene/src/fmat/fmat_ast.dart';
 export 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show
         emitFragmentGlsl,
+        emitVertexGlsl,
+        vertexVariantEntryName,
+        kVertexVariants,
         buildSidecar,
         kMaterialParamsBlock,
         kMaterialParamsInstance;
 export 'package:flutter_scene/src/fmat/fmat_parser.dart' show parseFmat;
 
 /// The result of preprocessing a `.fmat` source: the parsed material, the
-/// emitted GLSL fragment shader, and the metadata sidecar.
+/// emitted GLSL fragment shader, the per-variant vertex shaders (empty unless
+/// the material has a `vertex { }` block), and the metadata sidecar.
 class FmatCompilation {
   FmatCompilation({
     required this.material,
     required this.glsl,
+    required this.vertexGlsl,
     required this.sidecar,
   });
 
   final FmatMaterial material;
   final String glsl;
+
+  /// The generated vertex shaders keyed by shader-bundle entry name, or empty
+  /// when the material does not customize the vertex stage.
+  final Map<String, String> vertexGlsl;
   final Map<String, Object?> sidecar;
 }
 
@@ -37,6 +46,7 @@ FmatCompilation compileFmat(String source, {String? fileName}) {
   return FmatCompilation(
     material: material,
     glsl: emitFragmentGlsl(material),
+    vertexGlsl: emitVertexGlsl(material),
     sidecar: buildSidecar(material),
   );
 }

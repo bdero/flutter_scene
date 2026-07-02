@@ -362,4 +362,110 @@ sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
       );
     });
   });
+
+  group('vertex stage', () {
+    const withVertex = '''
+material {
+  name: "Curved",
+  parameters: [
+    { type: float, name: curvature, default: 0.004 },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vec3 rel = vertex.world_position - vertex.camera_position;
+    vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) { PrepareMaterial(material); }
+}
+''';
+
+    test('parses the optional vertex block', () {
+      final m = parseFmat(withVertex);
+      expect(m.hasVertexStage, isTrue);
+      expect(m.vertexSource, contains('void Vertex'));
+      expect(m.vertexSourceLine, greaterThan(0));
+    });
+
+    test('a material without a vertex block has no vertex stage', () {
+      final m = parseFmat('''
+material { name: "Plain" }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(m.hasVertexStage, isFalse);
+      expect(emitVertexGlsl(m), isEmpty);
+    });
+
+    test('emits one vertex variant per mesh type, keyed by entry name', () {
+      final m = parseFmat(withVertex);
+      final variants = emitVertexGlsl(m);
+      expect(variants.keys, <String>{
+        'CurvedUnskinnedVertex',
+        'CurvedSkinnedVertex',
+        'CurvedUnskinnedDepthVertex',
+      });
+      // Each variant suppresses the no-op hook, declares the shared param
+      // block, splices the author's Vertex(), and includes its mesh-type body.
+      final unskinned = variants['CurvedUnskinnedVertex']!;
+      expect(unskinned, contains('#define HAS_MATERIAL_VERTEX'));
+      expect(unskinned, contains('#include <material_vertex.glsl>'));
+      expect(unskinned, contains('uniform MaterialParams'));
+      expect(unskinned, contains('void Vertex(inout VertexInputs vertex)'));
+      expect(
+        unskinned,
+        contains('#include <flutter_scene_unskinned_body.glsl>'),
+      );
+      expect(
+        variants['CurvedSkinnedVertex']!,
+        contains('#include <flutter_scene_skinned_body.glsl>'),
+      );
+      expect(
+        variants['CurvedUnskinnedDepthVertex']!,
+        contains('#include <flutter_scene_unskinned_depth_body.glsl>'),
+      );
+    });
+
+    test('sidecar records the per-variant vertex entry names', () {
+      final sidecar = buildSidecar(parseFmat(withVertex));
+      expect(sidecar['vertex'], <String, Object?>{
+        'unskinned': 'CurvedUnskinnedVertex',
+        'skinned': 'CurvedSkinnedVertex',
+        'depth': 'CurvedUnskinnedDepthVertex',
+      });
+    });
+
+    test('a plain material records no vertex key in the sidecar', () {
+      final sidecar = buildSidecar(
+        parseFmat('''
+material { name: "Plain" }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+      );
+      expect(sidecar.containsKey('vertex'), isFalse);
+    });
+
+    test('rejects a vertex block missing the Vertex function', () {
+      expect(
+        () => parseFmat('''
+material { name: "X" }
+vertex { float noise(vec3 p) { return 0.0; } }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must define'),
+      );
+    });
+
+    test('rejects a vertex block on a sky material', () {
+      expect(
+        () => parseFmat('''
+material { name: "X" }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
+'''),
+        _throwsFmat('cannot declare a `vertex'),
+      );
+    });
+  });
 }

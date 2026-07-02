@@ -16,6 +16,28 @@ const String kMaterialParamsBlock = 'MaterialParams';
 /// The GLES-fold-safe instance name for [kMaterialParamsBlock].
 const String kMaterialParamsInstance = 'material_params';
 
+/// The engine vertex variants a material with a `vertex { }` block generates a
+/// shader for, mapping the sidecar key the runtime selects by to the shared
+/// body include that variant reuses. The keys correspond to the geometry a
+/// draw uses: `unskinned` for static meshes, `skinned` for skinned meshes, and
+/// `depth` for the position-only shadow-map / depth-prepass pass.
+const Map<String, String> kVertexVariants = <String, String>{
+  'unskinned': 'flutter_scene_unskinned_body.glsl',
+  'skinned': 'flutter_scene_skinned_body.glsl',
+  'depth': 'flutter_scene_unskinned_depth_body.glsl',
+};
+
+const Map<String, String> _vertexVariantEntrySuffix = <String, String>{
+  'unskinned': 'UnskinnedVertex',
+  'skinned': 'SkinnedVertex',
+  'depth': 'UnskinnedDepthVertex',
+};
+
+/// The shader-bundle entry name for [material]'s [variant] vertex shader (one
+/// of the keys in [kVertexVariants]).
+String vertexVariantEntryName(FmatMaterial material, String variant) =>
+    '${material.name}${_vertexVariantEntrySuffix[variant]}';
+
 /// Emits the fragment shader GLSL for [material].
 String emitFragmentGlsl(FmatMaterial material) {
   if (material.domain == FmatDomain.sky) {
@@ -76,6 +98,64 @@ String emitFragmentGlsl(FmatMaterial material) {
   }
   sb.writeln('}');
 
+  return sb.toString();
+}
+
+/// Emits the vertex-shader GLSL for each variant of [material], keyed by the
+/// shader-bundle entry name. Empty when the material has no `vertex { }` block
+/// (the draw then uses the engine's standard vertex shader for its geometry).
+///
+/// Each variant declares the shared `MaterialParams` block (so a parameter is
+/// readable in both stages), splices the author's `Vertex()` after the
+/// `VertexInputs` struct, and `#include`s the engine body for its mesh type,
+/// which builds the struct, calls `Vertex()`, and writes the stage outputs.
+Map<String, String> emitVertexGlsl(FmatMaterial material) {
+  if (!material.hasVertexStage) return const <String, String>{};
+  final result = <String, String>{};
+  kVertexVariants.forEach((variant, bodyInclude) {
+    result[vertexVariantEntryName(material, variant)] = _emitVertexVariant(
+      material,
+      bodyInclude,
+    );
+  });
+  return result;
+}
+
+String _emitVertexVariant(FmatMaterial material, String bodyInclude) {
+  final sb = StringBuffer();
+  sb.writeln(
+    '// Generated from a .fmat material by flutter_scene. Do not edit.',
+  );
+
+  final uniforms = material.uniformParameters.toList();
+  if (uniforms.isNotEmpty) {
+    // The same block the fragment stage declares; the runtime binds the packed
+    // bytes to both stages so `material_params.<name>` reads the same value in
+    // Vertex() as in Surface().
+    sb.writeln('uniform $kMaterialParamsBlock {');
+    for (final p in uniforms) {
+      sb.writeln('  ${p.type.glslType} ${p.name};');
+    }
+    sb.writeln('}');
+    sb.writeln('$kMaterialParamsInstance;');
+    sb.writeln();
+  }
+
+  // The material supplies its own Vertex(), so suppress the no-op hook in
+  // material_vertex.glsl.
+  sb.writeln('#define HAS_MATERIAL_VERTEX');
+  sb.writeln('#include <material_vertex.glsl>');
+  sb.writeln();
+
+  // Map compiler errors in the author's code back to the .fmat source line.
+  sb.writeln('#line ${material.vertexSourceLine}');
+  sb.write(material.vertexSource);
+  if (!material.vertexSource!.endsWith('\n')) sb.writeln();
+  sb.writeln();
+
+  // The engine body for this mesh type builds VertexInputs, calls Vertex(),
+  // and writes the stage outputs.
+  sb.writeln('#include <$bodyInclude>');
   return sb.toString();
 }
 
@@ -148,6 +228,11 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'blending': material.blending.name,
     'culling': material.culling.name,
     'uniform_block': kMaterialParamsBlock,
+    if (material.hasVertexStage)
+      'vertex': <String, Object?>{
+        for (final variant in kVertexVariants.keys)
+          variant: vertexVariantEntryName(material, variant),
+      },
     'parameters': [
       for (final p in material.uniformParameters)
         <String, Object?>{
