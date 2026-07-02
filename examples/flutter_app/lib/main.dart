@@ -4,6 +4,8 @@ import 'package:flutter_scene/scene.dart'
     show AntiAliasingMode, Scene, PostInsertion, SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
+import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
+    show Box3dPhysicsWorld;
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
@@ -17,6 +19,7 @@ import 'example_lod.dart';
 import 'example_logo.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
+import 'example_physics_box3d.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
@@ -50,6 +53,7 @@ class _MyAppState extends State<MyApp> {
   // soon as the app starts, but only the Physics example waits on it, so
   // the other examples are not delayed by it. A no-op on native.
   final Future<void> _physicsReady = RapierWorld.ensureInitialized();
+  final Future<void> _box3dReady = Box3dPhysicsWorld.ensureInitialized();
 
   @override
   void initState() {
@@ -81,6 +85,17 @@ class _MyAppState extends State<MyApp> {
             return const Center(child: CircularProgressIndicator());
           }
           return const ExamplePhysics();
+        },
+      ),
+      'Physics (box3d)': (context) => FutureBuilder<void>(
+        // The box3d backend readiness (a no-op on native; the wasm load on
+        // the web) before a world can be built.
+        future: _box3dReady,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return const ExamplePhysicsBox3d();
         },
       ),
       'Shapes': (context) => FutureBuilder<void>(
