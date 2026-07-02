@@ -24,6 +24,45 @@
   constraint relaxes from exactly one to at most one of `camera`,
   `cameraBuilder`, or `viewsBuilder`.
 
+* Added `Texture2D` for textures with generated mipmaps and trilinear plus
+  anisotropic filtering, built from an asset, a `ui.Image`, or raw pixels
+  (`Texture2D.fromAsset`, `Texture2D.fromImage`, `Texture2D.fromPixels`).
+  `TextureContent` selects how each mip level is filtered (color in linear
+  light, raw data, or renormalized normals) and `TextureSampling` controls the
+  mip filter, maximum mip level, and anisotropy. The runtime glTF loader now
+  builds its textures as `Texture2D`, so imported models are mipmapped.
+
+* **Breaking:** the material texture slots (`baseColorTexture`,
+  `metallicRoughnessTexture`, `normalTexture`, `emissiveTexture`,
+  `occlusionTexture`) now hold a `TextureSource` rather than a raw
+  `gpu.Texture`. Assign a `Texture2D` or a `RenderTexture` directly, or wrap an
+  existing `gpu.Texture` in `GpuTextureSource`.
+
+* Added `TextureAtlas`, a helper for a uniform grid of packed tiles (voxel
+  faces, sprite sheets, terrain) that resolves per-tile UVs and can build a
+  `PhysicallyBasedMaterial` from its maps, along with
+  `generateSolidColorAtlasPixels` for a placeholder atlas.
+
+* Added geometric specular antialiasing to `PhysicallyBasedMaterial` via
+  `specularAntiAliasingVariance` and `specularAntiAliasingThreshold`, which
+  widen roughness where the shading normal varies quickly to curb distant
+  specular sparkle.
+
+* Fixed the split-sum specular sampling the BRDF integration lookup with its
+  roughness axis flipped, which gave rough surfaces mirror-strength
+  reflections and washed them out.
+
+* Fixed image-based lighting taking the shadow-ambient gate and the specular
+  Fresnel term from the normal-mapped normal, which darkened bumpy surfaces
+  under a low sun and made grazing reflections blotchy. Both now use the
+  geometric normal; the reflection direction still follows the normal map.
+
+* Fixed `normalScale` not being applied to the perturbed normal.
+
+* Screen-space reflections now fade out on rough surfaces. The camera depth
+  prepass carries per-pixel roughness, so smooth surfaces still reflect while
+  rough ones stop.
+
 ## 0.18.1
 
 * No code changes. Reworded the package description, added the Flutter Scene
