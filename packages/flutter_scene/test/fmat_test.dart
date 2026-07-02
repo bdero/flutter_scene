@@ -548,4 +548,83 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
   });
+
+  group('custom attributes', () {
+    const withAttributes = '''
+material {
+  name: "Attr",
+  attributes: [
+    { type: float, name: wave_phase },
+    { type: vec3, name: bary },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += sin(wave_phase) + bary.x;
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) { PrepareMaterial(material); }
+}
+''';
+
+    test('parses declared attributes in order', () {
+      final m = parseFmat(withAttributes);
+      expect(m.attributes.map((a) => a.name), ['wave_phase', 'bary']);
+      expect(m.attributes.map((a) => a.type), [FmatType.float_, FmatType.vec3]);
+    });
+
+    test('color variants declare each attribute as an in', () {
+      final variants = emitVertexGlsl(parseFmat(withAttributes));
+      for (final key in ['AttrUnskinnedVertex', 'AttrSkinnedVertex']) {
+        expect(variants[key], contains('in float wave_phase;'));
+        expect(variants[key], contains('in vec3 bary;'));
+      }
+    });
+
+    test('depth variant declares zero fallbacks, not ins', () {
+      final depth = emitVertexGlsl(
+        parseFmat(withAttributes),
+      )['AttrUnskinnedDepthVertex']!;
+      expect(depth, contains('float wave_phase = 0.0;'));
+      expect(depth, contains('vec3 bary = vec3(0.0);'));
+      expect(depth, isNot(contains('in float wave_phase;')));
+    });
+
+    test('rejects a non-interpolatable attribute type', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", attributes: [ { type: mat4, name: m } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must be one of float, vec2, vec3, vec4'),
+      );
+    });
+
+    test('rejects attributes without a vertex block', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", attributes: [ { type: float, name: a } ] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must declare a `vertex'),
+      );
+    });
+
+    test('rejects an attribute that collides with a varying', () {
+      expect(
+        () => parseFmat('''
+material {
+  name: "X",
+  varyings: [ { type: float, name: shared } ],
+  attributes: [ { type: float, name: shared } ],
+}
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('collides with a parameter or varying'),
+      );
+    });
+  });
 }

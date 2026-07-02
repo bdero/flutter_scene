@@ -558,6 +558,7 @@ FmatMaterial _build(
     'culling',
     'parameters',
     'varyings',
+    'attributes',
     'requires',
   };
   for (final key in tree.keys) {
@@ -598,6 +599,12 @@ FmatMaterial _build(
 
   final parameters = _buildParameters(tree['parameters'], fileName);
   final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
+  final attributes = _buildAttributes(
+    tree['attributes'],
+    parameters,
+    varyings,
+    fileName,
+  );
 
   // `requires` lists engine-provided resources the shader uses. The only
   // supported entry is `environment` (the prefiltered-radiance atlas), and
@@ -671,6 +678,15 @@ FmatMaterial _build(
     );
   }
 
+  // A custom attribute is read in `Vertex()`, so it needs a vertex block.
+  if (attributes.isNotEmpty && vertex == null) {
+    throw FmatException(
+      'A material with `attributes` must declare a `vertex { }` block that '
+      'reads them.',
+      fileName: fileName,
+    );
+  }
+
   return FmatMaterial(
     name: name,
     domain: domain,
@@ -684,7 +700,82 @@ FmatMaterial _build(
     vertexSource: vertex?.content,
     vertexSourceLine: vertex?.startLine ?? 0,
     varyings: varyings,
+    attributes: attributes,
   );
+}
+
+List<FmatAttribute> _buildAttributes(
+  Object? raw,
+  List<FmatParameter> parameters,
+  List<FmatVarying> varyings,
+  String? fileName,
+) {
+  if (raw == null) return const [];
+  if (raw is! List) {
+    throw FmatException('`attributes` must be a list.', fileName: fileName);
+  }
+  final taken = {
+    for (final p in parameters) p.name,
+    for (final v in varyings) v.name,
+  };
+  final attributes = <FmatAttribute>[];
+  final seen = <String>{};
+  for (final entry in raw) {
+    if (entry is! Map<String, Object?>) {
+      throw FmatException(
+        'Each attribute must be an object.',
+        fileName: fileName,
+      );
+    }
+    for (final key in entry.keys) {
+      if (key != 'type' && key != 'name') {
+        throw FmatException(
+          'Unknown attribute key `$key`.',
+          fileName: fileName,
+        );
+      }
+    }
+
+    final typeTok = entry['type'];
+    if (typeTok is! _Ident) {
+      throw FmatException('Attribute `type` is required.', fileName: fileName);
+    }
+    final type = FmatType.fromToken(typeTok.name);
+    if (type == null || !_varyingTypes.contains(type)) {
+      throw FmatException(
+        'Attribute `${typeTok.name}` must be one of float, vec2, vec3, vec4.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
+    }
+
+    final nameVal = entry['name'];
+    final name = switch (nameVal) {
+      String s => s,
+      _Ident id => id.name,
+      _ => throw FmatException(
+        'Attribute `name` is required.',
+        fileName: fileName,
+      ),
+    };
+    _validateParamName(name, fileName);
+    if (!seen.add(name)) {
+      throw FmatException(
+        'Duplicate attribute name `$name`.',
+        fileName: fileName,
+      );
+    }
+    if (taken.contains(name)) {
+      throw FmatException(
+        'Attribute `$name` collides with a parameter or varying of the same '
+        'name.',
+        fileName: fileName,
+      );
+    }
+
+    attributes.add(FmatAttribute(type: type, name: name));
+  }
+  return attributes;
 }
 
 /// Interpolant types allowed for a `varyings` entry (int/mat/sampler are not

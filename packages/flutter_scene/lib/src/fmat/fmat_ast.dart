@@ -148,6 +148,23 @@ class FmatVarying {
   final String name;
 }
 
+/// A custom per-vertex attribute the mesh supplies and the vertex stage reads,
+/// declared in the material's `attributes` list. The emitter declares it as a
+/// vertex `in <name>` (matched to the geometry's attribute by name), so the
+/// author reads `name` in `Vertex()`. The geometry must provide a matching
+/// stream (see `MeshGeometry.setCustomAttribute`). Only float and vector types
+/// are supported.
+class FmatAttribute {
+  const FmatAttribute({required this.type, required this.name});
+
+  final FmatType type;
+  final String name;
+
+  /// Number of float components (1..4), used for the vertex format and the
+  /// zero fallback in the depth variant.
+  int get components => type.componentCount;
+}
+
 /// A fully parsed and validated `.fmat` material.
 class FmatMaterial {
   FmatMaterial({
@@ -163,6 +180,7 @@ class FmatMaterial {
     this.vertexSource,
     this.vertexSourceLine = 0,
     this.varyings = const [],
+    this.attributes = const [],
   });
 
   final String name;
@@ -203,6 +221,10 @@ class FmatMaterial {
   /// Custom interpolants forwarded from `Vertex()` to `Surface()`, in declared
   /// order. Empty unless the material declares a `varyings` list.
   final List<FmatVarying> varyings;
+
+  /// Custom per-vertex attributes the mesh supplies to `Vertex()`, in declared
+  /// order. Empty unless the material declares an `attributes` list.
+  final List<FmatAttribute> attributes;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.
