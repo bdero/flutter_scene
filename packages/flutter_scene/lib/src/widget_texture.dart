@@ -15,8 +15,8 @@ sealed class WidgetUpdatePolicy {
 
   /// Capture every frame while attached (the default). Captures are
   /// throttled to one in flight, and the recording itself reuses the
-  /// child's retained layers, so the steady-state cost is the rasterize
-  /// and readback of content that is actually changing.
+  /// child's retained layers, so the steady-state cost is rasterizing
+  /// the content that is actually changing.
   ///
   /// Per-frame capture is the only trigger that observes every change:
   /// repaints inside the child's own repaint boundaries (scrollable items,
@@ -49,17 +49,15 @@ class _ManualUpdatePolicy extends WidgetUpdatePolicy {
 ///
 /// Bind [texture] to any material texture slot (for example
 /// `PhysicallyBasedMaterial.baseColorTexture`). It is null until the first
-/// capture completes; listen for changes to pick it up (the texture object is
-/// also replaced when the capture size changes).
+/// capture completes; listen for changes to pick it up, and expect the
+/// texture object itself to be replaced across captures.
 ///
-/// Captures round-trip through the CPU today (rasterize, read back, upload),
-/// so treat this as a correct-but-slow path: captures are throttled to one in
-/// flight and only run when the child subtree actually repaints, but each one
-/// costs a readback on the raster thread plus a byte upload.
+/// A capture rasterizes the child and wraps the resulting image's backing
+/// GPU texture directly (`gpu.Texture.fromImage`), so no pixel data crosses
+/// the CPU. On backends where the image cannot be wrapped (the web backend,
+/// software rendering) it falls back to reading the bytes back and uploading
+/// them. Captures are throttled to one in flight either way.
 /// {@category Widgets}
-// TODO(widget-textures): keep the snapshot on the GPU once the engine can
-// wrap a ui.Image's backing texture as a flutter_gpu texture (the planned
-// gpu.Texture.fromImage); the capture and binding API stays the same.
 class WidgetTextureController extends ChangeNotifier {
   gpu.Texture? _texture;
   Duration _lastCaptureDuration = Duration.zero;
@@ -69,16 +67,31 @@ class WidgetTextureController extends ChangeNotifier {
   /// The most recent capture, or null before the first one completes.
   gpu.Texture? get texture => _texture;
 
-  /// Wall-clock duration of the last capture round trip (rasterize, read
-  /// back, upload), for diagnostics.
+  /// Wall-clock duration of the last capture (rasterize and wrap, plus the
+  /// readback and upload on the fallback path), for diagnostics.
   Duration get lastCaptureDuration => _lastCaptureDuration;
 
   /// Total completed captures, for diagnostics.
   int get captureCount => _captureCount;
 
-  void _publish(ByteData bytes, int width, int height, Duration elapsed) {
+  /// Publishes a capture wrapped directly from the rasterized image's
+  /// backing texture (the zero-copy path).
+  void _publishWrapped(gpu.Texture texture, Duration elapsed) {
+    _texture = texture;
+    _lastCaptureDuration = elapsed;
+    _captureCount++;
+    notifyListeners();
+  }
+
+  /// Publishes a capture from read-back bytes (the fallback path). The
+  /// backing texture is reused and overwritten in place while the capture
+  /// size is stable.
+  void _publishBytes(ByteData bytes, int width, int height, Duration elapsed) {
     var texture = _texture;
-    if (texture == null || texture.width != width || texture.height != height) {
+    if (texture == null ||
+        texture.width != width ||
+        texture.height != height ||
+        texture.storageMode != gpu.StorageMode.hostVisible) {
       texture = gpu.gpuContext.createTexture(
         gpu.StorageMode.hostVisible,
         width,
@@ -441,6 +454,11 @@ class _RenderWidgetTexture extends RenderProxyBox {
     }
   }
 
+  // Whether gpu.Texture.fromImage can wrap captures on this backend. Cleared
+  // by the first failed wrap (the web backend, software rendering) so later
+  // captures skip straight to the readback fallback.
+  bool _wrapSupported = true;
+
   Future<void> _pumpCapture() async {
     if (_captureInFlight) return;
     _captureInFlight = true;
@@ -455,18 +473,39 @@ class _RenderWidgetTexture extends RenderProxyBox {
             Offset.zero & _captureSize,
             pixelRatio: _pixelRatio,
           );
-          final bytes = await image.toByteData(
-            format: ui.ImageByteFormat.rawStraightRgba,
-          );
-          if (bytes != null && attached) {
-            _controller._publish(
-              bytes,
-              image.width,
-              image.height,
-              stopwatch.elapsed,
-            );
+          try {
+            gpu.Texture? wrapped;
+            if (_wrapSupported) {
+              try {
+                wrapped = gpu.Texture.fromImage(gpu.gpuContext, image);
+              } on Exception {
+                // The image is not backed by a wrappable GPU texture on this
+                // backend; read back and upload from here on.
+                _wrapSupported = false;
+              }
+            }
+            if (!attached) {
+              // Detached mid-capture; drop the result.
+            } else if (wrapped != null) {
+              _controller._publishWrapped(wrapped, stopwatch.elapsed);
+            } else {
+              final bytes = await image.toByteData(
+                format: ui.ImageByteFormat.rawStraightRgba,
+              );
+              if (bytes != null && attached) {
+                _controller._publishBytes(
+                  bytes,
+                  image.width,
+                  image.height,
+                  stopwatch.elapsed,
+                );
+              }
+            }
+          } finally {
+            // A wrapped texture shares the image's storage and keeps it
+            // alive, so disposing the image is safe on both paths.
+            image.dispose();
           }
-          image.dispose();
         } finally {
           layer.dispose();
         }

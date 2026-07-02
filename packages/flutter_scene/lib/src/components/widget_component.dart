@@ -44,9 +44,10 @@ enum WidgetInput {
 ///    mesh is created at all (for surfaces that already exist, like a screen
 ///    inside an imported model).
 ///
-/// The texture object is stable across captures (overwritten in place) and
-/// replaced only when the capture size changes; [bind] re-fires exactly on
-/// replacement.
+/// Each capture wraps the rasterized image's backing texture directly, so
+/// the texture object is replaced across captures and [bind] re-fires per
+/// capture (on the readback fallback path it is overwritten in place and
+/// [bind] re-fires only when the capture size changes).
 /// {@category Widgets}
 // TODO(widget-component): WidgetInput.automatic via ScenePointer (phase 3).
 // TODO(fscene): serialize the component spec (size, policy, geometry) with a

@@ -89,6 +89,8 @@ base class Texture {
   Texture._() {
     _stub();
   }
+  factory Texture.fromImage(GpuContext gpuContext, ui.Image image) =>
+      Texture._();
   StorageMode get storageMode => _stub();
   PixelFormat get format => _stub();
   int get width => _stub();
