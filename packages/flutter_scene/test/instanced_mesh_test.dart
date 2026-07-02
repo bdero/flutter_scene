@@ -27,8 +27,9 @@ class _StubGeometry extends Geometry {
     gpu.HostBuffer transientsBuffer,
     Matrix4 modelTransform,
     Matrix4 cameraTransform,
-    Vector3 cameraPosition,
-  ) {
+    Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+  }) {
     throw UnsupportedError('Stub geometry is not renderable');
   }
 }

@@ -164,6 +164,49 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _camera());
   }),
+  // A custom .fmat material with a vertex { } stage: a lit material whose
+  // Vertex() hook bends a tessellated plane down with horizontal distance from
+  // the camera (the curved-world look). Exercises vertex-shader customization
+  // end to end: the generated vertex variant is paired with the fragment and
+  // its MaterialParams reach the vertex stage.
+  SmokeScene('fmat_vertex_curve', () {
+    final shader = _materialsLibrary!['VertexCurve']!;
+    final metadata = (_materialsMetadata!['VertexCurve'] as Map)
+        .cast<String, Object?>();
+    // Resolve the generated vertex variants from the sidecar's variant map (as
+    // the DataAssets loader does), since this scene builds the material by hand.
+    final vertexMeta = (metadata['vertex'] as Map?)?.cast<String, Object?>();
+    final vertexShaders = vertexMeta == null
+        ? null
+        : <String, gpu.Shader>{
+            for (final e in vertexMeta.entries)
+              e.key: _materialsLibrary![e.value as String]!,
+          };
+    final material = PreprocessedMaterial(
+      fragmentShader: shader,
+      metadata: metadata,
+      vertexShaders: vertexShaders,
+    )..parameters.setFloat('curvature', 0.022);
+    final scene = Scene();
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
+        ),
+      ),
+    );
+    // A tessellated plane so the per-vertex bend reads as a smooth curve rather
+    // than moving only the corners.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0, segmentsX: 48, segmentsZ: 48),
+          material,
+        ),
+      ),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }),
 ];
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the

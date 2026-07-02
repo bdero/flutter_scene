@@ -413,13 +413,20 @@ abstract class Geometry {
   /// subclass-specific values, like the joints texture for skinned
   /// geometry) into the supplied transient buffer and bind the resulting
   /// uniform views.
+  ///
+  /// [shaderOverride] is the vertex shader the pipeline actually runs when it
+  /// differs from this geometry's default [vertexShader] (a custom material's
+  /// generated vertex variant). The per-frame uniforms (`FrameInfo`, the joints
+  /// texture) must be bound against that shader's slots, since a variant can
+  /// place its uniform blocks at different binding points.
   void bind(
     gpu.RenderPass pass,
     gpu.HostBuffer transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
-    vm.Vector3 cameraPosition,
-  );
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+  });
 
   /// Emits this geometry's draw call after [bind] has prepared the render pass.
   void draw(gpu.RenderPass pass, {int instanceCount = 1}) {
@@ -665,8 +672,9 @@ class UnskinnedGeometry extends Geometry {
     gpu.HostBuffer transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
-    vm.Vector3 cameraPosition,
-  ) {
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+  }) {
     bindGeometryBuffers(pass);
 
     // Unskinned vertex UBO. The model transform is NOT part of this block;
@@ -675,7 +683,7 @@ class UnskinnedGeometry extends Geometry {
     bindUnskinnedFrameInfo(
       pass,
       transientsBuffer,
-      vertexShader,
+      shaderOverride ?? vertexShader,
       cameraTransform,
       cameraPosition,
     );
@@ -717,14 +725,19 @@ class SkinnedGeometry extends Geometry {
     gpu.HostBuffer transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
-    vm.Vector3 cameraPosition,
-  ) {
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+  }) {
     if (_jointsTexture == null) {
       throw Exception('Joints texture must be set for skinned geometry.');
     }
 
+    // Bind against the shader the pipeline runs (a material's skinned vertex
+    // variant when supplied), since its uniform slots can differ.
+    final boundShader = shaderOverride ?? vertexShader;
+
     pass.bindTexture(
-      vertexShader.getUniformSlot('joints_texture'),
+      boundShader.getUniformSlot('joints_texture'),
       _jointsTexture!,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
@@ -745,7 +758,7 @@ class SkinnedGeometry extends Geometry {
     // transform to be ignored). `modelTransform` is unused for skinned
     // geometry as a result.
     final identityTransform = vm.Matrix4.identity();
-    final frameInfoSlot = vertexShader.getUniformSlot('FrameInfo');
+    final frameInfoSlot = boundShader.getUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([
       identityTransform.storage[0],
       identityTransform.storage[1],
