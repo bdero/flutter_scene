@@ -182,8 +182,11 @@ class BillboardGeometry extends Geometry {
     gpu.HostBuffer transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
-    vm.Vector3 cameraPosition,
-  ) {
+    vm.Vector3 cameraPosition, {
+    // Billboards use the engine's billboard vertex shader; custom material
+    // vertex variants do not apply, so this override is accepted and ignored.
+    gpu.Shader? shaderOverride,
+  }) {
     // Slot 0: the shared unit quad (and its indices).
     bindGeometryBuffers(pass);
 

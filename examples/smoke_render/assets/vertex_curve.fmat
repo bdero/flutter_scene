@@ -1,0 +1,34 @@
+// A lit material with a custom vertex stage that bends geometry down with
+// horizontal distance from the camera (the "curved world" / small-planet
+// look). Exercises the .fmat vertex { } hook end to end together with the
+// engine's physically based lighting.
+
+material {
+  name: "VertexCurve",
+  shading_model: lit,
+  culling: none,
+  parameters: [
+    { type: float, name: curvature, hint: range(0.0, 0.2, 0.001), default: 0.05 },
+    { type: vec4, name: base_color, hint: source_color, default: [0.45, 0.55, 0.35, 1.0] },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Drop the vertex by a quadratic of its horizontal distance from the
+    // camera, so distant geometry curves away over a false horizon. Reads the
+    // engine-provided world position and camera position; the engine projects
+    // the modified world position after this returns.
+    vec3 rel = vertex.world_position - vertex.camera_position;
+    vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = material_params.base_color;
+    material.metallic = 0.0;
+    material.roughness = 0.85;
+    PrepareMaterial(material);
+  }
+}

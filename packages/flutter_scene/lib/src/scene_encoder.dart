@@ -338,12 +338,19 @@ base class SceneEncoder {
     // it binds; reset for every draw so a shared material does not leak a
     // previous draw's fade.
     material.lodFade = fade;
+    // A `vertex { }` material supplies its own vertex shader for this mesh
+    // type; the geometry must bind FrameInfo (and skinned's joints texture)
+    // against it, since its uniform slots can differ from the engine default.
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
     geometry.bind(
       _renderPass,
       _transientsBuffer,
       worldTransform,
       _cameraTransform,
       _camera.position,
+      shaderOverride: materialVertex,
     );
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
@@ -355,7 +362,9 @@ base class SceneEncoder {
       );
     }
     material.bind(_renderPass, _transientsBuffer, _lighting);
-    _bindMaterialVertexStage(geometry, material);
+    if (materialVertex != null) {
+      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
+    }
     if (windingFlipped) {
       // A mirrored (negative-determinant) transform reverses triangle
       // winding; flip the cull order so front faces aren't culled. Material
@@ -364,19 +373,6 @@ base class SceneEncoder {
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
     geometry.draw(_renderPass);
-  }
-
-  // Binds a `vertex { }` material's uniforms to the vertex stage. The geometry
-  // already bound its FrameInfo (camera transform and position); this makes the
-  // material's MaterialParams block available in the generated Vertex() hook. A
-  // no-op unless the material supplied a vertex shader for this geometry.
-  void _bindMaterialVertexStage(Geometry geometry, Material material) {
-    final materialVertex = material.materialVertexShader(
-      geometry.materialVertexVariant,
-    );
-    if (materialVertex != null) {
-      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
-    }
   }
 
   /// Draws an opaque instanced item with hardware instancing: the instance
@@ -399,8 +395,13 @@ base class SceneEncoder {
     _renderPass.clearBindings();
     _bindPipeline(pipeline);
     material.lodFade = fade;
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
     material.bind(_renderPass, _transientsBuffer, _lighting);
-    _bindMaterialVertexStage(geometry, material);
+    if (materialVertex != null) {
+      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
+    }
     _renderPass.setPrimitiveType(geometry.primitiveType);
 
     if (geometry.instancedVertexLayout == null) {
@@ -411,6 +412,7 @@ base class SceneEncoder {
           nodeTransform * instanceTransform,
           _cameraTransform,
           _camera.position,
+          shaderOverride: materialVertex,
         );
         // Each instance can itself mirror; combine with the node's parity.
         final flip = windingFlipped != (instanceTransform.determinant() < 0);
@@ -428,6 +430,7 @@ base class SceneEncoder {
       nodeTransform,
       _cameraTransform,
       _camera.position,
+      shaderOverride: materialVertex,
     );
     final packed = packInstanceTransforms(
       nodeTransform,
