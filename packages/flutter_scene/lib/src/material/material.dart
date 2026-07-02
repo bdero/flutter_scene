@@ -247,4 +247,17 @@ abstract class Material {
   bool isOpaque() {
     return true;
   }
+
+  /// The metallic-roughness texture the camera depth prepass samples so
+  /// screen-space reflections have a per-pixel roughness (roughness in G),
+  /// or null to use a fully-rough placeholder. The base material has none, so
+  /// it reads as fully rough and receives no screen-space reflection; a lit
+  /// material overrides this.
+  @internal
+  gpu.Texture? get reflectionRoughnessTexture => null;
+
+  /// The roughness multiplier applied to [reflectionRoughnessTexture] in the
+  /// depth prepass (the material's roughness factor).
+  @internal
+  double get reflectionRoughnessFactor => 1.0;
 }
