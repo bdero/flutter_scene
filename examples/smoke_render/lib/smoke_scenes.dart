@@ -68,8 +68,29 @@ Future<void> loadSmokeMaterials() async {
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
 }
 
-/// The smoke scene set. Mostly procedural for determinism; the final scene
-/// exercises a custom `.fmat` material compiled by the build hook.
+/// Builds a `PreprocessedMaterial` for the `VertexCurve` `.fmat` at the given
+/// [curvature], resolving its generated vertex variants from the sidecar's
+/// variant map (as the DataAssets loader does), since these scenes build the
+/// material by hand.
+PreprocessedMaterial _curveMaterial(double curvature) {
+  final metadata = (_materialsMetadata!['VertexCurve'] as Map)
+      .cast<String, Object?>();
+  final vertexMeta = (metadata['vertex'] as Map?)?.cast<String, Object?>();
+  final vertexShaders = vertexMeta == null
+      ? null
+      : <String, gpu.Shader>{
+          for (final e in vertexMeta.entries)
+            e.key: _materialsLibrary![e.value as String]!,
+        };
+  return PreprocessedMaterial(
+    fragmentShader: _materialsLibrary!['VertexCurve']!,
+    metadata: metadata,
+    vertexShaders: vertexShaders,
+  )..parameters.setFloat('curvature', curvature);
+}
+
+/// The smoke scene set. Mostly procedural for determinism; the final scenes
+/// exercise a custom `.fmat` material compiled by the build hook.
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Diffuse-ish PBR under the default studio IBL.
   SmokeScene('pbr_cuboid', () {
@@ -170,23 +191,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // end to end: the generated vertex variant is paired with the fragment and
   // its MaterialParams reach the vertex stage.
   SmokeScene('fmat_vertex_curve', () {
-    final shader = _materialsLibrary!['VertexCurve']!;
-    final metadata = (_materialsMetadata!['VertexCurve'] as Map)
-        .cast<String, Object?>();
-    // Resolve the generated vertex variants from the sidecar's variant map (as
-    // the DataAssets loader does), since this scene builds the material by hand.
-    final vertexMeta = (metadata['vertex'] as Map?)?.cast<String, Object?>();
-    final vertexShaders = vertexMeta == null
-        ? null
-        : <String, gpu.Shader>{
-            for (final e in vertexMeta.entries)
-              e.key: _materialsLibrary![e.value as String]!,
-          };
-    final material = PreprocessedMaterial(
-      fragmentShader: shader,
-      metadata: metadata,
-      vertexShaders: vertexShaders,
-    )..parameters.setFloat('curvature', 0.022);
+    final material = _curveMaterial(0.022);
     final scene = Scene();
     scene.add(
       Node()..addComponent(
@@ -204,6 +209,44 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           material,
         ),
       ),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }),
+  // A vertex-displacing material under a shadow-casting light: a curved ground
+  // receiver and a floating caster, both displaced by the curve. Exercises the
+  // multi-pass vertex hook: the caster's depth in the shadow map is displaced
+  // too, so its shadow lands under the displaced caster on the curved ground
+  // rather than detaching to the flat position.
+  SmokeScene('fmat_vertex_curve_shadow', () {
+    final scene = Scene();
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(
+            direction: vm.Vector3(-0.4, -1.0, -0.35),
+            castsShadow: true,
+            shadowMaxDistance: 20.0,
+          ),
+        ),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0, segmentsX: 48, segmentsZ: 48),
+          _curveMaterial(0.02),
+        ),
+      ),
+    );
+    // Caster floating above, using the same curve material so it is displaced
+    // and casts a shadow from its displaced position.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(0.6, 0.6, 0.6)),
+          _curveMaterial(0.02),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)),
     );
     return (scene: scene, camera: _shadowCamera());
   }),
