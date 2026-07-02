@@ -99,7 +99,9 @@ class ExampleSpritesState extends State<ExampleSprites> {
       ),
     );
 
-    final dot = await gpuTextureFromImage(await _softDotImage());
+    final dot = GpuTextureSource(
+      await gpuTextureFromImage(await _softDotImage()),
+    );
 
     // Left: three overlapping alpha sprites at different depths.
     final colors = [
