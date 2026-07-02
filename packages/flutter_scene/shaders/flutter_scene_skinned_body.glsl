@@ -86,4 +86,14 @@ void main() {
   v_normal = vertex.world_normal;
   v_texture_coords = vertex.uv;
   v_color = vertex.color;
+
+#ifdef HAS_MATERIAL_VERTEX
+  // Keep the mesh inputs (including the skin attributes) live behind a
+  // runtime-zero (see VertexKeepAlive) so a hook that fully replaces the
+  // outputs cannot strip a declared attribute and break shader reflection.
+  gl_Position += vertex_keep_alive.keep_alive.x *
+      vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz +
+               joints.xyz + weights.xyz,
+           0.0);
+#endif
 }

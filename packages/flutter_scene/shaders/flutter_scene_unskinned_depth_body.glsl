@@ -53,4 +53,10 @@ void main() {
   v_normal = vec3(0.0);
   v_texture_coords = vec2(0.0);
   v_color = vec4(0.0);
+
+#ifdef HAS_MATERIAL_VERTEX
+  // Keep the position input live so a hook that replaces world_position cannot
+  // strip it (see VertexKeepAlive). Only position is fetched in the depth pass.
+  gl_Position += vertex_keep_alive.keep_alive.x * vec4(position, 0.0);
+#endif
 }

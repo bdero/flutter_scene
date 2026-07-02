@@ -49,4 +49,13 @@ void main() {
   v_normal = vertex.world_normal;
   v_texture_coords = vertex.uv;
   v_color = vertex.color;
+
+#ifdef HAS_MATERIAL_VERTEX
+  // Reference the mesh inputs behind a runtime-zero (see VertexKeepAlive) so a
+  // Vertex() hook that fully replaces the outputs cannot let the optimizer
+  // strip a declared attribute, which would break shader reflection. Compiled
+  // only into a .fmat's vertex variants, never the engine's base shaders.
+  gl_Position += vertex_keep_alive.keep_alive.x *
+      vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz, 0.0);
+#endif
 }

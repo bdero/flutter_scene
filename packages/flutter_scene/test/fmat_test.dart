@@ -427,6 +427,16 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
 
+    test('every vertex variant declares the keep-alive block', () {
+      // The body includes reference it (under HAS_MATERIAL_VERTEX) to keep the
+      // mesh inputs live, so a hook that replaces the outputs cannot strip an
+      // attribute and break reflection.
+      final variants = emitVertexGlsl(parseFmat(withVertex));
+      for (final glsl in variants.values) {
+        expect(glsl, contains('uniform VertexKeepAlive'));
+      }
+    });
+
     test('sidecar records the per-variant vertex entry names', () {
       final sidecar = buildSidecar(parseFmat(withVertex));
       expect(sidecar['vertex'], <String, Object?>{

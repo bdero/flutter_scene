@@ -16,6 +16,16 @@ const String kMaterialParamsBlock = 'MaterialParams';
 /// The GLES-fold-safe instance name for [kMaterialParamsBlock].
 const String kMaterialParamsInstance = 'material_params';
 
+/// The uniform block a generated vertex variant declares to keep the mesh
+/// vertex inputs live (see the body includes). The runtime binds it to zero,
+/// so it has no effect; it exists only so the optimizer cannot strip a
+/// declared vertex attribute when a `Vertex()` hook fully replaces the stage
+/// outputs (which would break shader reflection).
+const String kVertexKeepAliveBlock = 'VertexKeepAlive';
+
+/// The GLES-fold-safe instance name for [kVertexKeepAliveBlock].
+const String kVertexKeepAliveInstance = 'vertex_keep_alive';
+
 /// The engine vertex variants a material with a `vertex { }` block generates a
 /// shader for, mapping the sidecar key the runtime selects by to the shared
 /// body include that variant reuses. The keys correspond to the geometry a
@@ -192,6 +202,13 @@ String _emitVertexVariant(
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
   }
+
+  // Bound to zero by the runtime; the body include multiplies the mesh inputs
+  // by it so a hook that fully replaces the outputs cannot strip a declared
+  // vertex attribute (which would break shader reflection).
+  sb.writeln('uniform $kVertexKeepAliveBlock { vec4 keep_alive; }');
+  sb.writeln('$kVertexKeepAliveInstance;');
+  sb.writeln();
 
   // The material supplies its own Vertex(), so suppress the no-op hook in
   // material_vertex.glsl.
