@@ -139,6 +139,9 @@ class _OceanDemoState extends State<_OceanDemo> {
         indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
       }
     }
+    // TODO(gles-swiftshader): custom vertex attributes read wrong on the
+    // x86_64 SwiftShader GLES stack the Android emulator uses (fine on real
+    // devices and every other backend), so the wave color is off there.
     return MeshGeometry.fromArrays(positions: positions, indices: indices)
       ..setCustomAttribute('wave_seed', seeds, components: 1);
   }
