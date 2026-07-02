@@ -1,0 +1,48 @@
+// The single custom-material smoke coverage: one .fmat that customizes BOTH
+// the vertex stage and the fragment color, and exercises the whole path (build
+// hook, generated fragment + vertex variants, sidecar params, a custom
+// per-vertex attribute, a custom varying, and the depth/shadow variant).
+
+material {
+  name: "CustomMaterial",
+  shading_model: lit,
+  culling: none,
+  parameters: [
+    { type: float, name: amplitude, hint: range(0.0, 0.6, 0.01), default: 0.3 },
+    { type: vec4, name: color_a, hint: source_color, default: [0.1, 0.3, 0.95, 1.0] },
+    { type: vec4, name: color_b, hint: source_color, default: [1.0, 0.55, 0.1, 1.0] },
+  ],
+  // Supplied per vertex by the mesh (setCustomAttribute).
+  attributes: [
+    { type: float, name: phase },
+  ],
+  // Forwarded from the vertex stage to the fragment stage.
+  varyings: [
+    { type: float, name: tint },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Vertex customization: a world-space ripple. Because it is driven by the
+    // world position (not the custom attribute), it applies in every pass,
+    // including the shadow map, so the cast shadow ripples too.
+    float ripple = sin(vertex.world_position.x * 3.0) *
+                   cos(vertex.world_position.z * 3.0);
+    vertex.world_position.y += material_params.amplitude * ripple;
+    // Forward the per-vertex phase attribute for coloring.
+    tint = phase;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    // Color customization: blend two authored colors by the interpolated
+    // per-vertex phase.
+    float t = 0.5 + 0.5 * sin(tint * 2.0);
+    material.base_color = mix(material_params.color_a, material_params.color_b, t);
+    material.metallic = 0.0;
+    material.roughness = 0.6;
+    PrepareMaterial(material);
+  }
+}

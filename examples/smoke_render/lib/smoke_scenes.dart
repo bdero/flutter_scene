@@ -88,14 +88,11 @@ PreprocessedMaterial _fmatMaterial(String name) {
   );
 }
 
-PreprocessedMaterial _curveMaterial(double curvature) =>
-    _fmatMaterial('VertexCurve')..parameters.setFloat('curvature', curvature);
-
 /// A flat NxN grid in the XZ plane carrying a per-vertex `phase` custom
-/// attribute (diagonal stripes), for the custom-attribute scene.
+/// attribute, for the custom-material scene.
 MeshGeometry _phaseGrid() {
   const n = 24; // cells per side; (n + 1)^2 vertices
-  const size = 3.0;
+  const size = 2.2;
   final vertexCount = (n + 1) * (n + 1);
   final positions = Float32List(vertexCount * 3);
   final phase = Float32List(vertexCount);
@@ -186,69 +183,15 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
   }),
-  // A custom .fmat material (the unlit toon) compiled by buildMaterials and
-  // driven through PreprocessedMaterial. Exercises the whole custom-material
-  // path end to end: the build hook, the generated shader, the sidecar, and
-  // the type-checked runtime parameters.
-  SmokeScene('fmat_toon', () {
-    final shader = _materialsLibrary!['FmatToon']!;
-    final metadata = (_materialsMetadata!['FmatToon'] as Map)
-        .cast<String, Object?>();
-    final material = PreprocessedMaterial(
-      fragmentShader: shader,
-      metadata: metadata,
-    );
-    material.parameters
-      ..setColor('base_color', const Color(0xFFE0A030))
-      ..setColor('rim_color', const Color(0xFF40C0FF))
-      // Light toward the camera so the banded diffuse reads on the visible
-      // faces.
-      ..setVec3('light_direction', vm.Vector3(3.0, 2.0, 4.0))
-      ..setFloat('band_count', 4.0)
-      ..setFloat('ambient', 0.3)
-      ..setFloat('rim_strength', 0.4)
-      ..setFloat('rim_width', 0.35);
-    final scene = Scene();
-    scene.add(
-      Node(
-        mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material),
-      )..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3),
-    );
-    return (scene: scene, camera: _camera());
-  }),
-  // A custom .fmat material with a vertex { } stage: a lit material whose
-  // Vertex() hook bends a tessellated plane down with horizontal distance from
-  // the camera (the curved-world look). Exercises vertex-shader customization
-  // end to end: the generated vertex variant is paired with the fragment and
-  // its MaterialParams reach the vertex stage.
-  SmokeScene('fmat_vertex_curve', () {
-    final material = _curveMaterial(0.022);
-    final scene = Scene();
-    scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
-        ),
-      ),
-    );
-    // A tessellated plane so the per-vertex bend reads as a smooth curve rather
-    // than moving only the corners.
-    scene.add(
-      Node(
-        mesh: Mesh(
-          PlaneGeometry(width: 3.0, depth: 3.0, segmentsX: 48, segmentsZ: 48),
-          material,
-        ),
-      ),
-    );
-    return (scene: scene, camera: _shadowCamera());
-  }),
-  // A vertex-displacing material under a shadow-casting light: a curved ground
-  // receiver and a floating caster, both displaced by the curve. Exercises the
-  // multi-pass vertex hook: the caster's depth in the shadow map is displaced
-  // too, so its shadow lands under the displaced caster on the curved ground
-  // rather than detaching to the flat position.
-  SmokeScene('fmat_vertex_curve_shadow', () {
+  // The single custom-material scene: one .fmat that customizes BOTH the
+  // vertex stage (a world-space ripple, which also displaces the shadow) and
+  // the fragment color (blended from a per-vertex attribute forwarded through a
+  // varying). Covers the whole custom-material path end to end: the build hook,
+  // the generated fragment and vertex variants, sidecar params, a custom
+  // attribute, a custom varying, and the depth/shadow variant.
+  SmokeScene('fmat_custom_material', () {
+    final material = _fmatMaterial('CustomMaterial')
+      ..parameters.setFloat('amplitude', 0.3);
     final scene = Scene();
     scene.add(
       Node()..addComponent(
@@ -261,40 +204,26 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ),
       ),
     );
+    // Ground receiver, to catch the rippled shadow.
     scene.add(
       Node(
         mesh: Mesh(
-          PlaneGeometry(width: 3.0, depth: 3.0, segmentsX: 48, segmentsZ: 48),
-          _curveMaterial(0.02),
+          PlaneGeometry(width: 3.6, depth: 3.6),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.8, 0.8, 0.82, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
         ),
       ),
     );
-    // Caster floating above, using the same curve material so it is displaced
-    // and casts a shadow from its displaced position.
+    // The custom-material hero: a grid carrying a per-vertex `phase` attribute,
+    // rippled by the vertex stage and colored from the attribute. Floats above
+    // the ground so its displaced shadow reads clearly.
     scene.add(
-      Node(
-        mesh: Mesh(
-          CuboidGeometry(vm.Vector3(0.6, 0.6, 0.6)),
-          _curveMaterial(0.02),
-        ),
-      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)),
+      Node(mesh: Mesh(_phaseGrid(), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)),
     );
-    return (scene: scene, camera: _shadowCamera());
-  }),
-  // A material driven by a custom per-vertex attribute: the grid supplies a
-  // `phase` value per vertex, Vertex() bobs the vertex by it and forwards it
-  // through a varying, and Surface() colors by the interpolated value.
-  // Exercises the declared-attribute -> vertex -> varying -> fragment path.
-  SmokeScene('fmat_vertex_attribute', () {
-    final scene = Scene();
-    scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
-        ),
-      ),
-    );
-    scene.add(Node(mesh: Mesh(_phaseGrid(), _fmatMaterial('VertexAttribute'))));
     return (scene: scene, camera: _shadowCamera());
   }),
 ];
