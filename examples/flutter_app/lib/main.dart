@@ -20,6 +20,7 @@ import 'example_logo.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_physics_box3d.dart';
+import 'example_physics_car.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
@@ -96,6 +97,17 @@ class _MyAppState extends State<MyApp> {
             return const Center(child: CircularProgressIndicator());
           }
           return const ExamplePhysicsBox3d();
+        },
+      ),
+      'Car Physics': (context) => FutureBuilder<void>(
+        // Shares the Rapier backend with the Physics example, so it waits on
+        // the same wasm load before building its world.
+        future: _physicsReady,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return const ExamplePhysicsCar();
         },
       ),
       'Shapes': (context) => FutureBuilder<void>(
