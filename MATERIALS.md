@@ -243,6 +243,112 @@ outputs it premultiplied.
 
 ---
 
+# The `vertex` block
+
+A surface material may add an optional `vertex { }` block to customize the
+vertex stage (displace geometry, animate it, perturb normals, feed data to the
+fragment). You write one function:
+
+```glsl
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Read and modify the vertex, in place.
+  }
+}
+```
+
+You write it once. The engine runs it on every mesh type and pass (static,
+skinned, and the position-only depth/shadow pass); you never branch on whether
+the mesh is skinned. Skinning is already applied when `Vertex()` runs, so the
+fields below mean the same thing everywhere.
+
+`VertexInputs` is:
+
+```glsl
+struct VertexInputs {
+  vec3 position;        // object space (post-skinning on a skinned mesh)
+  vec3 normal;          // object space
+  vec3 world_position;  // world space, after the model/skin transform
+  vec3 world_normal;    // world space
+  vec2 uv;
+  vec4 color;
+  vec3 camera_position; // read-only, world space
+};
+```
+
+Write `world_position` to displace geometry (the engine projects it to clip
+space after `Vertex()` returns) and `world_normal` to change the shading normal.
+The `material_params.*` values are available in `Vertex()` just as in
+`Surface()`, so one parameter drives both stages.
+
+```glsl
+// A world curve: bend geometry down with distance from the camera.
+void Vertex(inout VertexInputs vertex) {
+  vec3 rel = vertex.world_position - vertex.camera_position;
+  vertex.world_position.y -= material_params.curvature * dot(rel.xz, rel.xz);
+}
+```
+
+**Derive, don't replace.** Prefer perturbing the provided value
+(`vertex.world_normal = normalize(vertex.world_normal + delta)`) over assigning
+a fresh one. It keeps the mesh normal meaningful, and it reads the mesh input so
+the input can't be optimized away. (The engine inserts a keep-alive so a full
+replacement still compiles, but deriving is the better habit.)
+
+## Custom varyings (vertex to fragment)
+
+Declare named interpolants in a `varyings` list; `Vertex()` writes them and
+`Surface()` reads them, by name. The emitter generates the matching `out`/`in`
+declarations, so you never pick a location.
+
+```
+material {
+  name: "Curve",
+  varyings: [ { type: float, name: curve_fade } ],   // float/vec2/vec3/vec4
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) { /* ... */ curve_fade = ...; }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color.rgb *= mix(1.0, 0.4, curve_fade);
+    PrepareMaterial(material);
+  }
+}
+```
+
+## Custom vertex attributes (mesh to vertex)
+
+Declare named per-vertex inputs in an `attributes` list; the mesh supplies the
+data and `Vertex()` reads each by name.
+
+```
+material {
+  name: "Waves",
+  attributes: [ { type: float, name: phase } ],   // float/vec2/vec3/vec4
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += 0.2 * sin(phase);
+  }
+}
+```
+
+Supply the data on the geometry, one value per vertex, matching by name:
+
+```dart
+geometry.setCustomAttribute('phase', phaseValues, components: 1);
+```
+
+Custom attributes require the described-layout (unskinned) geometry path
+(`MeshGeometry` and the built-in primitives use it; skinned meshes do not
+support custom attributes yet). The depth/shadow pass fetches only position, so
+an attribute reads zero there: a displacement driven by a custom attribute is
+not reflected in the shadow, while one driven by `world_position` / a parameter
+is (world position is available in every pass).
+
+---
+
 # The engine contract (both paths)
 
 flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
@@ -421,9 +527,12 @@ changed. Every part of a `.fmat` reloads with no app-side code and no restart:
   defaults** — re-read from the regenerated sidecar and applied to the live
   material. A value you set at runtime (`setColor`, etc.) is preserved; an
   unset parameter takes the edited default.
-- **The GLSL body** (`Surface()`) — the changed `.shaderbundle` is reloaded in
-  place via `ShaderLibrary.reinitialize` and the affected render pipelines are
-  rebuilt, so a shader edit shows up live.
+- **The GLSL body** (`Surface()` and the `vertex { }` block's `Vertex()`) — the
+  changed `.shaderbundle` is reloaded in place via `ShaderLibrary.reinitialize`
+  and the affected render pipelines are rebuilt, so a fragment or vertex edit
+  shows up live. (Changing the `varyings` / `attributes` lists changes the
+  generated shaders' structure; that reloads too, but a new custom attribute
+  only takes effect once the geometry supplies it via `setCustomAttribute`.)
 
 Requirements: the DataAssets workflow (`dart run flutter_scene:init` +
 `--enable-dart-data-assets`), so the build hook re-runs on a `.fmat` edit and
@@ -438,8 +547,9 @@ participate; it carries no sidecar.)
 # Current state and what's next
 
 The `.fmat` format, its preprocessor, the `buildMaterials` hook,
-`PreprocessedMaterial`, and hot reload are implemented. Remaining and in-flight
-work, tracked in [issue #22][issue22]:
+`PreprocessedMaterial`, the `vertex { }` stage (with custom varyings and
+attributes), and hot reload are implemented. Remaining and in-flight work,
+tracked in [issue #22][issue22]:
 
 - **The `light()` hook** for a custom per-light BRDF (toon banding inside the
   engine light loop) is not implemented; use `unlit` for fully custom shading
@@ -449,8 +559,10 @@ work, tracked in [issue #22][issue22]:
   `MaterialParameters` API.
 - **Additive/multiply blending and per-material depth state** are not yet
   configurable.
-- **Vertex-shader customization** is not exposed; materials use the engine's
-  standard vertex shaders.
+- **Custom vertex attributes on skinned meshes** are not supported (they use the
+  engine's default layout, not the described layout the attributes ride on), and
+  per-instance custom attributes are not exposed yet. See [The `vertex`
+  block](#the-vertex-block).
 - **An inspector** that surfaces the parameter hints as UI does not exist (the
   metadata is emitted for future tooling).
 
@@ -487,10 +599,16 @@ garbage on some backends).
 
 # See also
 
-- `examples/smoke_render/assets/toon.fmat` and the `fmat_toon` scene in
-  `examples/smoke_render/lib/smoke_scenes.dart`: a worked `.fmat` material
+- `examples/smoke_render/assets/custom_material.fmat` and the
+  `fmat_custom_material` scene in `examples/smoke_render/lib/smoke_scenes.dart`:
+  a worked `.fmat` that customizes both the vertex stage and the fragment,
   rendered through `PreprocessedMaterial`.
-- `examples/flutter_app/lib/example_toon.dart`: the raw-`ShaderMaterial` toon.
+- `examples/flutter_app/lib/example_vertex_curve.dart` with
+  `assets/vertex_ocean.fmat` and `assets/vertex_road.fmat`: the "Custom
+  vertices" example (an animated curved ocean and a curved runner road),
+  showing the `vertex { }` stage, custom varyings, and custom attributes.
+- `examples/flutter_app/assets/toon.fmat` and `example_toon_fmat.dart`: a
+  fragment-only `.fmat`; `example_toon.dart` is the raw-`ShaderMaterial` toon.
 - `packages/flutter_scene/shaders/flutter_scene_standard.frag` and
   `material_lighting.glsl`: the engine's PBR shader and the lighting framework a
   `lit` material composes against.

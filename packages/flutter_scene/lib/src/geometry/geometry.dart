@@ -185,6 +185,7 @@ abstract class Geometry {
   /// so an attribute-driven vertex displacement is not reflected in shadows.
   /// Re-attaching the same [name] replaces it. Custom attributes require the
   /// described-layout (unskinned) geometry path.
+  /// {@category Geometry}
   void setCustomAttribute(
     String name,
     Float32List data, {
