@@ -190,6 +190,11 @@ base class RenderPass {
 
   RenderPipeline? _boundPipeline;
   web.WebGLVertexArrayObject? _vao;
+
+  /// Vertex-stream bindings recorded since the last [clearBindings], applied
+  /// through the VAO cache when the draw is issued: (view, slot, whether the
+  /// stream is instance-rate).
+  final List<(BufferView, int, bool)> _pendingVertexBindings = [];
   PrimitiveType _primitiveType = PrimitiveType.triangle;
   BufferView? _inlineVertexBufferView;
 
@@ -365,7 +370,6 @@ base class RenderPass {
   }
 
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
-    final gl = _gpuContext._gl;
     final pipeline = _boundPipeline;
     if (pipeline == null) {
       throw StateError('bindVertexBuffer called before bindPipeline');
@@ -380,13 +384,16 @@ base class RenderPass {
       );
     }
 
-    _ensureVao();
-    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+    if (layout == null && pipeline.vertexShader.vertexInputs.isEmpty) {
+      // Inline pipeline (no reflected attributes): configured at draw time
+      // from the vertex count; not part of the cached-VAO path.
+      _inlineVertexBufferView = bufferView;
+      return;
+    }
+    _inlineVertexBufferView = null;
 
+    var instanceRate = false;
     if (layout != null) {
-      // Explicit layout: the buffer's slot describes its stride, step mode,
-      // and named attributes; the shader's reflection only supplies the
-      // attribute locations.
       if (slot < 0 || slot >= layout.buffers.length) {
         throw RangeError.value(
           slot,
@@ -394,7 +401,24 @@ base class RenderPass {
           'Pipeline VertexLayout declares ${layout.buffers.length} buffers',
         );
       }
-      _inlineVertexBufferView = null;
+      instanceRate = layout.buffers[slot].stepMode == VertexStepMode.instance;
+    }
+    // Deferred: applied (through the VAO cache) when the draw is issued.
+    _pendingVertexBindings.add((bufferView, slot, instanceRate));
+  }
+
+  /// Applies one recorded vertex-stream binding to the currently bound VAO:
+  /// binds the stream's GL buffer and points/enables its attributes.
+  void _applyVertexBinding(BufferView bufferView, int slot) {
+    final gl = _gpuContext._gl;
+    final pipeline = _boundPipeline!;
+    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+
+    final layout = pipeline.vertexLayout;
+    if (layout != null) {
+      // Explicit layout: the buffer's slot describes its stride, step mode,
+      // and named attributes; the shader's reflection only supplies the
+      // attribute locations.
       final buffer = layout.buffers[slot];
       final divisor = buffer.stepMode == VertexStepMode.instance ? 1 : 0;
       for (final attribute in buffer.attributes) {
@@ -426,35 +450,98 @@ base class RenderPass {
     }
 
     final inputs = pipeline.vertexShader.vertexInputs;
-    if (inputs.isEmpty) {
-      _inlineVertexBufferView = bufferView;
+    final stride = pipeline.vertexShader.vertexStride;
+    for (final input in inputs) {
+      gl.enableVertexAttribArray(input.location);
+      gl.vertexAttribPointer(
+        input.location,
+        input.componentCount,
+        web.WebGL2RenderingContext.FLOAT,
+        false,
+        stride,
+        bufferView.offsetInBytes + input.offsetInBytes,
+      );
+      // Divisor state lives in the VAO and may be left over from an
+      // instanced layout; reset it for vertex-rate inputs.
+      gl.vertexAttribDivisor(input.location, 0);
+    }
+  }
+
+  /// Binds the vertex (and, when [needsIndex] is set, index) state for the
+  /// draw being issued, through a cached VAO.
+  ///
+  /// Vertex-attribute specification is the dominant per-draw GL traffic, and
+  /// on the web every GL call is validated in the browser's GPU process, so
+  /// re-specifying stable geometry streams per draw is expensive out of all
+  /// proportion to the Dart-side cost. Geometry streams are stable per
+  /// (pipeline, buffers, offsets), so their full attribute state is captured
+  /// in a VAO once and re-bound with a single call thereafter.
+  ///
+  /// Instance-rate streams are excluded from the cache key and re-pointed on
+  /// the bound VAO every draw: they ride the per-frame bump allocator, so
+  /// their offset changes per draw and every instanced draw re-points them
+  /// anyway.
+  void _applyVertexState({required bool needsIndex}) {
+    if (_inlineVertexBufferView != null) {
+      _ensureVao();
+      return;
+    }
+    final gl = _gpuContext._gl;
+    final pipeline = _boundPipeline!;
+    final key = StringBuffer()..write(identityHashCode(pipeline));
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      if (instanceRate) continue;
+      key
+        ..write('|')
+        ..write(identityHashCode(view.buffer))
+        ..write(':')
+        ..write(view.offsetInBytes)
+        ..write(':')
+        ..write(slot);
+    }
+    final indexView = needsIndex ? _indexBufferView : null;
+    if (indexView != null) {
+      key
+        ..write('#')
+        ..write(identityHashCode(indexView.buffer))
+        ..write(':')
+        ..write(indexView.offsetInBytes);
+    }
+    final cacheKey = key.toString();
+    final cache = _gpuContext._vaoCache;
+    // Remove-and-reinsert keeps the map in least-recently-used order.
+    var vao = cache.remove(cacheKey);
+    if (vao != null) {
+      cache[cacheKey] = vao;
+      gl.bindVertexArray(vao);
     } else {
-      _inlineVertexBufferView = null;
-      final stride = pipeline.vertexShader.vertexStride;
-      for (final input in inputs) {
-        gl.enableVertexAttribArray(input.location);
-        gl.vertexAttribPointer(
-          input.location,
-          input.componentCount,
-          web.WebGL2RenderingContext.FLOAT,
-          false,
-          stride,
-          bufferView.offsetInBytes + input.offsetInBytes,
-        );
-        // Divisor state lives in the VAO and may be left over from an
-        // instanced layout; reset it for vertex-rate inputs.
-        gl.vertexAttribDivisor(input.location, 0);
+      vao = gl.createVertexArray();
+      if (vao == null) {
+        throw StateError('Failed to create WebGL vertex array');
       }
+      gl.bindVertexArray(vao);
+      for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+        if (instanceRate) continue;
+        _applyVertexBinding(view, slot);
+      }
+      // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
+      indexView?.buffer._bindForTarget(
+        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+      );
+      cache[cacheKey] = vao;
+      if (cache.length > GpuContext._kMaxCachedVaos) {
+        final oldest = cache.keys.first;
+        gl.deleteVertexArray(cache.remove(oldest)!);
+      }
+    }
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      if (instanceRate) _applyVertexBinding(view, slot);
     }
   }
 
   void bindIndexBuffer(BufferView bufferView, IndexType indexType) {
-    // ELEMENT_ARRAY_BUFFER binding is captured in VAO state, so the VAO must
-    // be bound first.
-    _ensureVao();
-    bufferView.buffer._bindForTarget(
-      web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
-    );
+    // Deferred: ELEMENT_ARRAY_BUFFER binding is VAO state, applied (through
+    // the VAO cache) when the draw is issued.
     _indexBufferView = bufferView;
     _indexType = indexType;
   }
@@ -664,6 +751,7 @@ base class RenderPass {
     }
     _inlineVertexBufferView = null;
     _indexBufferView = null;
+    _pendingVertexBindings.clear();
   }
 
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
@@ -855,6 +943,7 @@ base class RenderPass {
       throw StateError('draw called before bindPipeline');
     }
     if (vertexCount == 0 || instanceCount == 0) return;
+    _applyVertexState(needsIndex: false);
     _configureInlineVertexBuffer(vertexCount);
     if (instanceCount != 1) {
       gl.drawArraysInstanced(
@@ -881,6 +970,7 @@ base class RenderPass {
     if (indexView == null) {
       throw StateError('drawIndexed called before bindIndexBuffer');
     }
+    _applyVertexState(needsIndex: true);
     final glIndexType = _indexType == IndexType.int16
         ? web.WebGL2RenderingContext.UNSIGNED_SHORT
         : web.WebGL2RenderingContext.UNSIGNED_INT;
