@@ -40,6 +40,18 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
   final domain = sky != null ? FmatDomain.sky : FmatDomain.surface;
   final body = fragment ?? sky!;
 
+  // The optional `vertex { }` block customizes the vertex stage. It is only
+  // meaningful for a surface material (a sky owns its own vertex shader).
+  final vertex = blocks['vertex'];
+  if (vertex != null && domain == FmatDomain.sky) {
+    throw FmatException(
+      'A `sky` material cannot declare a `vertex { }` block; the engine owns '
+      'the sky vertex shader.',
+      fileName: fileName,
+      line: vertex.startLine,
+    );
+  }
+
   final tokens = _Lexer(
     material.content,
     fileName,
@@ -47,7 +59,7 @@ FmatMaterial parseFmat(String source, {String? fileName}) {
   ).tokenize();
   final tree = _ValueParser(tokens, fileName).parseObjectBody();
 
-  return _build(tree, domain, body, fileName);
+  return _build(tree, domain, body, vertex, fileName);
 }
 
 // ---------------------------------------------------------------------------
@@ -512,10 +524,15 @@ const _reservedNames = <String>{
   'brdf_lut',
   'shadow_map',
   'MaterialInputs',
+  'VertexInputs',
+  'vertex',
   'material',
   'material_params',
   'MaterialParams',
   'Surface',
+  'Vertex',
+  'frame_info',
+  'FrameInfo',
   'EvaluateLighting',
   'InitMaterialInputs',
   'PrepareMaterial',
@@ -531,6 +548,7 @@ FmatMaterial _build(
   Map<String, Object?> tree,
   FmatDomain domain,
   _Block body,
+  _Block? vertex,
   String? fileName,
 ) {
   const knownKeys = {
@@ -630,6 +648,18 @@ FmatMaterial _build(
     }
   }
 
+  // A `vertex { }` block must define the `Vertex()` hook. Same loose check as
+  // `Surface()`: catches the common omission without fully parsing GLSL.
+  if (vertex != null &&
+      !RegExp(r'\bvoid\s+Vertex\s*\(').hasMatch(vertex.content)) {
+    throw FmatException(
+      'The `vertex` block must define '
+      '`void Vertex(inout VertexInputs vertex)`.',
+      fileName: fileName,
+      line: vertex.startLine,
+    );
+  }
+
   return FmatMaterial(
     name: name,
     domain: domain,
@@ -640,6 +670,8 @@ FmatMaterial _build(
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,
+    vertexSource: vertex?.content,
+    vertexSourceLine: vertex?.startLine ?? 0,
   );
 }
 

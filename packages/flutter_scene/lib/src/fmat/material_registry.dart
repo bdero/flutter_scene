@@ -174,9 +174,17 @@ final class FmatMaterialRegistry {
         '"$sourcePath" is a sky .fmat; load it with loadFmatSky instead.',
       );
     }
+    // Resolve the generated vertex-stage variants (a `vertex { }` material)
+    // from the sidecar's variant -> entry-name map against the same bundle.
+    final vertexShaders = _resolveVertexShaders(
+      metadata['vertex'],
+      shaderLibrary,
+      index.shaderBundleAssetKey,
+    );
     final material = PreprocessedMaterial(
       fragmentShader: shader,
       metadata: metadata,
+      vertexShaders: vertexShaders,
     );
     _fmatSourcePaths[material] = sourcePath;
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
@@ -188,6 +196,29 @@ final class FmatMaterialRegistry {
       entryName: resolution.entry.entryName,
     );
     return material;
+  }
+
+  /// Resolves the generated vertex variants for a `vertex { }` material from
+  /// the sidecar's `vertex` map (variant key -> bundle entry name) against
+  /// [shaderLibrary]. Returns null when the material has no vertex stage.
+  Map<String, gpu.Shader>? _resolveVertexShaders(
+    Object? vertexMeta,
+    gpu.ShaderLibrary shaderLibrary,
+    String shaderBundleAssetKey,
+  ) {
+    if (vertexMeta is! Map) return null;
+    final result = <String, gpu.Shader>{};
+    vertexMeta.forEach((variant, entryName) {
+      final shader = shaderLibrary[entryName as String];
+      if (shader == null) {
+        throw StateError(
+          'Vertex shader entry "$entryName" (variant "$variant") was missing '
+          'from $shaderBundleAssetKey.',
+        );
+      }
+      result[variant as String] = shader;
+    });
+    return result.isEmpty ? null : result;
   }
 
   /// Loads the sky whose source is [sourcePath] as a [PreprocessedSky].

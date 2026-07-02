@@ -142,6 +142,8 @@ class _ObjectMaskEncoder {
     final geometry = item.geometry;
     // Unskinned geometry fills the mask through a position-only shader and
     // layout; skinned geometry falls back to its full vertex shader and bind.
+    // TODO(vertex-materials): pair a `vertex { }` material's variant here (and
+    // bind its MaterialParams) so click-picking hits the displaced silhouette.
     final depthVertex = geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
       depthVertex?.shader ?? geometry.vertexShader,

@@ -393,8 +393,11 @@ class MaterialParameters {
     throw ArgumentError('Unknown material parameter "$name".');
   }
 
-  /// Binds the uniform block and the sampler parameters on [shader] into [pass].
-  void bind(
+  /// Binds only the `MaterialParams` uniform block on [shader] into [pass],
+  /// not the sampler parameters. Used to make the block available to the
+  /// vertex stage, whose generated shader declares the block but not the
+  /// material's samplers.
+  void bindUniformBlock(
     gpu.RenderPass pass,
     gpu.Shader shader,
     gpu.HostBuffer transientsBuffer,
@@ -405,6 +408,15 @@ class MaterialParameters {
         transientsBuffer.emplace(_block),
       );
     }
+  }
+
+  /// Binds the uniform block and the sampler parameters on [shader] into [pass].
+  void bind(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    gpu.HostBuffer transientsBuffer,
+  ) {
+    bindUniformBlock(pass, shader, transientsBuffer);
     for (final entry in _samplers.entries) {
       final slot = entry.value;
       pass.bindTexture(

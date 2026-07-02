@@ -231,8 +231,11 @@ base class SceneEncoder {
     Material material,
     double fade,
   ) {
+    // A material with a `vertex { }` block supplies its own vertex shader for
+    // this geometry's mesh type; otherwise the engine's standard one is used.
     final pipeline = resolvePipeline(
-      geometry.vertexShader,
+      material.materialVertexShader(geometry.materialVertexVariant) ??
+          geometry.vertexShader,
       material.fragmentShader,
       vertexLayout: geometry.instancedVertexLayout,
     );
@@ -352,6 +355,7 @@ base class SceneEncoder {
       );
     }
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    _bindMaterialVertexStage(geometry, material);
     if (windingFlipped) {
       // A mirrored (negative-determinant) transform reverses triangle
       // winding; flip the cull order so front faces aren't culled. Material
@@ -360,6 +364,19 @@ base class SceneEncoder {
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
     geometry.draw(_renderPass);
+  }
+
+  // Binds a `vertex { }` material's uniforms to the vertex stage. The geometry
+  // already bound its FrameInfo (camera transform and position); this makes the
+  // material's MaterialParams block available in the generated Vertex() hook. A
+  // no-op unless the material supplied a vertex shader for this geometry.
+  void _bindMaterialVertexStage(Geometry geometry, Material material) {
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
+    if (materialVertex != null) {
+      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
+    }
   }
 
   /// Draws an opaque instanced item with hardware instancing: the instance
@@ -383,6 +400,7 @@ base class SceneEncoder {
     _bindPipeline(pipeline);
     material.lodFade = fade;
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    _bindMaterialVertexStage(geometry, material);
     _renderPass.setPrimitiveType(geometry.primitiveType);
 
     if (geometry.instancedVertexLayout == null) {

@@ -34,15 +34,37 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   PreprocessedMaterial({
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,
+    Map<String, gpu.Shader>? vertexShaders,
   }) : _shadingModel = _parseShadingModel(metadata['shading_model']),
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
+       _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
   }
 
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
+
+  /// The generated vertex shaders for a `vertex { }` material, keyed by the
+  /// variant the geometry selects (`'unskinned'`, `'skinned'`, `'depth'`), or
+  /// null when the material does not customize the vertex stage. Resolved by
+  /// the loader from the sidecar's `vertex` map and the shader bundle.
+  final Map<String, gpu.Shader>? _vertexShaders;
+
+  @override
+  gpu.Shader? materialVertexShader(String variant) => _vertexShaders?[variant];
+
+  @override
+  void bindVertexStage(
+    gpu.RenderPass pass,
+    gpu.Shader vertexShader,
+    gpu.HostBuffer transientsBuffer,
+  ) {
+    // The generated vertex variant declares the same MaterialParams block as
+    // the fragment shader, so a parameter reads the same value in both stages.
+    parameters.bindUniformBlock(pass, vertexShader, transientsBuffer);
+  }
 
   /// Whether the engine runs its lighting ([FmatShadingModel.lit]) or the
   /// shader's color is output directly ([FmatShadingModel.unlit]).

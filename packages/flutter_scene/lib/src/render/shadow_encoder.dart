@@ -78,6 +78,11 @@ class ShadowEncoder {
     final geometry = item.geometry;
     // Unskinned casters draw depth through a position-only shader and layout;
     // skinned geometry falls back to its full vertex shader and bind.
+    // TODO(vertex-materials): pair a `vertex { }` material's `depth`/`skinned`
+    // variant here (and bind its MaterialParams) so displaced geometry casts a
+    // matching shadow. A camera-relative displacement additionally needs the
+    // real camera position plumbed in place of _cameraPositionPlaceholder; only
+    // the light-space matrix reaches this pass today.
     final depthVertex = geometry.depthOnlyVertex;
     final pipeline = resolvePipeline(
       depthVertex?.shader ?? geometry.vertexShader,
