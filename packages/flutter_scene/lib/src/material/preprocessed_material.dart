@@ -55,6 +55,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   gpu.Shader? materialVertexShader(String variant) => _vertexShaders?[variant];
 
+  // 16 zero bytes (a std140 vec4) for the VertexKeepAlive block below.
+  static final ByteData _zeroKeepAlive = ByteData(16);
+
   @override
   void bindVertexStage(
     gpu.RenderPass pass,
@@ -64,6 +67,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // The generated vertex variant declares the same MaterialParams block as
     // the fragment shader, so a parameter reads the same value in both stages.
     parameters.bindUniformBlock(pass, vertexShader, transientsBuffer);
+    // Bind the keep-alive block (name must match kVertexKeepAliveBlock in the
+    // emitter) to zero: the generated shader multiplies the mesh inputs by it
+    // so the optimizer cannot strip a declared attribute when a Vertex() hook
+    // replaces the outputs, and zero makes it invisible.
+    pass.bindUniform(
+      vertexShader.getUniformSlot('VertexKeepAlive'),
+      transientsBuffer.emplace(_zeroKeepAlive),
+    );
   }
 
   /// Whether the engine runs its lighting ([FmatShadingModel.lit]) or the
