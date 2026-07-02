@@ -201,6 +201,15 @@ base class Texture {
   final bool enableShaderWriteUsage;
   final int mipLevelCount;
 
+  // Sampler state last applied to this texture (GL sampler parameters are
+  // per-texture-object state). Lets RenderPass.bindTexture skip redundant
+  // texParameteri calls, which otherwise dominate per-draw GL traffic.
+  int _lastMinFilter = -1;
+  int _lastMagFilter = -1;
+  int _lastWrapS = -1;
+  int _lastWrapT = -1;
+  double _lastAnisotropy = -1;
+
   late final _GlFormat _glFormat;
   web.WebGLTexture? _texture;
   web.WebGLRenderbuffer? _renderbuffer;
