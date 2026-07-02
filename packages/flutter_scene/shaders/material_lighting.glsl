@@ -288,11 +288,12 @@ vec4 EvaluateLighting(MaterialInputs material) {
   irradiance *= frag_info.environment_intensity;
   prefiltered_color *= frag_info.environment_intensity;
 
-  // Split-sum DFG terms (Karis '13). The LUT is sampled slightly inside
-  // [0, 1] to avoid edge-tap artifacts.
+  // Split-sum DFG terms (Karis '13) from the RGBA16F environment-BRDF LUT
+  // (scale in R, bias in G), indexed by (n_dot_v, roughness) with roughness up
+  // the V axis; sampled slightly inside [0, 1] to avoid edge-tap artifacts.
   vec2 f_ab = texture(
                   brdf_lut,
-                  clamp(vec2(n_dot_v_energy, 1.0 - roughness), 0.0, 0.99))
+                  clamp(vec2(n_dot_v_energy, roughness), 0.0, 0.99))
                   .rg;
 
   // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
