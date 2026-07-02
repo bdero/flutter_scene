@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/dfg_lut.dart';
 
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
@@ -147,18 +147,14 @@ abstract class Material {
     return _defaultEnvironmentMap ??= EnvironmentMap.studio();
   }
 
-  /// Loads the bundled BRDF lookup texture used by the PBR fragment
-  /// shader's split-sum specular IBL.
+  /// Builds the BRDF lookup texture used by the PBR fragment shader's
+  /// split-sum specular IBL (see [buildBrdfLutTexture]).
   ///
-  /// Called by the [Scene] constructor; rendering is gated on the
-  /// returned [Future] completing. The same future is reused on
-  /// subsequent calls.
+  /// Called by the [Scene] constructor; rendering is gated on the returned
+  /// [Future] completing. The texture is built once and reused.
   static Future<void> initializeStaticResources() {
-    return gpuTextureFromAsset(
-      'packages/flutter_scene/assets/ibl_brdf_lut.png',
-    ).then((gpu.Texture value) {
-      _brdfLutTexture = value;
-    });
+    _brdfLutTexture ??= buildBrdfLutTexture();
+    return Future<void>.value();
   }
 
   /// Whether to render both faces of triangles drawn with this material

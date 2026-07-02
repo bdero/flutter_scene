@@ -63,8 +63,6 @@ dev_dependencies:
 flutter:
   assets:
     - build/shaderbundles/base.shaderbundle
-    # Split-sum DFG lookup for specular IBL.
-    - assets/ibl_brdf_lut.png
     # A bundled sample environment, loadable via EnvironmentMap.fromAssets.
     # (The zero-config default is the procedural EnvironmentMap.studio().)
     - assets/royal_esplanade.png

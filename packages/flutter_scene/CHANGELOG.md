@@ -73,6 +73,13 @@
   prepass carries per-pixel roughness, so smooth surfaces still reflect while
   rough ones stop.
 
+* The split-sum environment BRDF (the DFG lookup for specular image-based
+  lighting) is now generated at load as an `RGBA16F` texture instead of loading
+  a bundled 8-bit PNG. The 8-bit table quantized the scale/bias terms into 256
+  steps, showing up as subtle radial banding on large glossy surfaces; the
+  half-float table removes it (half-float linear filtering is core in
+  GLES 3.0 / WebGL2). The `ibl_brdf_lut.png` asset is removed.
+
 ## 0.18.1
 
 * No code changes. Reworded the package description, added the Flutter Scene
