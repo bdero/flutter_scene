@@ -15,5 +15,6 @@
 library;
 
 export 'src/box3d_collider.dart';
+export 'src/box3d_joint.dart';
 export 'src/box3d_physics_world.dart' show Box3dPhysicsWorld;
 export 'src/box3d_rigid_body.dart';
