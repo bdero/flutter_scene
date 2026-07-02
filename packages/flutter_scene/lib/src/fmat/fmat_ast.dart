@@ -136,6 +136,18 @@ class FmatParameter {
   bool get isSampler => type.isSampler;
 }
 
+/// A custom interpolant the vertex stage writes and the fragment stage reads,
+/// declared in the material's `varyings` list. The emitter generates the
+/// matching `out` (vertex) and `in` (fragment) declarations under [name], so
+/// the author writes `name = ...` in `Vertex()` and reads `name` in
+/// `Surface()`. Only interpolatable float and vector types are allowed.
+class FmatVarying {
+  const FmatVarying({required this.type, required this.name});
+
+  final FmatType type;
+  final String name;
+}
+
 /// A fully parsed and validated `.fmat` material.
 class FmatMaterial {
   FmatMaterial({
@@ -150,6 +162,7 @@ class FmatMaterial {
     required this.fragmentSourceLine,
     this.vertexSource,
     this.vertexSourceLine = 0,
+    this.varyings = const [],
   });
 
   final String name;
@@ -186,6 +199,10 @@ class FmatMaterial {
 
   /// Whether this material customizes the vertex stage.
   bool get hasVertexStage => vertexSource != null;
+
+  /// Custom interpolants forwarded from `Vertex()` to `Surface()`, in declared
+  /// order. Empty unless the material declares a `varyings` list.
+  final List<FmatVarying> varyings;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.

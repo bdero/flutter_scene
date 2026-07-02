@@ -31,6 +31,17 @@ struct VertexInputs {
   vec3 camera_position;
 };
 
+// The engine's standard vertex outputs, consumed by the fragment stage's
+// material_varyings.glsl in this same order. Declared here (before a material's
+// custom varyings, which the emitter appends after including this file) so the
+// vertex and fragment stages assign matching interpolant locations. The body
+// includes (flutter_scene_*_body.glsl) write these in main().
+out vec3 v_position; // world-space position
+out vec3 v_normal; // world-space normal, not normalized
+out vec3 v_viewvector; // camera_position - vertex_position (world space)
+out vec2 v_texture_coords;
+out vec4 v_color;
+
 #ifndef HAS_MATERIAL_VERTEX
 // The default hook: leave every vertex unchanged.
 void Vertex(inout VertexInputs vertex) {}

@@ -38,6 +38,18 @@ const Map<String, String> _vertexVariantEntrySuffix = <String, String>{
 String vertexVariantEntryName(FmatMaterial material, String variant) =>
     '${material.name}${_vertexVariantEntrySuffix[variant]}';
 
+/// Writes the custom-varying declarations for [material] into [sb], as `in`
+/// (fragment stage) or `out` (vertex stage). They are matched across stages by
+/// name, like the engine's standard `v_*` varyings.
+void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
+  if (material.varyings.isEmpty) return;
+  sb.writeln('// Custom interpolants (vertex Vertex() -> fragment Surface()).');
+  for (final v in material.varyings) {
+    sb.writeln('$direction ${v.type.glslType} ${v.name};');
+  }
+  sb.writeln();
+}
+
 /// Emits the fragment shader GLSL for [material].
 String emitFragmentGlsl(FmatMaterial material) {
   if (material.domain == FmatDomain.sky) {
@@ -60,6 +72,9 @@ String emitFragmentGlsl(FmatMaterial material) {
     sb.writeln('#include <material_lighting.glsl>');
   }
   sb.writeln();
+
+  // Custom interpolants the vertex stage wrote, read by name in Surface().
+  _writeVaryings(sb, material, 'in');
 
   final uniforms = material.uniformParameters.toList();
   if (uniforms.isNotEmpty) {
@@ -146,6 +161,9 @@ String _emitVertexVariant(FmatMaterial material, String bodyInclude) {
   sb.writeln('#define HAS_MATERIAL_VERTEX');
   sb.writeln('#include <material_vertex.glsl>');
   sb.writeln();
+
+  // Custom interpolants Vertex() writes by name, read in the fragment stage.
+  _writeVaryings(sb, material, 'out');
 
   // Map compiler errors in the author's code back to the .fmat source line.
   sb.writeln('#line ${material.vertexSourceLine}');
