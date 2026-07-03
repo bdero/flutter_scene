@@ -94,11 +94,19 @@ export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
 export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
+export 'src/components/point_light_component.dart' show PointLightComponent;
+export 'src/components/spot_light_component.dart' show SpotLightComponent;
 export 'src/render/lod.dart' show LodLevel;
 export 'src/components/widget_component.dart' show WidgetComponent, WidgetInput;
 export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart'
-    show DirectionalLight, Lighting, ShadowCascade, ShadowCasterFaces;
+    show
+        DirectionalLight,
+        Lighting,
+        PointLight,
+        ShadowCascade,
+        ShadowCasterFaces,
+        SpotLight;
 export 'src/render/custom_render_pass.dart'
     show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;
 export 'src/render/object_filter.dart' show NodeFilter;

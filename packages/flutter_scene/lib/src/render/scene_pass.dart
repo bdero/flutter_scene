@@ -43,6 +43,8 @@ class ScenePass extends RenderGraphPass {
     required bool enableMsaa,
     DirectionalLight? directionalLight,
     Vector3? directionalLightDirection,
+    gpu.Texture? punctualLightTexture,
+    int punctualLightCount = 0,
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
     int layerMask = kRenderLayerAll,
@@ -60,6 +62,8 @@ class ScenePass extends RenderGraphPass {
        _enableMsaa = enableMsaa,
        _directionalLight = directionalLight,
        _directionalLightDirection = directionalLightDirection,
+       _punctualLightTexture = punctualLightTexture,
+       _punctualLightCount = punctualLightCount,
        _cascades = cascades,
        _specularOcclusionMode = specularOcclusionMode,
        _fog = fog;
@@ -76,6 +80,8 @@ class ScenePass extends RenderGraphPass {
   final bool _enableMsaa;
   final DirectionalLight? _directionalLight;
   final Vector3? _directionalLightDirection;
+  final gpu.Texture? _punctualLightTexture;
+  final int _punctualLightCount;
   final int _layerMask;
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
@@ -147,6 +153,8 @@ class ScenePass extends RenderGraphPass {
       environmentTransform: _environmentTransform,
       directionalLight: _directionalLight,
       directionalLightDirection: _directionalLightDirection,
+      punctualLightTexture: _punctualLightTexture,
+      punctualLightCount: _punctualLightCount,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,

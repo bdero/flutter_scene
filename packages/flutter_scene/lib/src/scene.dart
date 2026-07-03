@@ -30,6 +30,7 @@ import 'render/fxaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
+import 'render/punctual_lights.dart';
 import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
@@ -356,6 +357,10 @@ base class Scene implements SceneGraph {
   /// Kept in sync by the node graph as mesh-bearing nodes are added and
   /// removed. Engine-internal; not part of the stable public API.
   final RenderScene renderScene = RenderScene();
+
+  // Builds the per-frame data texture carrying the scene's point, spot, and
+  // extra directional lights. Rebuilt once per frame in [render].
+  final PunctualLightBuffer _punctualLightBuffer = PunctualLightBuffer();
 
   /// The scene's primary camera.
   ///
@@ -906,6 +911,15 @@ base class Scene implements SceneGraph {
         ? null
         : renderScene.directionalLights.first;
 
+    // The additional analytic lights (point, spot, and directional lights past
+    // the first) are view-independent, so build their shared data texture once
+    // per frame here rather than per view.
+    final punctualLighting = _punctualLightBuffer.build(
+      directionals: renderScene.directionalLights,
+      points: renderScene.pointLights,
+      spots: renderScene.spotLights,
+    );
+
     // Texture-target views render first so screen views (and the HUD)
     // composite this frame's captures, the simple form of the
     // produce-before-consume rule.
@@ -931,6 +945,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
+        punctualLighting: punctualLighting,
       );
       target.markUpdated(now);
     }
@@ -959,6 +974,7 @@ base class Scene implements SceneGraph {
         environmentMap: environmentMap,
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
+        punctualLighting: punctualLighting,
       );
     }
 
@@ -998,6 +1014,7 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
     required gpu.HostBuffer transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    required PunctualLighting punctualLighting,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
     // the rasterized 3D content matches Flutter's framebuffer density.
@@ -1027,6 +1044,7 @@ base class Scene implements SceneGraph {
       environmentMap: environmentMap,
       transientsBuffer: transientsBuffer,
       lightComponent: lightComponent,
+      punctualLighting: punctualLighting,
     );
 
     final image = swapchainColor.asImage();
@@ -1048,6 +1066,7 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
     required gpu.HostBuffer transientsBuffer,
     required DirectionalLightComponent? lightComponent,
+    required PunctualLighting punctualLighting,
   }) {
     final camera = view.camera;
     final effectiveAa = _resolveAntiAliasingMode(
@@ -1183,6 +1202,8 @@ base class Scene implements SceneGraph {
         enableMsaa: enableMsaa,
         directionalLight: light,
         directionalLightDirection: lightDirection,
+        punctualLightTexture: punctualLighting.texture,
+        punctualLightCount: punctualLighting.count,
         cascades: cascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         layerMask: view.layerMask,

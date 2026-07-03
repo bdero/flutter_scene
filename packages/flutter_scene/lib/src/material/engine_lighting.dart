@@ -115,6 +115,9 @@ class EngineLightingUniforms {
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
+    // radiance_blend.z [162]: the number of additional analytic lights in the
+    // punctual_lights data texture. The fragment loops over this many rows.
+    fragInfo[162] = lighting.punctualLightCount.toDouble();
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
@@ -282,6 +285,20 @@ class EngineLightingUniforms {
     // cross-fade is active the primary is bound here too (a valid no-op, since
     // frag_info.radiance_blend.x is 0 and the shader never reads it).
     _bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
+    // The additional analytic lights (point/spot/extra directional) as an
+    // RGBA32F data texture, point-sampled (each texel is packed light data).
+    // A white placeholder is bound when there are none; the shader never reads
+    // it because frag_info punctual_light_count is 0.
+    pass.bindTexture(
+      shader.getUniformSlot('punctual_lights'),
+      Material.whitePlaceholder(lighting.punctualLightTexture),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
     // Screen-space ambient occlusion. Bilinear so a half-resolution
     // occlusion buffer upsamples smoothly; a white placeholder makes the
     // sample a no-op when occlusion is off. The shader gates it on

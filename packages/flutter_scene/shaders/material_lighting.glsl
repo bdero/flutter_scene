@@ -198,6 +198,50 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
       0.0, 1.0);
 }
 
+// The number of additional analytic lights (point, spot, and directional
+// lights past the first) the loop below can shade in one draw. Must match
+// kMaxPunctualLights in lib/src/render/punctual_lights.dart. The loop is
+// unrolled to this constant bound because GLSL ES 1.00 requires a compile-time
+// loop bound; the active count (frag_info.radiance_blend.z) ends it early.
+#define MAX_PUNCTUAL_LIGHTS 16
+
+// Reads column `col` (0..3) of light `light_index`'s row from the
+// punctual_lights data texture. Fetched by computed UV rather than a
+// dynamically-indexed uniform array, which a GLSL ES 1.00 fragment shader may
+// not do (see punctual_lights_design.md). The texture is 4 texels wide and
+// MAX_PUNCTUAL_LIGHTS rows tall.
+vec4 FetchPunctualTexel(int light_index, int col) {
+  vec2 uv = vec2((float(col) + 0.5) * 0.25,
+                 (float(light_index) + 0.5) / float(MAX_PUNCTUAL_LIGHTS));
+  return texture(punctual_lights, uv);
+}
+
+// One analytic light's Cook-Torrance contribution. `light_vector` points from
+// the surface toward the light (unit length); `radiance` is the light color
+// premultiplied by intensity and any distance/cone attenuation. Returns the
+// linear direct term; the caller multiplies in any shadow visibility. Shared by
+// the directional light and every punctual light so the BRDF lives in one place.
+vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
+                           vec3 camera_normal, vec3 albedo, float metallic,
+                           float roughness, vec3 reflectance, float n_dot_v) {
+  float n_dot_l = max(dot(normal, light_vector), 0.0);
+  if (n_dot_l <= 0.0) {
+    return vec3(0.0);
+  }
+  vec3 half_vector = normalize(light_vector + camera_normal);
+  float n_dot_v_safe = max(n_dot_v, 1e-4);
+  float distribution = DistributionGGX(normal, half_vector, roughness);
+  float visibility =
+      VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+  vec3 specular_fresnel =
+      FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+  // `visibility` already folds in 1 / (4 * NoL * NoV).
+  vec3 specular = distribution * visibility * specular_fresnel;
+  vec3 diffuse =
+      (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
+  return (diffuse + specular) * radiance * n_dot_l;
+}
+
 // Lights a surface described by `material` and returns the final fragment
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
 // the material contract; a material's Surface() function fills `material` and
@@ -321,12 +365,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // Sun direction and how squarely this surface faces it. `facing` ramps from
   // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
   // sun's influence falls off smoothly rather than at a hard line.
-  float n_dot_l = 0.0;
   float geometric_n_dot_l = 0.0;
   vec3 light_vector = vec3(0.0);
   if (frag_info.has_directional_light > 0.5) {
     light_vector = -normalize(frag_info.directional_light_direction.xyz);
-    n_dot_l = dot(normal, light_vector);
     geometric_n_dot_l = dot(GetWorldNormal(), light_vector);
   }
   // Whether the surface faces the sun is a geometric property, so gate the
@@ -359,22 +401,59 @@ vec4 EvaluateLighting(MaterialInputs material) {
       ambient_shadow;
 
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
-  // ambient term).
+  // ambient term). The shadowed first directional light shades here; its shadow
+  // visibility multiplies the whole term.
   vec3 direct = vec3(0.0);
-  if (frag_info.has_directional_light > 0.5 && n_dot_l > 0.0) {
-    vec3 half_vector = normalize(light_vector + camera_normal);
-    float n_dot_v_safe = max(n_dot_v, 1e-4);
-    float distribution = DistributionGGX(normal, half_vector, roughness);
-    float visibility =
-        VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
-    vec3 specular_fresnel =
-        FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
-    // `visibility` already folds in 1 / (4 * NoL * NoV).
-    vec3 specular = distribution * visibility * specular_fresnel;
-    vec3 diffuse = (vec3(1.0) - specular_fresnel) * (1.0 - metallic) *
-                   albedo * (1.0 / kPi);
-    direct = (diffuse + specular) * frag_info.directional_light_color.rgb *
-             n_dot_l * shadow;
+  if (frag_info.has_directional_light > 0.5) {
+    direct = EvaluateAnalyticLight(light_vector,
+                                   frag_info.directional_light_color.rgb, normal,
+                                   camera_normal, albedo, metallic, roughness,
+                                   reflectance, n_dot_v) *
+             shadow;
+  }
+
+  // Additional analytic lights (point, spot, and directional lights past the
+  // first) from the punctual_lights data texture. None of them cast shadows in
+  // this release. The loop bound is the compile-time MAX_PUNCTUAL_LIGHTS; the
+  // active count ends it early. Rows are fetched by computed UV, so no uniform
+  // array is dynamically indexed.
+  int punctual_count = int(frag_info.radiance_blend.z);
+  for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
+    if (i >= punctual_count) {
+      break;
+    }
+    vec4 l0 = FetchPunctualTexel(i, 0); // position.xyz, type
+    vec4 l1 = FetchPunctualTexel(i, 1); // color.rgb, inverse range
+    float type = l0.w;
+    vec3 radiance = l1.rgb;
+    vec3 punctual_light_vector;
+    if (type < 0.5) {
+      // Directional: the travel direction is in texel 2; no attenuation.
+      punctual_light_vector = -normalize(FetchPunctualTexel(i, 2).xyz);
+    } else {
+      vec3 to_light = l0.xyz - v_position;
+      float dist_sq = dot(to_light, to_light);
+      punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
+      // Windowed inverse-square distance falloff (Frostbite/Karis): with an
+      // inverse range of 0 (infinite range) the window is 1 and this is a pure
+      // inverse square, clamped near the source.
+      float inv_range = l1.w;
+      float factor = dist_sq * inv_range * inv_range;
+      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
+      radiance *= (window * window) / max(dist_sq, 1e-4);
+      if (type > 1.5) {
+        // Spot cone: a squared linear ramp on the cosine between the inner and
+        // outer cone, using the precomputed scale (texel 2 w) and offset.
+        vec4 l2 = FetchPunctualTexel(i, 2); // direction.xyz, angular scale
+        float spot_offset = FetchPunctualTexel(i, 3).x;
+        float cd = dot(normalize(l2.xyz), -punctual_light_vector);
+        float cone = clamp(cd * l2.w + spot_offset, 0.0, 1.0);
+        radiance *= cone * cone;
+      }
+    }
+    direct += EvaluateAnalyticLight(punctual_light_vector, radiance, normal,
+                                    camera_normal, albedo, metallic, roughness,
+                                    reflectance, n_dot_v);
   }
 
   vec3 emissive = material.emissive;
