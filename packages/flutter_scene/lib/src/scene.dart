@@ -10,6 +10,7 @@ import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
 import 'fog.dart';
+import 'god_rays.dart';
 import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
@@ -587,6 +588,13 @@ base class Scene implements SceneGraph {
   /// mapping, so it works on any camera type.
   final Fog fog = Fog();
 
+  /// Directional volumetric god rays. Off by default; set
+  /// [GodRaysSettings.enabled] to turn them on. Requires a shadow-casting
+  /// [DirectionalLight] and a [PerspectiveCamera] (they march the cascaded
+  /// shadow map against the camera depth); skipped otherwise.
+  final GodRaysSettings godRays = GodRaysSettings();
+  late final GodRaysPass _godRaysPass = GodRaysPass(godRays);
+
   @override
   void add(Node child) {
     root.add(child);
@@ -1016,13 +1024,21 @@ base class Scene implements SceneGraph {
           )
         : const <ShadowCascade>[];
 
-    // The geometry buffers the enabled custom passes request, so the engine
-    // produces depth/normals even without AO/SSR and publishes the shadow
-    // uniform for depth-aware passes.
+    // God rays march the cascaded shadow map against the camera depth, so they
+    // need both and a shadow-casting directional light.
+    final wantGodRays =
+        godRays.enabled &&
+        camera.projection is PerspectiveProjection &&
+        cascades.isNotEmpty;
+
+    // The geometry buffers the enabled custom passes (and god rays) request, so
+    // the engine produces depth/normals even without AO/SSR and publishes the
+    // shadow uniform for depth-aware passes.
     final customInputs = <RenderInput>{};
     for (final pass in _renderPasses) {
       if (pass.enabled) customInputs.addAll(pass.inputs);
     }
+    if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
     final graph = RenderGraph();
     if (cascades.isNotEmpty) {
@@ -1158,6 +1174,31 @@ base class Scene implements SceneGraph {
     final height = pixelSize.height.toInt();
     final postTime =
         DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0;
+
+    // Volumetric god rays, in HDR right after the scene (and reflections), so
+    // the in-scattered light tone-maps with the rest of the frame. Built on the
+    // custom-pass API: it reads the depth + shadow inputs it declared.
+    if (wantGodRays) {
+      graph.addPass(
+        UserRenderGraphPass(
+          pass: _godRaysPass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: pool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: height,
+              format: gpu.PixelFormat.r16g16b16a16Float,
+              debugName: 'god_rays',
+            ),
+          ),
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: 0,
+          time: postTime,
+        ),
+      );
+    }
 
     // Custom HDR passes right after the scene is drawn.
     _addHdrCustomPasses(

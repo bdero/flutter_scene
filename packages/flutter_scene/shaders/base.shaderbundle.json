@@ -43,6 +43,10 @@
         "type": "fragment",
         "file": "shaders/flutter_scene_outline.frag"
     },
+    "GodRaysFragment": {
+        "type": "fragment",
+        "file": "shaders/flutter_scene_god_rays.frag"
+    },
     "SsaoFragment": {
         "type": "fragment",
         "file": "shaders/flutter_scene_ssao.frag"
