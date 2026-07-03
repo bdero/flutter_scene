@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 
 /// Which faces of a shadow caster are rendered into the shadow map (the
@@ -370,10 +371,15 @@ class Lighting {
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
     this.viewportSize = ui.Size.zero,
+    this.fog,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
   final EnvironmentMap environmentMap;
+
+  /// The scene's distance fog, or null when fog is off for this frame. Applied
+  /// per-fragment by every material in linear HDR before tone mapping.
+  final Fog? fog;
 
   /// A secondary environment cross-faded with [environmentMap] by
   /// [environmentBlend], or null when a single environment is in effect.

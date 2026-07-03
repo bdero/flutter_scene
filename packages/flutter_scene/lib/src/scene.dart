@@ -9,6 +9,7 @@ import 'ambient_occlusion.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
+import 'fog.dart';
 import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
@@ -581,6 +582,11 @@ base class Scene implements SceneGraph {
   final ScreenSpaceReflectionsSettings screenSpaceReflections =
       ScreenSpaceReflectionsSettings();
 
+  /// Distance fog. Off by default; set [Fog.enabled] and a [Fog.mode] to turn it
+  /// on. Applied per-fragment by every material in linear HDR before tone
+  /// mapping, so it works on any camera type.
+  final Fog fog = Fog();
+
   @override
   void add(Node child) {
     root.add(child);
@@ -1098,6 +1104,7 @@ base class Scene implements SceneGraph {
         cascades: cascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         layerMask: view.layerMask,
+        fog: fog,
       ),
     );
     // Screen-space reflections refine the lit HDR color in place, before

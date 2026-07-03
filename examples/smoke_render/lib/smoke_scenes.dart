@@ -233,6 +233,42 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _shadowCamera());
   }),
+  // Distance fog: a near and a far cuboid, the far one fading toward the fog
+  // color, with height fog and sun in-scatter enabled so those branches of
+  // ApplyFog run too. Geometry stays central so the corners keep the clear
+  // color (the frame-sanity check). One scene covers the global per-fragment
+  // fog path across backends.
+  SmokeScene('fog', () {
+    final scene = Scene();
+    scene.fog
+      ..enabled = true
+      ..mode = FogMode.exponential
+      ..color = vm.Vector3(0.55, 0.62, 0.78)
+      ..density = 0.09
+      ..height = 0.0
+      ..heightFalloff = 0.2
+      ..sunInScatter = 0.6
+      ..sunInScatterExponent = 6.0;
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(direction: vm.Vector3(-0.5, -0.4, -0.75)),
+        ),
+      ),
+    );
+    // A near cuboid (lightly fogged) and a far one (heavily fogged toward the
+    // fog color), so the fog gradient is a clear visual-diff signal while the
+    // corners stay the magenta clear.
+    scene.add(_cuboid(vm.Vector4(0.85, 0.85, 0.88, 1.0), 0.0, 0.6));
+    scene.add(
+      _cuboid(vm.Vector4(0.85, 0.85, 0.88, 1.0), 0.0, 0.6)
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(-1.4, 0, -12)) *
+            vm.Matrix4.rotationY(0.6) *
+            vm.Matrix4.rotationX(0.3),
+    );
+    return (scene: scene, camera: _camera());
+  }),
 ];
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the

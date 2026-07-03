@@ -18,6 +18,10 @@ in vec4 v_color;
 
 out vec4 frag_color;
 
+// Distance fog (the FogInfo block + ApplyFog). Declared after the varyings it
+// reads (v_position, v_viewvector).
+#include <fog.glsl>
+
 const float kGamma = 2.2;
 vec3 SRGBToLinear(vec3 color) { return pow(color, vec3(kGamma)); }
 
@@ -30,5 +34,5 @@ void main() {
   // pass applies display encoding. Output is premultiplied by alpha.
   vec3 rgb = SRGBToLinear(base.rgb) * vertex_color.rgb * frag_info.color.rgb;
   float alpha = base.a * vertex_color.a * frag_info.color.a;
-  frag_color = vec4(rgb, 1.0) * alpha;
+  frag_color = ApplyFog(vec4(rgb, 1.0) * alpha);
 }

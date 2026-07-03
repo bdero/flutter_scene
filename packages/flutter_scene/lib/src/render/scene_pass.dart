@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
@@ -44,6 +45,7 @@ class ScenePass extends RenderGraphPass {
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
     int layerMask = kRenderLayerAll,
+    Fog? fog,
   }) : _camera = camera,
        _layerMask = layerMask,
        _renderScene = renderScene,
@@ -58,7 +60,8 @@ class ScenePass extends RenderGraphPass {
        _directionalLight = directionalLight,
        _directionalLightDirection = directionalLightDirection,
        _cascades = cascades,
-       _specularOcclusionMode = specularOcclusionMode;
+       _specularOcclusionMode = specularOcclusionMode,
+       _fog = fog;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -75,6 +78,7 @@ class ScenePass extends RenderGraphPass {
   final int _layerMask;
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
+  final Fog? _fog;
 
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
@@ -147,6 +151,7 @@ class ScenePass extends RenderGraphPass {
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
       viewportSize: _dimensions,
+      fog: _fog,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
