@@ -11,6 +11,16 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// directional) shaded per frame. Must match `MAX_PUNCTUAL_LIGHTS` in
 /// `shaders/material_lighting.glsl`; the fragment loop is a constant-bounded
 /// unroll over this count, so it is a compile-time constant in both places.
+///
+/// TODO(lighting): this is a hard *global* cap and the shaded set is shared by
+/// every fragment. Per-object culling via the render BVH turns it into a
+/// per-object budget with an unbounded scene total (see the near-term revision
+/// in notes/rendering/punctual_lights_design.md), and a punctual on/off shader
+/// permutation makes the no-light case cost nothing. TODO(#188474): when Flutter
+/// GPU exposes storage buffers/compute, a higher-tier variant can read a storage
+/// buffer with a real dynamic loop (no cap, no data-texture packing) and move
+/// light-to-region assignment to a compute pass, with this remaining the
+/// base-tier fallback.
 const int kMaxPunctualLights = 16;
 
 // Each light is one row of the data texture, four RGBA32F texels wide:
