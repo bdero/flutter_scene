@@ -26,8 +26,7 @@ class GodRaysSettings {
   /// Overall brightness of the in-scattered light.
   double intensity = 1.0;
 
-  /// Scattering density along the ray. Higher is thicker and brighter shafts
-  /// (and more extinction with distance).
+  /// Scattering strength along the ray: how thick and bright the shafts read.
   double density = 0.5;
 
   /// Henyey-Greenstein phase asymmetry (`-1` to `1`). Positive concentrates the
@@ -46,8 +45,9 @@ class GodRaysSettings {
   /// noise. `0` disables it.
   double jitter = 1.0;
 
-  /// A tint multiplied with the directional light color. White uses the light's
-  /// own color.
+  /// The shaft color. This is used directly (not the light's direct radiance),
+  /// so shafts show even for a shadow-only sun whose direct intensity is zero;
+  /// tint it to match the sun. White by default.
   Vector3 color = Vector3(1.0, 1.0, 1.0);
 }
 

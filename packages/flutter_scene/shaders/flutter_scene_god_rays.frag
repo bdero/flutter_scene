@@ -135,21 +135,25 @@ void main() {
   float denom = 1.0 + g * g - 2.0 * g * cos_theta;
   float phase = (1.0 - g * g) / (4.0 * kPi * pow(max(denom, 1e-4), 1.5));
 
+  // Accumulate the lit fraction of the ray. Averaging (rather than a strong
+  // Beer-Lambert extinction) keeps the shafts long instead of collapsing all
+  // the in-scatter into the first step near the camera; density scales the
+  // overall thickness.
   int count = int(shadow.light_direction.w + 0.5);
-  float scatter = 0.0;
-  float transmittance = 1.0;
+  float lit_sum = 0.0;
   for (int i = 0; i < kMaxSteps; i++) {
     if (i >= steps) break;
     vec3 p =
         cam.camera_position.xyz + ray_dir * (offset + float(i) * step_len);
-    float visible = ShadowVisibility(p, count);
-    transmittance *= exp(-density * step_len);
-    scatter += visible * density * step_len * transmittance;
+    lit_sum += ShadowVisibility(p, count);
   }
+  float avg_lit = lit_sum / float(steps);
 
-  vec3 sun_color = shadow.light_color.rgb * god.color.rgb;
-  vec3 in_scatter = sun_color * scatter * phase * god.params0.x;
+  // The shaft color is the god-rays color directly (default white), not the
+  // light's direct radiance: a shadow-only sun (intensityScale 0, all lighting
+  // from the IBL) has zero direct color, but its shafts should still show.
   // Additive single-scattering: adds light along the view path; coverage
   // (alpha) is unchanged. Premultiplied HDR, before tone mapping.
+  vec3 in_scatter = god.color.rgb * avg_lit * phase * density * god.params0.x;
   frag_color = vec4(scene.rgb + in_scatter, scene.a);
 }
