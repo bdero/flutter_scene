@@ -392,7 +392,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // fog and its sky-color influence are on, so it is free otherwise.
   vec3 sky_fog_color = fog.color.rgb;
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
-    const float kSkyFogRoughness = 0.15;
+    // Sample the sharpest prefiltered level: the fog color should match the
+    // crisp skybox as closely as the environment resolution allows, so avoid
+    // extra roughness blur on top of the bake.
+    const float kSkyFogRoughness = 0.0;
     vec3 sky_dir = environment_transform * normalize(-v_viewvector);
     sky_fog_color = SampleRadianceEnv(
         prefiltered_radiance, prefiltered_radiance_cube, sky_dir,
