@@ -246,13 +246,16 @@ class RenderPassContext {
       _context.blackboard.get<ByteData>(kShadowUniformBlackboardKey);
 
   /// A packed `PostCameraInfo` std140 uniform block for reconstructing world
-  /// positions from [sceneDepthLinear]: a `vec4` `(tan(fovX/2), tan(fovY/2),
-  /// near, far)`, the `mat4` inverse view matrix (view space -> world), and a
-  /// `vec4` camera world position. Bind it under a `PostCameraInfo` block via
-  /// [applyShader]'s `uniforms`. The projection terms are zero for a
-  /// non-perspective camera (where depth is unavailable).
+  /// positions from [sceneDepthLinear]. Layout: a `vec4` `(tan(fovX/2),
+  /// tan(fovY/2), near, far)`, then the camera basis as three `vec4`s (right,
+  /// up, forward, matching the depth prepass's view space: the eye at the origin
+  /// looking down +forward), then a `vec4` camera world position. Reconstruct
+  /// with `viewZ = depth; viewXY = (2*uv - 1 flipped) * viewZ * tangents;
+  /// world = position + right*viewX + up*viewY + forward*viewZ`. Bind it under a
+  /// `PostCameraInfo` block via [applyShader]'s `uniforms`. The projection terms
+  /// are zero for a non-perspective camera (where depth is unavailable).
   ByteData get cameraInfo {
-    final f = Float32List(24); // vec4 + mat4 + vec4
+    final f = Float32List(20); // 5 vec4
     final projection = camera.projection;
     if (projection is PerspectiveProjection && dimensions.height > 0) {
       final tanY = math.tan(projection.fovRadiansY * 0.5);
@@ -261,11 +264,23 @@ class RenderPassContext {
       f[2] = projection.near;
       f[3] = projection.far;
     }
-    final inverseView = camera.getViewMatrix()..invert();
-    f.setRange(4, 20, inverseView.storage);
-    f[20] = camera.position.x;
-    f[21] = camera.position.y;
-    f[22] = camera.position.z;
+    // The same view basis the depth prepass encodes against (eye at origin
+    // looking down +forward), so a reconstructed view point maps to world.
+    final forward = camera.forward.normalized();
+    final right = camera.up.cross(forward)..normalize();
+    final up = forward.cross(right)..normalize();
+    f[4] = right.x;
+    f[5] = right.y;
+    f[6] = right.z;
+    f[8] = up.x;
+    f[9] = up.y;
+    f[10] = up.z;
+    f[12] = forward.x;
+    f[13] = forward.y;
+    f[14] = forward.z;
+    f[16] = camera.position.x;
+    f[17] = camera.position.y;
+    f[18] = camera.position.z;
     return ByteData.sublistView(f);
   }
 

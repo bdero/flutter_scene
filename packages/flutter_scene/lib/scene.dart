@@ -73,6 +73,7 @@ export 'src/importer/scene_registry.dart'
 export 'src/ambient_occlusion.dart'
     show AmbientOcclusionSettings, SpecularAmbientOcclusionMode;
 export 'src/fog.dart' show Fog, FogMode;
+export 'src/god_rays.dart' show GodRaysSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;
 export 'src/asset_helpers.dart'
