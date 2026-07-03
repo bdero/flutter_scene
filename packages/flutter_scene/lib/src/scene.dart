@@ -1039,10 +1039,11 @@ base class Scene implements SceneGraph {
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
         // occlusion pass reading a full-resolution depth would alias on fine
         // geometry). Size the prepass to occlusion's target whenever it is on
-        // so its behavior is unchanged; reflections sample whatever
-        // resolution is published. With only reflections on, use full
-        // resolution.
-        final depthDimensions = wantAo
+        // so its behavior is unchanged; reflections sample whatever resolution
+        // is published. With only reflections on, use full resolution. The
+        // depth-mip-chain path (SsaoPass builds the reduced levels) wants a
+        // full-resolution base, so it also renders the prepass full size.
+        final depthDimensions = (wantAo && !ambientOcclusion.depthMipChain)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
         // Reflections need the interpolated view-space normal, so the prepass

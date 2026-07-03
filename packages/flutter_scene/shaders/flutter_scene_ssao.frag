@@ -11,6 +11,13 @@
 
 uniform sampler2D linear_depth;
 
+// Downsampled copies of the depth for the SAO mip chain (half, quarter, and
+// eighth resolution). When the chain is disabled these are all bound to
+// linear_depth and params2.y is 1, so the sample loop only ever reads level 0.
+uniform sampler2D depth_mip1;
+uniform sampler2D depth_mip2;
+uniform sampler2D depth_mip3;
+
 uniform SsaoInfo {
   // x, y: occlusion target size in pixels. z, w: its reciprocal.
   vec4 viewport;
@@ -19,7 +26,7 @@ uniform SsaoInfo {
   // x: radius (world units). y: bias (world units). z: intensity (final
   // contrast power). w: projection scale (pixels per world unit at depth 1).
   vec4 params;
-  // x: sample count.
+  // x: sample count. y: mip level count (1 disables the chain).
   vec4 params2;
 }
 ssao;
@@ -44,8 +51,16 @@ const float kEdgeFadeMax = 0.04;
 // places the eye at the origin looking down +Z (the convention the depth
 // prepass writes), so the stored planar depth is the view-space Z and the
 // X/Y follow from the projection tangents.
-vec3 ViewPositionAt(vec2 uv) {
-  float z = texture(linear_depth, uv).r;
+// Fetches the view-space depth at [uv] from level [level] of the depth chain.
+float DepthAtLevel(vec2 uv, int level) {
+  if (level <= 0) return texture(linear_depth, uv).r;
+  if (level == 1) return texture(depth_mip1, uv).r;
+  if (level == 2) return texture(depth_mip2, uv).r;
+  return texture(depth_mip3, uv).r;
+}
+
+vec3 ViewPositionAt(vec2 uv, int level) {
+  float z = DepthAtLevel(uv, level);
   // NDC from the full-screen UV (V runs downward in the UV).
   vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
   return vec3(ndc.x * z * ssao.proj.x, ndc.y * z * ssao.proj.y, z);
@@ -57,9 +72,10 @@ void main() {
   float intensity = ssao.params.z;
   float proj_scale = ssao.params.w;
   int sample_count = int(ssao.params2.x);
+  int mip_levels = int(ssao.params2.y);
   float far = ssao.proj.w;
 
-  vec3 origin = ViewPositionAt(v_uv);
+  vec3 origin = ViewPositionAt(v_uv, 0);
 
   // Background texels (no geometry) are unoccluded.
   if (origin.z >= far) {
@@ -82,10 +98,6 @@ void main() {
 
   // Screen-space disk radius: the world radius projected to this depth.
   float screen_radius = proj_scale * radius / origin.z;
-  // TODO(flutter_scene): SAO keeps large radii cache-friendly by sampling a
-  // MIP chain of the depth buffer (selecting a level per sample by screen
-  // radius). A single level is enough for typical radii; add the chain (like
-  // the bloom downsample chain) if large-radius occlusion shows cache cost.
 
   // Interleaved rotation: 16 well-separated angles tiled over a 4x4 screen
   // block (the golden-ratio sequence spreads them, and neighbours differ
@@ -109,10 +121,21 @@ void main() {
     // streaks on receding surfaces).
     float sample_radius = sqrt((float(i) + 0.5) / float(sample_count));
     float theta = float(i) * kGoldenAngle + rotation;
-    vec2 offset = vec2(cos(theta), sin(theta)) * (sample_radius * screen_radius);
+    float pixel_radius = sample_radius * screen_radius;
+    vec2 offset = vec2(cos(theta), sin(theta)) * pixel_radius;
     vec2 sample_uv = v_uv + offset * ssao.viewport.zw;
 
-    vec3 q = ViewPositionAt(sample_uv);
+    // Read the depth from a coarser level as the sample gets further away, so
+    // far taps read pre-reduced depth (cache-friendly) and, with a full-
+    // resolution level 0, near geometry is not contaminated by the surface
+    // behind it where the projection compresses depth. Level 0 when the chain
+    // is disabled (mip_levels <= 1).
+    int level = 0;
+    if (mip_levels > 1) {
+      level = clamp(
+          int(floor(log2(max(1.0, pixel_radius)))) - 3, 0, mip_levels - 1);
+    }
+    vec3 q = ViewPositionAt(sample_uv, level);
     vec3 v = q - origin;
     float vv = dot(v, v);
     float vn = dot(v, normal);

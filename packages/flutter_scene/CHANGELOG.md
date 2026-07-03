@@ -13,6 +13,15 @@
   at a missing uniform slot. The generated fragment now keeps the block
   referenced through a zero-bound keep-alive, with no visible effect.
 
+* `AmbientOcclusionSettings.depthMipChain` (off by default) renders the
+  occlusion depth prepass at full resolution and samples it through a
+  downsampled mip chain, a level per sample distance. It keeps depth accurate
+  where the projection compresses a large range into few pixels (grazing
+  surfaces, vertex-displaced worlds), so near geometry's occlusion is not
+  contaminated by the far surface behind it, and keeps large radii
+  cache-friendly. The cost is a full-resolution prepass plus the chain build, so
+  it is best reserved for higher-end targets.
+
 * Widget-texture captures (`WidgetTexture`, `WidgetComponent`) now stay on the
   GPU. Each capture wraps the rasterized image's backing texture directly
   (`Texture.fromImage`) instead of reading the pixels back and re-uploading

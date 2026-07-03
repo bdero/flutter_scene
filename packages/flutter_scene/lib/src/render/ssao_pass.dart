@@ -105,15 +105,87 @@ class SsaoPass extends RenderGraphPass {
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
   static final gpu.Shader _fragmentShader = baseShaderLibrary['SsaoFragment']!;
+  static final gpu.Shader _downsampleShader =
+      baseShaderLibrary['DepthDownsampleFragment']!;
+
+  // The depth mip chain matches the fp32 linear-depth prepass format.
+  static const gpu.PixelFormat _depthFormat = gpu.PixelFormat.r32g32b32a32Float;
 
   @override
   String get name => 'SsaoPass';
+
+  // Downsamples [source] into a half-size (rounded down) depth level via the
+  // depth-downsample shader (nearest 2x2 minimum). Used to build the SAO chain.
+  gpu.Texture _downsampleDepth(
+    RenderGraphContext context,
+    gpu.Texture source,
+    int width,
+    int height,
+  ) {
+    final target = context.texturePool.acquire(
+      TransientTextureDescriptor.color(
+        width: width,
+        height: height,
+        format: _depthFormat,
+        debugName: 'depth_mip',
+      ),
+    );
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
+    );
+    renderPass.bindPipeline(
+      gpu.gpuContext.createRenderPipeline(_vertexShader, _downsampleShader),
+    );
+    renderPass.setColorBlendEnable(false);
+    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+    renderPass.bindTexture(
+      _downsampleShader.getUniformSlot('source'),
+      source,
+      sampler: _nearestClamp,
+    );
+    drawCompat(renderPass, 6);
+    commandBuffer.submit();
+    return target;
+  }
 
   @override
   void execute(RenderGraphContext context) {
     final linearDepth = context.blackboard.require<gpu.Texture>(
       kLinearDepthBlackboardKey,
     );
+
+    // Build the depth mip chain from the (full-resolution) linear depth so the
+    // occlusion samples a coarser level the further each tap reaches. When
+    // disabled the three slots reuse the base depth and the shader stays at
+    // level 0, so behaviour is unchanged.
+    var mip1 = linearDepth;
+    var mip2 = linearDepth;
+    var mip3 = linearDepth;
+    var mipLevels = 1;
+    if (_settings.depthMipChain) {
+      final fw = _dimensions.width.toInt();
+      final fh = _dimensions.height.toInt();
+      mip1 = _downsampleDepth(
+        context,
+        linearDepth,
+        math.max(1, fw ~/ 2),
+        math.max(1, fh ~/ 2),
+      );
+      mip2 = _downsampleDepth(
+        context,
+        mip1,
+        math.max(1, fw ~/ 4),
+        math.max(1, fh ~/ 4),
+      );
+      mip3 = _downsampleDepth(
+        context,
+        mip2,
+        math.max(1, fw ~/ 8),
+        math.max(1, fh ~/ 8),
+      );
+      mipLevels = 4;
+    }
 
     final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
     final aoWidth = aoSize.width.toInt();
@@ -157,10 +229,26 @@ class SsaoPass extends RenderGraphPass {
       ..[9] = _settings.bias
       ..[10] = _settings.intensity
       ..[11] = projScale
-      ..[12] = _settings.sampleCount.toDouble();
+      ..[12] = _settings.sampleCount.toDouble()
+      ..[13] = mipLevels.toDouble();
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('SsaoInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('depth_mip1'),
+      mip1,
+      sampler: _nearestClamp,
+    );
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('depth_mip2'),
+      mip2,
+      sampler: _nearestClamp,
+    );
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('depth_mip3'),
+      mip3,
+      sampler: _nearestClamp,
     );
     renderPass.bindTexture(
       _fragmentShader.getUniformSlot('linear_depth'),
