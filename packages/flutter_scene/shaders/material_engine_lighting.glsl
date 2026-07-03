@@ -90,8 +90,11 @@ uniform FragInfo {
   // toward the secondary environment (the *_b samplers), 0 samples only the
   // primary. y: shadow-ambient strength, how much the cast shadow also darkens
   // the IBL ambient (0 leaves the ambient physical, 1 darkens it as much as the
-  // direct light). zw reserved. Both environments share RadianceLayoutInfo (the
-  // layout is a per-backend choice, not per-environment).
+  // direct light). z: the number of additional analytic lights packed into the
+  // punctual_lights data texture (point, spot, and directional lights past the
+  // first shadowed one); the material loops over this many. w reserved. Both
+  // environments share RadianceLayoutInfo (the layout is a per-backend choice,
+  // not per-environment).
   vec4 radiance_blend;
 }
 frag_info;
@@ -117,3 +120,13 @@ uniform sampler2D sh_coefficients_b;
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.
 uniform sampler2D ssao_texture;
+// The additional analytic lights (point, spot, and directional lights past the
+// first) as an RGBA32F data texture: one light per row, four texels wide. Read
+// by computed UV (not a dynamically-indexed uniform array, which GLSL ES 1.00
+// forbids in a fragment shader). frag_info.radiance_blend.z is the row count; a
+// white placeholder is bound and never read when it is zero. Column layout:
+//   0: position.xyz, type (0 directional, 1 point, 2 spot)
+//   1: color.rgb * intensity, inverse range (0 = infinite)
+//   2: direction.xyz, spot angular scale
+//   3: spot angular offset, unused, unused, unused
+uniform sampler2D punctual_lights;

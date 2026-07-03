@@ -5,6 +5,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
+import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -176,6 +178,36 @@ class RenderScene {
   /// Unregisters [light]. Called when its owning node unmounts.
   void removeDirectionalLight(DirectionalLightComponent light) {
     directionalLights.remove(light);
+  }
+
+  /// The point lights contributed by mounted [PointLightComponent]s, in
+  /// registration order. Collected into the per-frame punctual light buffer.
+  final List<PointLightComponent> pointLights = [];
+
+  /// Registers [light] as an active point light. Called by a
+  /// [PointLightComponent] when its owning node mounts.
+  void addPointLight(PointLightComponent light) {
+    pointLights.add(light);
+  }
+
+  /// Unregisters [light]. Called when its owning node unmounts.
+  void removePointLight(PointLightComponent light) {
+    pointLights.remove(light);
+  }
+
+  /// The spot lights contributed by mounted [SpotLightComponent]s, in
+  /// registration order. Collected into the per-frame punctual light buffer.
+  final List<SpotLightComponent> spotLights = [];
+
+  /// Registers [light] as an active spot light. Called by a
+  /// [SpotLightComponent] when its owning node mounts.
+  void addSpotLight(SpotLightComponent light) {
+    spotLights.add(light);
+  }
+
+  /// Unregisters [light]. Called when its owning node unmounts.
+  void removeSpotLight(SpotLightComponent light) {
+    spotLights.remove(light);
   }
 
   /// The environment volumes contributed by mounted

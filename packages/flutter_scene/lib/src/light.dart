@@ -321,6 +321,92 @@ class DirectionalLight {
   }
 }
 
+/// A light that radiates from a single world-space point equally in every
+/// direction, its influence falling off with distance.
+///
+/// Attach one to the scene by adding a `PointLightComponent` to a node; the
+/// light's world position is the node's world-space translation, so moving
+/// the node moves the light. The analytic contribution is layered on top of
+/// the image-based-lighting ambient term, the same as [DirectionalLight].
+///
+/// Point lights do not cast shadows in this release.
+/// {@category Lighting and environment}
+class PointLight {
+  /// Creates a [PointLight].
+  ///
+  /// [color] is the light's linear RGB; [intensity] scales it and is the
+  /// radiance at unit distance (point lights fall off with the inverse
+  /// square of distance, so useful values are often larger than a
+  /// [DirectionalLight]'s). [range] is the world-space distance at which the
+  /// influence reaches zero; `0` (the default) means infinite range (pure
+  /// inverse-square falloff).
+  PointLight({Vector3? color, this.intensity = 1.0, this.range = 0.0})
+    : color = color ?? Vector3(1.0, 1.0, 1.0);
+
+  /// Linear RGB color of the light.
+  Vector3 color;
+
+  /// Scalar multiplier applied to [color]; the radiance at unit distance.
+  double intensity;
+
+  /// World-space distance at which the light's influence smoothly reaches
+  /// zero. `0` means infinite range (pure inverse-square falloff, clamped
+  /// near the source).
+  double range;
+}
+
+/// A light that radiates from a world-space point within a cone, combining a
+/// [PointLight]'s distance falloff with an angular falloff between an inner
+/// and outer cone.
+///
+/// Attach one by adding a `SpotLightComponent` to a node; the light's world
+/// position is the node's world translation and its aim is the node's
+/// world-space rotation applied to [direction]. The analytic contribution is
+/// layered on top of the image-based-lighting ambient term.
+///
+/// Spot lights do not cast shadows in this release.
+/// {@category Lighting and environment}
+class SpotLight {
+  /// Creates a [SpotLight].
+  ///
+  /// [direction] is the cone's aim in the owning node's local space (rotated
+  /// to world by the node's transform). [innerConeAngle] and [outerConeAngle]
+  /// are half-angles in radians: the cone is full brightness within
+  /// [innerConeAngle] of the axis and falls to zero at [outerConeAngle].
+  /// Both must satisfy `0 <= inner < outer < pi/2`.
+  SpotLight({
+    Vector3? color,
+    this.intensity = 1.0,
+    this.range = 0.0,
+    Vector3? direction,
+    this.innerConeAngle = 0.0,
+    this.outerConeAngle = math.pi / 4.0,
+  }) : color = color ?? Vector3(1.0, 1.0, 1.0),
+       direction = direction ?? Vector3(0.0, -1.0, 0.0);
+
+  /// Linear RGB color of the light.
+  Vector3 color;
+
+  /// Scalar multiplier applied to [color]; the radiance at unit distance.
+  double intensity;
+
+  /// World-space distance at which the light's influence smoothly reaches
+  /// zero. `0` means infinite range (pure inverse-square falloff).
+  double range;
+
+  /// The cone's aim, in the owning node's local space. Need not be unit
+  /// length. Rotated to world by the node's transform.
+  Vector3 direction;
+
+  /// Half-angle of the inner cone, in radians. Within this angle of the
+  /// axis the light is at full brightness.
+  double innerConeAngle;
+
+  /// Half-angle of the outer cone, in radians. Between [innerConeAngle] and
+  /// this the light falls off to zero; past it the light contributes nothing.
+  double outerConeAngle;
+}
+
 /// One cascade of a cascaded shadow map, produced by
 /// [DirectionalLight.computeCascades].
 ///
@@ -366,6 +452,8 @@ class Lighting {
     Matrix3? environmentTransform,
     this.directionalLight,
     this.directionalLightDirection,
+    this.punctualLightTexture,
+    this.punctualLightCount = 0,
     this.shadowMap,
     this.cascades = const [],
     this.ssaoMap,
@@ -405,6 +493,17 @@ class Lighting {
   /// the light node's transform. Null when there is no directional light;
   /// consumers fall back to [DirectionalLight.direction] in that case.
   final Vector3? directionalLightDirection;
+
+  /// The per-frame data texture holding the additional analytic lights (point
+  /// and spot lights, plus any directional lights past the first shadowed
+  /// one), or null when there are none. Each light occupies a row of RGBA32F
+  /// texels; the shader loops over the first [punctualLightCount] rows. Built
+  /// by `PunctualLightBuffer` and shared across every lit draw this frame.
+  final gpu.Texture? punctualLightTexture;
+
+  /// The number of valid light rows in [punctualLightTexture]. Zero leaves the
+  /// texture unread (only [directionalLight] and the ambient term contribute).
+  final int punctualLightCount;
 
   /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
   /// cascade tiles as a horizontal strip) for [directionalLight], or
