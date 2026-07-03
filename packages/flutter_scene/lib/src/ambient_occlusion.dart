@@ -46,6 +46,19 @@ class AmbientOcclusionSettings {
   /// cost of fine detail. Recommended on mobile.
   bool halfResolution = true;
 
+  /// Renders the depth prepass at full resolution and samples it through a
+  /// downsampled mip chain (a level per sample distance), instead of rasterising
+  /// the depth at the occlusion resolution.
+  ///
+  /// This is the Scalable Ambient Obscurance depth-mip design. It keeps the
+  /// depth accurate where the projection compresses a large range into few
+  /// pixels (a steep grazing surface or a vertex-displaced "curved world"), so
+  /// the occlusion of near geometry is not contaminated by the far surface
+  /// behind it, and it keeps large radii cache-friendly. The cost is a
+  /// full-resolution depth prepass plus the chain build, so it is off by default
+  /// and best reserved for higher-end targets.
+  bool depthMipChain = false;
+
   /// How indirect specular reflections are occluded. See
   /// [SpecularAmbientOcclusionMode].
   SpecularAmbientOcclusionMode specularMode = SpecularAmbientOcclusionMode.none;
