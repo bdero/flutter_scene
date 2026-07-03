@@ -16,6 +16,8 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
+import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/fscene/id.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
@@ -41,6 +43,8 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(ParticleEmitterCodec())
     ..register(MeshCodec())
     ..register(DirectionalLightCodec())
+    ..register(PointLightCodec())
+    ..register(SpotLightCodec())
     ..register(CameraCodec())
     ..register(EnvironmentVolumeCodec());
 }
@@ -669,6 +673,140 @@ class DirectionalLightCodec extends ComponentCodec {
           p,
           'shadowNormalBias',
           numberDefault('shadowNormalBias'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Codec for [PointLightComponent].
+class PointLightCodec extends ComponentCodec {
+  @override
+  String get type => 'pointLight';
+
+  static final List<ComponentPropertyDef> _schema = [
+    ComponentPropertyDef(
+      'color',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(1, 1, 1)),
+      doc: 'Linear RGB light color.',
+      read: (c) => Vec3Value((c as PointLightComponent).light.color.clone()),
+    ),
+    ComponentPropertyDef(
+      'intensity',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Light brightness (radiance at unit distance).',
+      min: 0,
+      read: (c) => DoubleValue((c as PointLightComponent).light.intensity),
+    ),
+    ComponentPropertyDef(
+      'range',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Distance the light reaches, or 0 for infinite range.',
+      min: 0,
+      read: (c) => DoubleValue((c as PointLightComponent).light.range),
+    ),
+  ];
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) => component is PointLightComponent;
+
+  @override
+  Component realize(ComponentSpec spec, RealizeContext context) {
+    final p = spec.properties;
+    return PointLightComponent(
+      PointLight(
+        color: readVec3(p, 'color', vec3Default('color')),
+        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
+        range: readDouble(p, 'range', numberDefault('range')),
+      ),
+    );
+  }
+}
+
+/// Codec for [SpotLightComponent].
+class SpotLightCodec extends ComponentCodec {
+  @override
+  String get type => 'spotLight';
+
+  static final List<ComponentPropertyDef> _schema = [
+    ComponentPropertyDef(
+      'direction',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(0, -1, 0)),
+      doc: 'Cone aim in the node\'s local space.',
+      read: (c) => Vec3Value((c as SpotLightComponent).light.direction.clone()),
+    ),
+    ComponentPropertyDef(
+      'color',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(1, 1, 1)),
+      doc: 'Linear RGB light color.',
+      read: (c) => Vec3Value((c as SpotLightComponent).light.color.clone()),
+    ),
+    ComponentPropertyDef(
+      'intensity',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Light brightness (radiance at unit distance).',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.intensity),
+    ),
+    ComponentPropertyDef(
+      'range',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Distance the light reaches, or 0 for infinite range.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.range),
+    ),
+    ComponentPropertyDef(
+      'innerConeAngle',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Half-angle (radians) of the full-brightness inner cone.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.innerConeAngle),
+    ),
+    ComponentPropertyDef(
+      'outerConeAngle',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.7853981633974483),
+      doc: 'Half-angle (radians) at which the cone falls to zero.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.outerConeAngle),
+    ),
+  ];
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) => component is SpotLightComponent;
+
+  @override
+  Component realize(ComponentSpec spec, RealizeContext context) {
+    final p = spec.properties;
+    return SpotLightComponent(
+      SpotLight(
+        direction: readVec3(p, 'direction', vec3Default('direction')),
+        color: readVec3(p, 'color', vec3Default('color')),
+        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
+        range: readDouble(p, 'range', numberDefault('range')),
+        innerConeAngle: readDouble(
+          p,
+          'innerConeAngle',
+          numberDefault('innerConeAngle'),
+        ),
+        outerConeAngle: readDouble(
+          p,
+          'outerConeAngle',
+          numberDefault('outerConeAngle'),
         ),
       ),
     );

@@ -3,6 +3,9 @@ import 'package:vector_math/vector_math.dart';
 import 'types.dart';
 
 GltfDocument parseGltfJson(Map<String, Object?> json) {
+  // KHR_lights_punctual declares its lights at the document's extensions.
+  final docExtensions = json['extensions'] as Map?;
+  final punctual = docExtensions?['KHR_lights_punctual'] as Map?;
   return GltfDocument(
     scene: json['scene'] as int?,
     scenes: _list(json['scenes'], _parseScene),
@@ -17,6 +20,26 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
     samplers: _list(json['samplers'], _parseSampler),
     skins: _list(json['skins'], _parseSkin),
     animations: _list(json['animations'], _parseAnimation),
+    lights: _list(punctual?['lights'], _parsePunctualLight),
+  );
+}
+
+GltfPunctualLight _parsePunctualLight(Map<String, Object?> j) {
+  Vector3? color;
+  if (j['color'] is List) {
+    final c = (j['color'] as List).cast<num>();
+    color = Vector3(c[0].toDouble(), c[1].toDouble(), c[2].toDouble());
+  }
+  final spot = j['spot'] as Map?;
+  return GltfPunctualLight(
+    name: j['name'] as String?,
+    type: j['type'] as String? ?? 'point',
+    color: color,
+    intensity: (j['intensity'] as num?)?.toDouble() ?? 1.0,
+    range: (j['range'] as num?)?.toDouble(),
+    innerConeAngle: (spot?['innerConeAngle'] as num?)?.toDouble() ?? 0.0,
+    outerConeAngle:
+        (spot?['outerConeAngle'] as num?)?.toDouble() ?? 0.7853981633974483,
   );
 }
 
@@ -61,10 +84,13 @@ GltfNode _parseNode(Map<String, Object?> j) {
     final s = (j['scale'] as List).cast<num>();
     scale = Vector3(s[0].toDouble(), s[1].toDouble(), s[2].toDouble());
   }
+  final nodeExtensions = j['extensions'] as Map?;
+  final punctual = nodeExtensions?['KHR_lights_punctual'] as Map?;
   return GltfNode(
     name: j['name'] as String?,
     mesh: j['mesh'] as int?,
     skin: j['skin'] as int?,
+    light: punctual?['light'] as int?,
     children: ((j['children'] as List?) ?? const []).cast<int>(),
     matrix: matrix,
     translation: translation,
