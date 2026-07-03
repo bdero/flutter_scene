@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -10,6 +12,12 @@ import 'package:flutter_scene/src/render/shadow_encoder.dart';
 /// directional shadow map atlas (a depth-in-`.r` fp32 texture). The
 /// downstream scene pass reads it from here.
 const String kShadowMapBlackboardKey = 'directional_shadow_map';
+
+/// Render-graph blackboard key under which [ShadowPass] publishes the packed
+/// shadow uniform (the `PostShadowInfo` std140 block: per-cascade world->light
+/// matrices, split distances, the light direction + cascade count, and the
+/// light color). A depth-aware custom pass reads it to sample the shadow map.
+const String kShadowUniformBlackboardKey = 'shadow_uniform';
 
 /// Renders the scene's depth from a directional light into a cascaded
 /// shadow map atlas and publishes it on the render-graph blackboard.
@@ -26,16 +34,21 @@ class ShadowPass extends RenderGraphPass {
     required int tileResolution,
     required ShadowCasterFaces casterFaces,
     required Vector3 cameraPosition,
+    ByteData? shadowUniform,
   }) : _renderScene = renderScene,
        _cascades = cascades,
        _tileResolution = tileResolution,
        _casterFaces = casterFaces,
-       _cameraPosition = cameraPosition;
+       _cameraPosition = cameraPosition,
+       _shadowUniform = shadowUniform;
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
   final int _tileResolution;
   final ShadowCasterFaces _casterFaces;
+
+  // The packed PostShadowInfo block, published for depth-aware custom passes.
+  final ByteData? _shadowUniform;
 
   // Bound as FrameInfo.camera_position so a `vertex { }` material's
   // camera-relative displacement bends shadow casters the same way as the
@@ -109,5 +122,9 @@ class ShadowPass extends RenderGraphPass {
 
     commandBuffer.submit();
     context.blackboard.set(kShadowMapBlackboardKey, color);
+    final shadowUniform = _shadowUniform;
+    if (shadowUniform != null) {
+      context.blackboard.set(kShadowUniformBlackboardKey, shadowUniform);
+    }
   }
 }

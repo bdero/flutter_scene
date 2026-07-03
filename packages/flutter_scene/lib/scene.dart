@@ -99,7 +99,7 @@ export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart'
     show DirectionalLight, Lighting, ShadowCascade, ShadowCasterFaces;
 export 'src/render/custom_render_pass.dart'
-    show CustomRenderPass, RenderPassContext, RenderStage;
+    show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;

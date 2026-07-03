@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -6,14 +7,43 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/object_filter.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
+import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 import 'package:flutter_scene/src/shaders.dart';
+
+/// Packs the `PostShadowInfo` std140 block a depth-aware custom pass reads
+/// (exposed as [RenderPassContext.shadowInfo]) from the frame's [cascades],
+/// the light's world-space travel [direction], and its [color] premultiplied by
+/// intensity. Layout: `mat4 light_space_matrix[4]` (world -> cascade clip),
+/// `vec4 cascade_splits` (view-space split distance per cascade), `vec4
+/// light_direction` (xyz direction, w = cascade count), `vec4 light_color`.
+ByteData packPostShadowInfo(
+  List<ShadowCascade> cascades,
+  Vector3 direction,
+  Vector3 color,
+) {
+  final f = Float32List(76); // 4 mat4 + 3 vec4
+  final count = cascades.length < 4 ? cascades.length : 4;
+  for (var i = 0; i < count; i++) {
+    f.setRange(i * 16, i * 16 + 16, cascades[i].lightSpaceMatrix.storage);
+    f[64 + i] = cascades[i].splitDistance;
+  }
+  f[68] = direction.x;
+  f[69] = direction.y;
+  f[70] = direction.z;
+  f[71] = count.toDouble();
+  f[72] = color.x;
+  f[73] = color.y;
+  f[74] = color.z;
+  return ByteData.sublistView(f);
+}
 
 /// A named anchor point in the built-in render pipeline where a
 /// [CustomRenderPass] runs. Ordering within one stage follows the order the
@@ -40,6 +70,31 @@ enum RenderStage {
   /// At the very end, after anti-aliasing and display-referred custom
   /// effects (the overlay slot the built-in selection outline uses).
   afterAntiAliasing,
+}
+
+/// An engine geometry buffer a [CustomRenderPass] can request through
+/// [CustomRenderPass.inputs]. Declaring one makes the engine produce it this
+/// frame and exposes it on the [RenderPassContext], so a pass can read the
+/// scene's geometry (depth, normals, shadows), not just its color. Together
+/// they turn the custom-pass API into a general depth/shadow-aware
+/// post-process system (contact shadows, custom occlusion, volumetrics, and so
+/// on).
+/// {@category Rendering}
+enum RenderInput {
+  /// The linear (view-space) depth buffer, on
+  /// [RenderPassContext.sceneDepthLinear]. Needs a perspective camera;
+  /// reconstruct positions with [RenderPassContext.cameraInfo].
+  depth,
+
+  /// View-space normals, octahedral-packed into the green/blue channels of the
+  /// same buffer as [depth] (which this implies).
+  normals,
+
+  /// The directional light's cascaded shadow map, on
+  /// [RenderPassContext.shadowMap], with [RenderPassContext.shadowInfo] for its
+  /// cascade transforms. Null unless the scene has a shadow-casting directional
+  /// light.
+  shadowMap,
 }
 
 /// A user-supplied render pass inserted into the built-in pipeline at a
@@ -73,6 +128,11 @@ abstract class CustomRenderPass {
 
   /// Where in the pipeline this pass runs.
   RenderStage get stage;
+
+  /// The engine geometry buffers this pass reads, beyond the always-available
+  /// scene color. Declaring one makes the engine produce it this frame and
+  /// exposes it on the [RenderPassContext]. Empty by default (color only).
+  Set<RenderInput> get inputs => const {};
 
   /// Whether this pass runs. A disabled pass is skipped entirely (it never
   /// consumes a buffer), so toggling it does not disturb the rest of the
@@ -161,10 +221,53 @@ class RenderPassContext {
   gpu.Texture get displayColor =>
       _context.blackboard.require<gpu.Texture>(kDisplayColorBlackboardKey);
 
-  /// The linear (view-space) depth buffer, or null when no depth prepass ran
-  /// this frame (it only runs when ambient occlusion is enabled).
+  /// The linear (view-space) depth buffer: planar view-space depth (world
+  /// units) in the red channel, with the octahedral-packed view-space normal in
+  /// green/blue when [RenderInput.normals] was requested. Non-null when the pass
+  /// declared [RenderInput.depth] (or [RenderInput.normals]) and the camera is
+  /// perspective; also present when ambient occlusion or reflections ran.
   gpu.Texture? get sceneDepthLinear =>
       _context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey);
+
+  /// The directional light's cascaded shadow map atlas (a horizontal strip of
+  /// `shadowInfo` cascade tiles, window-space depth in the red channel).
+  /// Non-null when the pass declared [RenderInput.shadowMap] and the scene has
+  /// a shadow-casting directional light. Pair with [shadowInfo].
+  gpu.Texture? get shadowMap =>
+      _context.blackboard.get<gpu.Texture>(kShadowMapBlackboardKey);
+
+  /// The packed `PostShadowInfo` std140 uniform block matching [shadowMap]:
+  /// four `mat4` world->cascade-clip matrices, a `vec4` of the cascades'
+  /// view-space split distances, a `vec4` light direction (xyz world travel
+  /// direction, w = cascade count), and a `vec4` light color (rgb, premultiplied
+  /// by intensity). Bind it under a `PostShadowInfo` block via
+  /// [applyShader]'s `uniforms`. Null when [shadowMap] is null.
+  ByteData? get shadowInfo =>
+      _context.blackboard.get<ByteData>(kShadowUniformBlackboardKey);
+
+  /// A packed `PostCameraInfo` std140 uniform block for reconstructing world
+  /// positions from [sceneDepthLinear]: a `vec4` `(tan(fovX/2), tan(fovY/2),
+  /// near, far)`, the `mat4` inverse view matrix (view space -> world), and a
+  /// `vec4` camera world position. Bind it under a `PostCameraInfo` block via
+  /// [applyShader]'s `uniforms`. The projection terms are zero for a
+  /// non-perspective camera (where depth is unavailable).
+  ByteData get cameraInfo {
+    final f = Float32List(24); // vec4 + mat4 + vec4
+    final projection = camera.projection;
+    if (projection is PerspectiveProjection && dimensions.height > 0) {
+      final tanY = math.tan(projection.fovRadiansY * 0.5);
+      f[0] = tanY * (dimensions.width / dimensions.height);
+      f[1] = tanY;
+      f[2] = projection.near;
+      f[3] = projection.far;
+    }
+    final inverseView = camera.getViewMatrix()..invert();
+    f.setRange(4, 20, inverseView.storage);
+    f[20] = camera.position.x;
+    f[21] = camera.position.y;
+    f[22] = camera.position.z;
+    return ByteData.sublistView(f);
+  }
 
   // Whether this stage operates on the HDR scene color or the display image.
   Object get _chainKey =>
