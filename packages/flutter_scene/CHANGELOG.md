@@ -22,6 +22,31 @@
   cache-friendly. The cost is a full-resolution prepass plus the chain build, so
   it is best reserved for higher-end targets.
 
+* Distance fog. `scene.fog` (a `Fog`, off by default) fades geometry toward a
+  fog color with distance, applied per-fragment in linear HDR before tone
+  mapping so it is exposed and tone-mapped along with the scene. It supports
+  linear, exponential, and exponential-squared falloff (`FogMode`), a maximum
+  opacity, a cutoff distance, an exponential height term that thins fog with
+  altitude, and an in-scattering glow toward the directional light. Its
+  `skyColorInfluence` blends the fog color toward the environment sampled in the
+  view direction, so distant geometry dissolves into the sky and horizon instead
+  of a flat wall.
+
+* Custom render passes can now read the scene's geometry, not just its color. A
+  `CustomRenderPass` declares the buffers it needs through a `RenderInput` set
+  (`depth`, `normals`, `shadowMap`); the engine produces them that frame and
+  exposes them on `RenderPassContext` (`sceneDepthLinear`, `shadowMap`,
+  `shadowInfo`, `cameraInfo`), so a full-screen pass can reconstruct world
+  positions and sample the shadow map. This turns the custom-pass API into a
+  general depth- and shadow-aware post-process system.
+
+* Volumetric god rays. `scene.godRays` (a `GodRaysSettings`, off by default)
+  draws directional light shafts by marching the view ray against the cascaded
+  shadow map and adding single-scattering to the HDR scene color, with controls
+  for intensity, density, Henyey-Greenstein anisotropy, step count, maximum
+  distance, jitter, and a color. It requires a shadow-casting directional light
+  and a perspective camera.
+
 * Widget-texture captures (`WidgetTexture`, `WidgetComponent`) now stay on the
   GPU. Each capture wraps the rasterized image's backing texture directly
   (`Texture.fromImage`) instead of reading the pixels back and re-uploading
