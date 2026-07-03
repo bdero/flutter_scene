@@ -130,10 +130,11 @@ class EngineLightingUniforms {
     final fog = lighting.fog;
     final buffer = Float32List(24);
     if (fog != null && fog.enabled && fog.mode != FogMode.none) {
-      // params0: mode, enabled, maxOpacity.
+      // params0: mode, enabled, maxOpacity, sky-color influence.
       buffer[0] = fog.mode.index.toDouble();
       buffer[1] = 1.0;
       buffer[2] = fog.maxOpacity.clamp(0.0, 1.0);
+      buffer[3] = fog.skyColorInfluence.clamp(0.0, 1.0);
       // params1: density, start, end, cutoffDistance.
       buffer[4] = fog.density;
       buffer[5] = fog.start;

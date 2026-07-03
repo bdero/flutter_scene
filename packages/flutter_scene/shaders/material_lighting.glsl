@@ -384,5 +384,27 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // resolve pass (see flutter_scene_resolve.frag), so this writes into a
   // floating-point scene-color target.
   vec3 out_color = ambient + direct + emissive;
-  return ApplyFog(vec4(out_color, 1.0) * alpha);
+
+  // Sky-colored fog: when active, sample the environment in the view direction
+  // (rotated by the same environment_transform, cross-faded like the IBL, and
+  // scaled by environment_intensity) so far geometry dissolves into the sky
+  // behind it, matching the unfogged skybox at the horizon. Only sampled when
+  // fog and its sky-color influence are on, so it is free otherwise.
+  vec3 sky_fog_color = fog.color.rgb;
+  if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
+    const float kSkyFogRoughness = 0.15;
+    vec3 sky_dir = environment_transform * normalize(-v_viewvector);
+    sky_fog_color = SampleRadianceEnv(
+        prefiltered_radiance, prefiltered_radiance_cube, sky_dir,
+        kSkyFogRoughness);
+    if (env_blend > 0.0) {
+      sky_fog_color = mix(
+          sky_fog_color,
+          SampleRadianceEnv(prefiltered_radiance_b, prefiltered_radiance_cube_b,
+                            sky_dir, kSkyFogRoughness),
+          env_blend);
+    }
+    sky_fog_color *= frag_info.environment_intensity;
+  }
+  return ApplyFog(vec4(out_color, 1.0) * alpha, sky_fog_color);
 }
