@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
@@ -114,7 +113,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     gpu.HostBuffer transientsBuffer,
     Lighting lighting,
   ) {
-    pass.setCullMode(_cullMode(_culling));
+    pass.setCullMode(renderCullMode);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
 
     if (shadingModel == FmatShadingModel.lit) {
@@ -134,10 +133,24 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     }
 
     parameters.bind(pass, fragmentShader, transientsBuffer);
+    // Bind the fragment keep-alive block (name matches kFragmentKeepAliveBlock
+    // in the emitter) to zero. The generated fragment references MaterialParams
+    // through it so the block is not optimized out when Surface() reads no
+    // parameter; it is declared only when the material has such a block.
+    if (parameters.hasUniformBlock) {
+      pass.bindUniform(
+        fragmentShader.getUniformSlot('FragmentKeepAlive'),
+        transientsBuffer.emplace(_zeroKeepAlive),
+      );
+    }
   }
 
   @override
   bool isOpaque() => _blending == FmatBlending.opaque;
+
+  @override
+  @internal
+  gpu.CullMode get renderCullMode => _cullMode(_culling);
 }
 
 gpu.CullMode _cullMode(FmatCulling culling) => switch (culling) {

@@ -26,6 +26,17 @@ const String kVertexKeepAliveBlock = 'VertexKeepAlive';
 /// The GLES-fold-safe instance name for [kVertexKeepAliveBlock].
 const String kVertexKeepAliveInstance = 'vertex_keep_alive';
 
+/// The uniform block a generated fragment declares to keep the `MaterialParams`
+/// block live when `Surface()` reads no parameter (e.g. a material whose
+/// parameters are used only in its `Vertex()` stage). The runtime binds it to
+/// zero, so it has no effect; without it the optimizer strips the unreferenced
+/// block, its uniform slot is then absent, and binding the parameters crashes
+/// the Metal backend.
+const String kFragmentKeepAliveBlock = 'FragmentKeepAlive';
+
+/// The GLES-fold-safe instance name for [kFragmentKeepAliveBlock].
+const String kFragmentKeepAliveInstance = 'fragment_keep_alive';
+
 /// The engine vertex variants a material with a `vertex { }` block generates a
 /// shader for, mapping the sidecar key the runtime selects by to the shared
 /// body include that variant reuses. The keys correspond to the geometry a
@@ -95,6 +106,12 @@ String emitFragmentGlsl(FmatMaterial material) {
     sb.writeln('}');
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
+    // Bound to zero by the runtime; main() multiplies a MaterialParams field by
+    // it so the block cannot be optimized out when Surface() reads no parameter
+    // (its uniform slot would then be missing and binding it would crash).
+    sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
+    sb.writeln('$kFragmentKeepAliveInstance;');
+    sb.writeln();
   }
 
   final samplers = material.samplerParameters.toList();
@@ -112,6 +129,16 @@ String emitFragmentGlsl(FmatMaterial material) {
   sb.writeln('void main() {');
   sb.writeln('  MaterialInputs material = InitMaterialInputs();');
   sb.writeln('  Surface(material);');
+  if (uniforms.isNotEmpty) {
+    final first = uniforms.first;
+    final scalar = first.type.glslType == 'float'
+        ? 'material_params.${first.name}'
+        : 'material_params.${first.name}.x';
+    sb.writeln(
+      '  material.base_color.r += '
+      '$kFragmentKeepAliveInstance.keep_alive.x * $scalar;',
+    );
+  }
   if (lit) {
     sb.writeln('  frag_color = EvaluateLighting(material);');
   } else {

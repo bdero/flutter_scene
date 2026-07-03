@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Color;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
@@ -392,6 +392,12 @@ class MaterialParameters {
     }
     throw ArgumentError('Unknown material parameter "$name".');
   }
+
+  /// Whether this material has a non-empty `MaterialParams` uniform block (any
+  /// non-sampler parameters). When false the generated shaders declare no block
+  /// and none is bound.
+  @internal
+  bool get hasUniformBlock => _block.lengthInBytes > 0;
 
   /// Binds only the `MaterialParams` uniform block on [shader] into [pass],
   /// not the sampler parameters. Used to make the block available to the

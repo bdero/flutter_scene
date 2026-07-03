@@ -131,6 +131,34 @@ fragment {
         contains('vec4(material.base_color.rgb, 1.0) * material.base_color.a'),
       );
     });
+
+    test('keeps MaterialParams live when the fragment reads no parameter', () {
+      // A parameter used only in the vertex stage: the fragment must still
+      // reference MaterialParams (through the zero-bound keep-alive) so the
+      // block is not optimized out and its uniform slot stays bindable, which
+      // otherwise crashes the Metal backend when the parameters are bound.
+      final c = compileFmat('''
+material {
+  name: "P",
+  shading_model: unlit,
+  parameters: [ { type: float, name: k, default: 1.0 } ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(c.glsl, contains('uniform MaterialParams {'));
+      expect(
+        c.glsl,
+        contains('uniform FragmentKeepAlive { vec4 keep_alive; }'),
+      );
+      expect(
+        c.glsl,
+        contains('fragment_keep_alive.keep_alive.x * material_params.k'),
+      );
+    });
   });
 
   group('sidecar', () {
