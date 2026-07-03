@@ -50,21 +50,34 @@ class ExampleLightsState extends State<ExampleLights> {
     scene.environmentIntensity = 0.1;
     scene.directionalLight = null;
 
-    // A matte floor to catch the light pools.
+    // Reflect the lit scene off the floor.
+    scene.screenSpaceReflections.enabled = true;
+
+    // A dark, near-polished floor so the colored light pools and the spheres
+    // reflect in it.
     scene.add(
       Node(
         mesh: Mesh(
           CuboidGeometry(vm.Vector3(24, 0.2, 24)),
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.6, 0.6, 0.62, 1)
-            ..roughnessFactor = 0.85
+            ..baseColorFactor = vm.Vector4(0.05, 0.05, 0.06, 1)
+            ..roughnessFactor = 0.08
             ..metallicFactor = 0.0,
         ),
         localTransform: vm.Matrix4.translation(vm.Vector3(0, -1.2, 0)),
       ),
     );
 
-    // A ring of shapes for the lights to sweep across.
+    // A ring of spheres spanning a range of material properties: alternating
+    // metal and dielectric, roughness increasing around the ring.
+    final sphereColors = <vm.Vector4>[
+      vm.Vector4(0.95, 0.64, 0.54, 1), // copper-ish
+      vm.Vector4(0.9, 0.9, 0.92, 1), // silver-ish
+      vm.Vector4(1.0, 0.86, 0.57, 1), // gold-ish
+      vm.Vector4(0.8, 0.85, 0.9, 1),
+      vm.Vector4(0.85, 0.85, 0.85, 1),
+      vm.Vector4(0.75, 0.8, 0.85, 1),
+    ];
     for (var i = 0; i < 6; i++) {
       final angle = i / 6 * 2 * pi;
       scene.add(
@@ -72,9 +85,11 @@ class ExampleLightsState extends State<ExampleLights> {
           mesh: Mesh(
             SphereGeometry(radius: 0.7),
             PhysicallyBasedMaterial()
-              ..baseColorFactor = vm.Vector4(0.85, 0.85, 0.85, 1)
-              ..roughnessFactor = 0.5
-              ..metallicFactor = 0.0,
+              ..baseColorFactor = sphereColors[i]
+              // Alternate metal and dielectric; sweep roughness around the ring
+              // so the same lights read across smooth-to-rough surfaces.
+              ..metallicFactor = i.isEven ? 1.0 : 0.0
+              ..roughnessFactor = 0.05 + i / 5 * 0.7,
           ),
           localTransform: vm.Matrix4.translation(
             vm.Vector3(cos(angle) * 4, 0, sin(angle) * 4),
