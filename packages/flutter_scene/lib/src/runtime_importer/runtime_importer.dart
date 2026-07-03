@@ -4,6 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
+import '../components/component.dart';
+import '../components/directional_light_component.dart';
+import '../components/point_light_component.dart';
+import '../components/spot_light_component.dart';
+import '../light.dart';
 import '../material/unlit_material.dart';
 import '../mesh.dart';
 import '../node.dart';
@@ -229,11 +234,63 @@ void _populateNode({
     }
   }
 
+  final lightIndex = gltfNode.light;
+  if (lightIndex != null && lightIndex >= 0 && lightIndex < doc.lights.length) {
+    final component = _buildLightComponent(doc.lights[lightIndex]);
+    if (component != null) {
+      engineNode.addComponent(component);
+    }
+  }
+
   for (final childIndex in gltfNode.children) {
     if (childIndex < 0 || childIndex >= engineNodes.length) {
       throw Exception('glTF node child index $childIndex out of range');
     }
     engineNode.add(engineNodes[childIndex]);
+  }
+}
+
+// Builds the engine light component for a KHR_lights_punctual light, or null
+// for an unsupported type. glTF lights emit along the node's local -Z axis, so
+// directional and spot lights take that as their local direction (the node
+// transform, and the scene-root handedness flip, then aim them in world space).
+//
+// TODO(lighting): glTF point/spot intensity is candela and directional is lux;
+// flutter_scene uses an artistic multiplier, so the value is carried through
+// unconverted. Map photometric units to the engine's exposure if physical
+// intensities are needed.
+Component? _buildLightComponent(GltfPunctualLight light) {
+  switch (light.type) {
+    case 'directional':
+      return DirectionalLightComponent(
+        DirectionalLight(
+          direction: Vector3(0.0, 0.0, -1.0),
+          color: light.color.clone(),
+          intensity: light.intensity,
+        ),
+      );
+    case 'point':
+      return PointLightComponent(
+        PointLight(
+          color: light.color.clone(),
+          intensity: light.intensity,
+          range: light.range ?? 0.0,
+        ),
+      );
+    case 'spot':
+      return SpotLightComponent(
+        SpotLight(
+          direction: Vector3(0.0, 0.0, -1.0),
+          color: light.color.clone(),
+          intensity: light.intensity,
+          range: light.range ?? 0.0,
+          innerConeAngle: light.innerConeAngle,
+          outerConeAngle: light.outerConeAngle,
+        ),
+      );
+    default:
+      debugPrint('Skipping unsupported KHR_lights_punctual type ${light.type}');
+      return null;
   }
 }
 

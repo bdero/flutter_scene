@@ -23,14 +23,28 @@ void main() {
   final registry = defaultComponentRegistry();
 
   test('the registry exposes the built-in component types', () {
-    expect(registry.types, containsAll(['mesh', 'directionalLight', 'camera']));
+    expect(
+      registry.types,
+      containsAll([
+        'mesh',
+        'directionalLight',
+        'pointLight',
+        'spotLight',
+        'camera',
+      ]),
+    );
   });
 
   // For codecs that derive serialize from their schema, realizing an empty
   // spec and serializing must reproduce exactly the schema's keys (in order)
   // and default values. This locks schema, realize defaults, and serialize
   // together so none can drift.
-  for (final type in ['directionalLight', 'camera']) {
+  for (final type in [
+    'directionalLight',
+    'pointLight',
+    'spotLight',
+    'camera',
+  ]) {
     test('$type schema, realize defaults, and serialize agree', () {
       final codec = registry.codecFor(type)!;
       final doc = SceneDocument();

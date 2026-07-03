@@ -19,6 +19,7 @@ class GltfDocument {
     this.samplers = const [],
     this.skins = const [],
     this.animations = const [],
+    this.lights = const [],
   });
 
   final int? scene;
@@ -34,6 +35,36 @@ class GltfDocument {
   final List<GltfSampler> samplers;
   final List<GltfSkin> skins;
   final List<GltfAnimation> animations;
+
+  /// Punctual lights declared by the `KHR_lights_punctual` extension, indexed
+  /// by [GltfNode.light]. Empty when the extension is absent.
+  final List<GltfPunctualLight> lights;
+}
+
+/// A `KHR_lights_punctual` light definition. Fields match the extension spec.
+/// [innerConeAngle]/[outerConeAngle] are only meaningful for `spot` lights.
+class GltfPunctualLight {
+  GltfPunctualLight({
+    this.name,
+    required this.type,
+    Vector3? color,
+    this.intensity = 1.0,
+    this.range,
+    this.innerConeAngle = 0.0,
+    this.outerConeAngle = 0.7853981633974483, // pi / 4
+  }) : color = color ?? Vector3(1.0, 1.0, 1.0);
+
+  final String? name;
+
+  /// One of `directional`, `point`, or `spot`.
+  final String type;
+  final Vector3 color;
+  final double intensity;
+
+  /// Distance cutoff, or null for infinite range (point and spot only).
+  final double? range;
+  final double innerConeAngle;
+  final double outerConeAngle;
 }
 
 class GltfScene {
@@ -47,6 +78,7 @@ class GltfNode {
     this.name,
     this.mesh,
     this.skin,
+    this.light,
     this.children = const [],
     this.matrix,
     this.translation,
@@ -57,6 +89,9 @@ class GltfNode {
   final String? name;
   final int? mesh;
   final int? skin;
+
+  /// Index into [GltfDocument.lights] (`KHR_lights_punctual`), or null.
+  final int? light;
   final List<int> children;
 
   /// If [matrix] is set, [translation]/[rotation]/[scale] are ignored.
