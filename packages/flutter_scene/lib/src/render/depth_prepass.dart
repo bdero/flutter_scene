@@ -155,9 +155,9 @@ class _DepthPrepassEncoder {
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-    // Match the standard materials' winding / culling so the same faces
-    // that are visible contribute depth.
-    _renderPass.setCullMode(gpu.CullMode.backFace);
+    // Winding and culling are matched to each material per draw in [submit]
+    // (winding follows the node/instance parity, culling follows the material's
+    // own mode), so the same faces the color pass draws contribute depth.
     _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
     // The camera axes are constant across the pass. Pack them once and
     // rebind per draw (clearBindings drops the binding between draws). The
@@ -235,6 +235,10 @@ class _DepthPrepassEncoder {
       }
     }
     _renderPass.clearBindings();
+    // Cull the same faces as the color pass; a double-sided (culling: none)
+    // material must stay double-sided here, or its camera-facing back faces are
+    // absent from the prepass and SSAO/SSR read the farther surface behind them.
+    _renderPass.setCullMode(item.material.renderCullMode);
     final geometry = item.geometry;
     // Unskinned geometry draws depth through a position-only shader and layout
     // (fetching only position); skinned geometry has no such variant, so it

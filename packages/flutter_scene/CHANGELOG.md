@@ -1,5 +1,18 @@
 ## 0.19.0
 
+* Ambient occlusion and screen-space reflections no longer sample the wrong
+  depth for double-sided (`culling: none`) materials. The depth prepass they
+  read culled every material back-face regardless of its own mode, so a
+  double-sided surface's camera-facing back faces were missing from the depth
+  and the effects shaded the farther surface behind them. The prepass now culls
+  each material with its own mode, matching the color pass.
+
+* A `.fmat` whose parameters are used only in its `vertex { }` stage no longer
+  crashes at draw time. When `Surface()` reads no parameter the compiler stripped
+  the fragment's `MaterialParams` block, and binding the parameters then pointed
+  at a missing uniform slot. The generated fragment now keeps the block
+  referenced through a zero-bound keep-alive, with no visible effect.
+
 * Widget-texture captures (`WidgetTexture`, `WidgetComponent`) now stay on the
   GPU. Each capture wraps the rasterized image's backing texture directly
   (`Texture.fromImage`) instead of reading the pixels back and re-uploading

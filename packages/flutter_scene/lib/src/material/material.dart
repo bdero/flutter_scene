@@ -246,16 +246,26 @@ abstract class Material {
     gpu.HostBuffer transientsBuffer,
     Lighting lighting,
   ) {
-    // Double-sided is honored only for opaque materials. A translucent
-    // material is always back-face culled: drawing both sides would blend the
-    // overlapping front and back surfaces in triangle-index order rather than
-    // depth order (the translucent pass has no per-fragment sorting), which
-    // seams thick double-sided glass. Single-sided draws just the outer
-    // surface.
-    final cullBackFace = !doubleSided || !isOpaque();
-    pass.setCullMode(cullBackFace ? gpu.CullMode.backFace : gpu.CullMode.none);
+    pass.setCullMode(renderCullMode);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
+
+  /// The face-culling mode geometry drawn with this material renders with.
+  ///
+  /// Passes that draw the geometry without calling [bind] (the depth/normal
+  /// prepass behind SSAO and SSR) read this to cull the same faces the color
+  /// pass does. If they disagree, a double-sided material's back faces are
+  /// missing from the prepass and screen-space effects sample the wrong
+  /// (farther) surface where a front face is actually drawn.
+  ///
+  /// Double-sided is honored only for opaque materials. A translucent material
+  /// is always back-face culled: drawing both sides would blend the overlapping
+  /// front and back surfaces in triangle-index order rather than depth order
+  /// (the translucent pass has no per-fragment sorting), which seams thick
+  /// double-sided glass.
+  @internal
+  gpu.CullMode get renderCullMode =>
+      (!doubleSided || !isOpaque()) ? gpu.CullMode.backFace : gpu.CullMode.none;
 
   /// Whether geometry rendered with this material is fully opaque.
   ///
