@@ -10,7 +10,8 @@
 
 uniform FogInfo {
   // x: mode (0 none, 1 linear, 2 exponential, 3 exponential-squared)
-  // y: enabled (> 0.5)   z: maximum opacity   w: unused
+  // y: enabled (> 0.5)   z: maximum opacity   w: sky-color influence (0 = flat
+  // color, 1 = fully the sky color sampled in the view direction)
   vec4 params0;
   // x: density   y: start distance   z: end distance   w: cutoff distance
   // (<= 0 disables the cutoff)
@@ -28,10 +29,14 @@ uniform FogInfo {
 fog;
 
 // Blends [premult_color] (linear HDR, premultiplied by its own alpha) toward the
-// fog color by the distance-based fog factor. Returns the fogged premultiplied
+// fog color by the distance-based fog factor. [sky_color] is the environment
+// radiance sampled in the view direction (the lit path supplies it; the unlit
+// path passes the flat fog color, making the sky mix inert); the fog color
+// lerps from the flat color toward it by the sky-color influence, so far
+// geometry dissolves into the sky behind it. Returns the fogged premultiplied
 // color; alpha (coverage) is left unchanged so a transparent fragment adds no
 // fog (the geometry behind it is fogged by its own, farther fragment).
-vec4 ApplyFog(vec4 premult_color) {
+vec4 ApplyFog(vec4 premult_color, vec3 sky_color) {
   if (fog.params0.y < 0.5) {
     return premult_color;
   }
@@ -88,7 +93,9 @@ vec4 ApplyFog(vec4 premult_color) {
     return premult_color;
   }
 
-  vec3 fog_color = fog.color.rgb;
+  // Fog color: the flat color, lerped toward the sky sampled in the view
+  // direction so distant geometry blends into the sky/horizon behind it.
+  vec3 fog_color = mix(fog.color.rgb, sky_color, fog.params0.w);
   // Cheap sun in-scatter: brighten the fog toward the directional light, so
   // looking into the sun through fog glows. No volumetrics.
   if (fog.sun.w > 0.5 && fog.params2.z > 0.0) {

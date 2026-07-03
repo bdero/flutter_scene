@@ -248,7 +248,10 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..height = 0.0
       ..heightFalloff = 0.2
       ..sunInScatter = 0.6
-      ..sunInScatterExponent = 6.0;
+      ..sunInScatterExponent = 6.0
+      // Blend the fog color toward the sky sampled in the view direction so the
+      // env-sampling fog path is exercised too.
+      ..skyColorInfluence = 0.7;
     scene.add(
       Node()..addComponent(
         DirectionalLightComponent(

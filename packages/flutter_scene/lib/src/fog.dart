@@ -36,6 +36,14 @@ class Fog {
   /// matching it to the horizon color makes geometry dissolve into the sky.
   Vector3 color = Vector3(0.6, 0.7, 0.8);
 
+  /// How much the fog color is taken from the sky instead of [color] (0 = flat
+  /// [color], 1 = fully the environment sampled in the view direction). Above 0,
+  /// far geometry fades into the actual sky/horizon behind it (aerial
+  /// perspective) rather than a flat wall of [color]. Sampled from the
+  /// image-based-lighting environment, so it applies to lit materials; unlit
+  /// materials always use the flat [color].
+  double skyColorInfluence = 0.0;
+
   /// Density for [FogMode.exponential] and [FogMode.exponentialSquared]. Larger
   /// is thicker. See [visibilityDensity] for a distance-based way to set it.
   double density = 0.02;

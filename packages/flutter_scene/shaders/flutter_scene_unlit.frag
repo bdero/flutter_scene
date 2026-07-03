@@ -34,5 +34,8 @@ void main() {
   // pass applies display encoding. Output is premultiplied by alpha.
   vec3 rgb = SRGBToLinear(base.rgb) * vertex_color.rgb * frag_info.color.rgb;
   float alpha = base.a * vertex_color.a * frag_info.color.a;
-  frag_color = ApplyFog(vec4(rgb, 1.0) * alpha);
+  // Unlit has no environment bound, so pass the flat fog color as the sky color;
+  // the sky-color mix in ApplyFog is then inert (sky-colored fog is a lit-path
+  // feature).
+  frag_color = ApplyFog(vec4(rgb, 1.0) * alpha, fog.color.rgb);
 }
