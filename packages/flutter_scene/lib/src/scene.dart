@@ -1016,6 +1016,14 @@ base class Scene implements SceneGraph {
           )
         : const <ShadowCascade>[];
 
+    // The geometry buffers the enabled custom passes request, so the engine
+    // produces depth/normals even without AO/SSR and publishes the shadow
+    // uniform for depth-aware passes.
+    final customInputs = <RenderInput>{};
+    for (final pass in _renderPasses) {
+      if (pass.enabled) customInputs.addAll(pass.inputs);
+    }
+
     final graph = RenderGraph();
     if (cascades.isNotEmpty) {
       graph.addPass(
@@ -1025,6 +1033,13 @@ base class Scene implements SceneGraph {
           tileResolution: light!.shadowMapResolution,
           casterFaces: light.shadowCasterFaces,
           cameraPosition: camera.position,
+          shadowUniform: customInputs.contains(RenderInput.shadowMap)
+              ? packPostShadowInfo(
+                  cascades,
+                  lightDirection ?? light.direction,
+                  light.color * light.intensity,
+                )
+              : null,
         ),
       );
     }
@@ -1038,9 +1053,13 @@ base class Scene implements SceneGraph {
     // Reflections run after the scene is drawn (they sample the lit color),
     // so capture whether they apply here and add the pass below.
     final wantSsr = perspectiveCamera != null && screenSpaceReflections.enabled;
+    // A custom pass may request depth/normals; normals imply depth.
+    final wantCustomNormals = customInputs.contains(RenderInput.normals);
+    final wantCustomDepth =
+        wantCustomNormals || customInputs.contains(RenderInput.depth);
     if (perspectiveCamera != null) {
       final wantAo = ambientOcclusion.enabled;
-      if (wantAo || wantSsr) {
+      if (wantAo || wantSsr || wantCustomDepth) {
         // Ambient occlusion evaluates its chain (depth prepass, occlusion,
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
         // occlusion pass reading a full-resolution depth would alias on fine
@@ -1066,7 +1085,7 @@ base class Scene implements SceneGraph {
             cameraForward: cameraForward,
             farDepth: perspectiveCamera.far,
             layerMask: view.layerMask,
-            writeNormals: wantSsr,
+            writeNormals: wantSsr || wantCustomNormals,
             cameraRight: cameraRight,
             cameraUp: cameraUp,
           ),
