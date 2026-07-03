@@ -231,6 +231,12 @@ class PhysicallyBasedMaterial extends Material {
       lighting,
       env,
     );
+    EngineLightingUniforms.bindFog(
+      pass,
+      fragmentShader,
+      transientsBuffer,
+      lighting,
+    );
   }
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(

@@ -10,6 +10,9 @@
 // the `prefiltered_radiance`, `brdf_lut`, and `shadow_map` samplers, the
 // MaterialInputs struct (material_inputs.glsl), and pbr.glsl + texture.glsl.
 
+// Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
+#include <fog.glsl>
+
 // Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
 // The coefficients already include the cosine convolution and 1/pi, so
 // the result is E(n)/pi. Must use the same real-SH basis the CPU-side
@@ -381,5 +384,5 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // resolve pass (see flutter_scene_resolve.frag), so this writes into a
   // floating-point scene-color target.
   vec3 out_color = ambient + direct + emissive;
-  return vec4(out_color, 1.0) * alpha;
+  return ApplyFog(vec4(out_color, 1.0) * alpha);
 }

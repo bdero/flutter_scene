@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
@@ -114,6 +115,58 @@ class EngineLightingUniforms {
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
+  }
+
+  /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
+  /// from [lighting]'s fog and directional light, and binds it on [shader].
+  /// Every material shader declares `FogInfo`, so this is always bound; when
+  /// there is no fog the `enabled` flag is 0 and `ApplyFog` is a no-op.
+  static void bindFog(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    gpu.HostBuffer transientsBuffer,
+    Lighting lighting,
+  ) {
+    final fog = lighting.fog;
+    final buffer = Float32List(24);
+    if (fog != null && fog.enabled && fog.mode != FogMode.none) {
+      // params0: mode, enabled, maxOpacity.
+      buffer[0] = fog.mode.index.toDouble();
+      buffer[1] = 1.0;
+      buffer[2] = fog.maxOpacity.clamp(0.0, 1.0);
+      // params1: density, start, end, cutoffDistance.
+      buffer[4] = fog.density;
+      buffer[5] = fog.start;
+      buffer[6] = fog.end;
+      buffer[7] = fog.cutoffDistance;
+      // params2: height, heightFalloff, sunInScatter, sunExponent.
+      buffer[8] = fog.height;
+      buffer[9] = fog.heightFalloff;
+      buffer[10] = fog.sunInScatter;
+      buffer[11] = fog.sunInScatterExponent;
+      // color.
+      buffer[12] = fog.color.x;
+      buffer[13] = fog.color.y;
+      buffer[14] = fog.color.z;
+      // sun color * intensity + has-sun, and sun travel direction. Reuses the
+      // scene's directional light (the same source packInto uses for lighting).
+      final light = lighting.directionalLight;
+      if (light != null && fog.sunInScatter > 0.0) {
+        buffer[16] = light.color.x * light.intensity;
+        buffer[17] = light.color.y * light.intensity;
+        buffer[18] = light.color.z * light.intensity;
+        buffer[19] = 1.0; // has-sun
+        final direction = lighting.directionalLightDirection ?? light.direction;
+        buffer[20] = direction.x;
+        buffer[21] = direction.y;
+        buffer[22] = direction.z;
+      }
+    }
+    // buffer[1] left 0 (disabled) when there is no active fog.
+    pass.bindUniform(
+      shader.getUniformSlot('FogInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(buffer)),
+    );
   }
 
   // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound

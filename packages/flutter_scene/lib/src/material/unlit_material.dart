@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
@@ -85,6 +86,13 @@ class UnlitMaterial extends Material {
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat,
           ),
+    );
+    // The unlit shader carries the FogInfo block (fog.glsl) too.
+    EngineLightingUniforms.bindFog(
+      pass,
+      fragmentShader,
+      transientsBuffer,
+      lighting,
     );
   }
 }
