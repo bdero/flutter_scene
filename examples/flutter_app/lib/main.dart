@@ -10,6 +10,7 @@ import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
 import 'example_lights.dart';
+import 'example_spot_shadow.dart';
 import 'example_fscene.dart';
 import 'example_fscene_animated.dart';
 import 'example_fscene_import.dart';
@@ -68,6 +69,7 @@ class _MyAppState extends State<MyApp> {
       'Flutter Logo': (context) => const ExampleLogo(),
       'Cuboid': (context) => const ExampleCuboid(),
       'Lights': (context) => const ExampleLights(),
+      'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Sprites': (context) => const ExampleSprites(),
       'Particles': (context) => const ExampleParticles(),
       'Instancing': (context) => const ExampleInstancing(),

@@ -11,9 +11,9 @@ import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
-// Floats per light row (4 RGBA32F texels). Kept local to the test so a change
+// Floats per light row (8 RGBA32F texels). Kept local to the test so a change
 // to the layout has to be reflected here on purpose.
-const int _floatsPerLight = 16;
+const int _floatsPerLight = 32;
 
 PointLightComponent _pointAt(Vector3 position, PointLight light) {
   final node = Node(localTransform: Matrix4.translation(position));
