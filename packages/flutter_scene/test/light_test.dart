@@ -80,4 +80,44 @@ void main() {
       }
     });
   });
+
+  group('SpotLight.shadowViewProjection', () {
+    // A spot at the origin aiming straight down, a 30-degree outer cone,
+    // reaching 10 units.
+    final light = SpotLight(outerConeAngle: pi / 6, range: 10.0);
+    final matrix = light.shadowViewProjection(
+      Vector3.zero(),
+      Vector3(0, -1, 0),
+    );
+
+    Vector3 project(Vector3 world) {
+      final clip = matrix * Vector4(world.x, world.y, world.z, 1.0) as Vector4;
+      return Vector3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
+    }
+
+    test('a point on the axis within range projects to the tile center', () {
+      final ndc = project(Vector3(0, -5, 0));
+      expect(ndc.x, closeTo(0.0, 1e-5));
+      expect(ndc.y, closeTo(0.0, 1e-5));
+      expect(ndc.z, greaterThan(0.0));
+      expect(ndc.z, lessThan(1.0));
+    });
+
+    test('a point well outside the cone falls outside the tile', () {
+      // ~63 degrees off the axis, far past the 30-degree cone.
+      final ndc = project(Vector3(10, -5, 0));
+      expect(ndc.x.abs() > 1.0 || ndc.y.abs() > 1.0, isTrue);
+    });
+
+    test('a point past the range is clipped beyond the far plane', () {
+      final ndc = project(Vector3(0, -20, 0));
+      expect(ndc.z, greaterThan(1.0));
+    });
+
+    test('depth increases with distance from the light', () {
+      final near = project(Vector3(0, -2, 0)).z;
+      final far = project(Vector3(0, -9, 0)).z;
+      expect(far, greaterThan(near));
+    });
+  });
 }
