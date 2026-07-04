@@ -103,13 +103,14 @@ class ExampleSpotShadowState extends State<ExampleSpotShadow> {
     // the occluders' shadows sweep across the floor.
     spot = SpotLight(
       color: vm.Vector3(1.0, 0.97, 0.9),
-      intensity: 120.0,
-      range: 40.0,
+      intensity: 199.0,
+      range: 60.0,
       direction: vm.Vector3(0, -1, 0),
-      innerConeAngle: 0.35,
-      outerConeAngle: 0.6,
+      innerConeAngle: 0.6,
+      outerConeAngle: 0.81,
       castsShadow: true,
       shadowMapResolution: 1024,
+      shadowNear: 0.02,
     );
     scene.add(
       Node()
