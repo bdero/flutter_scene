@@ -93,6 +93,7 @@ class SceneView extends StatefulWidget {
     this.loading,
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
+    this.warmUp = false,
     this.debugWidgetInput = false,
   }) : assert(
          (camera != null ? 1 : 0) +
@@ -163,6 +164,15 @@ class SceneView extends StatefulWidget {
   /// does not flash it for a single frame. Defaults to [Duration.zero].
   final Duration revealMinDuration;
 
+  /// Whether to compile the scene's render pipelines before revealing it, so
+  /// the first visible frame does not stall while shaders compile.
+  ///
+  /// When true, the view calls [Scene.warmUp] with its own views once the
+  /// [loading] group (if any) is ready, and reveals only after. This gates the
+  /// view even without a [loading] group or [loadingBuilder]. Populate the
+  /// scene before warm-up runs (loads tracked by [loading] are awaited first).
+  final bool warmUp;
+
   /// Resolves the camera for a single-view frame.
   ///
   /// Precedence: the explicit [camera], then [cameraBuilder] evaluated at
@@ -215,9 +225,11 @@ class _SceneViewState extends State<SceneView>
   // is swapped) cannot reveal the wrong generation.
   int _revealGeneration = 0;
 
-  // A view gates rendering only when it opts in with a `loading` group or a
-  // `loadingBuilder`; otherwise it renders as soon as it can, unchanged.
-  bool get _gated => widget.loading != null || widget.loadingBuilder != null;
+  // A view gates rendering only when it opts in with a `loading` group, a
+  // `loadingBuilder`, or `warmUp`; otherwise it renders as soon as it can,
+  // unchanged.
+  bool get _gated =>
+      widget.loading != null || widget.loadingBuilder != null || widget.warmUp;
 
   @override
   void initState() {
@@ -241,7 +253,9 @@ class _SceneViewState extends State<SceneView>
     // A new set of resources to wait for (or newly gated): hold the scene again
     // until they load.
     final gatedBefore =
-        oldWidget.loading != null || oldWidget.loadingBuilder != null;
+        oldWidget.loading != null ||
+        oldWidget.loadingBuilder != null ||
+        oldWidget.warmUp;
     if (widget.loading != oldWidget.loading || _gated != gatedBefore) {
       _revealed = !_gated;
       if (_gated) {
@@ -260,7 +274,15 @@ class _SceneViewState extends State<SceneView>
     final generation = ++_revealGeneration;
     final start = DateTime.now();
     await Scene.initializeStaticResources();
+    if (!mounted || generation != _revealGeneration) return;
     await widget.loading?.ready;
+    if (!mounted || generation != _revealGeneration) return;
+    // Compile the pipelines the first frame needs while the loading widget is
+    // still up, so the reveal frame does not stall.
+    if (widget.warmUp) {
+      await widget.scene.warmUp(_warmUpViews());
+      if (!mounted || generation != _revealGeneration) return;
+    }
     final remaining =
         widget.revealMinDuration - DateTime.now().difference(start);
     if (remaining > Duration.zero) {
@@ -269,6 +291,11 @@ class _SceneViewState extends State<SceneView>
     if (!mounted || generation != _revealGeneration) return;
     setState(() => _revealed = true);
   }
+
+  // The views to warm up, matching what the first rendered frame will use.
+  List<RenderView> _warmUpViews() => widget.viewsBuilder != null
+      ? _viewsForFrame()
+      : [RenderView(camera: _cameraForFrame())];
 
   void _onTick(Duration elapsed) {
     if (!_revealed) {
