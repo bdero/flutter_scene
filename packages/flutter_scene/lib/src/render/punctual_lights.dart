@@ -33,10 +33,10 @@ const int kMaxPunctualLights = 16;
 //   col 2: direction.xyz, spot angular scale
 //   col 3: spot angular offset, shadow slot (-1 = none), unused, unused
 //   col 4-7: world -> spot-clip matrix for a shadow-casting spot (else unused)
-// The shader reads these by computed UV, sidestepping the GLSL-ES-1.00 ban on
-// dynamically indexing a uniform array (see punctual_lights_design.md). The
-// spot shadow matrix rides here rather than in its own texture so no extra
-// sampler is needed (the lit shader is at the backend sampler limit).
+// The shader reads these by computed UV, sidestepping the GLSL ES 1.00 ban on
+// dynamically indexing a uniform array in a fragment shader. The spot shadow
+// matrix rides here rather than in its own texture so no extra sampler is
+// needed (the lit shader is at the backend's sampler limit).
 const int _texelsPerLight = 8;
 const int _floatsPerLight = _texelsPerLight * 4;
 

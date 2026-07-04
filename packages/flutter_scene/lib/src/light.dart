@@ -329,7 +329,7 @@ class DirectionalLight {
 /// the node moves the light. The analytic contribution is layered on top of
 /// the image-based-lighting ambient term, the same as [DirectionalLight].
 ///
-/// Point lights do not cast shadows in this release.
+/// Point lights do not cast shadows.
 /// {@category Lighting and environment}
 class PointLight {
   /// Creates a [PointLight].

@@ -207,11 +207,10 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
 // loop bound; the active count (frag_info.radiance_blend.z) ends it early.
 #define MAX_PUNCTUAL_LIGHTS 16
 
-// Reads column `col` (0..3) of light `light_index`'s row from the
-// punctual_lights parameters texture (4 texels wide, punctual_dims.x rows
+// Reads column `col` (0..7) of light `light_index`'s row from the
+// punctual_lights parameters texture (8 texels wide, punctual_dims.x rows
 // tall). Fetched by computed UV rather than a dynamically-indexed uniform
-// array, which a GLSL ES 1.00 fragment shader may not do (see
-// punctual_lights_design.md).
+// array, which a GLSL ES 1.00 fragment shader may not do.
 vec4 FetchPunctualTexel(int light_index, int col) {
   // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
   vec2 uv = vec2((float(col) + 0.5) * 0.125,
@@ -481,7 +480,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   }
 
   // Additional analytic lights (point, spot, and directional lights past the
-  // first). None cast shadows in this release. The scene may hold any number of
+  // first); point lights do not cast shadows. The scene may hold any number of
   // lights; per-object culling gives this object a contiguous slice of the
   // light-index buffer, and the loop shades only that slice. The loop bound is
   // the compile-time per-object budget MAX_PUNCTUAL_LIGHTS; the object's count
@@ -494,8 +493,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // coarse (per-frame-global / capability-tier) permutation that compiles the
   // loop out for sun/IBL-only scenes is a possible low-end win, but only if the
   // never-entered loop is measured to cost occupancy on real hardware. Froxel
-  // clustering is the high-end tier (no per-draw light state). See
-  // notes/rendering/punctual_lights_design.md.
+  // clustering is the high-end tier (no per-draw light state).
   // punctual_dims.x is the parameters-texture row count; 0 means the scene has
   // no punctual lights this frame, so ignore any stale per-object count (and
   // never divide by the zero texture height in the fetch helpers).
@@ -520,9 +518,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
       vec3 to_light = l0.xyz - v_position;
       float dist_sq = dot(to_light, to_light);
       punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
-      // Windowed inverse-square distance falloff (Frostbite/Karis): with an
-      // inverse range of 0 (infinite range) the window is 1 and this is a pure
-      // inverse square, clamped near the source.
+      // Windowed inverse-square distance falloff: with an inverse range of 0
+      // (infinite range) the window is 1 and this is a pure inverse square,
+      // clamped near the source.
       float inv_range = l1.w;
       float factor = dist_sq * inv_range * inv_range;
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
