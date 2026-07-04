@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-/// Point and spot lights orbiting a small set of matte shapes. The ambient
-/// (image-based) light is turned down and there is no directional sun, so the
-/// colored point lights and the overhead spot are what light the scene.
+/// A grid of colored point lights over a grid of shapes. There are far more
+/// lights than the per-object budget, but each light has a finite range and
+/// reaches only nearby shapes, so per-object culling keeps every fragment cheap
+/// while the scene as a whole holds an unlimited number of lights.
 class ExampleLights extends StatefulWidget {
   const ExampleLights({super.key});
 
@@ -14,18 +15,13 @@ class ExampleLights extends StatefulWidget {
   ExampleLightsState createState() => ExampleLightsState();
 }
 
-/// Moves the owning node around a horizontal circle, so a light attached to
-/// the node orbits the scene.
-class _OrbitComponent extends Component {
-  _OrbitComponent({
-    required this.radius,
-    required this.height,
-    required this.speed,
-    required this.phase,
-  });
+/// Bobs the owning node up and down about a base position, so its light drifts
+/// and the culling (and light pools) update every frame.
+class _BobComponent extends Component {
+  _BobComponent(this.base, this.amplitude, this.speed, this.phase);
 
-  final double radius;
-  final double height;
+  final vm.Vector3 base;
+  final double amplitude;
   final double speed;
   final double phase;
   double _elapsed = 0.0;
@@ -33,138 +29,115 @@ class _OrbitComponent extends Component {
   @override
   void update(double deltaSeconds) {
     _elapsed += deltaSeconds;
-    final angle = _elapsed * speed + phase;
     node.localTransform = vm.Matrix4.translation(
-      vm.Vector3(cos(angle) * radius, height, sin(angle) * radius),
+      vm.Vector3(
+        base.x,
+        base.y + sin(_elapsed * speed + phase) * amplitude,
+        base.z,
+      ),
     );
   }
 }
+
+const int _grid = 5; // _grid * _grid lights and shapes
+const double _spacing = 6.0;
 
 class ExampleLightsState extends State<ExampleLights> {
   Scene scene = Scene();
 
   @override
   void initState() {
-    // Dim the image-based ambient and drop the sun so the punctual lights are
-    // what the eye reads.
+    // Dim the image-based ambient and drop the sun so the colored point lights
+    // are what the eye reads. Reflect the lit scene off the floor.
     scene.environmentIntensity = 0.1;
     scene.directionalLight = null;
-
-    // Reflect the lit scene off the floor.
     scene.screenSpaceReflections.enabled = true;
 
-    // A dark, near-polished floor so the colored light pools and the spheres
-    // reflect in it.
+    final extent = (_grid - 1) * _spacing / 2;
+
+    // A dark, near-polished floor large enough to hold the grid, so the light
+    // pools and shapes reflect in it.
+    final floorSize = _grid * _spacing + 6;
     scene.add(
       Node(
         mesh: Mesh(
-          CuboidGeometry(vm.Vector3(24, 0.2, 24)),
+          CuboidGeometry(vm.Vector3(floorSize, 0.2, floorSize)),
           PhysicallyBasedMaterial()
             ..baseColorFactor = vm.Vector4(0.05, 0.05, 0.06, 1)
-            ..roughnessFactor = 0.08
+            ..roughnessFactor = 0.1
             ..metallicFactor = 0.0,
         ),
         localTransform: vm.Matrix4.translation(vm.Vector3(0, -1.2, 0)),
       ),
     );
 
-    // A ring of spheres spanning a range of material properties: alternating
-    // metal and dielectric, roughness increasing around the ring.
-    final sphereColors = <vm.Vector4>[
-      vm.Vector4(0.95, 0.64, 0.54, 1), // copper-ish
-      vm.Vector4(0.9, 0.9, 0.92, 1), // silver-ish
-      vm.Vector4(1.0, 0.86, 0.57, 1), // gold-ish
-      vm.Vector4(0.8, 0.85, 0.9, 1),
-      vm.Vector4(0.85, 0.85, 0.85, 1),
-      vm.Vector4(0.75, 0.8, 0.85, 1),
-    ];
-    for (var i = 0; i < 6; i++) {
-      final angle = i / 6 * 2 * pi;
-      scene.add(
-        Node(
-          mesh: Mesh(
-            SphereGeometry(radius: 0.7),
-            PhysicallyBasedMaterial()
-              ..baseColorFactor = sphereColors[i]
-              // Alternate metal and dielectric; sweep roughness around the ring
-              // so the same lights read across smooth-to-rough surfaces.
-              ..metallicFactor = i.isEven ? 1.0 : 0.0
-              ..roughnessFactor = 0.05 + i / 5 * 0.7,
-          ),
-          localTransform: vm.Matrix4.translation(
-            vm.Vector3(cos(angle) * 4, 0, sin(angle) * 4),
-          ),
-        ),
-      );
-    }
+    var index = 0;
+    for (var i = 0; i < _grid; i++) {
+      for (var j = 0; j < _grid; j++) {
+        final x = i * _spacing - extent;
+        final z = j * _spacing - extent;
+        final t = index / (_grid * _grid);
 
-    // Three colored point lights orbiting at different phases, each marked by
-    // a small unlit sphere so its position is visible.
-    final colors = <vm.Vector3>[
-      vm.Vector3(1.0, 0.2, 0.2),
-      vm.Vector3(0.2, 1.0, 0.3),
-      vm.Vector3(0.3, 0.4, 1.0),
-    ];
-    for (var i = 0; i < colors.length; i++) {
-      final node = Node()
-        ..addComponent(
-          PointLightComponent(
-            PointLight(color: colors[i], intensity: 22.0, range: 14.0),
-          ),
-        )
-        ..addComponent(
-          _OrbitComponent(
-            radius: 5.5,
-            height: 1.5,
-            speed: 0.6,
-            phase: i / colors.length * 2 * pi,
+        // A shape at the grid cell, its material sweeping metal/dielectric and
+        // roughness across the grid.
+        scene.add(
+          Node(
+            mesh: Mesh(
+              SphereGeometry(radius: 1.0),
+              PhysicallyBasedMaterial()
+                ..baseColorFactor = vm.Vector4(0.85, 0.85, 0.87, 1)
+                ..metallicFactor = index.isEven ? 1.0 : 0.0
+                ..roughnessFactor = 0.1 + t * 0.6,
+            ),
+            localTransform: vm.Matrix4.translation(vm.Vector3(x, 0, z)),
           ),
         );
-      node.add(
-        Node(
-          mesh: Mesh(
-            SphereGeometry(radius: 0.12),
-            UnlitMaterial()
-              ..baseColorFactor = vm.Vector4(
-                colors[i].x,
-                colors[i].y,
-                colors[i].z,
-                1,
-              ),
-          ),
-        ),
-      );
-      scene.add(node);
-    }
 
-    // A warm overhead spot light pointing straight down at the center.
-    scene.add(
-      Node(localTransform: vm.Matrix4.translation(vm.Vector3(0, 8, 0)))
-        ..addComponent(
-          SpotLightComponent(
-            SpotLight(
-              color: vm.Vector3(1.0, 0.9, 0.7),
-              intensity: 60.0,
-              range: 20.0,
-              direction: vm.Vector3(0, -1, 0),
-              innerConeAngle: 0.15,
-              outerConeAngle: 0.5,
+        // A colored point light above the cell. Its range (7) reaches only the
+        // neighboring cells, so no shape is lit by more than a handful of the
+        // grid's lights even though the whole grid has many.
+        final color = HSVColor.fromAHSV(1.0, t * 360.0, 0.9, 1.0).toColor();
+        final rgb = vm.Vector3(
+          color.r.toDouble(),
+          color.g.toDouble(),
+          color.b.toDouble(),
+        );
+        final lightNode = Node()
+          ..addComponent(
+            PointLightComponent(
+              PointLight(color: rgb, intensity: 14.0, range: 7.0),
+            ),
+          )
+          ..addComponent(
+            _BobComponent(vm.Vector3(x, 2.0, z), 0.8, 1.2, index.toDouble()),
+          );
+        // A small unlit sphere marks each light's position.
+        lightNode.add(
+          Node(
+            mesh: Mesh(
+              SphereGeometry(radius: 0.12),
+              UnlitMaterial()
+                ..baseColorFactor = vm.Vector4(rgb.x, rgb.y, rgb.z, 1),
             ),
           ),
-        ),
-    );
+        );
+        scene.add(lightNode);
+        index++;
+      }
+    }
 
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
+    final radius = _grid * _spacing * 0.9;
     return SceneView(
       scene,
       cameraBuilder: (elapsed) {
-        final t = elapsed.inMicroseconds / 1e6 * 0.25;
+        final t = elapsed.inMicroseconds / 1e6 * 0.15;
         return PerspectiveCamera(
-          position: vm.Vector3(sin(t) * 11, 6, cos(t) * 11),
+          position: vm.Vector3(sin(t) * radius, radius * 0.7, cos(t) * radius),
           target: vm.Vector3(0, -0.5, 0),
         );
       },
