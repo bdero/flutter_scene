@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Packs the `PostShadowInfo` std140 block a depth-aware custom pass reads
 /// (exposed as [RenderPassContext.shadowInfo]) from the frame's [cascades],
@@ -420,7 +421,7 @@ class RenderPassContext {
     }
 
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     _wrote = true;
   }

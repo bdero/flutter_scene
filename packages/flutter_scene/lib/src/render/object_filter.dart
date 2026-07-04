@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Selects which scene nodes an object-filtered draw includes.
 ///
@@ -88,7 +89,7 @@ void renderObjectMask({
     colorOf,
   );
   renderScene.cull(encoder.frustum, encoder.submit);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }
 
 /// Records each filtered item's geometry flat into a color mask. Mirrors the

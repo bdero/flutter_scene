@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/screen_space_reflections.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 // Two triangles of NDC positions covering the screen (6 vec2s).
 gpu.BufferView _fullscreenQuad() {
@@ -171,7 +172,7 @@ class SsrPass extends RenderGraphPass {
       sampler: _nearestClamp,
     );
     drawCompat(tracePass, 6);
-    traceCmd.submit();
+    rendererSubmissions.submit(traceCmd);
 
     // Composite: bilinear-upscale the reflection and blend it over the
     // full-resolution scene color.
@@ -208,7 +209,7 @@ class SsrPass extends RenderGraphPass {
       sampler: _linearClamp,
     );
     drawCompat(compositePass, 6);
-    compositeCmd.submit();
+    rendererSubmissions.submit(compositeCmd);
 
     context.blackboard.set(kSceneColorBlackboardKey, output);
   }

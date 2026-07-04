@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key for the bloom texture [BloomPass] produces.
 /// The resolve pass reads it and adds it to the HDR scene color.
@@ -150,7 +151,7 @@ class BloomPass extends RenderGraphPass {
       sampler: _linearClamp,
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
   }
 
   void _drawFilter(
@@ -205,7 +206,7 @@ class BloomPass extends RenderGraphPass {
       sampler: _linearClamp,
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
   }
 
   static final gpu.SamplerOptions _linearClamp = gpu.SamplerOptions(
