@@ -125,6 +125,30 @@ void main() {
       );
       expect(hits, {mover}, reason: 'the moved item is found at its new spot');
     });
+
+    test('queryAabb agrees with a brute-force overlap test', () {
+      final items = [for (int i = 0; i < 8; i++) _itemAt(i * 4.0)];
+      final bvh = Bvh.build(items);
+      // Overlaps the items at x = 4, 8, 12 (each a unit box), none others.
+      final box = Aabb3.minMax(Vector3(3, -1, -1), Vector3(13, 1, 1));
+
+      final expected = items
+          .where((i) => i.worldBounds!.intersectsWithAabb3(box))
+          .toSet();
+      expect(expected.length, 3);
+
+      final hits = <RenderItem>{};
+      bvh.queryAabb(box, hits.add);
+      expect(hits, expected);
+    });
+
+    test('queryAabb on an empty BVH yields nothing', () {
+      final hits = <RenderItem>[];
+      Bvh.build(
+        [],
+      ).queryAabb(Aabb3.minMax(Vector3.zero(), Vector3.all(1)), hits.add);
+      expect(hits, isEmpty);
+    });
   });
 
   group('RenderScene.cull', () {

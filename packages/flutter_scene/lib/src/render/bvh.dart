@@ -44,6 +44,30 @@ class Bvh {
     _query(node.right, frustum, visit);
   }
 
+  /// Calls [visit] once for every item whose world AABB intersects [box].
+  ///
+  /// Used to scatter a light's influence volume onto the items it can reach,
+  /// so each item collects only the lights near it.
+  void queryAabb(Aabb3 box, void Function(RenderItem) visit) {
+    _queryAabb(_root, box, visit);
+  }
+
+  static void _queryAabb(
+    _BvhNode? node,
+    Aabb3 box,
+    void Function(RenderItem) visit,
+  ) {
+    if (node == null) return;
+    if (!node.bounds.intersectsWithAabb3(box)) return;
+    final item = node.item;
+    if (item != null) {
+      visit(item);
+      return;
+    }
+    _queryAabb(node.left, box, visit);
+    _queryAabb(node.right, box, visit);
+  }
+
   /// Recomputes every node's AABB from the leaves' current
   /// [RenderItem.worldBounds] without changing the tree topology.
   ///
