@@ -31,7 +31,8 @@ Future<Node> importGlb(Uint8List bytes) async {
     glbBinaryChunk: container.binaryChunk,
     resolveUri: null,
   );
-  return _buildScene(doc, bufferData, null);
+  final packed = await _packPrimitives(doc, bufferData);
+  return _buildScene(doc, bufferData, packed, null);
 }
 
 /// Parse a multi-file glTF document into a [Node] tree.
@@ -51,14 +52,57 @@ Future<Node> importGltf(
     glbBinaryChunk: Uint8List(0),
     resolveUri: resolveUri,
   );
-  return _buildScene(doc, bufferData, resolveUri);
+  final packed = await _packPrimitives(doc, bufferData);
+  return _buildScene(doc, bufferData, packed, resolveUri);
 }
 
-/// Builds the [Node] tree from a parsed document and its resolved
-/// buffer. Shared by the GLB and multi-file glTF entry points.
+/// Packs every mesh primitive's vertex/index data on a background isolate,
+/// off the UI thread, so a large model does not stall the app while it loads.
+///
+/// Returns the packed primitives indexed `[meshIndex][primitiveIndex]`, with a
+/// null entry for each non-triangle primitive (skipped, see [_populateNode]).
+/// The GPU upload of these buffers still happens on the raster thread, in
+/// [geometryFromPacked]; only the pure-data packing moves off it. On the web,
+/// where [compute] runs inline, this is a no-op indirection.
+///
+/// TODO(runtime-import-offload): the JSON parse and the skin/animation accessor
+/// decode still run on the calling thread. They are small next to vertex
+/// packing, but could also move onto the isolate (parse from raw bytes there,
+/// return the packed skins/animations too) to fully offload a heavy import.
+Future<List<List<PackedPrimitive?>>> _packPrimitives(
+  GltfDocument doc,
+  Uint8List bufferData,
+) => compute(_packPrimitivesIsolate, (doc: doc, bufferData: bufferData));
+
+// Top-level so it can run on a background isolate. Packs each primitive with
+// the shared [packGltfPrimitive]; non-triangle topologies pack to null.
+List<List<PackedPrimitive?>> _packPrimitivesIsolate(
+  ({GltfDocument doc, Uint8List bufferData}) input,
+) {
+  final doc = input.doc;
+  return [
+    for (final mesh in doc.meshes)
+      [
+        for (final p in mesh.primitives)
+          if (p.mode != 4)
+            null
+          else
+            packGltfPrimitive(
+              primitive: p,
+              accessors: doc.accessors,
+              bufferViews: doc.bufferViews,
+              bufferData: input.bufferData,
+            ),
+      ],
+  ];
+}
+
+/// Builds the [Node] tree from a parsed document, its resolved buffer, and its
+/// pre-packed primitives. Shared by the GLB and multi-file glTF entry points.
 Future<Node> _buildScene(
   GltfDocument doc,
   Uint8List bufferData,
+  List<List<PackedPrimitive?>> packed,
   GltfResourceResolver? resolveUri,
 ) async {
   // Decode all textures up front so material construction can reference
@@ -79,7 +123,7 @@ Future<Node> _buildScene(
       engineNode: engineNodes[i],
       gltfNode: doc.nodes[i],
       doc: doc,
-      bufferData: bufferData,
+      packed: packed,
       engineNodes: engineNodes,
       textures: textures,
     );
@@ -151,7 +195,7 @@ void _populateNode({
   required Node engineNode,
   required GltfNode gltfNode,
   required GltfDocument doc,
-  required Uint8List bufferData,
+  required List<List<PackedPrimitive?>> packed,
   required List<Node> engineNodes,
   required List<Texture2D> textures,
 }) {
@@ -160,26 +204,25 @@ void _populateNode({
 
   if (gltfNode.mesh != null) {
     final gltfMesh = doc.meshes[gltfNode.mesh!];
+    final packedMesh = packed[gltfNode.mesh!];
     final primitives = <MeshPrimitive>[];
-    for (final p in gltfMesh.primitives) {
-      // Skip non-triangle topologies for now; they need shader/render-state
-      // support that flutter_scene's pipeline doesn't currently expose.
-      if (p.mode != 4) {
+    for (int pi = 0; pi < gltfMesh.primitives.length; pi++) {
+      final p = gltfMesh.primitives[pi];
+      final packedPrimitive = packedMesh[pi];
+      // A null entry is a non-triangle topology skipped during packing; they
+      // need shader/render-state support that flutter_scene's pipeline doesn't
+      // currently expose.
+      if (packedPrimitive == null) {
         debugPrint(
           'Skipping mesh primitive with unsupported topology mode ${p.mode}',
         );
         continue;
       }
-      final built = buildGeometry(
-        primitive: p,
-        accessors: doc.accessors,
-        bufferViews: doc.bufferViews,
-        bufferData: bufferData,
-      );
+      final geometry = geometryFromPacked(packedPrimitive);
       final material = p.material != null
           ? buildMaterial(doc.materials[p.material!], textures)
           : UnlitMaterial();
-      primitives.add(MeshPrimitive(built.geometry, material));
+      primitives.add(MeshPrimitive(geometry, material));
     }
     if (primitives.isNotEmpty) {
       engineNode.mesh = Mesh.primitives(primitives: primitives);

@@ -5,33 +5,15 @@ import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../geometry/geometry.dart';
 
-/// An engine [Geometry] built from a glTF mesh primitive, paired with
-/// its vertex count.
-class BuiltGeometry {
-  BuiltGeometry({required this.geometry, required this.vertexCount});
-  final Geometry geometry;
-  final int vertexCount;
-}
-
-/// Builds and GPU-uploads an engine [Geometry] from a glTF mesh
+/// GPU-uploads an engine [Geometry] from a [packGltfPrimitive]-packed
 /// primitive.
 ///
-/// The pure-data packing (vertex layout, index handling, normal
-/// generation) is done by [packGltfPrimitive]
-/// so the runtime GLB importer and the offline scene emitter share
-/// one implementation.
-BuiltGeometry buildGeometry({
-  required GltfMeshPrimitive primitive,
-  required List<GltfAccessor> accessors,
-  required List<GltfBufferView> bufferViews,
-  required Uint8List bufferData,
-}) {
-  final packed = packGltfPrimitive(
-    primitive: primitive,
-    accessors: accessors,
-    bufferViews: bufferViews,
-    bufferData: bufferData,
-  );
+/// The pure-data packing (vertex layout, index handling, normal generation)
+/// is done by [packGltfPrimitive], off the raster thread on a background
+/// isolate for the runtime importer; this upload half must run on the raster
+/// thread. Keeping them split is what lets a large model pack without stalling
+/// the UI. The offline scene emitter shares the same packer.
+Geometry geometryFromPacked(PackedPrimitive packed) {
   final Geometry geometry = packed.isSkinned
       ? SkinnedGeometry()
       : UnskinnedGeometry();
@@ -41,5 +23,5 @@ BuiltGeometry buildGeometry({
     ByteData.sublistView(packed.indexBytes),
     indexType: packed.indices32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16,
   );
-  return BuiltGeometry(geometry: geometry, vertexCount: packed.vertexCount);
+  return geometry;
 }
