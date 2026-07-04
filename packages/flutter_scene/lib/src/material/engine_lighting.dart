@@ -123,6 +123,13 @@ class EngineLightingUniforms {
     fragInfo[8] = lighting.punctualParamsCount.toDouble();
     fragInfo[9] = lighting.punctualIndexWidth.toDouble();
     fragInfo[10] = lighting.punctualIndexHeight.toDouble();
+    // spot_shadow_params [12..15] (more of the unused SH region): the shared
+    // spot-shadow parameters. count 0 disables spot shadow sampling; the shader
+    // also uses count to size the shared shadow atlas (cascades + spot tiles).
+    fragInfo[12] = lighting.spotShadowCount.toDouble();
+    fragInfo[13] = lighting.spotShadowDepthBias;
+    fragInfo[14] = lighting.spotShadowNormalBias;
+    fragInfo[15] = lighting.spotShadowSoftness;
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)

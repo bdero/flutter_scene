@@ -31,6 +31,7 @@ import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/punctual_lights.dart';
+import 'render/spot_shadow.dart';
 import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
@@ -911,6 +912,9 @@ base class Scene implements SceneGraph {
         ? null
         : renderScene.directionalLights.first;
 
+    // Select this frame's shadow-casting spots (view-independent).
+    final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+
     // The additional analytic lights (point, spot, and directional lights past
     // the first) are view-independent, so build their shared data texture once
     // per frame here rather than per view.
@@ -920,6 +924,7 @@ base class Scene implements SceneGraph {
       spots: renderScene.spotLights,
       items: renderScene.items,
       bvh: renderScene.bvh,
+      spotShadows: spotShadowFrame,
     );
 
     // Texture-target views render first so screen views (and the HUD)
@@ -948,6 +953,7 @@ base class Scene implements SceneGraph {
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
+        spotShadowFrame: spotShadowFrame,
       );
       target.markUpdated(now);
     }
@@ -977,6 +983,7 @@ base class Scene implements SceneGraph {
         transientsBuffer: transientsBuffer,
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
+        spotShadowFrame: spotShadowFrame,
       );
     }
 
@@ -1017,6 +1024,7 @@ base class Scene implements SceneGraph {
     required gpu.HostBuffer transientsBuffer,
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
+    required SpotShadowFrame? spotShadowFrame,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
     // the rasterized 3D content matches Flutter's framebuffer density.
@@ -1047,6 +1055,7 @@ base class Scene implements SceneGraph {
       transientsBuffer: transientsBuffer,
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
+      spotShadowFrame: spotShadowFrame,
     );
 
     final image = swapchainColor.asImage();
@@ -1069,6 +1078,7 @@ base class Scene implements SceneGraph {
     required gpu.HostBuffer transientsBuffer,
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
+    required SpotShadowFrame? spotShadowFrame,
   }) {
     final camera = view.camera;
     final effectiveAa = _resolveAntiAliasingMode(
@@ -1109,19 +1119,31 @@ base class Scene implements SceneGraph {
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
     final graph = RenderGraph();
-    if (cascades.isNotEmpty) {
+    // Directional cascades and shadow-casting spots share one atlas (and so one
+    // sampler in the lit shader). All tiles use one resolution, the directional
+    // light's when it casts, otherwise the spots'.
+    if (cascades.isNotEmpty || spotShadowFrame != null) {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
           cascades: cascades,
-          tileResolution: light!.shadowMapResolution,
-          casterFaces: light.shadowCasterFaces,
+          tileResolution: cascades.isNotEmpty
+              ? light!.shadowMapResolution
+              : spotShadowFrame!.tileResolution,
+          casterFaces: cascades.isNotEmpty
+              ? light!.shadowCasterFaces
+              : ShadowCasterFaces.front,
           cameraPosition: camera.position,
-          shadowUniform: customInputs.contains(RenderInput.shadowMap)
+          spotShadows: spotShadowFrame,
+          // PostShadowInfo describes the directional cascades, so publish it
+          // only when they exist (a spot-only atlas has no directional light).
+          shadowUniform:
+              cascades.isNotEmpty &&
+                  customInputs.contains(RenderInput.shadowMap)
               ? packPostShadowInfo(
                   cascades,
-                  lightDirection ?? light.direction,
-                  light.color * light.intensity,
+                  lightDirection ?? light!.direction,
+                  light!.color * light.intensity,
                 )
               : null,
         ),

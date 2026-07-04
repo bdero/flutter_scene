@@ -89,7 +89,9 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // World-space penumbra -> this cascade's UV space, floored at a texel.
   float radius =
       max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
-  float inv_count = 1.0 / float(count);
+  // The atlas also holds spot-shadow tiles after the cascades, so normalize the
+  // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
+  float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
 
   // A per-fragment rotation hides the 16-tap pattern as a smooth edge.
   float noise = fract(
@@ -211,7 +213,8 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
 // array, which a GLSL ES 1.00 fragment shader may not do (see
 // punctual_lights_design.md).
 vec4 FetchPunctualTexel(int light_index, int col) {
-  vec2 uv = vec2((float(col) + 0.5) * 0.25,
+  // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
+  vec2 uv = vec2((float(col) + 0.5) * 0.125,
                  (float(light_index) + 0.5) / frag_info.punctual_dims.x);
   return texture(punctual_lights, uv);
 }
@@ -251,6 +254,34 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
   return (diffuse + specular) * radiance * n_dot_l;
+}
+
+// Spot-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting spot in
+// row `light_row`, slot `slot`. Its world -> spot-clip matrix rides in the
+// light's own params row (texels 4-7); its shadow tile follows the directional
+// cascades in the shared atlas. Fragments outside the spot frustum read as lit
+// (the cone attenuation already zeroed them).
+float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
+  mat4 m = mat4(FetchPunctualTexel(light_row, 4), FetchPunctualTexel(light_row, 5),
+                FetchPunctualTexel(light_row, 6), FetchPunctualTexel(light_row, 7));
+  vec4 clip = m * vec4(world_pos + normal * frag_info.spot_shadow_params.z, 1.0);
+  if (clip.w <= 0.0) {
+    return 1.0;
+  }
+  vec3 proj = clip.xyz / clip.w;
+  vec2 uv = proj.xy * 0.5 + 0.5;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
+      proj.z > 1.0) {
+    return 1.0;
+  }
+  float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
+  float tile = frag_info.shadow_cascade_count + float(slot);
+  float receiver = proj.z - frag_info.spot_shadow_params.y;
+  // Shared atlas: place uv in this spot's tile (after the cascades); stored
+  // top-down, so flip V (matches the cascade sampling).
+  vec2 atlas_uv = vec2((tile + uv.x) / total, 1.0 - uv.y);
+  float caster = texture(shadow_map, atlas_uv).r;
+  return receiver <= caster ? 1.0 : 0.0;
 }
 
 // Lights a surface described by `material` and returns the final fragment
@@ -474,10 +505,16 @@ vec4 EvaluateLighting(MaterialInputs material) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
         vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
-        float spot_offset = FetchPunctualTexel(light_row, 3).x;
+        vec4 l3 = FetchPunctualTexel(light_row, 3); // spot offset, shadow slot
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
-        float cone = clamp(cd * l2.w + spot_offset, 0.0, 1.0);
+        float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
         radiance *= cone * cone;
+        // Spot shadow, when this spot has a slot in the shared atlas. Gate on
+        // the geometric normal (the shadow is a geometric property).
+        if (l3.y > -0.5 && frag_info.spot_shadow_params.x > 0.5) {
+          radiance *= SampleSpotShadow(
+              light_row, int(l3.y + 0.5), v_position, GetWorldNormal());
+        }
       }
     }
     direct += EvaluateAnalyticLight(punctual_light_vector, radiance, normal,

@@ -156,6 +156,13 @@ class ScenePass extends RenderGraphPass {
       punctualParamsCount: _punctualLighting.paramsCount,
       punctualIndexWidth: _punctualLighting.indexWidth,
       punctualIndexHeight: _punctualLighting.indexHeight,
+      // Spot shadows share the atlas, so only sample them when it was produced.
+      spotShadowCount: shadowMap == null
+          ? 0
+          : _punctualLighting.spotShadowCount,
+      spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
+      spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
+      spotShadowSoftness: _punctualLighting.spotShadowSoftness,
       shadowMap: shadowMap,
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,

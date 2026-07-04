@@ -13,7 +13,12 @@ uniform FragInfo {
   // light-index texture width/height. (Reuses the first of the once-diffuse-SH
   // slots, which are unused now that SH is sampled from sh_coefficients.)
   vec4 punctual_dims;
-  vec4 diffuse_sh1;
+  // Spot-shadow parameters (more of the unused SH region). x: shadow-casting
+  // spot count (0 disables spot shadows; their atlas tiles follow the
+  // directional cascades, and their matrices ride in the params texture).
+  // y: clip-space depth bias. z: world-space normal bias. w: PCF softness in
+  // texels.
+  vec4 spot_shadow_params;
   vec4 diffuse_sh2;
   vec4 diffuse_sh3;
   vec4 diffuse_sh4;

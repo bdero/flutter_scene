@@ -519,6 +519,10 @@ class Lighting {
     this.punctualParamsCount = 0,
     this.punctualIndexWidth = 0,
     this.punctualIndexHeight = 0,
+    this.spotShadowCount = 0,
+    this.spotShadowDepthBias = 0.0,
+    this.spotShadowNormalBias = 0.0,
+    this.spotShadowSoftness = 0.0,
     this.shadowMap,
     this.cascades = const [],
     this.ssaoMap,
@@ -579,6 +583,16 @@ class Lighting {
   /// normalization.
   final int punctualIndexWidth;
   final int punctualIndexHeight;
+
+  /// Number of shadow-casting spots this frame; their tiles follow the
+  /// directional cascades in [shadowMap] and their matrices ride in
+  /// [punctualParamsTexture]. Zero disables spot shadow sampling.
+  final int spotShadowCount;
+
+  /// Shared spot-shadow sampling parameters.
+  final double spotShadowDepthBias;
+  final double spotShadowNormalBias;
+  final double spotShadowSoftness;
 
   /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
   /// cascade tiles as a horizontal strip) for [directionalLight], or
