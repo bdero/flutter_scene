@@ -364,7 +364,9 @@ class PointLight {
 /// world-space rotation applied to [direction]. The analytic contribution is
 /// layered on top of the image-based-lighting ambient term.
 ///
-/// Spot lights do not cast shadows in this release.
+/// When [castsShadow] is true and the scene's spot-shadow budget has room, the
+/// renderer renders the spot's cone into a perspective shadow map and the light
+/// is occluded by geometry between it and the surface.
 /// {@category Lighting and environment}
 class SpotLight {
   /// Creates a [SpotLight].
@@ -381,6 +383,12 @@ class SpotLight {
     Vector3? direction,
     this.innerConeAngle = 0.0,
     this.outerConeAngle = math.pi / 4.0,
+    this.castsShadow = false,
+    this.shadowMapResolution = 1024,
+    this.shadowNear = 0.1,
+    this.shadowDepthBias = 0.001,
+    this.shadowNormalBias = 0.03,
+    this.shadowSoftness = 1.0,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -405,6 +413,60 @@ class SpotLight {
   /// Half-angle of the outer cone, in radians. Between [innerConeAngle] and
   /// this the light falls off to zero; past it the light contributes nothing.
   double outerConeAngle;
+
+  /// Whether this spot casts a shadow. When true, the renderer renders the
+  /// cone into a perspective shadow map if the scene's spot-shadow budget has
+  /// room (shadow-casting spots are limited; the rest shade unshadowed).
+  bool castsShadow;
+
+  /// Pixel resolution of this spot's (square) shadow map tile.
+  int shadowMapResolution;
+
+  /// Near clip distance of the shadow frustum. Geometry closer to the light
+  /// than this does not occlude.
+  double shadowNear;
+
+  /// Clip-space depth bias subtracted from the receiver before the shadow
+  /// test, to keep lit surfaces from shadowing themselves.
+  double shadowDepthBias;
+
+  /// World-space offset along the surface normal applied to the receiver
+  /// before the shadow lookup ("normal-offset shadows").
+  double shadowNormalBias;
+
+  /// Radius, in shadow-map texels, of the soft-shadow PCF kernel. `0` gives a
+  /// hard edge.
+  double shadowSoftness;
+
+  /// The world -> clip matrix that renders and samples this spot's perspective
+  /// shadow map, for a light at [worldPosition] aimed along [worldDirection]
+  /// (both from the owning node's transform). The frustum is the cone, a
+  /// vertical field of view of twice [outerConeAngle] (with a small margin) and
+  /// a square aspect, out to [range] (or a default when the range is infinite).
+  Matrix4 shadowViewProjection(Vector3 worldPosition, Vector3 worldDirection) {
+    final length = worldDirection.length;
+    final dir = length == 0.0
+        ? Vector3(0.0, -1.0, 0.0)
+        : worldDirection / length;
+    final up = dir.y.abs() > 0.99
+        ? Vector3(0.0, 0.0, 1.0)
+        : Vector3(0.0, 1.0, 0.0);
+    final view = DirectionalLight._lookAt(
+      worldPosition,
+      worldPosition + dir,
+      up,
+    );
+    final far = range > 0.0 ? range : 100.0;
+    // A small margin past the outer cone so its lit edge sits inside the
+    // frustum rather than on its clipped border.
+    final fovY = math.min(2.0 * outerConeAngle * 1.05, math.pi * 0.98);
+    final projection = PerspectiveProjection(
+      fovRadiansY: fovY,
+      near: shadowNear,
+      far: far,
+    ).getProjectionMatrix(1.0);
+    return projection * view;
+  }
 }
 
 /// One cascade of a cascaded shadow map, produced by
