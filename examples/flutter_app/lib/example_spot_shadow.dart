@@ -207,6 +207,10 @@ class _SettingsPanel extends StatelessWidget {
                   spot.shadowNear = v;
                   onChanged();
                 }),
+                _slider('Softness', spot.shadowSoftness, 0.0, 4.0, 2, (v) {
+                  spot.shadowSoftness = v;
+                  onChanged();
+                }),
                 const SizedBox(height: 8),
                 _header('Spot light'),
                 _slider('Intensity', spot.intensity, 0.0, 300.0, 0, (v) {
