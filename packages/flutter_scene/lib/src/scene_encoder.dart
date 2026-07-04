@@ -49,6 +49,8 @@ base class _TranslucentRecord {
     this.pipeline,
     this.depth,
     this.windingFlipped,
+    this.lightListOffset,
+    this.lightListCount,
   );
   final Matrix4 worldTransform;
   final Geometry geometry;
@@ -57,6 +59,9 @@ base class _TranslucentRecord {
   final gpu.RenderPipeline pipeline;
   final double depth;
   final bool windingFlipped;
+  // The owning item's punctual-light slice, captured at submit time.
+  final int lightListOffset;
+  final int lightListCount;
 }
 
 /// Render pipelines keyed by their (vertex shader, fragment shader, vertex
@@ -270,6 +275,8 @@ base class SceneEncoder {
             pipeline,
             _depthOf(worldTransform),
             item.windingFlipped != (instanceTransform.determinant() < 0),
+            item.lightListOffset,
+            item.lightListCount,
           ),
         );
       }
@@ -283,6 +290,8 @@ base class SceneEncoder {
           pipeline,
           _depthOf(item.worldTransform),
           item.windingFlipped,
+          item.lightListOffset,
+          item.lightListCount,
         ),
       );
     }
@@ -466,6 +475,8 @@ base class SceneEncoder {
     });
     for (final record in _opaqueRecords) {
       final item = record.item;
+      record.material.lightListOffset = item.lightListOffset;
+      record.material.lightListCount = item.lightListCount;
       final instances = item.instanceTransforms;
       if (instances != null) {
         _encodeInstanced(
@@ -506,6 +517,8 @@ base class SceneEncoder {
       ),
     );
     for (final record in _translucentRecords) {
+      record.material.lightListOffset = record.lightListOffset;
+      record.material.lightListCount = record.lightListCount;
       _encode(
         record.pipeline,
         record.worldTransform,

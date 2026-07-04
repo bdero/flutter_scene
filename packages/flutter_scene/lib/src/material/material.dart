@@ -172,6 +172,16 @@ abstract class Material {
   @internal
   double lodFade = 1.0;
 
+  /// The owning render item's punctual-light slice, set by the encoder right
+  /// before [bind] and written into `FragInfo.radiance_blend.zw`. The lit
+  /// materials loop the `[lightListOffset, +lightListCount)` range of the
+  /// per-frame light-index buffer, so each item shades only the lights that
+  /// reach it. Both default to 0 (no punctual lights).
+  @internal
+  int lightListOffset = 0;
+  @internal
+  int lightListCount = 0;
+
   gpu.Shader? _fragmentShader;
   String? _fragmentShaderName;
 

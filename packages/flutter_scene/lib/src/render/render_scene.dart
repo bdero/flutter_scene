@@ -264,6 +264,12 @@ class RenderScene {
       cameraOverride ?? (cameras.isEmpty ? null : cameras.first.toCamera());
 
   Bvh _bvh = Bvh.build([]);
+
+  /// The spatial structure over the bounded items, current after
+  /// [rebuildIfDirty]. Used by the light culler to scatter each light onto the
+  /// items it reaches.
+  Bvh get bvh => _bvh;
+
   final List<RenderItem> _alwaysVisible = [];
 
   // The BVH needs a full rebuild: an item was added or removed, or an

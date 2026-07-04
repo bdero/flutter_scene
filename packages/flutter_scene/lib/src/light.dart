@@ -452,8 +452,11 @@ class Lighting {
     Matrix3? environmentTransform,
     this.directionalLight,
     this.directionalLightDirection,
-    this.punctualLightTexture,
-    this.punctualLightCount = 0,
+    this.punctualParamsTexture,
+    this.punctualIndexTexture,
+    this.punctualParamsCount = 0,
+    this.punctualIndexWidth = 0,
+    this.punctualIndexHeight = 0,
     this.shadowMap,
     this.cascades = const [],
     this.ssaoMap,
@@ -494,16 +497,26 @@ class Lighting {
   /// consumers fall back to [DirectionalLight.direction] in that case.
   final Vector3? directionalLightDirection;
 
-  /// The per-frame data texture holding the additional analytic lights (point
-  /// and spot lights, plus any directional lights past the first shadowed
-  /// one), or null when there are none. Each light occupies a row of RGBA32F
-  /// texels; the shader loops over the first [punctualLightCount] rows. Built
-  /// by `PunctualLightBuffer` and shared across every lit draw this frame.
-  final gpu.Texture? punctualLightTexture;
+  /// The per-frame parameters texture holding every additional analytic light
+  /// (point and spot lights, plus any directional lights past the first
+  /// shadowed one), one per RGBA32F row, or null when there are none. Built by
+  /// `PunctualLightBuffer` and shared across every lit draw this frame; a draw
+  /// reads only the rows its per-object index slice selects.
+  final gpu.Texture? punctualParamsTexture;
 
-  /// The number of valid light rows in [punctualLightTexture]. Zero leaves the
-  /// texture unread (only [directionalLight] and the ambient term contribute).
-  final int punctualLightCount;
+  /// The per-frame light-index texture: each item's
+  /// `[lightListOffset, +lightListCount)` slice indexes into
+  /// [punctualParamsTexture]. Null when no item is reached by any light.
+  final gpu.Texture? punctualIndexTexture;
+
+  /// Number of light rows in [punctualParamsTexture]. Zero leaves punctual
+  /// lighting off (only [directionalLight] and the ambient term contribute).
+  final int punctualParamsCount;
+
+  /// Dimensions of [punctualIndexTexture], for the shader's fetch-coordinate
+  /// normalization.
+  final int punctualIndexWidth;
+  final int punctualIndexHeight;
 
   /// The cascaded shadow map atlas (a depth-in-`.r` texture holding the
   /// cascade tiles as a horizontal strip) for [directionalLight], or
