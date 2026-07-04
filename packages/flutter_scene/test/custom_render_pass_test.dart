@@ -1,8 +1,4 @@
-import 'dart:typed_data';
-
 import 'package:flutter_scene/scene.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/light.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/custom_render_pass.dart'
     show packPostShadowInfo;
@@ -43,7 +39,7 @@ void main() {
 
   test('packPostShadowInfo matches the PostShadowInfo std140 layout', () {
     final c0 = ShadowCascade(
-      lightSpaceMatrix: Matrix4.identity()..scale(2.0, 3.0, 4.0),
+      lightSpaceMatrix: Matrix4.identity()..scaleByDouble(2.0, 3.0, 4.0, 1.0),
       splitDistance: 10.0,
       boxSize: 5.0,
     );
