@@ -389,6 +389,7 @@ class SpotLight {
     this.shadowDepthBias = 0.001,
     this.shadowNormalBias = 0.03,
     this.shadowSoftness = 1.0,
+    this.shadowCasterFaces = ShadowCasterFaces.front,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -437,6 +438,12 @@ class SpotLight {
   /// Radius, in shadow-map texels, of the soft-shadow PCF kernel. `0` gives a
   /// hard edge.
   double shadowSoftness;
+
+  /// Which faces are rendered into the shadow map. [ShadowCasterFaces.back]
+  /// (second-depth) removes the shadow detaching from a solid caster's base
+  /// (peter-panning) by recording the far side; [ShadowCasterFaces.front] is
+  /// the general default.
+  ShadowCasterFaces shadowCasterFaces;
 
   /// The world -> clip matrix that renders and samples this spot's perspective
   /// shadow map, for a light at [worldPosition] aimed along [worldDirection]

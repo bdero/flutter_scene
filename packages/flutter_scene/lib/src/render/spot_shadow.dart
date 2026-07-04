@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/spot_light_component.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 
 /// The most spot lights that can cast a shadow at once. Each takes a tile in
 /// the shared shadow atlas and a perspective depth pass, so the count is
@@ -20,6 +21,7 @@ class SpotShadowFrame {
     required this.depthBias,
     required this.normalBias,
     required this.softness,
+    required this.casterFaces,
   });
 
   /// The shadow-casting spot components, index = slot.
@@ -32,6 +34,7 @@ class SpotShadowFrame {
   final double depthBias;
   final double normalBias;
   final double softness;
+  final ShadowCasterFaces casterFaces;
 
   /// The slot assigned to [component] (its atlas tile and matrix), or -1 when
   /// it is not a shadow caster this frame.
@@ -64,5 +67,6 @@ SpotShadowFrame? collectSpotShadows(List<SpotLightComponent> spots) {
     depthBias: first.shadowDepthBias,
     normalBias: first.shadowNormalBias,
     softness: first.shadowSoftness,
+    casterFaces: first.shadowCasterFaces,
   );
 }
