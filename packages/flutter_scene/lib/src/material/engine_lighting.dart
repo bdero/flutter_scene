@@ -193,6 +193,53 @@ class EngineLightingUniforms {
     return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: 16);
   }
 
+  // The engine lighting samplers are frame-invariant, so their options are
+  // shared rather than allocated per draw (this binding path runs for every lit
+  // draw, so at high draw counts the per-draw allocation churn is real).
+  static final gpu.SamplerOptions _radianceMipSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    mipFilter: gpu.MipFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+  static final gpu.SamplerOptions _radianceAtlasSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    mipFilter: gpu.MipFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+  static final gpu.SamplerOptions _cubeSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    mipFilter: gpu.MipFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+  static final gpu.SamplerOptions _clampLinearSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+  static final gpu.SamplerOptions _nearestSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+  );
+  static final gpu.SamplerOptions _nearestClampSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
+  // Selects the mip-vs-atlas radiance sampler for a prefiltered radiance
+  // texture's layout (the mip layout needs a linear mip filter for textureLod;
+  // the single-level band atlas is inert under either).
+  static gpu.SamplerOptions _radianceSampler(bool mipLayout) =>
+      mipLayout ? _radianceMipSampler : _radianceAtlasSampler;
+
   /// Binds the prefiltered radiance sampler plus the `RadianceLayoutInfo`
   /// block that tells `SamplePrefilteredRadiance` which layout the bound
   /// texture uses. Every engine site that binds `prefiltered_radiance`
@@ -211,26 +258,14 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance'),
       env.prefilteredRadianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        mipFilter: mipLayout ? gpu.MipFilter.linear : gpu.MipFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _radianceSampler(mipLayout),
     );
     // Radiance cubemap (real on the cube layout, a dummy otherwise). Mip-linear
     // for the roughness textureLod; clamp the faces.
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance_cube'),
       env.prefilteredRadianceCube,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        mipFilter: gpu.MipFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _cubeSampler,
     );
     pass.bindUniform(
       shader.getUniformSlot('RadianceLayoutInfo'),
@@ -250,12 +285,7 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _clampLinearSampler,
     );
     pass.bindTexture(
       shader.getUniformSlot('shadow_map'),
@@ -264,22 +294,14 @@ class EngineLightingUniforms {
       // textures without GL_OES_texture_float_linear, making linear filtering
       // incomplete. The shader already performs PCF explicitly, so nearest is
       // the portable choice.
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-      ),
+      sampler: _nearestSampler,
     );
     // Diffuse irradiance SH: a 9x1 coefficient texture, point-sampled (each
     // texel is one coefficient). Sampled in EvaluateDiffuseSH.
     pass.bindTexture(
       shader.getUniformSlot('sh_coefficients'),
       env.diffuseShTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _nearestClampSampler,
     );
     // The secondary cross-fade environment (the *_b samplers). When no
     // cross-fade is active the primary is bound here too (a valid no-op, since
@@ -292,12 +314,7 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('punctual_lights'),
       Material.whitePlaceholder(lighting.punctualLightTexture),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _nearestClampSampler,
     );
     // Screen-space ambient occlusion. Bilinear so a half-resolution
     // occlusion buffer upsamples smoothly; a white placeholder makes the
@@ -306,12 +323,7 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('ssao_texture'),
       Material.whitePlaceholder(lighting.ssaoMap),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _clampLinearSampler,
     );
   }
 
@@ -329,24 +341,12 @@ class EngineLightingUniforms {
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance_b'),
       env.prefilteredRadianceTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        mipFilter: mipLayout ? gpu.MipFilter.linear : gpu.MipFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.repeat,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _radianceSampler(mipLayout),
     );
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance_cube_b'),
       env.prefilteredRadianceCube,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        mipFilter: gpu.MipFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _cubeSampler,
     );
   }
 
