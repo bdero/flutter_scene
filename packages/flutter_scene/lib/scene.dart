@@ -172,6 +172,7 @@ export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
 export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;
 export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;
+export 'src/resource_group.dart' show ResourceGroup;
 export 'src/scene_pointer.dart' show ScenePointer;
 export 'src/scene.dart' show AntiAliasingMode, Scene, SceneGraph;
 export 'src/widget_texture.dart'
@@ -186,5 +187,10 @@ export 'src/sun_light.dart' show SunLight;
 export 'src/surface.dart' show Surface;
 export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
-    show SceneCameraBuilder, SceneScope, SceneTickCallback, SceneView;
+    show
+        SceneCameraBuilder,
+        SceneLoadingBuilder,
+        SceneScope,
+        SceneTickCallback,
+        SceneView;
 export 'src/tone_mapping.dart' show ToneMappingMode;

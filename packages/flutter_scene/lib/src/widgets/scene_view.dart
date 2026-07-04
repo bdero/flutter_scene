@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render_view.dart';
 import 'package:flutter_scene/src/components/widget_component.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/scene_pointer.dart';
 import 'package:flutter_scene/src/widget_texture.dart';
@@ -31,6 +32,12 @@ typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 /// {@category Widgets}
 typedef SceneTickCallback =
     void Function(Duration elapsed, double deltaSeconds);
+
+/// Builds the widget shown while a [SceneView] waits for its resources to load,
+/// given the current load [progress] (0 to 1). See [SceneView.loadingBuilder].
+/// {@category Widgets}
+typedef SceneLoadingBuilder =
+    Widget Function(BuildContext context, double progress);
 
 /// A widget that renders a [Scene] and drives its per-frame repaint.
 ///
@@ -83,6 +90,9 @@ class SceneView extends StatefulWidget {
     this.autoTick = true,
     this.pixelRatio,
     this.onTick,
+    this.loading,
+    this.loadingBuilder,
+    this.revealMinDuration = Duration.zero,
     this.debugWidgetInput = false,
   }) : assert(
          (camera != null ? 1 : 0) +
@@ -125,7 +135,33 @@ class SceneView extends StatefulWidget {
   final bool debugWidgetInput;
 
   /// Called once per frame while ticking. See [SceneTickCallback].
+  ///
+  /// When the view is gated by [loading] or [loadingBuilder], it is not called
+  /// while the loading widget is shown (per-frame app logic stays paused until
+  /// the scene is revealed), and its first call after reveal carries a
+  /// single-frame delta rather than the whole loading time.
   final SceneTickCallback? onTick;
+
+  /// Resources this view waits for before it reveals the scene.
+  ///
+  /// While the group is loading (and while the engine's shared static
+  /// resources are still initializing), the scene is held off-screen and
+  /// [loadingBuilder] is shown in its place, so a half-built scene is never
+  /// drawn. Once the group and static resources are ready, the fully assembled
+  /// scene is revealed in one frame. Leave null to render as soon as static
+  /// resources are ready (the historical behavior).
+  final ResourceGroup? loading;
+
+  /// Builds the widget shown while the view waits to reveal the scene.
+  ///
+  /// Called with the current load [progress] (the [loading] group's progress,
+  /// or 0 until static resources are ready when there is no group). When null,
+  /// the space is left blank until the scene is revealed.
+  final SceneLoadingBuilder? loadingBuilder;
+
+  /// The minimum time the loading widget stays up once shown, so a fast load
+  /// does not flash it for a single frame. Defaults to [Duration.zero].
+  final Duration revealMinDuration;
 
   /// Resolves the camera for a single-view frame.
   ///
@@ -165,11 +201,33 @@ class _SceneViewState extends State<SceneView>
   Ticker? _ticker;
   Duration _lastTick = Duration.zero;
 
+  // Zero-based clock: the ticker's raw elapsed at the moment the scene is
+  // revealed, subtracted from later ticks so the visible scene starts its time
+  // (and its first frame delta) from zero rather than from app launch.
+  Duration _tickOrigin = Duration.zero;
+
+  // Whether the scene is being drawn yet. While gated (see `_gated`) it stays
+  // false until static resources and the `loading` group are ready, and the
+  // loading widget shows instead. Ungated views reveal immediately, so this is
+  // true from the first frame and behavior matches a view with no loading args.
+  bool _revealed = false;
+  // Bumps on each reveal watch so a stale async wait (after the loading group
+  // is swapped) cannot reveal the wrong generation.
+  int _revealGeneration = 0;
+
+  // A view gates rendering only when it opts in with a `loading` group or a
+  // `loadingBuilder`; otherwise it renders as soon as it can, unchanged.
+  bool get _gated => widget.loading != null || widget.loadingBuilder != null;
+
   @override
   void initState() {
     super.initState();
     if (widget.autoTick) {
       _ticker = createTicker(_onTick)..start();
+    }
+    _revealed = !_gated;
+    if (_gated) {
+      _startRevealWatch();
     }
   }
 
@@ -180,16 +238,51 @@ class _SceneViewState extends State<SceneView>
       _ticker?.dispose();
       _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
     }
+    // A new set of resources to wait for (or newly gated): hold the scene again
+    // until they load.
+    final gatedBefore =
+        oldWidget.loading != null || oldWidget.loadingBuilder != null;
+    if (widget.loading != oldWidget.loading || _gated != gatedBefore) {
+      _revealed = !_gated;
+      if (_gated) {
+        _startRevealWatch();
+      }
+    }
     // Repaint immediately so a changed camera / scene is reflected even when
     // not auto-ticking.
     _repaint.notify();
   }
 
+  // Waits for the engine's shared static resources and the `loading` group,
+  // then reveals the scene (after `revealMinDuration`), so a half-built scene
+  // is never drawn.
+  Future<void> _startRevealWatch() async {
+    final generation = ++_revealGeneration;
+    final start = DateTime.now();
+    await Scene.initializeStaticResources();
+    await widget.loading?.ready;
+    final remaining =
+        widget.revealMinDuration - DateTime.now().difference(start);
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+    if (!mounted || generation != _revealGeneration) return;
+    setState(() => _revealed = true);
+  }
+
   void _onTick(Duration elapsed) {
-    final deltaSeconds = (elapsed - _lastTick).inMicroseconds / 1e6;
-    _lastTick = elapsed;
-    _elapsed.value = elapsed;
-    widget.onTick?.call(elapsed, deltaSeconds);
+    if (!_revealed) {
+      // Hold the origin at the latest tick so the first revealed frame's delta
+      // is a single frame, not the whole time spent on the loading screen.
+      _tickOrigin = elapsed;
+      _lastTick = Duration.zero;
+      return;
+    }
+    final revealElapsed = elapsed - _tickOrigin;
+    final deltaSeconds = (revealElapsed - _lastTick).inMicroseconds / 1e6;
+    _lastTick = revealElapsed;
+    _elapsed.value = revealElapsed;
+    widget.onTick?.call(revealElapsed, deltaSeconds);
     _repaint.notify();
   }
 
@@ -310,6 +403,9 @@ class _SceneViewState extends State<SceneView>
       child: LayoutBuilder(
         builder: (context, constraints) {
           _viewSize = constraints.biggest;
+          if (!_revealed) {
+            return _buildLoading(context);
+          }
           return Listener(
             // Translucent: forwarded events still reach the app's own
             // gesture handlers; the scene never wins a gesture arena.
@@ -373,6 +469,25 @@ class _SceneViewState extends State<SceneView>
           );
         },
       ),
+    );
+  }
+
+  // The placeholder shown before the scene is revealed. Rebuilds as the
+  // loading group's progress advances so a progress bar can animate.
+  Widget _buildLoading(BuildContext context) {
+    final builder = widget.loadingBuilder;
+    if (builder == null) {
+      return const SizedBox.expand();
+    }
+    final progress = widget.loading?.progress;
+    if (progress == null) {
+      // No group to measure: progress reads 0 until static resources flip the
+      // view to revealed.
+      return builder(context, 0.0);
+    }
+    return ValueListenableBuilder<double>(
+      valueListenable: progress,
+      builder: (context, value, _) => builder(context, value),
     );
   }
 
