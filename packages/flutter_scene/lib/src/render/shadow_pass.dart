@@ -136,11 +136,7 @@ class ShadowPass extends RenderGraphPass {
     final spots = _spotShadows;
     if (spots != null) {
       for (var s = 0; s < spots.matrices.length; s++) {
-        renderTile(
-          _cascades.length + s,
-          spots.matrices[s],
-          ShadowCasterFaces.front,
-        );
+        renderTile(_cascades.length + s, spots.matrices[s], spots.casterFaces);
       }
     }
 
