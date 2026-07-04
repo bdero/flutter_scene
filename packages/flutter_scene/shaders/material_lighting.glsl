@@ -256,11 +256,27 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   return (diffuse + specular) * radiance * n_dot_l;
 }
 
+// One shadow comparison tap for a spot: places the in-tile `uv` in the spot's
+// atlas tile (`tile` of `total`, stored top-down so V is flipped) and returns 1
+// lit / 0 shadowed. `uv` is clamped into the tile so the kernel never reads a
+// neighbouring tile (the atlas is nearest-sampled, so there is no bilinear
+// bleed once it stays in-tile).
+float SpotShadowTap(vec2 uv, float tile, float total, float receiver) {
+  vec2 atlas_uv = vec2((tile + clamp(uv.x, 0.0, 1.0)) / total,
+                       1.0 - clamp(uv.y, 0.0, 1.0));
+  return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
+}
+
+// Number of ring taps around the center for the spot-shadow PCF.
+#define SPOT_PCF_RING 8
+
 // Spot-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting spot in
 // row `light_row`, slot `slot`. Its world -> spot-clip matrix rides in the
 // light's own params row (texels 4-7); its shadow tile follows the directional
-// cascades in the shared atlas. Fragments outside the spot frustum read as lit
-// (the cone attenuation already zeroed them).
+// cascades in the shared atlas. A center tap plus a per-fragment-rotated ring
+// (radius from spot_shadow_params.w, the softness) gives a soft penumbra; a
+// softness of 0 collapses the kernel to a hard edge. Fragments outside the spot
+// frustum read as lit (the cone attenuation already zeroed them).
 float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
   mat4 m = mat4(FetchPunctualTexel(light_row, 4), FetchPunctualTexel(light_row, 5),
                 FetchPunctualTexel(light_row, 6), FetchPunctualTexel(light_row, 7));
@@ -277,11 +293,21 @@ float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
   float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
   float tile = frag_info.shadow_cascade_count + float(slot);
   float receiver = proj.z - frag_info.spot_shadow_params.y;
-  // Shared atlas: place uv in this spot's tile (after the cascades); stored
-  // top-down, so flip V (matches the cascade sampling).
-  vec2 atlas_uv = vec2((tile + uv.x) / total, 1.0 - uv.y);
-  float caster = texture(shadow_map, atlas_uv).r;
-  return receiver <= caster ? 1.0 : 0.0;
+  // Penumbra radius in tile-UV (resolution-independent). softness 0 = hard.
+  float radius = frag_info.spot_shadow_params.w * 0.004;
+
+  float lit = SpotShadowTap(uv, tile, total, receiver);
+  // A per-fragment rotation hides the ring pattern as a smooth edge.
+  float noise = fract(
+      52.9829189 *
+      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float base = noise * 6.28318530718;
+  for (int i = 0; i < SPOT_PCF_RING; i++) {
+    float a = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
+    vec2 offset = vec2(cos(a), sin(a)) * radius;
+    lit += SpotShadowTap(uv + offset, tile, total, receiver);
+  }
+  return lit / float(SPOT_PCF_RING + 1);
 }
 
 // Lights a surface described by `material` and returns the final fragment
