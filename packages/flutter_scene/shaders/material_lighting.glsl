@@ -418,13 +418,14 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // active count ends it early. Rows are fetched by computed UV, so no uniform
   // array is dynamically indexed.
   //
-  // TODO(lighting): gate this block, the punctual_lights sampler, and the count
-  // read behind an `#ifdef FS_PUNCTUAL_LIGHTS` and compile a base variant
-  // without it, so a lit material used in a scene with no point/spot lights (the
-  // standard PBR shader and every custom-lit .fmat) is byte-identical to the
-  // pre-punctual shader and binds no light sampler. The engine selects the
-  // +punctual variant per draw only when the object is reached by a light. See
-  // notes/rendering/punctual_lights_design.md (near-term revision).
+  // TODO(lighting): this stays a single uniform-gated loop on purpose (a shader
+  // permutation was considered and rejected: it multiplies pipeline variants and
+  // fights draw-call batching at scale, and the unentered loop is already ~free
+  // under uniform control flow). To make it unlimited without per-fragment cost
+  // growing, feed it a per-region light subset from froxel clustering and loop
+  // that range instead of the global set; and hoist the frame-constant lighting
+  // bindings to per-pass so no light sampler is bound per draw. See
+  // notes/rendering/punctual_lights_design.md (near-term revision, scale-first).
   int punctual_count = int(frag_info.radiance_blend.z);
   for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
     if (i >= punctual_count) {
