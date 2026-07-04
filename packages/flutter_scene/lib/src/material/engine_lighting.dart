@@ -115,9 +115,14 @@ class EngineLightingUniforms {
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
-    // radiance_blend.z [162]: the number of additional analytic lights in the
-    // punctual_lights data texture. The fragment loops over this many rows.
-    fragInfo[162] = lighting.punctualLightCount.toDouble();
+    // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
+    // dimensions the shader needs to normalize its punctual-light fetches.
+    // x: parameters-texture row count (all scene lights). y/z: the light-index
+    // texture width/height. These are frame-constant. The per-object slice
+    // (radiance_blend.z count, .w offset) is written per draw by the material.
+    fragInfo[8] = lighting.punctualParamsCount.toDouble();
+    fragInfo[9] = lighting.punctualIndexWidth.toDouble();
+    fragInfo[10] = lighting.punctualIndexHeight.toDouble();
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
@@ -307,13 +312,19 @@ class EngineLightingUniforms {
     // cross-fade is active the primary is bound here too (a valid no-op, since
     // frag_info.radiance_blend.x is 0 and the shader never reads it).
     _bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
-    // The additional analytic lights (point/spot/extra directional) as an
-    // RGBA32F data texture, point-sampled (each texel is packed light data).
-    // A white placeholder is bound when there are none; the shader never reads
-    // it because frag_info punctual_light_count is 0.
+    // Punctual light parameters (all scene lights) and the per-object light
+    // index buffer, both RGBA32F data textures, point-sampled (each texel is
+    // packed data). White placeholders are bound when there are no lights or no
+    // reached items; the shader never reads them because the per-object count is
+    // 0.
     pass.bindTexture(
       shader.getUniformSlot('punctual_lights'),
-      Material.whitePlaceholder(lighting.punctualLightTexture),
+      Material.whitePlaceholder(lighting.punctualParamsTexture),
+      sampler: _nearestClampSampler,
+    );
+    pass.bindTexture(
+      shader.getUniformSlot('punctual_index'),
+      Material.whitePlaceholder(lighting.punctualIndexTexture),
       sampler: _nearestClampSampler,
     );
     // Screen-space ambient occlusion. Bilinear so a half-resolution

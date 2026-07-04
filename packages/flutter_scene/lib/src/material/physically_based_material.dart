@@ -211,6 +211,10 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[138] = specularAntiAliasingVariance;
     fragInfo[139] = specularAntiAliasingThreshold;
     fragInfo[EngineLightingUniforms.fadeIndex] = lodFade;
+    // radiance_blend.zw [162]/[163]: this item's punctual-light slice
+    // (count, offset) into the per-frame light-index buffer.
+    fragInfo[162] = lightListCount.toDouble();
+    fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),

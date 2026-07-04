@@ -206,14 +206,25 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
 #define MAX_PUNCTUAL_LIGHTS 16
 
 // Reads column `col` (0..3) of light `light_index`'s row from the
-// punctual_lights data texture. Fetched by computed UV rather than a
-// dynamically-indexed uniform array, which a GLSL ES 1.00 fragment shader may
-// not do (see punctual_lights_design.md). The texture is 4 texels wide and
-// MAX_PUNCTUAL_LIGHTS rows tall.
+// punctual_lights parameters texture (4 texels wide, punctual_dims.x rows
+// tall). Fetched by computed UV rather than a dynamically-indexed uniform
+// array, which a GLSL ES 1.00 fragment shader may not do (see
+// punctual_lights_design.md).
 vec4 FetchPunctualTexel(int light_index, int col) {
   vec2 uv = vec2((float(col) + 0.5) * 0.25,
-                 (float(light_index) + 0.5) / float(MAX_PUNCTUAL_LIGHTS));
+                 (float(light_index) + 0.5) / frag_info.punctual_dims.x);
   return texture(punctual_lights, uv);
+}
+
+// Reads entry `j` of the per-object light-index buffer, returning the light row
+// it points at. The buffer is a 2D texture (index in .r); `j` is decomposed to
+// a texel with the width/height in punctual_dims.yz.
+float FetchPunctualIndex(int j) {
+  float width = frag_info.punctual_dims.y;
+  float fj = float(j);
+  vec2 uv = vec2((mod(fj, width) + 0.5) / width,
+                 (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
+  return texture(punctual_index, uv).r;
 }
 
 // One analytic light's Cook-Torrance contribution. `light_vector` points from
@@ -413,34 +424,41 @@ vec4 EvaluateLighting(MaterialInputs material) {
   }
 
   // Additional analytic lights (point, spot, and directional lights past the
-  // first) from the punctual_lights data texture. None of them cast shadows in
-  // this release. The loop bound is the compile-time MAX_PUNCTUAL_LIGHTS; the
-  // active count ends it early. Rows are fetched by computed UV, so no uniform
+  // first). None cast shadows in this release. The scene may hold any number of
+  // lights; per-object culling gives this object a contiguous slice of the
+  // light-index buffer, and the loop shades only that slice. The loop bound is
+  // the compile-time per-object budget MAX_PUNCTUAL_LIGHTS; the object's count
+  // ends it early. Every fetch is a computed-UV texture read, so no uniform
   // array is dynamically indexed.
   //
-  // TODO(lighting): this stays a single uniform-gated loop. A per-draw (per-object)
-  // punctual on/off permutation is rejected: it varies the pipeline within a frame
-  // and defeats material-sorted batching, worst on tile GPUs. A coarse
-  // (per-frame-global / capability-tier) permutation that compiles the loop out for
-  // sun/IBL-only scenes is a possible low-end win, but only if the never-entered
-  // loop is measured to cost occupancy on real hardware; do the free wins first
-  // (hoist frame-constant lighting bindings to per-pass so no light sampler binds
-  // per draw). To make it unlimited without per-fragment cost growing, feed a
-  // per-region subset from froxel clustering (a high-end tier) and loop that range.
-  // See notes/rendering/punctual_lights_design.md (near-term revision).
-  int punctual_count = int(frag_info.radiance_blend.z);
+  // TODO(lighting): this stays a single uniform-gated loop. A per-draw
+  // (per-object) punctual on/off permutation is rejected: it varies the pipeline
+  // within a frame and defeats material-sorted batching, worst on tile GPUs. A
+  // coarse (per-frame-global / capability-tier) permutation that compiles the
+  // loop out for sun/IBL-only scenes is a possible low-end win, but only if the
+  // never-entered loop is measured to cost occupancy on real hardware. Froxel
+  // clustering is the high-end tier (no per-draw light state). See
+  // notes/rendering/punctual_lights_design.md.
+  // punctual_dims.x is the parameters-texture row count; 0 means the scene has
+  // no punctual lights this frame, so ignore any stale per-object count (and
+  // never divide by the zero texture height in the fetch helpers).
+  int punctual_count =
+      frag_info.punctual_dims.x < 0.5 ? 0 : int(frag_info.radiance_blend.z);
+  int punctual_offset = int(frag_info.radiance_blend.w);
   for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
     if (i >= punctual_count) {
       break;
     }
-    vec4 l0 = FetchPunctualTexel(i, 0); // position.xyz, type
-    vec4 l1 = FetchPunctualTexel(i, 1); // color.rgb, inverse range
+    // Resolve this slot to a light row through the per-object index buffer.
+    int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
+    vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
+    vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
     float type = l0.w;
     vec3 radiance = l1.rgb;
     vec3 punctual_light_vector;
     if (type < 0.5) {
       // Directional: the travel direction is in texel 2; no attenuation.
-      punctual_light_vector = -normalize(FetchPunctualTexel(i, 2).xyz);
+      punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
     } else {
       vec3 to_light = l0.xyz - v_position;
       float dist_sq = dot(to_light, to_light);
@@ -455,8 +473,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
       if (type > 1.5) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
-        vec4 l2 = FetchPunctualTexel(i, 2); // direction.xyz, angular scale
-        float spot_offset = FetchPunctualTexel(i, 3).x;
+        vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
+        float spot_offset = FetchPunctualTexel(light_row, 3).x;
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
         float cone = clamp(cd * l2.w + spot_offset, 0.0, 1.0);
         radiance *= cone * cone;

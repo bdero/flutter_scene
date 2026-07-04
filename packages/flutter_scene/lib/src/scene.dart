@@ -918,6 +918,8 @@ base class Scene implements SceneGraph {
       directionals: renderScene.directionalLights,
       points: renderScene.pointLights,
       spots: renderScene.spotLights,
+      items: renderScene.items,
+      bvh: renderScene.bvh,
     );
 
     // Texture-target views render first so screen views (and the HUD)
@@ -1202,8 +1204,7 @@ base class Scene implements SceneGraph {
         enableMsaa: enableMsaa,
         directionalLight: light,
         directionalLightDirection: lightDirection,
-        punctualLightTexture: punctualLighting.texture,
-        punctualLightCount: punctualLighting.count,
+        punctualLighting: punctualLighting,
         cascades: cascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         layerMask: view.layerMask,

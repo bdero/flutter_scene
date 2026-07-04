@@ -8,11 +8,11 @@
 uniform FragInfo {
   vec4 color;
   vec4 emissive_factor;
-  // Diffuse irradiance L2 spherical-harmonic coefficients (xyz = RGB,
-  // w unused). The cosine convolution (A_l band factors) and the 1/pi
-  // Lambertian term are already folded in, so evaluating the polynomial
-  // yields E(n)/pi, ready to multiply by the diffuse albedo.
-  vec4 diffuse_sh0;
+  // Punctual light texture dimensions, for normalizing the shader's fetch
+  // coordinates. x: parameters-texture row count (all scene lights). y/z:
+  // light-index texture width/height. (Reuses the first of the once-diffuse-SH
+  // slots, which are unused now that SH is sampled from sh_coefficients.)
+  vec4 punctual_dims;
   vec4 diffuse_sh1;
   vec4 diffuse_sh2;
   vec4 diffuse_sh3;
@@ -130,3 +130,9 @@ uniform sampler2D ssao_texture;
 //   2: direction.xyz, spot angular scale
 //   3: spot angular offset, unused, unused, unused
 uniform sampler2D punctual_lights;
+// The per-object light-index buffer: a 2D RGBA32F texture whose texels (row
+// major, index in .r) are light rows into punctual_lights. Each object shades
+// the slice [radiance_blend.w, radiance_blend.w + radiance_blend.z). Read by
+// computed UV (punctual_dims.yz give its width/height). A white placeholder is
+// bound and never read when the per-object count is 0.
+uniform sampler2D punctual_index;
