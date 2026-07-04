@@ -17,8 +17,10 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// notes/rendering/punctual_lights_design.md) makes it unlimited via froxel
 /// clustering, so a fragment loops only its screen-region's lights with no
 /// per-draw light state (better for batching than per-object lists, whose CPU
-/// cost grows with draw count). A shader permutation for the no-light case was
-/// considered and rejected for scale. TODO(#188474): when Flutter GPU exposes
+/// cost grows with draw count), as a high-end tier; constrained mobile stays a
+/// small-`MAX` direct loop. A per-object shader permutation for the no-light case
+/// is rejected (pipeline thrash); a coarse per-frame/capability-tier one is a
+/// measured low-end option only. TODO(#188474): when Flutter GPU exposes
 /// storage buffers/compute, a capability-gated higher-tier variant can read a
 /// storage buffer with a real dynamic loop (no cap, no data-texture packing) and
 /// move light-to-region assignment to a compute pass, with this the base-tier
