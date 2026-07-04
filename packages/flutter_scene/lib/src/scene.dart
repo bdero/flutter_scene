@@ -745,6 +745,43 @@ base class Scene implements SceneGraph {
     );
   }
 
+  /// Compiles the render pipelines and uploads the GPU resources this scene
+  /// needs, by encoding one frame offscreen and discarding it, so the first
+  /// visible frame does not stall while shaders compile or textures upload.
+  ///
+  /// Pass the same [views] the scene will be shown with: their cameras,
+  /// anti-aliasing, render targets, and this scene's lights and post-process
+  /// settings determine which pipeline variants compile, so a warm-up frame
+  /// must match the real one (the offscreen frame is rendered tiny, since a
+  /// pipeline's identity does not depend on resolution). Populate the scene
+  /// first; warm-up encodes whatever is attached when it runs.
+  ///
+  /// A `SceneView` with `warmUp: true` calls this before it reveals the scene.
+  /// Awaiting it is optional and safe to repeat. It awaits
+  /// [initializeStaticResources] first. On backends that compile pipelines
+  /// lazily on first draw (the common case) this front-loads that cost; on a
+  /// backend that compiles asynchronously it kicks compilation off without
+  /// blocking on completion.
+  /// {@category Assets and loading}
+  Future<void> warmUp(List<RenderView> views) async {
+    await initializeStaticResources();
+    if (views.isEmpty) {
+      return;
+    }
+    // Advance a zero step so the warm-up frame does not move the scene's clock
+    // forward before the first real frame (render then skips its implicit
+    // wall-clock tick).
+    update(0.0);
+    // Encode one real frame into a discarded recording. The GPU passes (and so
+    // the pipeline compilations and resource uploads) are submitted during
+    // rendering; only the final canvas blit is thrown away. A small area is
+    // enough because pipeline identity is resolution-independent.
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    renderViews(views, canvas, region: const ui.Rect.fromLTWH(0, 0, 64, 64));
+    recorder.endRecording().dispose();
+  }
+
   /// Renders a list of [views] of this scene onto [canvas].
   ///
   /// Each [RenderView] binds a camera to a normalized sub-rectangle of
