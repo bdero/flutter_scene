@@ -55,28 +55,30 @@ class ExampleLightsState extends State<ExampleLights> {
 
     final extent = (_grid - 1) * _spacing / 2;
 
-    // A dark, near-polished floor large enough to hold the grid, so the light
-    // pools and shapes reflect in it.
-    final floorSize = _grid * _spacing + 6;
-    scene.add(
-      Node(
-        mesh: Mesh(
-          CuboidGeometry(vm.Vector3(floorSize, 0.2, floorSize)),
-          PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.05, 0.05, 0.06, 1)
-            ..roughnessFactor = 0.1
-            ..metallicFactor = 0.0,
-        ),
-        localTransform: vm.Matrix4.translation(vm.Vector3(0, -1.2, 0)),
-      ),
-    );
-
     var index = 0;
     for (var i = 0; i < _grid; i++) {
       for (var j = 0; j < _grid; j++) {
         final x = i * _spacing - extent;
         final z = j * _spacing - extent;
         final t = index / (_grid * _grid);
+
+        // The floor is tiled, one dark near-polished tile per cell, rather than
+        // one large slab: per-object culling gives each object the lights that
+        // reach it, so a single floor spanning every light would be reached by
+        // all of them at once (and exceed the per-object budget). Tiling keeps
+        // each piece within reach of only its local lights.
+        scene.add(
+          Node(
+            mesh: Mesh(
+              CuboidGeometry(vm.Vector3(_spacing, 0.2, _spacing)),
+              PhysicallyBasedMaterial()
+                ..baseColorFactor = vm.Vector4(0.05, 0.05, 0.06, 1)
+                ..roughnessFactor = 0.1
+                ..metallicFactor = 0.0,
+            ),
+            localTransform: vm.Matrix4.translation(vm.Vector3(x, -1.2, z)),
+          ),
+        );
 
         // A shape at the grid cell, its material sweeping metal/dielectric and
         // roughness across the grid.
