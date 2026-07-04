@@ -386,8 +386,8 @@ class SpotLight {
     this.castsShadow = false,
     this.shadowMapResolution = 1024,
     this.shadowNear = 0.1,
-    this.shadowDepthBias = 0.001,
-    this.shadowNormalBias = 0.03,
+    this.shadowDepthBias = 0.0,
+    this.shadowNormalBias = 0.1,
     this.shadowSoftness = 1.0,
     this.shadowCasterFaces = ShadowCasterFaces.front,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
@@ -428,11 +428,16 @@ class SpotLight {
   double shadowNear;
 
   /// Clip-space depth bias subtracted from the receiver before the shadow
-  /// test, to keep lit surfaces from shadowing themselves.
+  /// test. Defaults to `0`: a constant clip-space bias is badly behaved in a
+  /// perspective shadow (tiny near the light, large far away, which detaches
+  /// the shadow from a caster's base), so the normal-offset bias below does
+  /// the work instead. Raise it only to fight grazing-angle self-shadow acne.
   double shadowDepthBias;
 
   /// World-space offset along the surface normal applied to the receiver
-  /// before the shadow lookup ("normal-offset shadows").
+  /// before the shadow lookup ("normal-offset shadows"). This is the main
+  /// acne/peter-panning control for a spot; being world-space it scales with
+  /// the scene, so very small scenes may want a smaller value.
   double shadowNormalBias;
 
   /// Radius, in shadow-map texels, of the soft-shadow PCF kernel. `0` gives a
