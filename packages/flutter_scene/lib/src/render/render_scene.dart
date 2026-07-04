@@ -64,6 +64,18 @@ class RenderItem {
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
 
+  /// Start index of this item's punctual-light list in the shared per-frame
+  /// light-index buffer, and how many lights follow. Refreshed each frame by
+  /// the light culler; the shader loops that slice so a fragment only shades
+  /// the lights that reach this item. `count` 0 means no punctual lights.
+  int lightListOffset = 0;
+  int lightListCount = 0;
+
+  /// Scratch accumulator the light culler appends this item's light indices to
+  /// before flattening them into the shared buffer. Reused across frames to
+  /// avoid per-item allocation; cleared at the start of each cull.
+  final List<int> lightScratch = [];
+
   /// The owning node's highlight color (linear RGBA), or null when the node
   /// is not highlighted. Refreshed each frame; the selection-outline pass
   /// draws only highlighted items, using this as the mask color.
