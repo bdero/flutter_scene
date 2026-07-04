@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key under which [DepthPrepass] publishes the
 /// camera linear-depth texture: planar view-space depth (world units) in
@@ -126,7 +127,7 @@ class DepthPrepass extends RenderGraphPass {
       cameraUp: _cameraUp,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kLinearDepthBlackboardKey, linearDepth);
   }

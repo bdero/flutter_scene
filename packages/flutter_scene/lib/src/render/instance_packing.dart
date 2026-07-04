@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Per-instance world transforms packed for the instance-rate vertex buffer
@@ -104,18 +105,20 @@ void bindInstanceTransforms(
 /// for why). [beginFrame] cycles it to the next frame's backing storage
 /// and is driven once per frame from the render setup.
 class InstanceTransformBuffers {
-  // Created lazily: the GPU context initializes on the raster thread after
-  // the first frame on some backends, so it isn't available at startup.
-  gpu.HostBuffer? _buffer;
-  gpu.HostBuffer get _host => _buffer ??= gpu.gpuContext.createHostBuffer();
+  // Pooled so a buffer is never reset while in-flight frames still read it.
+  // Buffers are created lazily inside [beginFrame]: the GPU context
+  // initializes on the raster thread after the first frame on some
+  // backends, so it isn't available at startup.
+  final TransientsPool _pool = TransientsPool(rendererSubmissions);
+  gpu.HostBuffer? _host;
 
-  /// Cycles to the next frame's backing storage. Call once per frame
-  /// before any [emplace].
-  void beginFrame() => _host.reset();
+  /// Acquires this frame's backing storage. Call once per frame before any
+  /// [emplace].
+  void beginFrame() => _host = _pool.beginFrame();
 
   /// Emplaces [data] and returns a view to bind as the instance-rate
   /// vertex buffer.
-  gpu.BufferView emplace(ByteData data) => _host.emplace(data);
+  gpu.BufferView emplace(ByteData data) => _host!.emplace(data);
 }
 
 /// The process-wide instance-transform vertex buffer. One GPU context per

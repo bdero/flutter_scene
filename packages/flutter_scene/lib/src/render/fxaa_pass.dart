@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Anti-aliases the display-referred image as a single full-screen FXAA
 /// pass. Reads the resolve output from the blackboard, writes [_output],
@@ -83,7 +84,7 @@ class FxaaPass extends RenderGraphPass {
     );
 
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kDisplayColorBlackboardKey, _output);
   }

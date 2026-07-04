@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Number of roughness bands in a prefiltered-radiance atlas (band 0 =
 /// mirror, band `kPrefilterBandCount - 1` = fully rough; band `i` covers
@@ -223,7 +224,7 @@ void prefilterEquirectRadianceCubeFace(
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }
 
 /// Creates an empty prefiltered-radiance render target, for incremental
@@ -334,5 +335,5 @@ void _prefilterPass(
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }

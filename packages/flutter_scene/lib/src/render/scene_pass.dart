@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/render/skybox_encoder.dart';
 import 'package:flutter_scene/src/render/ssao_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key for the current scene-color texture.
 ///
@@ -186,7 +187,7 @@ class ScenePass extends RenderGraphPass {
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
     encoder.flush();
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
   }

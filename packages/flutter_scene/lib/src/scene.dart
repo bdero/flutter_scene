@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
@@ -365,10 +366,10 @@ base class Scene implements SceneGraph {
 
   /// Transient-uniform allocator, created once and reused every frame.
   ///
-  /// A [gpu.HostBuffer] cycles through several frames of backing storage on
-  /// `reset()`, so one instance is meant to live for the scene's lifetime
-  /// rather than being recreated per frame.
-  gpu.HostBuffer? _transientsBuffer;
+  /// Pools the per-frame uniform host buffers, handing out one whose prior
+  /// GPU work has completed so a buffer is never reset while frames that
+  /// read it are still in flight.
+  final TransientsPool _transientsPool = TransientsPool(rendererSubmissions);
 
   /// The image-based-lighting environment, or null to use the engine's
   /// default (the built-in procedural [EnvironmentMap.studio], built
@@ -828,11 +829,9 @@ base class Scene implements SceneGraph {
     // thread only after the first frame.
     final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
 
-    // Reuse one host buffer across frames; reset() cycles it to the next
-    // frame's backing storage. Shared by every view this frame.
-    final transientsBuffer = _transientsBuffer ??= gpu.gpuContext
-        .createHostBuffer();
-    transientsBuffer.reset();
+    // Acquire this frame's uniform host buffer. Shared by every view this
+    // frame.
+    final transientsBuffer = _transientsPool.beginFrame();
     // Advance the instance-transform buffer pool to this frame's set (it
     // backs the instance-rate vertex buffer, separate from the uniform
     // host buffer above; see instance_packing.dart).

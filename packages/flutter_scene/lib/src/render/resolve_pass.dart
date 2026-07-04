@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/resolve_info.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key for the display-referred color the resolve
 /// pass produces. After-tone-mapping custom effects read it and republish
@@ -122,7 +123,7 @@ class ResolvePass extends RenderGraphPass {
       ),
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kDisplayColorBlackboardKey, _outputColor);
   }

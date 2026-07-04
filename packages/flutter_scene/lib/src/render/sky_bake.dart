@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/skybox_encoder.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 // Fullscreen NDC quad (6 vec2s), shared by the face renders and the equirect
 // assembly.
@@ -148,7 +149,7 @@ void _renderFace(
   );
   source.bind(pass, transients, noEnvironment);
   drawCompat(pass, 6);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }
 
 void _assembleEquirect(
@@ -189,7 +190,7 @@ void _assembleEquirect(
     gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(faceInfo)),
   );
   drawCompat(pass, 6);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }
 
 gpu.Texture _createShTarget() {
@@ -230,7 +231,7 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
     ),
   );
   drawCompat(pass, 6);
-  commandBuffer.submit();
+  rendererSubmissions.submit(commandBuffer);
 }
 
 /// Renders [source] into six cube faces, assembles an equirectangular radiance

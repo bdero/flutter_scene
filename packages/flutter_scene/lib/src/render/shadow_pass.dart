@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_encoder.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the
 /// directional shadow map atlas (a depth-in-`.r` fp32 texture). The
@@ -120,7 +121,7 @@ class ShadowPass extends RenderGraphPass {
       _renderScene.cull(encoder.frustum, encoder.submit);
     }
 
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
     context.blackboard.set(kShadowMapBlackboardKey, color);
     final shadowUniform = _shadowUniform;
     if (shadowUniform != null) {

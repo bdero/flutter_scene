@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/ambient_occlusion.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Render-graph blackboard key under which [SsaoBlurPass] publishes the
 /// final ambient-occlusion texture (occlusion factor in `.r`, 1 =
@@ -145,7 +146,7 @@ class SsaoPass extends RenderGraphPass {
       sampler: _nearestClamp,
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
     return target;
   }
 
@@ -256,7 +257,7 @@ class SsaoPass extends RenderGraphPass {
       sampler: _nearestClamp,
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(_kSsaoRawBlackboardKey, occlusion);
   }
@@ -339,7 +340,7 @@ class SsaoBlurPass extends RenderGraphPass {
       sampler: _nearestClamp,
     );
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kSsaoTextureBlackboardKey, blurred);
   }

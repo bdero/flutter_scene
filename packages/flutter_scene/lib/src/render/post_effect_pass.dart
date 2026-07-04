@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/post_process/post_effect.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Runs one custom [PostEffect] as a full-screen pass.
 ///
@@ -106,7 +107,7 @@ class PostEffectPass extends RenderGraphPass {
     _effect.bindUniforms(renderPass, context.transientsBuffer);
 
     drawCompat(renderPass, 6);
-    commandBuffer.submit();
+    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(_outputKey, _output);
   }
