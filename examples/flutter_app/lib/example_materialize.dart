@@ -16,7 +16,7 @@
 //
 // A single eased progress value drives three staggered sweep fronts. All
 // gating compares world-space height (the model only spins about the world
-// up axis, so height is stable), wobbled by a shared gradient noise so the
+// up axis, so height is stable), wobbled by shared simplex noise so the
 // boundaries read organic; the same noise inputs gate all three stages so
 // their boundaries line up. Every mesh node and every primitive of the
 // imported model is incorporated (wire/glass geometry per node, a shell
