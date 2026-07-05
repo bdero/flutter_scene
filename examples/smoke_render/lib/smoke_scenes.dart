@@ -293,6 +293,36 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the
 /// magenta clear.
+/// The CPU/GPU noise parity probe (see `assets/noise_parity.fmat`). Not part
+/// of [kSmokeScenes]; its test samples decoded pixel values numerically
+/// instead of uploading a screenshot, so the frame never reaches the visual
+/// diff service. Tone mapping and anti-aliasing are configured so the packed
+/// bytes survive the display encode exactly.
+({Scene scene, PerspectiveCamera camera}) buildNoiseParityScene() {
+  final scene = Scene()
+    ..toneMapping = ToneMappingMode.linear
+    ..antiAliasingMode = AntiAliasingMode.none;
+  // A camera-facing quad spanning world [-1, 1] in x/y; the material derives
+  // its tile grid from world position, so no texture coordinates are needed.
+  final quad = MeshGeometry.fromArrays(
+    positions: Float32List.fromList([
+      -1, -1, 0, 1, -1, 0, 1, 1, 0, //
+      -1, -1, 0, 1, 1, 0, -1, 1, 0,
+    ]),
+  );
+  scene.add(Node(mesh: Mesh(quad, _fmatMaterial('NoiseParity'))));
+  // 45-degree vertical FOV at distance 2.6 sees a half-height of ~1.08, so
+  // the quad fits with a small margin; the marker scan derives the tile
+  // mapping from the frame, so exact framing does not matter.
+  return (
+    scene: scene,
+    camera: PerspectiveCamera(
+      position: vm.Vector3(0, 0, -2.6),
+      target: vm.Vector3.zero(),
+    ),
+  );
+}
+
 class SmokeSceneView extends StatefulWidget {
   const SmokeSceneView(this.scene, {super.key});
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -125,6 +126,145 @@ void main() {
       );
     });
   }
+
+  testWidgets('noise parity between CPU and GPU', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.initializeStaticResources();
+    await loadSmokeMaterials();
+
+    final setup = buildNoiseParityScene();
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(
+            child: RepaintBoundary(
+              key: boundaryKey,
+              child: SizedBox(
+                width: kSmokeSize,
+                height: kSmokeSize,
+                child: SceneView(setup.scene, camera: setup.camera),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    final boundary =
+        boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+    final rgba = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    final width = image.width, height = image.height;
+
+    int decode(int px, int py) {
+      final o = (py * width + px) * 4;
+      return (rgba.getUint8(o) << 16) |
+          (rgba.getUint8(o + 1) << 8) |
+          rgba.getUint8(o + 2);
+    }
+
+    // Locate the three marker tiles (see noise_parity.fmat) and derive the
+    // tile-center-to-pixel mapping from their centroids, which stays correct
+    // under any flip or framing without replicating camera math.
+    (double, double) centroidOf(int marker) {
+      var sx = 0.0, sy = 0.0;
+      var n = 0;
+      for (var py = 0; py < height; py++) {
+        for (var px = 0; px < width; px++) {
+          if (decode(px, py) == marker) {
+            sx += px;
+            sy += py;
+            n++;
+          }
+        }
+      }
+      expect(
+        n,
+        greaterThan(50),
+        reason: 'marker 0x0${marker.toRadixString(16)} not found',
+      );
+      return (sx / n, sy / n);
+    }
+
+    final a = centroidOf(0xABCDEF); // tile (row 0, col 0)
+    final b = centroidOf(0x123456); // tile (row 0, col 7)
+    final c = centroidOf(0xFEDCBA); // tile (row 11, col 0)
+
+    int sampleTile(int row, int col) {
+      final px = a.$1 + (b.$1 - a.$1) * col / 7 + (c.$1 - a.$1) * row / 11;
+      final py = a.$2 + (b.$2 - a.$2) * col / 7 + (c.$2 - a.$2) * row / 11;
+      return decode(px.round(), py.round());
+    }
+
+    // Dart mirror of the shader's per-tile evaluation. Coordinates and
+    // fractal parameters are exactly representable in float32, so the noise
+    // inputs are bit identical; only gradient-math rounding differs.
+    double expected01(int r, int c) {
+      final fx = c * 7.25 - 27.5;
+      final fy = c * 3.75 + r * 11.125 - 40.0;
+      final fz = c * 1.875 - r * 5.25 + 13.75;
+      final n = FastNoiseLite(seed: 1337 + r)..frequency = 0.0625;
+      if (r == 3 || r == 4 || r == 6) n.noiseType = NoiseType.openSimplex2S;
+      if (r >= 5) {
+        n
+          ..octaves = 4
+          ..lacunarity = 2.0
+          ..gain = 0.5;
+      }
+      if (r == 5 || r == 6) n.fractalType = FractalType.fbm;
+      if (r == 7) n.fractalType = FractalType.ridged;
+      if (r == 8) {
+        n
+          ..fractalType = FractalType.pingPong
+          ..pingPongStrength = 2.0;
+      }
+      final is3d = r == 2 || r == 4 || r == 6 || r == 8;
+      final v = is3d ? n.getNoise3(fx, fy, fz) : n.getNoise2(fx, fy);
+      return v * 0.5 + 0.5;
+    }
+
+    // Float rows: single octaves tight, fractal rows a little looser (four
+    // octaves of float32 gradient rounding). These tolerances are the
+    // executable form of the parity contract.
+    for (var r = 1; r <= 8; r++) {
+      final tol = r <= 4 ? 5e-5 : 2e-4;
+      for (var c = 0; c < 8; c++) {
+        final gpu01 = sampleTile(r, c) / 16777215.0;
+        expect(
+          gpu01,
+          closeTo(expected01(r, c), tol),
+          reason: 'float noise mismatch at tile row $r col $c',
+        );
+      }
+    }
+
+    // Hash rows: the integer layer is bit-exact, no tolerance.
+    for (var c = 0; c < 8; c++) {
+      expect(
+        sampleTile(9, c),
+        noiseHash2(1337 + 9, c * 3 - 11, 9 * 7 + c) & 0xFFFFFF,
+        reason: 'NoiseHash2 mismatch at col $c',
+      );
+      expect(
+        sampleTile(10, c),
+        noiseHash3(1337 + 10, c * 3 - 11, 10 * 7 + c, c - 5) & 0xFFFFFF,
+        reason: 'NoiseHash3 mismatch at col $c',
+      );
+    }
+  });
 
   tearDownAll(() {
     binding.reportData = <String, dynamic>{...captures};
