@@ -56,39 +56,39 @@ const double _kSweepPad = 0.15;
 /// current values.
 class _MaterializeSettings {
   // Wireframe.
-  double wireThickness = 0.006;
-  vm.Vector3 wireColor = vm.Vector3(0.25, 0.85, 1.0);
+  double wireThickness = 0.002;
+  vm.Vector3 wireColor = vm.Vector3(0.16, 0.64, 1.0);
   double wireAlpha = 0.85;
-  double wireGlow = 8.0;
+  double wireGlow = 27.5;
 
   // Glass.
   vm.Vector3 glassTint = vm.Vector3(0.5, 0.85, 1.0);
-  double glassAlpha = 0.69;
+  double glassAlpha = 0.2;
   vm.Vector3 glassGlowColor = vm.Vector3(1.0, 1.0, 0.6);
-  double glassGlowStrength = 22.0;
-  vm.Vector3 flyDir = vm.Vector3(0.0, -1.0, 0.0);
-  double flyDistance = 1.4;
-  double centerDistance = 0.0;
-  double normalDistance = 0.0;
-  double jitter = 0.15;
+  double glassGlowStrength = 1.9;
+  vm.Vector3 flyDir = vm.Vector3(0.0, 1.0, 0.0);
+  double flyDistance = 0.0;
+  double centerDistance = 0.45;
+  double normalDistance = 1.5;
+  double jitter = 0.32;
   double fadePortion = 0.64;
-  double coolSpan = 0.33;
+  double coolSpan = 0.62;
   double tumble = 2.3;
-  double glassBand = 0.5;
+  double glassBand = 0.84;
 
   // Shell reveal.
-  double seamWidth = 0.23;
+  double seamWidth = 0.12;
   vm.Vector3 seamColor = vm.Vector3(0.3, 0.9, 1.0);
-  double seamStrength = 28.6;
+  double seamStrength = 40.0;
 
   // Boundary noise, shared by all three stages.
-  vm.Vector3 noiseScale = vm.Vector3(8.0, 8.0, 8.0);
-  double noiseAmp = 0.06;
+  vm.Vector3 noiseScale = vm.Vector3(3.4, 0.5, 3.9);
+  double noiseAmp = 0.11;
 
   // Timing.
   double duration = 7.0;
   double lagWireToGlass = 0.0;
-  double lagGlassToSolid = 1.05;
+  double lagGlassToSolid = 1.5;
 
   String dump() {
     String v3(vm.Vector3 v) =>
