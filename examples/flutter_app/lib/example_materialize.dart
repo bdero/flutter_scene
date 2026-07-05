@@ -27,18 +27,17 @@
 // playback bar); the panel's print button dumps the current values to the
 // console.
 //
-// The example reads the imported primitives' retained CPU vertex data back
-// through the internal cpuMeshData accessor to derive the wire and soup
-// geometry; in-repo example apps may reach into internals, so the lints are
-// waived for the whole file (same waiver as example_shapes.dart).
-// ignore_for_file: implementation_imports, invalid_use_of_internal_member
+// The wire and shard geometry is derived from the loaded model through the
+// public readback and derivation APIs, Geometry.extractMeshData snapshots
+// each primitive, MeshData.merge/unweld/extractEdges build the shard soup
+// and the edge set (on a background isolate via compute), and
+// LineSegmentsGeometry renders the edges as GPU-expanded thick ribbons.
 
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart' show EnvironmentSelector, fetchResource;
@@ -74,7 +73,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   // textures), and one wire/glass pass per mesh node (each carries that
   // node's world transform).
   final List<PreprocessedMaterial> _shellMaterials = [];
-  final List<(Node, PreprocessedMaterial)> _wirePasses = [];
+  final List<(PreprocessedMaterial, LineSegmentsGeometry)> _wirePasses = [];
   final List<(Node, PreprocessedMaterial)> _glassPasses = [];
 
   final Node _spin = Node(name: 'materialize_spin');
@@ -131,12 +130,12 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
 
       for (final meshNode in meshNodes) {
         final world = meshNode.globalTransform;
-        final parts = <_TriangleMesh>[];
+        final parts = <MeshData>[];
         for (final primitive in meshNode.mesh!.primitives) {
-          final source = _extractTriangleMesh(primitive.geometry);
+          final source = primitive.geometry.extractMeshData();
           parts.add(source);
           primitiveCount++;
-          triangleCount += source.indices.length ~/ 3;
+          triangleCount += source.triangleCount;
           for (var v = 0; v < source.positions.length; v += 3) {
             scratch.setValues(
               source.positions[v],
@@ -160,24 +159,35 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
           _shellMaterials.add(shell);
         }
 
-        final source = _mergeTriangleMeshes(parts);
+        // Derive the shard soup and the edge set on a background isolate;
+        // both are pure MeshData transforms.
+        final derived = await compute(
+          _deriveMaterializeGeometry,
+          MeshData.merge(parts),
+        );
+        if (!mounted) return;
 
-        // Stage 1: view-facing ribbon quads over this node's unique edges.
+        // Stage 1: the unique edges as GPU-expanded thick ribbons, offset
+        // off the surface so they do not z-fight the shell.
         final wire = await loadFmatMaterial(
           'assets/materialize_wireframe.fmat',
         );
-        final wireNode = Node(
-          name: 'materialize_wire',
-          mesh: Mesh(_buildWireGeometry(source), wire),
+        final wireGeometry = LineSegmentsGeometry(
+          derived.edges,
+          normalOffset: 0.002,
         );
-        meshNode.add(wireNode);
-        _wirePasses.add((wireNode, wire));
+        meshNode.add(
+          Node(name: 'materialize_wire', mesh: Mesh(wireGeometry, wire)),
+        );
+        _wirePasses.add((wire, wireGeometry));
 
-        // Stage 2: this node's unwelded shard soup.
+        // Stage 2: the unwelded shard soup, carrying the canned
+        // triangle_centroid/triangle_seed attributes the glass material's
+        // vertex stage reads.
         final glass = await loadFmatMaterial('assets/materialize_glass.fmat');
         final glassNode = Node(
           name: 'materialize_glass',
-          mesh: Mesh(_buildGlassGeometry(source), glass),
+          mesh: Mesh(MeshGeometry.fromMeshData(derived.shards), glass),
         );
         meshNode.add(glassNode);
         _glassPasses.add((glassNode, glass));
@@ -258,218 +268,6 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       ..setFloat('occlusion_strength', imported.occlusionStrength);
   }
 
-  /// Reads positions, normals, and triangle indices back from the imported
-  /// geometry's retained CPU copy (interleaved unskinned layout, 12 floats
-  /// per vertex).
-  _TriangleMesh _extractTriangleMesh(Geometry geometry) {
-    final data = geometry.cpuMeshData;
-    final vertices = data.vertices;
-    final indexData = data.indices;
-    if (vertices == null || indexData == null) {
-      throw StateError('Imported geometry retained no CPU vertex data.');
-    }
-    const stride = 12; // floats per unskinned vertex
-    final floats = Float32List.sublistView(vertices);
-    final vertexCount = data.vertexCount;
-    final positions = Float32List(vertexCount * 3);
-    final normals = Float32List(vertexCount * 3);
-    for (var v = 0; v < vertexCount; v++) {
-      final base = v * stride;
-      positions[v * 3] = floats[base];
-      positions[v * 3 + 1] = floats[base + 1];
-      positions[v * 3 + 2] = floats[base + 2];
-      normals[v * 3] = floats[base + 3];
-      normals[v * 3 + 1] = floats[base + 4];
-      normals[v * 3 + 2] = floats[base + 5];
-    }
-    // Note sublistView range args count the SOURCE's elements (bytes for a
-    // ByteData), so no end bound is passed; the buffer holds exactly
-    // indexCount elements.
-    final List<int> indices = data.indexType == gpu.IndexType.int32
-        ? Uint32List.sublistView(indexData)
-        : Uint16List.sublistView(indexData);
-    return _TriangleMesh(positions, normals, indices);
-  }
-
-  /// Concatenates per-primitive triangle meshes (same node space) into one,
-  /// rebasing the indices.
-  _TriangleMesh _mergeTriangleMeshes(List<_TriangleMesh> parts) {
-    if (parts.length == 1) return parts.first;
-    var vertexCount = 0;
-    var indexCount = 0;
-    for (final part in parts) {
-      vertexCount += part.positions.length ~/ 3;
-      indexCount += part.indices.length;
-    }
-    final positions = Float32List(vertexCount * 3);
-    final normals = Float32List(vertexCount * 3);
-    final indices = List<int>.filled(indexCount, 0);
-    var vertexBase = 0;
-    var indexBase = 0;
-    for (final part in parts) {
-      positions.setRange(
-        vertexBase * 3,
-        vertexBase * 3 + part.positions.length,
-        part.positions,
-      );
-      normals.setRange(
-        vertexBase * 3,
-        vertexBase * 3 + part.normals.length,
-        part.normals,
-      );
-      for (var i = 0; i < part.indices.length; i++) {
-        indices[indexBase + i] = part.indices[i] + vertexBase;
-      }
-      vertexBase += part.positions.length ~/ 3;
-      indexBase += part.indices.length;
-    }
-    return _TriangleMesh(positions, normals, indices);
-  }
-
-  /// A view-facing ribbon quad per unique undirected edge. Each vertex
-  /// carries the opposite endpoint and a side sign; the material's vertex
-  /// stage expands the quad perpendicular to the edge and the view.
-  MeshGeometry _buildWireGeometry(_TriangleMesh source) {
-    final seen = <int>{};
-    final edgeA = <int>[];
-    final edgeB = <int>[];
-    void addEdge(int a, int b) {
-      final lo = math.min(a, b);
-      final hi = math.max(a, b);
-      if (seen.add(lo * 0x100000 + hi)) {
-        edgeA.add(lo);
-        edgeB.add(hi);
-      }
-    }
-
-    final srcIndices = source.indices;
-    for (var t = 0; t + 2 < srcIndices.length; t += 3) {
-      addEdge(srcIndices[t], srcIndices[t + 1]);
-      addEdge(srcIndices[t + 1], srcIndices[t + 2]);
-      addEdge(srcIndices[t + 2], srcIndices[t]);
-    }
-
-    final edgeCount = edgeA.length;
-    final positions = Float32List(edgeCount * 12);
-    final normals = Float32List(edgeCount * 12);
-    final others = Float32List(edgeCount * 12);
-    final sides = Float32List(edgeCount * 4);
-    final indices = List<int>.filled(edgeCount * 6, 0);
-    void writeVec3(Float32List dst, int vertex, Float32List src, int index) {
-      dst[vertex * 3] = src[index * 3];
-      dst[vertex * 3 + 1] = src[index * 3 + 1];
-      dst[vertex * 3 + 2] = src[index * 3 + 2];
-    }
-
-    for (var e = 0; e < edgeCount; e++) {
-      final a = edgeA[e], b = edgeB[e];
-      final base = e * 4;
-      for (var corner = 0; corner < 4; corner++) {
-        final v = base + corner;
-        final atA = corner < 2;
-        writeVec3(positions, v, source.positions, atA ? a : b);
-        writeVec3(normals, v, source.normals, atA ? a : b);
-        writeVec3(others, v, source.positions, atA ? b : a);
-        sides[v] = corner.isEven ? 1.0 : -1.0;
-      }
-      final i = e * 6;
-      indices[i] = base;
-      indices[i + 1] = base + 1;
-      indices[i + 2] = base + 2;
-      indices[i + 3] = base;
-      indices[i + 4] = base + 2;
-      indices[i + 5] = base + 3;
-    }
-    return MeshGeometry.fromArrays(
-        positions: positions,
-        normals: normals,
-        indices: indices,
-      )
-      ..setCustomAttribute('edge_other', others, components: 3)
-      ..setCustomAttribute('edge_side', sides, components: 1);
-  }
-
-  /// The shard soup: every triangle unwelded to three unique vertices with a
-  /// flat outward normal, plus the triangle centroid and a random seed as
-  /// custom attributes for the glass material's vertex stage.
-  MeshGeometry _buildGlassGeometry(_TriangleMesh source) {
-    final indices = source.indices;
-    final triangleCount = indices.length ~/ 3;
-    final positions = Float32List(triangleCount * 9);
-    final normals = Float32List(triangleCount * 9);
-    final centroids = Float32List(triangleCount * 9);
-    final seeds = Float32List(triangleCount * 3);
-
-    final p0 = vm.Vector3.zero(),
-        p1 = vm.Vector3.zero(),
-        p2 = vm.Vector3.zero();
-    final smooth = vm.Vector3.zero();
-    var seedState = 0x9e3779b9;
-    for (var t = 0; t < triangleCount; t++) {
-      final i0 = indices[t * 3],
-          i1 = indices[t * 3 + 1],
-          i2 = indices[t * 3 + 2];
-      p0.setValues(
-        source.positions[i0 * 3],
-        source.positions[i0 * 3 + 1],
-        source.positions[i0 * 3 + 2],
-      );
-      p1.setValues(
-        source.positions[i1 * 3],
-        source.positions[i1 * 3 + 1],
-        source.positions[i1 * 3 + 2],
-      );
-      p2.setValues(
-        source.positions[i2 * 3],
-        source.positions[i2 * 3 + 1],
-        source.positions[i2 * 3 + 2],
-      );
-
-      // Flat face normal, sign-checked against the averaged vertex normals
-      // so it always points outward.
-      final flat = (p1 - p0).cross(p2 - p0);
-      if (flat.length2 > 0) flat.normalize();
-      smooth.setValues(
-        source.normals[i0 * 3] +
-            source.normals[i1 * 3] +
-            source.normals[i2 * 3],
-        source.normals[i0 * 3 + 1] +
-            source.normals[i1 * 3 + 1] +
-            source.normals[i2 * 3 + 1],
-        source.normals[i0 * 3 + 2] +
-            source.normals[i1 * 3 + 2] +
-            source.normals[i2 * 3 + 2],
-      );
-      if (flat.dot(smooth) < 0) flat.negate();
-
-      final cx = (p0.x + p1.x + p2.x) / 3;
-      final cy = (p0.y + p1.y + p2.y) / 3;
-      final cz = (p0.z + p1.z + p2.z) / 3;
-
-      // Cheap deterministic per-triangle random in [0, 1).
-      seedState = 0x1fffffff & (seedState * 1103515245 + 12345);
-      final seed = (seedState & 0xffff) / 0x10000;
-
-      for (var v = 0; v < 3; v++) {
-        final src = v == 0 ? p0 : (v == 1 ? p1 : p2);
-        final out = (t * 3 + v) * 3;
-        positions[out] = src.x;
-        positions[out + 1] = src.y;
-        positions[out + 2] = src.z;
-        normals[out] = flat.x;
-        normals[out + 1] = flat.y;
-        normals[out + 2] = flat.z;
-        centroids[out] = cx;
-        centroids[out + 1] = cy;
-        centroids[out + 2] = cz;
-        seeds[t * 3 + v] = seed;
-      }
-    }
-    return MeshGeometry.fromArrays(positions: positions, normals: normals)
-      ..setCustomAttribute('tri_centroid', centroids, components: 3)
-      ..setCustomAttribute('tri_seed', seeds, components: 1);
-  }
-
   /// Writes every look setting into the materials (scaled to the model's
   /// world height where the setting is a fraction).
   void _applySettings() {
@@ -479,11 +277,10 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     final noiseScale = s.noiseScale / range;
     final noiseAmp = s.noiseAmp * range;
 
-    for (final (_, wire) in _wirePasses) {
+    for (final (wire, wireGeometry) in _wirePasses) {
+      wireGeometry.width = range * s.wireThickness;
       wire.parameters
         ..setFloat('band', range * 0.06)
-        ..setFloat('thickness', range * s.wireThickness)
-        ..setFloat('inflate', range * 0.004)
         ..setVec4(
           'wire_color',
           vm.Vector4(s.wireColor.x, s.wireColor.y, s.wireColor.z, s.wireAlpha),
@@ -550,11 +347,10 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     final center = vm.Vector3.copy(_center);
     _spin.globalTransform.transform3(center);
 
-    for (final (node, wire) in _wirePasses) {
+    for (final (wire, _) in _wirePasses) {
       wire.parameters
         ..setFloat('wire_front', wireFront)
-        ..setFloat('solid_front', solidFront)
-        ..setMat4('model_matrix', node.globalTransform);
+        ..setFloat('solid_front', solidFront);
     }
     for (final (node, glass) in _glassPasses) {
       glass.parameters
@@ -675,10 +471,15 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   }
 }
 
-class _TriangleMesh {
-  _TriangleMesh(this.positions, this.normals, this.indices);
-
-  final Float32List positions;
-  final Float32List normals;
-  final List<int> indices;
+/// Derives the Materialize passes' geometry from one node's merged source
+/// mesh. Pure CPU work; runs on a background isolate via `compute`.
+({MeshData shards, LineSegmentData edges}) _deriveMaterializeGeometry(
+  MeshData source,
+) {
+  return (
+    shards: source.unweld(
+      attributes: {UnweldAttribute.centroid, UnweldAttribute.seed},
+    ),
+    edges: source.extractEdges(),
+  );
 }
