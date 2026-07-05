@@ -19,6 +19,7 @@ import 'example_fscene_stream.dart';
 import 'example_instancing.dart';
 import 'example_lod.dart';
 import 'example_logo.dart';
+import 'example_materialize.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_physics_box3d.dart';
@@ -79,6 +80,7 @@ class _MyAppState extends State<MyApp> {
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Custom vertices (.fmat)': (context) => const ExampleVertexCurve(),
+      'Materialize (.fmat)': (context) => const ExampleMaterialize(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Render Targets': (context) => const ExampleRenderTarget(),
