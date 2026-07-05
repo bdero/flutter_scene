@@ -132,7 +132,9 @@ void _renderFace(
       gpu.ColorAttachment(texture: face, clearValue: Vector4.zero()),
     ),
   );
-  final transients = gpu.gpuContext.createHostBuffer();
+  // One-shot bake uniforms ride the shared uniform arena; the bake's own
+  // submission (via rendererSubmissions) seals the blocks it wrote.
+  final transients = uniformTransients;
   final vertexShader = baseShaderLibrary['SkyboxVertex']!;
   pass.bindPipeline(resolvePipeline(vertexShader, source.fragmentShader));
   pass.setColorBlendEnable(false);
@@ -187,7 +189,7 @@ void _assembleEquirect(
   final faceInfo = Float32List(4)..[0] = _faceOverscan(faceResolution);
   pass.bindUniform(
     fragmentShader.getUniformSlot('CubeFaceInfo'),
-    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(faceInfo)),
+    uniformTransients.emplace(ByteData.sublistView(faceInfo)),
   );
   drawCompat(pass, 6);
   rendererSubmissions.submit(commandBuffer);

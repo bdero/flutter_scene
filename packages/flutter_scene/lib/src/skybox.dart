@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A sky that exposes a directional sun, so the engine can drive a matching
 /// shadow-casting directional light from it.
@@ -155,7 +156,7 @@ class ShaderSkySource extends SkySource {
   /// during the background draw; not part of the app-facing API.
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
     for (final entry in _uniformBlocks.entries) {

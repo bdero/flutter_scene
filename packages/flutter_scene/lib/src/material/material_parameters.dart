@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 class _ParamSlot {
   _ParamSlot(this.type, this.offsetBytes, {this.sourceColor = false});
@@ -406,7 +407,7 @@ class MaterialParameters {
   void bindUniformBlock(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
   ) {
     if (_block.lengthInBytes > 0) {
       pass.bindUniform(
@@ -420,7 +421,7 @@ class MaterialParameters {
   void bind(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
   ) {
     bindUniformBlock(pass, shader, transientsBuffer);
     for (final entry in _samplers.entries) {

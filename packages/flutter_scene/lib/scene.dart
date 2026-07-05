@@ -109,6 +109,7 @@ export 'src/light.dart'
         SpotLight;
 export 'src/render/custom_render_pass.dart'
     show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;
+export 'src/render/frame_transients.dart' show TransientWriter;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;

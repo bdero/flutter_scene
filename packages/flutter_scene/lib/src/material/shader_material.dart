@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A [Material] backed by a caller-supplied fragment shader.
 ///
@@ -191,7 +192,7 @@ class ShaderMaterial extends Material {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     pass.setCullMode(cullingMode);

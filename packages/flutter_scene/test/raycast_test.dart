@@ -17,7 +17,7 @@ import 'package:flutter_scene/src/raycast.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart'
     as gpu
-    show IndexType, RenderPass, HostBuffer, Shader;
+    show IndexType, RenderPass, Shader;
 import 'package:vector_math/vector_math.dart';
 
 /// A bare [Geometry] whose only purpose is to exercise the CPU-side raycast
@@ -26,7 +26,7 @@ class _RaycastDataGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Matrix4 modelTransform,
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {

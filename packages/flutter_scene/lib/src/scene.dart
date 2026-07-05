@@ -32,7 +32,6 @@ import 'render/render_graph.dart';
 import 'render/render_scene.dart';
 import 'render/punctual_lights.dart';
 import 'render/spot_shadow.dart';
-import 'render/instance_packing.dart';
 import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
@@ -382,12 +381,6 @@ base class Scene implements SceneGraph {
   final Surface surface = Surface();
 
   /// Transient-uniform allocator, created once and reused every frame.
-  ///
-  /// Pools the per-frame uniform host buffers, handing out one whose prior
-  /// GPU work has completed so a buffer is never reset while frames that
-  /// read it are still in flight.
-  final TransientsPool _transientsPool = TransientsPool(rendererSubmissions);
-
   /// The image-based-lighting environment, or null to use the engine's
   /// default (the built-in procedural [EnvironmentMap.studio], built
   /// lazily on first render).
@@ -883,13 +876,12 @@ base class Scene implements SceneGraph {
     // thread only after the first frame.
     final environmentMap = environment ?? Material.getDefaultEnvironmentMap();
 
-    // Acquire this frame's uniform host buffer. Shared by every view this
-    // frame.
-    final transientsBuffer = _transientsPool.beginFrame();
-    // Advance the instance-transform buffer pool to this frame's set (it
-    // backs the instance-rate vertex buffer, separate from the uniform
-    // host buffer above; see instance_packing.dart).
-    instanceTransformBuffers.beginFrame();
+    // Advance the per-frame transient arenas (uniform blocks and
+    // instance-rate vertex data): recycle blocks whose GPU work completed
+    // and reset the frame stats. Shared by every view this frame.
+    uniformTransients.beginFrame();
+    instanceTransients.beginFrame();
+    final TransientWriter transientsBuffer = uniformTransients;
 
     // Advance the scene once per frame (not once per view): tick components
     // and animations and refresh the flat render list before the passes
@@ -1021,7 +1013,7 @@ base class Scene implements SceneGraph {
     required double dpr,
     required int viewIndex,
     required EnvironmentMap environmentMap,
-    required gpu.HostBuffer transientsBuffer,
+    required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
@@ -1075,7 +1067,7 @@ base class Scene implements SceneGraph {
     required ui.Size pixelSize,
     required TransientTexturePool pool,
     required EnvironmentMap environmentMap,
-    required gpu.HostBuffer transientsBuffer,
+    required TransientWriter transientsBuffer,
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,

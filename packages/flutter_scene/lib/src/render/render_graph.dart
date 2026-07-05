@@ -1,4 +1,5 @@
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
@@ -188,7 +189,7 @@ class RenderGraphContext {
     required this.blackboard,
   });
 
-  final gpu.HostBuffer transientsBuffer;
+  final TransientWriter transientsBuffer;
   final TransientTexturePool texturePool;
   final Blackboard blackboard;
 }
@@ -233,7 +234,7 @@ class RenderGraph {
   /// creates and submits its own command buffer. Clears the blackboard
   /// first so state never leaks between frames.
   void execute({
-    required gpu.HostBuffer transientsBuffer,
+    required TransientWriter transientsBuffer,
     required TransientTexturePool texturePool,
   }) {
     _blackboard._clear();

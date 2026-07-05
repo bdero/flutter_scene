@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
@@ -131,7 +132,7 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
 /// Applications typically do not construct `SceneEncoder` directly;
 /// custom [Geometry] or [Material] subclasses interact with it through
 /// their `bind` callbacks, which receive the `gpu.RenderPass` and
-/// `gpu.HostBuffer` directly.
+/// `TransientWriter` directly.
 base class SceneEncoder {
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
@@ -142,7 +143,7 @@ base class SceneEncoder {
   /// configured for the opaque phase (depth writes on, blending off).
   SceneEncoder(
     gpu.RenderPass renderPass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     this._camera,
     ui.Size dimensions,
     this._lighting,
@@ -166,7 +167,7 @@ base class SceneEncoder {
   final Lighting _lighting;
   final int _layerMask;
   final gpu.RenderPass _renderPass;
-  final gpu.HostBuffer _transientsBuffer;
+  final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
   // The camera's vertical field of view in radians, or null for a
   // non-perspective camera (which disables screen-size LOD).

@@ -3,6 +3,7 @@ import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A sky driven by a `.fmat` sky shader (`sky { vec3 Sky(vec3 direction) }`)
 /// and its sidecar metadata (produced at build time by `buildMaterials`).
@@ -49,7 +50,7 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
     // Parameters (the MaterialParams block plus any declared samplers) carry

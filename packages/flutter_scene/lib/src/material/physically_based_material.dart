@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
 /// matching glTF's `alphaMode`.
@@ -167,7 +168,7 @@ class PhysicallyBasedMaterial extends Material {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     super.bind(pass, transientsBuffer, lighting);
