@@ -206,6 +206,36 @@ fragment {
         ),
       );
     });
+
+    test('vertex variants keep MaterialParams live via the body macro', () {
+      // A Vertex() that reads no parameter must not let the compiler strip
+      // the MaterialParams block from the variant; the runtime binds it to
+      // the vertex stage unconditionally.
+      final c = compileFmat('''
+material {
+  name: "V",
+  shading_model: unlit,
+  parameters: [ { type: float, name: k, default: 1.0 } ],
+  varyings: [ { type: float, name: h } ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    h = vertex.position.y;
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(h);
+  }
+}
+''');
+      for (final variant in c.vertexGlsl.values) {
+        expect(
+          variant,
+          contains('#define MATERIAL_PARAMS_KEEP_ALIVE (material_params.k)'),
+        );
+      }
+    });
   });
 
   group('sidecar', () {
