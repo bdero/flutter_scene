@@ -1,0 +1,122 @@
+// Glass-shard stage of the Materialize example. Rendered over an unwelded
+// triangle soup where every triangle carries flat outward normals plus two
+// custom attributes, its centroid (tri_centroid) and a per-triangle random
+// seed (tri_seed). As the glass front sweeps up past a triangle's centroid,
+// the shard flies in from a scattered pose (pushed out along its face
+// normal with a seeded tumble) and seats onto the surface.
+//
+// The Vertex() hook cannot see the instance model matrix, and the shard
+// math has to rotate about the centroid in object space, so the node's
+// world transform is passed in as the model_matrix parameter and the hook
+// writes world outputs through it itself.
+
+material {
+  name: "MaterializeGlass",
+  shading_model: lit,
+  blending: alpha,
+  culling: none,
+
+  parameters: [
+    { type: mat4, name: model_matrix },
+    // Object-space sweep fronts, driven from Dart each tick.
+    { type: float, name: glass_y, default: 10.0 },
+    { type: float, name: solid_y, default: -10.0 },
+    // Height of the assembly band; a shard goes from fully scattered to
+    // seated while the glass front crosses this span above its centroid.
+    { type: float, name: band, default: 0.35 },
+    // How far shards sit out along their face normal when scattered.
+    { type: float, name: scatter, hint: range(0, 3, 0.01), default: 0.8 },
+    { type: float, name: time, default: 0.0 },
+    { type: vec4, name: glass_color, hint: source_color, default: [0.5, 0.85, 1.0, 0.16] },
+    { type: vec3, name: heat_color, hint: source_color, default: [0.3, 0.9, 1.0] },
+    { type: float, name: heat_strength, hint: range(0, 20, 0.1), default: 5.0 },
+  ],
+
+  attributes: [
+    { type: vec3, name: tri_centroid },
+    { type: float, name: tri_seed },
+  ],
+
+  varyings: [
+    { type: float, name: assemble },
+    { type: float, name: centroid_y },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    centroid_y = tri_centroid.y;
+
+    // 0 scattered, 1 seated. Eased so shards decelerate as they arrive.
+    float a = clamp(
+        (material_params.glass_y - tri_centroid.y) /
+            max(material_params.band, 1e-4),
+        0.0, 1.0);
+    a = smoothstep(0.0, 1.0, a);
+    assemble = a;
+
+    float s = 1.0 - a;
+    vec3 rel = vertex.position - tri_centroid;
+    vec3 n = vertex.normal;
+
+    // Seeded tumble about the centroid, with a slow wobble while afloat.
+    vec3 axis = normalize(
+        vec3(sin(tri_seed * 3.1), cos(tri_seed * 5.7), sin(tri_seed * 7.3)) +
+        vec3(0.0, 0.001, 0.0));
+    float wobble =
+        sin(material_params.time * (1.0 + fract(tri_seed) * 1.5) +
+            tri_seed * 40.0) * 0.4;
+    float angle = s * ((fract(tri_seed * 7.61) - 0.5) * 8.0 + wobble);
+    float ca = cos(angle);
+    float sa = sin(angle);
+    vec3 rel_rot =
+        rel * ca + cross(axis, rel) * sa + axis * dot(axis, rel) * (1.0 - ca);
+    vec3 n_rot =
+        n * ca + cross(axis, n) * sa + axis * dot(axis, n) * (1.0 - ca);
+
+    // Outward flight along the face normal plus a gentle drift.
+    float dist =
+        s * s * material_params.scatter * (0.6 + 0.8 * fract(tri_seed * 13.37));
+    vec3 drift = n * dist +
+        vec3(sin(tri_seed * 21.0 + material_params.time * 0.7), 0.35,
+             cos(tri_seed * 17.0 + material_params.time * 0.7)) *
+            (0.12 * s);
+
+    vec3 obj = tri_centroid + rel_rot + drift;
+    vertex.world_position =
+        (material_params.model_matrix * vec4(obj, 1.0)).xyz;
+    vertex.world_normal =
+        normalize(mat3(material_params.model_matrix) * n_rot);
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    // Pop in as soon as the shard starts flying, hand off to the opaque
+    // shell once the solid front passes the centroid.
+    float visible = smoothstep(0.0, 0.15, assemble);
+    float takeover =
+        smoothstep(material_params.solid_y - 0.02, material_params.solid_y,
+                   centroid_y);
+
+    vec3 n = GetWorldNormal();
+    vec3 v = GetViewDirection();
+    float fresnel = pow(1.0 - abs(dot(n, v)), 3.0);
+    float alpha = mix(material_params.glass_color.a, 0.9, fresnel);
+    alpha *= visible * takeover;
+    if (alpha <= 0.003) {
+      discard;
+    }
+
+    material.base_color = vec4(material_params.glass_color.rgb, alpha);
+    material.metallic = 0.0;
+    material.roughness = 0.06;
+
+    // Shards run hot mid-flight and cool off as they seat.
+    float heat = assemble * (1.0 - assemble) * 4.0;
+    material.emissive =
+        material_params.heat_color * (heat * material_params.heat_strength *
+                                      (0.35 + 0.65 * fresnel));
+    PrepareMaterial(material);
+  }
+}

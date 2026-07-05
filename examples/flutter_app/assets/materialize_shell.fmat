@@ -1,0 +1,89 @@
+// Final stage of the Materialize example, the real PBR surface revealing
+// itself bottom-to-top behind a glowing seam. Applied to the original
+// imported geometry with the model's own textures re-bound as sampler
+// parameters and the factor uniforms copied from the imported material,
+// so below the seam it shades like the standard PBR material.
+//
+// TODO(materialize-shadows): the depth/shadow variant runs no Surface(),
+// so with a shadow-casting key light this pass casts the full helmet's
+// shadow before the reveal finishes. Discard-aware depth variants in the
+// fmat pipeline would fix it.
+
+material {
+  name: "MaterializeShell",
+  shading_model: lit,
+  blending: opaque,
+
+  parameters: [
+    // Object-space reveal front, driven from Dart each tick.
+    { type: float, name: solid_y, default: 10.0 },
+    // Height of the emissive seam band under the front.
+    { type: float, name: seam_width, default: 0.06 },
+    { type: vec4, name: seam_color, hint: source_color, default: [0.3, 0.9, 1.0, 1.0] },
+    { type: float, name: seam_strength, hint: range(0, 40, 0.1), default: 16.0 },
+
+    // Standard PBR inputs mirrored from the imported material.
+    { type: vec4, name: base_color_factor, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: float, name: metallic_factor, hint: range(0, 1, 0.01), default: 1.0 },
+    { type: float, name: roughness_factor, hint: range(0, 1, 0.01), default: 1.0 },
+    { type: vec3, name: emissive_factor, default: [0.0, 0.0, 0.0] },
+    { type: float, name: normal_scale, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: occlusion_strength, hint: range(0, 1, 0.01), default: 1.0 },
+    { type: sampler2d, name: base_color_texture, hint: default_white },
+    { type: sampler2d, name: metallic_roughness_texture, hint: default_white },
+    { type: sampler2d, name: normal_texture, hint: default_normal },
+    { type: sampler2d, name: occlusion_texture, hint: default_white },
+    { type: sampler2d, name: emissive_texture, hint: default_black },
+  ],
+
+  varyings: [
+    { type: float, name: object_y },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    object_y = vertex.position.y;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    if (object_y > material_params.solid_y) {
+      discard;
+    }
+
+    vec2 uv = GetUV0();
+
+    vec4 base = texture(base_color_texture, uv);
+    material.base_color = vec4(
+        SRGBToLinear(base.rgb) * material_params.base_color_factor.rgb, 1.0);
+
+    // PerturbNormal wants the non-normalized view vector.
+    material.normal = PerturbNormal(normal_texture, GetWorldNormal(),
+                                    v_viewvector, uv,
+                                    material_params.normal_scale);
+
+    vec4 mr = texture(metallic_roughness_texture, uv);
+    material.metallic = clamp(mr.b * material_params.metallic_factor, 0.0, 1.0);
+    material.roughness = clamp(mr.g * material_params.roughness_factor,
+                               0.05, 1.0);
+
+    float occlusion = texture(occlusion_texture, uv).r;
+    material.occlusion =
+        1.0 - (1.0 - occlusion) * material_params.occlusion_strength;
+
+    material.emissive = SRGBToLinear(texture(emissive_texture, uv).rgb) *
+        material_params.emissive_factor;
+
+    // The laser seam, a hot emissive band right under the reveal front.
+    float d = material_params.solid_y - object_y;
+    float seam =
+        1.0 - smoothstep(0.0, max(material_params.seam_width, 1e-4), d);
+    material.emissive +=
+        material_params.seam_color.rgb * (seam * seam *
+                                          material_params.seam_strength);
+
+    PrepareMaterial(material);
+  }
+}
