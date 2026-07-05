@@ -5,11 +5,14 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 
-/// Post-processing settings shared by every example.
+/// The rendering and post-processing settings an example runs with.
 ///
-/// The settings sidebar edits the single [exampleSettings] instance, and
-/// each example copies it onto its own scene with [applyTo] right before
-/// rendering, so one set of controls drives every scene.
+/// Each example gets its own instance (recreated by the app shell whenever
+/// the selection changes, see [resetExampleSettings]), so tuning one scene
+/// never leaks into another and an example can ship its own defaults. The
+/// settings sidebar edits the current [exampleSettings] instance, and each
+/// example copies it onto its own scene with [applyTo] right before
+/// rendering.
 class ExampleSettings {
   /// Color grading shared across the examples.
   final ColorGradingSettings colorGrading = ColorGradingSettings();
@@ -164,8 +167,23 @@ class ExampleSettings {
   }
 }
 
-/// The single shared settings instance used across the example app.
-final ExampleSettings exampleSettings = ExampleSettings();
+/// The settings instance for the currently selected example. Examples read
+/// this in their tick; the app shell replaces it via [resetExampleSettings]
+/// when the selection changes.
+ExampleSettings exampleSettings = ExampleSettings();
+
+// The custom wave effect is loaded once at startup and carried across the
+// per-example instances.
+PostEffect? _waveEffect;
+
+/// Replaces [exampleSettings] with a fresh instance for a newly selected
+/// example, built by [defaults] when the example overrides the stock
+/// defaults, and returns it.
+ExampleSettings resetExampleSettings([ExampleSettings Function()? defaults]) {
+  exampleSettings = (defaults?.call() ?? ExampleSettings())
+    ..waveEffect = _waveEffect;
+  return exampleSettings;
+}
 
 /// Loads the example shader bundle and builds the custom post-processing
 /// effects. Awaited at startup alongside [Scene.initializeStaticResources].
@@ -175,11 +193,12 @@ Future<void> loadExampleEffects() async {
   );
   final waveShader = library?['WaveFragment'];
   if (waveShader != null) {
-    exampleSettings.waveEffect = PostEffect(
+    _waveEffect = PostEffect(
       fragmentShader: waveShader,
       insertion: PostInsertion.beforeTonemap,
       enabled: false,
       useFrameInfo: true,
     );
+    exampleSettings.waveEffect = _waveEffect;
   }
 }

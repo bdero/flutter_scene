@@ -3,6 +3,7 @@
 // environment rotation, applied directly to the scene it is given. Used by
 // the stress tests and the widget-texture example.
 
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,11 @@ class LightingPanel extends StatefulWidget {
     required this.scene,
     required this.selector,
     this.showSkybox = true,
+    this.initialEnvironmentId,
+    this.initialSkyBlur = 0.0,
+    this.initialExposure = 1.0,
+    this.initialIblIntensity = 1.0,
+    this.initialRotationDegrees,
   });
 
   final Scene scene;
@@ -28,6 +34,21 @@ class LightingPanel extends StatefulWidget {
   /// Whether the skybox starts enabled.
   final bool showSkybox;
 
+  /// The [ExampleEnvironment.id] to select at startup, or null to keep the
+  /// selector's current environment. Loads (from the cache when possible)
+  /// in the background.
+  final String? initialEnvironmentId;
+
+  /// Starting values for the sliders, applied to the scene at startup so an
+  /// example can ship its own lighting defaults.
+  final double initialSkyBlur;
+  final double initialExposure;
+  final double initialIblIntensity;
+
+  /// Starting environment rotation Euler angles in degrees (x, y, z), or
+  /// null for none.
+  final vm.Vector3? initialRotationDegrees;
+
   @override
   State<LightingPanel> createState() => _LightingPanelState();
 }
@@ -35,17 +56,30 @@ class LightingPanel extends StatefulWidget {
 class _LightingPanelState extends State<LightingPanel> {
   late bool _showSkybox = widget.showSkybox;
   final EnvironmentSkySource _skySource = EnvironmentSkySource();
-  double _exposure = 1.0;
-  double _environmentIntensity = 1.0;
-  double _envRotationX = 0.0;
-  double _envRotationY = 0.0;
-  double _envRotationZ = 0.0;
+  late double _exposure = widget.initialExposure;
+  late double _environmentIntensity = widget.initialIblIntensity;
+  late double _envRotationX = widget.initialRotationDegrees?.x ?? 0.0;
+  late double _envRotationY = widget.initialRotationDegrees?.y ?? 0.0;
+  late double _envRotationZ = widget.initialRotationDegrees?.z ?? 0.0;
 
   @override
   void initState() {
     super.initState();
+    _skySource.blurriness = widget.initialSkyBlur;
+    widget.scene.exposure = _exposure;
+    widget.scene.environmentIntensity = _environmentIntensity;
+    _applyEnvironmentRotation();
     _applySkybox();
     widget.selector.addListener(_onSelectorChanged);
+    final environmentId = widget.initialEnvironmentId;
+    if (environmentId != null && widget.selector.active.id != environmentId) {
+      for (final environment in exampleEnvironments) {
+        if (environment.id == environmentId) {
+          unawaited(_selectEnvironment(environment));
+          break;
+        }
+      }
+    }
   }
 
   @override
