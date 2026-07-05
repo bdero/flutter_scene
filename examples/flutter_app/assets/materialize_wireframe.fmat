@@ -4,7 +4,7 @@
 // no vertex block needed.
 //
 // All gating compares world-space height (the model only spins about the
-// world up axis, so height is stable), with a shared gradient noise wobbling
+// world up axis, so height is stable), with shared simplex noise wobbling
 // the boundary so the sweep reads organic.
 
 material {
@@ -28,37 +28,12 @@ material {
 }
 
 fragment {
-  // Hash-based gradient noise; wobbles the sweep boundaries. The same
-  // function (and inputs) gate the glass and shell stages so their
-  // boundaries line up.
-  vec3 NoiseHash(vec3 p) {
-    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
-             dot(p, vec3(269.5, 183.3, 246.1)),
-             dot(p, vec3(113.5, 271.9, 124.6)));
-    return fract(sin(p) * 43758.5453123) * 2.0 - 1.0;
-  }
-
-  float SeamNoise(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    vec3 u = f * f * (3.0 - 2.0 * f);
-    float n000 = dot(NoiseHash(i), f);
-    float n100 = dot(NoiseHash(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0));
-    float n010 = dot(NoiseHash(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0));
-    float n110 = dot(NoiseHash(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0));
-    float n001 = dot(NoiseHash(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0));
-    float n101 = dot(NoiseHash(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0));
-    float n011 = dot(NoiseHash(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0));
-    float n111 = dot(NoiseHash(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0));
-    return mix(
-        mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
-        mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
-  }
+#include <noise.glsl>
 
   void Surface(inout MaterialInputs material) {
     vec3 world = GetWorldPosition();
     float band = max(material_params.band, 1e-4);
-    float n = SeamNoise(world * material_params.noise_scale) *
+    float n = NoiseSimplex3(world * material_params.noise_scale, 7) *
         material_params.noise_amp;
     float wire_front = material_params.wire_front + n;
     float solid_front = material_params.solid_front + n;
