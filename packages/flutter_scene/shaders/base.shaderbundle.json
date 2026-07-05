@@ -130,5 +130,13 @@
   "SkyPhysicalFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_sky_physical.frag"
+  },
+  "SplatsVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_splats.vert"
+  },
+  "SplatsFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_splats.frag"
   }
 }

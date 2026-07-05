@@ -29,6 +29,7 @@ import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
 import 'example_particles.dart';
+import 'example_splats.dart';
 import 'example_skybox.dart';
 import 'example_sprites.dart';
 import 'example_ssr.dart';
@@ -98,6 +99,7 @@ class _MyAppState extends State<MyApp> {
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Sprites': (context) => const ExampleSprites(),
       'Particles': (context) => const ExampleParticles(),
+      'Gaussian Splats': (context) => const ExampleSplats(),
       'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
       'Screen-space Reflections': (context) => const ExampleSsr(),
