@@ -156,7 +156,7 @@ fragment {
       );
       expect(
         c.glsl,
-        contains('fragment_keep_alive.keep_alive.x * material_params.k'),
+        contains('fragment_keep_alive.keep_alive.x * (material_params.k)'),
       );
     });
 
@@ -182,7 +182,7 @@ fragment {
         c.glsl,
         contains(
           'fragment_keep_alive.keep_alive.x * '
-          'material_params.transform[0].x',
+          '(material_params.transform[0].x)',
         ),
       );
 
@@ -202,7 +202,7 @@ fragment {
         ci.glsl,
         contains(
           'fragment_keep_alive.keep_alive.x * '
-          'float(material_params.steps)',
+          '(float(material_params.steps))',
         ),
       );
     });
@@ -235,6 +235,132 @@ fragment {
           contains('#define MATERIAL_PARAMS_KEEP_ALIVE (material_params.k)'),
         );
       }
+    });
+
+    test(
+      'vertex variants keep declared attributes live via the body macro',
+      () {
+        // An attribute Vertex() never reads must not be stripped; the geometry
+        // supplies its buffer unconditionally, and a missing input breaks
+        // reflection and the pipeline's vertex layout.
+        final c = compileFmat('''
+material {
+  name: "A",
+  shading_model: unlit,
+  attributes: [
+    { type: float, name: seed },
+    { type: vec3, name: center },
+  ],
+  varyings: [ { type: float, name: h } ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    h = vertex.position.y;
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(h);
+  }
+}
+''');
+        for (final variant in c.vertexGlsl.values) {
+          expect(
+            variant,
+            contains(
+              '#define MATERIAL_ATTRIBUTES_KEEP_ALIVE (seed + center.x)',
+            ),
+          );
+        }
+      },
+    );
+
+    test('keep-alive fetches samplers the fragment never references', () {
+      // The runtime binds every declared sampler; one the author's code never
+      // samples must not be stripped from the compiled shader.
+      final c = compileFmat('''
+material {
+  name: "S",
+  shading_model: unlit,
+  parameters: [
+    { type: sampler2d, name: used_texture, hint: default_white },
+    { type: sampler2d, name: unused_texture, hint: default_white },
+    { type: samplerCube, name: unused_cube, hint: default_black },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = texture(used_texture, GetUV0());
+  }
+}
+''');
+      // No MaterialParams block, but the keep-alive block is still declared
+      // for the sampler fetches.
+      expect(c.glsl, isNot(contains('uniform MaterialParams {')));
+      expect(
+        c.glsl,
+        contains('uniform FragmentKeepAlive { vec4 keep_alive; }'),
+      );
+      expect(c.glsl, contains('texture(unused_texture, vec2(0.0)).x'));
+      expect(c.glsl, contains('texture(unused_cube, vec3(0.0, 0.0, 1.0)).x'));
+      // The sampler the fragment really uses pays no keep-alive fetch.
+      expect(c.glsl, isNot(contains('texture(used_texture, vec2(0.0))')));
+    });
+
+    test(
+      'sampler-only material with all samplers used keeps the block live',
+      () {
+        final c = compileFmat('''
+material {
+  name: "S2",
+  shading_model: unlit,
+  parameters: [
+    { type: sampler2d, name: tex, hint: default_white },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = texture(tex, GetUV0());
+  }
+}
+''');
+        expect(
+          c.glsl,
+          contains(
+            'fragment_keep_alive.keep_alive.x * '
+            'fragment_keep_alive.keep_alive.y',
+          ),
+        );
+      },
+    );
+
+    test('sky shaders carry the same parameter keep-alive', () {
+      final c = compileFmat('''
+material {
+  name: "SkyK",
+  parameters: [
+    { type: vec3, name: unused_color, default: [0.0, 0.0, 0.0] },
+    { type: sampler2d, name: unused_texture, hint: default_white },
+  ],
+}
+sky {
+  vec3 Sky(vec3 direction) {
+    return vec3(0.5);
+  }
+}
+''');
+      expect(
+        c.glsl,
+        contains('uniform FragmentKeepAlive { vec4 keep_alive; }'),
+      );
+      expect(
+        c.glsl,
+        contains(
+          'frag_color.r += fragment_keep_alive.keep_alive.x * '
+          '(material_params.unused_color.x + '
+          'texture(unused_texture, vec2(0.0)).x)',
+        ),
+      );
     });
   });
 

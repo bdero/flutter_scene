@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/material/environment.dart';
@@ -36,6 +38,9 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
   /// The sky's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
 
+  // 16 zero bytes (a std140 vec4) for the FragmentKeepAlive block.
+  static final ByteData _zeroKeepAlive = ByteData(16);
+
   @override
   void updateFromMetadata(
     gpu.Shader fragmentShader,
@@ -55,6 +60,15 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     // Parameters (the MaterialParams block plus any declared samplers) carry
     // the sky's inputs; the raw uniform-block path is unused here.
     parameters.bind(pass, fragmentShader, transientsBuffer);
+    // Zero keep-alive, mirroring PreprocessedMaterial; the generated sky
+    // references every declared parameter resource through it so none can be
+    // optimized out.
+    if (parameters.hasAnyParameters) {
+      pass.bindUniform(
+        fragmentShader.getUniformSlot('FragmentKeepAlive'),
+        transientsBuffer.emplace(_zeroKeepAlive),
+      );
+    }
     // A `requires: [environment]` sky samples the scene's prefiltered
     // radiance, bound the same way the standard material binds it.
     if (useEnvironment) {
