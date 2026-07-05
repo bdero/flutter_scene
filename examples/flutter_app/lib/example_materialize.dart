@@ -22,8 +22,10 @@
 // imported model is incorporated (wire/glass geometry per node, a shell
 // material per primitive).
 //
-// Every look/timing input lives in _MaterializeSettings, editable from the
-// side panel; the print button dumps the current values to the console.
+// Every look/timing input lives in MaterializeSettings (see
+// materialize_settings.dart, which also holds the side panel and the
+// playback bar); the panel's print button dumps the current values to the
+// console.
 //
 // The example reads the imported primitives' retained CPU vertex data back
 // through the internal cpuMeshData accessor to derive the wire and soup
@@ -42,6 +44,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'environment_menu.dart' show EnvironmentSelector, fetchResource;
 import 'example_settings.dart';
 import 'lighting_panel.dart';
+import 'materialize_settings.dart';
 
 const String _kHelmetUrl =
     'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
@@ -50,81 +53,6 @@ const int _kHelmetSizeBytes = 3773916;
 
 // Sweep overshoot below/above the model so every fade band fully clears.
 const double _kSweepPad = 0.15;
-
-/// Every tunable of the effect. Lengths are fractions of the model's height;
-/// noise scales are cycles per model height. The print button dumps the
-/// current values.
-class _MaterializeSettings {
-  // Wireframe.
-  double wireThickness = 0.002;
-  vm.Vector3 wireColor = vm.Vector3(0.16, 0.64, 1.0);
-  double wireAlpha = 0.85;
-  double wireGlow = 27.5;
-
-  // Glass.
-  vm.Vector3 glassTint = vm.Vector3(0.5, 0.85, 1.0);
-  double glassAlpha = 0.2;
-  vm.Vector3 glassGlowColor = vm.Vector3(1.0, 1.0, 0.6);
-  double glassGlowStrength = 1.9;
-  vm.Vector3 flyDir = vm.Vector3(0.0, 1.0, 0.0);
-  double flyDistance = 0.0;
-  double centerDistance = 0.45;
-  double normalDistance = 1.5;
-  double jitter = 0.32;
-  double fadePortion = 0.64;
-  double coolSpan = 0.62;
-  double tumble = 2.3;
-  double glassBand = 0.84;
-
-  // Shell reveal.
-  double seamWidth = 0.12;
-  vm.Vector3 seamColor = vm.Vector3(0.3, 0.9, 1.0);
-  double seamStrength = 40.0;
-
-  // Boundary noise, shared by all three stages.
-  vm.Vector3 noiseScale = vm.Vector3(3.4, 0.5, 3.9);
-  double noiseAmp = 0.11;
-
-  // Timing.
-  double duration = 7.0;
-  double lagWireToGlass = 0.0;
-  double lagGlassToSolid = 1.5;
-
-  String dump() {
-    String v3(vm.Vector3 v) =>
-        '${v.x.toStringAsFixed(3)}, ${v.y.toStringAsFixed(3)}, '
-        '${v.z.toStringAsFixed(3)}';
-    String f(double v) => v.toStringAsFixed(3);
-    return '''
-=== Materialize settings ===
-wireThickness: ${f(wireThickness)}
-wireColor: ${v3(wireColor)}
-wireAlpha: ${f(wireAlpha)}
-wireGlow: ${f(wireGlow)}
-glassTint: ${v3(glassTint)}
-glassAlpha: ${f(glassAlpha)}
-glassGlowColor: ${v3(glassGlowColor)}
-glassGlowStrength: ${f(glassGlowStrength)}
-flyDir: ${v3(flyDir)}
-flyDistance: ${f(flyDistance)}
-centerDistance: ${f(centerDistance)}
-normalDistance: ${f(normalDistance)}
-jitter: ${f(jitter)}
-fadePortion: ${f(fadePortion)}
-coolSpan: ${f(coolSpan)}
-tumble: ${f(tumble)}
-glassBand: ${f(glassBand)}
-seamWidth: ${f(seamWidth)}
-seamColor: ${v3(seamColor)}
-seamStrength: ${f(seamStrength)}
-noiseScale: ${v3(noiseScale)}
-noiseAmp: ${f(noiseAmp)}
-duration: ${f(duration)}
-lagWireToGlass: ${f(lagWireToGlass)}
-lagGlassToSolid: ${f(lagGlassToSolid)}
-============================''';
-  }
-}
 
 class ExampleMaterialize extends StatefulWidget {
   const ExampleMaterialize({super.key});
@@ -135,7 +63,7 @@ class ExampleMaterialize extends StatefulWidget {
 
 class _ExampleMaterializeState extends State<ExampleMaterialize> {
   final Scene scene = Scene();
-  final _MaterializeSettings _settings = _MaterializeSettings();
+  final MaterializeSettings _settings = MaterializeSettings();
   final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
   bool _ready = false;
@@ -716,410 +644,32 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
         ),
         // The panel starts below the debug banner and the global settings
         // buttons in the top-right corner.
-        Positioned(top: 72, right: 8, bottom: 8, child: _settingsPanel()),
+        Positioned(
+          top: 72,
+          right: 8,
+          bottom: 8,
+          child: MaterializeSettingsPanel(
+            settings: _settings,
+            onChanged: _applySettings,
+          ),
+        ),
         Positioned(
           top: 8,
           left: 0,
           right: 0,
-          child: Center(child: _playbackBar()),
-        ),
-      ],
-    );
-  }
-
-  Widget _playbackBar() {
-    return Card(
-      color: Colors.black54,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(
-                _playing ? Icons.pause : Icons.play_arrow,
-                color: Colors.white,
-              ),
-              onPressed: () => setState(() => _playing = !_playing),
-            ),
-            IconButton(
-              icon: const Icon(Icons.replay, color: Colors.white),
-              onPressed: () => setState(() {
+          child: Center(
+            child: MaterializePlaybackBar(
+              playing: _playing,
+              progress: _t.clamp(0.0, 1.0).toDouble(),
+              onPlayingChanged: (playing) => setState(() => _playing = playing),
+              onRestart: () => setState(() {
                 _t = -0.05;
                 _playing = true;
               }),
-            ),
-            SizedBox(
-              width: 220,
-              child: Slider(
-                value: _t.clamp(0.0, 1.0).toDouble(),
-                onChangeStart: (_) => setState(() => _playing = false),
-                onChanged: (value) => setState(() => _t = value),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _settingsPanel() {
-    return SizedBox(
-      width: 290,
-      child: Card(
-        color: Colors.black54,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-              child: Row(
-                children: [
-                  const Text(
-                    'Effect settings',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Print settings to console',
-                    icon: const Icon(Icons.print, color: Colors.white),
-                    onPressed: () => debugPrint(_settings.dump()),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                children: [
-                  _section('Wireframe', [
-                    _slider(
-                      'Thickness',
-                      _settings.wireThickness,
-                      0.001,
-                      0.03,
-                      (v) => _settings.wireThickness = v,
-                    ),
-                    _colorRow(
-                      'Color',
-                      _settings.wireColor,
-                      (v) => _settings.wireColor = v,
-                    ),
-                    _slider(
-                      'Opacity',
-                      _settings.wireAlpha,
-                      0.0,
-                      1.0,
-                      (v) => _settings.wireAlpha = v,
-                    ),
-                    _slider(
-                      'Front glow',
-                      _settings.wireGlow,
-                      0.0,
-                      30.0,
-                      (v) => _settings.wireGlow = v,
-                    ),
-                  ]),
-                  _section('Glass', [
-                    _colorRow(
-                      'Tint',
-                      _settings.glassTint,
-                      (v) => _settings.glassTint = v,
-                    ),
-                    _slider(
-                      'Translucency',
-                      _settings.glassAlpha,
-                      0.0,
-                      1.0,
-                      (v) => _settings.glassAlpha = v,
-                    ),
-                    _colorRow(
-                      'Glow color',
-                      _settings.glassGlowColor,
-                      (v) => _settings.glassGlowColor = v,
-                    ),
-                    _slider(
-                      'Glow intensity',
-                      _settings.glassGlowStrength,
-                      0.0,
-                      30.0,
-                      (v) => _settings.glassGlowStrength = v,
-                    ),
-                    _slider(
-                      'Fly-in X',
-                      _settings.flyDir.x,
-                      -1.0,
-                      1.0,
-                      (v) => _settings.flyDir.x = v,
-                    ),
-                    _slider(
-                      'Fly-in Y',
-                      _settings.flyDir.y,
-                      -1.0,
-                      1.0,
-                      (v) => _settings.flyDir.y = v,
-                    ),
-                    _slider(
-                      'Fly-in Z',
-                      _settings.flyDir.z,
-                      -1.0,
-                      1.0,
-                      (v) => _settings.flyDir.z = v,
-                    ),
-                    _slider(
-                      'Fly distance',
-                      _settings.flyDistance,
-                      0.0,
-                      4.0,
-                      (v) => _settings.flyDistance = v,
-                    ),
-                    _slider(
-                      'From center',
-                      _settings.centerDistance,
-                      0.0,
-                      3.0,
-                      (v) => _settings.centerDistance = v,
-                    ),
-                    _slider(
-                      'Off normal',
-                      _settings.normalDistance,
-                      0.0,
-                      2.0,
-                      (v) => _settings.normalDistance = v,
-                    ),
-                    _slider(
-                      'Jitter',
-                      _settings.jitter,
-                      0.0,
-                      1.0,
-                      (v) => _settings.jitter = v,
-                    ),
-                    _slider(
-                      'Fade portion',
-                      _settings.fadePortion,
-                      0.05,
-                      1.0,
-                      (v) => _settings.fadePortion = v,
-                    ),
-                    _slider(
-                      'Glow cool span',
-                      _settings.coolSpan,
-                      0.05,
-                      4.0,
-                      (v) => _settings.coolSpan = v,
-                    ),
-                    _slider(
-                      'Tumble',
-                      _settings.tumble,
-                      0.0,
-                      3.0,
-                      (v) => _settings.tumble = v,
-                    ),
-                    _slider(
-                      'Assembly band',
-                      _settings.glassBand,
-                      0.05,
-                      1.0,
-                      (v) => _settings.glassBand = v,
-                    ),
-                  ]),
-                  _section('Reveal', [
-                    _slider(
-                      'Seam thickness',
-                      _settings.seamWidth,
-                      0.005,
-                      0.3,
-                      (v) => _settings.seamWidth = v,
-                    ),
-                    _colorRow(
-                      'Seam color',
-                      _settings.seamColor,
-                      (v) => _settings.seamColor = v,
-                    ),
-                    _slider(
-                      'Seam brightness',
-                      _settings.seamStrength,
-                      0.0,
-                      40.0,
-                      (v) => _settings.seamStrength = v,
-                    ),
-                    _slider(
-                      'Noise scale X',
-                      _settings.noiseScale.x,
-                      0.5,
-                      30.0,
-                      (v) => _settings.noiseScale.x = v,
-                    ),
-                    _slider(
-                      'Noise scale Y',
-                      _settings.noiseScale.y,
-                      0.5,
-                      30.0,
-                      (v) => _settings.noiseScale.y = v,
-                    ),
-                    _slider(
-                      'Noise scale Z',
-                      _settings.noiseScale.z,
-                      0.5,
-                      30.0,
-                      (v) => _settings.noiseScale.z = v,
-                    ),
-                    _slider(
-                      'Noise amount',
-                      _settings.noiseAmp,
-                      0.0,
-                      0.3,
-                      (v) => _settings.noiseAmp = v,
-                    ),
-                  ]),
-                  _section('Timing', [
-                    _slider(
-                      'Cycle seconds',
-                      _settings.duration,
-                      3.0,
-                      20.0,
-                      (v) => _settings.duration = v,
-                    ),
-                    _slider(
-                      'Wire to glass lag',
-                      _settings.lagWireToGlass,
-                      0.0,
-                      1.0,
-                      (v) => _settings.lagWireToGlass = v,
-                    ),
-                    _slider(
-                      'Glass to solid lag',
-                      _settings.lagGlassToSolid,
-                      0.0,
-                      1.5,
-                      (v) => _settings.lagGlassToSolid = v,
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _section(String title, List<Widget> children) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 2),
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+              onScrub: (value) => setState(() => _t = value),
             ),
           ),
         ),
-        ...children,
-      ],
-    );
-  }
-
-  Widget _slider(
-    String label,
-    double value,
-    double min,
-    double max,
-    void Function(double) apply,
-  ) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 108,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 11),
-          ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-            ),
-            child: Slider(
-              value: value.clamp(min, max).toDouble(),
-              min: min,
-              max: max,
-              onChanged: (v) => setState(() {
-                apply(v);
-                _applySettings();
-              }),
-            ),
-          ),
-        ),
-        SizedBox(
-          width: 34,
-          child: Text(
-            value.toStringAsFixed(2),
-            style: const TextStyle(color: Colors.white54, fontSize: 10),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _colorRow(
-    String label,
-    vm.Vector3 color,
-    void Function(vm.Vector3) apply,
-  ) {
-    Widget channel(String name, double value, void Function(double) set) {
-      return Expanded(
-        child: SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 2,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-          ),
-          child: Slider(
-            value: value.clamp(0.0, 1.0).toDouble(),
-            onChanged: (v) => setState(() {
-              set(v);
-              apply(color);
-              _applySettings();
-            }),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      children: [
-        SizedBox(
-          width: 76,
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 11),
-          ),
-        ),
-        Container(
-          width: 14,
-          height: 14,
-          margin: const EdgeInsets.only(right: 4),
-          decoration: BoxDecoration(
-            color: Color.fromARGB(
-              255,
-              (color.x * 255).round(),
-              (color.y * 255).round(),
-              (color.z * 255).round(),
-            ),
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ),
-        channel('R', color.x, (v) => color.x = v),
-        channel('G', color.y, (v) => color.y = v),
-        channel('B', color.z, (v) => color.z = v),
       ],
     );
   }
