@@ -39,15 +39,18 @@ void main() {
   vec3 perp = cross(dir, view);
   float perp_len = length(perp);
   perp = perp_len > 1e-12 ? perp / perp_len : vec3(0.0);
+  // Orient the expansion so every quad winds as a front face under the
+  // engine's winding convention (perp flips sign with the segment direction
+  // otherwise, and a back-face culling material would drop the ribbons).
+  if (dot(cross(perp, dir), view) > 0.0) {
+    perp = -perp;
+  }
   pos += perp * (frame_info.params.x * corner.y);
 
-  // Camera-facing normal (perpendicular to both the segment and the
-  // expansion direction, flipped toward the eye).
+  // Camera-facing shading normal, perpendicular to both the segment and
+  // the expansion direction.
   float dir_len = length(dir);
-  vec3 n = dir_len > 1e-12 ? cross(perp, dir / dir_len) : vec3(0.0, 0.0, 1.0);
-  if (dot(n, view) < 0.0) {
-    n = -n;
-  }
+  vec3 n = dir_len > 1e-12 ? cross(dir / dir_len, perp) : vec3(0.0, 0.0, 1.0);
 
   v_position = pos;
   gl_Position = frame_info.camera_transform * vec4(pos, 1.0);

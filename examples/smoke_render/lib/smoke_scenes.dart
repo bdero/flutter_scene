@@ -241,12 +241,12 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         mesh: Mesh(
           LineSegmentsGeometry(
             grid.extractMeshData().extractEdges(),
-            width: 0.025,
+            width: 0.02,
             normalOffset: 0.01,
           ),
           UnlitMaterial()..baseColorFactor = vm.Vector4(0.2, 0.9, 1.0, 1.0),
         ),
-      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 2.1, 0)),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.5, 0)),
     );
     return (scene: scene, camera: _shadowCamera());
   }),
