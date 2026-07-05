@@ -65,6 +65,15 @@ base class _TranslucentRecord {
   final int lightListCount;
 }
 
+/// The viewport size of the scene color pass currently being encoded.
+///
+/// Set by [SceneEncoder] at construction and read by geometry whose
+/// projection math needs the pixel scale (splat footprints). Encoding is
+/// single-threaded, so a frame-scoped module value is safe.
+/// TODO(splats): thread the viewport through `Geometry.bind` instead once
+/// another consumer appears.
+ui.Size currentSceneEncoderViewport = ui.Size.zero;
+
 /// Render pipelines keyed by their (vertex shader, fragment shader, vertex
 /// layout) triple.
 ///
@@ -150,6 +159,7 @@ base class SceneEncoder {
     this._layerMask,
   ) : _renderPass = renderPass,
       _transientsBuffer = transientsBuffer {
+    currentSceneEncoderViewport = dimensions;
     _cameraTransform = _camera.getViewTransform(dimensions);
     frustum = Frustum.matrix(_cameraTransform);
     // The screen-size LOD metric is perspective-specific; with any other
