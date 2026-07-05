@@ -707,7 +707,11 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
           child: LightingPanel(
             scene: scene,
             selector: _environmentSelector,
-            showSkybox: false,
+            initialEnvironmentId: 'helipad',
+            initialSkyBlur: 0.33,
+            initialExposure: 2.03,
+            initialIblIntensity: 1.36,
+            initialRotationDegrees: vm.Vector3(0.0, -80.7, 0.0),
           ),
         ),
         // The panel starts below the debug banner and the global settings

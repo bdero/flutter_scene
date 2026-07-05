@@ -42,6 +42,30 @@ void main() {
   runApp(const MyApp());
 }
 
+/// Per-example overrides of the stock [ExampleSettings] defaults, keyed by
+/// the example's name in the picker. Examples not listed start from the
+/// stock defaults. Every example gets its own fresh instance either way
+/// (see [resetExampleSettings]), so tuning one scene never leaks into
+/// another.
+final Map<String, ExampleSettings Function()> settingsDefaults = {
+  // A cinematic grade for the dark materialize stage: no key light (the
+  // effect's own emissives and the environment carry it), bloom for the hot
+  // seam and shard glows, and a subtle lens treatment.
+  'Materialize (.fmat)': () => ExampleSettings()
+    ..directionalLightEnabled = false
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 1.05
+    ..colorGrading.contrast = 1.19
+    ..colorGrading.saturation = 1.16
+    ..colorGrading.temperature = -0.20
+    ..colorGrading.tint = 0.01
+    ..bloom.enabled = true
+    ..bloom.intensity = 0.06
+    ..chromaticAberration.enabled = true
+    ..chromaticAberration.intensity = 0.14
+    ..vignette.enabled = true,
+};
+
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -138,6 +162,7 @@ class _MyAppState extends State<MyApp> {
       'Stress Tests': (context) => const ExampleStressTests(),
     };
     selectedExample = examples.keys.first;
+    resetExampleSettings(settingsDefaults[selectedExample]);
 
     _ready = Future.wait([
       Scene.initializeStaticResources(),
@@ -177,7 +202,13 @@ class _MyAppState extends State<MyApp> {
                     examples: examples.keys.toList(growable: false),
                     selected: selectedExample,
                     onSelected: (next) {
-                      setState(() => selectedExample = next);
+                      setState(() {
+                        selectedExample = next;
+                        // Every example runs on its own settings instance;
+                        // examples listed in settingsDefaults start from
+                        // their own defaults instead of the stock ones.
+                        resetExampleSettings(settingsDefaults[next]);
+                      });
                     },
                   ),
                 ),
