@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
+import 'package:flutter_scene/src/geometry/mesh_data.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
@@ -46,12 +49,15 @@ abstract class Geometry {
   ByteData? _cpuVertices;
   ByteData? _cpuIndices;
 
-  // Structure-of-arrays CPU copies for raycasting, set by the SoA upload path
-  // instead of the interleaved [_cpuVertices]. Position is required to
-  // raycast; texture coordinates let a hit report a UV. Null for interleaved
-  // geometry (which raycasts off [_cpuVertices]) or non-raycastable geometry.
+  // Structure-of-arrays CPU copies for raycasting and readback, set by the
+  // SoA upload path instead of the interleaved [_cpuVertices]. Position is
+  // required to raycast; texture coordinates let a hit report a UV; normals
+  // and colors exist only for [extractMeshData]. Null for interleaved
+  // geometry (which reads off [_cpuVertices]) or non-readable geometry.
   Float32List? _cpuPositions;
   Float32List? _cpuTexCoords;
+  Float32List? _cpuNormals;
+  Float32List? _cpuColors;
 
   gpu.Shader? _vertexShader;
   String? _vertexShaderName;
@@ -143,8 +149,17 @@ abstract class Geometry {
   // Extra per-vertex attribute streams a material's custom `attributes` read,
   // keyed by the shader `in` name (insertion order is the slot order). Bound
   // after the base vertex streams in the color pass; the depth passes fetch
-  // only position and ignore them. Populated by [setCustomAttribute].
-  final Map<String, ({gpu.VertexFormat format, gpu.BufferView view})>
+  // only position and ignore them. Populated by [setCustomAttribute], which
+  // retains the caller's data for [extractMeshData].
+  final Map<
+    String,
+    ({
+      gpu.VertexFormat format,
+      gpu.BufferView view,
+      Float32List data,
+      int components,
+    })
+  >
   _customAttributes = {};
 
   /// The number of vertex buffer streams this geometry binds: the built-in
@@ -212,6 +227,8 @@ abstract class Geometry {
         offsetInBytes: 0,
         lengthInBytes: bytes.lengthInBytes,
       ),
+      data: data,
+      components: components,
     );
   }
 
@@ -330,9 +347,13 @@ abstract class Geometry {
     required Float32List positions,
     Float32List? texCoords,
     ByteData? indices,
+    Float32List? normals,
+    Float32List? colors,
   }) {
     _cpuPositions = positions;
     _cpuTexCoords = texCoords;
+    _cpuNormals = normals;
+    _cpuColors = colors;
     _cpuIndices = indices;
     _cpuVertices = null;
   }
@@ -360,6 +381,103 @@ abstract class Geometry {
     vertexCount: _vertexCount,
     indexCount: _indexCount,
   );
+
+  /// Whether this geometry retains CPU-side vertex data, making
+  /// [extractMeshData] available.
+  ///
+  /// True for geometry loaded by the importers or built from attribute
+  /// arrays ([MeshGeometry], [GeometryBuilder], the shape geometries).
+  /// False for caller-managed vertex buffers ([setVertices] /
+  /// [setVertexStreams]) and before the first upload.
+  /// {@category Geometry}
+  bool get isReadable => _cpuVertices != null || _cpuPositions != null;
+
+  /// Copies this geometry's retained CPU vertex/index data out as an
+  /// isolate-transferable [MeshData] snapshot.
+  ///
+  /// The snapshot is always a copy (never a view of engine memory) with
+  /// structure-of-arrays attributes regardless of how the data is stored
+  /// internally, so it is safe to send to a background isolate and derive
+  /// new geometry from (see [MeshData.unweld], [MeshData.extractEdges]).
+  /// Attributes the engine did not retain come back null; skinned geometry
+  /// returns bind-pose positions and no joint data.
+  ///
+  /// Throws a [StateError] when [isReadable] is false.
+  /// {@category Geometry}
+  MeshData extractMeshData() {
+    final interleaved = _cpuVertices;
+    final soaPositions = _cpuPositions;
+    if (interleaved == null && soaPositions == null) {
+      throw StateError(
+        'This geometry retains no CPU vertex data to extract '
+        '(isReadable is false). Caller-managed vertex buffers are not '
+        'readable.',
+      );
+    }
+
+    Float32List positions;
+    Float32List? normals;
+    Float32List? texCoords;
+    Float32List? colors;
+    if (interleaved != null) {
+      // Interleaved unskinned (12 floats) or skinned (20 floats, of which
+      // the leading 12 match the unskinned layout) vertices.
+      final stride = this is SkinnedGeometry ? 20 : 12;
+      final floats = Float32List.sublistView(interleaved);
+      positions = Float32List(_vertexCount * 3);
+      normals = Float32List(_vertexCount * 3);
+      texCoords = Float32List(_vertexCount * 2);
+      colors = Float32List(_vertexCount * 4);
+      for (var v = 0; v < _vertexCount; v++) {
+        final base = v * stride;
+        positions[v * 3] = floats[base];
+        positions[v * 3 + 1] = floats[base + 1];
+        positions[v * 3 + 2] = floats[base + 2];
+        normals[v * 3] = floats[base + 3];
+        normals[v * 3 + 1] = floats[base + 4];
+        normals[v * 3 + 2] = floats[base + 5];
+        texCoords[v * 2] = floats[base + 6];
+        texCoords[v * 2 + 1] = floats[base + 7];
+        colors[v * 4] = floats[base + 8];
+        colors[v * 4 + 1] = floats[base + 9];
+        colors[v * 4 + 2] = floats[base + 10];
+        colors[v * 4 + 3] = floats[base + 11];
+      }
+    } else {
+      positions = Float32List.fromList(soaPositions!);
+      final n = _cpuNormals;
+      final t = _cpuTexCoords;
+      final c = _cpuColors;
+      normals = n == null ? null : Float32List.fromList(n);
+      texCoords = t == null ? null : Float32List.fromList(t);
+      colors = c == null ? null : Float32List.fromList(c);
+    }
+
+    List<int>? indices;
+    final indexBytes = _cpuIndices;
+    if (indexBytes != null && _indexCount > 0) {
+      indices = _indexType == gpu.IndexType.int32
+          ? Uint32List.fromList(Uint32List.sublistView(indexBytes))
+          : Uint16List.fromList(Uint16List.sublistView(indexBytes));
+    }
+
+    return MeshData(
+      positions: positions,
+      vertexCount: _vertexCount,
+      normals: normals,
+      texCoords: texCoords,
+      colors: colors,
+      indices: indices,
+      primitiveType: primitiveType,
+      customAttributes: {
+        for (final entry in _customAttributes.entries)
+          entry.key: MeshAttributeData(
+            Float32List.fromList(entry.value.data),
+            components: entry.value.components,
+          ),
+      },
+    );
+  }
 
   /// Internal: populate bounds from a tightly packed position list (three
   /// floats per vertex), used by the structure-of-arrays upload path.
@@ -680,6 +798,8 @@ class UnskinnedGeometry extends Geometry {
     setRaycastAttributes(
       positions: Float32List.sublistView(streams.position),
       texCoords: Float32List.sublistView(streams.texCoord),
+      normals: Float32List.sublistView(streams.normal),
+      colors: Float32List.sublistView(streams.color),
       indices: indices,
     );
     if (localBounds == null && vertexCount > 0) {
@@ -718,6 +838,8 @@ class UnskinnedGeometry extends Geometry {
     setRaycastAttributes(
       positions: Float32List.sublistView(streams.position),
       texCoords: Float32List.sublistView(streams.texCoord),
+      normals: Float32List.sublistView(streams.normal),
+      colors: Float32List.sublistView(streams.color),
       indices: indices,
     );
     if (localBounds == null && vertexCount > 0) {
