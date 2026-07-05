@@ -55,8 +55,12 @@ void main() {
   v_color = vec4(0.0);
 
 #ifdef HAS_MATERIAL_VERTEX
-  // Keep the position input live so a hook that replaces world_position cannot
-  // strip it (see VertexKeepAlive). Only position is fetched in the depth pass.
-  gl_Position += vertex_keep_alive.keep_alive.x * vec4(position, 0.0);
+  // Keep the position input and the instance-rate model_transform columns
+  // live so a hook that replaces world_position cannot strip them (see
+  // VertexKeepAlive). Only position is fetched in the depth pass.
+  gl_Position += vertex_keep_alive.keep_alive.x *
+      vec4(position + model_transform_0.xyz + model_transform_1.xyz +
+               model_transform_2.xyz + model_transform_3.xyz,
+           0.0);
 #endif
 }
