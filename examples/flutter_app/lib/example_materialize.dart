@@ -1,18 +1,24 @@
-// Materialize showcase. The DamagedHelmet phases into existence bottom-to-top
-// in three stages, each its own draw call over the same model:
-//   1. A wireframe forms (line-list geometry over the mesh's unique edges,
-//      unlit translucent .fmat with a glowing sweep front).
+// Materialize showcase. The DamagedHelmet phases into existence from the
+// bottom of the model to the top in three stages, each its own draw call over
+// the same model:
+//   1. A wireframe forms (view-facing ribbon quads over the mesh's unique
+//      edges, unlit translucent .fmat with a glowing sweep front).
 //   2. Glass triangles fly in and assemble over it (unwelded triangle soup
-//      with flat outward normals; a per-triangle centroid + seed attribute
-//      lets the vertex stage scatter each shard along its face normal with a
-//      seeded tumble and pull it into place).
+//      with flat outward normals; per-triangle centroid + seed attributes let
+//      the vertex stage fly each shard in from a settable world direction,
+//      fading in at a distance and easing along an s-curve into a soft
+//      landing, then glowing on the surface until the shell phases over it).
 //   3. The real PBR surface reveals itself behind a hot emissive seam (the
 //      original geometry with a .fmat that replicates standard PBR sampling,
 //      re-binding the model's own textures, and discards above the front).
 //
-// A single eased progress value drives three object-space front heights
-// (wire leads, glass lags, solid trails), written into the materials each
-// tick, so all gating is a per-fragment compare against vertex.position.y.
+// A single eased progress value drives three staggered sweep fronts. All
+// gating compares dot(position, sweep_dir) in object space, where sweep_dir
+// is the model's up axis mapped into mesh space at load, so the reveal
+// travels bottom-to-top regardless of how the source asset is oriented.
+//
+// Every look/timing input lives in _MaterializeSettings, editable from the
+// side panel; the print button dumps the current values to the console.
 //
 // The example reads the imported primitive's retained CPU vertex data back
 // through the internal cpuMeshData accessor to derive the wire and soup
@@ -28,18 +34,79 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
 
-import 'environment_menu.dart' show fetchResource;
+import 'environment_menu.dart' show EnvironmentSelector, fetchResource;
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 
 const String _kHelmetUrl =
     'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
     'main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
 const int _kHelmetSizeBytes = 3773916;
 
-// How far (in normalized model height) each stage trails the one before it.
-const double _kStageLag = 0.35;
 // Sweep overshoot below/above the model so every fade band fully clears.
 const double _kSweepPad = 0.15;
+
+/// Every tunable of the effect. Lengths are fractions of the model's height
+/// along the sweep axis; the print button dumps the current values.
+class _MaterializeSettings {
+  // Wireframe.
+  double wireThickness = 0.006;
+  vm.Vector3 wireColor = vm.Vector3(0.25, 0.85, 1.0);
+  double wireAlpha = 0.85;
+  double wireGlow = 8.0;
+
+  // Glass.
+  vm.Vector3 glassTint = vm.Vector3(0.5, 0.85, 1.0);
+  double glassAlpha = 0.16;
+  vm.Vector3 glassGlowColor = vm.Vector3(0.3, 0.9, 1.0);
+  double glassGlowStrength = 6.0;
+  vm.Vector3 flyDir = vm.Vector3(0.35, 1.0, -0.3);
+  double flyDistance = 1.2;
+  double fadePortion = 0.35;
+  double coolSpan = 1.5;
+  double tumble = 1.0;
+  double glassBand = 0.3;
+
+  // Shell reveal.
+  double seamWidth = 0.05;
+  vm.Vector3 seamColor = vm.Vector3(0.3, 0.9, 1.0);
+  double seamStrength = 16.0;
+
+  // Timing.
+  double duration = 10.0;
+  double lagWireToGlass = 0.25;
+  double lagGlassToSolid = 0.6;
+
+  String dump() {
+    String v3(vm.Vector3 v) =>
+        '${v.x.toStringAsFixed(3)}, ${v.y.toStringAsFixed(3)}, '
+        '${v.z.toStringAsFixed(3)}';
+    String f(double v) => v.toStringAsFixed(3);
+    return '''
+=== Materialize settings ===
+wireThickness: ${f(wireThickness)}
+wireColor: ${v3(wireColor)}
+wireAlpha: ${f(wireAlpha)}
+wireGlow: ${f(wireGlow)}
+glassTint: ${v3(glassTint)}
+glassAlpha: ${f(glassAlpha)}
+glassGlowColor: ${v3(glassGlowColor)}
+glassGlowStrength: ${f(glassGlowStrength)}
+flyDir: ${v3(flyDir)}
+flyDistance: ${f(flyDistance)}
+fadePortion: ${f(fadePortion)}
+coolSpan: ${f(coolSpan)}
+tumble: ${f(tumble)}
+glassBand: ${f(glassBand)}
+seamWidth: ${f(seamWidth)}
+seamColor: ${v3(seamColor)}
+seamStrength: ${f(seamStrength)}
+duration: ${f(duration)}
+lagWireToGlass: ${f(lagWireToGlass)}
+lagGlassToSolid: ${f(lagGlassToSolid)}
+============================''';
+  }
+}
 
 class ExampleMaterialize extends StatefulWidget {
   const ExampleMaterialize({super.key});
@@ -50,6 +117,8 @@ class ExampleMaterialize extends StatefulWidget {
 
 class _ExampleMaterializeState extends State<ExampleMaterialize> {
   final Scene scene = Scene();
+  final _MaterializeSettings _settings = _MaterializeSettings();
+  final EnvironmentSelector _environmentSelector = EnvironmentSelector();
 
   bool _ready = false;
   Object? _error;
@@ -60,12 +129,14 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   PreprocessedMaterial? _shellMaterial;
 
   final Node _spin = Node(name: 'materialize_spin');
+  Node? _wireNode;
   Node? _glassNode;
 
-  // Object-space vertical extent of the helmet, from the shell geometry's
-  // local bounds. Every sweep front is derived from these.
-  double _minY = 0;
-  double _maxY = 1;
+  // The model's up axis in mesh-object space, and the vertex extent along it.
+  vm.Vector3 _sweepDir = vm.Vector3(0, 1, 0);
+  double _sweepMin = 0;
+  double _sweepMax = 1;
+  double get _sweepRange => math.max(_sweepMax - _sweepMin, 1e-3);
 
   vm.Vector3 _cameraPosition = vm.Vector3(0, 0, -3);
   vm.Vector3 _cameraTarget = vm.Vector3.zero();
@@ -74,7 +145,6 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   // fully materialized and fully hidden.
   double _t = -0.05;
   bool _playing = true;
-  double _duration = 8.0;
 
   @override
   void initState() {
@@ -106,30 +176,34 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       final primitive = meshNode.mesh!.primitives.first;
       final source = _extractTriangleMesh(primitive.geometry);
 
-      final bounds = primitive.geometry.localBounds;
-      if (bounds == null) {
-        throw StateError('Imported geometry has no local bounds.');
+      // The source asset's mesh space is not necessarily y-up (the glTF node
+      // hierarchy carries a rotation), so map the model's world up axis into
+      // mesh space and sweep along that.
+      final inverse = vm.Matrix4.copy(meshNode.globalTransform)..invert();
+      _sweepDir = inverse.getRotation().transform(vm.Vector3(0, 1, 0))
+        ..normalize();
+      _sweepMin = double.infinity;
+      _sweepMax = double.negativeInfinity;
+      for (var v = 0; v < source.positions.length; v += 3) {
+        final s =
+            source.positions[v] * _sweepDir.x +
+            source.positions[v + 1] * _sweepDir.y +
+            source.positions[v + 2] * _sweepDir.z;
+        if (s < _sweepMin) _sweepMin = s;
+        if (s > _sweepMax) _sweepMax = s;
       }
-      _minY = bounds.min.y;
-      _maxY = bounds.max.y;
-      final height = math.max(_maxY - _minY, 1e-3);
 
       // Stage 3: the original geometry, shading like the imported PBR
       // material but clipped to the reveal front with an emissive seam.
       _bindShellInputs(shell, primitive.material);
-      shell.parameters.setFloat('seam_width', height * 0.05);
       primitive.material = shell;
 
-      // Stage 1: the unique triangle edges as a line list. Source positions
-      // and normals are reused so the lines can inflate off the surface.
+      // Stage 1: view-facing ribbon quads over the mesh's unique edges.
       final wireNode = Node(
         name: 'materialize_wire',
         mesh: Mesh(_buildWireGeometry(source), wire),
       );
       meshNode.add(wireNode);
-      wire.parameters
-        ..setFloat('band', height * 0.06)
-        ..setFloat('inflate', height * 0.004);
 
       // Stage 2: the unwelded shard soup with flat normals and per-triangle
       // centroid/seed attributes.
@@ -138,17 +212,19 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
         mesh: Mesh(_buildGlassGeometry(source), glass),
       );
       meshNode.add(glassNode);
-      glass.parameters
-        ..setFloat('band', height * 0.30)
-        ..setFloat('scatter', height * 0.8);
 
       _spin.add(helmet);
       scene.add(_spin);
 
       // Frame the camera. After the importer's scene-root Z flip glTF
       // models face -Z, so the camera sits on the -Z side.
-      final center = vm.Vector3.copy(bounds.center);
-      final radius = math.max((bounds.max - bounds.min).length * 0.5, 0.1);
+      final bounds = primitive.geometry.localBounds;
+      final center = bounds == null
+          ? vm.Vector3.zero()
+          : vm.Vector3.copy(bounds.center);
+      final radius = bounds == null
+          ? 1.0
+          : math.max((bounds.max - bounds.min).length * 0.5, 0.1);
       _cameraTarget = center;
       _cameraPosition = vm.Vector3(
         center.x + radius * 0.4,
@@ -159,7 +235,9 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       _wireMaterial = wire;
       _glassMaterial = glass;
       _shellMaterial = shell;
+      _wireNode = wireNode;
       _glassNode = glassNode;
+      _applySettings();
       _applyProgress(0);
       setState(() => _ready = true);
     } catch (e) {
@@ -238,33 +316,67 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     return _TriangleMesh(positions, normals, indices);
   }
 
-  /// A line list over the mesh's unique undirected edges. Shared edges are
-  /// deduplicated so the translucent lines do not double-blend.
+  /// A view-facing ribbon quad per unique undirected edge. Each vertex
+  /// carries the opposite endpoint and a side sign; the material's vertex
+  /// stage expands the quad perpendicular to the edge and the view.
   MeshGeometry _buildWireGeometry(_TriangleMesh source) {
     final seen = <int>{};
-    final edges = <int>[];
+    final edgeA = <int>[];
+    final edgeB = <int>[];
     void addEdge(int a, int b) {
       final lo = math.min(a, b);
       final hi = math.max(a, b);
       if (seen.add(lo * 0x100000 + hi)) {
-        edges
-          ..add(lo)
-          ..add(hi);
+        edgeA.add(lo);
+        edgeB.add(hi);
       }
     }
 
-    final indices = source.indices;
-    for (var t = 0; t + 2 < indices.length; t += 3) {
-      addEdge(indices[t], indices[t + 1]);
-      addEdge(indices[t + 1], indices[t + 2]);
-      addEdge(indices[t + 2], indices[t]);
+    final srcIndices = source.indices;
+    for (var t = 0; t + 2 < srcIndices.length; t += 3) {
+      addEdge(srcIndices[t], srcIndices[t + 1]);
+      addEdge(srcIndices[t + 1], srcIndices[t + 2]);
+      addEdge(srcIndices[t + 2], srcIndices[t]);
+    }
+
+    final edgeCount = edgeA.length;
+    final positions = Float32List(edgeCount * 12);
+    final normals = Float32List(edgeCount * 12);
+    final others = Float32List(edgeCount * 12);
+    final sides = Float32List(edgeCount * 4);
+    final indices = List<int>.filled(edgeCount * 6, 0);
+    void writeVec3(Float32List dst, int vertex, Float32List src, int index) {
+      dst[vertex * 3] = src[index * 3];
+      dst[vertex * 3 + 1] = src[index * 3 + 1];
+      dst[vertex * 3 + 2] = src[index * 3 + 2];
+    }
+
+    for (var e = 0; e < edgeCount; e++) {
+      final a = edgeA[e], b = edgeB[e];
+      final base = e * 4;
+      for (var corner = 0; corner < 4; corner++) {
+        final v = base + corner;
+        final atA = corner < 2;
+        writeVec3(positions, v, source.positions, atA ? a : b);
+        writeVec3(normals, v, source.normals, atA ? a : b);
+        writeVec3(others, v, source.positions, atA ? b : a);
+        sides[v] = corner.isEven ? 1.0 : -1.0;
+      }
+      final i = e * 6;
+      indices[i] = base;
+      indices[i + 1] = base + 1;
+      indices[i + 2] = base + 2;
+      indices[i + 3] = base;
+      indices[i + 4] = base + 2;
+      indices[i + 5] = base + 3;
     }
     return MeshGeometry.fromArrays(
-      positions: source.positions,
-      normals: source.normals,
-      indices: edges,
-      primitiveType: gpu.PrimitiveType.line,
-    );
+        positions: positions,
+        normals: normals,
+        indices: indices,
+      )
+      ..setCustomAttribute('edge_other', others, components: 3)
+      ..setCustomAttribute('edge_side', sides, components: 1);
   }
 
   /// The shard soup: every triangle unwelded to three unique vertices with a
@@ -348,41 +460,90 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       ..setCustomAttribute('tri_seed', seeds, components: 1);
   }
 
-  /// Maps eased progress to the three object-space sweep fronts and writes
-  /// them (plus the animated inputs) into the materials.
+  /// Writes every look setting into the materials (scaled to the model's
+  /// height along the sweep axis where the setting is a fraction).
+  void _applySettings() {
+    final wire = _wireMaterial;
+    final glass = _glassMaterial;
+    final shell = _shellMaterial;
+    if (wire == null || glass == null || shell == null) return;
+    final s = _settings;
+    final range = _sweepRange;
+
+    wire.parameters
+      ..setVec3('sweep_dir', _sweepDir)
+      ..setFloat('band', range * 0.06)
+      ..setFloat('thickness', range * s.wireThickness)
+      ..setFloat('inflate', range * 0.004)
+      ..setVec4(
+        'wire_color',
+        vm.Vector4(s.wireColor.x, s.wireColor.y, s.wireColor.z, s.wireAlpha),
+      )
+      ..setFloat('glow_strength', s.wireGlow);
+
+    glass.parameters
+      ..setVec3('sweep_dir', _sweepDir)
+      ..setFloat('band', range * s.glassBand)
+      ..setVec3('fly_dir', s.flyDir)
+      ..setFloat('fly_distance', range * s.flyDistance)
+      ..setFloat('fade_portion', s.fadePortion)
+      ..setFloat('cool_span', s.coolSpan)
+      ..setFloat('tumble', s.tumble)
+      ..setVec4(
+        'glass_color',
+        vm.Vector4(s.glassTint.x, s.glassTint.y, s.glassTint.z, s.glassAlpha),
+      )
+      ..setVec3('glow_color', s.glassGlowColor)
+      ..setFloat('glow_strength', s.glassGlowStrength);
+
+    shell.parameters
+      ..setVec3('sweep_dir', _sweepDir)
+      ..setFloat('seam_width', range * s.seamWidth)
+      ..setVec4(
+        'seam_color',
+        vm.Vector4(s.seamColor.x, s.seamColor.y, s.seamColor.z, 1.0),
+      )
+      ..setFloat('seam_strength', s.seamStrength);
+  }
+
+  /// Maps eased progress to the three staggered sweep fronts and writes them
+  /// (plus the animated inputs) into the materials.
   void _applyProgress(double elapsedSeconds) {
     final wire = _wireMaterial;
     final glass = _glassMaterial;
     final shell = _shellMaterial;
+    final wireNode = _wireNode;
     final glassNode = _glassNode;
-    if (wire == null || glass == null || shell == null || glassNode == null) {
+    if (wire == null ||
+        glass == null ||
+        shell == null ||
+        wireNode == null ||
+        glassNode == null) {
       return;
     }
+    final s = _settings;
     final p = _t.clamp(0.0, 1.0);
     final eased = p * p * (3 - 2 * p);
-    final height = _maxY - _minY;
 
     const start = -_kSweepPad;
-    const end = 1.0 + 2 * _kStageLag + _kSweepPad;
+    final end = 1.0 + s.lagWireToGlass + s.lagGlassToSolid + _kSweepPad;
     final wireN = start + eased * (end - start);
-    double frontY(double n) => _minY + n * height;
+    double front(double n) => _sweepMin + n * _sweepRange;
 
-    final wireY = frontY(wireN);
-    final glassY = frontY(wireN - _kStageLag);
-    final solidY = frontY(wireN - 2 * _kStageLag);
+    final wireFront = front(wireN);
+    final glassFront = front(wireN - s.lagWireToGlass);
+    final solidFront = front(wireN - s.lagWireToGlass - s.lagGlassToSolid);
 
     wire.parameters
-      ..setFloat('wire_y', wireY)
-      ..setFloat('solid_y', solidY);
+      ..setFloat('wire_front', wireFront)
+      ..setFloat('solid_front', solidFront)
+      ..setMat4('model_matrix', wireNode.globalTransform);
     glass.parameters
-      ..setFloat('glass_y', glassY)
-      ..setFloat('solid_y', solidY)
-      ..setFloat('time', elapsedSeconds);
-    shell.parameters.setFloat('solid_y', solidY);
-
-    // The glass vertex stage does its shard math in object space and needs
-    // the node's world transform to write world outputs itself.
-    glass.parameters.setMat4('model_matrix', glassNode.globalTransform);
+      ..setFloat('glass_front', glassFront)
+      ..setFloat('solid_front', solidFront)
+      ..setFloat('time', elapsedSeconds)
+      ..setMat4('model_matrix', glassNode.globalTransform);
+    shell.parameters.setFloat('solid_front', solidFront);
   }
 
   @override
@@ -424,6 +585,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     }
     return Stack(
       children: [
+        const Positioned.fill(child: ColoredBox(color: Color(0xFF06080C))),
         Positioned.fill(
           child: SceneView(
             scene,
@@ -434,7 +596,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
             onTick: (elapsed, deltaSeconds) {
               final seconds = elapsed.inMicroseconds / 1e6;
               if (_playing) {
-                _t += deltaSeconds / _duration;
+                _t += deltaSeconds / _settings.duration;
                 // Hold briefly at both ends, then loop.
                 if (_t > 1.3) _t = -0.08;
               }
@@ -445,55 +607,364 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
           ),
         ),
         Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          left: 8,
+          bottom: 8,
+          child: LightingPanel(
+            scene: scene,
+            selector: _environmentSelector,
+            showSkybox: false,
+          ),
+        ),
+        Positioned(top: 8, right: 8, bottom: 8, child: _settingsPanel()),
+        Positioned(top: 8, left: 8, child: _playbackBar()),
+      ],
+    );
+  }
+
+  Widget _playbackBar() {
+    return Card(
+      color: Colors.black54,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                _playing ? Icons.pause : Icons.play_arrow,
+                color: Colors.white,
+              ),
+              onPressed: () => setState(() => _playing = !_playing),
+            ),
+            IconButton(
+              icon: const Icon(Icons.replay, color: Colors.white),
+              onPressed: () => setState(() {
+                _t = -0.05;
+                _playing = true;
+              }),
+            ),
+            SizedBox(
+              width: 220,
+              child: Slider(
+                value: _t.clamp(0.0, 1.0).toDouble(),
+                onChangeStart: (_) => setState(() => _playing = false),
+                onChanged: (value) => setState(() => _t = value),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsPanel() {
+    return SizedBox(
+      width: 290,
+      child: Card(
+        color: Colors.black54,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: Icon(
-                      _playing ? Icons.pause : Icons.play_arrow,
+                  const Text(
+                    'Effect settings',
+                    style: TextStyle(
                       color: Colors.white,
+                      fontWeight: FontWeight.bold,
                     ),
-                    onPressed: () => setState(() => _playing = !_playing),
                   ),
+                  const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.replay, color: Colors.white),
-                    onPressed: () => setState(() {
-                      _t = -0.05;
-                      _playing = true;
-                    }),
-                  ),
-                  const Text('Progress', style: TextStyle(color: Colors.white)),
-                  Expanded(
-                    child: Slider(
-                      value: _t.clamp(0.0, 1.0).toDouble(),
-                      onChangeStart: (_) => setState(() => _playing = false),
-                      onChanged: (value) => setState(() => _t = value),
-                    ),
-                  ),
-                  Text(
-                    'Cycle ${_duration.toStringAsFixed(0)}s',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: Slider(
-                      value: _duration,
-                      min: 3,
-                      max: 16,
-                      onChanged: (value) => setState(() => _duration = value),
-                    ),
+                    tooltip: 'Print settings to console',
+                    icon: const Icon(Icons.print, color: Colors.white),
+                    onPressed: () => debugPrint(_settings.dump()),
                   ),
                 ],
               ),
             ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                children: [
+                  _section('Wireframe', [
+                    _slider(
+                      'Thickness',
+                      _settings.wireThickness,
+                      0.001,
+                      0.03,
+                      (v) => _settings.wireThickness = v,
+                    ),
+                    _colorRow(
+                      'Color',
+                      _settings.wireColor,
+                      (v) => _settings.wireColor = v,
+                    ),
+                    _slider(
+                      'Opacity',
+                      _settings.wireAlpha,
+                      0.0,
+                      1.0,
+                      (v) => _settings.wireAlpha = v,
+                    ),
+                    _slider(
+                      'Front glow',
+                      _settings.wireGlow,
+                      0.0,
+                      30.0,
+                      (v) => _settings.wireGlow = v,
+                    ),
+                  ]),
+                  _section('Glass', [
+                    _colorRow(
+                      'Tint',
+                      _settings.glassTint,
+                      (v) => _settings.glassTint = v,
+                    ),
+                    _slider(
+                      'Translucency',
+                      _settings.glassAlpha,
+                      0.0,
+                      1.0,
+                      (v) => _settings.glassAlpha = v,
+                    ),
+                    _colorRow(
+                      'Glow color',
+                      _settings.glassGlowColor,
+                      (v) => _settings.glassGlowColor = v,
+                    ),
+                    _slider(
+                      'Glow intensity',
+                      _settings.glassGlowStrength,
+                      0.0,
+                      30.0,
+                      (v) => _settings.glassGlowStrength = v,
+                    ),
+                    _slider(
+                      'Fly-in X',
+                      _settings.flyDir.x,
+                      -1.0,
+                      1.0,
+                      (v) => _settings.flyDir.x = v,
+                    ),
+                    _slider(
+                      'Fly-in Y',
+                      _settings.flyDir.y,
+                      -1.0,
+                      1.0,
+                      (v) => _settings.flyDir.y = v,
+                    ),
+                    _slider(
+                      'Fly-in Z',
+                      _settings.flyDir.z,
+                      -1.0,
+                      1.0,
+                      (v) => _settings.flyDir.z = v,
+                    ),
+                    _slider(
+                      'Fly distance',
+                      _settings.flyDistance,
+                      0.1,
+                      4.0,
+                      (v) => _settings.flyDistance = v,
+                    ),
+                    _slider(
+                      'Fade portion',
+                      _settings.fadePortion,
+                      0.05,
+                      1.0,
+                      (v) => _settings.fadePortion = v,
+                    ),
+                    _slider(
+                      'Glow cool span',
+                      _settings.coolSpan,
+                      0.05,
+                      4.0,
+                      (v) => _settings.coolSpan = v,
+                    ),
+                    _slider(
+                      'Tumble',
+                      _settings.tumble,
+                      0.0,
+                      3.0,
+                      (v) => _settings.tumble = v,
+                    ),
+                    _slider(
+                      'Assembly band',
+                      _settings.glassBand,
+                      0.05,
+                      1.0,
+                      (v) => _settings.glassBand = v,
+                    ),
+                  ]),
+                  _section('Reveal', [
+                    _slider(
+                      'Seam thickness',
+                      _settings.seamWidth,
+                      0.005,
+                      0.3,
+                      (v) => _settings.seamWidth = v,
+                    ),
+                    _colorRow(
+                      'Seam color',
+                      _settings.seamColor,
+                      (v) => _settings.seamColor = v,
+                    ),
+                    _slider(
+                      'Seam brightness',
+                      _settings.seamStrength,
+                      0.0,
+                      40.0,
+                      (v) => _settings.seamStrength = v,
+                    ),
+                  ]),
+                  _section('Timing', [
+                    _slider(
+                      'Cycle seconds',
+                      _settings.duration,
+                      3.0,
+                      20.0,
+                      (v) => _settings.duration = v,
+                    ),
+                    _slider(
+                      'Wire to glass lag',
+                      _settings.lagWireToGlass,
+                      0.0,
+                      1.0,
+                      (v) => _settings.lagWireToGlass = v,
+                    ),
+                    _slider(
+                      'Glass to solid lag',
+                      _settings.lagGlassToSolid,
+                      0.0,
+                      1.5,
+                      (v) => _settings.lagGlassToSolid = v,
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _section(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 2),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
           ),
         ),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    void Function(double) apply,
+  ) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 108,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            ),
+            child: Slider(
+              value: value.clamp(min, max).toDouble(),
+              min: min,
+              max: max,
+              onChanged: (v) => setState(() {
+                apply(v);
+                _applySettings();
+              }),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 34,
+          child: Text(
+            value.toStringAsFixed(2),
+            style: const TextStyle(color: Colors.white54, fontSize: 10),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _colorRow(
+    String label,
+    vm.Vector3 color,
+    void Function(vm.Vector3) apply,
+  ) {
+    Widget channel(String name, double value, void Function(double) set) {
+      return Expanded(
+        child: SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+          ),
+          child: Slider(
+            value: value.clamp(0.0, 1.0).toDouble(),
+            onChanged: (v) => setState(() {
+              set(v);
+              apply(color);
+              _applySettings();
+            }),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 76,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+        ),
+        Container(
+          width: 14,
+          height: 14,
+          margin: const EdgeInsets.only(right: 4),
+          decoration: BoxDecoration(
+            color: Color.fromARGB(
+              255,
+              (color.x * 255).round(),
+              (color.y * 255).round(),
+              (color.z * 255).round(),
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        channel('R', color.x, (v) => color.x = v),
+        channel('G', color.y, (v) => color.y = v),
+        channel('B', color.z, (v) => color.z = v),
       ],
     );
   }

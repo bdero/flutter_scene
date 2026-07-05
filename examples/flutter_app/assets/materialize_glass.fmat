@@ -1,14 +1,15 @@
 // Glass-shard stage of the Materialize example. Rendered over an unwelded
 // triangle soup where every triangle carries flat outward normals plus two
 // custom attributes, its centroid (tri_centroid) and a per-triangle random
-// seed (tri_seed). As the glass front sweeps up past a triangle's centroid,
-// the shard flies in from a scattered pose (pushed out along its face
-// normal with a seeded tumble) and seats onto the surface.
+// seed (tri_seed). As the glass front sweeps past a triangle's centroid the
+// shard flies in from a world-space direction, fading in at a distance and
+// easing along an s-curve (accelerate, then decelerate into a soft landing),
+// then sits on the surface glowing until the opaque shell phases over it.
 //
-// The Vertex() hook cannot see the instance model matrix, and the shard
-// math has to rotate about the centroid in object space, so the node's
-// world transform is passed in as the model_matrix parameter and the hook
-// writes world outputs through it itself.
+// The Vertex() hook cannot see the instance model matrix, and the tumble has
+// to rotate about the centroid in object space, so the node's world transform
+// is passed in as the model_matrix parameter and the hook writes world
+// outputs through it itself.
 
 material {
   name: "MaterializeGlass",
@@ -18,18 +19,28 @@ material {
 
   parameters: [
     { type: mat4, name: model_matrix },
-    // Object-space sweep fronts, driven from Dart each tick.
-    { type: float, name: glass_y, default: 10.0 },
-    { type: float, name: solid_y, default: -10.0 },
-    // Height of the assembly band; a shard goes from fully scattered to
-    // seated while the glass front crosses this span above its centroid.
+    { type: vec3, name: sweep_dir, default: [0.0, 1.0, 0.0] },
+    // Sweep fronts (object-space sweep coordinates), driven per tick.
+    { type: float, name: glass_front, default: 10.0 },
+    { type: float, name: solid_front, default: -10.0 },
+    // Sweep span a shard's flight occupies; the shard leaves its scattered
+    // pose when the glass front reaches its centroid and lands when the
+    // front has advanced this far past it.
     { type: float, name: band, default: 0.35 },
-    // How far shards sit out along their face normal when scattered.
-    { type: float, name: scatter, hint: range(0, 3, 0.01), default: 0.8 },
+    // World-space direction the shards come from, and how far out they start.
+    { type: vec3, name: fly_dir, default: [0.35, 1.0, -0.3] },
+    { type: float, name: fly_distance, default: 1.2 },
+    // Portion of the flight over which a shard fades in from nothing.
+    { type: float, name: fade_portion, hint: range(0.01, 1, 0.01), default: 0.35 },
+    // How long (in flight-band units past landing) the landing glow lasts.
+    { type: float, name: cool_span, hint: range(0.05, 4, 0.05), default: 1.5 },
+    // Tumble rotation amount while in flight.
+    { type: float, name: tumble, hint: range(0, 3, 0.01), default: 1.0 },
     { type: float, name: time, default: 0.0 },
+    // rgb tints the glass; a is its base translucency.
     { type: vec4, name: glass_color, hint: source_color, default: [0.5, 0.85, 1.0, 0.16] },
-    { type: vec3, name: heat_color, hint: source_color, default: [0.3, 0.9, 1.0] },
-    { type: float, name: heat_strength, hint: range(0, 20, 0.1), default: 5.0 },
+    { type: vec3, name: glow_color, hint: source_color, default: [0.3, 0.9, 1.0] },
+    { type: float, name: glow_strength, hint: range(0, 30, 0.1), default: 6.0 },
   ],
 
   attributes: [
@@ -38,35 +49,42 @@ material {
   ],
 
   varyings: [
-    { type: float, name: assemble },
-    { type: float, name: centroid_y },
+    { type: float, name: flight_a },
+    { type: float, name: seat_g },
+    { type: float, name: sweep_c },
   ],
 }
 
 vertex {
   void Vertex(inout VertexInputs vertex) {
-    centroid_y = tri_centroid.y;
+    float cs = dot(tri_centroid, material_params.sweep_dir);
+    sweep_c = cs;
 
-    // 0 scattered, 1 seated. Eased so shards decelerate as they arrive.
-    float a = clamp(
-        (material_params.glass_y - tri_centroid.y) /
-            max(material_params.band, 1e-4),
-        0.0, 1.0);
-    a = smoothstep(0.0, 1.0, a);
-    assemble = a;
+    // Raw flight progress: 0 scattered, 1 seated, keeps counting past 1 so
+    // the fragment stage knows how long the shard has been down.
+    float t = (material_params.glass_front - cs) /
+        max(material_params.band, 1e-4);
+    float a = clamp(t, 0.0, 1.0);
+    flight_a = a;
+    seat_g = max(t - 1.0, 0.0);
 
-    float s = 1.0 - a;
+    // Smootherstep easing: the shard accelerates away from its start, then
+    // decelerates and lands softly (zero velocity at both ends).
+    float ease = a * a * a * (a * (a * 6.0 - 15.0) + 10.0);
+    float s = 1.0 - ease;
+
+    // Seeded tumble about the centroid, unwinding to zero as it lands.
     vec3 rel = vertex.position - tri_centroid;
     vec3 n = vertex.normal;
-
-    // Seeded tumble about the centroid, with a slow wobble while afloat.
     vec3 axis = normalize(
-        vec3(sin(tri_seed * 3.1), cos(tri_seed * 5.7), sin(tri_seed * 7.3)) +
+        vec3(sin(tri_seed * 19.3), cos(tri_seed * 35.7), sin(tri_seed * 45.9)) +
         vec3(0.0, 0.001, 0.0));
     float wobble =
         sin(material_params.time * (1.0 + fract(tri_seed) * 1.5) +
             tri_seed * 40.0) * 0.4;
-    float angle = s * ((fract(tri_seed * 7.61) - 0.5) * 8.0 + wobble);
+    float angle = s * (material_params.tumble *
+                           (fract(tri_seed * 7.61) - 0.5) * 8.0 +
+                       wobble);
     float ca = cos(angle);
     float sa = sin(angle);
     vec3 rel_rot =
@@ -74,17 +92,18 @@ vertex {
     vec3 n_rot =
         n * ca + cross(axis, n) * sa + axis * dot(axis, n) * (1.0 - ca);
 
-    // Outward flight along the face normal plus a gentle drift.
-    float dist =
-        s * s * material_params.scatter * (0.6 + 0.8 * fract(tri_seed * 13.37));
-    vec3 drift = n * dist +
-        vec3(sin(tri_seed * 21.0 + material_params.time * 0.7), 0.35,
-             cos(tri_seed * 17.0 + material_params.time * 0.7)) *
-            (0.12 * s);
+    vec3 obj = tri_centroid + rel_rot;
+    vec3 world = (material_params.model_matrix * vec4(obj, 1.0)).xyz;
 
-    vec3 obj = tri_centroid + rel_rot + drift;
-    vertex.world_position =
-        (material_params.model_matrix * vec4(obj, 1.0)).xyz;
+    // World-space flight in from fly_dir, with a little per-shard spread so
+    // the swarm does not arrive as a rigid sheet.
+    vec3 fdir = normalize(material_params.fly_dir + vec3(0.0, 1e-4, 0.0));
+    vec3 spread = vec3(sin(tri_seed * 21.0), sin(tri_seed * 33.0),
+                       cos(tri_seed * 17.0)) * 0.25;
+    world += (fdir + spread) *
+        (material_params.fly_distance * (0.75 + 0.5 * fract(tri_seed * 13.37)) * s);
+
+    vertex.world_position = world;
     vertex.world_normal =
         normalize(mat3(material_params.model_matrix) * n_rot);
   }
@@ -92,18 +111,18 @@ vertex {
 
 fragment {
   void Surface(inout MaterialInputs material) {
-    // Pop in as soon as the shard starts flying, hand off to the opaque
+    // Fade in over the first part of the flight, hand off to the opaque
     // shell once the solid front passes the centroid.
-    float visible = smoothstep(0.0, 0.15, assemble);
+    float appear = smoothstep(0.0, material_params.fade_portion, flight_a);
     float takeover =
-        smoothstep(material_params.solid_y - 0.02, material_params.solid_y,
-                   centroid_y);
+        smoothstep(material_params.solid_front - 0.02,
+                   material_params.solid_front, sweep_c);
 
     vec3 n = GetWorldNormal();
     vec3 v = GetViewDirection();
     float fresnel = pow(1.0 - abs(dot(n, v)), 3.0);
     float alpha = mix(material_params.glass_color.a, 0.9, fresnel);
-    alpha *= visible * takeover;
+    alpha *= appear * takeover;
     if (alpha <= 0.003) {
       discard;
     }
@@ -112,11 +131,14 @@ fragment {
     material.metallic = 0.0;
     material.roughness = 0.06;
 
-    // Shards run hot mid-flight and cool off as they seat.
-    float heat = assemble * (1.0 - assemble) * 4.0;
-    material.emissive =
-        material_params.heat_color * (heat * material_params.heat_strength *
-                                      (0.35 + 0.65 * fresnel));
+    // Landing glow: ignites as the shard arrives and cools off while it sits
+    // on the surface, still visible when the shell phases over it.
+    float ignite = smoothstep(0.6, 1.0, flight_a);
+    float cool = 1.0 - smoothstep(0.0, max(material_params.cool_span, 1e-3),
+                                  seat_g);
+    material.emissive = material_params.glow_color *
+        (material_params.glow_strength * ignite * cool *
+         (0.35 + 0.65 * fresnel));
     PrepareMaterial(material);
   }
 }
