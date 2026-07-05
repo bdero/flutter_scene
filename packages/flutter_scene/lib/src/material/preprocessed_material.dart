@@ -151,10 +151,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
     parameters.bind(pass, fragmentShader, transientsBuffer);
     // Bind the fragment keep-alive block (name matches kFragmentKeepAliveBlock
-    // in the emitter) to zero. The generated fragment references MaterialParams
-    // through it so the block is not optimized out when Surface() reads no
-    // parameter; it is declared only when the material has such a block.
-    if (parameters.hasUniformBlock) {
+    // in the emitter) to zero. The generated fragment references every
+    // declared parameter resource through it (the MaterialParams block and
+    // any unreferenced samplers) so none can be optimized out; the emitter
+    // declares it whenever the material has any parameter.
+    if (parameters.hasAnyParameters) {
       pass.bindUniform(
         fragmentShader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),

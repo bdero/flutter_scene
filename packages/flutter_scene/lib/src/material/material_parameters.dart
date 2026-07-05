@@ -399,6 +399,13 @@ class MaterialParameters {
   @internal
   bool get hasUniformBlock => _block.lengthInBytes > 0;
 
+  /// Whether this material declares any parameter at all (the uniform block
+  /// or samplers). Mirrors the emitter's condition for declaring the
+  /// `FragmentKeepAlive` block, so the runtime binds it exactly when the
+  /// generated shader carries it.
+  @internal
+  bool get hasAnyParameters => hasUniformBlock || _samplers.isNotEmpty;
+
   /// Binds only the `MaterialParams` uniform block on [shader] into [pass],
   /// not the sampler parameters. Used to make the block available to the
   /// vertex stage, whose generated shader declares the block but not the

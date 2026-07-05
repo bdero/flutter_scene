@@ -98,6 +98,7 @@ String emitFragmentGlsl(FmatMaterial material) {
   _writeVaryings(sb, material, 'in');
 
   final uniforms = material.uniformParameters.toList();
+  final samplers = material.samplerParameters.toList();
   if (uniforms.isNotEmpty) {
     sb.writeln('uniform $kMaterialParamsBlock {');
     for (final p in uniforms) {
@@ -106,15 +107,17 @@ String emitFragmentGlsl(FmatMaterial material) {
     sb.writeln('}');
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
-    // Bound to zero by the runtime; main() multiplies a MaterialParams field by
-    // it so the block cannot be optimized out when Surface() reads no parameter
-    // (its uniform slot would then be missing and binding it would crash).
+  }
+  if (uniforms.isNotEmpty || samplers.isNotEmpty) {
+    // Bound to zero by the runtime; main() folds the parameters into a term
+    // multiplied by it so no declared parameter resource can be optimized out
+    // (the runtime binds them all unconditionally, and binding an
+    // optimized-out uniform or sampler is unsafe).
     sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
     sb.writeln('$kFragmentKeepAliveInstance;');
     sb.writeln();
   }
 
-  final samplers = material.samplerParameters.toList();
   for (final p in samplers) {
     sb.writeln('uniform ${p.type.glslType} ${p.name};');
   }
@@ -129,11 +132,11 @@ String emitFragmentGlsl(FmatMaterial material) {
   sb.writeln('void main() {');
   sb.writeln('  MaterialInputs material = InitMaterialInputs();');
   sb.writeln('  Surface(material);');
-  if (uniforms.isNotEmpty) {
+  final keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
+  if (keepAlive != null) {
     sb.writeln(
       '  material.base_color.r += '
-      '$kFragmentKeepAliveInstance.keep_alive.x * '
-      '${_paramsKeepAliveScalar(uniforms.first)};',
+      '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
   }
   if (lit) {
@@ -163,6 +166,38 @@ String _paramsKeepAliveScalar(FmatParameter p) {
     FmatType.mat4 => '$member[0].x',
     _ => '$member.x',
   };
+}
+
+/// The scalar keep-alive term for a fragment (or sky) shader, or null when
+/// the material declares no parameters (no keep-alive block is emitted then).
+///
+/// Folds in a MaterialParams read plus a zero-multiplied fetch of every
+/// sampler [source] never mentions, so the runtime can bind every declared
+/// parameter resource safely. Samplers the author's code references are
+/// skipped (their real fetch keeps them live and they pay nothing here);
+/// the whole-word check errs toward the extra fetch when unsure.
+String? _fragmentKeepAliveTerm(
+  FmatMaterial material,
+  List<FmatParameter> uniforms,
+  List<FmatParameter> samplers,
+) {
+  if (uniforms.isEmpty && samplers.isEmpty) return null;
+  final terms = <String>[
+    if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
+    for (final p in samplers)
+      if (!RegExp(
+        '\\b${RegExp.escape(p.name)}\\b',
+      ).hasMatch(material.fragmentSource))
+        p.type == FmatType.samplerCube
+            ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
+            : 'texture(${p.name}, vec2(0.0)).x',
+  ];
+  // Every declared resource is already referenced; the block still needs a
+  // live operand of its own so it cannot be folded away.
+  if (terms.isEmpty) {
+    return '$kFragmentKeepAliveInstance.keep_alive.y';
+  }
+  return '(${terms.join(' + ')})';
 }
 
 /// Emits the vertex-shader GLSL for each variant of [material], keyed by the
@@ -267,6 +302,17 @@ String _emitVertexVariant(
   // Custom per-vertex attributes Vertex() reads by name (real inputs in the
   // color variants, zero in the depth variant).
   _writeAttributes(sb, material, isDepth: isDepth);
+  if (material.attributes.isNotEmpty) {
+    // Folded into the zero-bound keep-alive by the body include so an
+    // attribute Vertex() never reads survives compilation; the geometry
+    // supplies its buffer unconditionally and a stripped input breaks
+    // reflection and the pipeline's vertex layout.
+    final terms = material.attributes
+        .map((a) => a.type == FmatType.float_ ? a.name : '${a.name}.x')
+        .join(' + ');
+    sb.writeln('#define MATERIAL_ATTRIBUTES_KEEP_ALIVE ($terms)');
+    sb.writeln();
+  }
 
   // Custom interpolants Vertex() writes by name, read in the fragment stage.
   _writeVaryings(sb, material, 'out');
@@ -296,6 +342,7 @@ String _emitSkyGlsl(FmatMaterial material) {
   sb.writeln();
 
   final uniforms = material.uniformParameters.toList();
+  final samplers = material.samplerParameters.toList();
   if (uniforms.isNotEmpty) {
     sb.writeln('uniform $kMaterialParamsBlock {');
     for (final p in uniforms) {
@@ -305,8 +352,14 @@ String _emitSkyGlsl(FmatMaterial material) {
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
   }
+  if (uniforms.isNotEmpty || samplers.isNotEmpty) {
+    // Same keep-alive as the surface fragment shader; see
+    // _fragmentKeepAliveTerm.
+    sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
+    sb.writeln('$kFragmentKeepAliveInstance;');
+    sb.writeln();
+  }
 
-  final samplers = material.samplerParameters.toList();
   for (final p in samplers) {
     sb.writeln('uniform ${p.type.glslType} ${p.name};');
   }
@@ -337,6 +390,13 @@ String _emitSkyGlsl(FmatMaterial material) {
   sb.writeln('void main() {');
   sb.writeln('  // Linear HDR radiance, premultiplied alpha (opaque sky).');
   sb.writeln('  frag_color = vec4(Sky(normalize(v_ray)), 1.0);');
+  final keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
+  if (keepAlive != null) {
+    sb.writeln(
+      '  frag_color.r += '
+      '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
+    );
+  }
   sb.writeln('}');
 
   return sb.toString();
