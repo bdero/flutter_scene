@@ -1,15 +1,38 @@
 ## 0.19.0
 
+* Per-frame transient GPU data (uniform blocks, instance transforms) now
+  rides an engine-owned, completion-aware arena allocator instead of
+  `package:flutter_gpu`'s `HostBuffer`. Emplacements stage CPU-side and
+  upload in a single write per block just before each command buffer
+  submission; a block is never written again while in-flight frames may
+  read it, and pooled memory grows with actual GPU queue depth and shrinks
+  back afterward. This removes a redundant 4x internal buffer ring, fixes
+  whole-frame aborts when a frame emplaces more than ~1MB of transients (a
+  `HostBuffer` block-boundary bug), and collapses per-draw GPU buffer
+  writes into a handful of block uploads per frame.
+
+* BREAKING: the custom-pass and material/geometry `bind` surfaces take a
+  `TransientWriter` (newly exported) where they previously took a
+  `gpu.HostBuffer`, and `RenderPassContext.transientsBuffer` changes type
+  accordingly. Call sites that only called `emplace` need no changes
+  beyond the parameter type.
+
 * Large speedup for many-draw scenes on the web backend. Per-draw uniform
   data was written into one shared GL buffer between draws that read it,
   which forces the browser's GL implementation to copy ("ghost") the buffer
   on every write; a scene with ~100 draw calls spent most of its frame time
-  there, in the browser's GPU process. Per-draw uniforms now go into small
-  pooled buffers written once per frame cycle (105-draw test scene, Apple
-  M3 Max Chrome, 35 fps to a 120 fps display cap). Vertex-attribute state is
-  also cached in vertex-array objects per (pipeline, geometry, index buffer)
-  instead of being re-specified every draw, and redundant per-draw texture
-  sampler-state calls are skipped.
+  there, in the browser's GPU process. Transient data is now written exactly
+  once per buffer before the draws that read it (see the arena entry above;
+  105-draw test scene, Apple M3 Max Chrome, 35 fps to a 120 fps display
+  cap). Vertex-attribute state is also cached in vertex-array objects per
+  (pipeline, geometry, index buffer) instead of being re-specified every
+  draw, and redundant per-draw texture sampler-state calls are skipped.
+
+* The web shim's `HostBuffer` is a faithful port of flutter_gpu's block bump
+  allocator again (with a corrected length-aware block-rollover bounds
+  check), keeping the shim a drop-in flutter_gpu replacement for consumers
+  that use it directly; the engine itself no longer allocates through
+  `HostBuffer` on any backend.
 
 * Ambient occlusion and screen-space reflections no longer sample the wrong
   depth for double-sided (`culling: none`) materials. The depth prepass they

@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Vertex (and optional index) data along with the vertex shader used to
 /// transform it.
@@ -490,7 +491,7 @@ abstract class Geometry {
   /// place its uniform blocks at different binding points.
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
@@ -761,7 +762,7 @@ class UnskinnedGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
@@ -814,7 +815,7 @@ class SkinnedGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
@@ -1089,7 +1090,7 @@ final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
 @internal
 void bindUnskinnedFrameInfo(
   gpu.RenderPass pass,
-  gpu.HostBuffer transientsBuffer,
+  TransientWriter transientsBuffer,
   gpu.Shader shader,
   vm.Matrix4 cameraTransform,
   vm.Vector3 cameraPosition,

@@ -15,7 +15,7 @@ class _StubGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Matrix4 modelTransform,
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {
@@ -25,8 +25,11 @@ class _StubGeometry extends Geometry {
 
 class _StubMaterial extends Material {
   @override
-  void bind(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer, Lighting l) =>
-      throw UnsupportedError('stub');
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Lighting l,
+  ) => throw UnsupportedError('stub');
 }
 
 RenderItem _itemAt(double x) =>

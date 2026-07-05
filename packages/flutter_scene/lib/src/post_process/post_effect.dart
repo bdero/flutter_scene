@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Where in the post-processing chain a [PostEffect] runs.
 /// {@category Rendering}
@@ -118,6 +119,6 @@ class PostEffect {
   Iterable<String> get textureNames => _bindings.textureNames;
 
   /// Binds this effect's own uniform blocks and textures. Engine-internal.
-  void bindUniforms(gpu.RenderPass pass, gpu.HostBuffer transientsBuffer) =>
+  void bindUniforms(gpu.RenderPass pass, TransientWriter transientsBuffer) =>
       _bindings.bind(pass, fragmentShader, transientsBuffer);
 }

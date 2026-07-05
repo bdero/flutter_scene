@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Selects how a sprite's color is blended into the scene.
 /// {@category Materials}
@@ -71,7 +72,7 @@ class SpriteMaterial extends Material {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     super.bind(pass, transientsBuffer, lighting);

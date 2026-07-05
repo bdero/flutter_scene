@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 // Two triangles of NDC positions covering the whole render target (6 vec2s).
 final gpu.DeviceBuffer _fullscreenQuad = gpu.gpuContext
@@ -41,7 +42,7 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
 /// re-asserts the opaque-phase state when it is constructed afterward.
 void encodeSkybox(
   gpu.RenderPass renderPass,
-  gpu.HostBuffer transientsBuffer,
+  TransientWriter transientsBuffer,
   Skybox skybox,
   EnvironmentMap environment,
   double environmentIntensity,
@@ -114,7 +115,7 @@ void encodeSkybox(
 // mat4, camera position) on the sky vertex shader.
 void _bindFrameInfo(
   gpu.RenderPass renderPass,
-  gpu.HostBuffer transientsBuffer,
+  TransientWriter transientsBuffer,
   gpu.Shader vertexShader,
   Matrix3? environmentTransform,
   Camera camera,
@@ -137,7 +138,7 @@ void _bindFrameInfo(
 /// draw (via the camera) and the offscreen bake (one call per cube face).
 void bindSkyboxFrameInfo(
   gpu.RenderPass renderPass,
-  gpu.HostBuffer transientsBuffer,
+  TransientWriter transientsBuffer,
   gpu.Shader vertexShader,
   Matrix4 inverseViewProjection,
   Vector3 cameraPosition,
@@ -168,7 +169,7 @@ void bindSkyboxFrameInfo(
 // atlases (primary plus the secondary cross-fade pair).
 void _bindEnvironmentSource(
   gpu.RenderPass renderPass,
-  gpu.HostBuffer transientsBuffer,
+  TransientWriter transientsBuffer,
   gpu.Shader fragmentShader,
   EnvironmentSkySource source,
   EnvironmentMap environment,

@@ -184,7 +184,7 @@ class _DepthPrepassEncoder {
   }
 
   final gpu.RenderPass _renderPass;
-  final gpu.HostBuffer _transientsBuffer;
+  final TransientWriter _transientsBuffer;
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
   final int _layerMask;

@@ -221,7 +221,7 @@ void prefilterEquirectRadianceCubeFace(
     ..[16] = (sourceEquirect.mipLevelCount - 1).toDouble();
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('PrefilterCubeInfo'),
-    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
+    uniformTransients.emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
   rendererSubmissions.submit(commandBuffer);
@@ -332,7 +332,7 @@ void _prefilterPass(
     ..[2] = mipLayout ? 1.0 : 0.0;
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('PrefilterInfo'),
-    gpu.gpuContext.createHostBuffer().emplace(ByteData.sublistView(info)),
+    uniformTransients.emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
   rendererSubmissions.submit(commandBuffer);

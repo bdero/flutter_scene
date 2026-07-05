@@ -79,53 +79,20 @@ void bindSingleInstanceTransform(
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
 ///
-/// The transforms are emplaced into [instanceTransformBuffers], a `HostBuffer`
-/// dedicated to instance vertex data, separate from the per-frame transient
-/// uniform `HostBuffer`. The split dates from debugging stale instance
-/// transforms on the GLES backend, which turned out to be an engine bug
-/// (flutter/flutter#187931, buffer writes racing the GL upload) that a
-/// dedicated buffer does not actually avoid. Kept for now since it is
-/// harmless and the engine fix has not shipped in the SDK yet.
+/// The transforms are emplaced into [instanceTransients], the arena
+/// dedicated to instance-rate vertex data. It stays separate from the
+/// uniform arena because the two need different alignments (vertex fetch
+/// needs element alignment; uniforms need the context's minimum uniform
+/// alignment), and separate blocks keep either stream from padding the
+/// other.
 void bindInstanceTransforms(
   gpu.RenderPass pass,
   Float32List packed, {
   int slot = 1,
 }) {
-  // TODO(gles-dirty-range): fold instance transforms back into the shared
-  // transients HostBuffer once flutter/flutter#187931 is fixed in the SDK.
   if (packed.isEmpty) return;
   pass.bindVertexBuffer(
-    instanceTransformBuffers.emplace(ByteData.sublistView(packed)),
+    instanceTransients.emplace(ByteData.sublistView(packed)),
     slot: slot,
   );
 }
-
-/// A `HostBuffer` dedicated to instance-rate transform vertex data, kept
-/// apart from the uniform transients buffer (see [bindInstanceTransforms]
-/// for why). [beginFrame] cycles it to the next frame's backing storage
-/// and is driven once per frame from the render setup.
-class InstanceTransformBuffers {
-  // Pooled so a buffer is never reset while in-flight frames still read it.
-  // Buffers are created lazily inside [beginFrame]: the GPU context
-  // initializes on the raster thread after the first frame on some
-  // backends, so it isn't available at startup.
-  final TransientsPool _pool = TransientsPool(rendererSubmissions);
-  gpu.HostBuffer? _host;
-
-  /// Acquires this frame's backing storage. Call once per frame before any
-  /// [emplace].
-  void beginFrame() => _host = _pool.beginFrame();
-
-  /// Emplaces [data] and returns a view to bind as the instance-rate
-  /// vertex buffer.
-  gpu.BufferView emplace(ByteData data) => _host!.emplace(data);
-}
-
-/// The process-wide instance-transform vertex buffer. One GPU context per
-/// process, so a single buffer serves every scene; [beginFrame] is driven
-/// from the per-frame render setup.
-// TODO(instance-buffer-ownership): a single process-wide buffer means two
-// Scenes rendering in the same frame both reset it; make it per-Surface if
-// multi-scene-per-frame becomes common.
-final InstanceTransformBuffers instanceTransformBuffers =
-    InstanceTransformBuffers();

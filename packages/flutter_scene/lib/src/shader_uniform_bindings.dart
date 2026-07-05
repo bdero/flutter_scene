@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Stores caller-supplied uniform blocks and textures keyed by name and
 /// binds them to a render pass against a shader's reflection.
@@ -49,7 +50,7 @@ class ShaderUniformBindings {
   void bind(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
   ) {
     for (final entry in _uniformBlocks.entries) {
       pass.bindUniform(

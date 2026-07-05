@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode;
 
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring
 /// scene lighting.
@@ -62,7 +63,7 @@ class UnlitMaterial extends Material {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     super.bind(pass, transientsBuffer, lighting);

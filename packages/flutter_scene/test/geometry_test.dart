@@ -13,7 +13,7 @@ class _StubGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Matrix4 modelTransform,
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {

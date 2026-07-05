@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Resolves a texture-slot value to the texture to sample this frame.
 ///
@@ -240,7 +241,7 @@ abstract class Material {
   void bindVertexStage(
     gpu.RenderPass pass,
     gpu.Shader vertexShader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
   ) {}
 
   /// Binds this material's render-pass state, uniforms, and textures.
@@ -253,7 +254,7 @@ abstract class Material {
   /// shadow resources that materials shade against.
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     pass.setCullMode(renderCullMode);

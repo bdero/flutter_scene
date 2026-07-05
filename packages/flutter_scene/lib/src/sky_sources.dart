@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A stylized gradient sky: zenith, horizon, and ground colors with an HDR
 /// sun disk.
@@ -71,7 +72,7 @@ class GradientSkySource extends ShaderSkySource implements SunSky {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
     setUniformBlockFromFloats('GradientSkyInfo', <double>[
@@ -169,7 +170,7 @@ class PhysicalSkySource extends ShaderSkySource implements SunSky {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
     setUniformBlockFromFloats('PhysicalSkyInfo', <double>[

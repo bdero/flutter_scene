@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Packs the engine lighting half of the shared `FragInfo` uniform block and
 /// binds the image-based-lighting and shadow samplers.
@@ -139,7 +140,7 @@ class EngineLightingUniforms {
   static void bindFog(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     final fog = lighting.fog;

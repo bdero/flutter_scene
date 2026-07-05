@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
@@ -61,7 +62,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   void bindVertexStage(
     gpu.RenderPass pass,
     gpu.Shader vertexShader,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
   ) {
     // The generated vertex variant declares the same MaterialParams block as
     // the fragment shader, so a parameter reads the same value in both stages.
@@ -114,7 +115,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
     pass.setCullMode(renderCullMode);

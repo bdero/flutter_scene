@@ -694,7 +694,7 @@ class _RingBufferStream {
   /// Tightly packed bytes for one vertex of this attribute.
   final int bytesPerVertex;
 
-  // Matches `gpu.HostBuffer`'s frame count, the number of frames the engine
+  // Matches `TransientWriter`'s frame count, the number of frames the engine
   // cycles transient buffers through.
   static const int _ringDepth = 4;
 

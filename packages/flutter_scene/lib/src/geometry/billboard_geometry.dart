@@ -6,8 +6,8 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
-import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// How a billboard quad orients itself toward the camera.
 /// {@category Geometry}
@@ -179,7 +179,7 @@ class BillboardGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
@@ -197,10 +197,7 @@ class BillboardGeometry extends Geometry {
         0,
         _instanceCount * floatsPerInstance,
       );
-      pass.bindVertexBuffer(
-        instanceTransformBuffers.emplace(liveBytes),
-        slot: 1,
-      );
+      pass.bindVertexBuffer(instanceTransients.emplace(liveBytes), slot: 1);
     }
 
     final frameInfo = Float32List(44);

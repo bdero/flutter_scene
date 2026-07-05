@@ -65,7 +65,7 @@ void renderObjectMask({
   required Matrix4 cameraTransform,
   required Vector3 cameraPosition,
   required RenderScene renderScene,
-  required gpu.HostBuffer transientsBuffer,
+  required TransientWriter transientsBuffer,
   required int layerMask,
   required NodeFilter filter,
   required Vector4 Function(RenderItem item) colorOf,
@@ -114,7 +114,7 @@ class _ObjectMaskEncoder {
   }
 
   final gpu.RenderPass _renderPass;
-  final gpu.HostBuffer _transientsBuffer;
+  final TransientWriter _transientsBuffer;
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
   final int _layerMask;

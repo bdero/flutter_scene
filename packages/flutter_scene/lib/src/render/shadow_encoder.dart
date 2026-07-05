@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Records each opaque shadow caster's depth into a shadow-map render
 /// pass, from a directional light's point of view.
@@ -42,7 +43,7 @@ class ShadowEncoder {
   }
 
   final gpu.RenderPass _renderPass;
-  final gpu.HostBuffer _transientsBuffer;
+  final TransientWriter _transientsBuffer;
   final Matrix4 _lightSpaceMatrix;
 
   // The scene camera position, bound as FrameInfo.camera_position so a
