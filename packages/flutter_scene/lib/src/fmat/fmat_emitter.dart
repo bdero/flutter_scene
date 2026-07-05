@@ -131,9 +131,13 @@ String emitFragmentGlsl(FmatMaterial material) {
   sb.writeln('  Surface(material);');
   if (uniforms.isNotEmpty) {
     final first = uniforms.first;
-    final scalar = first.type.glslType == 'float'
-        ? 'material_params.${first.name}'
-        : 'material_params.${first.name}.x';
+    final member = '$kMaterialParamsInstance.${first.name}';
+    final scalar = switch (first.type) {
+      FmatType.float_ => member,
+      FmatType.int_ => 'float($member)',
+      FmatType.mat4 => '$member[0].x',
+      _ => '$member.x',
+    };
     sb.writeln(
       '  material.base_color.r += '
       '$kFragmentKeepAliveInstance.keep_alive.x * $scalar;',

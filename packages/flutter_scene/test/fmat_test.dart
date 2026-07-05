@@ -159,6 +159,53 @@ fragment {
         contains('fragment_keep_alive.keep_alive.x * material_params.k'),
       );
     });
+
+    test('keep-alive reads a scalar from mat4 and int leading parameters', () {
+      // The keep-alive multiplies the first MaterialParams member; a plain
+      // `.x` swizzle is invalid GLSL on mat4 and int members.
+      final c = compileFmat('''
+material {
+  name: "M",
+  shading_model: unlit,
+  parameters: [
+    { type: mat4, name: transform },
+    { type: float, name: k, default: 1.0 },
+  ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(
+        c.glsl,
+        contains(
+          'fragment_keep_alive.keep_alive.x * '
+          'material_params.transform[0].x',
+        ),
+      );
+
+      final ci = compileFmat('''
+material {
+  name: "I",
+  shading_model: unlit,
+  parameters: [ { type: int, name: steps, default: 3 } ],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(
+        ci.glsl,
+        contains(
+          'fragment_keep_alive.keep_alive.x * '
+          'float(material_params.steps)',
+        ),
+      );
+    });
   });
 
   group('sidecar', () {
