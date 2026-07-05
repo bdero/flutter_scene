@@ -1,0 +1,96 @@
+// CPU/GPU noise parity probe. Renders a 8x12 tile grid over a camera-facing
+// quad spanning world [-1, 1] in x/y; every tile evaluates one noise function
+// at coordinates derived from its (row, column) and packs the result into
+// 24-bit fixed point across the color channels. The integration test decodes
+// the captured pixels and compares them against package:flutter_scene/noise.dart.
+//
+// The packed bytes must survive the display encode exactly, so each channel
+// is emitted pre-inverted through the resolve pass's gamma (pow 2.2), and the
+// probe only works with ToneMappingMode.linear, exposure 1.0, and
+// anti-aliasing off (the test configures all three).
+//
+// Row 0 and row 11 carry fixed marker values the test scans for, so it can
+// derive the tile-to-pixel mapping without replicating camera math (and
+// stays correct under any vertical flip).
+//
+// The coordinate constants are all exactly representable in float32, and the
+// frequency/lacunarity are powers of two, so the noise INPUTS are bit
+// identical between this shader and the Dart mirror; only gradient-math
+// rounding differs.
+
+material {
+  name: "NoiseParity",
+  shading_model: unlit,
+  culling: none,
+}
+
+fragment {
+#include <noise.glsl>
+
+  const float kCols = 8.0;
+  const float kRows = 12.0;
+
+  // 24-bit fixed point in [0, 1], gamma-inverted so the resolve pass's
+  // pow(c, 1/2.2) display encode lands back on the exact byte values.
+  vec3 PackUnorm24(float v01) {
+    float scaled = floor(clamp(v01, 0.0, 1.0) * 16777215.0 + 0.5);
+    float b2 = floor(scaled / 65536.0);
+    float b1 = floor((scaled - b2 * 65536.0) / 256.0);
+    float b0 = scaled - b2 * 65536.0 - b1 * 256.0;
+    return pow(vec3(b2, b1, b0) / 255.0, vec3(2.2));
+  }
+
+  vec3 PackBits24(int v24) {
+    return pow(
+        vec3(float((v24 >> 16) & 255), float((v24 >> 8) & 255),
+             float(v24 & 255)) /
+            255.0,
+        vec3(2.2));
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec3 world = GetWorldPosition();
+    int c = int(clamp(floor((world.x + 1.0) * 0.5 * kCols), 0.0, kCols - 1.0));
+    int r = int(clamp(floor((world.y + 1.0) * 0.5 * kRows), 0.0, kRows - 1.0));
+
+    // Tile coordinates, mirrored exactly by the test's Dart side.
+    float fx = float(c) * 7.25 - 27.5;
+    float fy = float(c) * 3.75 + float(r) * 11.125 - 40.0;
+    float fz = float(c) * 1.875 - float(r) * 5.25 + 13.75;
+    vec2 p2 = vec2(fx, fy) * 0.0625;
+    vec3 p3 = vec3(fx, fy, fz) * 0.0625;
+    int seed = 1337 + r;
+
+    int v24 = -1;
+    float v01 = 0.0;
+    if (r == 0) {
+      v24 = c == 0 ? 0xABCDEF : (c == 7 ? 0x123456 : 0);
+    } else if (r == 1) {
+      v01 = NoiseSimplex2(p2, seed) * 0.5 + 0.5;
+    } else if (r == 2) {
+      v01 = NoiseSimplex3(p3, seed) * 0.5 + 0.5;
+    } else if (r == 3) {
+      v01 = NoiseSimplex2S(p2, seed) * 0.5 + 0.5;
+    } else if (r == 4) {
+      v01 = NoiseSimplex3S(p3, seed) * 0.5 + 0.5;
+    } else if (r == 5) {
+      v01 = NoiseFbm2(p2, seed, 4, 2.0, 0.5) * 0.5 + 0.5;
+    } else if (r == 6) {
+      v01 = NoiseFbm3S(p3, seed, 4, 2.0, 0.5) * 0.5 + 0.5;
+    } else if (r == 7) {
+      v01 = NoiseRidged2(p2, seed, 4, 2.0, 0.5) * 0.5 + 0.5;
+    } else if (r == 8) {
+      v01 = NoisePingPong3(p3, seed, 4, 2.0, 0.5, 2.0) * 0.5 + 0.5;
+    } else if (r == 9) {
+      v24 = NoiseHash2(ivec2(c * 3 - 11, r * 7 + c), seed) & 0xFFFFFF;
+    } else if (r == 10) {
+      v24 = NoiseHash3(ivec3(c * 3 - 11, r * 7 + c, c - 5), seed) & 0xFFFFFF;
+    } else {
+      v24 = c == 0 ? 0xFEDCBA : 0;
+    }
+
+    material.base_color =
+        vec4(v24 >= 0 ? PackBits24(v24) : PackUnorm24(v01), 1.0);
+    PrepareMaterial(material);
+  }
+}

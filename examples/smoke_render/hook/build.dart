@@ -6,7 +6,7 @@ void main(List<String> args) {
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
-      materials: ['assets/custom_material.fmat'],
+      materials: ['assets/custom_material.fmat', 'assets/noise_parity.fmat'],
     );
   });
 }
