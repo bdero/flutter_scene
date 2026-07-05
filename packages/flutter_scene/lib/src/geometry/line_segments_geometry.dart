@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
@@ -143,7 +144,7 @@ class LineSegmentsGeometry extends Geometry {
   @override
   void bind(
     gpu.RenderPass pass,
-    gpu.HostBuffer transientsBuffer,
+    TransientWriter transientsBuffer,
     vm.Matrix4 modelTransform,
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
