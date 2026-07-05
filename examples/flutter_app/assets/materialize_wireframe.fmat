@@ -4,9 +4,9 @@
 // the opposite edge endpoint and a side sign; the vertex stage expands the
 // quad perpendicular to both the edge and the view direction.
 //
-// All gating compares a sweep coordinate (dot(position, sweep_dir), object
-// space) against fronts driven from Dart, so the reveal travels along the
-// model's up axis regardless of how the source asset is oriented.
+// All gating compares world-space height against fronts driven from Dart
+// (the model only spins about the world up axis, so height is stable), with
+// a shared gradient noise wobbling the boundary so the sweep reads organic.
 
 material {
   name: "MaterializeWireframe",
@@ -16,8 +16,7 @@ material {
 
   parameters: [
     { type: mat4, name: model_matrix },
-    { type: vec3, name: sweep_dir, default: [0.0, 1.0, 0.0] },
-    // Sweep fronts (object-space sweep coordinates), driven per tick.
+    // Sweep fronts (world-space heights), driven per tick.
     { type: float, name: wire_front, default: 10.0 },
     { type: float, name: solid_front, default: -10.0 },
     // Height of the fade band around each front.
@@ -29,6 +28,9 @@ material {
     { type: float, name: inflate, default: 0.004 },
     { type: vec4, name: wire_color, hint: source_color, default: [0.25, 0.85, 1.0, 0.85] },
     { type: float, name: glow_strength, hint: range(0, 30, 0.1), default: 8.0 },
+    // Boundary noise, shared with the glass and shell stages.
+    { type: vec3, name: noise_scale, default: [8.0, 8.0, 8.0] },
+    { type: float, name: noise_amp, default: 0.0 },
   ],
 
   attributes: [
@@ -37,14 +39,12 @@ material {
   ],
 
   varyings: [
-    { type: float, name: sweep_s },
+    { type: float, name: world_h },
   ],
 }
 
 vertex {
   void Vertex(inout VertexInputs vertex) {
-    sweep_s = dot(vertex.position, material_params.sweep_dir);
-
     // Inflate both endpoints along this vertex's normal (the endpoints of an
     // edge have nearly parallel normals, so sharing one is fine).
     vec3 p = vertex.position + vertex.normal * material_params.inflate;
@@ -52,6 +52,7 @@ vertex {
 
     vec3 world_p = (material_params.model_matrix * vec4(p, 1.0)).xyz;
     vec3 world_o = (material_params.model_matrix * vec4(o, 1.0)).xyz;
+    world_h = world_p.y;
 
     // Expand perpendicular to the edge and the view direction so the ribbon
     // always faces the camera.
@@ -69,25 +70,51 @@ vertex {
 }
 
 fragment {
+  // Hash-based gradient noise; wobbles the sweep boundaries. The same
+  // function (and inputs) gate the glass and shell stages so their
+  // boundaries line up.
+  vec3 NoiseHash(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return fract(sin(p) * 43758.5453123) * 2.0 - 1.0;
+  }
+
+  float SeamNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    float n000 = dot(NoiseHash(i), f);
+    float n100 = dot(NoiseHash(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0));
+    float n010 = dot(NoiseHash(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0));
+    float n110 = dot(NoiseHash(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0));
+    float n001 = dot(NoiseHash(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0));
+    float n101 = dot(NoiseHash(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0));
+    float n011 = dot(NoiseHash(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0));
+    float n111 = dot(NoiseHash(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0));
+    return mix(
+        mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+        mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+  }
+
   void Surface(inout MaterialInputs material) {
     float band = max(material_params.band, 1e-4);
+    float n = SeamNoise(GetWorldPosition() * material_params.noise_scale) *
+        material_params.noise_amp;
+    float wire_front = material_params.wire_front + n;
+    float solid_front = material_params.solid_front + n;
+
     // 1 below the wire front, easing to 0 above it.
-    float reveal = 1.0 -
-        smoothstep(material_params.wire_front - band,
-                   material_params.wire_front, sweep_s);
+    float reveal = 1.0 - smoothstep(wire_front - band, wire_front, world_h);
     // 0 below the solid front (the opaque surface owns that region now).
-    float takeover =
-        smoothstep(material_params.solid_front - band,
-                   material_params.solid_front + band, sweep_s);
+    float takeover = smoothstep(solid_front - band, solid_front + band, world_h);
     float alpha = reveal * takeover * material_params.wire_color.a;
     if (alpha <= 0.003) {
       discard;
     }
 
     // Hot pulse at the leading edge.
-    float edge = 1.0 -
-        clamp(abs(sweep_s - material_params.wire_front) / (band * 2.0),
-              0.0, 1.0);
+    float edge = 1.0 - clamp(abs(world_h - wire_front) / (band * 2.0), 0.0, 1.0);
     vec3 color = material_params.wire_color.rgb *
         (1.0 + material_params.glow_strength * edge * edge);
 

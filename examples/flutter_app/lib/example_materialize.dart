@@ -5,22 +5,27 @@
 //      edges, unlit translucent .fmat with a glowing sweep front).
 //   2. Glass triangles fly in and assemble over it (unwelded triangle soup
 //      with flat outward normals; per-triangle centroid + seed attributes let
-//      the vertex stage fly each shard in from a settable world direction,
-//      fading in at a distance and easing along an s-curve into a soft
-//      landing, then glowing on the surface until the shell phases over it).
+//      the vertex stage fly each shard in from a composable scattered pose,
+//      a bias direction, a radial push from the model center, a push along
+//      the face normal, and seeded jitter, fading in at a distance and
+//      easing along an s-curve into a soft landing, then glowing on the
+//      surface until the shell phases over it).
 //   3. The real PBR surface reveals itself behind a hot emissive seam (the
 //      original geometry with a .fmat that replicates standard PBR sampling,
 //      re-binding the model's own textures, and discards above the front).
 //
 // A single eased progress value drives three staggered sweep fronts. All
-// gating compares dot(position, sweep_dir) in object space, where sweep_dir
-// is the model's up axis mapped into mesh space at load, so the reveal
-// travels bottom-to-top regardless of how the source asset is oriented.
+// gating compares world-space height (the model only spins about the world
+// up axis, so height is stable), wobbled by a shared gradient noise so the
+// boundaries read organic; the same noise inputs gate all three stages so
+// their boundaries line up. Every mesh node and every primitive of the
+// imported model is incorporated (wire/glass geometry per node, a shell
+// material per primitive).
 //
 // Every look/timing input lives in _MaterializeSettings, editable from the
 // side panel; the print button dumps the current values to the console.
 //
-// The example reads the imported primitive's retained CPU vertex data back
+// The example reads the imported primitives' retained CPU vertex data back
 // through the internal cpuMeshData accessor to derive the wire and soup
 // geometry; in-repo example apps may reach into internals, so the lints are
 // waived for the whole file (same waiver as example_shapes.dart).
@@ -46,8 +51,9 @@ const int _kHelmetSizeBytes = 3773916;
 // Sweep overshoot below/above the model so every fade band fully clears.
 const double _kSweepPad = 0.15;
 
-/// Every tunable of the effect. Lengths are fractions of the model's height
-/// along the sweep axis; the print button dumps the current values.
+/// Every tunable of the effect. Lengths are fractions of the model's height;
+/// noise scales are cycles per model height. The print button dumps the
+/// current values.
 class _MaterializeSettings {
   // Wireframe.
   double wireThickness = 0.006;
@@ -62,6 +68,9 @@ class _MaterializeSettings {
   double glassGlowStrength = 22.0;
   vm.Vector3 flyDir = vm.Vector3(0.0, -1.0, 0.0);
   double flyDistance = 1.4;
+  double centerDistance = 0.0;
+  double normalDistance = 0.0;
+  double jitter = 0.15;
   double fadePortion = 0.64;
   double coolSpan = 0.33;
   double tumble = 2.3;
@@ -71,6 +80,10 @@ class _MaterializeSettings {
   double seamWidth = 0.23;
   vm.Vector3 seamColor = vm.Vector3(0.3, 0.9, 1.0);
   double seamStrength = 28.6;
+
+  // Boundary noise, shared by all three stages.
+  vm.Vector3 noiseScale = vm.Vector3(8.0, 8.0, 8.0);
+  double noiseAmp = 0.06;
 
   // Timing.
   double duration = 7.0;
@@ -94,6 +107,9 @@ glassGlowColor: ${v3(glassGlowColor)}
 glassGlowStrength: ${f(glassGlowStrength)}
 flyDir: ${v3(flyDir)}
 flyDistance: ${f(flyDistance)}
+centerDistance: ${f(centerDistance)}
+normalDistance: ${f(normalDistance)}
+jitter: ${f(jitter)}
 fadePortion: ${f(fadePortion)}
 coolSpan: ${f(coolSpan)}
 tumble: ${f(tumble)}
@@ -101,6 +117,8 @@ glassBand: ${f(glassBand)}
 seamWidth: ${f(seamWidth)}
 seamColor: ${v3(seamColor)}
 seamStrength: ${f(seamStrength)}
+noiseScale: ${v3(noiseScale)}
+noiseAmp: ${f(noiseAmp)}
 duration: ${f(duration)}
 lagWireToGlass: ${f(lagWireToGlass)}
 lagGlassToSolid: ${f(lagGlassToSolid)}
@@ -124,19 +142,21 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   Object? _error;
   int _downloaded = 0;
 
-  PreprocessedMaterial? _wireMaterial;
-  PreprocessedMaterial? _glassMaterial;
-  PreprocessedMaterial? _shellMaterial;
+  // One shell material per imported primitive (each carries that primitive's
+  // textures), and one wire/glass pass per mesh node (each carries that
+  // node's world transform).
+  final List<PreprocessedMaterial> _shellMaterials = [];
+  final List<(Node, PreprocessedMaterial)> _wirePasses = [];
+  final List<(Node, PreprocessedMaterial)> _glassPasses = [];
 
   final Node _spin = Node(name: 'materialize_spin');
-  Node? _wireNode;
-  Node? _glassNode;
 
-  // The model's up axis in mesh-object space, and the vertex extent along it.
-  vm.Vector3 _sweepDir = vm.Vector3(0, 1, 0);
-  double _sweepMin = 0;
-  double _sweepMax = 1;
-  double get _sweepRange => math.max(_sweepMax - _sweepMin, 1e-3);
+  // World-space vertical extent of the whole model (all nodes, all
+  // primitives), and its center, scanned at load with the spin at identity.
+  double _minH = 0;
+  double _maxH = 1;
+  final vm.Vector3 _center = vm.Vector3.zero();
+  double get _range => math.max(_maxH - _minH, 1e-3);
 
   vm.Vector3 _cameraPosition = vm.Vector3(0, 0, -3);
   vm.Vector3 _cameraTarget = vm.Vector3.zero();
@@ -154,10 +174,6 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
 
   Future<void> _load() async {
     try {
-      final wire = await loadFmatMaterial('assets/materialize_wireframe.fmat');
-      final glass = await loadFmatMaterial('assets/materialize_glass.fmat');
-      final shell = await loadFmatMaterial('assets/materialize_shell.fmat');
-
       final bytes = await fetchResource(
         _kHelmetUrl,
         expectedSize: _kHelmetSizeBytes,
@@ -169,74 +185,104 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       final helmet = await Node.fromGlbBytes(bytes);
       if (!mounted) return;
 
-      final meshNode = _findMeshNode(helmet);
-      if (meshNode == null) {
+      final meshNodes = <Node>[];
+      _collectMeshNodes(helmet, meshNodes);
+      if (meshNodes.isEmpty) {
         throw StateError('No mesh found in the downloaded model.');
       }
-      final primitive = meshNode.mesh!.primitives.first;
-      final source = _extractTriangleMesh(primitive.geometry);
 
-      // The source asset's mesh space is not necessarily y-up (the glTF node
-      // hierarchy carries a rotation), so map the model's world up axis into
-      // mesh space and sweep along that.
-      final inverse = vm.Matrix4.copy(meshNode.globalTransform)..invert();
-      _sweepDir = inverse.getRotation().transform(vm.Vector3(0, 1, 0))
-        ..normalize();
-      _sweepMin = double.infinity;
-      _sweepMax = double.negativeInfinity;
-      for (var v = 0; v < source.positions.length; v += 3) {
-        final s =
-            source.positions[v] * _sweepDir.x +
-            source.positions[v + 1] * _sweepDir.y +
-            source.positions[v + 2] * _sweepDir.z;
-        if (s < _sweepMin) _sweepMin = s;
-        if (s > _sweepMax) _sweepMax = s;
+      // World-space AABB across every node and primitive, for the sweep
+      // extent and the camera framing.
+      var minX = double.infinity, minY = double.infinity;
+      var minZ = double.infinity;
+      var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+      var maxZ = double.negativeInfinity;
+      var primitiveCount = 0;
+      var triangleCount = 0;
+      final scratch = vm.Vector3.zero();
+
+      for (final meshNode in meshNodes) {
+        final world = meshNode.globalTransform;
+        final parts = <_TriangleMesh>[];
+        for (final primitive in meshNode.mesh!.primitives) {
+          final source = _extractTriangleMesh(primitive.geometry);
+          parts.add(source);
+          primitiveCount++;
+          triangleCount += source.indices.length ~/ 3;
+          for (var v = 0; v < source.positions.length; v += 3) {
+            scratch.setValues(
+              source.positions[v],
+              source.positions[v + 1],
+              source.positions[v + 2],
+            );
+            world.transform3(scratch);
+            if (scratch.x < minX) minX = scratch.x;
+            if (scratch.y < minY) minY = scratch.y;
+            if (scratch.z < minZ) minZ = scratch.z;
+            if (scratch.x > maxX) maxX = scratch.x;
+            if (scratch.y > maxY) maxY = scratch.y;
+            if (scratch.z > maxZ) maxZ = scratch.z;
+          }
+
+          // Stage 3: this primitive keeps its geometry but shades through the
+          // reveal material, mirroring its own imported textures/factors.
+          final shell = await loadFmatMaterial('assets/materialize_shell.fmat');
+          _bindShellInputs(shell, primitive.material);
+          primitive.material = shell;
+          _shellMaterials.add(shell);
+        }
+
+        final source = _mergeTriangleMeshes(parts);
+
+        // Stage 1: view-facing ribbon quads over this node's unique edges.
+        final wire = await loadFmatMaterial(
+          'assets/materialize_wireframe.fmat',
+        );
+        final wireNode = Node(
+          name: 'materialize_wire',
+          mesh: Mesh(_buildWireGeometry(source), wire),
+        );
+        meshNode.add(wireNode);
+        _wirePasses.add((wireNode, wire));
+
+        // Stage 2: this node's unwelded shard soup.
+        final glass = await loadFmatMaterial('assets/materialize_glass.fmat');
+        final glassNode = Node(
+          name: 'materialize_glass',
+          mesh: Mesh(_buildGlassGeometry(source), glass),
+        );
+        meshNode.add(glassNode);
+        _glassPasses.add((glassNode, glass));
       }
-
-      // Stage 3: the original geometry, shading like the imported PBR
-      // material but clipped to the reveal front with an emissive seam.
-      _bindShellInputs(shell, primitive.material);
-      primitive.material = shell;
-
-      // Stage 1: view-facing ribbon quads over the mesh's unique edges.
-      final wireNode = Node(
-        name: 'materialize_wire',
-        mesh: Mesh(_buildWireGeometry(source), wire),
+      debugPrint(
+        'Materialize: ${meshNodes.length} mesh node(s), '
+        '$primitiveCount primitive(s), $triangleCount triangles',
       );
-      meshNode.add(wireNode);
 
-      // Stage 2: the unwelded shard soup with flat normals and per-triangle
-      // centroid/seed attributes.
-      final glassNode = Node(
-        name: 'materialize_glass',
-        mesh: Mesh(_buildGlassGeometry(source), glass),
+      _minH = minY;
+      _maxH = maxY;
+      _center.setValues(
+        (minX + maxX) / 2,
+        (minY + maxY) / 2,
+        (minZ + maxZ) / 2,
       );
-      meshNode.add(glassNode);
+      final radius = math.max(
+        vm.Vector3(maxX - minX, maxY - minY, maxZ - minZ).length * 0.5,
+        0.1,
+      );
 
       _spin.add(helmet);
       scene.add(_spin);
 
       // Frame the camera. After the importer's scene-root Z flip glTF
       // models face -Z, so the camera sits on the -Z side.
-      final bounds = primitive.geometry.localBounds;
-      final center = bounds == null
-          ? vm.Vector3.zero()
-          : vm.Vector3.copy(bounds.center);
-      final radius = bounds == null
-          ? 1.0
-          : math.max((bounds.max - bounds.min).length * 0.5, 0.1);
-      _cameraTarget = center;
+      _cameraTarget = vm.Vector3.copy(_center);
       _cameraPosition = vm.Vector3(
-        center.x + radius * 0.4,
-        center.y + radius * 0.5,
-        center.z - radius * 2.6,
+        _center.x + radius * 0.4,
+        _center.y + radius * 0.5,
+        _center.z - radius * 2.6,
       );
 
-      _wireMaterial = wire;
-      _glassMaterial = glass;
-      _shellMaterial = shell;
-      _wireNode = wireNode;
-      _glassNode = glassNode;
       _applySettings();
       _applyProgress(0);
       setState(() => _ready = true);
@@ -246,16 +292,14 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     }
   }
 
-  Node? _findMeshNode(Node node) {
+  void _collectMeshNodes(Node node, List<Node> out) {
     final mesh = node.mesh;
     if (mesh != null && mesh.primitives.isNotEmpty) {
-      return node;
+      out.add(node);
     }
     for (final child in node.children) {
-      final found = _findMeshNode(child);
-      if (found != null) return found;
+      _collectMeshNodes(child, out);
     }
-    return null;
   }
 
   /// Copies the imported material's textures and factors into the shell
@@ -310,9 +354,47 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       normals[v * 3 + 1] = floats[base + 4];
       normals[v * 3 + 2] = floats[base + 5];
     }
+    // Note sublistView range args count the SOURCE's elements (bytes for a
+    // ByteData), so no end bound is passed; the buffer holds exactly
+    // indexCount elements.
     final List<int> indices = data.indexType == gpu.IndexType.int32
-        ? Uint32List.sublistView(indexData, 0, data.indexCount)
-        : Uint16List.sublistView(indexData, 0, data.indexCount);
+        ? Uint32List.sublistView(indexData)
+        : Uint16List.sublistView(indexData);
+    return _TriangleMesh(positions, normals, indices);
+  }
+
+  /// Concatenates per-primitive triangle meshes (same node space) into one,
+  /// rebasing the indices.
+  _TriangleMesh _mergeTriangleMeshes(List<_TriangleMesh> parts) {
+    if (parts.length == 1) return parts.first;
+    var vertexCount = 0;
+    var indexCount = 0;
+    for (final part in parts) {
+      vertexCount += part.positions.length ~/ 3;
+      indexCount += part.indices.length;
+    }
+    final positions = Float32List(vertexCount * 3);
+    final normals = Float32List(vertexCount * 3);
+    final indices = List<int>.filled(indexCount, 0);
+    var vertexBase = 0;
+    var indexBase = 0;
+    for (final part in parts) {
+      positions.setRange(
+        vertexBase * 3,
+        vertexBase * 3 + part.positions.length,
+        part.positions,
+      );
+      normals.setRange(
+        vertexBase * 3,
+        vertexBase * 3 + part.normals.length,
+        part.normals,
+      );
+      for (var i = 0; i < part.indices.length; i++) {
+        indices[indexBase + i] = part.indices[i] + vertexBase;
+      }
+      vertexBase += part.positions.length ~/ 3;
+      indexBase += part.indices.length;
+    }
     return _TriangleMesh(positions, normals, indices);
   }
 
@@ -461,89 +543,102 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   }
 
   /// Writes every look setting into the materials (scaled to the model's
-  /// height along the sweep axis where the setting is a fraction).
+  /// world height where the setting is a fraction).
   void _applySettings() {
-    final wire = _wireMaterial;
-    final glass = _glassMaterial;
-    final shell = _shellMaterial;
-    if (wire == null || glass == null || shell == null) return;
+    if (_shellMaterials.isEmpty) return;
     final s = _settings;
-    final range = _sweepRange;
+    final range = _range;
+    final noiseScale = s.noiseScale / range;
+    final noiseAmp = s.noiseAmp * range;
 
-    wire.parameters
-      ..setVec3('sweep_dir', _sweepDir)
-      ..setFloat('band', range * 0.06)
-      ..setFloat('thickness', range * s.wireThickness)
-      ..setFloat('inflate', range * 0.004)
-      ..setVec4(
-        'wire_color',
-        vm.Vector4(s.wireColor.x, s.wireColor.y, s.wireColor.z, s.wireAlpha),
-      )
-      ..setFloat('glow_strength', s.wireGlow);
+    for (final (_, wire) in _wirePasses) {
+      wire.parameters
+        ..setFloat('band', range * 0.06)
+        ..setFloat('thickness', range * s.wireThickness)
+        ..setFloat('inflate', range * 0.004)
+        ..setVec4(
+          'wire_color',
+          vm.Vector4(s.wireColor.x, s.wireColor.y, s.wireColor.z, s.wireAlpha),
+        )
+        ..setFloat('glow_strength', s.wireGlow)
+        ..setVec3('noise_scale', noiseScale)
+        ..setFloat('noise_amp', noiseAmp);
+    }
 
-    glass.parameters
-      ..setVec3('sweep_dir', _sweepDir)
-      ..setFloat('band', range * s.glassBand)
-      ..setVec3('fly_dir', s.flyDir)
-      ..setFloat('fly_distance', range * s.flyDistance)
-      ..setFloat('fade_portion', s.fadePortion)
-      ..setFloat('cool_span', s.coolSpan)
-      ..setFloat('tumble', s.tumble)
-      ..setVec4(
-        'glass_color',
-        vm.Vector4(s.glassTint.x, s.glassTint.y, s.glassTint.z, s.glassAlpha),
-      )
-      ..setVec3('glow_color', s.glassGlowColor)
-      ..setFloat('glow_strength', s.glassGlowStrength);
+    for (final (_, glass) in _glassPasses) {
+      glass.parameters
+        ..setFloat('band', range * s.glassBand)
+        ..setVec3('fly_dir', s.flyDir)
+        ..setFloat('fly_distance', range * s.flyDistance)
+        ..setFloat('center_distance', range * s.centerDistance)
+        ..setFloat('normal_distance', range * s.normalDistance)
+        ..setFloat('jitter', range * s.jitter)
+        ..setFloat('fade_portion', s.fadePortion)
+        ..setFloat('cool_span', s.coolSpan)
+        ..setFloat('tumble', s.tumble)
+        ..setVec4(
+          'glass_color',
+          vm.Vector4(s.glassTint.x, s.glassTint.y, s.glassTint.z, s.glassAlpha),
+        )
+        ..setVec3('glow_color', s.glassGlowColor)
+        ..setFloat('glow_strength', s.glassGlowStrength)
+        ..setVec3('noise_scale', noiseScale)
+        ..setFloat('noise_amp', noiseAmp);
+    }
 
-    shell.parameters
-      ..setVec3('sweep_dir', _sweepDir)
-      ..setFloat('seam_width', range * s.seamWidth)
-      ..setVec4(
-        'seam_color',
-        vm.Vector4(s.seamColor.x, s.seamColor.y, s.seamColor.z, 1.0),
-      )
-      ..setFloat('seam_strength', s.seamStrength);
+    for (final shell in _shellMaterials) {
+      shell.parameters
+        ..setFloat('seam_width', range * s.seamWidth)
+        ..setVec4(
+          'seam_color',
+          vm.Vector4(s.seamColor.x, s.seamColor.y, s.seamColor.z, 1.0),
+        )
+        ..setFloat('seam_strength', s.seamStrength)
+        ..setVec3('noise_scale', noiseScale)
+        ..setFloat('noise_amp', noiseAmp);
+    }
   }
 
   /// Maps eased progress to the three staggered sweep fronts and writes them
   /// (plus the animated inputs) into the materials.
   void _applyProgress(double elapsedSeconds) {
-    final wire = _wireMaterial;
-    final glass = _glassMaterial;
-    final shell = _shellMaterial;
-    final wireNode = _wireNode;
-    final glassNode = _glassNode;
-    if (wire == null ||
-        glass == null ||
-        shell == null ||
-        wireNode == null ||
-        glassNode == null) {
-      return;
-    }
+    if (_shellMaterials.isEmpty) return;
     final s = _settings;
     final p = _t.clamp(0.0, 1.0);
     final eased = p * p * (3 - 2 * p);
 
-    const start = -_kSweepPad;
-    final end = 1.0 + s.lagWireToGlass + s.lagGlassToSolid + _kSweepPad;
+    // Pad past the noise amplitude so the wobbled boundaries fully clear.
+    final pad = _kSweepPad + s.noiseAmp;
+    final start = -pad;
+    final end = 1.0 + s.lagWireToGlass + s.lagGlassToSolid + pad;
     final wireN = start + eased * (end - start);
-    double front(double n) => _sweepMin + n * _sweepRange;
+    double front(double n) => _minH + n * _range;
 
     final wireFront = front(wireN);
     final glassFront = front(wireN - s.lagWireToGlass);
     final solidFront = front(wireN - s.lagWireToGlass - s.lagGlassToSolid);
 
-    wire.parameters
-      ..setFloat('wire_front', wireFront)
-      ..setFloat('solid_front', solidFront)
-      ..setMat4('model_matrix', wireNode.globalTransform);
-    glass.parameters
-      ..setFloat('glass_front', glassFront)
-      ..setFloat('solid_front', solidFront)
-      ..setFloat('time', elapsedSeconds)
-      ..setMat4('model_matrix', glassNode.globalTransform);
-    shell.parameters.setFloat('solid_front', solidFront);
+    // The model center, spun along with the model, for the radial scatter.
+    final center = vm.Vector3.copy(_center);
+    _spin.globalTransform.transform3(center);
+
+    for (final (node, wire) in _wirePasses) {
+      wire.parameters
+        ..setFloat('wire_front', wireFront)
+        ..setFloat('solid_front', solidFront)
+        ..setMat4('model_matrix', node.globalTransform);
+    }
+    for (final (node, glass) in _glassPasses) {
+      glass.parameters
+        ..setFloat('glass_front', glassFront)
+        ..setFloat('solid_front', solidFront)
+        ..setFloat('time', elapsedSeconds)
+        ..setVec3('model_center', center)
+        ..setMat4('model_matrix', node.globalTransform);
+    }
+    for (final shell in _shellMaterials) {
+      shell.parameters.setFloat('solid_front', solidFront);
+    }
   }
 
   @override
@@ -615,8 +710,15 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
             showSkybox: false,
           ),
         ),
-        Positioned(top: 8, right: 8, bottom: 8, child: _settingsPanel()),
-        Positioned(top: 8, left: 8, child: _playbackBar()),
+        // The panel starts below the debug banner and the global settings
+        // buttons in the top-right corner.
+        Positioned(top: 72, right: 8, bottom: 8, child: _settingsPanel()),
+        Positioned(
+          top: 8,
+          left: 0,
+          right: 0,
+          child: Center(child: _playbackBar()),
+        ),
       ],
     );
   }
@@ -765,9 +867,30 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
                     _slider(
                       'Fly distance',
                       _settings.flyDistance,
-                      0.1,
+                      0.0,
                       4.0,
                       (v) => _settings.flyDistance = v,
+                    ),
+                    _slider(
+                      'From center',
+                      _settings.centerDistance,
+                      0.0,
+                      3.0,
+                      (v) => _settings.centerDistance = v,
+                    ),
+                    _slider(
+                      'Off normal',
+                      _settings.normalDistance,
+                      0.0,
+                      2.0,
+                      (v) => _settings.normalDistance = v,
+                    ),
+                    _slider(
+                      'Jitter',
+                      _settings.jitter,
+                      0.0,
+                      1.0,
+                      (v) => _settings.jitter = v,
                     ),
                     _slider(
                       'Fade portion',
@@ -817,6 +940,34 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
                       0.0,
                       40.0,
                       (v) => _settings.seamStrength = v,
+                    ),
+                    _slider(
+                      'Noise scale X',
+                      _settings.noiseScale.x,
+                      0.5,
+                      30.0,
+                      (v) => _settings.noiseScale.x = v,
+                    ),
+                    _slider(
+                      'Noise scale Y',
+                      _settings.noiseScale.y,
+                      0.5,
+                      30.0,
+                      (v) => _settings.noiseScale.y = v,
+                    ),
+                    _slider(
+                      'Noise scale Z',
+                      _settings.noiseScale.z,
+                      0.5,
+                      30.0,
+                      (v) => _settings.noiseScale.z = v,
+                    ),
+                    _slider(
+                      'Noise amount',
+                      _settings.noiseAmp,
+                      0.0,
+                      0.3,
+                      (v) => _settings.noiseAmp = v,
                     ),
                   ]),
                   _section('Timing', [
