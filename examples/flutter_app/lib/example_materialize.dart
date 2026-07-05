@@ -57,25 +57,25 @@ class _MaterializeSettings {
 
   // Glass.
   vm.Vector3 glassTint = vm.Vector3(0.5, 0.85, 1.0);
-  double glassAlpha = 0.16;
-  vm.Vector3 glassGlowColor = vm.Vector3(0.3, 0.9, 1.0);
-  double glassGlowStrength = 6.0;
-  vm.Vector3 flyDir = vm.Vector3(0.35, 1.0, -0.3);
-  double flyDistance = 1.2;
-  double fadePortion = 0.35;
-  double coolSpan = 1.5;
-  double tumble = 1.0;
-  double glassBand = 0.3;
+  double glassAlpha = 0.69;
+  vm.Vector3 glassGlowColor = vm.Vector3(1.0, 1.0, 0.6);
+  double glassGlowStrength = 22.0;
+  vm.Vector3 flyDir = vm.Vector3(0.0, -1.0, 0.0);
+  double flyDistance = 1.4;
+  double fadePortion = 0.64;
+  double coolSpan = 0.33;
+  double tumble = 2.3;
+  double glassBand = 0.5;
 
   // Shell reveal.
-  double seamWidth = 0.05;
+  double seamWidth = 0.23;
   vm.Vector3 seamColor = vm.Vector3(0.3, 0.9, 1.0);
-  double seamStrength = 16.0;
+  double seamStrength = 28.6;
 
   // Timing.
-  double duration = 10.0;
-  double lagWireToGlass = 0.25;
-  double lagGlassToSolid = 0.6;
+  double duration = 7.0;
+  double lagWireToGlass = 0.0;
+  double lagGlassToSolid = 1.05;
 
   String dump() {
     String v3(vm.Vector3 v) =>
