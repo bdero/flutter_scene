@@ -4,10 +4,15 @@
 // parameters and the factor uniforms copied from the imported material,
 // so below the seam it shades like the standard PBR material.
 //
-// TODO(materialize-shadows): the depth/shadow variant runs no Surface(),
-// so with a shadow-casting key light this pass casts the full helmet's
-// shadow before the reveal finishes. Discard-aware depth variants in the
-// fmat pipeline would fix it.
+// The reveal front is a world-space height wobbled by a gradient noise (the
+// same function and inputs the wireframe and glass stages use, so all three
+// boundaries line up); the seam stays line-like but turns amorphous and
+// curvy as the noise amount rises.
+//
+// TODO(materialize-shadows): the depth/shadow pass runs no Surface(), so
+// with a shadow-casting key light this pass casts the full helmet's shadow
+// before the reveal finishes. Discard-aware depth variants in the fmat
+// pipeline would fix it.
 
 material {
   name: "MaterializeShell",
@@ -15,13 +20,15 @@ material {
   blending: opaque,
 
   parameters: [
-    { type: vec3, name: sweep_dir, default: [0.0, 1.0, 0.0] },
-    // Reveal front (an object-space sweep coordinate), driven per tick.
+    // Reveal front (a world-space height), driven per tick.
     { type: float, name: solid_front, default: 10.0 },
     // Height of the emissive seam band under the front.
     { type: float, name: seam_width, default: 0.06 },
     { type: vec4, name: seam_color, hint: source_color, default: [0.3, 0.9, 1.0, 1.0] },
     { type: float, name: seam_strength, hint: range(0, 40, 0.1), default: 16.0 },
+    // Boundary noise, per-dimension scale plus amount.
+    { type: vec3, name: noise_scale, default: [8.0, 8.0, 8.0] },
+    { type: float, name: noise_amp, default: 0.0 },
 
     // Standard PBR inputs mirrored from the imported material.
     { type: vec4, name: base_color_factor, default: [1.0, 1.0, 1.0, 1.0] },
@@ -36,21 +43,42 @@ material {
     { type: sampler2d, name: occlusion_texture, hint: default_white },
     { type: sampler2d, name: emissive_texture, hint: default_black },
   ],
-
-  varyings: [
-    { type: float, name: sweep_s },
-  ],
-}
-
-vertex {
-  void Vertex(inout VertexInputs vertex) {
-    sweep_s = dot(vertex.position, material_params.sweep_dir);
-  }
 }
 
 fragment {
+  // Hash-based gradient noise; wobbles the reveal boundary. The wireframe
+  // and glass stages use the same function and inputs so their boundaries
+  // line up with this one.
+  vec3 NoiseHash(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return fract(sin(p) * 43758.5453123) * 2.0 - 1.0;
+  }
+
+  float SeamNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    float n000 = dot(NoiseHash(i), f);
+    float n100 = dot(NoiseHash(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0));
+    float n010 = dot(NoiseHash(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0));
+    float n110 = dot(NoiseHash(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0));
+    float n001 = dot(NoiseHash(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0));
+    float n101 = dot(NoiseHash(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0));
+    float n011 = dot(NoiseHash(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0));
+    float n111 = dot(NoiseHash(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0));
+    return mix(
+        mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+        mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+  }
+
   void Surface(inout MaterialInputs material) {
-    if (sweep_s > material_params.solid_front) {
+    vec3 world = GetWorldPosition();
+    float n = SeamNoise(world * material_params.noise_scale) *
+        material_params.noise_amp;
+    float front = material_params.solid_front + n;
+    if (world.y > front) {
       discard;
     }
 
@@ -78,7 +106,7 @@ fragment {
         material_params.emissive_factor;
 
     // The laser seam, a hot emissive band right under the reveal front.
-    float d = material_params.solid_front - sweep_s;
+    float d = front - world.y;
     float seam =
         1.0 - smoothstep(0.0, max(material_params.seam_width, 1e-4), d);
     material.emissive +=
