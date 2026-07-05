@@ -26,7 +26,14 @@ export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
 export 'src/geometry/geometry.dart'
     show Geometry, SkinnedGeometry, UnskinnedGeometry;
-export 'src/geometry/mesh_data.dart' show MeshData;
+export 'src/geometry/line_segments_geometry.dart' show LineSegmentsGeometry;
+export 'src/geometry/mesh_data.dart'
+    show
+        LineSegmentData,
+        MeshAttributeData,
+        MeshData,
+        MeshTriangle,
+        UnweldAttribute;
 export 'src/geometry/mesh_geometry.dart'
     show GeometryBuilder, GeometryStorage, MeshGeometry;
 export 'src/geometry/primitives.dart'

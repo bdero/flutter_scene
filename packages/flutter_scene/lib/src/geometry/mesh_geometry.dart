@@ -148,7 +148,7 @@ class MeshGeometry extends UnskinnedGeometry {
     MeshData data, {
     GeometryStorage storage = GeometryStorage.fixed,
   }) {
-    return MeshGeometry.fromArrays(
+    final geometry = MeshGeometry.fromArrays(
       positions: data.positions,
       normals: data.normals,
       texCoords: data.texCoords,
@@ -157,6 +157,14 @@ class MeshGeometry extends UnskinnedGeometry {
       primitiveType: data.primitiveType,
       storage: storage,
     );
+    for (final entry in data.customAttributes.entries) {
+      geometry.setCustomAttribute(
+        entry.key,
+        entry.value.data,
+        components: entry.value.components,
+      );
+    }
+    return geometry;
   }
 
   /// Replaces this updatable geometry's data from a [MeshData] snapshot.
@@ -172,6 +180,13 @@ class MeshGeometry extends UnskinnedGeometry {
       colors: data.colors,
       indices: data.indices,
     );
+    for (final entry in data.customAttributes.entries) {
+      setCustomAttribute(
+        entry.key,
+        entry.value.data,
+        components: entry.value.components,
+      );
+    }
   }
 
   /// How this geometry's GPU buffers are managed; see [GeometryStorage].
@@ -429,6 +444,8 @@ class MeshGeometry extends UnskinnedGeometry {
     setRaycastAttributes(
       positions: _cpuPositions,
       texCoords: _cpuTexCoords,
+      normals: _cpuNormals,
+      colors: _cpuColors,
       indices: indexBytes,
     );
   }
@@ -493,6 +510,8 @@ class MeshGeometry extends UnskinnedGeometry {
     setRaycastAttributes(
       positions: _cpuPositions,
       texCoords: _cpuTexCoords,
+      normals: _cpuNormals,
+      colors: _cpuColors,
       indices: _packedIndexBytes == null
           ? null
           : ByteData.sublistView(_packedIndexBytes!),
