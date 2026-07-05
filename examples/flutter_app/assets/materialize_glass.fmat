@@ -1,7 +1,7 @@
 // Glass-shard stage of the Materialize example. Rendered over an unwelded
 // triangle soup where every triangle carries flat outward normals plus two
-// custom attributes, its centroid (tri_centroid) and a per-triangle random
-// seed (tri_seed). As the glass front sweeps past a triangle's centroid the
+// custom attributes, its centroid (triangle_centroid) and a per-triangle random
+// seed (triangle_seed). As the glass front sweeps past a triangle's centroid the
 // shard flies in from its scattered pose, fading in at a distance and easing
 // along an s-curve (accelerate, then decelerate into a soft landing), then
 // sits on the surface glowing until the opaque shell phases over it.
@@ -56,8 +56,8 @@ material {
   ],
 
   attributes: [
-    { type: vec3, name: tri_centroid },
-    { type: float, name: tri_seed },
+    { type: vec3, name: triangle_centroid },
+    { type: float, name: triangle_seed },
   ],
 
   varyings: [
@@ -69,7 +69,7 @@ material {
 vertex {
   void Vertex(inout VertexInputs vertex) {
     // World-space height of the shard's centroid drives its timing.
-    float wc = (material_params.model_matrix * vec4(tri_centroid, 1.0)).y;
+    float wc = (material_params.model_matrix * vec4(triangle_centroid, 1.0)).y;
 
     // Raw flight progress: 0 scattered, 1 seated, keeps counting past 1 so
     // the fragment stage knows how long the shard has been down.
@@ -85,16 +85,16 @@ vertex {
     float s = 1.0 - ease;
 
     // Seeded tumble about the centroid, unwinding to zero as it lands.
-    vec3 rel = vertex.position - tri_centroid;
+    vec3 rel = vertex.position - triangle_centroid;
     vec3 n = vertex.normal;
     vec3 axis = normalize(
-        vec3(sin(tri_seed * 19.3), cos(tri_seed * 35.7), sin(tri_seed * 45.9)) +
+        vec3(sin(triangle_seed * 19.3), cos(triangle_seed * 35.7), sin(triangle_seed * 45.9)) +
         vec3(0.0, 0.001, 0.0));
     float wobble =
-        sin(material_params.time * (1.0 + fract(tri_seed) * 1.5) +
-            tri_seed * 40.0) * 0.4;
+        sin(material_params.time * (1.0 + fract(triangle_seed) * 1.5) +
+            triangle_seed * 40.0) * 0.4;
     float angle = s * (material_params.tumble *
-                           (fract(tri_seed * 7.61) - 0.5) * 8.0 +
+                           (fract(triangle_seed * 7.61) - 0.5) * 8.0 +
                        wobble);
     float ca = cos(angle);
     float sa = sin(angle);
@@ -104,7 +104,7 @@ vertex {
         n * ca + cross(axis, n) * sa + axis * dot(axis, n) * (1.0 - ca);
 
     vec3 seated =
-        (material_params.model_matrix * vec4(tri_centroid + rel_rot, 1.0)).xyz;
+        (material_params.model_matrix * vec4(triangle_centroid + rel_rot, 1.0)).xyz;
 
     // Compose the scattered pose (all world space): shared bias direction,
     // radial push from the model center, a push along the shard's own face
@@ -114,12 +114,12 @@ vertex {
     float rlen = length(radial);
     radial = rlen > 1e-5 ? radial / rlen : vec3(0.0, 1.0, 0.0);
     vec3 n_world = normalize(mat3(material_params.model_matrix) * n);
-    vec3 jdir = normalize(vec3(sin(tri_seed * 61.0), sin(tri_seed * 47.0 + 2.0),
-                               cos(tri_seed * 53.0)));
+    vec3 jdir = normalize(vec3(sin(triangle_seed * 61.0), sin(triangle_seed * 47.0 + 2.0),
+                               cos(triangle_seed * 53.0)));
     vec3 offset = fdir * material_params.fly_distance +
         radial * material_params.center_distance +
         n_world * material_params.normal_distance +
-        jdir * (material_params.jitter * (0.5 + fract(tri_seed * 9.19)));
+        jdir * (material_params.jitter * (0.5 + fract(triangle_seed * 9.19)));
 
     vertex.world_position = seated + offset * s;
     vertex.world_normal =
