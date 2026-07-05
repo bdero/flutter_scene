@@ -90,6 +90,8 @@ const _frameworkShaderFiles = <String>[
   'pbr.glsl',
   'texture.glsl',
   'normals.glsl',
+  // Opt-in include for material authors (`#include <noise.glsl>`).
+  'noise.glsl',
   'material_inputs.glsl',
   'material_engine_lighting.glsl',
   'material_lighting.glsl',

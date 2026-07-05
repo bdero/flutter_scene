@@ -11,3 +11,4 @@ dartdoc:
     - "Widgets"
     - "Gaussian splatting"
     - "Assets and loading"
+    - "Noise"

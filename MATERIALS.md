@@ -349,6 +349,46 @@ is (world position is available in every pass).
 
 ---
 
+# Built-in noise, `#include <noise.glsl>`
+
+Any `fragment`, `vertex`, or `sky` block can opt into the engine's noise
+library by starting the block with an include:
+
+```glsl
+fragment {
+#include <noise.glsl>
+
+  void Surface(inout MaterialInputs material) {
+    float n = NoiseSimplex3(GetWorldPosition() * 4.0, 1337);
+    ...
+  }
+}
+```
+
+The library is a GPU port of the FastNoiseLite implementation behind
+`package:flutter_scene/noise.dart`, and the two are kept in lockstep, the
+same field sampled on the CPU and evaluated in a shader agree. Functions
+(each also in a smoother `2S`/`3S` OpenSimplex2S flavor):
+
+```glsl
+float NoiseSimplex2(vec2 p, int seed);   // one octave, roughly [-1, 1]
+float NoiseSimplex3(vec3 p, int seed);
+float NoiseFbm2(vec2 p, int seed, int octaves, float lacunarity, float gain);
+float NoiseRidged2(vec2 p, int seed, int octaves, float lacunarity, float gain);
+float NoisePingPong2(vec2 p, int seed, int octaves, float lacunarity, float gain, float strength);
+int   NoiseHash2(ivec2 cell, int seed);  // hashed lattice cell, full int32
+```
+
+Frequency is applied by the caller (scale `p` before the call), so
+`FastNoiseLite(seed: s, frequency: f).getNoise2(x, y)` on the CPU corresponds
+to `NoiseSimplex2(vec2(x, y) * f, s)` in the shader. The agreement contract
+has two tiers. `NoiseHash2`/`NoiseHash3` are pure 32-bit integer math and
+match the Dart `noiseHash2`/`noiseHash3` bit for bit on every backend, use
+them for decisions that must never disagree. The float functions match the
+CPU within a small tolerance (float32 rounding differs per GPU), enforced by
+a per-backend parity test in CI; do not re-derive a hard threshold from float
+noise on both sides, make the decision once and share it.
+
 # The engine contract (both paths)
 
 flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
