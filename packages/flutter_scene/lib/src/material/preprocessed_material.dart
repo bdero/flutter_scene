@@ -65,6 +65,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   ) {
     // The generated vertex variant declares the same MaterialParams block as
     // the fragment shader, so a parameter reads the same value in both stages.
+    // The variant's keep-alive references the block (see
+    // MATERIAL_PARAMS_KEEP_ALIVE in the emitter) so it survives compilation
+    // even when Vertex() reads no parameter; binding an optimized-out block
+    // crashes the Metal backend.
     parameters.bindUniformBlock(pass, vertexShader, transientsBuffer);
     // Bind the keep-alive block (name must match kVertexKeepAliveBlock in the
     // emitter) to zero: the generated shader multiplies the mesh inputs by it

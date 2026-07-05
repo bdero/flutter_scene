@@ -95,5 +95,10 @@ void main() {
       vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz +
                joints.xyz + weights.xyz,
            0.0);
+#ifdef MATERIAL_PARAMS_KEEP_ALIVE
+  // Keep MaterialParams live even when Vertex() reads no parameter; the
+  // runtime binds the block to the vertex stage unconditionally.
+  gl_Position.x += vertex_keep_alive.keep_alive.x * MATERIAL_PARAMS_KEEP_ALIVE;
+#endif
 #endif
 }

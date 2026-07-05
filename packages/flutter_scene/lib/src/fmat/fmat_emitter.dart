@@ -130,17 +130,10 @@ String emitFragmentGlsl(FmatMaterial material) {
   sb.writeln('  MaterialInputs material = InitMaterialInputs();');
   sb.writeln('  Surface(material);');
   if (uniforms.isNotEmpty) {
-    final first = uniforms.first;
-    final member = '$kMaterialParamsInstance.${first.name}';
-    final scalar = switch (first.type) {
-      FmatType.float_ => member,
-      FmatType.int_ => 'float($member)',
-      FmatType.mat4 => '$member[0].x',
-      _ => '$member.x',
-    };
     sb.writeln(
       '  material.base_color.r += '
-      '$kFragmentKeepAliveInstance.keep_alive.x * $scalar;',
+      '$kFragmentKeepAliveInstance.keep_alive.x * '
+      '${_paramsKeepAliveScalar(uniforms.first)};',
     );
   }
   if (lit) {
@@ -155,6 +148,21 @@ String emitFragmentGlsl(FmatMaterial material) {
   sb.writeln('}');
 
   return sb.toString();
+}
+
+/// A scalar GLSL expression reading one component of [p] through the
+/// MaterialParams instance. Both stages fold it into their zero-bound
+/// keep-alive term so the optimizer cannot strip the block when the author's
+/// code reads no parameter (the runtime binds it unconditionally, and binding
+/// an optimized-out block is unsafe).
+String _paramsKeepAliveScalar(FmatParameter p) {
+  final member = '$kMaterialParamsInstance.${p.name}';
+  return switch (p.type) {
+    FmatType.float_ => member,
+    FmatType.int_ => 'float($member)',
+    FmatType.mat4 => '$member[0].x',
+    _ => '$member.x',
+  };
 }
 
 /// Emits the vertex-shader GLSL for each variant of [material], keyed by the
@@ -231,6 +239,15 @@ String _emitVertexVariant(
     }
     sb.writeln('}');
     sb.writeln('$kMaterialParamsInstance;');
+    sb.writeln();
+    // The body include folds this into the zero-bound keep-alive so the block
+    // survives even when Vertex() reads no parameter; the runtime binds it to
+    // both stages unconditionally, and binding an optimized-out block crashes
+    // the Metal backend.
+    sb.writeln(
+      '#define MATERIAL_PARAMS_KEEP_ALIVE '
+      '(${_paramsKeepAliveScalar(uniforms.first)})',
+    );
     sb.writeln();
   }
 
