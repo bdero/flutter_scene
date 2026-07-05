@@ -227,9 +227,26 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // The custom-material hero: a grid carrying a per-vertex `phase` attribute,
     // rippled by the vertex stage and colored from the attribute. Floats above
     // the ground so its displaced shadow reads clearly.
+    final grid = _phaseGrid();
     scene.add(
-      Node(mesh: Mesh(_phaseGrid(), material))
+      Node(mesh: Mesh(grid, material))
         ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)),
+    );
+    // A thick-ribbon wireframe derived from the hero grid through the public
+    // readback chain (extractMeshData, extractEdges, LineSegmentsGeometry),
+    // floating above it. Covers the segment-expansion vertex shader and the
+    // derivation pipeline on every backend within this one scene.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          LineSegmentsGeometry(
+            grid.extractMeshData().extractEdges(),
+            width: 0.025,
+            normalOffset: 0.01,
+          ),
+          UnlitMaterial()..baseColorFactor = vm.Vector4(0.2, 0.9, 1.0, 1.0),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 2.1, 0)),
     );
     return (scene: scene, camera: _shadowCamera());
   }),
