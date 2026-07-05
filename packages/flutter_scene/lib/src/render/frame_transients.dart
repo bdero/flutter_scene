@@ -2,6 +2,10 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+// Whether GPU commands execute while passes are encoded (the WebGL2 backend)
+// rather than after submission. Decides the default transients strategy.
+import 'package:flutter_scene/src/render/transients_execution_native.dart'
+    if (dart.library.js_interop) 'package:flutter_scene/src/render/transients_execution_web.dart';
 
 /// Tracks GPU completion of command buffers submitted by the renderer.
 ///
@@ -68,6 +72,142 @@ abstract interface class TransientWriter {
   gpu.BufferView emplace(ByteData bytes);
 }
 
+/// A [TransientWriter] with the renderer's per-frame lifecycle. Implemented
+/// by [TransientArena] (deferred-execution backends) and
+/// [ImmediatePoolTransients] (the immediate-execution WebGL2 backend); the
+/// engine's shared instances pick per platform via [createFrameTransients].
+abstract interface class FrameTransients implements TransientWriter {
+  /// Recycles completed buffers and resets frame stats. Called once per
+  /// frame from the render setup.
+  void beginFrame();
+}
+
+/// Per-emplacement pooled transients for the immediate-execution WebGL2
+/// backend.
+///
+/// GL commands run while passes are encoded, so emplaced bytes must be
+/// device-resident before the caller binds the returned view, and a buffer
+/// written while earlier draws reference it forces the browser to ghost
+/// (copy) it, which dominated per-draw cost before per-emplacement buffers
+/// were introduced. Every emplacement therefore gets its own small device
+/// buffer (sized to the next power-of-two class), written exactly once via
+/// `overwrite` before the view is returned and never touched again while in
+/// flight. Buffers recycle through a completion-gated pool per size class
+/// and idle buffers beyond the previous frame's usage (plus a spare per
+/// class) are dropped, the same policies as [TransientArena].
+class ImmediatePoolTransients implements FrameTransients {
+  ImmediatePoolTransients(this._tracker) {
+    _tracker.addBeforeSubmitListener(_onBeforeSubmit);
+  }
+
+  /// The smallest pooled buffer size; tiny uniform blocks share this class.
+  static const int kMinBufferLengthInBytes = 512;
+
+  final GpuSubmissionTracker _tracker;
+
+  /// Buffers handed out since the last submission; stamped by it.
+  final List<_TransientBlock> _used = [];
+
+  /// Stamped buffers, reusable once the watermark passes their stamp.
+  final List<_TransientBlock> _pooled = [];
+
+  /// Per-size-class usage counts for the shrink policy.
+  final Map<int, int> _lastFrameUse = {};
+  final Map<int, int> _thisFrameUse = {};
+
+  /// Total live buffers. For tests.
+  @visibleForTesting
+  int get bufferCount => _used.length + _pooled.length;
+
+  static int _sizeClassFor(int length) {
+    var size = kMinBufferLengthInBytes;
+    while (size < length) {
+      size <<= 1;
+    }
+    return size;
+  }
+
+  @override
+  gpu.BufferView emplace(ByteData bytes) {
+    final length = bytes.lengthInBytes;
+    final sizeClass = _sizeClassFor(length);
+    final completed = _tracker.completedThrough;
+
+    _TransientBlock? block;
+    for (var i = 0; i < _pooled.length; i++) {
+      final candidate = _pooled[i];
+      if (candidate.length == sizeClass && candidate.stamp <= completed) {
+        block = candidate;
+        _pooled.removeAt(i);
+        break;
+      }
+    }
+    block ??= _TransientBlock(
+      gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, sizeClass),
+      ByteData(0), // No CPU staging: writes go straight to the device.
+      sizeClass,
+      false,
+    );
+    _used.add(block);
+    _thisFrameUse[sizeClass] = (_thisFrameUse[sizeClass] ?? 0) + 1;
+
+    // Device-resident before the view is returned: the immediate backend
+    // consumes it as soon as the caller binds and draws.
+    if (!block.device.overwrite(bytes)) {
+      debugPrint(
+        'ImmediatePoolTransients: failed to upload $length bytes to a '
+        '$sizeClass-byte transient buffer.',
+      );
+    }
+    return gpu.BufferView(
+      block.device,
+      offsetInBytes: 0,
+      lengthInBytes: length,
+    );
+  }
+
+  void _onBeforeSubmit(int id) {
+    for (final block in _used) {
+      block.stamp = id;
+      _pooled.add(block);
+    }
+    _used.clear();
+  }
+
+  @override
+  void beginFrame() {
+    _onBeforeSubmit(_tracker.latestSubmission);
+
+    // Shrink: per size class, keep completed buffers up to last frame's
+    // usage plus one spare; drop the rest.
+    final completed = _tracker.completedThrough;
+    final kept = <int, int>{};
+    _pooled.removeWhere((block) {
+      if (block.stamp > completed) return false; // still in flight
+      final keep = (_lastFrameUse[block.length] ?? 0) + 1;
+      final count = (kept[block.length] ?? 0) + 1;
+      kept[block.length] = count;
+      return count > keep;
+    });
+
+    _lastFrameUse
+      ..clear()
+      ..addAll(_thisFrameUse);
+    _thisFrameUse.clear();
+  }
+}
+
+/// Creates the platform-default [FrameTransients]: a staged, block-based
+/// [TransientArena] where GPU work executes after submission, and a
+/// per-emplacement [ImmediatePoolTransients] where GL commands execute at
+/// encode time and a bound buffer can never be written again.
+FrameTransients createFrameTransients(
+  GpuSubmissionTracker tracker, {
+  int? alignment,
+}) => kImmediateGpuExecution
+    ? ImmediatePoolTransients(tracker)
+    : TransientArena(tracker, alignment: alignment);
+
 /// A completion-aware bump allocator for per-frame transient GPU data.
 ///
 /// Emplacements are staged CPU-side into fixed-size blocks and returned as
@@ -86,7 +226,7 @@ abstract interface class TransientWriter {
 /// previous frame's usage (plus a spare) are dropped so memory shrinks back
 /// after load spikes. Requests larger than [blockLengthInBytes] get a
 /// dedicated buffer that is pooled the same way.
-class TransientArena implements TransientWriter {
+class TransientArena implements FrameTransients {
   TransientArena(
     this._tracker, {
     int? alignment,
@@ -134,6 +274,7 @@ class TransientArena implements TransientWriter {
   /// Open blocks from the previous frame (possible when a frame emplaced
   /// data but submitted nothing) seal with the latest submission stamp, so
   /// they stay safe against any in-flight work.
+  @override
   void beginFrame() {
     for (final block in _open) {
       _seal(block, _tracker.latestSubmission);
@@ -312,11 +453,13 @@ class _TransientBlock {
 
 /// The renderer's per-frame uniform transients (alignment resolved from the
 /// GPU context's minimum uniform alignment).
-final TransientArena uniformTransients = TransientArena(rendererSubmissions);
+final FrameTransients uniformTransients = createFrameTransients(
+  rendererSubmissions,
+);
 
 /// The renderer's per-frame instance-rate vertex transients. Vertex fetch
 /// needs only element alignment; 16 bytes covers a vec4 column.
-final TransientArena instanceTransients = TransientArena(
+final FrameTransients instanceTransients = createFrameTransients(
   rendererSubmissions,
   alignment: 16,
 );

@@ -9,7 +9,11 @@
   back afterward. This removes a redundant 4x internal buffer ring, fixes
   whole-frame aborts when a frame emplaces more than ~1MB of transients (a
   `HostBuffer` block-boundary bug), and collapses per-draw GPU buffer
-  writes into a handful of block uploads per frame.
+  writes into a handful of block uploads per frame. On the WebGL2 backend,
+  where GL commands execute during pass encoding (so a bound buffer can
+  never be written again without the browser ghosting it), the same arena
+  interface is backed by per-emplacement pooled buffers with identical
+  completion-gated recycling and shrink behavior.
 
 * BREAKING: the custom-pass and material/geometry `bind` surfaces take a
   `TransientWriter` (newly exported) where they previously took a
