@@ -1,36 +1,70 @@
-// Wireframe stage of the Materialize example. Rendered over line-list
-// geometry built from the model's unique triangle edges. Lines fade in
-// below the wire front with a hot leading edge, and fade back out once
-// the solid front passes (the opaque surface has taken over by then).
+// Wireframe stage of the Materialize example. Rendered over ribbon geometry,
+// one view-facing quad per unique mesh edge (native line primitives are a
+// fixed one pixel, so thickness is built from triangles). Each vertex carries
+// the opposite edge endpoint and a side sign; the vertex stage expands the
+// quad perpendicular to both the edge and the view direction.
+//
+// All gating compares a sweep coordinate (dot(position, sweep_dir), object
+// space) against fronts driven from Dart, so the reveal travels along the
+// model's up axis regardless of how the source asset is oriented.
 
 material {
   name: "MaterializeWireframe",
   shading_model: unlit,
   blending: alpha,
+  culling: none,
 
   parameters: [
-    // Object-space sweep fronts, driven from Dart each tick.
-    { type: float, name: wire_y, default: 10.0 },
-    { type: float, name: solid_y, default: -10.0 },
+    { type: mat4, name: model_matrix },
+    { type: vec3, name: sweep_dir, default: [0.0, 1.0, 0.0] },
+    // Sweep fronts (object-space sweep coordinates), driven per tick.
+    { type: float, name: wire_front, default: 10.0 },
+    { type: float, name: solid_front, default: -10.0 },
     // Height of the fade band around each front.
     { type: float, name: band, default: 0.08 },
-    // Push lines slightly outward along the vertex normal so they sit
-    // above the shell surface instead of z-fighting it.
+    // World-space ribbon width.
+    { type: float, name: thickness, default: 0.004 },
+    // Push the ribbon off the surface along the vertex normal so it does not
+    // z-fight the shell.
     { type: float, name: inflate, default: 0.004 },
     { type: vec4, name: wire_color, hint: source_color, default: [0.25, 0.85, 1.0, 0.85] },
-    { type: float, name: glow_strength, hint: range(0, 20, 0.1), default: 8.0 },
+    { type: float, name: glow_strength, hint: range(0, 30, 0.1), default: 8.0 },
+  ],
+
+  attributes: [
+    { type: vec3, name: edge_other },
+    { type: float, name: edge_side },
   ],
 
   varyings: [
-    { type: float, name: object_y },
+    { type: float, name: sweep_s },
   ],
 }
 
 vertex {
   void Vertex(inout VertexInputs vertex) {
-    object_y = vertex.position.y;
-    vertex.world_position +=
-        normalize(vertex.world_normal) * material_params.inflate;
+    sweep_s = dot(vertex.position, material_params.sweep_dir);
+
+    // Inflate both endpoints along this vertex's normal (the endpoints of an
+    // edge have nearly parallel normals, so sharing one is fine).
+    vec3 p = vertex.position + vertex.normal * material_params.inflate;
+    vec3 o = edge_other + vertex.normal * material_params.inflate;
+
+    vec3 world_p = (material_params.model_matrix * vec4(p, 1.0)).xyz;
+    vec3 world_o = (material_params.model_matrix * vec4(o, 1.0)).xyz;
+
+    // Expand perpendicular to the edge and the view direction so the ribbon
+    // always faces the camera.
+    vec3 dir = world_o - world_p;
+    vec3 view = vertex.camera_position - world_p;
+    vec3 perp = cross(dir, view);
+    float len = length(perp);
+    perp = len > 1e-6 ? perp / len : vec3(0.0);
+
+    vertex.world_position =
+        world_p + perp * (material_params.thickness * 0.5 * edge_side);
+    vertex.world_normal =
+        normalize(mat3(material_params.model_matrix) * vertex.normal);
   }
 }
 
@@ -39,12 +73,12 @@ fragment {
     float band = max(material_params.band, 1e-4);
     // 1 below the wire front, easing to 0 above it.
     float reveal = 1.0 -
-        smoothstep(material_params.wire_y - band, material_params.wire_y,
-                   object_y);
-    // 0 below the solid front (opaque surface owns that region now).
+        smoothstep(material_params.wire_front - band,
+                   material_params.wire_front, sweep_s);
+    // 0 below the solid front (the opaque surface owns that region now).
     float takeover =
-        smoothstep(material_params.solid_y - band,
-                   material_params.solid_y + band, object_y);
+        smoothstep(material_params.solid_front - band,
+                   material_params.solid_front + band, sweep_s);
     float alpha = reveal * takeover * material_params.wire_color.a;
     if (alpha <= 0.003) {
       discard;
@@ -52,7 +86,8 @@ fragment {
 
     // Hot pulse at the leading edge.
     float edge = 1.0 -
-        clamp(abs(object_y - material_params.wire_y) / (band * 2.0), 0.0, 1.0);
+        clamp(abs(sweep_s - material_params.wire_front) / (band * 2.0),
+              0.0, 1.0);
     vec3 color = material_params.wire_color.rgb *
         (1.0 + material_params.glow_strength * edge * edge);
 

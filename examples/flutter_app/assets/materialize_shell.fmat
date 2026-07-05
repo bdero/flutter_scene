@@ -15,8 +15,9 @@ material {
   blending: opaque,
 
   parameters: [
-    // Object-space reveal front, driven from Dart each tick.
-    { type: float, name: solid_y, default: 10.0 },
+    { type: vec3, name: sweep_dir, default: [0.0, 1.0, 0.0] },
+    // Reveal front (an object-space sweep coordinate), driven per tick.
+    { type: float, name: solid_front, default: 10.0 },
     // Height of the emissive seam band under the front.
     { type: float, name: seam_width, default: 0.06 },
     { type: vec4, name: seam_color, hint: source_color, default: [0.3, 0.9, 1.0, 1.0] },
@@ -37,19 +38,19 @@ material {
   ],
 
   varyings: [
-    { type: float, name: object_y },
+    { type: float, name: sweep_s },
   ],
 }
 
 vertex {
   void Vertex(inout VertexInputs vertex) {
-    object_y = vertex.position.y;
+    sweep_s = dot(vertex.position, material_params.sweep_dir);
   }
 }
 
 fragment {
   void Surface(inout MaterialInputs material) {
-    if (object_y > material_params.solid_y) {
+    if (sweep_s > material_params.solid_front) {
       discard;
     }
 
@@ -77,7 +78,7 @@ fragment {
         material_params.emissive_factor;
 
     // The laser seam, a hot emissive band right under the reveal front.
-    float d = material_params.solid_y - object_y;
+    float d = material_params.solid_front - sweep_s;
     float seam =
         1.0 - smoothstep(0.0, max(material_params.seam_width, 1e-4), d);
     material.emissive +=
