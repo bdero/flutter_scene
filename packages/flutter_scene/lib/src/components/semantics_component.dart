@@ -34,8 +34,7 @@ import 'package:flutter_scene/src/components/component.dart';
 ///
 /// The convenience parameters cover common cases; pass a full
 /// [SemanticsProperties] as [properties] for anything else (sliders, live
-/// regions, custom actions, focus callbacks). The two forms are mutually
-/// exclusive.
+/// regions, custom actions). The two forms are mutually exclusive.
 /// {@category Accessibility}
 class SemanticsComponent extends Component {
   /// Creates semantics for the owning node.
@@ -51,6 +50,8 @@ class SemanticsComponent extends Component {
     VoidCallback? onLongPress,
     VoidCallback? onIncrease,
     VoidCallback? onDecrease,
+    VoidCallback? onDidGainAccessibilityFocus,
+    VoidCallback? onDidLoseAccessibilityFocus,
     double? sortOrder,
     TextDirection? textDirection,
     bool occlusionHiding = false,
@@ -66,6 +67,8 @@ class SemanticsComponent extends Component {
                  onLongPress == null &&
                  onIncrease == null &&
                  onDecrease == null &&
+                 onDidGainAccessibilityFocus == null &&
+                 onDidLoseAccessibilityFocus == null &&
                  sortOrder == null &&
                  textDirection == null),
          'Pass either the convenience parameters or a full properties '
@@ -79,6 +82,8 @@ class SemanticsComponent extends Component {
        _onLongPress = onLongPress,
        _onIncrease = onIncrease,
        _onDecrease = onDecrease,
+       _onDidGainAccessibilityFocus = onDidGainAccessibilityFocus,
+       _onDidLoseAccessibilityFocus = onDidLoseAccessibilityFocus,
        _sortOrder = sortOrder,
        _textDirection = textDirection,
        _occlusionHiding = occlusionHiding,
@@ -93,6 +98,8 @@ class SemanticsComponent extends Component {
   VoidCallback? _onLongPress;
   VoidCallback? _onIncrease;
   VoidCallback? _onDecrease;
+  VoidCallback? _onDidGainAccessibilityFocus;
+  VoidCallback? _onDidLoseAccessibilityFocus;
   double? _sortOrder;
   TextDirection? _textDirection;
   bool _occlusionHiding;
@@ -190,6 +197,26 @@ class SemanticsComponent extends Component {
     _bump();
   }
 
+  /// Called when the node gains accessibility focus (the screen-reader
+  /// cursor lands on it). A natural place to draw an in-scene focus
+  /// indicator (a `Node.highlightColor` outline) or steer the camera.
+  VoidCallback? get onDidGainAccessibilityFocus => _onDidGainAccessibilityFocus;
+  set onDidGainAccessibilityFocus(VoidCallback? value) {
+    _assertConvenience();
+    if (value == _onDidGainAccessibilityFocus) return;
+    _onDidGainAccessibilityFocus = value;
+    _bump();
+  }
+
+  /// Called when the node loses accessibility focus.
+  VoidCallback? get onDidLoseAccessibilityFocus => _onDidLoseAccessibilityFocus;
+  set onDidLoseAccessibilityFocus(VoidCallback? value) {
+    _assertConvenience();
+    if (value == _onDidLoseAccessibilityFocus) return;
+    _onDidLoseAccessibilityFocus = value;
+    _bump();
+  }
+
   /// The node's position in the accessibility traversal order, lower values
   /// first. Elements without a sort order read in scene-graph order.
   double? get sortOrder => _sortOrder;
@@ -252,6 +279,8 @@ class SemanticsComponent extends Component {
               _onLongPress == null &&
               _onIncrease == null &&
               _onDecrease == null &&
+              _onDidGainAccessibilityFocus == null &&
+              _onDidLoseAccessibilityFocus == null &&
               _sortOrder == null &&
               _textDirection == null),
       'Pass either the convenience parameters or a full properties object, '
@@ -292,6 +321,8 @@ class SemanticsComponent extends Component {
             onLongPress: _onLongPress,
             onIncrease: _onIncrease,
             onDecrease: _onDecrease,
+            onDidGainAccessibilityFocus: _onDidGainAccessibilityFocus,
+            onDidLoseAccessibilityFocus: _onDidLoseAccessibilityFocus,
             sortKey: _sortOrder == null ? null : OrdinalSortKey(_sortOrder!),
             textDirection: _textDirection ?? ambientTextDirection,
           );
