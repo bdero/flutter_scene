@@ -1,16 +1,23 @@
+import 'dart:math';
+
+import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
-/// Scene content exposed to assistive technology: labeled 3D objects with
-/// semantics actions (a tappable lamp, an adjustable pedestal), an occluded
-/// gauge that opts into occlusion hiding, and a widget panel whose real
-/// button semantics project onto its 3D surface. Run a screen reader (or
-/// the Flutter semantics debugger) to explore; accessibility focus draws an
-/// in-scene highlight through onDidGainAccessibilityFocus.
+/// An accessible 3D scene: the car's doors, hood, and trunk are each a
+/// pickable, labeled part. Hover (or accessibility-focus) draws a
+/// see-through outline on the part through the built-in highlight system;
+/// clicking (or activating its semantics) toggles it open or closed with an
+/// animation. Every part is also a [SemanticsComponent], so a screen reader
+/// navigates the same parts and performs the same toggles.
+///
+/// Toggle "Show semantics" to overlay Flutter's [SemanticsDebugger], which
+/// draws every semantics rectangle and lets you tap one to fire its action,
+/// a way to verify the accessibility tree without turning a screen reader
+/// on.
 class ExampleAccessibility extends StatefulWidget {
   const ExampleAccessibility({super.key});
 
@@ -18,218 +25,334 @@ class ExampleAccessibility extends StatefulWidget {
   ExampleAccessibilityState createState() => ExampleAccessibilityState();
 }
 
+/// One openable car part: its node, rest pose, hinge axis, animation state,
+/// and the semantics that expose it.
+class _Part {
+  _Part({
+    required this.nodeName,
+    required this.label,
+    required this.axis,
+    required this.sortOrder,
+  });
+
+  final String nodeName;
+  final String label;
+  final vm.Vector3 axis;
+  final double sortOrder;
+
+  late Node node;
+  late vm.Matrix4 startTransform;
+  late SemanticsComponent semantics;
+
+  // Current open fraction (0 closed, 1 open) and the value it animates
+  // toward.
+  double amount = 0;
+  double target = 0;
+  bool get open => target > 0.5;
+}
+
 class ExampleAccessibilityState extends State<ExampleAccessibility> {
   final Scene scene = Scene();
+  bool loaded = false;
 
-  late final Node _lamp;
-  late final Node _pedestal;
-  late final UnlitMaterial _lampMaterial;
-  bool _lampOn = false;
-  double _pedestalScale = 1.0;
-  int _panelPresses = 0;
+  final EnvironmentSkySource _skySource = EnvironmentSkySource();
 
-  static final vm.Vector4 _focusColor = vm.Vector4(1.0, 0.85, 0.2, 1.0);
+  // Hover outline (mouse) and focus outline (assistive technology). Linear
+  // RGBA.
+  static final vm.Vector4 _hoverColor = vm.Vector4(0.2, 0.9, 1.0, 1.0);
+  static final vm.Vector4 _focusColor = vm.Vector4(1.0, 0.75, 0.1, 1.0);
 
-  // The focus highlight rides on Node.highlightColor, set while assistive
-  // technology focuses the object's semantics node.
-  SemanticsProperties _focusable(
-    Node node, {
-    required String label,
-    String? value,
-    String? hint,
-    bool button = false,
-    VoidCallback? onTap,
-    VoidCallback? onIncrease,
-    VoidCallback? onDecrease,
-    String? increasedValue,
-    String? decreasedValue,
-  }) => SemanticsProperties(
-    label: label,
-    value: value,
-    increasedValue: increasedValue,
-    decreasedValue: decreasedValue,
-    hint: hint,
-    button: button ? true : null,
-    textDirection: TextDirection.ltr,
-    onTap: onTap,
-    onIncrease: onIncrease,
-    onDecrease: onDecrease,
-    onDidGainAccessibilityFocus: () =>
-        setState(() => node.highlightColor = _focusColor),
-    onDidLoseAccessibilityFocus: () =>
-        setState(() => node.highlightColor = null),
-  );
+  final List<_Part> _parts = [
+    _Part(
+      nodeName: 'DoorFront.L',
+      label: 'Front left door',
+      axis: vm.Vector3(0, -1, 0),
+      sortOrder: 0,
+    ),
+    _Part(
+      nodeName: 'DoorFront.R',
+      label: 'Front right door',
+      axis: vm.Vector3(0, -1, 0),
+      sortOrder: 1,
+    ),
+    _Part(
+      nodeName: 'DoorBack.L',
+      label: 'Rear left door',
+      axis: vm.Vector3(0, -1, 0),
+      sortOrder: 2,
+    ),
+    _Part(
+      nodeName: 'DoorBack.R',
+      label: 'Rear right door',
+      axis: vm.Vector3(0, -1, 0),
+      sortOrder: 3,
+    ),
+    _Part(
+      nodeName: 'Frunk',
+      label: 'Front trunk',
+      axis: vm.Vector3(0, 0, 1),
+      sortOrder: 4,
+    ),
+    _Part(
+      nodeName: 'Trunk',
+      label: 'Trunk',
+      axis: vm.Vector3(0, 0, -1),
+      sortOrder: 5,
+    ),
+  ];
 
-  void _toggleLamp() {
-    setState(() {
-      _lampOn = !_lampOn;
-      _lampMaterial.baseColorFactor = _lampOn
-          ? vm.Vector4(1.0, 0.9, 0.4, 1.0)
-          : vm.Vector4(0.25, 0.25, 0.3, 1.0);
-      _lampSemantics.value = _lampOn ? 'on' : 'off';
-    });
-  }
+  final Map<Node, _Part> _partByNode = {};
 
-  late final SemanticsComponent _lampSemantics;
+  _Part? _hoveredPart;
+  _Part? _focusedPart;
 
-  void _scalePedestal(double delta) {
-    setState(() {
-      _pedestalScale = (_pedestalScale + delta).clamp(0.5, 2.0);
-      _pedestal.localTransform = vm.Matrix4.translation(vm.Vector3(1.6, 0, 0))
-        ..scaleByVector3(vm.Vector3.all(_pedestalScale));
-      _pedestalSemantics.properties = _pedestalProperties();
-    });
-  }
+  // Camera orbit, paused while the pointer is over the scene so parts are
+  // stationary (and easy to click) under the cursor.
+  double _orbitPhase = 0;
+  bool _pointerInside = false;
+  Camera? _lastCamera;
+  Size _viewSize = Size.zero;
 
-  late final SemanticsComponent _pedestalSemantics;
-
-  SemanticsProperties _pedestalProperties() => _focusable(
-    _pedestal,
-    label: 'Pedestal',
-    value: '${(_pedestalScale * 100).round()} percent',
-    increasedValue:
-        '${((_pedestalScale + 0.25).clamp(0.5, 2.0) * 100).round()} percent',
-    decreasedValue:
-        '${((_pedestalScale - 0.25).clamp(0.5, 2.0) * 100).round()} percent',
-    hint: 'Adjust to change its size',
-    onIncrease: () => _scalePedestal(0.25),
-    onDecrease: () => _scalePedestal(-0.25),
-  );
+  bool _showSemantics = false;
 
   @override
   void initState() {
     super.initState();
+    _load();
+  }
 
-    // A tappable lamp: activating it through the screen reader toggles its
-    // color and reported value.
-    _lampMaterial = UnlitMaterial()
-      ..baseColorFactor = vm.Vector4(0.25, 0.25, 0.3, 1.0);
-    _lamp = Node(
-      name: 'lamp',
-      localTransform: vm.Matrix4.translation(vm.Vector3(-1.6, 0, 0)),
-      mesh: Mesh(SphereGeometry(radius: 0.6), _lampMaterial),
+  Future<void> _load() async {
+    final car = await loadScene('assets_src/fcar.glb');
+    final environment = await EnvironmentMap.fromAssets(
+      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
     );
-    _lampSemantics = SemanticsComponent(
-      properties: _focusable(
-        _lamp,
-        label: 'Lamp',
-        value: 'off',
-        hint: 'Activate to toggle',
+    if (!mounted) return;
+
+    car.name = 'Car';
+    scene.add(car);
+
+    for (final part in _parts) {
+      final node = car.getChildByNamePath([part.nodeName])!;
+      part.node = node;
+      part.startTransform = node.localTransform.clone();
+      part.semantics = SemanticsComponent(
+        label: part.label,
+        value: 'closed',
+        hint: 'Activate to open or close',
         button: true,
-        onTap: _toggleLamp,
-      ),
-    );
-    _lamp.addComponent(_lampSemantics);
-    scene.add(_lamp);
+        sortOrder: part.sortOrder,
+        onTap: () => _togglePart(part),
+        onDidGainAccessibilityFocus: () => _setFocused(part),
+        onDidLoseAccessibilityFocus: () => _clearFocused(part),
+      );
+      node.addComponent(part.semantics);
+      _partByNode[node] = part;
+    }
 
-    // An adjustable pedestal: increase/decrease actions scale it.
-    _pedestal = Node(
-      name: 'pedestal',
-      localTransform: vm.Matrix4.translation(vm.Vector3(1.6, 0, 0)),
-      mesh: Mesh(
-        CuboidGeometry(vm.Vector3(0.9, 0.9, 0.9)),
-        UnlitMaterial()..baseColorFactor = vm.Vector4(0.4, 0.6, 0.9, 1.0),
-      ),
-    );
-    _pedestalSemantics = SemanticsComponent(properties: _pedestalProperties());
-    _pedestal.addComponent(_pedestalSemantics);
-    scene.add(_pedestal);
+    scene.environment = environment;
+    scene.exposure = 2.5;
+    scene.skybox = Skybox(_skySource);
+    scene.highlightStyle.thickness = 4.0;
 
-    // A gauge behind a wall, opted into occlusion hiding: it leaves the
-    // semantics tree while the wall blocks the camera's line of sight.
-    final gauge = Node(
-      name: 'gauge',
-      localTransform: vm.Matrix4.translation(vm.Vector3(0, 0.2, 3)),
-      mesh: Mesh(
-        SphereGeometry(radius: 0.35),
-        UnlitMaterial()..baseColorFactor = vm.Vector4(0.9, 0.3, 0.3, 1.0),
-      ),
-    );
-    gauge.addComponent(
-      SemanticsComponent(
-        label: 'Pressure gauge',
-        value: 'nominal',
-        textDirection: TextDirection.ltr,
-        occlusionHiding: true,
-      ),
-    );
-    scene.add(gauge);
-    final wall = Node(
-      name: 'wall',
-      localTransform: vm.Matrix4.translation(vm.Vector3(0, 0.2, 1.8)),
-      mesh: Mesh(
-        CuboidGeometry(vm.Vector3(1.4, 1.4, 0.1)),
-        UnlitMaterial()..baseColorFactor = vm.Vector4(0.5, 0.5, 0.5, 1.0),
-      ),
-    );
-    scene.add(wall);
+    setState(() => loaded = true);
+  }
 
-    // A widget panel on a quad: the hosted buttons' own semantics project
-    // onto the surface, so a screen reader traverses into them like any
-    // other widgets.
-    final panel = Node(
-      name: 'panel',
-      localTransform: vm.Matrix4.translation(vm.Vector3(0, 1.6, 0)),
+  @override
+  void dispose() {
+    scene.removeAll();
+    super.dispose();
+  }
+
+  // Walks up from a hit node to the openable part it belongs to, or null.
+  _Part? _partForNode(Node node) {
+    for (Node? current = node; current != null; current = current.parent) {
+      final part = _partByNode[current];
+      if (part != null) return part;
+    }
+    return null;
+  }
+
+  void _togglePart(_Part part) {
+    setState(() {
+      part.target = part.open ? 0.0 : 1.0;
+      part.semantics.value = part.open ? 'open' : 'closed';
+    });
+  }
+
+  void _setFocused(_Part part) {
+    setState(() {
+      _focusedPart = part;
+      _refreshHighlights();
+    });
+  }
+
+  void _clearFocused(_Part part) {
+    if (_focusedPart != part) return;
+    setState(() {
+      _focusedPart = null;
+      _refreshHighlights();
+    });
+  }
+
+  // Sets each part's outline color: amber where accessibility focus sits,
+  // cyan where the mouse hovers, none otherwise. highlightColor does not
+  // inherit, so it is set on the part node and all of its descendants.
+  void _refreshHighlights() {
+    for (final part in _parts) {
+      final color = part == _focusedPart
+          ? _focusColor
+          : (part == _hoveredPart ? _hoverColor : null);
+      _applyHighlight(part.node, color);
+    }
+  }
+
+  void _applyHighlight(Node node, vm.Vector4? color) {
+    node.highlightColor = color;
+    for (final child in node.children) {
+      _applyHighlight(child, color);
+    }
+  }
+
+  Camera _buildCamera() {
+    const radius = 10.0;
+    return PerspectiveCamera(
+      position: vm.Vector3(
+        sin(_orbitPhase) * radius,
+        4,
+        cos(_orbitPhase) * radius,
+      ),
+      target: vm.Vector3(0, 0.5, 0),
     );
-    panel.addComponent(
-      WidgetComponent(
-        size: const Size(360, 200),
-        worldHeight: 1.2,
-        child: _PanelContent(
-          onPressed: () => setState(() => _panelPresses++),
-          presses: () => _panelPresses,
+  }
+
+  void _onTick(double deltaSeconds) {
+    if (!_pointerInside) {
+      _orbitPhase += deltaSeconds * 0.2;
+    }
+    // Animate each part toward its open/closed target.
+    const speed = 3.0; // reaches the target in ~1/3 second
+    for (final part in _parts) {
+      if (part.amount == part.target) continue;
+      final step = speed * deltaSeconds;
+      if ((part.target - part.amount).abs() <= step) {
+        part.amount = part.target;
+      } else {
+        part.amount += part.target > part.amount ? step : -step;
+      }
+      part.node.localTransform = part.startTransform.clone()
+        ..rotate(part.axis, part.amount * pi / 2);
+    }
+    exampleSettings.applyTo(scene);
+  }
+
+  void _onEnter() => _pointerInside = true;
+
+  void _onExit() {
+    _pointerInside = false;
+    if (_hoveredPart != null) {
+      setState(() {
+        _hoveredPart = null;
+        _refreshHighlights();
+      });
+    }
+  }
+
+  _Part? _pick(Offset localPosition) {
+    final camera = _lastCamera;
+    if (camera == null || _viewSize.isEmpty) return null;
+    final hit = scene.raycast(
+      camera.screenPointToRay(localPosition, _viewSize),
+    );
+    return hit == null ? null : _partForNode(hit.node);
+  }
+
+  void _onHover(PointerHoverEvent event) {
+    final part = _pick(event.localPosition);
+    if (part == _hoveredPart) return;
+    setState(() {
+      _hoveredPart = part;
+      _refreshHighlights();
+    });
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    final part = _pick(details.localPosition);
+    if (part != null) _togglePart(part);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final scene3d = LayoutBuilder(
+      builder: (context, constraints) {
+        _viewSize = constraints.biggest;
+        return MouseRegion(
+          onEnter: (_) => _onEnter(),
+          onExit: (_) => _onExit(),
+          onHover: _onHover,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: _onTapUp,
+            child: SceneView(
+              scene,
+              cameraBuilder: (elapsed) => _lastCamera = _buildCamera(),
+              onTick: (elapsed, deltaSeconds) => _onTick(deltaSeconds),
+            ),
+          ),
+        );
+      },
+    );
+
+    // The debugger absorbs pointers to report semantics taps, so the toggle
+    // button rides above it (a later Stack child) to stay interactive.
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _showSemantics ? SemanticsDebugger(child: scene3d) : scene3d,
         ),
-      ),
-    );
-    scene.add(panel);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SceneView(
-      scene,
-      camera: PerspectiveCamera(
-        position: vm.Vector3(0, 1.2, -5.5),
-        target: vm.Vector3(0, 0.6, 0),
-      ),
-      onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
+        const Positioned(left: 16, top: 16, child: _Instructions()),
+        Positioned(
+          right: 16,
+          top: 16,
+          child: FilledButton.icon(
+            onPressed: () => setState(() => _showSemantics = !_showSemantics),
+            icon: Icon(
+              _showSemantics ? Icons.visibility_off : Icons.accessibility_new,
+            ),
+            label: Text(_showSemantics ? 'Hide semantics' : 'Show semantics'),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _PanelContent extends StatefulWidget {
-  const _PanelContent({required this.onPressed, required this.presses});
+class _Instructions extends StatelessWidget {
+  const _Instructions();
 
-  final VoidCallback onPressed;
-  final int Function() presses;
-
-  @override
-  State<_PanelContent> createState() => _PanelContentState();
-}
-
-class _PanelContentState extends State<_PanelContent> {
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF1F2430),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Control panel, pressed ${widget.presses()} times',
-              style: const TextStyle(color: Colors.white, fontSize: 20),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () {
-                widget.onPressed();
-                setState(() {});
-              },
-              child: const Text('Press me'),
-            ),
-          ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xAA000000),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text(
+          'Hover a door, hood, or trunk to outline it.\n'
+          'Click it to open or close it.\n'
+          'Turn on a screen reader, or "Show semantics",\n'
+          'to navigate and toggle the same parts.',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            height: 1.4,
+            decoration: TextDecoration.none,
+          ),
         ),
       ),
     );

@@ -387,6 +387,46 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a focus callback coexists with a live, mutable value', (
+    tester,
+  ) async {
+    final scene = await _readyScene(tester);
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    final handle = tester.ensureSemantics();
+    var focused = 0;
+    final component = SemanticsComponent(
+      label: 'Lamp',
+      value: 'off',
+      button: true,
+      onDidGainAccessibilityFocus: () => focused++,
+      boundsOverride: _unitBounds(),
+    );
+    scene.add(Node(name: 'lamp')..addComponent(component));
+
+    await tester.pumpWidget(_host(scene));
+    await _settleSemantics(tester);
+
+    expect(find.semantics.byValue('off'), findsOne);
+
+    // The focus callback and the mutable value are both convenience fields,
+    // so updating the value in place is allowed (the escape hatch would
+    // have made this throw).
+    component.value = 'on';
+    await _settleSemantics(tester);
+    expect(find.semantics.byValue('off'), findsNothing);
+    expect(find.semantics.byValue('on'), findsOne);
+
+    tester.semantics.performAction(
+      find.semantics.byLabel('Lamp'),
+      SemanticsAction.didGainAccessibilityFocus,
+    );
+    expect(focused, 1);
+    handle.dispose();
+  });
+
   testWidgets('widget surface semantics join the tree and dispatch actions', (
     tester,
   ) async {
