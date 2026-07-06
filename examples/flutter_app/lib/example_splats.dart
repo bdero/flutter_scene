@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
+import 'quake_camera.dart';
 
 /// Gaussian splat rendering: a procedural nebula (60k anisotropic splats)
 /// and, when `assets_src/strawberry.splat` is present (fetched by
@@ -49,10 +50,35 @@ class ExampleSplatsState extends State<ExampleSplats> {
   bool _cropSweep = false;
   bool _orbit = true;
 
+  // The free "inspection" camera. While inactive it is kept synced to the
+  // orbit camera so toggling it on does not jump the view.
+  bool _freeCamera = false;
+  final QuakeCamera _freeCam = QuakeCamera(position: vm.Vector3(0, 4, 14))
+    ..speed = 6.0
+    ..enabled = false;
+  double _elapsedSeconds = 0;
+
+  // Smoothed frames-per-second readout, updated a few times a second so
+  // the panel text does not rebuild every frame.
+  final ValueNotifier<double> _fps = ValueNotifier<double>(0);
+  double _fpsAccum = 0;
+  int _fpsFrames = 0;
+
   @override
   void initState() {
     super.initState();
+    // Splat footprints are soft, so MSAA buys nothing here while
+    // multiplying blend cost across millions of tiny triangles; prefer the
+    // post-process path for this example (still adjustable in the shared
+    // settings sidebar).
+    exampleSettings.antiAliasingMode = AntiAliasingMode.fxaa;
     _load();
+  }
+
+  @override
+  void dispose() {
+    _fps.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -254,34 +280,89 @@ class ExampleSplatsState extends State<ExampleSplats> {
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: SceneView(
-            scene,
-            cameraBuilder: (elapsed) {
-              if (_orbit) {
-                final t = elapsed.inMicroseconds / 1e6;
-                _cameraPosition = vm.Vector3(
-                  math.sin(t * 0.12) * 14,
-                  4.0 + math.sin(t * 0.05) * 2.0,
-                  math.cos(t * 0.12) * 14,
-                );
-              }
-              return PerspectiveCamera(
-                position: _cameraPosition,
-                target: vm.Vector3(0, 0.5, 0),
-              );
-            },
-            onTick: (elapsed, deltaSeconds) {
-              _tickCrop(elapsed);
-              exampleSettings.applyTo(scene);
-            },
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _freeCam.onKeyEvent,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onPanUpdate: _freeCamera
+                  ? (details) => setState(() => _freeCam.look(details.delta))
+                  : null,
+              child: SceneView(
+                scene,
+                cameraBuilder: (elapsed) {
+                  _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                  if (_freeCamera) {
+                    _freeCam.move(_elapsedSeconds);
+                    return _freeCam.camera;
+                  }
+                  if (_orbit) {
+                    final t = _elapsedSeconds;
+                    _cameraPosition = vm.Vector3(
+                      math.sin(t * 0.12) * 14,
+                      4.0 + math.sin(t * 0.05) * 2.0,
+                      math.cos(t * 0.12) * 14,
+                    );
+                  }
+                  final camera = PerspectiveCamera(
+                    position: _cameraPosition,
+                    target: vm.Vector3(0, 0.5, 0),
+                  );
+                  // Keep the free camera parked on the live view so
+                  // enabling it starts from what is on screen.
+                  _freeCam.syncTo(camera);
+                  return camera;
+                },
+                onTick: (elapsed, deltaSeconds) {
+                  _tickCrop(elapsed);
+                  _tickFps(deltaSeconds);
+                  exampleSettings.applyTo(scene);
+                },
+              ),
+            ),
           ),
-        ),
-        Positioned(left: 12, bottom: 12, child: _panel()),
-      ],
+          Positioned(left: 12, bottom: 12, child: _panel()),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Tooltip(
+              message: _freeCamera
+                  ? 'Back to the orbit camera'
+                  : 'Free camera (WASD + drag)',
+              child: FilledButton.tonalIcon(
+                onPressed: _toggleFreeCamera,
+                icon: Icon(
+                  _freeCamera ? Icons.threesixty : Icons.videogame_asset,
+                ),
+                label: Text(_freeCamera ? 'Orbit cam' : 'Free cam'),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  void _toggleFreeCamera() {
+    setState(() {
+      _freeCamera = !_freeCamera;
+      _freeCam
+        ..enabled = _freeCamera
+        ..releaseKeys()
+        ..move(_elapsedSeconds); // Reset the frame clock without moving.
+    });
+  }
+
+  void _tickFps(double deltaSeconds) {
+    _fpsAccum += deltaSeconds;
+    _fpsFrames++;
+    if (_fpsAccum >= 0.25) {
+      _fps.value = _fpsFrames / _fpsAccum;
+      _fpsAccum = 0;
+      _fpsFrames = 0;
+    }
   }
 
   Widget _panel() {
@@ -316,9 +397,12 @@ class ExampleSplatsState extends State<ExampleSplats> {
                 style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
             const SizedBox(height: 4),
-            Text(
-              '${splats.splats.count} splats',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ValueListenableBuilder<double>(
+              valueListenable: _fps,
+              builder: (context, fps, _) => Text(
+                '${splats.splats.count} splats · ${fps.toStringAsFixed(0)} fps',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             ),
             _slider(
               'Opacity',

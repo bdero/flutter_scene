@@ -38,6 +38,13 @@ class SplatComponent extends MeshComponent {
 
   final SplatGeometry _geometry;
 
+  @override
+  void onUnmount() {
+    super.onUnmount();
+    // Stop the background sorter; a remount lazily respawns it.
+    _geometry.disposeSorter();
+  }
+
   /// Global opacity multiplier in [0, 1].
   double get opacity => _geometry.opacity;
   set opacity(double value) => _geometry.opacity = value;

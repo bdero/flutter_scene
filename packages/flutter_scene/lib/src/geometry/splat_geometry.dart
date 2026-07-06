@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -11,7 +10,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 import 'package:flutter_scene/src/splats/splat_data.dart';
-import 'package:flutter_scene/src/splats/splat_sorter.dart';
+import 'package:flutter_scene/src/splats/splat_sort_service.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// How a crop box filters the splats of a [SplatGeometry].
@@ -130,6 +129,19 @@ class SplatGeometry extends Geometry {
   vm.Vector3? _lastSortDir;
   vm.Vector3? _pendingSortDir;
 
+  SplatSortService? _sorter;
+
+  /// Shuts down the background sorter (called when the owning component
+  /// unmounts). A later draw lazily respawns it.
+  void disposeSorter() {
+    _sorter?.dispose();
+    _sorter = null;
+    _sortInFlight = false;
+    _pendingSortDir = null;
+    // Force a fresh sort on remount.
+    _lastSortDir = null;
+  }
+
   gpu.BufferView? _quadVertices;
   gpu.BufferView? _quadIndices;
 
@@ -195,7 +207,8 @@ class SplatGeometry extends Geometry {
 
   // Kicks a background sort along [dirLocal] (the local-space direction of
   // increasing view depth), coalescing to the latest request while one is
-  // in flight.
+  // in flight. The sorter worker holds its own copy of the positions, so a
+  // request ships twelve bytes out and the order transfers back.
   void _requestSort(vm.Vector3 dirLocal) {
     if (_sortInFlight) {
       _pendingSortDir = dirLocal;
@@ -204,16 +217,13 @@ class SplatGeometry extends Geometry {
     _sortInFlight = true;
     _lastSortDir = dirLocal;
     final generation = ++_sortGeneration;
-    // TODO(splats): a long-lived sorter isolate would avoid re-sending the
-    // positions array on every sort (compute copies its arguments).
-    compute(sortSplatsForIsolate, (
-      positions: splats.data.positions,
-      count: splats.count,
-      dirX: dirLocal.x,
-      dirY: dirLocal.y,
-      dirZ: dirLocal.z,
-    ), debugLabel: 'sortSplats').then((order) {
+    final sorter = _sorter ??= SplatSortService(
+      splats.data.positions,
+      splats.count,
+    );
+    sorter.sort(dirLocal.x, dirLocal.y, dirLocal.z).then((order) {
       _sortInFlight = false;
+      if (order == null) return; // Disposed mid-sort.
       if (generation != _sortGeneration) return;
       final slot = (_activeSlot + 1) % _kIndexRingSize;
       final bytes = ByteData.sublistView(order);
