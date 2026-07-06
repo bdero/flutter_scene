@@ -59,4 +59,20 @@ class SplatComponent extends MeshComponent {
   /// rasterization) is enabled.
   bool get antialiased => _geometry.antialiased;
   set antialiased(bool value) => _geometry.antialiased = value;
+
+  /// The active crop box (a unit cube placed in the set's local space), or
+  /// null when no crop is set. See [setCropBox].
+  vm.Matrix4? get cropBox => _geometry.cropBox;
+
+  /// How the crop box filters splats.
+  SplatCropMode get cropMode => _geometry.cropMode;
+
+  /// Sets or clears the crop box: [box] places a unit cube (corners at
+  /// +/-1) in the set's local space, and [mode] keeps only the splats
+  /// inside it or drops them. Cropping is evaluated per frame on the GPU,
+  /// so the box can animate freely.
+  void setCropBox(
+    vm.Matrix4? box, {
+    SplatCropMode mode = SplatCropMode.include,
+  }) => _geometry.setCropBox(box, mode: mode);
 }

@@ -7,19 +7,19 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/components/splat_component.dart';
+import 'package:flutter_scene/src/geometry/splat_geometry.dart';
 import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 
-/// A procedural Gaussian splat nebula (60k anisotropic splats) with a PBR
-/// sphere parked inside it, proving splats and forward-rendered geometry
-/// occlude each other correctly in one scene. The camera orbits slowly; the
-/// panel exposes the splat knobs.
-///
-/// TODO(splats): also load a captured `.ply`/`.splat` asset (downloaded by
-/// the asset hook) once the example asset pipeline grows a splat step.
+/// Gaussian splat rendering: a procedural nebula (60k anisotropic splats)
+/// and, when `assets_src/strawberry.splat` is present (fetched by
+/// `tool/fetch_splat_asset.sh`, a CC BY capture by danylyon), a real 1.5M
+/// splat macro capture. A PBR sphere sits inside each scene proving splats
+/// and forward-rendered geometry occlude each other, and an animated crop
+/// box demonstrates GPU-side cropping.
 class ExampleSplats extends StatefulWidget {
   const ExampleSplats({super.key});
 
@@ -27,16 +27,27 @@ class ExampleSplats extends StatefulWidget {
   ExampleSplatsState createState() => ExampleSplatsState();
 }
 
+enum _SplatSource { nebula, capture }
+
 class ExampleSplatsState extends State<ExampleSplats> {
   Scene scene = Scene();
-  SplatComponent? _splats;
   bool _ready = false;
+
+  final Map<_SplatSource, Node> _sourceNodes = {};
+  final Map<_SplatSource, SplatComponent> _sources = {};
+  _SplatSource _active = _SplatSource.nebula;
+
+  // Local-space X extent of each set, used to scale the crop sweep.
+  static const Map<_SplatSource, double> _cropExtent = {
+    _SplatSource.nebula: 10.0,
+    _SplatSource.capture: 1.2,
+  };
 
   double _opacity = 1.0;
   double _splatScale = 1.0;
   bool _antialiased = true;
+  bool _cropSweep = false;
   bool _orbit = true;
-  vm.Vector3 _cameraPosition = vm.Vector3(0, 4, 14);
 
   @override
   void initState() {
@@ -54,25 +65,88 @@ class ExampleSplatsState extends State<ExampleSplats> {
       ),
     );
 
-    final splats = GaussianSplats.fromData(_nebula(seed: 7));
-    final component = SplatComponent(splats);
-    _splats = component;
-    scene.add(Node()..addComponent(component));
+    final nebula = SplatComponent(GaussianSplats.fromData(_nebula(seed: 7)));
+    _sources[_SplatSource.nebula] = nebula;
+    _sourceNodes[_SplatSource.nebula] = Node()..addComponent(nebula);
+
+    // The captured asset is optional (fetched by tool/fetch_splat_asset.sh).
+    try {
+      final capture = SplatComponent(
+        await GaussianSplats.fromAsset('assets_src/strawberry.splat'),
+      );
+      _sources[_SplatSource.capture] = capture;
+      // Training captures are y-down; flip upright and scale up to scene
+      // size.
+      _sourceNodes[_SplatSource.capture] = Node(
+        localTransform: vm.Matrix4.compose(
+          vm.Vector3(0, 1.0, 0),
+          vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi),
+          vm.Vector3.all(4.0),
+        ),
+      )..addComponent(capture);
+    } catch (_) {
+      // Asset absent; the nebula still demonstrates everything.
+    }
+
+    for (final entry in _sourceNodes.entries) {
+      entry.value.visible = entry.key == _active;
+      scene.add(entry.value);
+    }
 
     // A shiny sphere inside the cloud: splats in front of it must cover it,
     // and it must occlude the splats behind it.
-    final sphere = Node(
-      mesh: Mesh(
-        SphereGeometry(radius: 1.2),
-        PhysicallyBasedMaterial()
-          ..baseColorFactor = vm.Vector4(0.9, 0.85, 0.8, 1.0)
-          ..metallicFactor = 1.0
-          ..roughnessFactor = 0.15,
-      ),
-    )..localTransform = vm.Matrix4.translation(vm.Vector3(2.5, 0.4, 0));
-    scene.add(sphere);
+    scene.add(
+      Node(
+        mesh: Mesh(
+          SphereGeometry(radius: 1.2),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.9, 0.85, 0.8, 1.0)
+            ..metallicFactor = 1.0
+            ..roughnessFactor = 0.15,
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(2.5, 0.4, 0)),
+    );
 
     if (mounted) setState(() => _ready = true);
+  }
+
+  SplatComponent get _activeSplats => _sources[_active]!;
+
+  void _setActive(_SplatSource source) {
+    setState(() {
+      _active = source;
+      for (final entry in _sourceNodes.entries) {
+        entry.value.visible = entry.key == source;
+      }
+      _applyKnobs();
+    });
+  }
+
+  void _applyKnobs() {
+    final splats = _activeSplats;
+    splats.opacity = _opacity;
+    splats.splatScale = _splatScale;
+    splats.antialiased = _antialiased;
+    if (!_cropSweep) splats.setCropBox(null);
+  }
+
+  void _tickCrop(Duration elapsed) {
+    if (!_cropSweep) return;
+    final splats = _activeSplats;
+    final extent = _cropExtent[_active]!;
+    final t = elapsed.inMicroseconds / 1e6;
+    // A wipe: a big exclude box slides through the set, eating and then
+    // restoring it. Evaluated per splat on the GPU, so this is free to
+    // animate.
+    final sweep = math.sin(t * 0.5) * extent;
+    splats.setCropBox(
+      vm.Matrix4.compose(
+        vm.Vector3(sweep - extent, 0, 0),
+        vm.Quaternion.identity(),
+        vm.Vector3(extent, extent * 2, extent * 2),
+      ),
+      mode: SplatCropMode.exclude,
+    );
   }
 
   /// Builds a three-armed spiral nebula with a bright core. Anisotropic
@@ -138,8 +212,8 @@ class ExampleSplatsState extends State<ExampleSplats> {
         // The arm tangent direction (derivative of the spiral) is close to
         // the angular direction; stretch splats along it.
         final tangentYaw = -(theta + math.pi / 2);
-        final len = 0.10 + rng.nextDouble() * 0.22;
-        final scale = vm.Vector3(len * 3.0, len * 0.8, len);
+        final len = 0.06 + rng.nextDouble() * 0.12;
+        final scale = vm.Vector3(len * 2.2, len * 0.7, len);
         final t = ((r - 1.2) / 7.5).clamp(0.0, 1.0);
         final color =
             armColors[arm] * (0.35 + 0.5 * t) +
@@ -156,7 +230,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
     }
     for (var n = 0; n < core; n++, i++) {
       final position = vm.Vector3(gauss() * 0.9, gauss() * 0.45, gauss() * 0.9);
-      final len = 0.05 + rng.nextDouble() * 0.2;
+      final len = 0.04 + rng.nextDouble() * 0.1;
       final heat = math.max(0.0, 1.0 - position.length / 2.2);
       writeSplat(
         i,
@@ -169,6 +243,8 @@ class ExampleSplatsState extends State<ExampleSplats> {
     }
     return data;
   }
+
+  vm.Vector3 _cameraPosition = vm.Vector3(0, 4, 14);
 
   @override
   Widget build(BuildContext context) {
@@ -194,10 +270,13 @@ class ExampleSplatsState extends State<ExampleSplats> {
               }
               return PerspectiveCamera(
                 position: _cameraPosition,
-                target: vm.Vector3(0, 0, 0),
+                target: vm.Vector3(0, 0.5, 0),
               );
             },
-            onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
+            onTick: (elapsed, deltaSeconds) {
+              _tickCrop(elapsed);
+              exampleSettings.applyTo(scene);
+            },
           ),
         ),
         Positioned(left: 12, bottom: 12, child: _panel()),
@@ -206,8 +285,8 @@ class ExampleSplatsState extends State<ExampleSplats> {
   }
 
   Widget _panel() {
-    final splats = _splats;
-    if (splats == null) return const SizedBox.shrink();
+    final splats = _activeSplats;
+    final hasCapture = _sources.containsKey(_SplatSource.capture);
     return Card(
       color: Colors.black.withValues(alpha: 0.55),
       child: Padding(
@@ -216,6 +295,27 @@ class ExampleSplatsState extends State<ExampleSplats> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (hasCapture)
+              SegmentedButton<_SplatSource>(
+                segments: const [
+                  ButtonSegment(
+                    value: _SplatSource.nebula,
+                    label: Text('Nebula'),
+                  ),
+                  ButtonSegment(
+                    value: _SplatSource.capture,
+                    label: Text('Strawberry'),
+                  ),
+                ],
+                selected: {_active},
+                onSelectionChanged: (s) => _setActive(s.first),
+              )
+            else
+              const Text(
+                'Run tool/fetch_splat_asset.sh for the captured scene',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            const SizedBox(height: 4),
             Text(
               '${splats.splats.count} splats',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -227,7 +327,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
               1.0,
               (v) => setState(() {
                 _opacity = v;
-                splats.opacity = v;
+                _applyKnobs();
               }),
             ),
             _slider(
@@ -237,7 +337,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
               2.5,
               (v) => setState(() {
                 _splatScale = v;
-                splats.splatScale = v;
+                _applyKnobs();
               }),
             ),
             Row(
@@ -247,7 +347,16 @@ class ExampleSplatsState extends State<ExampleSplats> {
                   _antialiased,
                   (v) => setState(() {
                     _antialiased = v;
-                    splats.antialiased = v;
+                    _applyKnobs();
+                  }),
+                ),
+                const SizedBox(width: 12),
+                _toggle(
+                  'Crop sweep',
+                  _cropSweep,
+                  (v) => setState(() {
+                    _cropSweep = v;
+                    _applyKnobs();
                   }),
                 ),
                 const SizedBox(width: 12),
