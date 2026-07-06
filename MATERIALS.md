@@ -373,11 +373,23 @@ same field sampled on the CPU and evaluated in a shader agree. Functions
 ```glsl
 float NoiseSimplex2(vec2 p, int seed);   // one octave, roughly [-1, 1]
 float NoiseSimplex3(vec3 p, int seed);
+float NoisePerlin2(vec2 p, int seed);    // also NoisePerlin3
+float NoiseValue2(vec2 p, int seed);     // also NoiseValue3
+float NoiseCellular2(vec2 p, int seed, int distanceFunction, int returnType, float jitter);
 float NoiseFbm2(vec2 p, int seed, int octaves, float lacunarity, float gain);
 float NoiseRidged2(vec2 p, int seed, int octaves, float lacunarity, float gain);
 float NoisePingPong2(vec2 p, int seed, int octaves, float lacunarity, float gain, float strength);
+vec2  NoiseDomainWarp2(vec2 p, int seed, float amp);  // also NoiseDomainWarp3
+vec3  NoiseCurl3(vec3 p, int seed, float epsilon);    // divergence-free, for advection
 int   NoiseHash2(ivec2 cell, int seed);  // hashed lattice cell, full int32
 ```
+
+Cellular distance functions and return types are int constants
+(`kNoiseCellularEuclidean`/`EuclideanSq`/`Manhattan`/`Hybrid` and
+`kNoiseCellularCellValue`/`Distance`/`Distance2`/`Distance2Add`/`Sub`/`Mul`/
+`Div`) matching the Dart enums in declaration order. The GLSL domain warp
+covers the default OpenSimplex2 type without warp fractals; the reduced and
+basic-grid types and warp fractals are CPU-only for now.
 
 Frequency is applied by the caller (scale `p` before the call), so
 `FastNoiseLite(seed: s, frequency: f).getNoise2(x, y)` on the CPU corresponds

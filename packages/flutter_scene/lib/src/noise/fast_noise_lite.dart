@@ -5,10 +5,12 @@
 // application or the rendering engine, so it can be lifted wholesale into a
 // shared package later.
 //
-// Only a focused subset of FastNoiseLite is ported here: the OpenSimplex2 and
-// OpenSimplex2S noise types (2D and 3D) plus the None/FBm/Ridged/PingPong
-// fractal modes. The `NoiseType` enum is structured so Perlin, Value, and
-// Cellular can be added later without breaking callers.
+// Most of FastNoiseLite is ported here: the OpenSimplex2, OpenSimplex2S,
+// Perlin, Value, and Cellular noise types (2D and 3D), the
+// None/FBm/Ridged/PingPong fractal modes, and domain warp
+// (OpenSimplex2/OpenSimplex2Reduced/BasicGrid with progressive and independent
+// warp fractals). The remaining omissions are the ValueCubic noise type and
+// the 3D rotation types (ImproveXYPlanes/ImproveXZPlanes).
 //
 // All hashing math is forced to 32-bit signed wraparound (via `.toSigned(32)`)
 // after every multiply/add. FastNoiseLite relies on C# `int` overflow in its
@@ -48,23 +50,48 @@
 // SOFTWARE.
 // ---------------------------------------------------------------------------
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 /// The base noise algorithm used by [FastNoiseLite].
 ///
+/// ValueCubic is the one FNL noise type intentionally left out; add it as a
+/// new enum member plus matching `_genNoiseSingle` branches if it is needed.
 /// {@category Noise}
-///
-/// Only OpenSimplex2 and OpenSimplex2S are implemented. The remaining FNL noise
-/// types (Perlin, Value, ValueCubic, Cellular) are intentionally left out for
-/// now; add them as new enum members plus matching `_genNoiseSingle` branches.
-enum NoiseType { openSimplex2, openSimplex2S }
+enum NoiseType { openSimplex2, openSimplex2S, cellular, perlin, value }
 
 /// How successive noise octaves are combined.
 /// {@category Noise}
 enum FractalType { none, fbm, ridged, pingPong }
 
-/// A web-safe port of FastNoiseLite covering OpenSimplex2/OpenSimplex2S noise
-/// with None/FBm/Ridged/PingPong fractal layering.
+/// How distance to a cell point is measured by [NoiseType.cellular].
+/// {@category Noise}
+enum CellularDistanceFunction { euclidean, euclideanSq, manhattan, hybrid }
+
+/// What value [NoiseType.cellular] computes for a query point.
+/// {@category Noise}
+enum CellularReturnType {
+  cellValue,
+  distance,
+  distance2,
+  distance2Add,
+  distance2Sub,
+  distance2Mul,
+  distance2Div,
+}
+
+/// The warp algorithm applied by [FastNoiseLite.domainWarp2] and
+/// [FastNoiseLite.domainWarp3].
+/// {@category Noise}
+enum DomainWarpType { openSimplex2, openSimplex2Reduced, basicGrid }
+
+/// How successive domain warp octaves are combined.
+/// {@category Noise}
+enum DomainWarpFractalType { none, progressive, independent }
+
+/// A web-safe port of FastNoiseLite covering the OpenSimplex2, OpenSimplex2S,
+/// Perlin, Value, and Cellular noise types with None/FBm/Ridged/PingPong
+/// fractal layering, plus domain warp ([domainWarp2]/[domainWarp3]).
 ///
 /// Output of [getNoise2] and [getNoise3] is roughly in the range [-1, 1].
 ///
@@ -116,6 +143,30 @@ class FastNoiseLite {
   /// Strength of the ping-pong warp for [FractalType.pingPong]. Default 2.0.
   double pingPongStrength = 2.0;
 
+  /// Distance function for [NoiseType.cellular]. Default
+  /// [CellularDistanceFunction.euclideanSq].
+  CellularDistanceFunction cellularDistanceFunction =
+      CellularDistanceFunction.euclideanSq;
+
+  /// Return value computed by [NoiseType.cellular]. Default
+  /// [CellularReturnType.distance].
+  CellularReturnType cellularReturnType = CellularReturnType.distance;
+
+  /// Maximum distance a cellular point can move off its grid position.
+  /// Default 1.0; values above 1 cause artifacts.
+  double cellularJitterModifier = 1.0;
+
+  /// The warp algorithm for [domainWarp2]/[domainWarp3]. Default
+  /// [DomainWarpType.openSimplex2].
+  DomainWarpType domainWarpType = DomainWarpType.openSimplex2;
+
+  /// Maximum warp distance from the original position. Default 1.0.
+  double domainWarpAmp = 1.0;
+
+  /// Octave layering for [domainWarp2]/[domainWarp3]. Default
+  /// [DomainWarpFractalType.none].
+  DomainWarpFractalType domainWarpFractalType = DomainWarpFractalType.none;
+
   double _fractalBounding = 1 / 1.75;
 
   void _calculateFractalBounding() {
@@ -144,6 +195,11 @@ class FastNoiseLite {
         final double t = (x + y) * f2;
         x += t;
         y += t;
+        break;
+      case NoiseType.cellular:
+      case NoiseType.perlin:
+      case NoiseType.value:
+        // No skew; these sample the frequency-scaled coordinates directly.
         break;
     }
 
@@ -177,6 +233,11 @@ class FastNoiseLite {
         y = r - y;
         z = r - z;
         break;
+      case NoiseType.cellular:
+      case NoiseType.perlin:
+      case NoiseType.value:
+        // No rotation; these sample the frequency-scaled coordinates directly.
+        break;
     }
 
     switch (fractalType) {
@@ -191,12 +252,48 @@ class FastNoiseLite {
     }
   }
 
+  /// 2D warps the input position using the current domain warp settings.
+  ///
+  /// The reference implementation mutates its arguments in place; here the
+  /// warped position is returned. Feed it into [getNoise2].
+  ({double x, double y}) domainWarp2(double x, double y) {
+    switch (domainWarpFractalType) {
+      case DomainWarpFractalType.none:
+        return _domainWarpSingle2(x, y);
+      case DomainWarpFractalType.progressive:
+        return _domainWarpFractalProgressive2(x, y);
+      case DomainWarpFractalType.independent:
+        return _domainWarpFractalIndependent2(x, y);
+    }
+  }
+
+  /// 3D warps the input position using the current domain warp settings.
+  ///
+  /// The reference implementation mutates its arguments in place; here the
+  /// warped position is returned. Feed it into [getNoise3].
+  ({double x, double y, double z}) domainWarp3(double x, double y, double z) {
+    switch (domainWarpFractalType) {
+      case DomainWarpFractalType.none:
+        return _domainWarpSingle3(x, y, z);
+      case DomainWarpFractalType.progressive:
+        return _domainWarpFractalProgressive3(x, y, z);
+      case DomainWarpFractalType.independent:
+        return _domainWarpFractalIndependent3(x, y, z);
+    }
+  }
+
   double _genNoiseSingle2(int seed, double x, double y) {
     switch (noiseType) {
       case NoiseType.openSimplex2:
         return _singleSimplex2(seed, x, y);
       case NoiseType.openSimplex2S:
         return _singleOpenSimplex2S2(seed, x, y);
+      case NoiseType.cellular:
+        return _singleCellular2(seed, x, y);
+      case NoiseType.perlin:
+        return _singlePerlin2(seed, x, y);
+      case NoiseType.value:
+        return _singleValue2(seed, x, y);
     }
   }
 
@@ -206,6 +303,12 @@ class FastNoiseLite {
         return _singleOpenSimplex2_3(seed, x, y, z);
       case NoiseType.openSimplex2S:
         return _singleOpenSimplex2S3(seed, x, y, z);
+      case NoiseType.cellular:
+        return _singleCellular3(seed, x, y, z);
+      case NoiseType.perlin:
+        return _singlePerlin3(seed, x, y, z);
+      case NoiseType.value:
+        return _singleValue3(seed, x, y, z);
     }
   }
 
@@ -925,6 +1028,1026 @@ class FastNoiseLite {
 
     return value * 9.046026385208288;
   }
+
+  // --- Cellular --------------------------------------------------------------
+
+  double _singleCellular2(int seed, double x, double y) {
+    final int xr = _fastRound(x);
+    final int yr = _fastRound(y);
+
+    double distance0 = double.maxFinite;
+    double distance1 = double.maxFinite;
+    int closestHash = 0;
+
+    final double cellularJitter = 0.43701595 * cellularJitterModifier;
+
+    int xPrimed = _i32((xr - 1) * _primeX);
+    final int yPrimedBase = _i32((yr - 1) * _primeY);
+
+    switch (cellularDistanceFunction) {
+      case CellularDistanceFunction.euclidean:
+      case CellularDistanceFunction.euclideanSq:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            final int hash = _hash2(seed, xPrimed, yPrimed);
+            final int idx = hash & (255 << 1);
+
+            final double vecX = (xi - x) + _randVecs2D[idx] * cellularJitter;
+            final double vecY =
+                (yi - y) + _randVecs2D[idx | 1] * cellularJitter;
+
+            final double newDistance = vecX * vecX + vecY * vecY;
+
+            distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+            if (newDistance < distance0) {
+              distance0 = newDistance;
+              closestHash = hash;
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+      case CellularDistanceFunction.manhattan:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            final int hash = _hash2(seed, xPrimed, yPrimed);
+            final int idx = hash & (255 << 1);
+
+            final double vecX = (xi - x) + _randVecs2D[idx] * cellularJitter;
+            final double vecY =
+                (yi - y) + _randVecs2D[idx | 1] * cellularJitter;
+
+            final double newDistance = vecX.abs() + vecY.abs();
+
+            distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+            if (newDistance < distance0) {
+              distance0 = newDistance;
+              closestHash = hash;
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+      case CellularDistanceFunction.hybrid:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            final int hash = _hash2(seed, xPrimed, yPrimed);
+            final int idx = hash & (255 << 1);
+
+            final double vecX = (xi - x) + _randVecs2D[idx] * cellularJitter;
+            final double vecY =
+                (yi - y) + _randVecs2D[idx | 1] * cellularJitter;
+
+            final double newDistance =
+                (vecX.abs() + vecY.abs()) + (vecX * vecX + vecY * vecY);
+
+            distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+            if (newDistance < distance0) {
+              distance0 = newDistance;
+              closestHash = hash;
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+    }
+
+    if (cellularDistanceFunction == CellularDistanceFunction.euclidean &&
+        cellularReturnType.index >= CellularReturnType.distance.index) {
+      distance0 = math.sqrt(distance0);
+
+      if (cellularReturnType.index >= CellularReturnType.distance2.index) {
+        distance1 = math.sqrt(distance1);
+      }
+    }
+
+    switch (cellularReturnType) {
+      case CellularReturnType.cellValue:
+        return closestHash * (1 / 2147483648.0);
+      case CellularReturnType.distance:
+        return distance0 - 1;
+      case CellularReturnType.distance2:
+        return distance1 - 1;
+      case CellularReturnType.distance2Add:
+        return (distance1 + distance0) * 0.5 - 1;
+      case CellularReturnType.distance2Sub:
+        return distance1 - distance0 - 1;
+      case CellularReturnType.distance2Mul:
+        return distance1 * distance0 * 0.5 - 1;
+      case CellularReturnType.distance2Div:
+        return distance0 / distance1 - 1;
+    }
+  }
+
+  double _singleCellular3(int seed, double x, double y, double z) {
+    final int xr = _fastRound(x);
+    final int yr = _fastRound(y);
+    final int zr = _fastRound(z);
+
+    double distance0 = double.maxFinite;
+    double distance1 = double.maxFinite;
+    int closestHash = 0;
+
+    final double cellularJitter = 0.39614353 * cellularJitterModifier;
+
+    int xPrimed = _i32((xr - 1) * _primeX);
+    final int yPrimedBase = _i32((yr - 1) * _primeY);
+    final int zPrimedBase = _i32((zr - 1) * _primeZ);
+
+    switch (cellularDistanceFunction) {
+      case CellularDistanceFunction.euclidean:
+      case CellularDistanceFunction.euclideanSq:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            int zPrimed = zPrimedBase;
+
+            for (int zi = zr - 1; zi <= zr + 1; zi++) {
+              final int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
+              final int idx = hash & (255 << 2);
+
+              final double vecX = (xi - x) + _randVecs3D[idx] * cellularJitter;
+              final double vecY =
+                  (yi - y) + _randVecs3D[idx | 1] * cellularJitter;
+              final double vecZ =
+                  (zi - z) + _randVecs3D[idx | 2] * cellularJitter;
+
+              final double newDistance =
+                  vecX * vecX + vecY * vecY + vecZ * vecZ;
+
+              distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+              if (newDistance < distance0) {
+                distance0 = newDistance;
+                closestHash = hash;
+              }
+              zPrimed = _i32(zPrimed + _primeZ);
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+      case CellularDistanceFunction.manhattan:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            int zPrimed = zPrimedBase;
+
+            for (int zi = zr - 1; zi <= zr + 1; zi++) {
+              final int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
+              final int idx = hash & (255 << 2);
+
+              final double vecX = (xi - x) + _randVecs3D[idx] * cellularJitter;
+              final double vecY =
+                  (yi - y) + _randVecs3D[idx | 1] * cellularJitter;
+              final double vecZ =
+                  (zi - z) + _randVecs3D[idx | 2] * cellularJitter;
+
+              final double newDistance = vecX.abs() + vecY.abs() + vecZ.abs();
+
+              distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+              if (newDistance < distance0) {
+                distance0 = newDistance;
+                closestHash = hash;
+              }
+              zPrimed = _i32(zPrimed + _primeZ);
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+      case CellularDistanceFunction.hybrid:
+        for (int xi = xr - 1; xi <= xr + 1; xi++) {
+          int yPrimed = yPrimedBase;
+
+          for (int yi = yr - 1; yi <= yr + 1; yi++) {
+            int zPrimed = zPrimedBase;
+
+            for (int zi = zr - 1; zi <= zr + 1; zi++) {
+              final int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
+              final int idx = hash & (255 << 2);
+
+              final double vecX = (xi - x) + _randVecs3D[idx] * cellularJitter;
+              final double vecY =
+                  (yi - y) + _randVecs3D[idx | 1] * cellularJitter;
+              final double vecZ =
+                  (zi - z) + _randVecs3D[idx | 2] * cellularJitter;
+
+              final double newDistance =
+                  (vecX.abs() + vecY.abs() + vecZ.abs()) +
+                  (vecX * vecX + vecY * vecY + vecZ * vecZ);
+
+              distance1 = _fastMax(_fastMin(distance1, newDistance), distance0);
+              if (newDistance < distance0) {
+                distance0 = newDistance;
+                closestHash = hash;
+              }
+              zPrimed = _i32(zPrimed + _primeZ);
+            }
+            yPrimed = _i32(yPrimed + _primeY);
+          }
+          xPrimed = _i32(xPrimed + _primeX);
+        }
+        break;
+    }
+
+    if (cellularDistanceFunction == CellularDistanceFunction.euclidean &&
+        cellularReturnType.index >= CellularReturnType.distance.index) {
+      distance0 = math.sqrt(distance0);
+
+      if (cellularReturnType.index >= CellularReturnType.distance2.index) {
+        distance1 = math.sqrt(distance1);
+      }
+    }
+
+    switch (cellularReturnType) {
+      case CellularReturnType.cellValue:
+        return closestHash * (1 / 2147483648.0);
+      case CellularReturnType.distance:
+        return distance0 - 1;
+      case CellularReturnType.distance2:
+        return distance1 - 1;
+      case CellularReturnType.distance2Add:
+        return (distance1 + distance0) * 0.5 - 1;
+      case CellularReturnType.distance2Sub:
+        return distance1 - distance0 - 1;
+      case CellularReturnType.distance2Mul:
+        return distance1 * distance0 * 0.5 - 1;
+      case CellularReturnType.distance2Div:
+        return distance0 / distance1 - 1;
+    }
+  }
+
+  // --- Perlin ----------------------------------------------------------------
+
+  double _singlePerlin2(int seed, double x, double y) {
+    int x0 = _fastFloor(x);
+    int y0 = _fastFloor(y);
+
+    final double xd0 = x - x0;
+    final double yd0 = y - y0;
+    final double xd1 = xd0 - 1;
+    final double yd1 = yd0 - 1;
+
+    final double xs = _interpQuintic(xd0);
+    final double ys = _interpQuintic(yd0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+
+    final double xf0 = _lerp(
+      _gradCoord2(seed, x0, y0, xd0, yd0),
+      _gradCoord2(seed, x1, y0, xd1, yd0),
+      xs,
+    );
+    final double xf1 = _lerp(
+      _gradCoord2(seed, x0, y1, xd0, yd1),
+      _gradCoord2(seed, x1, y1, xd1, yd1),
+      xs,
+    );
+
+    return _lerp(xf0, xf1, ys) * 1.4247691104677813;
+  }
+
+  double _singlePerlin3(int seed, double x, double y, double z) {
+    int x0 = _fastFloor(x);
+    int y0 = _fastFloor(y);
+    int z0 = _fastFloor(z);
+
+    final double xd0 = x - x0;
+    final double yd0 = y - y0;
+    final double zd0 = z - z0;
+    final double xd1 = xd0 - 1;
+    final double yd1 = yd0 - 1;
+    final double zd1 = zd0 - 1;
+
+    final double xs = _interpQuintic(xd0);
+    final double ys = _interpQuintic(yd0);
+    final double zs = _interpQuintic(zd0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    z0 = _i32(z0 * _primeZ);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+    final int z1 = _i32(z0 + _primeZ);
+
+    final double xf00 = _lerp(
+      _gradCoord3(seed, x0, y0, z0, xd0, yd0, zd0),
+      _gradCoord3(seed, x1, y0, z0, xd1, yd0, zd0),
+      xs,
+    );
+    final double xf10 = _lerp(
+      _gradCoord3(seed, x0, y1, z0, xd0, yd1, zd0),
+      _gradCoord3(seed, x1, y1, z0, xd1, yd1, zd0),
+      xs,
+    );
+    final double xf01 = _lerp(
+      _gradCoord3(seed, x0, y0, z1, xd0, yd0, zd1),
+      _gradCoord3(seed, x1, y0, z1, xd1, yd0, zd1),
+      xs,
+    );
+    final double xf11 = _lerp(
+      _gradCoord3(seed, x0, y1, z1, xd0, yd1, zd1),
+      _gradCoord3(seed, x1, y1, z1, xd1, yd1, zd1),
+      xs,
+    );
+
+    final double yf0 = _lerp(xf00, xf10, ys);
+    final double yf1 = _lerp(xf01, xf11, ys);
+
+    return _lerp(yf0, yf1, zs) * 0.964921414852142333984375;
+  }
+
+  // --- Value -----------------------------------------------------------------
+
+  double _singleValue2(int seed, double x, double y) {
+    int x0 = _fastFloor(x);
+    int y0 = _fastFloor(y);
+
+    final double xs = _interpHermite(x - x0);
+    final double ys = _interpHermite(y - y0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+
+    final double xf0 = _lerp(
+      _valCoord2(seed, x0, y0),
+      _valCoord2(seed, x1, y0),
+      xs,
+    );
+    final double xf1 = _lerp(
+      _valCoord2(seed, x0, y1),
+      _valCoord2(seed, x1, y1),
+      xs,
+    );
+
+    return _lerp(xf0, xf1, ys);
+  }
+
+  double _singleValue3(int seed, double x, double y, double z) {
+    int x0 = _fastFloor(x);
+    int y0 = _fastFloor(y);
+    int z0 = _fastFloor(z);
+
+    final double xs = _interpHermite(x - x0);
+    final double ys = _interpHermite(y - y0);
+    final double zs = _interpHermite(z - z0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    z0 = _i32(z0 * _primeZ);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+    final int z1 = _i32(z0 + _primeZ);
+
+    final double xf00 = _lerp(
+      _valCoord3(seed, x0, y0, z0),
+      _valCoord3(seed, x1, y0, z0),
+      xs,
+    );
+    final double xf10 = _lerp(
+      _valCoord3(seed, x0, y1, z0),
+      _valCoord3(seed, x1, y1, z0),
+      xs,
+    );
+    final double xf01 = _lerp(
+      _valCoord3(seed, x0, y0, z1),
+      _valCoord3(seed, x1, y0, z1),
+      xs,
+    );
+    final double xf11 = _lerp(
+      _valCoord3(seed, x0, y1, z1),
+      _valCoord3(seed, x1, y1, z1),
+      xs,
+    );
+
+    final double yf0 = _lerp(xf00, xf10, ys);
+    final double yf1 = _lerp(xf01, xf11, ys);
+
+    return _lerp(yf0, yf1, zs);
+  }
+
+  // --- Domain warp -----------------------------------------------------------
+
+  ({double x, double y}) _doSingleDomainWarp2(
+    int seed,
+    double amp,
+    double freq,
+    double x,
+    double y,
+    double xr,
+    double yr,
+  ) {
+    switch (domainWarpType) {
+      case DomainWarpType.openSimplex2:
+        return _singleDomainWarpSimplexGradient(
+          seed,
+          amp * 38.283687591552734375,
+          freq,
+          x,
+          y,
+          xr,
+          yr,
+          false,
+        );
+      case DomainWarpType.openSimplex2Reduced:
+        return _singleDomainWarpSimplexGradient(
+          seed,
+          amp * 16.0,
+          freq,
+          x,
+          y,
+          xr,
+          yr,
+          true,
+        );
+      case DomainWarpType.basicGrid:
+        return _singleDomainWarpBasicGrid2(seed, amp, freq, x, y, xr, yr);
+    }
+  }
+
+  ({double x, double y, double z}) _doSingleDomainWarp3(
+    int seed,
+    double amp,
+    double freq,
+    double x,
+    double y,
+    double z,
+    double xr,
+    double yr,
+    double zr,
+  ) {
+    switch (domainWarpType) {
+      case DomainWarpType.openSimplex2:
+        return _singleDomainWarpOpenSimplex2Gradient(
+          seed,
+          amp * 32.69428253173828125,
+          freq,
+          x,
+          y,
+          z,
+          xr,
+          yr,
+          zr,
+          false,
+        );
+      case DomainWarpType.openSimplex2Reduced:
+        return _singleDomainWarpOpenSimplex2Gradient(
+          seed,
+          amp * 7.71604938271605,
+          freq,
+          x,
+          y,
+          z,
+          xr,
+          yr,
+          zr,
+          true,
+        );
+      case DomainWarpType.basicGrid:
+        return _singleDomainWarpBasicGrid3(
+          seed,
+          amp,
+          freq,
+          x,
+          y,
+          z,
+          xr,
+          yr,
+          zr,
+        );
+    }
+  }
+
+  ({double x, double y}) _transformDomainWarpCoordinate2(double x, double y) {
+    switch (domainWarpType) {
+      case DomainWarpType.openSimplex2:
+      case DomainWarpType.openSimplex2Reduced:
+        const double sqrt3 = 1.7320508075688772935274463415059;
+        const double f2 = 0.5 * (sqrt3 - 1);
+        final double t = (x + y) * f2;
+        x += t;
+        y += t;
+        break;
+      case DomainWarpType.basicGrid:
+        break;
+    }
+    return (x: x, y: y);
+  }
+
+  ({double x, double y, double z}) _transformDomainWarpCoordinate3(
+    double x,
+    double y,
+    double z,
+  ) {
+    switch (domainWarpType) {
+      case DomainWarpType.openSimplex2:
+      case DomainWarpType.openSimplex2Reduced:
+        // DefaultOpenSimplex2 rotation (not a skew).
+        const double r3 = 2.0 / 3.0;
+        final double r = (x + y + z) * r3;
+        x = r - x;
+        y = r - y;
+        z = r - z;
+        break;
+      case DomainWarpType.basicGrid:
+        break;
+    }
+    return (x: x, y: y, z: z);
+  }
+
+  ({double x, double y}) _domainWarpSingle2(double x, double y) {
+    final int seed = this.seed;
+    final double amp = domainWarpAmp * _fractalBounding;
+    final double freq = frequency;
+
+    final ({double x, double y}) s = _transformDomainWarpCoordinate2(x, y);
+
+    return _doSingleDomainWarp2(seed, amp, freq, s.x, s.y, x, y);
+  }
+
+  ({double x, double y, double z}) _domainWarpSingle3(
+    double x,
+    double y,
+    double z,
+  ) {
+    final int seed = this.seed;
+    final double amp = domainWarpAmp * _fractalBounding;
+    final double freq = frequency;
+
+    final ({double x, double y, double z}) s = _transformDomainWarpCoordinate3(
+      x,
+      y,
+      z,
+    );
+
+    return _doSingleDomainWarp3(seed, amp, freq, s.x, s.y, s.z, x, y, z);
+  }
+
+  ({double x, double y}) _domainWarpFractalProgressive2(double x, double y) {
+    int seed = this.seed;
+    double amp = domainWarpAmp * _fractalBounding;
+    double freq = frequency;
+
+    for (int i = 0; i < _octaves; i++) {
+      final ({double x, double y}) s = _transformDomainWarpCoordinate2(x, y);
+
+      final ({double x, double y}) warped = _doSingleDomainWarp2(
+        seed,
+        amp,
+        freq,
+        s.x,
+        s.y,
+        x,
+        y,
+      );
+      x = warped.x;
+      y = warped.y;
+
+      seed++;
+      amp *= _gain;
+      freq *= lacunarity;
+    }
+    return (x: x, y: y);
+  }
+
+  ({double x, double y, double z}) _domainWarpFractalProgressive3(
+    double x,
+    double y,
+    double z,
+  ) {
+    int seed = this.seed;
+    double amp = domainWarpAmp * _fractalBounding;
+    double freq = frequency;
+
+    for (int i = 0; i < _octaves; i++) {
+      final ({double x, double y, double z}) s =
+          _transformDomainWarpCoordinate3(x, y, z);
+
+      final ({double x, double y, double z}) warped = _doSingleDomainWarp3(
+        seed,
+        amp,
+        freq,
+        s.x,
+        s.y,
+        s.z,
+        x,
+        y,
+        z,
+      );
+      x = warped.x;
+      y = warped.y;
+      z = warped.z;
+
+      seed++;
+      amp *= _gain;
+      freq *= lacunarity;
+    }
+    return (x: x, y: y, z: z);
+  }
+
+  ({double x, double y}) _domainWarpFractalIndependent2(double x, double y) {
+    final ({double x, double y}) s = _transformDomainWarpCoordinate2(x, y);
+
+    int seed = this.seed;
+    double amp = domainWarpAmp * _fractalBounding;
+    double freq = frequency;
+
+    for (int i = 0; i < _octaves; i++) {
+      final ({double x, double y}) warped = _doSingleDomainWarp2(
+        seed,
+        amp,
+        freq,
+        s.x,
+        s.y,
+        x,
+        y,
+      );
+      x = warped.x;
+      y = warped.y;
+
+      seed++;
+      amp *= _gain;
+      freq *= lacunarity;
+    }
+    return (x: x, y: y);
+  }
+
+  ({double x, double y, double z}) _domainWarpFractalIndependent3(
+    double x,
+    double y,
+    double z,
+  ) {
+    final ({double x, double y, double z}) s = _transformDomainWarpCoordinate3(
+      x,
+      y,
+      z,
+    );
+
+    int seed = this.seed;
+    double amp = domainWarpAmp * _fractalBounding;
+    double freq = frequency;
+
+    for (int i = 0; i < _octaves; i++) {
+      final ({double x, double y, double z}) warped = _doSingleDomainWarp3(
+        seed,
+        amp,
+        freq,
+        s.x,
+        s.y,
+        s.z,
+        x,
+        y,
+        z,
+      );
+      x = warped.x;
+      y = warped.y;
+      z = warped.z;
+
+      seed++;
+      amp *= _gain;
+      freq *= lacunarity;
+    }
+    return (x: x, y: y, z: z);
+  }
+
+  ({double x, double y}) _singleDomainWarpBasicGrid2(
+    int seed,
+    double warpAmp,
+    double frequency,
+    double x,
+    double y,
+    double xr,
+    double yr,
+  ) {
+    final double xf = x * frequency;
+    final double yf = y * frequency;
+
+    int x0 = _fastFloor(xf);
+    int y0 = _fastFloor(yf);
+
+    final double xs = _interpHermite(xf - x0);
+    final double ys = _interpHermite(yf - y0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+
+    int hash0 = _hash2(seed, x0, y0) & (255 << 1);
+    int hash1 = _hash2(seed, x1, y0) & (255 << 1);
+
+    final double lx0x = _lerp(_randVecs2D[hash0], _randVecs2D[hash1], xs);
+    final double ly0x = _lerp(
+      _randVecs2D[hash0 | 1],
+      _randVecs2D[hash1 | 1],
+      xs,
+    );
+
+    hash0 = _hash2(seed, x0, y1) & (255 << 1);
+    hash1 = _hash2(seed, x1, y1) & (255 << 1);
+
+    final double lx1x = _lerp(_randVecs2D[hash0], _randVecs2D[hash1], xs);
+    final double ly1x = _lerp(
+      _randVecs2D[hash0 | 1],
+      _randVecs2D[hash1 | 1],
+      xs,
+    );
+
+    xr += _lerp(lx0x, lx1x, ys) * warpAmp;
+    yr += _lerp(ly0x, ly1x, ys) * warpAmp;
+    return (x: xr, y: yr);
+  }
+
+  ({double x, double y, double z}) _singleDomainWarpBasicGrid3(
+    int seed,
+    double warpAmp,
+    double frequency,
+    double x,
+    double y,
+    double z,
+    double xr,
+    double yr,
+    double zr,
+  ) {
+    final double xf = x * frequency;
+    final double yf = y * frequency;
+    final double zf = z * frequency;
+
+    int x0 = _fastFloor(xf);
+    int y0 = _fastFloor(yf);
+    int z0 = _fastFloor(zf);
+
+    final double xs = _interpHermite(xf - x0);
+    final double ys = _interpHermite(yf - y0);
+    final double zs = _interpHermite(zf - z0);
+
+    x0 = _i32(x0 * _primeX);
+    y0 = _i32(y0 * _primeY);
+    z0 = _i32(z0 * _primeZ);
+    final int x1 = _i32(x0 + _primeX);
+    final int y1 = _i32(y0 + _primeY);
+    final int z1 = _i32(z0 + _primeZ);
+
+    int hash0 = _hash3(seed, x0, y0, z0) & (255 << 2);
+    int hash1 = _hash3(seed, x1, y0, z0) & (255 << 2);
+
+    double lx0x = _lerp(_randVecs3D[hash0], _randVecs3D[hash1], xs);
+    double ly0x = _lerp(_randVecs3D[hash0 | 1], _randVecs3D[hash1 | 1], xs);
+    double lz0x = _lerp(_randVecs3D[hash0 | 2], _randVecs3D[hash1 | 2], xs);
+
+    hash0 = _hash3(seed, x0, y1, z0) & (255 << 2);
+    hash1 = _hash3(seed, x1, y1, z0) & (255 << 2);
+
+    double lx1x = _lerp(_randVecs3D[hash0], _randVecs3D[hash1], xs);
+    double ly1x = _lerp(_randVecs3D[hash0 | 1], _randVecs3D[hash1 | 1], xs);
+    double lz1x = _lerp(_randVecs3D[hash0 | 2], _randVecs3D[hash1 | 2], xs);
+
+    final double lx0y = _lerp(lx0x, lx1x, ys);
+    final double ly0y = _lerp(ly0x, ly1x, ys);
+    final double lz0y = _lerp(lz0x, lz1x, ys);
+
+    hash0 = _hash3(seed, x0, y0, z1) & (255 << 2);
+    hash1 = _hash3(seed, x1, y0, z1) & (255 << 2);
+
+    lx0x = _lerp(_randVecs3D[hash0], _randVecs3D[hash1], xs);
+    ly0x = _lerp(_randVecs3D[hash0 | 1], _randVecs3D[hash1 | 1], xs);
+    lz0x = _lerp(_randVecs3D[hash0 | 2], _randVecs3D[hash1 | 2], xs);
+
+    hash0 = _hash3(seed, x0, y1, z1) & (255 << 2);
+    hash1 = _hash3(seed, x1, y1, z1) & (255 << 2);
+
+    lx1x = _lerp(_randVecs3D[hash0], _randVecs3D[hash1], xs);
+    ly1x = _lerp(_randVecs3D[hash0 | 1], _randVecs3D[hash1 | 1], xs);
+    lz1x = _lerp(_randVecs3D[hash0 | 2], _randVecs3D[hash1 | 2], xs);
+
+    xr += _lerp(lx0y, _lerp(lx0x, lx1x, ys), zs) * warpAmp;
+    yr += _lerp(ly0y, _lerp(ly0x, ly1x, ys), zs) * warpAmp;
+    zr += _lerp(lz0y, _lerp(lz0x, lz1x, ys), zs) * warpAmp;
+    return (x: xr, y: yr, z: zr);
+  }
+
+  ({double x, double y}) _singleDomainWarpSimplexGradient(
+    int seed,
+    double warpAmp,
+    double frequency,
+    double x,
+    double y,
+    double xr,
+    double yr,
+    bool outGradOnly,
+  ) {
+    const double sqrt3 = 1.7320508075688772935274463415059;
+    const double g2 = (3 - sqrt3) / 6;
+
+    x *= frequency;
+    y *= frequency;
+
+    // The skew lives in _transformDomainWarpCoordinate2, mirroring the
+    // reference (which moved it to TransformNoiseCoordinate).
+
+    int i = _fastFloor(x);
+    int j = _fastFloor(y);
+    final double xi = x - i;
+    final double yi = y - j;
+
+    final double t = (xi + yi) * g2;
+    final double x0 = xi - t;
+    final double y0 = yi - t;
+
+    i = _i32(i * _primeX);
+    j = _i32(j * _primeY);
+
+    double vx = 0;
+    double vy = 0;
+
+    final double a = 0.5 - x0 * x0 - y0 * y0;
+    if (a > 0) {
+      final double aaaa = (a * a) * (a * a);
+      final ({double x, double y}) o = outGradOnly
+          ? _gradCoordOut2(seed, i, j)
+          : _gradCoordDual2(seed, i, j, x0, y0);
+      vx += aaaa * o.x;
+      vy += aaaa * o.y;
+    }
+
+    final double c =
+        (2 * (1 - 2 * g2) * (1 / g2 - 2)) * t +
+        ((-2 * (1 - 2 * g2) * (1 - 2 * g2)) + a);
+    if (c > 0) {
+      final double x2 = x0 + (2 * g2 - 1);
+      final double y2 = y0 + (2 * g2 - 1);
+      final double cccc = (c * c) * (c * c);
+      final ({double x, double y}) o = outGradOnly
+          ? _gradCoordOut2(seed, _i32(i + _primeX), _i32(j + _primeY))
+          : _gradCoordDual2(seed, _i32(i + _primeX), _i32(j + _primeY), x2, y2);
+      vx += cccc * o.x;
+      vy += cccc * o.y;
+    }
+
+    if (y0 > x0) {
+      final double x1 = x0 + g2;
+      final double y1 = y0 + (g2 - 1);
+      final double b = 0.5 - x1 * x1 - y1 * y1;
+      if (b > 0) {
+        final double bbbb = (b * b) * (b * b);
+        final ({double x, double y}) o = outGradOnly
+            ? _gradCoordOut2(seed, i, _i32(j + _primeY))
+            : _gradCoordDual2(seed, i, _i32(j + _primeY), x1, y1);
+        vx += bbbb * o.x;
+        vy += bbbb * o.y;
+      }
+    } else {
+      final double x1 = x0 + (g2 - 1);
+      final double y1 = y0 + g2;
+      final double b = 0.5 - x1 * x1 - y1 * y1;
+      if (b > 0) {
+        final double bbbb = (b * b) * (b * b);
+        final ({double x, double y}) o = outGradOnly
+            ? _gradCoordOut2(seed, _i32(i + _primeX), j)
+            : _gradCoordDual2(seed, _i32(i + _primeX), j, x1, y1);
+        vx += bbbb * o.x;
+        vy += bbbb * o.y;
+      }
+    }
+
+    xr += vx * warpAmp;
+    yr += vy * warpAmp;
+    return (x: xr, y: yr);
+  }
+
+  ({double x, double y, double z}) _singleDomainWarpOpenSimplex2Gradient(
+    int seed,
+    double warpAmp,
+    double frequency,
+    double x,
+    double y,
+    double z,
+    double xr,
+    double yr,
+    double zr,
+    bool outGradOnly,
+  ) {
+    x *= frequency;
+    y *= frequency;
+    z *= frequency;
+
+    // The rotation lives in _transformDomainWarpCoordinate3, mirroring the
+    // reference (which moved it to TransformDomainWarpCoordinate).
+
+    int i = _fastRound(x);
+    int j = _fastRound(y);
+    int k = _fastRound(z);
+    double x0 = x - i;
+    double y0 = y - j;
+    double z0 = z - k;
+
+    int xNSign = (-x0 - 1.0).toInt() | 1;
+    int yNSign = (-y0 - 1.0).toInt() | 1;
+    int zNSign = (-z0 - 1.0).toInt() | 1;
+
+    double ax0 = xNSign * -x0;
+    double ay0 = yNSign * -y0;
+    double az0 = zNSign * -z0;
+
+    i = _i32(i * _primeX);
+    j = _i32(j * _primeY);
+    k = _i32(k * _primeZ);
+
+    double vx = 0;
+    double vy = 0;
+    double vz = 0;
+
+    double a = (0.6 - x0 * x0) - (y0 * y0 + z0 * z0);
+    for (int l = 0; ; l++) {
+      if (a > 0) {
+        final double aaaa = (a * a) * (a * a);
+        final ({double x, double y, double z}) o = outGradOnly
+            ? _gradCoordOut3(seed, i, j, k)
+            : _gradCoordDual3(seed, i, j, k, x0, y0, z0);
+        vx += aaaa * o.x;
+        vy += aaaa * o.y;
+        vz += aaaa * o.z;
+      }
+
+      double b = a;
+      int i1 = i;
+      int j1 = j;
+      int k1 = k;
+      double x1 = x0;
+      double y1 = y0;
+      double z1 = z0;
+
+      if (ax0 >= ay0 && ax0 >= az0) {
+        x1 += xNSign;
+        b = b + ax0 + ax0;
+        i1 = _i32(i1 - xNSign * _primeX);
+      } else if (ay0 > ax0 && ay0 >= az0) {
+        y1 += yNSign;
+        b = b + ay0 + ay0;
+        j1 = _i32(j1 - yNSign * _primeY);
+      } else {
+        z1 += zNSign;
+        b = b + az0 + az0;
+        k1 = _i32(k1 - zNSign * _primeZ);
+      }
+
+      if (b > 1) {
+        b -= 1;
+        final double bbbb = (b * b) * (b * b);
+        final ({double x, double y, double z}) o = outGradOnly
+            ? _gradCoordOut3(seed, i1, j1, k1)
+            : _gradCoordDual3(seed, i1, j1, k1, x1, y1, z1);
+        vx += bbbb * o.x;
+        vy += bbbb * o.y;
+        vz += bbbb * o.z;
+      }
+
+      if (l == 1) break;
+
+      ax0 = 0.5 - ax0;
+      ay0 = 0.5 - ay0;
+      az0 = 0.5 - az0;
+
+      x0 = xNSign * ax0;
+      y0 = yNSign * ay0;
+      z0 = zNSign * az0;
+
+      a += (0.75 - ax0) - (ay0 + az0);
+
+      i = _i32(i + ((xNSign >> 1) & _primeX));
+      j = _i32(j + ((yNSign >> 1) & _primeY));
+      k = _i32(k + ((zNSign >> 1) & _primeZ));
+
+      xNSign = -xNSign;
+      yNSign = -yNSign;
+      zNSign = -zNSign;
+
+      seed = _i32(seed + 1293373);
+    }
+
+    xr += vx * warpAmp;
+    yr += vy * warpAmp;
+    zr += vz * warpAmp;
+    return (x: xr, y: yr, z: zr);
+  }
 }
 
 // --- Web-safe 32-bit integer helpers ---------------------------------------
@@ -944,7 +2067,13 @@ int _fastRound(double f) => f >= 0 ? (f + 0.5).toInt() : (f - 0.5).toInt();
 
 double _lerp(double a, double b, double t) => a + t * (b - a);
 
+double _interpHermite(double t) => t * t * (3 - 2 * t);
+
+double _interpQuintic(double t) => t * t * t * (t * (t * 6 - 15) + 10);
+
 double _fastMin(double a, double b) => a < b ? a : b;
+
+double _fastMax(double a, double b) => a > b ? a : b;
 
 double _pingPong(double t) {
   t -= (t * 0.5).toInt() * 2;
@@ -967,6 +2096,22 @@ int _hash3(int seed, int xPrimed, int yPrimed, int zPrimed) {
   int hash = _i32(seed ^ xPrimed ^ yPrimed ^ zPrimed);
   hash = _i32(hash * 0x27d4eb2d);
   return hash;
+}
+
+double _valCoord2(int seed, int xPrimed, int yPrimed) {
+  int hash = _hash2(seed, xPrimed, yPrimed);
+
+  hash = _i32(hash * hash);
+  hash = _i32(hash ^ _i32(hash << 19));
+  return hash * (1 / 2147483648.0);
+}
+
+double _valCoord3(int seed, int xPrimed, int yPrimed, int zPrimed) {
+  int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
+
+  hash = _i32(hash * hash);
+  hash = _i32(hash ^ _i32(hash << 19));
+  return hash * (1 / 2147483648.0);
 }
 
 /// Bit-exact hashed value for the integer lattice cell ([x], [y]).
@@ -1022,6 +2167,73 @@ double _gradCoord3(
   return xd * xg + yd * yg + zd * zg;
 }
 
+({double x, double y}) _gradCoordOut2(int seed, int xPrimed, int yPrimed) {
+  final int hash = _hash2(seed, xPrimed, yPrimed) & (255 << 1);
+
+  return (x: _randVecs2D[hash], y: _randVecs2D[hash | 1]);
+}
+
+({double x, double y, double z}) _gradCoordOut3(
+  int seed,
+  int xPrimed,
+  int yPrimed,
+  int zPrimed,
+) {
+  final int hash = _hash3(seed, xPrimed, yPrimed, zPrimed) & (255 << 2);
+
+  return (
+    x: _randVecs3D[hash],
+    y: _randVecs3D[hash | 1],
+    z: _randVecs3D[hash | 2],
+  );
+}
+
+({double x, double y}) _gradCoordDual2(
+  int seed,
+  int xPrimed,
+  int yPrimed,
+  double xd,
+  double yd,
+) {
+  final int hash = _hash2(seed, xPrimed, yPrimed);
+  final int index1 = hash & (127 << 1);
+  final int index2 = (hash >> 7) & (255 << 1);
+
+  final double xg = _gradients2D[index1];
+  final double yg = _gradients2D[index1 | 1];
+  final double value = xd * xg + yd * yg;
+
+  final double xgo = _randVecs2D[index2];
+  final double ygo = _randVecs2D[index2 | 1];
+
+  return (x: value * xgo, y: value * ygo);
+}
+
+({double x, double y, double z}) _gradCoordDual3(
+  int seed,
+  int xPrimed,
+  int yPrimed,
+  int zPrimed,
+  double xd,
+  double yd,
+  double zd,
+) {
+  final int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
+  final int index1 = hash & (63 << 2);
+  final int index2 = (hash >> 6) & (255 << 2);
+
+  final double xg = _gradients3D[index1];
+  final double yg = _gradients3D[index1 | 1];
+  final double zg = _gradients3D[index1 | 2];
+  final double value = xd * xg + yd * yg + zd * zg;
+
+  final double xgo = _randVecs3D[index2];
+  final double ygo = _randVecs3D[index2 | 1];
+  final double zgo = _randVecs3D[index2 | 2];
+
+  return (x: value * xgo, y: value * ygo, z: value * zgo);
+}
+
 // ---------------------------------------------------------------------------
 // Gradient lookup tables, transcribed verbatim from the canonical C# reference.
 //
@@ -1031,10 +2243,9 @@ double _gradCoord3(
 //   _gradients3D : 256  ( 64 vectors,      stride 4, w padded 0)
 //   _randVecs3D  : 1024 (256 vectors,      stride 4, w padded 0)
 //
-// _randVecs2D and _randVecs3D are not consumed by OpenSimplex2/OpenSimplex2S
-// (they back the Cellular noise that is not ported yet). They are kept here so
-// the full verbatim FNL table set lives in one place for when Cellular is
-// added; see [randVecsTableLengths] which references them so they stay live.
+// _randVecs2D and _randVecs3D back the Cellular noise and the domain warp
+// gradients; see [randVecsTableLengths], which tests pin to guard the
+// transcription.
 // ---------------------------------------------------------------------------
 
 final Float64List _gradients2D = Float64List.fromList(<double>[
@@ -3097,8 +4308,8 @@ final Float64List _randVecs3D = Float64List.fromList(<double>[
   0.0,
 ]);
 
-/// Lengths of the two RandVecs tables. Kept so the verbatim Cellular gradient
-/// tables stay referenced (and thus lint-clean) until Cellular noise is ported.
+/// Lengths of the two RandVecs tables, pinned by tests to guard the verbatim
+/// transcription of the Cellular/domain-warp gradient tables.
 final List<int> randVecsTableLengths = <int>[
   _randVecs2D.length,
   _randVecs3D.length,
