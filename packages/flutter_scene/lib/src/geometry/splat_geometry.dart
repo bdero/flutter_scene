@@ -14,6 +14,19 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:flutter_scene/src/splats/splat_sorter.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
+/// How a crop box filters the splats of a [SplatGeometry].
+/// {@category Geometry}
+enum SplatCropMode {
+  /// No crop; every splat draws.
+  none,
+
+  /// Only splats inside the box draw.
+  include,
+
+  /// Splats inside the box are dropped.
+  exclude,
+}
+
 /// Draws a [GaussianSplats] set as one instanced batch of screen-space
 /// Gaussian footprints.
 ///
@@ -57,6 +70,38 @@ class SplatGeometry extends Geometry {
   bool antialiased = true;
 
   int _shDegree = 2;
+
+  vm.Matrix4? _cropInverse;
+  SplatCropMode _cropMode = SplatCropMode.none;
+
+  /// The active crop box's placement in the splat set's local space (the
+  /// box is the unit cube, corners at +/-1), or null when no crop is set.
+  vm.Matrix4? get cropBox => _cropBox;
+  vm.Matrix4? _cropBox;
+
+  /// How the crop box filters splats.
+  SplatCropMode get cropMode => _cropMode;
+
+  /// Sets or clears the crop box.
+  ///
+  /// [box] places a unit cube (corners at +/-1) in the set's local space;
+  /// [mode] keeps only the splats inside it ([SplatCropMode.include]) or
+  /// drops them ([SplatCropMode.exclude]). Pass null (or
+  /// [SplatCropMode.none]) to clear.
+  void setCropBox(
+    vm.Matrix4? box, {
+    SplatCropMode mode = SplatCropMode.include,
+  }) {
+    if (box == null || mode == SplatCropMode.none) {
+      _cropBox = null;
+      _cropInverse = null;
+      _cropMode = SplatCropMode.none;
+      return;
+    }
+    _cropBox = box.clone();
+    _cropInverse = vm.Matrix4.inverted(box);
+    _cropMode = mode;
+  }
 
   /// The spherical-harmonic degree evaluated per splat, clamped to what the
   /// set carries. Lowering it cheapens the vertex stage.
@@ -242,30 +287,39 @@ class SplatGeometry extends Geometry {
     );
 
     final viewport = currentSceneEncoderViewport;
-    final frameInfo = Float32List(56);
+    final frameInfo = Float32List(72);
     frameInfo.setRange(0, 16, mvp.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
-    frameInfo[32] = cameraPosition.x;
-    frameInfo[33] = cameraPosition.y;
-    frameInfo[34] = cameraPosition.z;
-    frameInfo[35] = splats.colorSpace == SplatColorSpace.linear ? 1.0 : 0.0;
-    frameInfo[36] = splats.paramsWidth.toDouble();
-    frameInfo[37] = splats.paramsHeight.toDouble();
-    // [38], [39] reserved.
-    frameInfo[40] = splats.shWidth.toDouble();
-    frameInfo[41] = splats.shHeight.toDouble();
-    frameInfo[42] = splats.shStride.toDouble();
-    frameInfo[43] = shDegree.toDouble();
-    frameInfo[44] = viewport.width;
-    frameInfo[45] = viewport.height;
-    frameInfo[46] = antialiased ? 1.0 : 0.0;
-    frameInfo[47] = splatScale;
-    frameInfo[48] = opacity;
-    // [49..51] reserved.
-    frameInfo[52] = tint.x;
-    frameInfo[53] = tint.y;
-    frameInfo[54] = tint.z;
-    frameInfo[55] = tint.w;
+    final cropInverse = _cropInverse;
+    if (cropInverse != null) {
+      frameInfo.setRange(32, 48, cropInverse.storage);
+    }
+    frameInfo[48] = cameraPosition.x;
+    frameInfo[49] = cameraPosition.y;
+    frameInfo[50] = cameraPosition.z;
+    frameInfo[51] = splats.colorSpace == SplatColorSpace.linear ? 1.0 : 0.0;
+    frameInfo[52] = splats.paramsWidth.toDouble();
+    frameInfo[53] = splats.paramsHeight.toDouble();
+    // [54], [55] reserved.
+    frameInfo[56] = splats.shWidth.toDouble();
+    frameInfo[57] = splats.shHeight.toDouble();
+    frameInfo[58] = splats.shStride.toDouble();
+    frameInfo[59] = shDegree.toDouble();
+    frameInfo[60] = viewport.width;
+    frameInfo[61] = viewport.height;
+    frameInfo[62] = antialiased ? 1.0 : 0.0;
+    frameInfo[63] = splatScale;
+    frameInfo[64] = opacity;
+    frameInfo[65] = switch (_cropMode) {
+      SplatCropMode.none => 0.0,
+      SplatCropMode.include => 1.0,
+      SplatCropMode.exclude => 2.0,
+    };
+    // [66], [67] reserved.
+    frameInfo[68] = tint.x;
+    frameInfo[69] = tint.y;
+    frameInfo[70] = tint.z;
+    frameInfo[71] = tint.w;
     pass.bindUniform(
       vertexShader.getUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

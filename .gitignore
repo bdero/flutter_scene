@@ -31,3 +31,7 @@ pubspec.lock
 build/
 **/ephemeral/
 pubspec_overrides.yaml
+
+# Fetched splat capture for the Gaussian Splats example (see
+# examples/flutter_app/tool/fetch_splat_asset.sh).
+examples/assets_src/*.splat

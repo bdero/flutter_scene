@@ -11,11 +11,12 @@
 uniform FrameInfo {
   mat4 mvp_transform;   // camera view-projection * node world transform
   mat4 model_transform; // node world transform (for SH view direction)
+  mat4 crop_transform;  // splat-local -> crop-box space (unit cube, +/-1)
   vec4 camera_position; // xyz: world camera; w: color mode (0 sRGB-encoded, 1 linear)
   vec4 params_texture;  // x: width, y: height (texels)
   vec4 sh_texture;      // x: width, y: height, z: texels per splat, w: SH degree
   vec4 viewport;        // xy: size in pixels; z: kernel mode (0 classic, 1 antialiased); w: splat scale
-  vec4 params;          // x: opacity scale; yzw: reserved
+  vec4 params;          // x: opacity scale; y: crop mode (0 off, 1 include, 2 exclude); zw: reserved
   vec4 tint;            // linear RGBA multiplier
 }
 frame_info;
@@ -33,8 +34,11 @@ in float splat_index;
 out vec2 v_quad;
 out vec4 v_color;
 
-// The footprint half-extent in standard deviations. exp(-0.5 * 3.33^2) is
-// just under 1/255, so the cut is invisible at 8-bit blending precision.
+// The largest footprint half-extent in standard deviations.
+// exp(-0.5 * 3.33^2) is just under 1/255, so the cut is invisible at 8-bit
+// blending precision. Dimmer splats use a tighter cut (their falloff drops
+// below 1/255 sooner), which sharply reduces blended fill area in
+// low-opacity clouds.
 const float kSigmaCut = 3.33;
 
 // Low-pass dilation applied to the projected covariance (in pixel^2),
@@ -52,6 +56,12 @@ vec4 fetchTexel(sampler2D tex, float index, vec2 dims) {
   return texture(tex, vec2((x + 0.5) / dims.x, (y + 0.5) / dims.y));
 }
 
+void cull() {
+  gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+  v_quad = vec2(0.0);
+  v_color = vec4(0.0);
+}
+
 void main() {
   float base = splat_index * 4.0;
   vec2 dims = frame_info.params_texture.xy;
@@ -60,14 +70,24 @@ void main() {
   vec4 t2 = fetchTexel(splat_params_texture, base + 2.0, dims);
   vec4 t3 = fetchTexel(splat_params_texture, base + 3.0, dims);
 
+  // Crop volume: drop splats outside an include box or inside an exclude
+  // box (the box is the unit cube in crop space).
+  float crop_mode = frame_info.params.y;
+  if (crop_mode > 0.5) {
+    vec3 crop_pos = (frame_info.crop_transform * vec4(t0.xyz, 1.0)).xyz;
+    bool inside = all(lessThanEqual(abs(crop_pos), vec3(1.0)));
+    if (crop_mode < 1.5 ? !inside : inside) {
+      cull();
+      return;
+    }
+  }
+
   vec4 clip = frame_info.mvp_transform * vec4(t0.xyz, 1.0);
   vec3 ndc = clip.xyz / clip.w;
   // Cull splats behind the camera or far outside the frustum (the margin
   // leaves room for large footprints straddling the edge).
   if (clip.w <= 0.0 || abs(ndc.x) > 1.3 || abs(ndc.y) > 1.3 || ndc.z > 1.0) {
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    v_quad = vec2(0.0);
-    v_color = vec4(0.0);
+    cull();
     return;
   }
 
@@ -107,6 +127,16 @@ void main() {
     opacity *= sqrt(max(det_raw / det, 0.0));
   }
 
+  // The final blended alpha bounds the useful footprint: past the radius
+  // where the falloff drops under 1/255, fragments only discard. Tighten
+  // the cut per splat so dim splats rasterize far fewer pixels.
+  float alpha = clamp(opacity, 0.0, 1.0) * frame_info.tint.a;
+  if (alpha < 1.0 / 255.0) {
+    cull();
+    return;
+  }
+  float sigma_cut = min(kSigmaCut, sqrt(2.0 * log(alpha * 255.0)));
+
   // Eigen-decomposition of the symmetric 2x2 covariance.
   float mid = 0.5 * (cov_a + cov_d);
   float delta = sqrt(max(mid * mid - det, 0.0));
@@ -116,13 +146,16 @@ void main() {
       ? normalize(vec2(cov_b, lambda1 - cov_a))
       : (cov_a >= cov_d ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
   vec2 axis2 = vec2(-axis1.y, axis1.x);
-  float radius1 = kSigmaCut * sqrt(lambda1);
-  float radius2 = kSigmaCut * sqrt(lambda2);
+  // Clamp against a pathological footprint (the camera sitting inside a
+  // giant Gaussian) so one splat cannot rasterize far past the screen.
+  float max_radius = frame_info.viewport.x + frame_info.viewport.y;
+  float radius1 = min(sigma_cut * sqrt(lambda1), max_radius);
+  float radius2 = min(sigma_cut * sqrt(lambda2), max_radius);
 
   vec2 offset_px = corner.x * radius1 * axis1 + corner.y * radius2 * axis2;
   gl_Position =
       vec4(ndc.xy * clip.w + offset_px / half_viewport * clip.w, clip.zw);
-  v_quad = corner * kSigmaCut;
+  v_quad = corner * sigma_cut;
 
   // Color: the base (degree 0) term plus the view-dependent rest bands.
   vec3 color = t3.rgb;
@@ -158,8 +191,5 @@ void main() {
   if (frame_info.camera_position.w < 0.5) {
     color = pow(color, vec3(2.2));
   }
-  v_color = vec4(
-    color * frame_info.tint.rgb,
-    clamp(opacity, 0.0, 1.0) * frame_info.tint.a
-  );
+  v_color = vec4(color * frame_info.tint.rgb, alpha);
 }
