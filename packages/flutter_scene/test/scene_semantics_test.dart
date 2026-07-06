@@ -312,6 +312,62 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('the nearer part wins hit precedence when rects overlap', (
+    tester,
+  ) async {
+    final scene = await _readyScene(tester);
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    final handle = tester.ensureSemantics();
+    // The default camera looks down -Z from z = -5, so a box at z = -1 is
+    // nearer than one at z = +1. Both sit on the view axis, so their
+    // projected rects overlap at screen center. The nearer part is
+    // registered first, so only depth ordering (not registration order)
+    // can put it last in the child list, where the reversed hit test
+    // reaches it first.
+    final near =
+        Node(
+          name: 'near',
+          localTransform: Matrix4.translation(Vector3(0, 0, -1)),
+        )..addComponent(
+          SemanticsComponent(label: 'near', boundsOverride: _unitBounds()),
+        );
+    final far =
+        Node(name: 'far', localTransform: Matrix4.translation(Vector3(0, 0, 1)))
+          ..addComponent(
+            SemanticsComponent(label: 'far', boundsOverride: _unitBounds()),
+          );
+    scene.add(near);
+    scene.add(far);
+
+    await tester.pumpWidget(_host(scene));
+    await _settleSemantics(tester);
+
+    // The hit test walks children in reverse, so the nearer part must be
+    // emitted last (after the farther one) in the shared parent's child
+    // order.
+    final nearFinder = find.semantics.byLabel('near');
+    expect(nearFinder, findsOne);
+    final order = <String>[];
+    nearFinder.found.single.parent!.visitChildren((child) {
+      order.add(child.label);
+      return true;
+    });
+    expect(order.indexOf('near'), greaterThan(order.indexOf('far')));
+
+    // Reading order still follows registration order (near before far),
+    // independent of the depth-driven emission order.
+    final reading = tester.semantics
+        .simulatedAccessibilityTraversal()
+        .map((node) => node.label)
+        .where((label) => label == 'near' || label == 'far')
+        .toList();
+    expect(reading.indexOf('near'), lessThan(reading.indexOf('far')));
+    handle.dispose();
+  });
+
   testWidgets('occlusionHiding drops a node behind scene geometry', (
     tester,
   ) async {

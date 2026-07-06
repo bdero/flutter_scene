@@ -299,17 +299,27 @@ class SemanticsComponent extends Component {
   SemanticsProperties? _builtProperties;
   int _builtVersion = -1;
   TextDirection? _builtAmbient;
+  double? _builtFallbackSortOrder;
 
   /// The assembled [SemanticsProperties] for the current configuration,
   /// cached per [version]. [ambientTextDirection] fills in [textDirection]
-  /// when unset (the platform requires a direction on any node with text);
-  /// an explicit [properties] object is returned as-is and owns its own
-  /// direction.
+  /// when unset (the platform requires a direction on any node with text).
+  ///
+  /// [fallbackSortOrder] supplies a traversal ordinal when [sortOrder] is
+  /// unset, so a convenience-configured node always has a stable reading
+  /// order even though `SceneView` emits nodes in depth order (which drives
+  /// hit-test precedence, not reading order). An explicit [properties]
+  /// object is returned as-is and owns its own direction and sort key.
   @internal
-  SemanticsProperties effectiveProperties(TextDirection? ambientTextDirection) {
+  SemanticsProperties effectiveProperties(
+    TextDirection? ambientTextDirection, {
+    double? fallbackSortOrder,
+  }) {
     if (_builtProperties == null ||
         _builtVersion != _version ||
-        _builtAmbient != ambientTextDirection) {
+        _builtAmbient != ambientTextDirection ||
+        _builtFallbackSortOrder != fallbackSortOrder) {
+      final sortOrder = _sortOrder ?? fallbackSortOrder;
       _builtProperties =
           _properties ??
           SemanticsProperties(
@@ -323,11 +333,12 @@ class SemanticsComponent extends Component {
             onDecrease: _onDecrease,
             onDidGainAccessibilityFocus: _onDidGainAccessibilityFocus,
             onDidLoseAccessibilityFocus: _onDidLoseAccessibilityFocus,
-            sortKey: _sortOrder == null ? null : OrdinalSortKey(_sortOrder!),
+            sortKey: sortOrder == null ? null : OrdinalSortKey(sortOrder),
             textDirection: _textDirection ?? ambientTextDirection,
           );
       _builtVersion = _version;
       _builtAmbient = ambientTextDirection;
+      _builtFallbackSortOrder = fallbackSortOrder;
     }
     return _builtProperties!;
   }
