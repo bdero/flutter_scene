@@ -38,6 +38,12 @@ const Map<PixelFormat, _GlFormat> _formatTable = <PixelFormat, _GlFormat>{
     web.WebGL2RenderingContext.FLOAT,
     16,
   ),
+  PixelFormat.r32Float: _GlFormat(
+    web.WebGL2RenderingContext.R32F,
+    web.WebGL2RenderingContext.RED,
+    web.WebGL2RenderingContext.FLOAT,
+    4,
+  ),
   PixelFormat.r8UNormInt: _GlFormat(
     web.WebGL2RenderingContext.R8,
     web.WebGL2RenderingContext.RED,

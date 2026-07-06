@@ -18,6 +18,7 @@ enum PixelFormat {
   b8g8r8a8UNormIntSRGB,
   r32g32b32a32Float,
   r16g16b16a16Float,
+  r32Float,
   b10g10r10XR,
   b10g10r10XRSRGB,
   b10g10r10a10XR,

@@ -9,6 +9,7 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
 import 'package:example_app/example_animation.dart';
 
 import 'example_cuboid.dart';
+import 'example_dicom.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
 import 'example_fscene.dart';
@@ -105,6 +106,7 @@ class _MyAppState extends State<MyApp> {
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Custom vertices (.fmat)': (context) => const ExampleVertexCurve(),
       'Materialize (.fmat)': (context) => const ExampleMaterialize(),
+      'DICOM Volume': (context) => const ExampleDicom(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Render Targets': (context) => const ExampleRenderTarget(),
