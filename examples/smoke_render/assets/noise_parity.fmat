@@ -1,4 +1,4 @@
-// CPU/GPU noise parity probe. Renders a 8x12 tile grid over a camera-facing
+// CPU/GPU noise parity probe. Renders a 8x21 tile grid over a camera-facing
 // quad spanning world [-1, 1] in x/y; every tile evaluates one noise function
 // at coordinates derived from its (row, column) and packs the result into
 // 24-bit fixed point across the color channels. The integration test decodes
@@ -9,7 +9,7 @@
 // probe only works with ToneMappingMode.linear, exposure 1.0, and
 // anti-aliasing off (the test configures all three).
 //
-// Row 0 and row 11 carry fixed marker values the test scans for, so it can
+// Row 0 and row 20 carry fixed marker values the test scans for, so it can
 // derive the tile-to-pixel mapping without replicating camera math (and
 // stays correct under any vertical flip).
 //
@@ -28,7 +28,7 @@ fragment {
 #include <noise.glsl>
 
   const float kCols = 8.0;
-  const float kRows = 12.0;
+  const float kRows = 21.0;
 
   // 24-bit fixed point in [0, 1], gamma-inverted so the resolve pass's
   // pow(c, 1/2.2) display encode lands back on the exact byte values.
@@ -85,6 +85,34 @@ fragment {
       v24 = NoiseHash2(ivec2(c * 3 - 11, r * 7 + c), seed) & 0xFFFFFF;
     } else if (r == 10) {
       v24 = NoiseHash3(ivec3(c * 3 - 11, r * 7 + c, c - 5), seed) & 0xFFFFFF;
+    } else if (r == 11) {
+      v01 = NoisePerlin2(p2, seed) * 0.5 + 0.5;
+    } else if (r == 12) {
+      v01 = NoisePerlin3(p3, seed) * 0.5 + 0.5;
+    } else if (r == 13) {
+      v01 = NoiseValue2(p2, seed) * 0.5 + 0.5;
+    } else if (r == 14) {
+      v01 = NoiseValue3(p3, seed) * 0.5 + 0.5;
+    } else if (r == 15) {
+      v01 = NoiseCellular2(p2, seed, kNoiseCellularEuclideanSq,
+                           kNoiseCellularDistance, 1.0) *
+              0.5 +
+          0.5;
+    } else if (r == 16) {
+      v01 = NoiseCellular3(p3, seed, kNoiseCellularEuclidean,
+                           kNoiseCellularDistance2, 1.0) *
+              0.5 +
+          0.5;
+    } else if (r == 17) {
+      v01 = NoiseCellular2(p2, seed, kNoiseCellularManhattan,
+                           kNoiseCellularCellValue, 1.0) *
+              0.5 +
+          0.5;
+    } else if (r == 18) {
+      vec2 warped = NoiseDomainWarp2(p2, seed, 30.0);
+      v01 = clamp((warped.x - p2.x) / 60.0 + 0.5, 0.0, 1.0);
+    } else if (r == 19) {
+      v01 = NoiseCurl3(p3, seed, 0.25).x * 0.125 + 0.5;
     } else {
       v24 = c == 0 ? 0xFEDCBA : 0;
     }

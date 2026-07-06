@@ -201,11 +201,11 @@ void main() {
 
     final a = centroidOf(0xABCDEF); // tile (row 0, col 0)
     final b = centroidOf(0x123456); // tile (row 0, col 7)
-    final c = centroidOf(0xFEDCBA); // tile (row 11, col 0)
+    final c = centroidOf(0xFEDCBA); // tile (row 20, col 0)
 
     int sampleTile(int row, int col) {
-      final px = a.$1 + (b.$1 - a.$1) * col / 7 + (c.$1 - a.$1) * row / 11;
-      final py = a.$2 + (b.$2 - a.$2) * col / 7 + (c.$2 - a.$2) * row / 11;
+      final px = a.$1 + (b.$1 - a.$1) * col / 7 + (c.$1 - a.$1) * row / 20;
+      final py = a.$2 + (b.$2 - a.$2) * col / 7 + (c.$2 - a.$2) * row / 20;
       return decode(px.round(), py.round());
     }
 
@@ -231,7 +231,49 @@ void main() {
           ..fractalType = FractalType.pingPong
           ..pingPongStrength = 2.0;
       }
-      final is3d = r == 2 || r == 4 || r == 6 || r == 8;
+      if (r == 11 || r == 12) n.noiseType = NoiseType.perlin;
+      if (r == 13 || r == 14) n.noiseType = NoiseType.value;
+      if (r >= 15 && r <= 17) n.noiseType = NoiseType.cellular;
+      if (r == 15) {
+        n
+          ..cellularDistanceFunction = CellularDistanceFunction.euclideanSq
+          ..cellularReturnType = CellularReturnType.distance;
+      }
+      if (r == 16) {
+        n
+          ..cellularDistanceFunction = CellularDistanceFunction.euclidean
+          ..cellularReturnType = CellularReturnType.distance2;
+      }
+      if (r == 17) {
+        n
+          ..cellularDistanceFunction = CellularDistanceFunction.manhattan
+          ..cellularReturnType = CellularReturnType.cellValue;
+      }
+      if (r == 18) {
+        // Domain warp probe, mirrored against the pre-scaled coordinates the
+        // shader passes (frequency folds to 1).
+        // octaves = 1 makes the fractal bounding exactly 1, so the Dart
+        // domainWarpAmp equals the GLSL amp parameter.
+        final w =
+            (FastNoiseLite(seed: 1337 + r)
+                  ..frequency = 1.0
+                  ..octaves = 1
+                  ..domainWarpAmp = 30.0)
+                .domainWarp2(fx * 0.0625, fy * 0.0625);
+        return ((w.x - fx * 0.0625) / 60.0 + 0.5).clamp(0.0, 1.0);
+      }
+      if (r == 19) {
+        final v = noiseCurl3(
+          fx * 0.0625,
+          fy * 0.0625,
+          fz * 0.0625,
+          seed: 1337 + r,
+          epsilon: 0.25,
+        );
+        return (v.x * 0.125 + 0.5).clamp(0.0, 1.0);
+      }
+      final is3d =
+          r == 2 || r == 4 || r == 6 || r == 8 || r == 12 || r == 14 || r == 16;
       final v = is3d ? n.getNoise3(fx, fy, fz) : n.getNoise2(fx, fy);
       return v * 0.5 + 0.5;
     }
@@ -239,8 +281,34 @@ void main() {
     // Float rows: single octaves tight, fractal rows a little looser (four
     // octaves of float32 gradient rounding). These tolerances are the
     // executable form of the parity contract.
-    for (var r = 1; r <= 8; r++) {
-      final tol = r <= 4 ? 5e-5 : 2e-4;
+    for (final r in [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+    ]) {
+      final tol = switch (r) {
+        <= 4 => 5e-5, // single octave
+        <= 8 => 2e-4, // four octaves of rounding
+        <= 14 => 5e-5, // perlin/value, single octave
+        <= 16 => 2e-4, // cellular distance chains
+        17 => 2e-6, // cellValue is hash-derived, nearly exact
+        18 => 1e-4, // warp displacement, normalized
+        _ => 3e-4, // curl, central differences amplify rounding
+      };
       for (var c = 0; c < 8; c++) {
         final gpu01 = sampleTile(r, c) / 16777215.0;
         expect(
