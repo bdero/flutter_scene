@@ -20,11 +20,28 @@ const double _kUnboundedFocusExtent = 48.0;
 /// One projected semantics element, compared across frames to decide when
 /// the semantics tree needs a rebuild.
 class _SemanticsEntry {
-  _SemanticsEntry(this.component, this.rect, this.version);
+  _SemanticsEntry(
+    this.component,
+    this.rect,
+    this.version,
+    this.depth,
+    this.readingOrder,
+  );
 
   final SemanticsComponent component;
   final ui.Rect rect;
   final int version;
+
+  /// Distance from the camera to the node's bounds center. Emitted children
+  /// are ordered farthest-first (nearest last), so when projected rects
+  /// overlap the nearest part wins the reversed hit test that assistive
+  /// technology uses for touch exploration.
+  final double depth;
+
+  /// The component's registration index, used as a stable reading-order
+  /// fallback so traversal order does not follow the depth-driven emission
+  /// order.
+  final double readingOrder;
 
   bool matches(_SemanticsEntry other) =>
       identical(component, other.component) &&
@@ -77,7 +94,10 @@ class SceneSemanticsCoordinator {
       CustomPainterSemantics(
         key: ObjectKey(entry.component),
         rect: entry.rect,
-        properties: entry.component.effectiveProperties(ambientTextDirection),
+        properties: entry.component.effectiveProperties(
+          ambientTextDirection,
+          fallbackSortOrder: entry.readingOrder,
+        ),
       ),
   ];
 
@@ -103,8 +123,10 @@ class SceneSemanticsCoordinator {
     }
     _wasEnabled = true;
 
+    final components = scene.renderScene.semanticsComponents;
     final entries = <_SemanticsEntry>[];
-    for (final component in scene.renderScene.semanticsComponents) {
+    for (var i = 0; i < components.length; i++) {
+      final component = components[i];
       if (!component.enabled) continue;
       final node = component.node;
       if (!_chainVisible(node)) continue;
@@ -113,8 +135,21 @@ class SceneSemanticsCoordinator {
       if (component.occlusionHiding && _isOccluded(node, component, camera)) {
         continue;
       }
-      entries.add(_SemanticsEntry(component, rect, component.version));
+      entries.add(
+        _SemanticsEntry(
+          component,
+          rect,
+          component.version,
+          _cameraDepth(component, node, camera),
+          i.toDouble(),
+        ),
+      );
     }
+
+    // Emit farthest-first so the nearest overlapping part wins the reversed
+    // hit test; reading order stays put via each entry's readingOrder sort
+    // key. A stable sort keeps registration order between equal depths.
+    _mergeSortByDepthDescending(entries);
 
     if (!_entriesMatch(entries)) {
       _entries = entries;
@@ -122,6 +157,54 @@ class SceneSemanticsCoordinator {
     }
 
     _refreshWidgetSurfaces(camera, viewArea);
+  }
+
+  // Distance from the camera to the node's bounds center (or origin when the
+  // subtree is unbounded), the key for depth ordering.
+  double _cameraDepth(SemanticsComponent component, Node node, Camera camera) {
+    final bounds = component.boundsOverride ?? node.combinedLocalBounds;
+    final vm.Vector3 center;
+    if (bounds == null) {
+      center = node.globalTransform.getTranslation();
+    } else {
+      final world = vm.Aabb3.copy(bounds)..transform(node.globalTransform);
+      center = world.center;
+    }
+    return center.distanceTo(camera.position);
+  }
+
+  // A stable descending-by-depth sort. `List.sort` is not guaranteed stable,
+  // and stability matters so equal-depth parts keep registration order (and
+  // the emission order does not jitter frame to frame).
+  static void _mergeSortByDepthDescending(List<_SemanticsEntry> entries) {
+    if (entries.length < 2) return;
+    final sorted = List<_SemanticsEntry>.of(entries);
+    final buffer = List<_SemanticsEntry?>.filled(entries.length, null);
+    for (var width = 1; width < sorted.length; width *= 2) {
+      for (var lo = 0; lo < sorted.length; lo += width * 2) {
+        final mid = (lo + width).clamp(0, sorted.length);
+        final hi = (lo + width * 2).clamp(0, sorted.length);
+        var i = lo, j = mid, k = lo;
+        while (i < mid && j < hi) {
+          // `>=` keeps the left (earlier) entry first on ties: stable.
+          buffer[k++] = sorted[i].depth >= sorted[j].depth
+              ? sorted[i++]
+              : sorted[j++];
+        }
+        while (i < mid) {
+          buffer[k++] = sorted[i++];
+        }
+        while (j < hi) {
+          buffer[k++] = sorted[j++];
+        }
+      }
+      for (var x = 0; x < sorted.length; x++) {
+        sorted[x] = buffer[x]!;
+      }
+    }
+    for (var x = 0; x < entries.length; x++) {
+      entries[x] = sorted[x];
+    }
   }
 
   bool _entriesMatch(List<_SemanticsEntry> entries) {

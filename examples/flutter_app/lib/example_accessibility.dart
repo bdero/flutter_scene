@@ -313,7 +313,12 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
         Positioned.fill(
           child: _showSemantics ? SemanticsDebugger(child: scene3d) : scene3d,
         ),
-        const Positioned(left: 16, top: 16, child: _Instructions()),
+        const Positioned(
+          top: 16,
+          left: 0,
+          right: 0,
+          child: Align(alignment: Alignment.topCenter, child: _Instructions()),
+        ),
         Positioned(
           right: 16,
           top: 16,
