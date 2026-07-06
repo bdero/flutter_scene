@@ -1,0 +1,198 @@
+// Volume raymarching material for the DICOM Volume example.
+//
+// The scalar volume is stored in a 2D "slice atlas" texture (Z slices tiled
+// into a grid) because Flutter GPU has no 3D textures. `sample_volume` does
+// manual trilinear filtering across tiles so we never rely on hardware
+// filtering of the r32Float atlas (not universal across backends).
+//
+// Three views share one cube: MPR (a movable cross-section plane), MIP
+// (maximum intensity projection), and DVR (front-to-back composited volume
+// with a transfer function). Unlit: we write the final color ourselves.
+
+material {
+  name: "DicomVolume",
+  shading_model: unlit,
+  blending: alpha,
+  culling: back,
+
+  varyings: [
+    { type: vec3, name: v_uvw },
+  ],
+
+  parameters: [
+    // The slice atlas and its layout.
+    { type: sampler2d, name: volume, hint: default_black },
+    { type: vec2, name: atlas_grid, default: [1.0, 1.0] },   // tiles: cols, rows
+    { type: vec2, name: atlas_size, default: [1.0, 1.0] },   // atlas texels: w, h
+    { type: vec3, name: volume_dim, default: [1.0, 1.0, 1.0] }, // voxels: w, h, d
+
+    // Camera position expressed in the cube's [0,1] texture space.
+    { type: vec3, name: cam_uvw, default: [0.5, 0.5, 2.0] },
+
+    // 0 = MPR, 1 = MIP, 2 = DVR.
+    { type: float, name: mode, hint: range(0, 2, 1), default: 2.0 },
+    { type: float, name: step_count, hint: range(16, 512, 1), default: 256.0 },
+
+    // Window/level in normalized [0,1] intensity units.
+    { type: float, name: window_center, hint: range(0, 1, 0.001), default: 0.5 },
+    { type: float, name: window_width, hint: range(0.001, 1, 0.001), default: 1.0 },
+
+    // DVR transfer-function controls.
+    { type: float, name: density, hint: range(0, 4, 0.01), default: 1.0 },
+    { type: float, name: opacity_gamma, hint: range(0.5, 4, 0.01), default: 2.0 },
+    { type: float, name: brightness, hint: range(0, 4, 0.01), default: 1.0 },
+    // 0 = grayscale, 1 = hot, 2 = bone.
+    { type: float, name: colormap, hint: range(0, 2, 1), default: 0.0 },
+
+    // MPR plane: axis (0=x,1=y,2=z) and position along it in [0,1].
+    { type: float, name: slice_axis, hint: range(0, 2, 1), default: 2.0 },
+    { type: float, name: slice_pos, hint: range(0, 1, 0.001), default: 0.5 },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Cube geometry is built in [-0.5, 0.5]; map to [0, 1] texture space.
+    v_uvw = vertex.position + vec3(0.5);
+  }
+}
+
+fragment {
+  // Fetch a single voxel (integer coords, as floats) from its atlas tile.
+  // All-float tile math avoids integer modulo, which the GLSL ES 1.00 path
+  // does not support.
+  float fetch_voxel(float x, float y, float z) {
+    float cols = material_params.atlas_grid.x;
+    float col = mod(z, cols);
+    float row = floor(z / cols);
+    vec2 origin = vec2(col * material_params.volume_dim.x,
+                       row * material_params.volume_dim.y);
+    vec2 texel = origin + vec2(x + 0.5, y + 0.5);
+    return texture(volume, texel / material_params.atlas_size).r;
+  }
+
+  // Trilinear sample at a point in [0,1]^3. Each of the eight corners is
+  // fetched by exact voxel coordinate, so tile edges never bleed.
+  float sample_volume(vec3 p) {
+    vec3 dim = material_params.volume_dim;
+    p = clamp(p, 0.0, 1.0);
+    vec3 vox = p * (dim - vec3(1.0));
+    vec3 b0 = floor(vox);
+    vec3 f = vox - b0;
+    vec3 b1 = min(b0 + vec3(1.0), dim - vec3(1.0));
+
+    float c000 = fetch_voxel(b0.x, b0.y, b0.z);
+    float c100 = fetch_voxel(b1.x, b0.y, b0.z);
+    float c010 = fetch_voxel(b0.x, b1.y, b0.z);
+    float c110 = fetch_voxel(b1.x, b1.y, b0.z);
+    float c001 = fetch_voxel(b0.x, b0.y, b1.z);
+    float c101 = fetch_voxel(b1.x, b0.y, b1.z);
+    float c011 = fetch_voxel(b0.x, b1.y, b1.z);
+    float c111 = fetch_voxel(b1.x, b1.y, b1.z);
+
+    float c00 = mix(c000, c100, f.x);
+    float c10 = mix(c010, c110, f.x);
+    float c01 = mix(c001, c101, f.x);
+    float c11 = mix(c011, c111, f.x);
+    float c0 = mix(c00, c10, f.y);
+    float c1 = mix(c01, c11, f.y);
+    return mix(c0, c1, f.z);
+  }
+
+  // Map normalized intensity through window/level into [0,1].
+  float apply_window(float v) {
+    float lo = material_params.window_center - 0.5 * material_params.window_width;
+    return clamp((v - lo) / material_params.window_width, 0.0, 1.0);
+  }
+
+  vec3 colormap(float t) {
+    if (material_params.colormap < 0.5) {
+      return vec3(t); // grayscale
+    } else if (material_params.colormap < 1.5) {
+      // hot: black -> red -> yellow -> white
+      return clamp(vec3(t * 3.0, t * 3.0 - 1.0, t * 3.0 - 2.0), 0.0, 1.0);
+    }
+    // bone: cool-tinted grayscale
+    return vec3(t * t * 0.9, t * 0.95, sqrt(clamp(t, 0.0, 1.0)));
+  }
+
+  // Cheap per-pixel hash to jitter the ray start and hide slice banding.
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  }
+
+  // Distance from ro along rd to the far wall of the unit box.
+  float box_exit(vec3 ro, vec3 rd) {
+    vec3 inv = 1.0 / rd;
+    vec3 t0 = (vec3(0.0) - ro) * inv;
+    vec3 t1 = (vec3(1.0) - ro) * inv;
+    vec3 tmax = max(t0, t1);
+    return min(min(tmax.x, tmax.y), tmax.z);
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec3 ro = clamp(v_uvw, 0.0, 1.0);
+    vec3 rd = normalize(v_uvw - material_params.cam_uvw);
+    float t_exit = max(box_exit(ro, rd), 0.0);
+
+    const int MAX_STEPS = 512;
+    float steps = clamp(material_params.step_count, 1.0, float(MAX_STEPS));
+
+    // MPR: a single movable cross-section plane, opaque where it intersects.
+    if (material_params.mode < 0.5) {
+      float axis = material_params.slice_axis;
+      float ro_a = axis < 0.5 ? ro.x : (axis < 1.5 ? ro.y : ro.z);
+      float rd_a = axis < 0.5 ? rd.x : (axis < 1.5 ? rd.y : rd.z);
+      if (abs(rd_a) < 1e-5) discard;
+      float tp = (material_params.slice_pos - ro_a) / rd_a;
+      if (tp < 0.0 || tp > t_exit) discard;
+      vec3 pos = ro + tp * rd;
+      float w = apply_window(sample_volume(pos));
+      material.base_color = vec4(colormap(w), 1.0);
+      PrepareMaterial(material);
+      return;
+    }
+
+    float dt = t_exit / steps;
+    float jitter = hash(gl_FragCoord.xy);
+
+    // MIP: keep the largest windowed sample along the ray.
+    if (material_params.mode < 1.5) {
+      float peak = 0.0;
+      float t = jitter * dt;
+      for (int i = 0; i < MAX_STEPS; i++) {
+        if (float(i) >= steps || t > t_exit) break;
+        peak = max(peak, apply_window(sample_volume(ro + t * rd)));
+        t += dt;
+      }
+      if (peak <= 0.001) discard;
+      material.base_color = vec4(colormap(peak), 1.0);
+      PrepareMaterial(material);
+      return;
+    }
+
+    // DVR: front-to-back emission/absorption compositing.
+    vec3 accum_color = vec3(0.0);
+    float accum_alpha = 0.0;
+    float t = jitter * dt;
+    // Normalize per-step opacity to the step size so density is resolution
+    // independent (a coarse march looks like a fine one).
+    float step_norm = dt * material_params.volume_dim.z;
+    for (int i = 0; i < MAX_STEPS; i++) {
+      if (float(i) >= steps || t > t_exit) break;
+      float w = apply_window(sample_volume(ro + t * rd));
+      float a = clamp(pow(w, material_params.opacity_gamma) *
+                          material_params.density * step_norm,
+                      0.0, 1.0);
+      vec3 c = colormap(w) * material_params.brightness;
+      accum_color += (1.0 - accum_alpha) * a * c;
+      accum_alpha += (1.0 - accum_alpha) * a;
+      if (accum_alpha > 0.99) break; // early ray termination
+      t += dt;
+    }
+    if (accum_alpha <= 0.001) discard;
+    // Contract wants straight alpha; un-premultiply the composited color.
+    material.base_color = vec4(accum_color / accum_alpha, accum_alpha);
+    PrepareMaterial(material);
+  }
+}
