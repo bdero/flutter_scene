@@ -8,6 +8,7 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
     show Box3dPhysicsWorld;
 import 'package:example_app/example_animation.dart';
 
+import 'example_accessibility.dart';
 import 'example_cuboid.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -111,6 +112,7 @@ class _MyAppState extends State<MyApp> {
       'DICOM Volume': (context) => const ExampleDicom(),
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
+      'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(
         // The Rapier backend needs its wasm module loaded before a world

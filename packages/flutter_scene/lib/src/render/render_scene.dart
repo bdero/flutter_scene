@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
@@ -185,6 +186,27 @@ class RenderScene {
   void removeWidgetComponent(Object component) {
     widgetComponents.remove(component);
     widgetComponentsChanged.value++;
+  }
+
+  /// The mounted [SemanticsComponent]s, in registration order. `SceneView`
+  /// projects each one's node bounds into its semantics tree while
+  /// assistive technology is active.
+  final List<SemanticsComponent> semanticsComponents = [];
+
+  /// Bumped whenever [semanticsComponents] changes.
+  final ValueNotifier<int> semanticsComponentsChanged = ValueNotifier<int>(0);
+
+  /// Registers a mounted semantics component. Called by a
+  /// [SemanticsComponent] when its owning node mounts.
+  void addSemanticsComponent(SemanticsComponent component) {
+    semanticsComponents.add(component);
+    semanticsComponentsChanged.value++;
+  }
+
+  /// Unregisters an unmounted semantics component.
+  void removeSemanticsComponent(SemanticsComponent component) {
+    semanticsComponents.remove(component);
+    semanticsComponentsChanged.value++;
   }
 
   /// Unregisters [light]. Called when its owning node unmounts.

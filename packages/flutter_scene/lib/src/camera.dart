@@ -94,6 +94,28 @@ abstract class Camera {
     return Ray.originDirection(near, unproject(1.0) - near);
   }
 
+  /// Maps a world-space point to its position inside a view (logical
+  /// pixels, origin top-left), the forward counterpart of
+  /// [screenPointToRay].
+  ///
+  /// Returns null when [worldPoint] is at or behind the camera plane, where
+  /// it has no on-screen projection. Points outside the view bounds still
+  /// return a position (negative, or beyond [viewSize]); callers decide
+  /// whether to clamp or cull. [viewSize] is the view's logical size (the
+  /// constraints `SceneView` renders into).
+  ui.Offset? worldToScreen(Vector3 worldPoint, ui.Size viewSize) {
+    final clip = getViewTransform(
+      viewSize,
+    ).transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
+    if (clip.w <= 0) {
+      return null;
+    }
+    return ui.Offset(
+      (clip.x / clip.w + 1) / 2 * viewSize.width,
+      (1 - clip.y / clip.w) / 2 * viewSize.height,
+    );
+  }
+
   /// Returns the combined projection-and-view transform for a render target
   /// of the given [dimensions].
   ///

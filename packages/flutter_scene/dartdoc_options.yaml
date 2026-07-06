@@ -9,6 +9,7 @@ dartdoc:
     - "Physics"
     - "Picking and input"
     - "Widgets"
+    - "Accessibility"
     - "Gaussian splatting"
     - "Assets and loading"
     - "Noise"
