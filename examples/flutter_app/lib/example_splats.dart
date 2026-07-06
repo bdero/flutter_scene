@@ -9,18 +9,18 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/components/splat_component.dart';
 import 'package:flutter_scene/src/geometry/splat_geometry.dart';
 import 'package:flutter_scene/src/splats/gaussian_splats.dart';
-import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
-/// Gaussian splat rendering: a procedural nebula (60k anisotropic splats)
-/// and, when `assets_src/strawberry.splat` is present (fetched by
-/// `tool/fetch_splat_asset.sh`, a CC BY capture by danylyon), a real 1.5M
-/// splat macro capture. A PBR sphere sits inside each scene proving splats
-/// and forward-rendered geometry occlude each other, and an animated crop
-/// box demonstrates GPU-side cropping.
+/// Gaussian splat rendering with real captures: an isolated-object macro
+/// capture (Strawberry by danylyon, CC BY 4.0) and a room-scale capture
+/// (a Chinese classroom by hite404, CC BY 4.0), both fetched by
+/// `tool/fetch_splat_asset.sh`. A PBR sphere sits inside each scene proving
+/// splats and forward-rendered geometry occlude each other, an animated
+/// crop box demonstrates GPU-side cropping, and a Quake-style free camera
+/// (bottom right) explores the room capture from inside.
 class ExampleSplats extends StatefulWidget {
   const ExampleSplats({super.key});
 
@@ -28,21 +28,62 @@ class ExampleSplats extends StatefulWidget {
   ExampleSplatsState createState() => ExampleSplatsState();
 }
 
-enum _SplatSource { nebula, capture }
+/// One selectable capture: where to load it from and how to frame it.
+class _SourceConfig {
+  const _SourceConfig({
+    required this.label,
+    required this.asset,
+    required this.scale,
+    required this.lift,
+    required this.orbitRadius,
+    required this.orbitHeight,
+    required this.targetHeight,
+  });
+
+  final String label;
+  final String asset;
+
+  /// Uniform scale applied to the capture (captures come at their trained
+  /// size; the strawberry is a few centimeters across).
+  final double scale;
+
+  /// World-space height the capture's center is lifted to.
+  final double lift;
+
+  final double orbitRadius;
+  final double orbitHeight;
+  final double targetHeight;
+}
+
+const List<_SourceConfig> _sourceConfigs = [
+  _SourceConfig(
+    label: 'Strawberry',
+    asset: 'assets_src/strawberry.splat',
+    scale: 4.0,
+    lift: 1.0,
+    orbitRadius: 14.0,
+    orbitHeight: 4.0,
+    targetHeight: 0.5,
+  ),
+  _SourceConfig(
+    label: 'Classroom',
+    asset: 'assets_src/classroom.splat',
+    scale: 1.0,
+    lift: 1.4,
+    orbitRadius: 4.5,
+    orbitHeight: 1.9,
+    targetHeight: 1.2,
+  ),
+];
 
 class ExampleSplatsState extends State<ExampleSplats> {
   Scene scene = Scene();
   bool _ready = false;
 
-  final Map<_SplatSource, Node> _sourceNodes = {};
-  final Map<_SplatSource, SplatComponent> _sources = {};
-  _SplatSource _active = _SplatSource.nebula;
-
-  // Local-space X extent of each set, used to scale the crop sweep.
-  static const Map<_SplatSource, double> _cropExtent = {
-    _SplatSource.nebula: 10.0,
-    _SplatSource.capture: 1.2,
-  };
+  final Map<_SourceConfig, Node> _sourceNodes = {};
+  final Map<_SourceConfig, SplatComponent> _sources = {};
+  final Map<_SourceConfig, double> _cropExtents = {};
+  _SourceConfig? _active;
 
   double _opacity = 1.0;
   double _splatScale = 1.0;
@@ -54,7 +95,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
   // orbit camera so toggling it on does not jump the view.
   bool _freeCamera = false;
   final QuakeCamera _freeCam = QuakeCamera(position: vm.Vector3(0, 4, 14))
-    ..speed = 6.0
+    ..speed = 4.0
     ..enabled = false;
   double _elapsedSeconds = 0;
 
@@ -91,58 +132,72 @@ class ExampleSplatsState extends State<ExampleSplats> {
       ),
     );
 
-    final nebula = SplatComponent(GaussianSplats.fromData(_nebula(seed: 7)));
-    _sources[_SplatSource.nebula] = nebula;
-    _sourceNodes[_SplatSource.nebula] = Node()..addComponent(nebula);
-
-    // The captured asset is optional (fetched by tool/fetch_splat_asset.sh).
-    try {
-      final capture = SplatComponent(
-        await GaussianSplats.fromAsset('assets_src/strawberry.splat'),
-      );
-      _sources[_SplatSource.capture] = capture;
-      // Training captures are y-down; flip upright and scale up to scene
-      // size.
-      _sourceNodes[_SplatSource.capture] = Node(
-        localTransform: vm.Matrix4.compose(
-          vm.Vector3(0, 1.0, 0),
-          vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi),
-          vm.Vector3.all(4.0),
-        ),
-      )..addComponent(capture);
-    } catch (_) {
-      // Asset absent; the nebula still demonstrates everything.
+    for (final config in _sourceConfigs) {
+      try {
+        final component = SplatComponent(
+          await GaussianSplats.fromAsset(config.asset),
+        );
+        _sources[config] = component;
+        _sourceNodes[config] = _placeCapture(component, config);
+        final bounds = component.splats.bounds;
+        _cropExtents[config] = bounds == null
+            ? 5.0
+            : ((bounds.max.x - bounds.min.x) * 0.5 * config.scale).clamp(
+                3.0,
+                12.0,
+              );
+      } catch (_) {
+        // Asset absent (tool/fetch_splat_asset.sh not run); hide the source.
+      }
     }
+    _active = _sources.keys.isEmpty ? null : _sources.keys.first;
 
     for (final entry in _sourceNodes.entries) {
       entry.value.visible = entry.key == _active;
       scene.add(entry.value);
     }
 
-    // A shiny sphere inside the cloud: splats in front of it must cover it,
-    // and it must occlude the splats behind it.
+    // A shiny sphere inside each capture: splats in front of it must cover
+    // it, and it must occlude the splats behind it.
     scene.add(
       Node(
         mesh: Mesh(
-          SphereGeometry(radius: 1.2),
+          SphereGeometry(radius: 0.8),
           PhysicallyBasedMaterial()
             ..baseColorFactor = vm.Vector4(0.9, 0.85, 0.8, 1.0)
             ..metallicFactor = 1.0
             ..roughnessFactor = 0.15,
         ),
-      )..localTransform = vm.Matrix4.translation(vm.Vector3(2.5, 0.4, 0)),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(2.2, 1.0, 0)),
     );
 
     if (mounted) setState(() => _ready = true);
   }
 
-  SplatComponent get _activeSplats => _sources[_active]!;
+  /// Places a capture: recentered on its bounds, flipped upright (training
+  /// captures are y-down), scaled, and lifted so it sits in front of the
+  /// camera.
+  static Node _placeCapture(SplatComponent component, _SourceConfig config) {
+    final bounds = component.splats.bounds;
+    final center = bounds == null
+        ? vm.Vector3.zero()
+        : (bounds.min + bounds.max) * 0.5;
+    final transform = vm.Matrix4.compose(
+      vm.Vector3(0, config.lift, 0),
+      vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi),
+      vm.Vector3.all(config.scale),
+    )..multiply(vm.Matrix4.translation(-center));
+    return Node(localTransform: transform)..addComponent(component);
+  }
 
-  void _setActive(_SplatSource source) {
+  SplatComponent? get _activeSplats =>
+      _active == null ? null : _sources[_active];
+
+  void _setActive(_SourceConfig config) {
     setState(() {
-      _active = source;
+      _active = config;
       for (final entry in _sourceNodes.entries) {
-        entry.value.visible = entry.key == source;
+        entry.value.visible = entry.key == config;
       }
       _applyKnobs();
     });
@@ -150,6 +205,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
 
   void _applyKnobs() {
     final splats = _activeSplats;
+    if (splats == null) return;
     splats.opacity = _opacity;
     splats.splatScale = _splatScale;
     splats.antialiased = _antialiased;
@@ -159,115 +215,44 @@ class ExampleSplatsState extends State<ExampleSplats> {
   void _tickCrop(Duration elapsed) {
     if (!_cropSweep) return;
     final splats = _activeSplats;
-    final extent = _cropExtent[_active]!;
+    final active = _active;
+    if (splats == null || active == null) return;
+    final extent = _cropExtents[active]!;
     final t = elapsed.inMicroseconds / 1e6;
     // A wipe: a big exclude box slides through the set, eating and then
     // restoring it. Evaluated per splat on the GPU, so this is free to
-    // animate.
-    final sweep = math.sin(t * 0.5) * extent;
+    // animate. The box lives in the capture's local (pre-flip) space, so
+    // the sweep axis is x either way.
+    final sweep = math.sin(t * 0.5) * extent / active.scale;
+    final half = extent / active.scale;
     splats.setCropBox(
       vm.Matrix4.compose(
-        vm.Vector3(sweep - extent, 0, 0),
+        vm.Vector3(sweep - half, 0, 0),
         vm.Quaternion.identity(),
-        vm.Vector3(extent, extent * 2, extent * 2),
+        vm.Vector3(half, half * 3, half * 3),
       ),
       mode: SplatCropMode.exclude,
     );
   }
 
-  /// Builds a three-armed spiral nebula with a bright core. Anisotropic
-  /// splats stretch along their arm's tangent, showing off oriented
-  /// covariances; colors are authored in linear space.
-  static SplatData _nebula({required int seed}) {
-    const arms = 3;
-    const perArm = 17000;
-    const core = 9000;
-    const count = arms * perArm + core;
-    final rng = math.Random(seed);
-    final data = SplatData.zeroed(count);
+  void _toggleFreeCamera() {
+    setState(() {
+      _freeCamera = !_freeCamera;
+      _freeCam
+        ..enabled = _freeCamera
+        ..releaseKeys()
+        ..move(_elapsedSeconds); // Reset the frame clock without moving.
+    });
+  }
 
-    double gauss() {
-      // Box-Muller.
-      final u = math.max(rng.nextDouble(), 1e-9);
-      return math.sqrt(-2 * math.log(u)) *
-          math.cos(2 * math.pi * rng.nextDouble());
+  void _tickFps(double deltaSeconds) {
+    _fpsAccum += deltaSeconds;
+    _fpsFrames++;
+    if (_fpsAccum >= 0.25) {
+      _fps.value = _fpsFrames / _fpsAccum;
+      _fpsAccum = 0;
+      _fpsFrames = 0;
     }
-
-    void writeSplat(
-      int i, {
-      required vm.Vector3 position,
-      required vm.Vector3 scale,
-      required double yaw,
-      required vm.Vector3 color,
-      required double opacity,
-    }) {
-      final p = i * 3, q = i * 4;
-      data.positions[p] = position.x;
-      data.positions[p + 1] = position.y;
-      data.positions[p + 2] = position.z;
-      data.scales[p] = scale.x;
-      data.scales[p + 1] = scale.y;
-      data.scales[p + 2] = scale.z;
-      // Rotation about +Y by yaw: aligns local x with the arm tangent.
-      data.rotations[q + 1] = math.sin(yaw / 2);
-      data.rotations[q + 3] = math.cos(yaw / 2);
-      data.colors[p] = color.x;
-      data.colors[p + 1] = color.y;
-      data.colors[p + 2] = color.z;
-      data.opacities[i] = opacity;
-    }
-
-    final armColors = [
-      vm.Vector3(0.25, 0.45, 1.0), // blue
-      vm.Vector3(0.65, 0.3, 1.0), // violet
-      vm.Vector3(0.2, 0.9, 0.85), // teal
-    ];
-
-    var i = 0;
-    for (var arm = 0; arm < arms; arm++) {
-      final armBase = arm * 2 * math.pi / arms;
-      for (var n = 0; n < perArm; n++, i++) {
-        final r = 1.2 + 7.5 * math.sqrt(rng.nextDouble());
-        final theta = armBase + r * 0.55 + gauss() * (0.35 / math.sqrt(r));
-        final spread = 0.25 + r * 0.06;
-        final position = vm.Vector3(
-          r * math.cos(theta) + gauss() * spread,
-          gauss() * spread * 0.35,
-          r * math.sin(theta) + gauss() * spread,
-        );
-        // The arm tangent direction (derivative of the spiral) is close to
-        // the angular direction; stretch splats along it.
-        final tangentYaw = -(theta + math.pi / 2);
-        final len = 0.06 + rng.nextDouble() * 0.12;
-        final scale = vm.Vector3(len * 2.2, len * 0.7, len);
-        final t = ((r - 1.2) / 7.5).clamp(0.0, 1.0);
-        final color =
-            armColors[arm] * (0.35 + 0.5 * t) +
-            vm.Vector3(1.0, 0.85, 0.6) * (1.0 - t) * 0.5;
-        writeSplat(
-          i,
-          position: position,
-          scale: scale,
-          yaw: tangentYaw,
-          color: color * (2.2 - 1.4 * t),
-          opacity: 0.25 + rng.nextDouble() * 0.5,
-        );
-      }
-    }
-    for (var n = 0; n < core; n++, i++) {
-      final position = vm.Vector3(gauss() * 0.9, gauss() * 0.45, gauss() * 0.9);
-      final len = 0.04 + rng.nextDouble() * 0.1;
-      final heat = math.max(0.0, 1.0 - position.length / 2.2);
-      writeSplat(
-        i,
-        position: position,
-        scale: vm.Vector3(len, len, len),
-        yaw: rng.nextDouble() * math.pi,
-        color: vm.Vector3(1.0, 0.9, 0.7) * (1.5 + 6.0 * heat * heat),
-        opacity: 0.35 + rng.nextDouble() * 0.55,
-      );
-    }
-    return data;
   }
 
   vm.Vector3 _cameraPosition = vm.Vector3(0, 4, 14);
@@ -278,6 +263,20 @@ class ExampleSplatsState extends State<ExampleSplats> {
       return const ColoredBox(
         color: Color(0xFF040408),
         child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_active == null) {
+      return const ColoredBox(
+        color: Color(0xFF040408),
+        child: Center(
+          child: Text(
+            'No splat captures found.\n'
+            'Run examples/flutter_app/tool/fetch_splat_asset.sh, then '
+            'restart this example.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
       );
     }
     return Focus(
@@ -298,17 +297,19 @@ class ExampleSplatsState extends State<ExampleSplats> {
                     _freeCam.move(_elapsedSeconds);
                     return _freeCam.camera;
                   }
+                  final config = _active!;
                   if (_orbit) {
                     final t = _elapsedSeconds;
                     _cameraPosition = vm.Vector3(
-                      math.sin(t * 0.12) * 14,
-                      4.0 + math.sin(t * 0.05) * 2.0,
-                      math.cos(t * 0.12) * 14,
+                      math.sin(t * 0.12) * config.orbitRadius,
+                      config.orbitHeight +
+                          math.sin(t * 0.05) * config.orbitHeight * 0.4,
+                      math.cos(t * 0.12) * config.orbitRadius,
                     );
                   }
                   final camera = PerspectiveCamera(
                     position: _cameraPosition,
-                    target: vm.Vector3(0, 0.5, 0),
+                    target: vm.Vector3(0, config.targetHeight, 0),
                   );
                   // Keep the free camera parked on the live view so
                   // enabling it starts from what is on screen.
@@ -345,29 +346,9 @@ class ExampleSplatsState extends State<ExampleSplats> {
     );
   }
 
-  void _toggleFreeCamera() {
-    setState(() {
-      _freeCamera = !_freeCamera;
-      _freeCam
-        ..enabled = _freeCamera
-        ..releaseKeys()
-        ..move(_elapsedSeconds); // Reset the frame clock without moving.
-    });
-  }
-
-  void _tickFps(double deltaSeconds) {
-    _fpsAccum += deltaSeconds;
-    _fpsFrames++;
-    if (_fpsAccum >= 0.25) {
-      _fps.value = _fpsFrames / _fpsAccum;
-      _fpsAccum = 0;
-      _fpsFrames = 0;
-    }
-  }
-
   Widget _panel() {
     final splats = _activeSplats;
-    final hasCapture = _sources.containsKey(_SplatSource.capture);
+    if (splats == null) return const SizedBox.shrink();
     return Card(
       color: Colors.black.withValues(alpha: 0.55),
       child: Padding(
@@ -376,25 +357,14 @@ class ExampleSplatsState extends State<ExampleSplats> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (hasCapture)
-              SegmentedButton<_SplatSource>(
-                segments: const [
-                  ButtonSegment(
-                    value: _SplatSource.nebula,
-                    label: Text('Nebula'),
-                  ),
-                  ButtonSegment(
-                    value: _SplatSource.capture,
-                    label: Text('Strawberry'),
-                  ),
+            if (_sources.length > 1)
+              SegmentedButton<_SourceConfig>(
+                segments: [
+                  for (final config in _sources.keys)
+                    ButtonSegment(value: config, label: Text(config.label)),
                 ],
-                selected: {_active},
+                selected: {_active!},
                 onSelectionChanged: (s) => _setActive(s.first),
-              )
-            else
-              const Text(
-                'Run tool/fetch_splat_asset.sh for the captured scene',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
             const SizedBox(height: 4),
             ValueListenableBuilder<double>(
