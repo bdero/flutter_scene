@@ -154,6 +154,15 @@ class WidgetTextureController extends ChangeNotifier {
   /// [WidgetUpdatePolicy.manual]; under other policies it forces an
   /// immediate capture (subject to one-in-flight throttling).
   void requestCapture() => _host?._captureNow();
+
+  /// Sets the hosted subtree's semantics placement for this frame: the
+  /// transform mapping its logical coordinates onto the enclosing
+  /// `SceneView`'s box, or null to keep the subtree out of the semantics
+  /// tree (surface hidden, culled, or assistive technology inactive).
+  /// `SceneView` pushes this after each rendered frame.
+  @internal
+  void internalUpdateSemantics(Matrix4? transform) =>
+      _host?._updateSemantics(transform);
 }
 
 /// Hosts a live widget subtree and streams its visual output into a
@@ -374,9 +383,65 @@ class _RenderWidgetTexture extends RenderProxyBox {
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) => false;
 
-  // The child never appears on screen, so it has no semantics.
+  // ----- semantics -----
+  //
+  // The hosted subtree computes real semantics but never paints at its
+  // layout position. While the surface is visible on screen and assistive
+  // technology is active, `SceneView` pushes the transform mapping the
+  // subtree's logical space onto the surface's projected quad; the
+  // framework's semantics geometry composes transforms through
+  // applyPaintTransform, so overriding it repositions every node in the
+  // subtree at once. Semantics actions dispatch straight to the widgets'
+  // own handlers, independent of the synthetic pointer pipeline above.
+
+  Matrix4? _semanticsTransform;
+  bool _semanticsUpdateScheduled = false;
+
+  void _updateSemantics(Matrix4? transform) {
+    final current = _semanticsTransform;
+    if (transform == null && current == null) return;
+    if (transform != null &&
+        current != null &&
+        _matrixNearEquals(transform, current)) {
+      return;
+    }
+    _semanticsTransform = transform;
+    if (_semanticsUpdateScheduled) return;
+    _semanticsUpdateScheduled = true;
+    // Deferred to a post-frame callback: the new placement arrives during
+    // the paint flush, where dirtying semantics is not allowed.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _semanticsUpdateScheduled = false;
+      if (attached) markNeedsSemanticsUpdate();
+    }, debugLabel: 'WidgetTexture.semanticsUpdate');
+  }
+
+  static bool _matrixNearEquals(Matrix4 a, Matrix4 b) {
+    for (var i = 0; i < 16; i++) {
+      if ((a.storage[i] - b.storage[i]).abs() > 1e-3) return false;
+    }
+    return true;
+  }
+
   @override
-  void visitChildrenForSemantics(RenderObjectVisitor visitor) {}
+  void applyPaintTransform(RenderObject child, Matrix4 transform) {
+    super.applyPaintTransform(child, transform);
+    final t = _semanticsTransform;
+    if (t != null) {
+      transform.multiply(t);
+    }
+  }
+
+  // The subtree joins the semantics tree only while it has an on-screen
+  // placement; otherwise the child never appears on screen and has no
+  // semantics.
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    final child = this.child;
+    if (child != null && _semanticsTransform != null) {
+      visitor(child);
+    }
+  }
 
   @override
   void paint(PaintingContext context, Offset offset) {

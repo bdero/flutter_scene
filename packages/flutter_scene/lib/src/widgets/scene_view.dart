@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart'
+    show PipelineOwner, RenderCustomPaint, SemanticsBuilderCallback;
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart' show SemanticsBinding;
 import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene/src/camera.dart';
@@ -10,6 +13,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/scene_pointer.dart';
+import 'package:flutter_scene/src/widgets/scene_view_semantics.dart';
 import 'package:flutter_scene/src/widget_texture.dart';
 
 /// Builds a [Camera] for the current frame from the [elapsed] time since the
@@ -231,9 +235,18 @@ class _SceneViewState extends State<SceneView>
   bool get _gated =>
       widget.loading != null || widget.loadingBuilder != null || widget.warmUp;
 
+  // Builds the semantics elements for the scene's SemanticsComponents and
+  // widget surfaces; refreshed by the painter after each rendered frame.
+  late SceneSemanticsCoordinator _sceneSemantics;
+
   @override
   void initState() {
     super.initState();
+    _sceneSemantics = SceneSemanticsCoordinator(widget.scene);
+    SemanticsBinding.instance.addSemanticsEnabledListener(_onSemanticsChanged);
+    widget.scene.renderScene.semanticsComponentsChanged.addListener(
+      _onSemanticsChanged,
+    );
     if (widget.autoTick) {
       _ticker = createTicker(_onTick)..start();
     }
@@ -243,12 +256,26 @@ class _SceneViewState extends State<SceneView>
     }
   }
 
+  // Repaints so the next frame's semantics refresh sees the change (a
+  // screen reader toggling on/off, or semantics components mounting and
+  // unmounting), even when the view is not ticking.
+  void _onSemanticsChanged() => _repaint.notify();
+
   @override
   void didUpdateWidget(SceneView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.autoTick != oldWidget.autoTick) {
       _ticker?.dispose();
       _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
+    }
+    if (!identical(widget.scene, oldWidget.scene)) {
+      oldWidget.scene.renderScene.semanticsComponentsChanged.removeListener(
+        _onSemanticsChanged,
+      );
+      widget.scene.renderScene.semanticsComponentsChanged.addListener(
+        _onSemanticsChanged,
+      );
+      _sceneSemantics = SceneSemanticsCoordinator(widget.scene);
     }
     // A new set of resources to wait for (or newly gated): hold the scene again
     // until they load.
@@ -416,6 +443,12 @@ class _SceneViewState extends State<SceneView>
 
   @override
   void dispose() {
+    SemanticsBinding.instance.removeSemanticsEnabledListener(
+      _onSemanticsChanged,
+    );
+    widget.scene.renderScene.semanticsComponentsChanged.removeListener(
+      _onSemanticsChanged,
+    );
     _ticker?.dispose();
     _repaint.dispose();
     _elapsed.dispose();
@@ -424,6 +457,7 @@ class _SceneViewState extends State<SceneView>
 
   @override
   Widget build(BuildContext context) {
+    _sceneSemantics.ambientTextDirection = Directionality.maybeOf(context);
     return SceneScope(
       scene: widget.scene,
       elapsed: _elapsed,
@@ -447,12 +481,8 @@ class _SceneViewState extends State<SceneView>
             child: Stack(
               fit: StackFit.passthrough,
               children: [
-                CustomPaint(
-                  // Size.infinite fills the largest bounded constraints the view is
-                  // given (both tight constraints and a Stack's loose ones), so the
-                  // scene is never collapsed to zero size. See the class doc: place
-                  // SceneView where it receives bounded constraints.
-                  size: Size.infinite,
+                _SceneCustomPaint(
+                  semantics: _sceneSemantics,
                   painter: _ScenePainter(
                     scene: widget.scene,
                     cameraForFrame: widget.viewsBuilder == null
@@ -462,35 +492,41 @@ class _SceneViewState extends State<SceneView>
                         ? null
                         : _viewsForFrame,
                     pixelRatio: widget.pixelRatio,
+                    semantics: _sceneSemantics,
                     repaint: _repaint,
+                  ),
+                  // Invisible hosts for the scene's WidgetComponents: each hosted
+                  // subtree stays fully live (state, tickers, animations) while
+                  // occupying no layout space and never painting to the screen; its
+                  // visual output streams into the component's texture. The Overlay
+                  // keeps dialogs, dropdowns, and tooltips inside the capture.
+                  // Riding as the paint widget's child puts each subtree's
+                  // semantics under the scene's semantics boundary, beside the
+                  // nodes synthesized for SemanticsComponents.
+                  child: SizedBox.expand(
+                    child: ValueListenableBuilder<int>(
+                      valueListenable:
+                          widget.scene.renderScene.widgetComponentsChanged,
+                      builder: (context, _, _) => Stack(
+                        children: [
+                          for (final component
+                              in widget.scene.renderScene.widgetComponents
+                                  .whereType<WidgetComponent>())
+                            WidgetTexture(
+                              key: ObjectKey(component),
+                              controller: component.controller,
+                              width: component.size.width,
+                              height: component.size.height,
+                              pixelRatio: component.pixelRatio,
+                              update: component.updatePolicy,
+                              child: _WidgetComponentHost(component: component),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 if (widget.debugWidgetInput) _buildDebugOverlay(),
-                // Invisible hosts for the scene's WidgetComponents: each hosted
-                // subtree stays fully live (state, tickers, animations) while
-                // occupying no layout space and never painting to the screen; its
-                // visual output streams into the component's texture. The Overlay
-                // keeps dialogs, dropdowns, and tooltips inside the capture.
-                ValueListenableBuilder<int>(
-                  valueListenable:
-                      widget.scene.renderScene.widgetComponentsChanged,
-                  builder: (context, _, _) => Stack(
-                    children: [
-                      for (final component
-                          in widget.scene.renderScene.widgetComponents
-                              .whereType<WidgetComponent>())
-                        WidgetTexture(
-                          key: ObjectKey(component),
-                          controller: component.controller,
-                          width: component.size.width,
-                          height: component.size.height,
-                          pixelRatio: component.pixelRatio,
-                          update: component.updatePolicy,
-                          child: _WidgetComponentHost(component: component),
-                        ),
-                    ],
-                  ),
-                ),
               ],
             ),
           );
@@ -585,6 +621,7 @@ class _ScenePainter extends CustomPainter {
     required this.cameraForFrame,
     required this.viewsForFrame,
     required this.pixelRatio,
+    required this.semantics,
     required Listenable repaint,
   }) : super(repaint: repaint);
 
@@ -592,33 +629,143 @@ class _ScenePainter extends CustomPainter {
   final Camera Function()? cameraForFrame;
   final List<RenderView> Function()? viewsForFrame;
   final double? pixelRatio;
+  final SceneSemanticsCoordinator semantics;
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Semantics refresh in a finally so assistive technology stays current
+    // even on frames the engine skips or fails.
     final views = viewsForFrame;
     if (views != null) {
-      scene.renderViews(
-        views(),
-        canvas,
-        region: Offset.zero & size,
-        pixelRatio: pixelRatio,
-      );
+      final list = views();
+      try {
+        scene.renderViews(
+          list,
+          canvas,
+          region: Offset.zero & size,
+          pixelRatio: pixelRatio,
+        );
+      } finally {
+        // Semantics follow the primary view: the first one rendering to the
+        // screen. Views with an offscreen target contribute nothing.
+        Camera? primary;
+        var area = Offset.zero & size;
+        for (final view in list) {
+          if (view.target == null) {
+            primary = view.camera;
+            area = _viewArea(size, view.viewport);
+            break;
+          }
+        }
+        semantics.refreshAfterRender(primary, area);
+      }
     } else {
-      scene.render(
-        cameraForFrame!(),
-        canvas,
-        viewport: Offset.zero & size,
-        pixelRatio: pixelRatio,
-      );
+      final camera = cameraForFrame!();
+      try {
+        scene.render(
+          camera,
+          canvas,
+          viewport: Offset.zero & size,
+          pixelRatio: pixelRatio,
+        );
+      } finally {
+        semantics.refreshAfterRender(camera, Offset.zero & size);
+      }
     }
   }
+
+  // Maps a view's normalized viewport rectangle (0..1) into the scene box,
+  // matching how Scene.renderViews subdivides its region.
+  static Rect _viewArea(Size size, Rect? viewport) {
+    if (viewport == null) return Offset.zero & size;
+    return Rect.fromLTWH(
+      viewport.left * size.width,
+      viewport.top * size.height,
+      viewport.width * size.width,
+      viewport.height * size.height,
+    );
+  }
+
+  @override
+  SemanticsBuilderCallback? get semanticsBuilder => semantics.buildSemantics;
 
   @override
   bool shouldRepaint(covariant _ScenePainter oldDelegate) =>
       scene != oldDelegate.scene ||
       cameraForFrame != oldDelegate.cameraForFrame ||
       viewsForFrame != oldDelegate.viewsForFrame ||
-      pixelRatio != oldDelegate.pixelRatio;
+      pixelRatio != oldDelegate.pixelRatio ||
+      semantics != oldDelegate.semantics;
+}
+
+/// The scene's [CustomPaint], with a render object the semantics
+/// coordinator can schedule updates on. The widget-surface hosts ride as
+/// its child so their semantics assemble under the same boundary as the
+/// nodes synthesized for the scene's SemanticsComponents.
+class _SceneCustomPaint extends CustomPaint {
+  const _SceneCustomPaint({
+    required this.semantics,
+    required _ScenePainter super.painter,
+    required Widget super.child,
+    // Size.infinite fills the largest bounded constraints the view is given
+    // (both tight constraints and a Stack's loose ones), so the scene is
+    // never collapsed to zero size. See the class doc: place SceneView
+    // where it receives bounded constraints. With a child present the
+    // render object sizes to it, so the child is a SizedBox.expand.
+  }) : super(size: Size.infinite);
+
+  final SceneSemanticsCoordinator semantics;
+
+  @override
+  RenderCustomPaint createRenderObject(BuildContext context) =>
+      _RenderSceneCustomPaint(
+        semantics: semantics,
+        painter: painter,
+        preferredSize: size,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderSceneCustomPaint renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.semantics = semantics;
+  }
+}
+
+class _RenderSceneCustomPaint extends RenderCustomPaint {
+  _RenderSceneCustomPaint({
+    required SceneSemanticsCoordinator semantics,
+    super.painter,
+    required super.preferredSize,
+  }) : _semantics = semantics;
+
+  SceneSemanticsCoordinator _semantics;
+  set semantics(SceneSemanticsCoordinator value) {
+    if (identical(value, _semantics)) return;
+    if (identical(_semantics.renderObject, this)) {
+      _semantics.renderObject = null;
+    }
+    _semantics = value;
+    if (attached) {
+      _semantics.renderObject = this;
+    }
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _semantics.renderObject = this;
+  }
+
+  @override
+  void detach() {
+    if (identical(_semantics.renderObject, this)) {
+      _semantics.renderObject = null;
+    }
+    super.detach();
+  }
 }
 
 /// Exposes the active [Scene] (and the per-frame [elapsed] time) to descendants

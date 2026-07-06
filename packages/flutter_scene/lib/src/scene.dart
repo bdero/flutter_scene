@@ -331,17 +331,19 @@ base class Scene implements SceneGraph {
               loadBaseShaderLibrary(),
               Material.initializeStaticResources(),
             ])
+            .then((_) {
+              _readyToRender = true;
+            })
             .onError((e, stacktrace) {
+              // Only a successful load marks the scene ready to render;
+              // rendering with these resources missing throws mid-frame.
+              // The memoized future is reset so a later call retries.
               log(
                 'Failed to initialize static Flutter Scene resources',
                 error: e,
                 stackTrace: stacktrace,
               );
               _initializeStaticResources = null;
-              return const <void>[];
-            })
-            .then((_) {
-              _readyToRender = true;
             });
     return _initializeStaticResources!;
   }

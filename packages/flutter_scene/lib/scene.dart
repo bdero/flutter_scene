@@ -102,6 +102,7 @@ export 'src/components/instanced_mesh_component.dart'
 export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
 export 'src/components/point_light_component.dart' show PointLightComponent;
+export 'src/components/semantics_component.dart' show SemanticsComponent;
 export 'src/components/splat_component.dart' show SplatComponent;
 export 'src/components/spot_light_component.dart' show SpotLightComponent;
 export 'src/render/lod.dart' show LodLevel;

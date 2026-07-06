@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/widgets.dart' show Size, Widget;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
@@ -124,6 +125,17 @@ class WidgetComponent extends Component {
 
   /// The capture policy (see [WidgetUpdatePolicy]).
   WidgetUpdatePolicy get updatePolicy => _update;
+
+  /// Whether this component created its own quad surface (the zero-config
+  /// tier), whose known plane gives the hosted subtree's semantics an exact
+  /// projective screen mapping. Other tiers fall back to fitting the
+  /// projected node bounds.
+  @internal
+  bool get ownsQuadSurface => _createsSurface && _geometry == null;
+
+  /// The world-space height of the owned quad surface.
+  @internal
+  double get worldHeight => _worldHeight;
 
   MeshComponent? _meshComponent;
   UnlitMaterial? _ownedMaterial;

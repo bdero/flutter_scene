@@ -7,6 +7,28 @@
   view. Together they turn "load a model, find its meshes, frame the camera on
   it" into a few lines instead of a hand-rolled vertex loop.
 
+* Scene content can now be exposed to assistive technology (screen
+  readers, switch access). Attaching the new `SemanticsComponent` to a
+  node publishes it into the enclosing `SceneView`'s semantics tree with a
+  label, value, flags, and actions (tap, increase/decrease, or a full
+  `SemanticsProperties`), with its focus rectangle projected from the
+  node's bounds through the view's camera each frame and traversal order
+  controlled by `sortOrder`. Culled or invisible nodes leave the tree, and
+  an opt-in `occlusionHiding` also removes nodes that scene geometry
+  blocks from the camera. `WidgetComponent` surfaces now expose their
+  hosted subtree's real semantics too, positioned on the projected
+  surface, so screen readers traverse and activate in-scene widget panels
+  like ordinary widgets. All of this is skipped entirely while no
+  assistive technology is active. Multi-view scenes project semantics
+  through the primary view (the first view rendering to the screen).
+
+* Added `Camera.worldToScreen`, the forward counterpart of
+  `Camera.screenPointToRay`.
+
+* A failed static-resource load no longer marks the engine ready to
+  render (which crashed mid-frame); the scene keeps skipping frames and
+  the load is retried on the next `Scene.initializeStaticResources` call.
+
 * Per-frame transient GPU data (uniform blocks, instance transforms) now
   rides an engine-owned, completion-aware arena allocator instead of
   `package:flutter_gpu`'s `HostBuffer`. Emplacements stage CPU-side and
