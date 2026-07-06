@@ -16,5 +16,17 @@
 /// noise on both sides, make the decision once and share it.
 library;
 
+export 'src/noise/curl.dart' show noiseCurl3;
 export 'src/noise/fast_noise_lite.dart'
-    show FastNoiseLite, NoiseType, FractalType, noiseHash2, noiseHash3;
+    show
+        CellularDistanceFunction,
+        CellularReturnType,
+        DomainWarpFractalType,
+        DomainWarpType,
+        FastNoiseLite,
+        FractalType,
+        NoiseType,
+        noiseHash2,
+        noiseHash3;
+export 'src/noise/noise_pixels.dart' show bakeNoisePixels;
+export 'src/noise/noise_texture.dart' show bakeNoiseTexture;

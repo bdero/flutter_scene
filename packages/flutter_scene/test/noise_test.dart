@@ -1,4 +1,6 @@
+import 'package:flutter_scene/src/noise/curl.dart';
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
+import 'package:flutter_scene/src/noise/noise_pixels.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -180,10 +182,127 @@ void main() {
     });
   });
 
+  group('Curl and baking', () {
+    const tol = 1e-12;
+
+    test('pins noiseCurl3 values', () {
+      final a = noiseCurl3(1.5, -2.25, 0.75, seed: 42);
+      expect(a.x, closeTo(0.5009076873250302, tol));
+      expect(a.y, closeTo(0.5214795054653658, tol));
+      expect(a.z, closeTo(-1.65373506626347, tol));
+      final b = noiseCurl3(10.0, 20.0, 30.0, seed: 42);
+      expect(b.x, closeTo(-3.7994737333874373, tol));
+      expect(b.y, closeTo(0.8434069035202469, tol));
+      expect(b.z, closeTo(-0.08526620519254946, tol));
+    });
+
+    test('bakeNoisePixels lays out grayscale RGBA rows', () {
+      final noise = FastNoiseLite(seed: 7)..frequency = 0.125;
+      final pixels = bakeNoisePixels(noise, width: 4, height: 3, cellSize: 2.0);
+      expect(pixels.length, 4 * 3 * 4);
+      // Simplex noise is zero at the origin, which lands exactly mid-gray.
+      expect(pixels.sublist(0, 4), [128, 128, 128, 255]);
+      expect(pixels[24], 142);
+      expect(pixels[44], 19);
+      for (var i = 3; i < pixels.length; i += 4) {
+        expect(pixels[i], 255);
+      }
+    });
+  });
+
   group('Verbatim gradient tables', () {
     test('RandVecs table lengths match FastNoiseLite', () {
       // RandVecs2D is 512 (256 vectors * 2), RandVecs3D is 1024 (256 * 4).
       expect(randVecsTableLengths, equals(<int>[512, 1024]));
+    });
+  });
+
+  group('Pinned values (Perlin/Value/Cellular/domain warp)', () {
+    // Captured from this implementation, same contract as the group above:
+    // any drift is a behavior change to review, not a tolerance to widen.
+    const double tol = 1e-12;
+
+    test('Perlin 2D/3D', () {
+      final n = FastNoiseLite(seed: 1337)..noiseType = NoiseType.perlin;
+      expect(n.getNoise2(10.0, 20.0), closeTo(0.22915458489505705, tol));
+      expect(n.getNoise2(-3.5, 7.25), closeTo(0.04823204878033632, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(0.022362005962789727, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(-0.06157161260570574, tol));
+    });
+
+    test('Value 2D/3D', () {
+      final n = FastNoiseLite(seed: 1337)..noiseType = NoiseType.value;
+      expect(n.getNoise2(10.0, 20.0), closeTo(0.32306132591693104, tol));
+      expect(n.getNoise2(-3.5, 7.25), closeTo(0.4072705052856774, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(0.29168141224706545, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(0.40725406529946173, tol));
+    });
+
+    test('Cellular euclideanSq distance 2D/3D (the defaults)', () {
+      final n = FastNoiseLite(seed: 1337)..noiseType = NoiseType.cellular;
+      expect(n.getNoise2(10.0, 20.0), closeTo(-0.7483688437542296, tol));
+      expect(n.getNoise2(-3.5, 7.25), closeTo(-0.7378713923347398, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(-0.44072126994140604, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(-0.7868983908265716, tol));
+    });
+
+    test('Cellular euclidean distance 2D/3D', () {
+      final n = FastNoiseLite(seed: 1337)
+        ..noiseType = NoiseType.cellular
+        ..cellularDistanceFunction = CellularDistanceFunction.euclidean;
+      expect(n.getNoise2(10.0, 20.0), closeTo(-0.49837149578022344, tol));
+      expect(n.getNoise2(-3.5, 7.25), closeTo(-0.48801503179755334, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(-0.2521505966716334, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(-0.5383707015651754, tol));
+    });
+
+    test('Cellular euclideanSq cellValue 2D/3D', () {
+      final n = FastNoiseLite(seed: 1337)
+        ..noiseType = NoiseType.cellular
+        ..cellularReturnType = CellularReturnType.cellValue;
+      expect(n.getNoise2(10.0, 20.0), closeTo(-0.7075463067740202, tol));
+      // The remaining query points all land closest to the lattice cell at
+      // the origin, whose hash is noiseHash2(1337, 0, 0) == 117456389 in 2D
+      // and the identical noiseHash3(1337, 0, 0, 0) in 3D, so they pin the
+      // same 117456389 / 2^31 value.
+      expect(n.getNoise2(-3.5, 7.25), closeTo(0.054694893304258585, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(0.054694893304258585, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(0.054694893304258585, tol));
+    });
+
+    test('Cellular euclidean cellValue 2D/3D', () {
+      final n = FastNoiseLite(seed: 1337)
+        ..noiseType = NoiseType.cellular
+        ..cellularDistanceFunction = CellularDistanceFunction.euclidean
+        ..cellularReturnType = CellularReturnType.cellValue;
+      // Euclidean and euclideanSq order distances identically, so the
+      // closest cell (and thus cellValue) matches the group above.
+      expect(n.getNoise2(10.0, 20.0), closeTo(-0.7075463067740202, tol));
+      expect(n.getNoise2(-3.5, 7.25), closeTo(0.054694893304258585, tol));
+      expect(n.getNoise3(10.0, 20.0, 30.0), closeTo(0.054694893304258585, tol));
+      expect(n.getNoise3(-3.5, 7.25, 0.5), closeTo(0.054694893304258585, tol));
+    });
+
+    test('domainWarp2/domainWarp3 (single, openSimplex2)', () {
+      final w = FastNoiseLite(seed: 1337)..domainWarpAmp = 30.0;
+
+      final a = w.domainWarp2(10.0, 20.0);
+      expect(a.x, closeTo(7.915149012070828, tol));
+      expect(a.y, closeTo(14.416927320584488, tol));
+
+      final b = w.domainWarp2(-3.5, 7.25);
+      expect(b.x, closeTo(-4.014904506101028, tol));
+      expect(b.y, closeTo(5.937593300773079, tol));
+
+      final c = w.domainWarp3(10.0, 20.0, 30.0);
+      expect(c.x, closeTo(12.33769495097307, tol));
+      expect(c.y, closeTo(19.128145101965004, tol));
+      expect(c.z, closeTo(28.481334308135423, tol));
+
+      final d = w.domainWarp3(-3.5, 7.25, 0.5);
+      expect(d.x, closeTo(-6.484554714089589, tol));
+      expect(d.y, closeTo(10.093659904833277, tol));
+      expect(d.z, closeTo(2.744475237271351, tol));
     });
   });
 }
