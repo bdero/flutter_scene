@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 /// A decoded HDR image: linear RGBA float pixels (alpha 1), row-major, row 0
 /// at the top.
+/// {@category Assets and loading}
 class DecodedHdr {
   DecodedHdr(this.pixels, this.width, this.height);
 
@@ -23,6 +24,7 @@ class DecodedHdr {
 
 /// Thrown when [decodeRadianceHdr] cannot parse [bytes] as a supported
 /// Radiance HDR image.
+/// {@category Assets and loading}
 class HdrFormatException implements Exception {
   HdrFormatException(this.message);
   final String message;
@@ -36,6 +38,7 @@ class HdrFormatException implements Exception {
 /// by an integer factor during decode (averaging in linear space) so a very
 /// large panorama (e.g. 16K) never materializes at full resolution. A realtime
 /// environment map does not need more than a few thousand pixels wide.
+/// {@category Assets and loading}
 DecodedHdr decodeRadianceHdr(Uint8List bytes, {int? maxWidth}) {
   var pos = 0;
 

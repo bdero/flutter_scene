@@ -31,8 +31,7 @@ environment:
   flutter: ">=3.44.0"
 
 dependencies:
-  # Offline glTF -> .model import (build hook + CLI): arg parsing and image
-  # decoding. Build/offline-time only; tree-shaken from runtime builds.
+  # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0
   collection: ^1.19.0
   data_assets: ^0.20.0
@@ -48,6 +47,8 @@ dependencies:
   # zero-manifest .fmat workflow.
   flutter_gpu_shaders: ^0.5.1
   hooks: ^2.0.0
+  # Offline glTF texture decoding (build hook), and runtime OpenEXR decoding
+  # for HDR environment maps. WASM-safe (no dart:io/dart:html on its web graph).
   image: ^4.5.0
   logging: ^1.2.0
   vector_math: ^2.1.4

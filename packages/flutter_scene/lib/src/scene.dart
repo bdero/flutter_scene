@@ -411,6 +411,33 @@ base class Scene implements SceneGraph {
   /// draws the skybox behind all geometry; you do not place any geometry.
   Skybox? skybox;
 
+  /// Loads an equirectangular image ([EnvironmentMap.fromEquirectImageAsset],
+  /// so Radiance `.hdr`, OpenEXR `.exr`, or a standard sRGB image), lights the
+  /// scene with it, and (when [showSkybox]) shows it as the [skybox]. A
+  /// one-call setup so [environment] and [skybox] cannot drift apart.
+  ///
+  /// [skyBlur] blurs the visible sky (0 sharp, 1 fully blurred) without
+  /// touching the lighting; [intensity], [exposure], and [rotationY] set
+  /// [environmentIntensity], [exposure], and [environmentTransform].
+  Future<void> loadEnvironment(
+    String assetPath, {
+    bool showSkybox = true,
+    double skyBlur = 0.0,
+    double intensity = 1.0,
+    double exposure = 1.0,
+    double rotationY = 0.0,
+  }) async {
+    environment = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: assetPath,
+    );
+    environmentIntensity = intensity;
+    this.exposure = exposure;
+    environmentTransform = Matrix3.rotationY(rotationY);
+    skybox = showSkybox
+        ? Skybox(EnvironmentSkySource(blurriness: skyBlur))
+        : null;
+  }
+
   /// Drives [environment] from a sky on a refresh policy, or null (the
   /// default) to leave [environment] caller-managed.
   ///

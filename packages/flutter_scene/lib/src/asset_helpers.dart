@@ -53,6 +53,16 @@ Future<ui.Image> imageFromAsset(String assetPath, {AssetBundle? bundle}) async {
   return frame.image;
 }
 
+/// Reads the raw bytes of the asset at [assetPath] from the bundle.
+/// {@category Assets and loading}
+Future<Uint8List> bytesFromAsset(
+  String assetPath, {
+  AssetBundle? bundle,
+}) async {
+  final data = await (bundle ?? rootBundle).load(assetPath);
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+}
+
 /// Decodes an encoded image (PNG, JPEG, etc.) from raw [bytes].
 ///
 /// Uses `dart:ui`'s built-in image codecs. Throws if the bytes can't be

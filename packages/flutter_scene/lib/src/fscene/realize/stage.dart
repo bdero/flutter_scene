@@ -26,6 +26,7 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/exr_decoder.dart';
 import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -518,8 +519,9 @@ Future<EnvironmentMap?> _buildEnvironment(
 }
 
 // Builds an environment map from an inlined equirect image chunk, choosing the
-// decoder by the payload's format (`hdr` for Radiance HDR, an image codec
-// otherwise). Mirrors the editor's disk loader, sourced from embedded bytes.
+// decoder by the payload's format (`hdr` for Radiance HDR, `exr` for OpenEXR,
+// an image codec otherwise). Mirrors the editor's disk loader, sourced from
+// embedded bytes.
 Future<EnvironmentMap> _environmentFromImageBytes(
   Uint8List bytes,
   String? format,
@@ -530,6 +532,14 @@ Future<EnvironmentMap> _environmentFromImageBytes(
       linearPixels: hdr.pixels,
       width: hdr.width,
       height: hdr.height,
+    );
+  }
+  if (format == 'exr') {
+    final exr = decodeOpenExr(bytes, maxWidth: _maxEnvironmentWidth);
+    return EnvironmentMap.fromEquirectHdr(
+      linearPixels: exr.pixels,
+      width: exr.width,
+      height: exr.height,
     );
   }
   return EnvironmentMap.fromUIImages(
