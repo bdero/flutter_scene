@@ -401,6 +401,12 @@ CPU within a small tolerance (float32 rounding differs per GPU), enforced by
 a per-backend parity test in CI; do not re-derive a hard threshold from float
 noise on both sides, make the decision once and share it.
 
+The GLSL noise is correct on every backend, including the web (WebGL2). The
+Dart `FastNoiseLite` is currently correct only on native, its 32-bit integer
+hash overflows on the web (where Dart `int` is a JavaScript double), so on the
+web prefer the GLSL side or a `bakeNoiseTexture` built at build time or in a
+native isolate. A web-safe Dart multiply is a planned follow-up.
+
 # The engine contract (both paths)
 
 flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
