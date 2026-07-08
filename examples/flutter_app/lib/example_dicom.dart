@@ -25,6 +25,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'dicom/dicom_loader.dart';
 import 'example_settings.dart';
+import 'quake_camera.dart';
 
 enum _VolumeMode { mpr, mip, dvr }
 
@@ -67,6 +68,12 @@ class _ExampleDicomState extends State<ExampleDicom> {
   double _yaw = 0.6;
   double _pitch = 0.3;
   double _distance = 3.6;
+
+  // Optional detached "quake" fly camera. The volume spans ~2 world units, so
+  // a slower move speed than the default keeps it controllable.
+  bool _freeCamera = false;
+  final QuakeCamera _freeCam = QuakeCamera()..speed = 1.6;
+  double _elapsedSeconds = 0.0;
 
   @override
   void initState() {
@@ -175,6 +182,37 @@ class _ExampleDicomState extends State<ExampleDicom> {
     );
   }
 
+  // The world-space eye of whichever camera is active.
+  vm.Vector3 _activeCameraPosition() =>
+      _freeCamera ? _freeCam.position : _cameraPosition();
+
+  // The world-space look direction of the active camera. The orbit camera
+  // always looks at the origin; the free camera looks along its own heading.
+  vm.Vector3 _activeCameraForward() {
+    if (_freeCamera) return _freeCam.forward;
+    return (-_cameraPosition()).normalized();
+  }
+
+  // Toggles the detached fly camera. Turning it on adopts the current orbit
+  // pose so the view does not jump; turning it off drops back to the orbit.
+  void _toggleFreeCamera() {
+    setState(() {
+      _freeCamera = !_freeCamera;
+      if (_freeCamera) {
+        _freeCam.syncTo(
+          PerspectiveCamera(
+            position: _cameraPosition(),
+            target: vm.Vector3.zero(),
+          ),
+        );
+      }
+      _freeCam
+        ..enabled = _freeCamera
+        ..releaseKeys()
+        ..move(_elapsedSeconds); // reset the frame clock without moving
+    });
+  }
+
   // Maps a DICOM patient-space (LPS) direction into flutter_scene world space:
   // Superior -> +Y (up), Anterior -> +Z (toward the default camera), patient
   // Right -> +X. This is an odd-parity (determinant -1) map, the same reason
@@ -215,7 +253,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
     // Camera position expressed in the cube's [0,1] texture space. The node
     // maps object space (cube [-0.5,0.5]) to world; invert it to bring the
     // camera into object space, then shift to uvw ([0,1]).
-    final camObject = _invNodeTransform.transformed3(_cameraPosition());
+    final camObject = _invNodeTransform.transformed3(_activeCameraPosition());
     final camUvw = camObject + vm.Vector3.all(0.5);
 
     material.parameters
@@ -234,54 +272,83 @@ class _ExampleDicomState extends State<ExampleDicom> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Backdrop behind the (transparent-cleared) scene.
-        Positioned.fill(
-          child: ColoredBox(
-            color: _darkBackground ? Colors.black : Colors.white,
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _freeCam.onKeyEvent,
+      child: Stack(
+        children: [
+          // Backdrop behind the (transparent-cleared) scene.
+          Positioned.fill(
+            child: ColoredBox(
+              color: _darkBackground ? Colors.black : Colors.white,
+            ),
           ),
-        ),
-        Positioned.fill(
-          child: Listener(
-            onPointerSignal: (signal) {
-              if (signal is PointerScrollEvent) {
-                setState(() {
-                  _distance = (_distance + signal.scrollDelta.dy * 0.003).clamp(
-                    1.6,
-                    8.0,
-                  );
-                });
-              }
-            },
-            child: GestureDetector(
-              onPanUpdate: (d) {
-                setState(() {
-                  _yaw += d.delta.dx * 0.01;
-                  _pitch = (_pitch + d.delta.dy * 0.01).clamp(
-                    -math.pi / 2 + 0.05,
-                    math.pi / 2 - 0.05,
-                  );
-                });
-              },
-              child: SceneView(
-                scene,
-                cameraBuilder: (elapsed) => PerspectiveCamera(
-                  position: _cameraPosition(),
-                  target: vm.Vector3.zero(),
-                ),
-                onTick: (elapsed, deltaSeconds) {
-                  _applyDynamicParameters();
-                  exampleSettings.applyTo(scene);
+          Positioned.fill(
+            child: Listener(
+              // Scroll dollies the orbit camera; the free camera flies with the
+              // keys instead.
+              onPointerSignal: _freeCamera
+                  ? null
+                  : (signal) {
+                      if (signal is PointerScrollEvent) {
+                        setState(() {
+                          _distance =
+                              (_distance + signal.scrollDelta.dy * 0.003).clamp(
+                                1.6,
+                                8.0,
+                              );
+                        });
+                      }
+                    },
+              child: GestureDetector(
+                onPanUpdate: (d) {
+                  setState(() {
+                    if (_freeCamera) {
+                      _freeCam.look(d.delta);
+                    } else {
+                      _yaw += d.delta.dx * 0.01;
+                      _pitch = (_pitch + d.delta.dy * 0.01).clamp(
+                        -math.pi / 2 + 0.05,
+                        math.pi / 2 - 0.05,
+                      );
+                    }
+                  });
                 },
+                child: SceneView(
+                  scene,
+                  cameraBuilder: (elapsed) => _freeCamera
+                      ? _freeCam.camera
+                      : PerspectiveCamera(
+                          position: _cameraPosition(),
+                          target: vm.Vector3.zero(),
+                        ),
+                  onTick: (elapsed, deltaSeconds) {
+                    _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                    if (_freeCamera) {
+                      _freeCam.move(_elapsedSeconds);
+                    } else {
+                      // Keep the free camera glued to the orbit pose so
+                      // toggling it on never jumps.
+                      _freeCam.syncTo(
+                        PerspectiveCamera(
+                          position: _cameraPosition(),
+                          target: vm.Vector3.zero(),
+                        ),
+                      );
+                    }
+                    _applyDynamicParameters();
+                    exampleSettings.applyTo(scene);
+                  },
+                ),
               ),
             ),
           ),
-        ),
-        if (_material != null && _atlas != null) _buildTopBar(),
-        if (_material == null || _atlas == null) _buildOverlay(),
-        if (_material != null && _atlas != null) _buildControls(),
-      ],
+          if (_material != null && _atlas != null) _buildTopBar(),
+          if (_material != null && _atlas != null) _buildCameraToggle(),
+          if (_material == null || _atlas == null) _buildOverlay(),
+          if (_material != null && _atlas != null) _buildControls(),
+        ],
+      ),
     );
   }
 
@@ -303,11 +370,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: CustomPaint(
-              painter: _CompassPainter(
-                yaw: _yaw,
-                pitch: _pitch,
-                cameraPosition: _cameraPosition(),
-              ),
+              painter: _CompassPainter(forward: _activeCameraForward()),
             ),
           ),
           const SizedBox(width: 8),
@@ -315,6 +378,39 @@ class _ExampleDicomState extends State<ExampleDicom> {
             tooltip: 'Toggle background',
             onPressed: () => setState(() => _darkBackground = !_darkBackground),
             icon: Icon(_darkBackground ? Icons.light_mode : Icons.dark_mode),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCameraToggle() {
+    return Positioned(
+      right: 12,
+      bottom: 12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_freeCamera)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'WASD move  ·  Q/E down/up  ·  drag look  ·  Shift boost',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          FloatingActionButton.extended(
+            heroTag: null,
+            onPressed: _toggleFreeCamera,
+            backgroundColor: _freeCamera ? Colors.tealAccent.shade700 : null,
+            icon: Icon(_freeCamera ? Icons.videocam : Icons.videocam_outlined),
+            label: Text(_freeCamera ? 'Quake camera' : 'Orbit camera'),
           ),
         ],
       ),
@@ -530,15 +626,10 @@ class _ExampleDicomState extends State<ExampleDicom> {
 /// (R/L, A/P, S/I). Axes pointing toward the viewer are drawn solid; those
 /// pointing away are dimmed.
 class _CompassPainter extends CustomPainter {
-  _CompassPainter({
-    required this.yaw,
-    required this.pitch,
-    required this.cameraPosition,
-  });
+  _CompassPainter({required this.forward});
 
-  final double yaw;
-  final double pitch;
-  final vm.Vector3 cameraPosition;
+  /// Unit look direction of the active camera, in world space.
+  final vm.Vector3 forward;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -546,7 +637,6 @@ class _CompassPainter extends CustomPainter {
     final radius = size.width / 2 - 16;
 
     // Camera basis, matching the engine's left-handed right = up x forward.
-    final forward = (-cameraPosition).normalized();
     var right = vm.Vector3(0, 1, 0).cross(forward);
     if (right.length < 1e-4) right = vm.Vector3(1, 0, 0);
     right.normalize();
@@ -599,6 +689,5 @@ class _CompassPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CompassPainter old) =>
-      old.yaw != yaw || old.pitch != pitch;
+  bool shouldRepaint(_CompassPainter old) => old.forward != forward;
 }
