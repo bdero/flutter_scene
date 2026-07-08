@@ -7,12 +7,10 @@
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:http/http.dart' as http;
 
-import 'hdr_image.dart';
 import 'stress_cache.dart';
 
 /// An image-based-lighting environment selectable from the menu.
@@ -188,11 +186,10 @@ class EnvironmentSelector extends ChangeNotifier {
       );
     } else {
       final bytes = await fetchResource(environment.url!, onChunk: (_) {});
-      final hdr = await compute(loadHdrEnvironment, bytes);
-      map = await EnvironmentMap.fromEquirectHdr(
-        linearPixels: hdr.pixels,
-        width: hdr.width,
-        height: hdr.height,
+      // Detects .hdr/.exr and decodes off the UI isolate.
+      map = await EnvironmentMap.fromEquirectImageBytes(
+        bytes: bytes,
+        maxWidth: 1024,
       );
     }
     _cache[environment.id] = map;

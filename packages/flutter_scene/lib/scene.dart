@@ -63,6 +63,11 @@ export 'src/environment_volume.dart'
         blendEnvironmentVolumes;
 export 'src/material/environment.dart'
     show EnvironmentMap, environmentAssetPathOf, kDiffuseShCoefficientCount;
+export 'src/material/equirect_image.dart'
+    show EquirectImageFormat, decodeEquirectHdrImage, detectEquirectImageFormat;
+export 'src/material/exr_decoder.dart' show ExrFormatException, decodeOpenExr;
+export 'src/material/hdr_decoder.dart'
+    show DecodedHdr, HdrFormatException, decodeRadianceHdr;
 export 'src/material/material.dart' show Material;
 export 'src/material/material_parameters.dart' show MaterialParameters;
 export 'src/material/physically_based_material.dart'
