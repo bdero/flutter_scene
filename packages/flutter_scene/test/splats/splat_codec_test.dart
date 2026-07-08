@@ -245,15 +245,11 @@ void main() {
     expect(order.toSet(), {0.0, 1.0});
   });
 
-  test(
-    'rejects oversized sets with a clear error',
-    () {
-      // A count whose params texels exceed 4096 rows of a 4096-wide texture.
-      expect(
-        () => packSplats(SplatData.zeroed(4096 * 4096 ~/ 4 + 1)),
-        throwsArgumentError,
-      );
-    },
-    skip: 'Allocates ~1.5GB; covered by the height check unit logic.',
-  );
+  test('rejects oversized sets with a clear error', () {
+    // A count whose params texels exceed 4096 rows of a 4096-wide texture.
+    expect(
+      () => packSplats(SplatData.zeroed(4096 * 4096 ~/ 4 + 1)),
+      throwsArgumentError,
+    );
+  }, skip: 'Allocates ~1.5GB; covered by the height check unit logic.');
 }
