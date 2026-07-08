@@ -1,5 +1,12 @@
 ## 0.19.0
 
+* Scene-graph conveniences for working with a loaded model. `Node.meshNodes`
+  iterates the drawable nodes in a subtree, `Node.combinedWorldBounds` gives
+  the subtree's world-space AABB (the bound the renderer culls against), and
+  `PerspectiveCamera.framing(bounds)` places a camera to fit that AABB in the
+  view. Together they turn "load a model, find its meshes, frame the camera on
+  it" into a few lines instead of a hand-rolled vertex loop.
+
 * Per-frame transient GPU data (uniform blocks, instance transforms) now
   rides an engine-owned, completion-aware arena allocator instead of
   `package:flutter_gpu`'s `HostBuffer`. Emplacements stage CPU-side and

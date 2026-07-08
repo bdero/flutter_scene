@@ -353,6 +353,35 @@ base class Node implements SceneGraph {
     _combinedBoundsCached = true;
   }
 
+  /// The subtree's axis-aligned bounds in world space, or `null` when the
+  /// subtree is unbounded ([combinedLocalBounds] is `null`, e.g. skinned
+  /// content or caller-managed geometry).
+  ///
+  /// This is [combinedLocalBounds] placed into world space with this node's
+  /// [globalTransform], the same bound the renderer frustum-culls against.
+  /// Handy for framing a camera on a loaded model (see
+  /// [PerspectiveCamera.framing]) or sizing an effect to a model's extent,
+  /// without walking vertices by hand.
+  vm.Aabb3? get combinedWorldBounds {
+    final bounds = combinedLocalBounds;
+    if (bounds == null) return null;
+    return vm.Aabb3.copy(bounds)..transform(globalTransform);
+  }
+
+  /// The nodes in this subtree (this node and its descendants, depth-first)
+  /// that carry a mesh with at least one primitive.
+  ///
+  /// The usual entry point after loading a model, when you need the drawable
+  /// nodes to read geometry back, swap materials, or attach effects. Includes
+  /// this node when it has a mesh.
+  Iterable<Node> get meshNodes sync* {
+    final m = mesh;
+    if (m != null && m.primitives.isNotEmpty) yield this;
+    for (final child in children) {
+      yield* child.meshNodes;
+    }
+  }
+
   /// Whether this node's subtree would survive frustum culling against
   /// [camera] for a render target of the given [dimensions].
   ///

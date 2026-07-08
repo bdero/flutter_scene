@@ -332,4 +332,73 @@ void main() {
       expect(node.combinedLocalBounds!.max, Vector3(2, 2, 2));
     });
   });
+
+  group('Node.combinedWorldBounds', () {
+    test('places the local bounds into world space via globalTransform', () {
+      final node = Node(
+        localTransform: Matrix4.translation(Vector3(10, 0, 0)),
+        mesh: Mesh.primitives(
+          primitives: [
+            _primWithBounds(_aabb(Vector3(-1, -1, -1), Vector3(1, 1, 1))),
+          ],
+        ),
+      );
+      final world = node.combinedWorldBounds!;
+      expect(world.min, Vector3(9, -1, -1));
+      expect(world.max, Vector3(11, 1, 1));
+    });
+
+    test('composes ancestor transforms', () {
+      final parent = Node(localTransform: Matrix4.diagonal3(Vector3(2, 2, 2)));
+      final child = Node(
+        localTransform: Matrix4.translation(Vector3(1, 0, 0)),
+        mesh: Mesh.primitives(
+          primitives: [
+            _primWithBounds(_aabb(Vector3(-1, -1, -1), Vector3(1, 1, 1))),
+          ],
+        ),
+      );
+      parent.add(child);
+      // Child bounds [-1,1] translated by (1,0,0) then scaled by 2 -> [0,4].
+      final world = child.combinedWorldBounds!;
+      expect(world.min.x, closeTo(0, 1e-9));
+      expect(world.max.x, closeTo(4, 1e-9));
+    });
+
+    test('null when the subtree is unbounded', () {
+      final node = Node(
+        mesh: Mesh.primitives(primitives: [_primWithBounds(null)]),
+      );
+      expect(node.combinedWorldBounds, isNull);
+    });
+  });
+
+  group('Node.meshNodes', () {
+    test('yields self and descendants that carry a drawable mesh', () {
+      final root = Node(name: 'root');
+      final meshChild = Node(
+        name: 'meshChild',
+        mesh: Mesh.primitives(primitives: [_primWithBounds(null)]),
+      );
+      final emptyChild = Node(name: 'emptyChild');
+      final grandchild = Node(
+        name: 'grandchild',
+        mesh: Mesh.primitives(primitives: [_primWithBounds(null)]),
+      );
+      emptyChild.add(grandchild);
+      root
+        ..add(meshChild)
+        ..add(emptyChild);
+
+      expect(root.meshNodes.map((n) => n.name), ['meshChild', 'grandchild']);
+    });
+
+    test('includes the receiver when it has a mesh', () {
+      final node = Node(
+        name: 'self',
+        mesh: Mesh.primitives(primitives: [_primWithBounds(null)]),
+      );
+      expect(node.meshNodes.map((n) => n.name), ['self']);
+    });
+  });
 }
