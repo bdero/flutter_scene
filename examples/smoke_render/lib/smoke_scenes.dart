@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -49,6 +50,50 @@ Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
     ..vertexColorWeight = 0.0;
   return Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material))
     ..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3);
+}
+
+/// A deterministic anisotropic Gaussian splat cloud (degree-1 SH) for the
+/// splat smoke scene. Built from a fixed seed, so the packed data and the
+/// resulting depth sort are identical across runs and backends. Splats form
+/// a fuzzy spherical shell so the corners stay the magenta clear.
+GaussianSplats _splatCloud() {
+  const count = 2500;
+  final rng = math.Random(20260705);
+  final data = SplatData.zeroed(count, shDegree: 1);
+  for (var i = 0; i < count; i++) {
+    // A point on a fuzzy spherical shell around the origin.
+    final theta = rng.nextDouble() * 2 * math.pi;
+    final phi = math.acos(2 * rng.nextDouble() - 1);
+    final r = 0.45 + rng.nextDouble() * 0.65;
+    final sinPhi = math.sin(phi);
+    final p = i * 3, q = i * 4;
+    data.positions[p] = r * sinPhi * math.cos(theta);
+    data.positions[p + 1] = r * math.cos(phi);
+    data.positions[p + 2] = r * sinPhi * math.sin(theta);
+    // Anisotropic scales plus a yaw, so the covariance projection and the
+    // 2D eigendecomposition see non-circular footprints at varied angles.
+    final len = 0.05 + rng.nextDouble() * 0.055;
+    data.scales[p] = len * 2.4;
+    data.scales[p + 1] = len * 0.8;
+    data.scales[p + 2] = len;
+    final yaw = rng.nextDouble() * math.pi;
+    data.rotations[q + 1] = math.sin(yaw / 2);
+    data.rotations[q + 3] = math.cos(yaw / 2);
+    // Hue rotation by height for many distinct colors (linear space).
+    final h = (data.positions[p + 1] + 1.2) / 2.4;
+    data.colors[p] = 0.5 + 0.5 * math.cos(6.28318 * h);
+    data.colors[p + 1] = 0.5 + 0.5 * math.cos(6.28318 * (h + 0.33));
+    data.colors[p + 2] = 0.5 + 0.5 * math.cos(6.28318 * (h + 0.66));
+    data.opacities[i] = 0.55 + rng.nextDouble() * 0.4;
+    // A gentle view-dependent tint (degree-1 SH), small so the base color
+    // leads. Exercises the SH texture fetch and evaluation branch.
+    for (var c = 0; c < 3; c++) {
+      for (var ch = 0; ch < 3; ch++) {
+        data.sh![(i * 3 + c) * 3 + ch] = (rng.nextDouble() - 0.5) * 0.3;
+      }
+    }
+  }
+  return GaussianSplats.fromData(data);
 }
 
 /// Custom-material assets pre-loaded by [loadSmokeMaterials], so the
@@ -287,6 +332,31 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             vm.Matrix4.rotationY(0.6) *
             vm.Matrix4.rotationX(0.3),
     );
+    return (scene: scene, camera: _camera());
+  }),
+  // Gaussian splatting: a procedural anisotropic splat cloud (degree-1 SH)
+  // composited around an opaque cuboid, with a crop box carving one side.
+  // One scene covers the splat path across backends: the vertex-stage data
+  // texture fetch, the EWA covariance projection and 2D eigendecomposition,
+  // the background depth sort, premultiplied translucent blending over
+  // opaque geometry, the SH texture fetch and evaluation, and the crop
+  // branch. The splats surround an opaque cuboid so the splat/mesh depth
+  // composite (occlusion both ways) is exercised too.
+  SmokeScene('gaussian_splats', () {
+    final scene = Scene();
+    scene.add(_cuboid(vm.Vector4(0.85, 0.75, 0.20, 1.0), 0.1, 0.5));
+    final splats = SplatComponent(_splatCloud())
+      // Exclude a slab off the -x side, so the crop branch culls real splats
+      // while the central coverage the frame-sanity check samples stays high.
+      ..setCropBox(
+        vm.Matrix4.compose(
+          vm.Vector3(-1.25, 0, 0),
+          vm.Quaternion.identity(),
+          vm.Vector3(0.6, 2.0, 2.0),
+        ),
+        mode: SplatCropMode.exclude,
+      );
+    scene.add(Node()..addComponent(splats));
     return (scene: scene, camera: _camera());
   }),
 ];
