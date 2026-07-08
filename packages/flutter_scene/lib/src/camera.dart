@@ -194,6 +194,38 @@ class PerspectiveCamera extends Camera {
        target = target ?? Vector3(0, 0, 0),
        up = up ?? Vector3(0, 1, 0);
 
+  /// Places a camera to frame [bounds] (a model's world-space AABB, from
+  /// [Node.combinedWorldBounds]) so it fills the view.
+  ///
+  /// The camera looks at the bounds' center from [direction] (the offset from
+  /// the center toward the eye; defaults to `(0, 0, -1)`, matching the default
+  /// placement and the direction glTF models face after import). The distance
+  /// fits the bounds' bounding sphere within the vertical field of view, so it
+  /// frames cleanly on a landscape view; [margin] above `1` pulls the camera
+  /// back for padding (a portrait view, whose horizontal field of view is
+  /// narrower, may want some). The near and far planes are set around the
+  /// model so a tiny or a huge one both stay in range.
+  factory PerspectiveCamera.framing(
+    Aabb3 bounds, {
+    Vector3? direction,
+    double fovRadiansY = 45 * degrees2Radians,
+    Vector3? up,
+    double margin = 1.1,
+  }) {
+    final center = bounds.center;
+    final radius = max((bounds.max - bounds.min).length * 0.5, 1e-4);
+    final distance = radius / sin(fovRadiansY / 2) * margin;
+    final dir = (direction ?? Vector3(0, 0, -1)).normalized();
+    return PerspectiveCamera(
+      fovRadiansY: fovRadiansY,
+      position: center + dir * distance,
+      target: center,
+      up: up,
+      fovNear: max(distance - radius, distance * 1e-3),
+      fovFar: distance + radius * 2,
+    );
+  }
+
   /// Vertical field of view, in radians.
   ///
   /// The horizontal field of view is computed at render time from this
