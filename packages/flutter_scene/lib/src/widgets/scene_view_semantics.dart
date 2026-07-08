@@ -328,15 +328,17 @@ class SceneSemanticsCoordinator {
     Camera camera,
     ui.Rect viewArea,
   ) {
+    // Fit the widget rectangle onto the surface's projected node bounds with
+    // an affine (translate + scale) transform. A full projective homography
+    // (matching the perspective-warped quad exactly) is not used: platform
+    // semantics geometry mishandles a perspective transform once a subtree
+    // has more than one node (their rects and clips collapse), which drops
+    // the whole surface from the tree. The affine fit is exact for a
+    // head-on surface and a good approximation off-axis.
+    // TODO(scene-semantics): a perspective-correct mapping would need the
+    // framework's semantics geometry to handle projective transforms for
+    // multi-node subtrees, or a custom per-node projection.
     final node = component.node;
-    if (component.ownsQuadSurface) {
-      return _quadSurfaceTransform(component, node, camera, viewArea);
-    }
-    // Custom geometry or bind-only surfaces have no single plane to map
-    // exactly; fit the widget rectangle onto the projected node bounds.
-    // TODO(scene-semantics): exact per-surface mapping for custom widget
-    // geometry (project through the surface's UV parameterization instead
-    // of its AABB).
     final bounds = node.combinedLocalBounds;
     if (bounds == null) return null;
     final world = vm.Aabb3.copy(bounds)..transform(node.globalTransform);
@@ -348,59 +350,6 @@ class SceneSemanticsCoordinator {
       ..setEntry(1, 1, rect.height / size.height)
       ..setEntry(0, 3, rect.left)
       ..setEntry(1, 3, rect.top);
-  }
-
-  /// The exact projective transform for a component-owned quad surface:
-  /// widget logical space onto the quad's local plane, through the node's
-  /// world transform and the camera, into scene-box coordinates.
-  vm.Matrix4? _quadSurfaceTransform(
-    WidgetComponent component,
-    Node node,
-    Camera camera,
-    ui.Rect viewArea,
-  ) {
-    final size = component.size;
-    final quadHeight = component.worldHeight;
-    final quadWidth = quadHeight * (size.width / size.height);
-
-    // Widget space (origin top-left, y down) onto the quad's local plane.
-    // The quad's UVs mirror u across x and run v top-down (see
-    // WidgetComponent's quad geometry), so widget (0, 0) lands on the local
-    // (+halfWidth, +halfHeight) corner.
-    final localFromWidget = vm.Matrix4.identity()
-      ..setEntry(0, 0, -quadWidth / size.width)
-      ..setEntry(0, 3, quadWidth / 2)
-      ..setEntry(1, 1, -quadHeight / size.height)
-      ..setEntry(1, 3, quadHeight / 2);
-
-    final clipFromWidget = camera
-        .getViewTransform(viewArea.size)
-        .multiplied(node.globalTransform)
-        .multiplied(localFromWidget);
-
-    // Reject the mapping when any widget corner reaches the camera plane;
-    // the homography is degenerate there and the surface is unreadable
-    // anyway.
-    for (final corner in [
-      vm.Vector4(0, 0, 0, 1),
-      vm.Vector4(size.width, 0, 0, 1),
-      vm.Vector4(0, size.height, 0, 1),
-      vm.Vector4(size.width, size.height, 0, 1),
-    ]) {
-      final clip = clipFromWidget.transform(corner);
-      if (clip.w <= 0) return null;
-    }
-
-    // Homogeneous clip-to-screen: the perspective divide is deferred to the
-    // consumers of the semantics transform chain, which handle full
-    // projective matrices.
-    final screenFromClip = vm.Matrix4.identity()
-      ..setEntry(0, 0, viewArea.width / 2)
-      ..setEntry(0, 3, viewArea.width / 2 + viewArea.left)
-      ..setEntry(1, 1, -viewArea.height / 2)
-      ..setEntry(1, 3, viewArea.height / 2 + viewArea.top);
-
-    return screenFromClip.multiplied(clipFromWidget);
   }
 }
 
