@@ -85,8 +85,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   final vm.Vector3 _center = vm.Vector3.zero();
   double get _range => math.max(_maxH - _minH, 1e-3);
 
-  vm.Vector3 _cameraPosition = vm.Vector3(0, 0, -3);
-  vm.Vector3 _cameraTarget = vm.Vector3.zero();
+  PerspectiveCamera _camera = PerspectiveCamera(position: vm.Vector3(0, 0, -3));
 
   // Timeline. _t runs past [0, 1] a little so the effect holds briefly when
   // fully materialized and fully hidden.
@@ -112,44 +111,21 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       final helmet = await Node.fromGlbBytes(bytes);
       if (!mounted) return;
 
-      final meshNodes = <Node>[];
-      _collectMeshNodes(helmet, meshNodes);
+      final meshNodes = helmet.meshNodes.toList();
       if (meshNodes.isEmpty) {
         throw StateError('No mesh found in the downloaded model.');
       }
 
-      // World-space AABB across every node and primitive, for the sweep
-      // extent and the camera framing.
-      var minX = double.infinity, minY = double.infinity;
-      var minZ = double.infinity;
-      var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
-      var maxZ = double.negativeInfinity;
       var primitiveCount = 0;
       var triangleCount = 0;
-      final scratch = vm.Vector3.zero();
 
       for (final meshNode in meshNodes) {
-        final world = meshNode.globalTransform;
         final parts = <MeshData>[];
         for (final primitive in meshNode.mesh!.primitives) {
           final source = primitive.geometry.extractMeshData();
           parts.add(source);
           primitiveCount++;
           triangleCount += source.triangleCount;
-          for (var v = 0; v < source.positions.length; v += 3) {
-            scratch.setValues(
-              source.positions[v],
-              source.positions[v + 1],
-              source.positions[v + 2],
-            );
-            world.transform3(scratch);
-            if (scratch.x < minX) minX = scratch.x;
-            if (scratch.y < minY) minY = scratch.y;
-            if (scratch.z < minZ) minZ = scratch.z;
-            if (scratch.x > maxX) maxX = scratch.x;
-            if (scratch.y > maxY) maxY = scratch.y;
-            if (scratch.z > maxZ) maxZ = scratch.z;
-          }
 
           // Stage 3: this primitive keeps its geometry but shades through the
           // reveal material, mirroring its own imported textures/factors.
@@ -197,28 +173,24 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
         '$primitiveCount primitive(s), $triangleCount triangles',
       );
 
-      _minH = minY;
-      _maxH = maxY;
-      _center.setValues(
-        (minX + maxX) / 2,
-        (minY + maxY) / 2,
-        (minZ + maxZ) / 2,
-      );
-      final radius = math.max(
-        vm.Vector3(maxX - minX, maxY - minY, maxZ - minZ).length * 0.5,
-        0.1,
-      );
+      // The model's world-space bounds drive both the bottom-to-top sweep
+      // extent and the camera framing. Taken before adding the helmet under
+      // the spin node, so the sweep is measured with the spin at identity.
+      final bounds =
+          helmet.combinedWorldBounds ??
+          (throw StateError('Model has no computable bounds.'));
+      _minH = bounds.min.y;
+      _maxH = bounds.max.y;
+      _center.setFrom(bounds.center);
 
       _spin.add(helmet);
       scene.add(_spin);
 
-      // Frame the camera. After the importer's scene-root Z flip glTF
-      // models face -Z, so the camera sits on the -Z side.
-      _cameraTarget = vm.Vector3.copy(_center);
-      _cameraPosition = vm.Vector3(
-        _center.x + radius * 0.4,
-        _center.y + radius * 0.5,
-        _center.z - radius * 2.6,
+      // Frame the model on the -Z side (after the importer's scene-root Z flip
+      // glTF models face -Z), angled slightly up and to the side.
+      _camera = PerspectiveCamera.framing(
+        bounds,
+        direction: vm.Vector3(0.4, 0.5, -2.6),
       );
 
       _applySettings();
@@ -227,16 +199,6 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e);
-    }
-  }
-
-  void _collectMeshNodes(Node node, List<Node> out) {
-    final mesh = node.mesh;
-    if (mesh != null && mesh.primitives.isNotEmpty) {
-      out.add(node);
-    }
-    for (final child in node.children) {
-      _collectMeshNodes(child, out);
     }
   }
 
@@ -408,10 +370,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
         Positioned.fill(
           child: SceneView(
             scene,
-            camera: PerspectiveCamera(
-              position: _cameraPosition,
-              target: _cameraTarget,
-            ),
+            camera: _camera,
             onTick: (elapsed, deltaSeconds) {
               final seconds = elapsed.inMicroseconds / 1e6;
               if (_playing) {
