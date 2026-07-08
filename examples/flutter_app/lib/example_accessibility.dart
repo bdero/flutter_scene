@@ -1,7 +1,12 @@
 import 'dart:math';
 
 import 'package:flutter/gestures.dart'
-    show PointerDownEvent, PointerHoverEvent, PointerUpEvent;
+    show
+        PointerCancelEvent,
+        PointerDownEvent,
+        PointerHoverEvent,
+        PointerMoveEvent,
+        PointerUpEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -128,10 +133,16 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   _Part? _pressedPart;
   Offset? _pressPosition;
 
-  // Camera orbit, paused while the pointer is over the scene so parts hold
-  // still under the cursor (and the panel stays put to drag its sliders).
-  double _orbitPhase = 0;
+  // Orbit camera (spherical around the car). It auto-orbits while idle, and
+  // a drag on empty space or the car body (not a selectable part or the
+  // panel) turns it by hand. Orbit is paused while the pointer is over the
+  // scene so parts hold still under the cursor.
+  double _azimuth = 0;
+  double _elevation = 0.38;
+  static const double _radius = 11;
   bool _pointerInside = false;
+  bool _draggingCamera = false;
+  Offset _lastDragPosition = Offset.zero;
   Camera? _lastCamera;
   Size _viewSize = Size.zero;
 
@@ -187,7 +198,7 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
     // quarter turn about Y points it outward along +X.
     final panel = Node(
       name: 'ControlPanel',
-      localTransform: vm.Matrix4.translation(vm.Vector3(2.6, 1.1, 0))
+      localTransform: vm.Matrix4.translation(vm.Vector3(4.5, 1.1, 0))
         ..rotate(vm.Vector3(0, 1, 0), pi / 2),
     );
     panel.addComponent(
@@ -278,20 +289,24 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   }
 
   Camera _buildCamera() {
-    const radius = 10.0;
+    final target = vm.Vector3(0, 0.5, 0);
+    final ce = cos(_elevation);
+    final offset = vm.Vector3(
+      ce * sin(_azimuth),
+      sin(_elevation),
+      ce * cos(_azimuth),
+    );
     return PerspectiveCamera(
-      position: vm.Vector3(
-        sin(_orbitPhase) * radius,
-        4,
-        cos(_orbitPhase) * radius,
-      ),
-      target: vm.Vector3(0, 0.5, 0),
+      position: target + offset * _radius,
+      target: target,
     );
   }
 
   void _onTick(double deltaSeconds) {
-    if (!_pointerInside) {
-      _orbitPhase += deltaSeconds * 0.2;
+    // Auto-orbit only while idle (the pointer is off the scene and not
+    // dragging); a hover or drag holds the view still.
+    if (!_pointerInside && !_draggingCamera) {
+      _azimuth += deltaSeconds * 0.2;
     }
     _animateParts(deltaSeconds);
     _updateWheels(deltaSeconds);
@@ -346,16 +361,44 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   void _onPointerDown(PointerDownEvent event) {
     final hit = _rawPick(event.localPosition);
     // A press on the panel drives its sliders through the scene's widget
-    // input forwarding; do not also arm a car-part toggle.
-    if (hit == null || _isInPanel(hit.node)) {
+    // input forwarding; leave it alone.
+    if (hit != null && _isInPanel(hit.node)) {
       _pressedPart = null;
       return;
     }
-    _pressedPart = _partForNode(hit.node);
-    _pressPosition = event.localPosition;
+    final part = hit == null ? null : _partForNode(hit.node);
+    if (part != null) {
+      // A press on a selectable part arms a toggle (fired on release).
+      _pressedPart = part;
+      _pressPosition = event.localPosition;
+      return;
+    }
+    // Empty space or the car body: drag to orbit the camera.
+    _pressedPart = null;
+    _draggingCamera = true;
+    _lastDragPosition = event.localPosition;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_draggingCamera) return;
+    final delta = event.localPosition - _lastDragPosition;
+    _lastDragPosition = event.localPosition;
+    // Gentle sensitivity; elevation clamped away from the poles. The view
+    // rebuilds from these each frame (no setState needed).
+    _azimuth += delta.dx * 0.005;
+    _elevation = (_elevation + delta.dy * 0.005).clamp(0.05, 1.35);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _draggingCamera = false;
+    _pressedPart = null;
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    if (_draggingCamera) {
+      _draggingCamera = false;
+      return;
+    }
     final part = _pressedPart;
     _pressedPart = null;
     if (part == null) return;
@@ -395,7 +438,9 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
           onHover: _onHover,
           child: Listener(
             onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
             onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
             child: SceneView(
               scene,
               cameraBuilder: (elapsed) => _lastCamera = _buildCamera(),
@@ -515,8 +560,8 @@ class _Instructions extends StatelessWidget {
         child: Text(
           'Hover a door, hood, or trunk to outline it; click to open or '
           'close it.\n'
-          'Drag the panel sliders (visible from one side) to drive the '
-          'wheels.\n'
+          'Drag empty space to orbit the camera; drag the panel sliders '
+          '(visible from one side) to drive the wheels.\n'
           'Turn on a screen reader, or "Show semantics", to navigate and '
           'operate the same parts and sliders.',
           textAlign: TextAlign.center,

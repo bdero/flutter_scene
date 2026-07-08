@@ -9,23 +9,29 @@
 // semantics refresh runs from the scene painter regardless, so these tests
 // exercise the real per-frame path.
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart'
+    show Material, MaterialApp, Scaffold, Slider;
 import 'package:flutter/rendering.dart' show MatrixUtils;
 import 'package:flutter/semantics.dart'
     show SemanticsAction, SemanticsNode, SemanticsProperties;
 import 'package:flutter/widgets.dart'
     show
         Center,
+        Column,
         Directionality,
+        MainAxisSize,
         Offset,
         Rect,
         Semantics,
         Size,
         SizedBox,
+        Text,
         TextDirection,
         Widget;
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/scene.dart' hide Material;
 // The projection helper is internal SceneView machinery; reach it directly.
 import 'package:flutter_scene/src/widgets/scene_view_semantics.dart'
     show projectAabbToArea;
@@ -574,6 +580,118 @@ void main() {
     wall.visible = false;
     await _settleSemantics(tester);
     expect(find.semantics.byLabel('Panel button'), findsOne);
+    handle.dispose();
+  });
+
+  testWidgets('a side-facing rotated widget surface exposes its semantics', (
+    tester,
+  ) async {
+    final scene = await _readyScene(tester);
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    final handle = tester.ensureSemantics();
+    // Mirrors the example's control panel: off to the +X side and turned a
+    // quarter turn about Y so its front faces +X.
+    final panel = Node(
+      name: 'panel',
+      localTransform: Matrix4.translation(Vector3(4.5, 1.1, 0))
+        ..rotate(Vector3(0, 1, 0), math.pi / 2),
+    );
+    panel.addComponent(
+      WidgetComponent(
+        size: const Size(320, 200),
+        worldHeight: 1.25,
+        occlusionHiding: true,
+        child: Center(
+          child: Semantics(
+            label: 'Panel button',
+            button: true,
+            child: const SizedBox(width: 50, height: 50),
+          ),
+        ),
+      ),
+    );
+    scene.add(panel);
+
+    // A camera on the +X side looking back at the origin sees the panel
+    // front-on.
+    await tester.pumpWidget(
+      _host(
+        scene,
+        camera: PerspectiveCamera(
+          position: Vector3(11, 4, 0),
+          target: Vector3(0, 0.5, 0),
+        ),
+      ),
+    );
+    await _settleSemantics(tester);
+    expect(find.semantics.byLabel('Panel button'), findsOne);
+    handle.dispose();
+  });
+
+  testWidgets('a multi-widget surface exposes every child under MaterialApp', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    final handle = tester.ensureSemantics();
+    // A surface with several sibling controls (like the example's control
+    // panel), hosted under a full MaterialApp. A perspective mapping
+    // collapses multi-node subtree geometry; the affine fit must keep every
+    // child in the tree.
+    final panel = Node(name: 'panel');
+    panel.addComponent(
+      WidgetComponent(
+        size: const Size(320, 200),
+        worldHeight: 1.25,
+        child: Material(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Wheel speed'),
+              Slider(value: 0.5, onChanged: (_) {}),
+              const Text('Steering'),
+            ],
+          ),
+        ),
+      ),
+    );
+    scene.add(panel);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 200,
+              height: 200,
+              child: SceneView(
+                scene,
+                camera: PerspectiveCamera(
+                  position: Vector3(0, 0, -5),
+                  target: Vector3.zero(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await _settleSemantics(tester);
+
+    expect(find.semantics.byLabel('Wheel speed'), findsOne);
+    expect(find.semantics.byLabel('Steering'), findsOne);
+    expect(
+      find.semantics.byPredicate(
+        (node) => node.getSemanticsData().hasAction(SemanticsAction.increase),
+      ),
+      findsOne,
+    );
     handle.dispose();
   });
 }
