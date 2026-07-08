@@ -9,7 +9,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// encoded) images, so their colors must be decoded to linear before they
 /// enter the scene's linear HDR pipeline. Procedurally constructed splats
 /// whose colors are already linear skip the decode.
-/// {@category Geometry}
+/// {@category Gaussian splatting}
 enum SplatColorSpace {
   /// Colors are sRGB encoded (the trained-capture convention). The renderer
   /// decodes them to linear after evaluating spherical harmonics.
@@ -25,6 +25,7 @@ enum SplatColorSpace {
 /// This is the seam between the splat file parsers, procedural construction,
 /// and the renderer: parsers produce a [SplatData], and `GaussianSplats`
 /// packs one into GPU textures. All arrays are index-parallel.
+/// {@category Gaussian splatting}
 class SplatData {
   /// Wraps existing arrays without copying. Every array's length must match
   /// [count] times its per-splat stride.

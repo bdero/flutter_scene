@@ -13,8 +13,8 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:flutter_scene/src/splats/splat_sort_service.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
-/// How a crop box filters the splats of a [SplatGeometry].
-/// {@category Geometry}
+/// How a crop box filters the splats of a `SplatComponent`.
+/// {@category Gaussian splatting}
 enum SplatCropMode {
   /// No crop; every splat draws.
   none,

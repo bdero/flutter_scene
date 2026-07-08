@@ -16,7 +16,7 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 /// The GPU textures are created lazily on first draw, so a
 /// `GaussianSplats` can be constructed before
 /// `Scene.initializeStaticResources` completes.
-/// {@category Geometry}
+/// {@category Gaussian splatting}
 class GaussianSplats {
   GaussianSplats._(PackedSplats packed, this.colorSpace)
     : data = packed.data,
@@ -30,7 +30,9 @@ class GaussianSplats {
     bounds = data.computeBounds();
   }
 
-  /// Wraps an already-decoded-and-packed splat set.
+  /// Wraps an already-decoded-and-packed splat set. Takes the internal
+  /// packer output, so it is not application API.
+  @internal
   factory GaussianSplats.fromPacked(
     PackedSplats packed, {
     SplatColorSpace colorSpace = SplatColorSpace.displayReferred,
@@ -105,14 +107,27 @@ class GaussianSplats {
   /// The number of splats.
   int get count => data.count;
 
-  /// Parameter texture dimensions in texels.
+  /// Parameter texture dimensions in texels. Consumed by `SplatGeometry` to
+  /// address the data texture; not application API.
+  @internal
   final int paramsWidth;
+
+  /// See [paramsWidth].
+  @internal
   final int paramsHeight;
 
   /// Rest-SH texture dimensions and per-splat texel stride (zero when the
-  /// set carries no rest coefficients).
+  /// set carries no rest coefficients). Consumed by `SplatGeometry`; not
+  /// application API.
+  @internal
   final int shWidth;
+
+  /// See [shWidth].
+  @internal
   final int shHeight;
+
+  /// See [shWidth].
+  @internal
   final int shStride;
 
   // Texel arrays are held only until the first upload, then released.
@@ -123,7 +138,9 @@ class GaussianSplats {
   gpu.Texture? _shTexture;
 
   /// The RGBA32F parameter texture ([kParamsTexelsPerSplat] texels per
-  /// splat). Created on first access; requires the GPU context.
+  /// splat). Created on first access; requires the GPU context. Consumed by
+  /// `SplatGeometry`; not application API.
+  @internal
   gpu.Texture get paramsTexture {
     var texture = _paramsTexture;
     if (texture == null) {
@@ -135,6 +152,8 @@ class GaussianSplats {
   }
 
   /// The RGBA32F rest-SH texture, or null when [SplatData.shDegree] is 0.
+  /// Consumed by `SplatGeometry`; not application API.
+  @internal
   gpu.Texture? get shTexture {
     if (data.shDegree == 0) return null;
     var texture = _shTexture;

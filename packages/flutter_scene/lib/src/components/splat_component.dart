@@ -6,10 +6,6 @@ import 'package:flutter_scene/src/material/splat_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 
-// TODO(splats): export this (and GaussianSplats/SplatData under
-// lib/src/splats/) from lib/scene.dart with doc categories once the API
-// settles across the later phases (crop volumes, modifier hook, spz).
-
 /// An engine component that draws a [GaussianSplats] set.
 ///
 /// Attach it to a node like any other component; the node's transform
@@ -22,6 +18,7 @@ import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 /// final splats = await GaussianSplats.fromAsset('assets/garden.ply');
 /// scene.add(Node()..addComponent(SplatComponent(splats)));
 /// ```
+/// {@category Gaussian splatting}
 class SplatComponent extends MeshComponent {
   /// Creates a component that draws [splats].
   factory SplatComponent(GaussianSplats splats) {

@@ -9,4 +9,5 @@ dartdoc:
     - "Physics"
     - "Picking and input"
     - "Widgets"
+    - "Gaussian splatting"
     - "Assets and loading"

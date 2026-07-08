@@ -102,9 +102,14 @@ export 'src/components/instanced_mesh_component.dart'
 export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
 export 'src/components/point_light_component.dart' show PointLightComponent;
+export 'src/components/splat_component.dart' show SplatComponent;
 export 'src/components/spot_light_component.dart' show SpotLightComponent;
 export 'src/render/lod.dart' show LodLevel;
 export 'src/components/widget_component.dart' show WidgetComponent, WidgetInput;
+export 'src/geometry/splat_geometry.dart' show SplatCropMode;
+export 'src/splats/gaussian_splats.dart' show GaussianSplats;
+export 'src/splats/splat_codec.dart' show SplatFormat;
+export 'src/splats/splat_data.dart' show SplatColorSpace, SplatData;
 export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart'
     show

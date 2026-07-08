@@ -1,14 +1,9 @@
-// Gaussian splat rendering demo. The splat types live under lib/src (not yet
-// part of the public barrel); a dev app may import them directly.
-// ignore_for_file: implementation_imports
+// Gaussian splat rendering demo.
 
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/components/splat_component.dart';
-import 'package:flutter_scene/src/geometry/splat_geometry.dart';
-import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_settings.dart';
