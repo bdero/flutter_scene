@@ -19,12 +19,12 @@ enum SplatColorSpace {
   linear,
 }
 
-/// The CPU-side contents of a Gaussian splat set, stored as flat parallel
+/// The CPU-side contents of a Gaussian splat set as flat, index-parallel
 /// arrays (one entry per splat).
 ///
-/// This is the seam between the splat file parsers, procedural construction,
-/// and the renderer: parsers produce a [SplatData], and `GaussianSplats`
-/// packs one into GPU textures. All arrays are index-parallel.
+/// The seam between the file parsers, procedural construction, and the
+/// renderer. Parsers produce a [SplatData], and `GaussianSplats` packs one
+/// into GPU textures.
 /// {@category Gaussian splatting}
 class SplatData {
   /// Wraps existing arrays without copying. Every array's length must match
@@ -82,8 +82,8 @@ class SplatData {
   /// Unit orientation quaternions, `x, y, z, w` per splat.
   final Float32List rotations;
 
-  /// Base RGB color per splat: the evaluated degree-0 spherical-harmonic
-  /// term, in the file's color space (see [SplatColorSpace]).
+  /// Base RGB color per splat, the evaluated degree-0 spherical-harmonic
+  /// term, in the file's [SplatColorSpace].
   final Float32List colors;
 
   /// Opacity in [0, 1] per splat (parsers apply the training sigmoid).
@@ -92,16 +92,15 @@ class SplatData {
   /// Rest (degree >= 1) spherical-harmonic coefficients, or null when
   /// [shDegree] is 0.
   ///
-  /// Layout: per splat, [shRestCoeffCount] coefficients, each `r, g, b`.
-  /// Coefficients are ordered by band then by the standard 3DGS basis order
-  /// within a band.
+  /// Per splat, [shRestCoeffCount] coefficients of `r, g, b`, ordered by band
+  /// then by the standard 3DGS basis order within a band.
   final Float32List? sh;
 
   /// The highest spherical-harmonic degree carried by [sh] (0, 1, or 2).
   final int shDegree;
 
-  /// The number of rest (beyond degree 0) SH coefficients per splat and
-  /// channel for [degree]: 0 for degree 0, 3 for degree 1, 8 for degree 2.
+  /// Rest (beyond degree 0) SH coefficients per splat and channel, 0 at
+  /// [degree] 0, 3 at 1, 8 at 2.
   static int shRestCoeffCount(int degree) => (degree + 1) * (degree + 1) - 1;
 
   /// Computes the axis-aligned bounds of the splat centers, each padded by

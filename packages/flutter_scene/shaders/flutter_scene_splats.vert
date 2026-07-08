@@ -1,22 +1,22 @@
 // Gaussian splat vertex stage.
 //
-// Each instance is one splat; the per-instance attribute is the splat's
-// index into the parameter texture (a float, since the broadest GLES tier
-// has no integer attributes). The unit quad is expanded to cover the
-// splat's projected footprint: the local 3D covariance (prefetched from the
+// Each instance is one splat, its per-instance attribute the splat's index
+// into the parameter texture (a float, since the broadest GLES tier has no
+// integer attributes). The unit quad is expanded to cover the splat's
+// projected footprint. The local 3D covariance (prefetched from the
 // parameter texture) is pushed through the Jacobian of the full
 // local-to-pixel mapping, and the resulting 2D covariance's eigenvectors
 // give the quad axes. Instances arrive presorted back to front.
 
 uniform FrameInfo {
   mat4 mvp_transform;   // camera view-projection * node world transform
-  mat4 model_transform; // node world transform (for SH view direction)
-  mat4 crop_transform;  // splat-local -> crop-box space (unit cube, +/-1)
-  vec4 camera_position; // xyz: world camera; w: color mode (0 sRGB-encoded, 1 linear)
-  vec4 params_texture;  // x: width, y: height (texels)
-  vec4 sh_texture;      // x: width, y: height, z: texels per splat, w: SH degree
-  vec4 viewport;        // xy: size in pixels; z: kernel mode (0 classic, 1 antialiased); w: splat scale
-  vec4 params;          // x: opacity scale; y: crop mode (0 off, 1 include, 2 exclude); zw: reserved
+  mat4 model_transform; // node world transform (for the SH view direction)
+  mat4 crop_transform;  // splat-local to crop-box space (unit cube, +/-1)
+  vec4 camera_position; // xyz world camera, w color mode (0 sRGB, 1 linear)
+  vec4 params_texture;  // xy size in texels
+  vec4 sh_texture;      // xy size, z texels per splat, w SH degree
+  vec4 viewport;        // xy pixels, z kernel (0 classic, 1 aa), w splat scale
+  vec4 params;          // x opacity, y crop (0 off, 1 include, 2 exclude)
   vec4 tint;            // linear RGBA multiplier
 }
 frame_info;
@@ -24,9 +24,9 @@ frame_info;
 uniform sampler2D splat_params_texture;
 uniform sampler2D splat_sh_texture;
 
-// Slot 0: the unit quad, corners in [-1, 1].
+// Slot 0, the unit quad, corners in [-1, 1].
 in vec2 corner;
-// Slot 1 (instance rate): this instance's splat index.
+// Slot 1 (instance rate), this instance's splat index.
 in float splat_index;
 
 // Position within the footprint in standard-deviation units, and the
@@ -70,8 +70,8 @@ void main() {
   vec4 t2 = fetchTexel(splat_params_texture, base + 2.0, dims);
   vec4 t3 = fetchTexel(splat_params_texture, base + 3.0, dims);
 
-  // Crop volume: drop splats outside an include box or inside an exclude
-  // box (the box is the unit cube in crop space).
+  // Crop volume. Drop splats outside an include box or inside an exclude
+  // box (the unit cube in crop space).
   float crop_mode = frame_info.params.y;
   if (crop_mode > 0.5) {
     vec3 crop_pos = (frame_info.crop_transform * vec4(t0.xyz, 1.0)).xyz;
@@ -109,13 +109,13 @@ void main() {
   vec3 jx = (row_x - ndc.x * row_w) * (half_viewport.x / clip.w);
   vec3 jy = (row_y - ndc.y * row_w) * (half_viewport.y / clip.w);
 
-  // 2D covariance: J * cov3d * J^T, expanded through the symmetric product.
+  // 2D covariance J * cov3d * J^T, expanded through the symmetric product.
   vec3 cx = cov3d * jx;
   float cov_a = dot(jx, cx);
   float cov_b = dot(jy, cx);
   float cov_d = dot(jy, cov3d * jy);
 
-  // Low-pass kernel: dilate by kKernel2D pixels^2. The antialiased mode
+  // Low-pass kernel, dilating by kKernel2D pixels^2. The antialiased mode
   // compensates opacity by the footprint growth so small splats dim instead
   // of shimmering.
   float det_raw = cov_a * cov_d - cov_b * cov_b;
@@ -127,9 +127,9 @@ void main() {
     opacity *= sqrt(max(det_raw / det, 0.0));
   }
 
-  // The final blended alpha bounds the useful footprint: past the radius
-  // where the falloff drops under 1/255, fragments only discard. Tighten
-  // the cut per splat so dim splats rasterize far fewer pixels.
+  // The final blended alpha bounds the useful footprint. Past the radius
+  // where the falloff drops under 1/255 fragments only discard, so tighten
+  // the cut per splat and dim splats rasterize far fewer pixels.
   float alpha = clamp(opacity, 0.0, 1.0) * frame_info.tint.a;
   if (alpha < 1.0 / 255.0) {
     cull();
@@ -157,7 +157,7 @@ void main() {
       vec4(ndc.xy * clip.w + offset_px / half_viewport * clip.w, clip.zw);
   v_quad = corner * sigma_cut;
 
-  // Color: the base (degree 0) term plus the view-dependent rest bands.
+  // The base (degree 0) color plus the view-dependent rest bands.
   vec3 color = t3.rgb;
   float degree = frame_info.sh_texture.w;
   if (degree >= 1.0) {

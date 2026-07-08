@@ -9,13 +9,13 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
-/// Gaussian splat rendering with real captures: an isolated-object macro
-/// capture (Strawberry by danylyon, CC BY 4.0) and a room-scale capture
-/// (a Chinese classroom by hite404, CC BY 4.0), both fetched by
+/// Gaussian splat rendering with two real captures, an isolated-object macro
+/// capture (Strawberry by danylyon, CC BY 4.0) and a room-scale one (a
+/// Chinese classroom by hite404, CC BY 4.0), both fetched by
 /// `tool/fetch_splat_asset.sh`. A PBR sphere sits inside each scene proving
 /// splats and forward-rendered geometry occlude each other, an animated
 /// crop box demonstrates GPU-side cropping, and a Quake-style free camera
-/// (bottom right) explores the room capture from inside.
+/// (bottom right) explores the room from inside.
 class ExampleSplats extends StatefulWidget {
   const ExampleSplats({super.key});
 
@@ -23,7 +23,7 @@ class ExampleSplats extends StatefulWidget {
   ExampleSplatsState createState() => ExampleSplatsState();
 }
 
-/// One selectable capture: where to load it from and how to frame it.
+/// One selectable capture, where to load it from and how to frame it.
 class _SourceConfig {
   const _SourceConfig({
     required this.label,
@@ -152,7 +152,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
       scene.add(entry.value);
     }
 
-    // A shiny sphere inside each capture: splats in front of it must cover
+    // A shiny sphere inside each capture. Splats in front of it must cover
     // it, and it must occlude the splats behind it.
     scene.add(
       Node(
@@ -169,9 +169,8 @@ class ExampleSplatsState extends State<ExampleSplats> {
     if (mounted) setState(() => _ready = true);
   }
 
-  /// Places a capture: recentered on its bounds, flipped upright (training
-  /// captures are y-down), scaled, and lifted so it sits in front of the
-  /// camera.
+  /// Places a capture, recentered on its bounds, flipped upright (training
+  /// captures are y-down), scaled, and lifted in front of the camera.
   static Node _placeCapture(SplatComponent component, _SourceConfig config) {
     final bounds = component.splats.bounds;
     final center = bounds == null
@@ -214,10 +213,10 @@ class ExampleSplatsState extends State<ExampleSplats> {
     if (splats == null || active == null) return;
     final extent = _cropExtents[active]!;
     final t = elapsed.inMicroseconds / 1e6;
-    // A wipe: a big exclude box slides through the set, eating and then
-    // restoring it. Evaluated per splat on the GPU, so this is free to
-    // animate. The box lives in the capture's local (pre-flip) space, so
-    // the sweep axis is x either way.
+    // A wipe. A big exclude box slides through the set, eating and then
+    // restoring it, evaluated per splat on the GPU so it is free to animate.
+    // The box lives in the capture's local (pre-flip) space, so the sweep
+    // axis is x either way.
     final sweep = math.sin(t * 0.5) * extent / active.scale;
     final half = extent / active.scale;
     splats.setCropBox(

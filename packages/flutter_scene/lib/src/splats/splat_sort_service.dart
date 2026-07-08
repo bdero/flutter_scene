@@ -6,14 +6,13 @@ import 'package:flutter_scene/src/splats/splat_sort_service_native.dart'
 
 /// A long-lived background sorter for one splat set.
 ///
-/// The positions array is copied to the worker once at construction, so a
-/// re-sort only ships the tiny direction request and the sorted order back
-/// (transferred, not copied). The per-sort `compute` alternative re-copies
-/// the whole positions array on the UI thread every time, which shows as a
-/// rhythmic stutter while the camera orbits a large set.
+/// The positions are copied to the worker once at construction, so a re-sort
+/// only ships the direction out and transfers the order back. A per-sort
+/// `compute` would re-copy the whole positions array on the UI thread every
+/// time, a rhythmic stutter while orbiting a large set.
 ///
-/// On the web there are no isolates; the fallback sorts synchronously on
-/// the main thread. TODO(splats): move the web path into a web worker.
+/// The web has no isolates, so its fallback sorts synchronously on the main
+/// thread. TODO(splats): move the web path into a web worker.
 abstract interface class SplatSortService {
   /// Creates the platform sorter over [positions] (`x, y, z` per splat).
   factory SplatSortService(Float32List positions, int count) =>

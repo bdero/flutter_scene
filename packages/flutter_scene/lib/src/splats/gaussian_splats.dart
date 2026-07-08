@@ -6,16 +6,15 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/splats/splat_codec.dart';
 import 'package:flutter_scene/src/splats/splat_data.dart';
 
-/// A loaded Gaussian splat set: the decoded splat arrays plus the GPU
-/// textures the splat shaders fetch from.
+/// A loaded Gaussian splat set, the decoded arrays plus the GPU textures the
+/// splat shaders fetch from.
 ///
-/// Load one with [fromAsset] or [fromBytes] (file decoding and texel packing
-/// run on a background isolate), or build one procedurally with [fromData].
-/// Attach it to the scene through a `SplatComponent`.
+/// Load one with [fromAsset] or [fromBytes] (decoded and packed on a
+/// background isolate), or build one procedurally with [fromData], then
+/// attach it through a `SplatComponent`.
 ///
-/// The GPU textures are created lazily on first draw, so a
-/// `GaussianSplats` can be constructed before
-/// `Scene.initializeStaticResources` completes.
+/// The GPU textures are created lazily on first draw, so a `GaussianSplats`
+/// can be constructed before `Scene.initializeStaticResources` completes.
 /// {@category Gaussian splatting}
 class GaussianSplats {
   GaussianSplats._(PackedSplats packed, this.colorSpace)

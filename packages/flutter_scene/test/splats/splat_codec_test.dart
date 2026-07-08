@@ -80,7 +80,7 @@ void main() {
     expect(data.scales[1], closeTo(2.0, 1e-6));
     expect(data.scales[2], closeTo(1.0, 1e-6));
     expect(data.opacities[0], closeTo(0.75, 1e-6));
-    // SH0 evaluation: 0.5 + C0 * f_dc.
+    // SH0 evaluation, 0.5 + C0 * f_dc.
     expect(data.colors[0], closeTo(0.5 + kShC0, 1e-6));
     expect(data.colors[1], closeTo(0.5, 1e-6));
     expect(data.colors[2], closeTo(0.5 - kShC0, 1e-6));
@@ -90,7 +90,7 @@ void main() {
 
   test('reorders channel-major f_rest into per-coefficient rgb', () {
     final rest = <String, double>{};
-    // Channel-major: R coefficients 1..3, G 4..6, B 7..9.
+    // Channel-major, R coefficients 1..3, G 4..6, B 7..9.
     for (var i = 0; i < 9; i++) {
       rest['f_rest_$i'] = (i + 1).toDouble();
     }
@@ -100,7 +100,7 @@ void main() {
     final data = parseSplatPly(bytes);
 
     expect(data.shDegree, 1);
-    // Coefficient 0 across channels: R=1, G=4, B=7; coefficient 2: 3, 6, 9.
+    // Coefficient 0 across channels is R=1, G=4, B=7; coefficient 2 is 3,6,9.
     expect(data.sh!.sublist(0, 3), [1.0, 4.0, 7.0]);
     expect(data.sh!.sublist(6, 9), [3.0, 6.0, 9.0]);
   });
@@ -111,7 +111,7 @@ void main() {
     };
     final bytes = buildSplatPly([
       {'opacity': logit(0.9), 'rot_0': 1.0, ...rest},
-      {'opacity': -20.0, 'rot_0': 1.0, ...rest}, // sigmoid ~ 0: culled
+      {'opacity': -20.0, 'rot_0': 1.0, ...rest}, // sigmoid ~ 0, culled
     ], restPerChannel: 8);
 
     final full = parseSplatPly(bytes);
@@ -158,7 +158,7 @@ void main() {
   });
 
   test('packs covariance from quaternion and scales', () {
-    // Identity rotation: covariance is diag(sx^2, sy^2, sz^2).
+    // Identity rotation, so covariance is diag(sx^2, sy^2, sz^2).
     final data = SplatData.zeroed(2);
     data.positions.setAll(0, [1, 2, 3, 4, 5, 6]);
     data.scales.setAll(0, [0.5, 2.0, 3.0, 1.0, 1.0, 1.0]);
@@ -173,17 +173,17 @@ void main() {
     );
 
     final t = packed.paramsTexels;
-    // Splat 0, texel 0: position + opacity.
+    // Splat 0, texel 0, position and opacity.
     expect(t.sublist(0, 4), [1, 2, 3, 0.25]);
-    // Texels 1-2: xx, xy, xz, yy | yz, zz.
+    // Texels 1-2, xx, xy, xz, yy | yz, zz.
     expect(t[4], closeTo(0.25, 1e-6)); // xx = 0.5^2
     expect(t[5], closeTo(0.0, 1e-6));
     expect(t[7], closeTo(4.0, 1e-6)); // yy = 2^2
     expect(t[9], closeTo(9.0, 1e-6)); // zz = 3^2
-    // Texel 3: color.
+    // Texel 3, color.
     expect(t.sublist(12, 15), [1, 0, 0]);
 
-    // Splat 1: 90-degree rotation about Z of a unit sphere stays identity.
+    // Splat 1, a 90-degree Z rotation of a unit sphere, stays identity.
     final o = kParamsTexelsPerSplat * 4;
     expect(t[o + 4], closeTo(1.0, 1e-6));
     expect(t[o + 7], closeTo(1.0, 1e-6));
@@ -204,7 +204,7 @@ void main() {
     final packed = packSplats(data);
     expect(packed.shStride, 4);
     final sh = packed.shTexels!;
-    // Splat 2, coefficient 1: value 2*100 + 10 + channel.
+    // Splat 2, coefficient 1, value 2*100 + 10 + channel.
     final base = (2 * packed.shStride + 1) * 4;
     expect(sh.sublist(base, base + 3), [210.0, 211.0, 212.0]);
     // Padding texel is zero.

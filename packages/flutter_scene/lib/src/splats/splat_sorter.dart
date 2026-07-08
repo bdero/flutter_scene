@@ -2,20 +2,18 @@ import 'dart:typed_data';
 
 /// Sorts splats back to front along a view direction.
 ///
-/// Returns the splat indices as a [Float32List] (largest view depth first),
-/// ready to upload verbatim as the instance-rate index attribute (the
-/// attribute is a float because the broadest GLES tier has no integer vertex
-/// attributes; float indices are exact up to 2^24 splats).
+/// Returns the splat indices largest-view-depth-first, ready to upload as the
+/// instance-rate index attribute. The attribute is a float (the broadest GLES
+/// tier has no integer vertex attributes), exact up to 2^24 splats.
 ///
-/// [viewRow] is the direction the depth key is measured along, in the same
-/// (local) space as [positions]. The caller derives it from the
-/// view-projection w row transformed into local space, so the key is exact
-/// view-space depth. Ordering along a fixed direction is unaffected by
-/// camera translation, so a re-sort is only needed when the direction
-/// changes.
+/// `dir*` is the direction the depth key is measured along, in the same local
+/// space as [positions]. The caller derives it from the view-projection w row
+/// in local space, so the key is exact view-space depth. Ordering along a
+/// fixed direction is unaffected by camera translation, so a re-sort is only
+/// needed when the direction changes.
 ///
-/// A 16-bit counting sort over the normalized depth range: two O(n) passes
-/// and a 65536-bucket histogram, no comparison sort.
+/// Uses a 16-bit counting sort, two O(n) passes over a 65536-bucket histogram
+/// rather than a comparison sort.
 Float32List sortSplatsBackToFront(
   Float32List positions,
   int count,
@@ -55,9 +53,8 @@ Float32List sortSplatsBackToFront(
     histogram[q]++;
   }
 
-  // Back to front: the largest depth bucket writes first. Convert the
-  // histogram into each bucket's starting output offset, walking buckets
-  // from far to near.
+  // Turn the histogram into each bucket's starting output offset, walking
+  // far to near so the largest depth bucket writes first (back to front).
   var offset = 0;
   for (var b = buckets - 1; b >= 0; b--) {
     final n = histogram[b];

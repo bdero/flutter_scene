@@ -29,15 +29,13 @@ enum SplatCropMode {
 /// Draws a [GaussianSplats] set as one instanced batch of screen-space
 /// Gaussian footprints.
 ///
-/// Each instance is one splat; the vertex shader fetches the splat's
+/// Each instance is one splat. The vertex shader fetches the splat's
 /// parameters from the set's data textures and expands a quad over its
-/// projected footprint. Instances draw in presorted back-to-front order; the
-/// sort runs on a background isolate and is retriggered when the view
-/// direction (in the set's local space) drifts past a small threshold, so a
-/// fast orbit can lag the true order by a few frames.
+/// projected footprint. Instances draw presorted back to front by a
+/// background sort that reruns when the view direction drifts, so a fast
+/// orbit can lag the true order by a few frames.
 ///
-/// Pair with a `SplatMaterial`; attach to the scene through a
-/// `SplatComponent`.
+/// Pair with a `SplatMaterial` and attach through a `SplatComponent`.
 /// {@category Geometry}
 class SplatGeometry extends Geometry {
   /// Creates geometry for [splats].
@@ -113,9 +111,9 @@ class SplatGeometry extends Geometry {
   // one degree (dot < cos(1.1 degrees)).
   static const double _kResortDotThreshold = 0.99982;
 
-  // The sorted-order instance buffers. A ring so a completing sort never
-  // overwrites the buffer a recent frame's command buffer may still read.
-  // Slots fill lazily; _activeSlot is the one bind() uses this frame.
+  // A ring of sorted-order instance buffers, so a completing sort never
+  // overwrites one a recent frame's command buffer may still read. Slots
+  // fill lazily; _activeSlot is the one bind() uses this frame.
   // TODO(splats): reuse slots with completion tracking (the transient
   // arena's mechanism) instead of relying on sort cadence spacing.
   static const int _kIndexRingSize = 3;
@@ -271,7 +269,7 @@ class SplatGeometry extends Geometry {
       }
     }
 
-    // Slot 0: the quad. Slot 1: the sorted splat indices, instance rate.
+    // Slot 0 is the quad, slot 1 the sorted splat indices (instance rate).
     bindGeometryBuffers(pass);
     final indexBuffer = _indexRing[_activeSlot]!;
     pass.bindVertexBuffer(
@@ -343,9 +341,9 @@ class SplatGeometry extends Geometry {
   }
 }
 
-/// The splat pipeline layout: slot 0 the per-vertex unit quad, slot 1 the
-/// per-instance splat index (a float; the broadest GLES tier has no integer
-/// vertex attributes).
+/// The splat pipeline layout, slot 0 the per-vertex unit quad and slot 1 the
+/// per-instance splat index (a float, since the broadest GLES tier has no
+/// integer vertex attributes).
 final VertexLayoutDescriptor _kSplatLayout = VertexLayoutDescriptor(
   buffers: const [
     VertexBufferDescriptor(

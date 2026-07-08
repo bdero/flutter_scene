@@ -71,10 +71,10 @@ class SplatComponent extends MeshComponent {
   /// How the crop box filters splats.
   SplatCropMode get cropMode => _geometry.cropMode;
 
-  /// Sets or clears the crop box: [box] places a unit cube (corners at
+  /// Sets or clears the crop box. [box] places a unit cube (corners at
   /// +/-1) in the set's local space, and [mode] keeps only the splats
-  /// inside it or drops them. Cropping is evaluated per frame on the GPU,
-  /// so the box can animate freely.
+  /// inside it or drops them. Cropping runs per frame on the GPU, so the box
+  /// can animate freely.
   void setCropBox(
     vm.Matrix4? box, {
     SplatCropMode mode = SplatCropMode.include,

@@ -1,12 +1,12 @@
 // Converts a Gaussian-splat PLY into the compact 32-byte-per-splat `.splat`
 // layout (float position and scale, 8-bit color/opacity, 8-bit scalar-first
-// quaternion). Rest spherical harmonics are dropped; the format carries
-// none. Used by fetch_splat_asset.sh to keep the example's captured asset
+// quaternion), dropping the rest spherical harmonics the format cannot
+// carry. Used by fetch_splat_asset.sh to keep the example's captured asset
 // small enough to bundle.
 //
-// Usage: dart run tool/ply_to_splat.dart <in.ply> <out.splat>
+// Run with `dart run tool/ply_to_splat.dart <in.ply> <out.splat>`.
 
-// The splat codec is engine-internal; this dev tool may import it directly.
+// The splat codec is engine-internal, but this dev tool may import it.
 // ignore_for_file: implementation_imports
 
 import 'dart:io';
