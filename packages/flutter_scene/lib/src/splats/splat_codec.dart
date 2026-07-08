@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/splats/splat_data.dart';
 
 /// The splat file formats the runtime loader understands.
-/// {@category Geometry}
+/// {@category Gaussian splatting}
 enum SplatFormat {
   /// An uncompressed Gaussian-splat PLY (binary little-endian), the training
   /// interchange layout: `x y z ... f_dc_* f_rest_* opacity scale_* rot_*`.
