@@ -132,7 +132,12 @@ class SceneSemanticsCoordinator {
       if (!_chainVisible(node)) continue;
       final rect = _projectFocusRect(component, node, camera, viewArea);
       if (rect == null) continue;
-      if (component.occlusionHiding && _isOccluded(node, component, camera)) {
+      if (component.occlusionHiding &&
+          _isNodeOccluded(
+            node,
+            camera,
+            boundsOverride: component.boundsOverride,
+          )) {
         continue;
       }
       entries.add(
@@ -266,8 +271,8 @@ class SceneSemanticsCoordinator {
   /// Whether other scene geometry sits between the camera and the node's
   /// bounds center. A single center-point sample, conservative and cheap;
   /// the node's own subtree never counts as an occluder.
-  bool _isOccluded(Node node, SemanticsComponent component, Camera camera) {
-    final bounds = component.boundsOverride ?? node.combinedLocalBounds;
+  bool _isNodeOccluded(Node node, Camera camera, {vm.Aabb3? boundsOverride}) {
+    final bounds = boundsOverride ?? node.combinedLocalBounds;
     final vm.Vector3 center;
     if (bounds == null) {
       center = node.globalTransform.getTranslation();
@@ -301,7 +306,10 @@ class SceneSemanticsCoordinator {
     for (final entry in scene.renderScene.widgetComponents) {
       if (entry is! WidgetComponent) continue;
       vm.Matrix4? transform;
-      if (camera != null && entry.enabled && _chainVisible(entry.node)) {
+      if (camera != null &&
+          entry.enabled &&
+          _chainVisible(entry.node) &&
+          !(entry.occlusionHiding && _isNodeOccluded(entry.node, camera))) {
         transform = _widgetSurfaceTransform(entry, camera, viewArea);
       }
       // The render layer speaks Flutter's 64-bit matrices; convert at the

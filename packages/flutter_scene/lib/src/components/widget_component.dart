@@ -64,6 +64,7 @@ class WidgetComponent extends Component {
     double worldHeight = 1.0,
     WidgetUpdatePolicy update = WidgetUpdatePolicy.everyFrame,
     this.input = WidgetInput.automatic,
+    this.occlusionHiding = false,
     Geometry? geometry,
     Material? material,
     void Function(gpu.Texture texture)? bind,
@@ -87,6 +88,7 @@ class WidgetComponent extends Component {
     double pixelRatio = 1.0,
     WidgetUpdatePolicy update = WidgetUpdatePolicy.everyFrame,
     this.input = WidgetInput.automatic,
+    this.occlusionHiding = false,
   }) : _child = child,
        _size = size,
        _pixelRatio = pixelRatio,
@@ -99,6 +101,17 @@ class WidgetComponent extends Component {
 
   /// How this surface receives pointer input.
   final WidgetInput input;
+
+  /// Whether the surface's hosted subtree leaves the semantics tree while
+  /// scene geometry occludes it from the camera. Defaults to false (an
+  /// occluded surface keeps its semantics, matching a partially obscured
+  /// widget). When true, an occlusion raycast toward the surface center
+  /// each semantics update drops the whole subtree while it is hidden, so
+  /// assistive technology cannot reach controls the viewer cannot see
+  /// (matching how [WidgetInput.automatic] pointer input is already
+  /// blocked by the occluder). Only consulted while assistive technology
+  /// is active.
+  final bool occlusionHiding;
 
   final Widget _child;
   final Size _size;

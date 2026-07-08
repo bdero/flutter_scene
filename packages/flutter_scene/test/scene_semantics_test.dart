@@ -532,4 +532,48 @@ void main() {
     expect(find.semantics.byLabel('Panel button'), findsNothing);
     handle.dispose();
   });
+
+  testWidgets('occlusionHiding drops an occluded widget surface subtree', (
+    tester,
+  ) async {
+    final scene = await _readyScene(tester);
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    final handle = tester.ensureSemantics();
+    // The default camera sits at z = -5 looking toward the origin. The
+    // panel is at the origin; a wall between them occludes it.
+    final panel = Node(name: 'panel');
+    panel.addComponent(
+      WidgetComponent(
+        size: const Size(100, 100),
+        occlusionHiding: true,
+        child: Center(
+          child: Semantics(
+            label: 'Panel button',
+            button: true,
+            child: const SizedBox(width: 50, height: 50),
+          ),
+        ),
+      ),
+    );
+    scene.add(panel);
+    final wall = _quadNode(
+      name: 'wall',
+      transform: Matrix4.translation(Vector3(0, 0, -2))
+        ..scaleByVector3(Vector3(6, 6, 1)),
+    );
+    scene.add(wall);
+
+    await tester.pumpWidget(_host(scene));
+    await _settleSemantics(tester);
+    expect(find.semantics.byLabel('Panel button'), findsNothing);
+
+    // With the occluder gone the surface's semantics return.
+    wall.visible = false;
+    await _settleSemantics(tester);
+    expect(find.semantics.byLabel('Panel button'), findsOne);
+    handle.dispose();
+  });
 }

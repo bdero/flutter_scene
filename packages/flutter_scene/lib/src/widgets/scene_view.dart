@@ -519,7 +519,22 @@ class _SceneViewState extends State<SceneView>
                               height: component.size.height,
                               pixelRatio: component.pixelRatio,
                               update: component.updatePolicy,
-                              child: _WidgetComponentHost(component: component),
+                              // ExcludeSemantics gates the subtree's semantics
+                              // by the coordinator's per-frame decision (see
+                              // WidgetTextureController.semanticsHidden); the
+                              // subtree stays structurally present either way.
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    component.controller.semanticsHidden,
+                                builder: (context, hidden, child) =>
+                                    ExcludeSemantics(
+                                      excluding: hidden,
+                                      child: child,
+                                    ),
+                                child: _WidgetComponentHost(
+                                  component: component,
+                                ),
+                              ),
                             ),
                         ],
                       ),

@@ -22,6 +22,10 @@
   assistive technology is active. Multi-view scenes project semantics
   through the primary view (the first view rendering to the screen).
 
+* `WidgetComponent` gained `occlusionHiding` (opt-in): while scene geometry
+  occludes the surface from the camera, its hosted subtree's semantics leave
+  the tree, matching how its pointer input is already blocked.
+
 * Added `Camera.worldToScreen`, the forward counterpart of
   `Camera.screenPointToRay`.
 

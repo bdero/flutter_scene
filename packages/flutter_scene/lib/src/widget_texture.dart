@@ -155,11 +155,22 @@ class WidgetTextureController extends ChangeNotifier {
   /// immediate capture (subject to one-in-flight throttling).
   void requestCapture() => _host?._captureNow();
 
+  /// Whether the hosted subtree's semantics are currently hidden. The
+  /// [WidgetTexture] wraps its child in an `ExcludeSemantics` driven by this,
+  /// so an off-screen, culled, or occluded surface (or one with assistive
+  /// technology inactive) contributes no semantics, while the child stays
+  /// structurally present (toggling `ExcludeSemantics` is cheaper and more
+  /// robust than adding and removing the subtree from the semantics walk).
+  @internal
+  final ValueNotifier<bool> semanticsHidden = ValueNotifier<bool>(true);
+
   /// Sets the hosted subtree's semantics placement for this frame: the
   /// transform mapping its logical coordinates onto the enclosing
-  /// `SceneView`'s box, or null to keep the subtree out of the semantics
-  /// tree (surface hidden, culled, or assistive technology inactive).
-  /// `SceneView` pushes this after each rendered frame.
+  /// `SceneView`'s box, or null to hide the subtree's semantics (surface
+  /// off-screen, culled, occluded, or assistive technology inactive).
+  /// `SceneView` pushes this after each rendered frame. The host defers the
+  /// [semanticsHidden] flip to a post-frame callback, since this is called
+  /// during paint (where scheduling a build is not allowed).
   @internal
   void internalUpdateSemantics(Matrix4? transform) =>
       _host?._updateSemantics(transform);
@@ -386,13 +397,18 @@ class _RenderWidgetTexture extends RenderProxyBox {
   // ----- semantics -----
   //
   // The hosted subtree computes real semantics but never paints at its
-  // layout position. While the surface is visible on screen and assistive
+  // layout position. While the surface is on screen and assistive
   // technology is active, `SceneView` pushes the transform mapping the
   // subtree's logical space onto the surface's projected quad; the
   // framework's semantics geometry composes transforms through
   // applyPaintTransform, so overriding it repositions every node in the
-  // subtree at once. Semantics actions dispatch straight to the widgets'
-  // own handlers, independent of the synthetic pointer pipeline above.
+  // subtree at once. The child is always visited for semantics; hiding
+  // (off-screen, culled, occluded) is done by the `ExcludeSemantics` the
+  // host widget wraps the child in, which is robust to toggling in a way
+  // that adding and removing the child from the semantics walk is not (a
+  // rejoining subtree leaves dirty parent data). Semantics actions dispatch
+  // straight to the widgets' own handlers, independent of the synthetic
+  // pointer pipeline above.
 
   Matrix4? _semanticsTransform;
   bool _semanticsUpdateScheduled = false;
@@ -409,10 +425,13 @@ class _RenderWidgetTexture extends RenderProxyBox {
     if (_semanticsUpdateScheduled) return;
     _semanticsUpdateScheduled = true;
     // Deferred to a post-frame callback: the new placement arrives during
-    // the paint flush, where dirtying semantics is not allowed.
+    // the paint flush, where dirtying semantics and scheduling a build
+    // (the ExcludeSemantics toggle) are both disallowed.
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _semanticsUpdateScheduled = false;
-      if (attached) markNeedsSemanticsUpdate();
+      if (!attached) return;
+      _controller.semanticsHidden.value = _semanticsTransform == null;
+      markNeedsSemanticsUpdate();
     }, debugLabel: 'WidgetTexture.semanticsUpdate');
   }
 
@@ -432,13 +451,12 @@ class _RenderWidgetTexture extends RenderProxyBox {
     }
   }
 
-  // The subtree joins the semantics tree only while it has an on-screen
-  // placement; otherwise the child never appears on screen and has no
-  // semantics.
+  // Always visit the child; its semantics are gated by the host widget's
+  // ExcludeSemantics, not by removing it from the walk.
   @override
   void visitChildrenForSemantics(RenderObjectVisitor visitor) {
     final child = this.child;
-    if (child != null && _semanticsTransform != null) {
+    if (child != null) {
       visitor(child);
     }
   }
