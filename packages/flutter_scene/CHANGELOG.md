@@ -51,6 +51,17 @@
   at a missing uniform slot. The generated fragment now keeps the block
   referenced through a zero-bound keep-alive, with no visible effect.
 
+* Built-in noise, matched between CPU and GPU. `package:flutter_scene/noise.dart`
+  adds a web-safe `FastNoiseLite` (OpenSimplex2/2S, Perlin, Value, and Cellular
+  with fBm/ridged/ping-pong fractals, domain warp, and a `noiseCurl3` advection
+  field), plus `bakeNoisePixels`/`bakeNoiseTexture` to bake a configuration into
+  a texture. Any `.fmat` `fragment`, `vertex`, or `sky` block can
+  `#include <noise.glsl>` for the same functions in a shader. The two halves are
+  kept in lockstep so a field sampled on the CPU and evaluated in a shader agree:
+  the integer hash layer (`noiseHash2`/`NoiseHash2`) is bit-exact on every
+  backend for decisions that must not disagree, and the float functions match
+  within a small tolerance enforced by a per-backend parity test.
+
 * `AmbientOcclusionSettings.depthMipChain` (off by default) renders the
   occlusion depth prepass at full resolution and samples it through a
   downsampled mip chain, a level per sample distance. It keeps depth accurate
