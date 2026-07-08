@@ -407,6 +407,13 @@ hash overflows on the web (where Dart `int` is a JavaScript double), so on the
 web prefer the GLSL side or a `bakeNoiseTexture` built at build time or in a
 native isolate. A web-safe Dart multiply is a planned follow-up.
 
+`noise.glsl` carries the gradient and cell-vector lookup tables (the cellular
+functions add about 1500 float constants), so a material that uses many noise
+functions compiles to a large shader. That is fine on real GPU drivers, but a
+software compiler (a device emulator, some headless CI) can run out of memory
+on it; a material that uses one or two functions stays small. Bake to a
+texture when a single field would do.
+
 # The engine contract (both paths)
 
 flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
