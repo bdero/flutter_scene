@@ -14,10 +14,16 @@
 //
 // All hashing math is forced to 32-bit signed wraparound (via `.toSigned(32)`)
 // after every multiply/add. FastNoiseLite relies on C# `int` overflow in its
-// hash/prime mixing; Dart ints are 64-bit on native and 53-bit doubles on the
-// web, so a naive port diverges between platforms. Forcing 32-bit width makes a
-// given seed + coordinate produce an identical value on macOS and in Chrome.
-// `test/noise_test.dart` pins specific outputs to guard against regressions.
+// hash/prime mixing. On native (64-bit ints) this is exact and
+// `test/noise_test.dart` pins the outputs.
+//
+// TODO(noise-web): this is NOT web-safe. On the web Dart `int` is a JS double
+// (exact only to 53 bits), so a 32-bit-by-32-bit multiply like
+// `hash * 0x27d4eb2d` overflows and loses its low bits before `.toSigned(32)`
+// can wrap, and the 3D lattice math overflows outright. The fix is a
+// Math.imul-style 32-bit multiply (split into 16-bit halves) at every
+// hash/prime multiply site. Until then the GLSL side (noise.glsl, which runs
+// with real 32-bit ints on every GPU backend) is the web-correct path.
 //
 // Gradient lookup tables (`_gradients2D`, `_randVecs2D`, `_gradients3D`,
 // `_randVecs3D`) and the prime/hash constants are transcribed verbatim from the

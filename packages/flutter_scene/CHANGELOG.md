@@ -52,15 +52,19 @@
   referenced through a zero-bound keep-alive, with no visible effect.
 
 * Built-in noise, matched between CPU and GPU. `package:flutter_scene/noise.dart`
-  adds a web-safe `FastNoiseLite` (OpenSimplex2/2S, Perlin, Value, and Cellular
-  with fBm/ridged/ping-pong fractals, domain warp, and a `noiseCurl3` advection
+  adds `FastNoiseLite` (OpenSimplex2/2S, Perlin, Value, and Cellular with
+  fBm/ridged/ping-pong fractals, domain warp, and a `noiseCurl3` advection
   field), plus `bakeNoisePixels`/`bakeNoiseTexture` to bake a configuration into
   a texture. Any `.fmat` `fragment`, `vertex`, or `sky` block can
   `#include <noise.glsl>` for the same functions in a shader. The two halves are
   kept in lockstep so a field sampled on the CPU and evaluated in a shader agree:
   the integer hash layer (`noiseHash2`/`NoiseHash2`) is bit-exact on every
   backend for decisions that must not disagree, and the float functions match
-  within a small tolerance enforced by a per-backend parity test.
+  within a small tolerance enforced by a per-backend parity test. The GLSL side
+  is correct on every backend including the web; the Dart side is currently
+  native-only (its 32-bit integer hash overflows on the web, where Dart `int` is
+  a JS double), so on the web use the GLSL noise or a baked texture. A web-safe
+  Dart multiply is a planned follow-up.
 
 * `AmbientOcclusionSettings.depthMipChain` (off by default) renders the
   occlusion depth prepass at full resolution and samples it through a
