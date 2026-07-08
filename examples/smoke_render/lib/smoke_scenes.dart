@@ -334,14 +334,13 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _camera());
   }),
-  // Gaussian splatting: a procedural anisotropic splat cloud (degree-1 SH)
-  // composited around an opaque cuboid, with a crop box carving one side.
-  // One scene covers the splat path across backends: the vertex-stage data
-  // texture fetch, the EWA covariance projection and 2D eigendecomposition,
-  // the background depth sort, premultiplied translucent blending over
-  // opaque geometry, the SH texture fetch and evaluation, and the crop
-  // branch. The splats surround an opaque cuboid so the splat/mesh depth
-  // composite (occlusion both ways) is exercised too.
+  // A procedural anisotropic splat cloud (degree-1 SH) composited around an
+  // opaque cuboid, with a crop box carving one side. One scene covers the
+  // splat path across backends, the vertex-stage data texture fetch, the EWA
+  // covariance projection and 2D eigendecomposition, the background depth
+  // sort, premultiplied translucent blending over opaque geometry, the SH
+  // texture fetch and evaluation, and the crop branch. The surrounding
+  // cuboid exercises the splat/mesh depth composite (occlusion both ways).
   SmokeScene('gaussian_splats', () {
     final scene = Scene();
     scene.add(_cuboid(vm.Vector4(0.85, 0.75, 0.20, 1.0), 0.1, 0.5));

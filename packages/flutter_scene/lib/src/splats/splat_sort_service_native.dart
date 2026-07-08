@@ -20,8 +20,8 @@ class _IsolateSplatSortService implements SplatSortService {
   ReceivePort? _fromWorker;
   Completer<Float32List?>? _pending;
 
-  // Spawns the worker on first use, copying the positions once; the copy
-  // transfers into the isolate rather than being re-serialized.
+  // Spawns the worker on first use, transferring the positions in once
+  // rather than re-serializing them per sort.
   Future<SendPort> _ensureWorker() {
     return _requests ??= () async {
       final fromWorker = ReceivePort();
@@ -73,7 +73,7 @@ class _IsolateSplatSortService implements SplatSortService {
   }
 }
 
-/// The sorter isolate: receives the positions once at spawn, then serves
+/// The sorter isolate. Receives the positions once at spawn, then serves
 /// direction requests until a null message asks it to exit.
 void splatSorterIsolateMain(List<Object> init) {
   final replyTo = init[0] as SendPort;

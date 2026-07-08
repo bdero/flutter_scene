@@ -6,11 +6,11 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 /// The splat file formats the runtime loader understands.
 /// {@category Gaussian splatting}
 enum SplatFormat {
-  /// An uncompressed Gaussian-splat PLY (binary little-endian), the training
-  /// interchange layout: `x y z ... f_dc_* f_rest_* opacity scale_* rot_*`.
+  /// An uncompressed binary-little-endian PLY in the training interchange
+  /// layout (`x y z ... f_dc_* f_rest_* opacity scale_* rot_*`).
   ply,
 
-  /// The compact 32-byte-per-splat `.splat` layout common in web pipelines:
+  /// The compact 32-byte-per-splat `.splat` layout common in web pipelines,
   /// float position and scale, 8-bit color/opacity, 8-bit quaternion.
   splat,
 }
@@ -32,8 +32,8 @@ class SplatDecodeOptions {
 
 /// A decoded splat set together with its GPU-ready texel arrays.
 ///
-/// Produced by [decodeSplats] (usually on a background isolate); consumed by
-/// `GaussianSplats`, which uploads the texel arrays verbatim.
+/// Produced by [decodeSplats] (usually off-thread) and uploaded verbatim by
+/// `GaussianSplats`.
 class PackedSplats {
   PackedSplats({
     required this.data,
@@ -49,8 +49,7 @@ class PackedSplats {
   /// The decoded splat arrays (kept for sorting, bounds, and readback).
   final SplatData data;
 
-  /// RGBA32F texels for the parameter texture, [kParamsTexelsPerSplat]
-  /// consecutive texels per splat:
+  /// RGBA32F parameter texels, [kParamsTexelsPerSplat] per splat, laid out as
   /// `pos.xyz, opacity | cov.xx,xy,xz,yy | cov.yz,zz,0,0 | color.rgb, 0`.
   final Float32List paramsTexels;
 
@@ -66,8 +65,8 @@ class PackedSplats {
   final int shWidth;
   final int shHeight;
 
-  /// Texels per splat in the SH texture (4 for degree 1, 8 for degree 2;
-  /// a power of two so groups never straddle rows).
+  /// Texels per splat in the SH texture, a power of two so groups never
+  /// straddle rows (4 for degree 1, 8 for degree 2).
   final int shStride;
 }
 
@@ -118,11 +117,10 @@ PackedSplats decodeSplatsForIsolate(
 
 /// Parses a binary little-endian Gaussian-splat PLY.
 ///
-/// Recognizes the training layout's properties by name (`x`, `f_dc_0`,
-/// `f_rest_*`, `opacity`, `scale_*`, `rot_*`); other float properties are
-/// skipped by stride. Applies the training-space transforms: `exp` on
-/// scales, sigmoid on opacity, `0.5 + C0 * f_dc` on the base color, and
-/// quaternion normalization.
+/// Recognizes the training properties by name (`x`, `f_dc_0`, `f_rest_*`,
+/// `opacity`, `scale_*`, `rot_*`) and skips others by stride. Applies the
+/// training-space transforms, `exp` on scales, sigmoid on opacity,
+/// `0.5 + C0 * f_dc` on the base color, and quaternion normalization.
 SplatData parseSplatPly(
   Uint8List bytes, {
   SplatDecodeOptions options = const SplatDecodeOptions(),
@@ -177,8 +175,7 @@ SplatData parseSplatPly(
     throw FormatException('Splat PLY is truncated.');
   }
 
-  // First pass: count survivors of the alpha cull so the arrays allocate
-  // exactly once.
+  // Count survivors of the alpha cull first, so the arrays allocate once.
   var kept = 0;
   for (var i = 0; i < total; i++) {
     final op = _sigmoid(
@@ -230,8 +227,8 @@ SplatData parseSplatPly(
       final shOut = w * keptRest * 3;
       for (var c = 0; c < keptRest; c++) {
         for (var ch = 0; ch < 3; ch++) {
-          // Channel-major in the file: coefficient c of channel ch is at
-          // rest index ch * restPerChannel + c.
+          // Channel-major in the file, so coefficient c of channel ch lands
+          // at rest index ch * restPerChannel + c.
           sh[shOut + c * 3 + ch] = view.getFloat32(
             base + restBase + (ch * restPerChannel + c) * 4,
             Endian.little,
