@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
+import 'package:flutter_scene/src/render/sh_composite.dart';
 import 'package:flutter_scene/src/render/skybox_encoder.dart';
 import 'package:flutter_scene/src/render/ssao_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
@@ -143,9 +144,32 @@ class ScenePass extends RenderGraphPass {
     final ssaoMap = context.blackboard.get<gpu.Texture>(
       kSsaoTextureBlackboardKey,
     );
+    // During an environment cross-fade, copy both environments' diffuse-SH
+    // coefficients into one 9x2 composite so the lit shader reads them
+    // through a single sampler. Without a cross-fade the primary's own 9x1
+    // texture is bound directly (both shader row coordinates land on its
+    // single row).
+    final envB = _environmentMapB;
+    gpu.Texture? shComposite;
+    if (envB != null) {
+      shComposite = context.texturePool.acquire(
+        const TransientTextureDescriptor.color(
+          width: 9,
+          height: 2,
+          format: gpu.PixelFormat.r16g16b16a16Float,
+          debugName: 'sh_composite',
+        ),
+      );
+      encodeShComposite(
+        shComposite,
+        _environmentMap.diffuseShTexture,
+        envB.diffuseShTexture,
+      );
+    }
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentMapB: _environmentMapB,
+      diffuseShTexture: shComposite,
       environmentBlend: _environmentBlend,
       environmentIntensity: _environmentIntensity,
       environmentTransform: _environmentTransform,

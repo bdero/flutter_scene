@@ -1,5 +1,14 @@
 ## 0.19.0
 
+* The lit shader reads both cross-fade environments' diffuse SH through a
+  single `sh_coefficients` sampler (a 9x2 composite row per environment during
+  a cross-fade), dropping the fragment sampler count from 16 to 15. Skinned
+  draws add a vertex-stage joints texture on top of the fragment samplers, and
+  16 + 1 overflowed the texture-unit validation on GLES drivers reporting the
+  minimum 16 units (ANGLE on D3D11), crashing skinned meshes on Windows. The
+  engine-side validation fix is upstream; this keeps skinned rendering working
+  on stable drivers today and buys back sampler headroom everywhere.
+
 * Scene-graph conveniences for working with a loaded model. `Node.meshNodes`
   iterates the drawable nodes in a subtree, `Node.combinedWorldBounds` gives
   the subtree's world-space AABB (the bound the renderer culls against), and

@@ -524,6 +524,7 @@ class Lighting {
     this.environmentBlend = 0.0,
     this.environmentIntensity = 1.0,
     Matrix3? environmentTransform,
+    this.diffuseShTexture,
     this.directionalLight,
     this.directionalLightDirection,
     this.punctualParamsTexture,
@@ -566,6 +567,12 @@ class Lighting {
   /// Rotation applied to the image-based-lighting environment (the
   /// scene's `environmentTransform`). Identity leaves it unrotated.
   final Matrix3 environmentTransform;
+
+  /// The diffuse-SH coefficient texture to bind for this draw. During an
+  /// environment cross-fade this is a 9x2 composite (row 0 primary, row 1
+  /// [environmentMapB]); otherwise null, and [environmentMap]'s own 9x1
+  /// texture is bound.
+  final gpu.Texture? diffuseShTexture;
 
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;

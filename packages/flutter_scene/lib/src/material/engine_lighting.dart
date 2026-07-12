@@ -309,17 +309,21 @@ class EngineLightingUniforms {
       // the portable choice.
       sampler: _nearestSampler,
     );
-    // Diffuse irradiance SH: a 9x1 coefficient texture, point-sampled (each
-    // texel is one coefficient). Sampled in EvaluateDiffuseSH.
+    // Diffuse irradiance SH coefficients, point-sampled (each texel is one
+    // coefficient). During a cross-fade [Lighting.diffuseShTexture] carries a
+    // 9x2 composite holding both environments' rows; otherwise the primary's
+    // own 9x1 texture is bound and both shader row coordinates land on its
+    // single row. Sampled in EvaluateDiffuseSH.
     pass.bindTexture(
       shader.getUniformSlot('sh_coefficients'),
-      env.diffuseShTexture,
+      lighting.diffuseShTexture ?? env.diffuseShTexture,
       sampler: _nearestClampSampler,
     );
-    // The secondary cross-fade environment (the *_b samplers). When no
-    // cross-fade is active the primary is bound here too (a valid no-op, since
-    // frag_info.radiance_blend.x is 0 and the shader never reads it).
-    _bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
+    // The secondary cross-fade environment's radiance (the *_b samplers).
+    // When no cross-fade is active the primary is bound here too (a valid
+    // no-op, since frag_info.radiance_blend.x is 0 and the shader never
+    // reads it).
+    bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
     // Punctual light parameters (all scene lights) and the per-object light
     // index buffer, both RGBA32F data textures, point-sampled (each texel is
     // packed data). White placeholders are bound when there are no lights or no
@@ -366,27 +370,6 @@ class EngineLightingUniforms {
       shader.getUniformSlot('prefiltered_radiance_cube_b'),
       env.prefilteredRadianceCube,
       sampler: _cubeSampler,
-    );
-  }
-
-  // Binds the secondary environment's prefiltered radiance and diffuse SH to
-  // the `_b` samplers, with the same options as the primary (both share the
-  // bound RadianceLayoutInfo, so the layout flag is not re-bound).
-  static void _bindSecondaryRadiance(
-    gpu.RenderPass pass,
-    gpu.Shader shader,
-    EnvironmentMap env,
-  ) {
-    bindSecondaryRadiance(pass, shader, env);
-    pass.bindTexture(
-      shader.getUniformSlot('sh_coefficients_b'),
-      env.diffuseShTexture,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
     );
   }
 }
