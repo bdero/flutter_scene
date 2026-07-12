@@ -31,3 +31,6 @@ flutter:
     # hook/build.dart.
     - build/shaderbundles/materials.shaderbundle
     - build/shaderbundles/materials.fmat.json
+    # Skinned animated test model (assets_src is a symlink into
+    # examples/assets_src), for the skinned_animation scene.
+    - assets_src/two_triangles.glb

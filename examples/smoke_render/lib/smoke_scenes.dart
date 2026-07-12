@@ -133,6 +133,16 @@ PreprocessedMaterial _fmatMaterial(String name) {
   );
 }
 
+/// The skinned animated model preloaded by [loadSmokeModels], so the
+/// synchronous [SmokeScene] setup closures can pose and add it.
+Node? _skinnedModel;
+
+/// Loads the skinned test model once. Call before pumping the
+/// skinned_animation scene.
+Future<void> loadSmokeModels() async {
+  _skinnedModel ??= await Node.fromGlbAsset('assets_src/two_triangles.glb');
+}
+
 /// A flat NxN grid in the XZ plane carrying a per-vertex `phase` custom
 /// attribute, for the custom-material scene.
 MeshGeometry _phaseGrid() {
@@ -357,6 +367,29 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       );
     scene.add(Node()..addComponent(splats));
     return (scene: scene, camera: _camera());
+  }),
+  // A skinned mesh (two bone-driven triangles) posed by seeking a paused
+  // animation clip to a fixed mid-swing time, so the deformation is
+  // deterministic. The only scene that draws through the skinned vertex
+  // shader, whose joints texture rides in the vertex stage on top of the lit
+  // fragment shader's full sampler set. On GLES that combination overflows
+  // the per-stage texture-unit validation on drivers reporting the minimum
+  // 16 fragment units (the skinned-draw crash on Windows ANGLE), so this
+  // scene reproduces that crash on CI's GLES backends.
+  SmokeScene('skinned_animation', () {
+    final scene = Scene();
+    final model = _skinnedModel!;
+    scene.add(model);
+    model
+        .createAnimationClip(model.findAnimationByName('Metronome')!)
+        .seek(0.4);
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.8, 2.0, -6.5),
+        target: vm.Vector3(0, 1.5, 0),
+      ),
+    );
   }),
 ];
 

@@ -54,6 +54,7 @@ void main() {
       // which must be loaded before SmokeSceneView constructs them.
       await Scene.initializeStaticResources();
       await loadSmokeMaterials();
+      await loadSmokeModels();
 
       await tester.pumpWidget(
         MaterialApp(
