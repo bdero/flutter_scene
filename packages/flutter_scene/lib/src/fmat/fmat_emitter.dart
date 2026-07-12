@@ -352,7 +352,7 @@ String _emitSkyGlsl(FmatMaterial material) {
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
   }
-  if (uniforms.isNotEmpty || samplers.isNotEmpty) {
+  if (uniforms.isNotEmpty || samplers.isNotEmpty || material.useEnvironment) {
     // Same keep-alive as the surface fragment shader; see
     // _fragmentKeepAliveTerm.
     sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
@@ -367,13 +367,19 @@ String _emitSkyGlsl(FmatMaterial material) {
 
   if (material.useEnvironment) {
     sb.writeln(
-      '// The scene environment\'s prefiltered-radiance atlas, bound by the',
+      '// The environment\'s prefiltered radiance, bound by the engine in',
     );
     sb.writeln(
-      '// engine. Sample with SamplePrefilteredRadiance(prefiltered_radiance,',
+      '// whichever layout it uses (2D equirect or cube). Sample through',
     );
-    sb.writeln('// direction, roughness).');
+    sb.writeln('// SampleEnvironment(direction, roughness).');
     sb.writeln('uniform sampler2D prefiltered_radiance;');
+    sb.writeln('uniform samplerCube prefiltered_radiance_cube;');
+    sb.writeln();
+    sb.writeln('vec3 SampleEnvironment(vec3 direction, float roughness) {');
+    sb.writeln('  return SampleRadianceEnv(prefiltered_radiance,');
+    sb.writeln('      prefiltered_radiance_cube, direction, roughness);');
+    sb.writeln('}');
     sb.writeln();
   }
 
@@ -390,7 +396,15 @@ String _emitSkyGlsl(FmatMaterial material) {
   sb.writeln('void main() {');
   sb.writeln('  // Linear HDR radiance, premultiplied alpha (opaque sky).');
   sb.writeln('  frag_color = vec4(Sky(normalize(v_ray)), 1.0);');
-  final keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
+  var keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
+  // A sky that requires the environment but never calls SampleEnvironment
+  // would let the compiler strip the radiance samplers and layout block the
+  // engine binds unconditionally; a zero-multiplied sample keeps them live.
+  if (material.useEnvironment &&
+      !RegExp(r'\bSampleEnvironment\b').hasMatch(material.fragmentSource)) {
+    const envTerm = 'SampleEnvironment(vec3(0.0, 1.0, 0.0), 1.0).x';
+    keepAlive = keepAlive == null ? envTerm : '($keepAlive + $envTerm)';
+  }
   if (keepAlive != null) {
     sb.writeln(
       '  frag_color.r += '

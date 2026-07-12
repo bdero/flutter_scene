@@ -12,7 +12,10 @@
 // assets/menger_sky.fmat is a second, much heavier sky (a raymarched Menger
 // sponge interior) driven the same way; its light, glow, and fog parameters
 // change the emitted light dramatically, so re-baking visibly relights the
-// spheres.
+// spheres. It also declares `requires: [environment]` and reflects a
+// downloaded environment map (Helipad by default, selectable from the
+// lighting panel) through `sampledEnvironment`, while its own bake keeps
+// driving the scene lighting.
 
 import 'dart:math';
 
@@ -20,7 +23,9 @@ import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'environment_menu.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 
 class ExampleSkybox extends StatefulWidget {
   const ExampleSkybox({super.key});
@@ -47,8 +52,14 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   PreprocessedSky? _mengerSky;
   GradientSkySource? _gradientSky;
   PhysicalSkySource? _physicalSky;
-  _SkyType _skyType = _SkyType.fmatGradient;
+  _SkyType _skyType = _SkyType.fmatMenger;
   SkyEnvironment? _skyEnvironment;
+
+  // The lighting panel's environment selection feeds the Menger sky's
+  // reflections through sampledEnvironment (the scene's own environment is
+  // owned by the sky bake).
+  final EnvironmentSelector _environmentSelector = EnvironmentSelector();
+  EnvironmentMap? _studioEnvironment;
 
   // Sun controls, surfaced as sliders.
   double _sunElevation = 0.5; // radians above the horizon
@@ -56,18 +67,22 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   double _sunSharpness = 400.0; // higher = tighter sun disk
 
   // Menger sky controls. Hues are in degrees; colors are derived per emitter
-  // with a saturation that suits it.
+  // with a saturation that suits it. Travel and spin advance continuously at
+  // the slider speeds, wrapping at the sponge's repeat period.
   double _mengerTravel = 1.0;
-  double _mengerSpin = 0.5;
-  double _mengerHoleSize = 0.03;
-  double _mengerLightHue = 37.0;
+  double _mengerTravelSpeed = 1.0; // units per second
+  double _mengerSpin = 0.0;
+  double _mengerSpinSpeed = 0.25; // radians per second
+  double _mengerHoleSize = -0.01;
+  double _mengerLightHue = 82.22;
   double _mengerLightIntensity = 1.6;
-  double _mengerLightHeight = 1.0;
+  double _mengerLightHeight = 0.51;
   double _mengerGlowHue = 200.0;
-  double _mengerGlowIntensity = 2.0;
+  double _mengerGlowIntensity = 8.59;
   double _mengerFogHue = 220.0;
-  double _mengerFogBrightness = 2.5;
-  double _mengerGrade = 0.5;
+  double _mengerFogBrightness = 6.82;
+  double _mengerGrade = 0.48;
+  double _mengerReflection = 0.7;
 
   @override
   void initState() {
@@ -80,7 +95,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     final menger = await loadFmatSky('assets/menger_sky.fmat');
     if (!mounted) return;
     _fmatSky = sky;
-    _mengerSky = menger;
+    _mengerSky = menger..sampledEnvironment = _sampledEnvironment;
     _applySkyType(_skyType);
 
     // Left: a smooth metallic sphere mirrors the baked environment (specular).
@@ -138,9 +153,22 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
     scene.skybox = Skybox(source);
     _skyEnvironment = SkyEnvironment(
       source,
-      refresh: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.manual,
+      refresh: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.everyFrame,
     );
     scene.skyEnvironment = _skyEnvironment;
+  }
+
+  // The Menger sky reflects the map picked in the lighting panel. The scene's
+  // environment can't carry it (each sky bake overwrites it), so the resolved
+  // map goes to the sky source directly; null falls back to the same studio
+  // environment the renderer defaults to. Kept in a field because the panel's
+  // initial download can finish before the sky loads (or after).
+  EnvironmentMap? _sampledEnvironment;
+
+  void _onEnvironmentResolved(EnvironmentMap? map) {
+    _sampledEnvironment =
+        map ?? (_studioEnvironment ??= EnvironmentMap.studio());
+    _mengerSky?.sampledEnvironment = _sampledEnvironment;
   }
 
   // A slider hue as a light color, with a per-emitter saturation.
@@ -190,8 +218,23 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
           ..setFloat('glow_intensity', _mengerGlowIntensity)
           ..setVec3('fog_color', _hueColor(_mengerFogHue, 0.3))
           ..setFloat('fog_brightness', _mengerFogBrightness)
-          ..setFloat('grade', _mengerGrade);
+          ..setFloat('grade', _mengerGrade)
+          ..setFloat('reflection', _mengerReflection);
     }
+  }
+
+  // Advances the Menger sky's travel and spin at the slider speeds. Both
+  // wrap at the field's period (the sponge repeats every 3 units, rotation
+  // every full turn) so the march never runs into float precision.
+  void _tickMengerSky(double deltaSeconds) {
+    if (_skyType != _SkyType.fmatMenger) return;
+    final sky = _mengerSky;
+    if (sky == null) return;
+    _mengerTravel = (_mengerTravel + _mengerTravelSpeed * deltaSeconds) % 3.0;
+    _mengerSpin = (_mengerSpin + _mengerSpinSpeed * deltaSeconds) % (2 * pi);
+    sky.parameters
+      ..setFloat('travel', _mengerTravel)
+      ..setFloat('spin', _mengerSpin);
   }
 
   // One slider per parameter of the active sky. Each one pushes the new
@@ -232,11 +275,11 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
       ];
     }
     return [
-      slider('Travel', _mengerTravel, 0, 60, (v) {
-        _mengerTravel = v;
+      slider('Travel speed', _mengerTravelSpeed, 0, 6, (v) {
+        _mengerTravelSpeed = v;
       }),
-      slider('Spin', _mengerSpin, -pi, pi, (v) {
-        _mengerSpin = v;
+      slider('Spin speed', _mengerSpinSpeed, -2, 2, (v) {
+        _mengerSpinSpeed = v;
       }),
       slider('Hole size', _mengerHoleSize, -0.02, 0.1, (v) {
         _mengerHoleSize = v;
@@ -265,6 +308,9 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
       slider('Grade', _mengerGrade, 0, 1, (v) {
         _mengerGrade = v;
       }),
+      slider('Reflection', _mengerReflection, 0, 2, (v) {
+        _mengerReflection = v;
+      }),
     ];
   }
 
@@ -285,7 +331,21 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
                 target: vm.Vector3(0, 0, 0),
               );
             },
-            onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
+            onTick: (elapsed, deltaSeconds) {
+              exampleSettings.applyTo(scene);
+              _tickMengerSky(deltaSeconds);
+            },
+          ),
+        ),
+        Positioned(
+          right: 16,
+          top: 16,
+          child: LightingPanel(
+            scene: scene,
+            selector: _environmentSelector,
+            manageSkybox: false,
+            initialEnvironmentId: 'helipad',
+            onEnvironmentResolved: _onEnvironmentResolved,
           ),
         ),
         Positioned(

@@ -21,6 +21,8 @@ class LightingPanel extends StatefulWidget {
     required this.scene,
     required this.selector,
     this.showSkybox = true,
+    this.manageSkybox = true,
+    this.onEnvironmentResolved,
     this.initialEnvironmentId,
     this.initialSkyBlur = 0.0,
     this.initialExposure = 1.0,
@@ -33,6 +35,16 @@ class LightingPanel extends StatefulWidget {
 
   /// Whether the skybox starts enabled.
   final bool showSkybox;
+
+  /// Whether the panel owns the scene's skybox (the toggle plus sky blur).
+  /// Pass false when the example manages its own skybox; the panel then
+  /// never touches `scene.skybox` and hides those controls.
+  final bool manageSkybox;
+
+  /// Called with the resolved [EnvironmentMap] after each successful
+  /// selection (null means the renderer's built-in studio default), including
+  /// the [initialEnvironmentId] load.
+  final void Function(EnvironmentMap? map)? onEnvironmentResolved;
 
   /// The [ExampleEnvironment.id] to select at startup, or null to keep the
   /// selector's current environment. Loads (from the cache when possible)
@@ -69,7 +81,7 @@ class _LightingPanelState extends State<LightingPanel> {
     widget.scene.exposure = _exposure;
     widget.scene.environmentIntensity = _environmentIntensity;
     _applyEnvironmentRotation();
-    _applySkybox();
+    if (widget.manageSkybox) _applySkybox();
     widget.selector.addListener(_onSelectorChanged);
     final environmentId = widget.initialEnvironmentId;
     if (environmentId != null && widget.selector.active.id != environmentId) {
@@ -110,7 +122,8 @@ class _LightingPanelState extends State<LightingPanel> {
 
   Future<void> _selectEnvironment(ExampleEnvironment environment) async {
     try {
-      await widget.selector.select(environment, widget.scene);
+      final map = await widget.selector.select(environment, widget.scene);
+      widget.onEnvironmentResolved?.call(map);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -140,32 +153,34 @@ class _LightingPanelState extends State<LightingPanel> {
               onSelected: _selectEnvironment,
             ),
             const SizedBox(height: 4),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Skybox',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
+            if (widget.manageSkybox) ...[
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Skybox',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
                   ),
-                ),
-                Switch(
-                  value: _showSkybox,
-                  onChanged: (value) => setState(() {
-                    _showSkybox = value;
-                    _applySkybox();
-                  }),
-                ),
-              ],
-            ),
-            LabeledSlider(
-              label: 'Sky blur',
-              value: _skySource.blurriness,
-              min: 0.0,
-              max: 1.0,
-              onChanged: _showSkybox
-                  ? (value) => setState(() => _skySource.blurriness = value)
-                  : null,
-            ),
+                  Switch(
+                    value: _showSkybox,
+                    onChanged: (value) => setState(() {
+                      _showSkybox = value;
+                      _applySkybox();
+                    }),
+                  ),
+                ],
+              ),
+              LabeledSlider(
+                label: 'Sky blur',
+                value: _skySource.blurriness,
+                min: 0.0,
+                max: 1.0,
+                onChanged: _showSkybox
+                    ? (value) => setState(() => _skySource.blurriness = value)
+                    : null,
+              ),
+            ],
             LabeledSlider(
               label: 'Exposure',
               value: _exposure,

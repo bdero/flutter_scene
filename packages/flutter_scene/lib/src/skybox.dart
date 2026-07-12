@@ -107,6 +107,18 @@ class ShaderSkySource extends SkySource {
   /// (`prefiltered_radiance`, `brdf_lut`) when the shader declares them.
   bool useEnvironment;
 
+  /// The environment a [useEnvironment] shader samples, overriding the
+  /// scene's.
+  ///
+  /// Null (the default) samples the scene's active environment. Set a fixed
+  /// map when this same sky drives the scene's lighting through a
+  /// `SkyEnvironment`: the scene's environment then holds the sky's own
+  /// bake, and without an override the bake pass substitutes an empty
+  /// environment (a sky cannot sample the environment it is producing). A
+  /// fixed override is safe there, so both the background draw and the bake
+  /// sample it.
+  EnvironmentMap? sampledEnvironment;
+
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _SkyTexture> _textures = {};
 
@@ -176,7 +188,7 @@ class ShaderSkySource extends SkySource {
       EngineLightingUniforms.bindPrefilteredRadiance(
         pass,
         fragmentShader,
-        environment,
+        sampledEnvironment ?? environment,
       );
       pass.bindTexture(
         fragmentShader.getUniformSlot('brdf_lut'),

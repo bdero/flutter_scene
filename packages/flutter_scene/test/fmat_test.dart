@@ -550,17 +550,29 @@ sky { vec3 Sky(vec3 d) { return vec3(0.0); } }
 material { name: "EnvSky", requires: [environment] }
 sky {
   vec3 Sky(vec3 direction) {
-    return SamplePrefilteredRadiance(prefiltered_radiance, direction, 0.5);
+    return SampleEnvironment(direction, 0.5);
   }
 }
 ''';
 
-    test('requires: [environment] declares and records the atlas', () {
+    test('requires: [environment] declares and records the samplers', () {
       final m = parseFmat(envSky);
       expect(m.useEnvironment, isTrue);
       final glsl = emitFragmentGlsl(m);
       expect(glsl, contains('uniform sampler2D prefiltered_radiance;'));
+      expect(glsl, contains('uniform samplerCube prefiltered_radiance_cube;'));
+      expect(glsl, contains('vec3 SampleEnvironment('));
       expect(buildSidecar(m)['use_environment'], isTrue);
+    });
+
+    test('an unsampled environment stays live through the keep-alive', () {
+      final m = parseFmat('''
+material { name: "EnvSky", requires: [environment] }
+sky { vec3 Sky(vec3 direction) { return vec3(0.0); } }
+''');
+      final glsl = emitFragmentGlsl(m);
+      expect(glsl, contains('uniform FragmentKeepAlive'));
+      expect(glsl, contains('SampleEnvironment(vec3(0.0, 1.0, 0.0), 1.0).x'));
     });
 
     test('skies without requires do not declare the atlas', () {
