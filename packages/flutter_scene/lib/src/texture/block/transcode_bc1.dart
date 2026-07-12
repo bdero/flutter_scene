@@ -41,6 +41,22 @@ void transcodeUniversalBlockToBc1(
   // Endpoints, as RGB565.
   var c0 = _pack565(src[si], src[si + 1], src[si + 2]);
   var c1 = _pack565(src[si + 4], src[si + 5], src[si + 6]);
+  // Near-flat blocks can quantize both endpoints to the same 565 value while
+  // the weights stay nonzero. Equal endpoints select the 3-color mode
+  // (color0 <= color1), where index 3 decodes as transparent black, so any
+  // weight in the index-3 band would punch a hole in an opaque texture. The
+  // block is a single color, so emit index 0 everywhere.
+  if (c0 == c1) {
+    out[oi] = c0 & 0xFF;
+    out[oi + 1] = (c0 >> 8) & 0xFF;
+    out[oi + 2] = c1 & 0xFF;
+    out[oi + 3] = (c1 >> 8) & 0xFF;
+    out[oi + 4] = 0;
+    out[oi + 5] = 0;
+    out[oi + 6] = 0;
+    out[oi + 7] = 0;
+    return;
+  }
   // 4-color (opaque) mode requires color0 > color1. If swapped, flip the
   // weight direction below.
   final swapped = c0 < c1;

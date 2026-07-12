@@ -69,6 +69,50 @@ void main() {
       expect(_psnrRgb(rgba, viaBc1), greaterThan(28));
     });
 
+    test('keeps blocks with 565-equal endpoints opaque', () {
+      // Endpoints that differ in rgba8 but quantize to the same RGB565 value.
+      // Before the equal-endpoint guard, such a block was emitted in BC1's
+      // 3-color mode, where weights in the index-3 band decode as transparent
+      // black (white speckles on opaque textures).
+      final block = Uint8List(kBlockBytes);
+      block.setRange(0, 4, [100, 100, 100, 255]);
+      block.setRange(4, 8, [103, 101, 102, 255]);
+      for (var i = 0; i < 8; i++) {
+        // Weights sweep 0..15, covering every index band.
+        block[8 + i] = (i * 2) | ((i * 2 + 1) << 4);
+      }
+      final bc1 = transcodeUniversalToBc1(block, 1);
+      final decoded = decodeBc1ToRgba8(bc1, 4, 4);
+      for (var i = 0; i < decoded.length; i += 4) {
+        expect(decoded[i + 3], 255);
+        // Every texel is the shared endpoint color, (100,100,100) through
+        // RGB565 quantization and bit-replicated expansion.
+        expect(decoded[i], 99);
+        expect(decoded[i + 1], 101);
+        expect(decoded[i + 2], 99);
+      }
+    });
+
+    test('never produces transparent texels from opaque input', () {
+      const w = 32, h = 32;
+      final rng = math.Random(7);
+      final rgba = Uint8List(w * h * 4);
+      // Near-flat noise, the case that collapses endpoints to equal 565
+      // values while keeping nonzero weights.
+      for (var i = 0; i < rgba.length; i += 4) {
+        rgba[i] = 100 + rng.nextInt(4);
+        rgba[i + 1] = 100 + rng.nextInt(4);
+        rgba[i + 2] = 100 + rng.nextInt(4);
+        rgba[i + 3] = 255;
+      }
+      final blocks = encodeUniversalBlocks(rgba, w, h);
+      final bc1 = transcodeUniversalToBc1(blocks, _blockCount(w, h));
+      final decoded = decodeBc1ToRgba8(bc1, w, h);
+      for (var i = 3; i < decoded.length; i += 4) {
+        expect(decoded[i], 255);
+      }
+    });
+
     test('stays close to the universal-block decode it transcodes from', () {
       const w = 32, h = 32;
       final rng = math.Random(5);
