@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:flutter_scene/src/splats/gaussian_splats.dart';
 import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:flutter_scene/src/splats/splat_sort_service.dart';
+import 'package:flutter_scene/src/splats/splat_sorter.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// How a crop box filters the splats of a `SplatComponent`.
@@ -31,9 +32,10 @@ enum SplatCropMode {
 ///
 /// Each instance is one splat. The vertex shader fetches the splat's
 /// parameters from the set's data textures and expands a quad over its
-/// projected footprint. Instances draw presorted back to front by a
-/// background sort that reruns when the view direction drifts, so a fast
-/// orbit can lag the true order by a few frames.
+/// projected footprint. Instances draw presorted back to front, re-sorted
+/// when the view direction drifts. Small sets sort on the calling thread;
+/// larger sets sort in the background, so a fast orbit can lag the true
+/// order by a few frames.
 ///
 /// Pair with a `SplatMaterial` and attach through a `SplatComponent`.
 /// {@category Geometry}
@@ -203,11 +205,32 @@ class SplatGeometry extends Geometry {
     _activeSlot = 0;
   }
 
-  // Kicks a background sort along [dirLocal] (the local-space direction of
-  // increasing view depth), coalescing to the latest request while one is
-  // in flight. The sorter worker holds its own copy of the positions, so a
+  // Sets with at most this many splats sort on the calling thread. The sort
+  // is far cheaper than a worker round-trip at this size, and the order takes
+  // effect within the requesting frame, so a small set never draws in the
+  // identity-order fallback (which single-frame captures can otherwise
+  // observe while the first background sort is in flight).
+  static const int _kSyncSortMax = 4096;
+
+  // Kicks a sort along [dirLocal] (the local-space direction of increasing
+  // view depth). Small sets sort synchronously; larger sets go to the
+  // background sorter, coalescing to the latest request while one is in
+  // flight. The sorter worker holds its own copy of the positions, so a
   // request ships twelve bytes out and the order transfers back.
   void _requestSort(vm.Vector3 dirLocal) {
+    if (splats.count <= _kSyncSortMax) {
+      _lastSortDir = dirLocal;
+      _applyOrder(
+        sortSplatsBackToFront(
+          splats.data.positions,
+          splats.count,
+          dirLocal.x,
+          dirLocal.y,
+          dirLocal.z,
+        ),
+      );
+      return;
+    }
     if (_sortInFlight) {
       _pendingSortDir = dirLocal;
       return;
@@ -223,21 +246,26 @@ class SplatGeometry extends Geometry {
       _sortInFlight = false;
       if (order == null) return; // Disposed mid-sort.
       if (generation != _sortGeneration) return;
-      final slot = (_activeSlot + 1) % _kIndexRingSize;
-      final bytes = ByteData.sublistView(order);
-      final buffer =
-          _indexRing[slot] ??
-          gpu.gpuContext.createDeviceBuffer(
-            gpu.StorageMode.hostVisible,
-            splats.count * 4,
-          );
-      buffer.overwrite(bytes);
-      _indexRing[slot] = buffer;
-      _activeSlot = slot;
+      _applyOrder(order);
       final pending = _pendingSortDir;
       _pendingSortDir = null;
       if (pending != null) _requestSort(pending);
     });
+  }
+
+  // Uploads [order] into the next ring slot and makes it the active order.
+  void _applyOrder(Float32List order) {
+    final slot = (_activeSlot + 1) % _kIndexRingSize;
+    final bytes = ByteData.sublistView(order);
+    final buffer =
+        _indexRing[slot] ??
+        gpu.gpuContext.createDeviceBuffer(
+          gpu.StorageMode.hostVisible,
+          splats.count * 4,
+        );
+    buffer.overwrite(bytes);
+    _indexRing[slot] = buffer;
+    _activeSlot = slot;
   }
 
   @override
