@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 class ExampleAnimation extends StatefulWidget {
@@ -16,6 +17,7 @@ class ExampleAnimation extends StatefulWidget {
 class ExampleAnimationState extends State<ExampleAnimation> {
   Scene scene = Scene();
   bool loaded = false;
+  bool _controlsOpen = true;
   AnimationClip? idleClip;
   AnimationClip? runClip;
   AnimationClip? walkClip;
@@ -99,43 +101,125 @@ class ExampleAnimationState extends State<ExampleAnimation> {
             onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
           ),
         ),
-        // Door open slider
+        // Animation weights are grouped in a side panel instead of occupying
+        // the entire scene width as unlabeled sliders.
         if (idleClip != null)
-          Column(
-            children: [
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  for (final clip in [idleClip, walkClip, runClip])
-                    Slider(
-                      value: clip!.weight,
-                      onChanged: (value) {
-                        setState(() => clip.weight = value);
-                      },
-                    ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Slider(
-                    min: -2,
-                    max: 2,
-                    value: walkClip!.playbackTimeScale,
-                    onChanged: (value) {
-                      setState(() {
-                        idleClip!.playbackTimeScale = value;
-                        walkClip!.playbackTimeScale = value;
-                        runClip!.playbackTimeScale = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
+          ExampleOverlay.bottomLeftPanel(child: _buildControls()),
       ],
     );
   }
+
+  Widget _buildControls() {
+    final clips = <(String, AnimationClip)>[
+      ('Idle weight', idleClip!),
+      ('Walk weight', walkClip!),
+      ('Run weight', runClip!),
+    ];
+    return SizedBox(
+      width: 280,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bodyMaxHeight = constraints.hasBoundedHeight
+              ? min(300.0, max(0.0, constraints.maxHeight - 57.0))
+              : 300.0;
+
+          return Card(
+            color: Colors.black54,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: () =>
+                      setState(() => _controlsOpen = !_controlsOpen),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.animation,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Animation controls',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _controlsOpen
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_controlsOpen) ...[
+                  const Divider(height: 1, color: Colors.white24),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: bodyMaxHeight),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final (label, clip) in clips)
+                            _slider(
+                              label,
+                              clip.weight,
+                              0,
+                              1,
+                              (value) =>
+                                  setState(() => clip.weight = value),
+                            ),
+                          _slider(
+                            'Playback speed',
+                            walkClip!.playbackTimeScale,
+                            -2,
+                            2,
+                            (value) => setState(() {
+                              idleClip!.playbackTimeScale = value;
+                              walkClip!.playbackTimeScale = value;
+                              runClip!.playbackTimeScale = value;
+                            }),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        '$label: ${value.toStringAsFixed(2)}',
+        style: const TextStyle(color: Colors.white70, fontSize: 12),
+      ),
+      Slider(value: value, min: min, max: max, onChanged: onChanged),
+    ],
+  );
 }

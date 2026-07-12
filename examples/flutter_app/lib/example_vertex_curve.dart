@@ -12,6 +12,8 @@ import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 enum _Demo {
@@ -44,32 +46,18 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
             _Demo.runner => const _RunnerDemo(key: ValueKey('runner')),
           },
         ),
-        Positioned(
-          top: 16,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Card(
-              color: Colors.black54,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                child: DropdownButton<_Demo>(
-                  value: _demo,
-                  dropdownColor: Colors.black87,
-                  underline: const SizedBox.shrink(),
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  items: [
-                    for (final d in _Demo.values)
-                      DropdownMenuItem(value: d, child: Text(d.label)),
-                  ],
-                  onChanged: (d) {
-                    if (d != null) setState(() => _demo = d);
-                  },
-                ),
-              ),
+        ExampleOverlay.topLeft(
+          child: SizedBox(
+            width: 150,
+            child: ExampleDropdown<_Demo>(
+              value: _demo,
+              items: [
+                for (final d in _Demo.values)
+                  DropdownMenuItem(value: d, child: Text(d.label)),
+              ],
+              onChanged: (d) {
+                if (d != null) setState(() => _demo = d);
+              },
             ),
           ),
         ),
@@ -314,22 +302,68 @@ class _RunnerDemoState extends State<_RunnerDemo> {
 // Shared controls.
 // ---------------------------------------------------------------------------
 
-class _Controls extends StatelessWidget {
+class _Controls extends StatefulWidget {
   const _Controls({required this.rows});
 
   final List<Widget> rows;
 
   @override
+  State<_Controls> createState() => _ControlsState();
+}
+
+class _ControlsState extends State<_Controls> {
+  bool _open = true;
+
+  @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16,
+    return ExampleOverlay.bottomLeftPanel(
       child: Card(
         color: Colors.black54,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.waves_outlined, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Vertex controls',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _open ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_open) ...[
+              const Divider(height: 1, color: Colors.white24),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: widget.rows,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
