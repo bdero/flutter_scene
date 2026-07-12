@@ -123,6 +123,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_sh_project.frag"
   },
+  "ShCompositeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_sh_composite.frag"
+  },
   "SkyGradientFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_sky_gradient.frag"

@@ -110,17 +110,19 @@ uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
 uniform samplerCube prefiltered_radiance_cube;
 uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
-// Diffuse irradiance SH coefficients: a 9x1 texture, coefficient i at texel i
-// (RGB). Sampled instead of read from a uniform so a sky's coefficients,
-// computed on the GPU, need no read-back. The diffuse_sh* uniform fields above
-// are unused.
+// Diffuse irradiance SH coefficients, coefficient i at texel i (RGB). Sampled
+// instead of read from a uniform so a sky's coefficients, computed on the GPU,
+// need no read-back (the diffuse_sh* uniform fields above are unused). Rows
+// select the environment: row 0 primary, row 1 the cross-fade secondary. When
+// no cross-fade is active the primary's 9x1 texture is bound directly and both
+// row coordinates land on its single row.
 uniform sampler2D sh_coefficients;
 // The secondary environment cross-faded in by frag_info.radiance_blend.x: its
 // prefiltered radiance (2D atlas and cubemap, the same layout pair as the
-// primary) and diffuse SH. A dummy is bound when no cross-fade is active.
+// primary). Its diffuse SH rides in sh_coefficients row 1. A dummy is bound
+// when no cross-fade is active.
 uniform sampler2D prefiltered_radiance_b;
 uniform samplerCube prefiltered_radiance_cube_b;
-uniform sampler2D sh_coefficients_b;
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.
