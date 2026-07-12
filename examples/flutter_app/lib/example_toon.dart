@@ -10,6 +10,7 @@
 //   4. Construct a ShaderMaterial, set its uniform block + texture by
 //      name, attach it to the model's mesh primitives.
 
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Material;
@@ -17,6 +18,7 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 class ExampleToon extends StatefulWidget {
@@ -29,6 +31,7 @@ class ExampleToon extends StatefulWidget {
 class _ExampleToonState extends State<ExampleToon> {
   Scene scene = Scene();
   bool loaded = false;
+  bool _controlsOpen = true;
 
   // Wrapper around the loaded Dash node. Spinning this instead of the
   // camera keeps the world-space light direction (which we use for
@@ -194,65 +197,120 @@ class _ExampleToonState extends State<ExampleToon> {
             },
           ),
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SliderRow(
-                    label: 'Band count',
-                    value: bandCount,
-                    min: 1,
-                    max: 8,
-                    onChanged: (v) => setState(() {
-                      bandCount = v.roundToDouble();
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim strength',
-                    value: rimStrength,
-                    min: 0,
-                    max: 2,
-                    onChanged: (v) => setState(() {
-                      rimStrength = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim width',
-                    value: rimWidth,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      rimWidth = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Ambient',
-                    value: ambient,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      ambient = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        ExampleOverlay.bottomLeftPanel(
+          child: _buildControls(),
         ),
       ],
     );
   }
+
+  Widget _buildControls() => SizedBox(
+    width: 340,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final bodyMaxHeight = constraints.hasBoundedHeight
+            ? min(300.0, max(0.0, constraints.maxHeight - 57.0))
+            : 300.0;
+
+        return Card(
+          color: Colors.black54,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () => setState(() => _controlsOpen = !_controlsOpen),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.palette_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Toon controls',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        _controlsOpen
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_controlsOpen) ...[
+                const Divider(height: 1, color: Colors.white24),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: bodyMaxHeight),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SliderRow(
+                          label: 'Band count',
+                          value: bandCount,
+                          min: 1,
+                          max: 8,
+                          onChanged: (v) => setState(() {
+                            bandCount = v.roundToDouble();
+                            _refreshUniforms(_toonMaterial!);
+                          }),
+                        ),
+                        _SliderRow(
+                          label: 'Rim strength',
+                          value: rimStrength,
+                          min: 0,
+                          max: 2,
+                          onChanged: (v) => setState(() {
+                            rimStrength = v;
+                            _refreshUniforms(_toonMaterial!);
+                          }),
+                        ),
+                        _SliderRow(
+                          label: 'Rim width',
+                          value: rimWidth,
+                          min: 0,
+                          max: 1,
+                          onChanged: (v) => setState(() {
+                            rimWidth = v;
+                            _refreshUniforms(_toonMaterial!);
+                          }),
+                        ),
+                        _SliderRow(
+                          label: 'Ambient',
+                          value: ambient,
+                          min: 0,
+                          max: 1,
+                          onChanged: (v) => setState(() {
+                            ambient = v;
+                            _refreshUniforms(_toonMaterial!);
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    ),
+  );
 }
 
 class _SliderRow extends StatelessWidget {

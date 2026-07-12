@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 class ExampleCar extends StatefulWidget {
@@ -24,6 +25,7 @@ class NodeState {
 class ExampleCarState extends State<ExampleCar> {
   Scene scene = Scene();
   bool loaded = false;
+  bool _controlsOpen = true;
 
   double wheelRotation = 0;
 
@@ -162,88 +164,135 @@ class ExampleCarState extends State<ExampleCar> {
             },
           ),
         ),
-        // Door open slider
-        Column(
-          children: [
-            const Spacer(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('Sky blur'),
-                SizedBox(
-                  width: 220,
-                  child: Slider(
-                    value: _skySource.blurriness,
-                    onChanged: (value) {
-                      setState(() => _skySource.blurriness = value);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final doorName in [
-                  'DoorFront.L',
-                  'DoorFront.R',
-                  'DoorBack.L',
-                  'DoorBack.R',
-                ])
-                  Expanded(
-                    child: Slider(
-                      value: nodes[doorName]!.amount,
-                      onChanged: (value) {
-                        setState(() => _applyDoorPose(doorName, value));
-                      },
-                    ),
-                  ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: nodes['Frunk']!.amount,
-                    onChanged: (value) {
-                      setState(() => _applyDoorPose('Frunk', value));
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: nodes['Trunk']!.amount,
-                    onChanged: (value) {
-                      setState(() => _applyDoorPose('Trunk', value));
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: nodes['WheelBack.L']!.amount,
-                    onChanged: (value) {
-                      setState(() => nodes['WheelBack.L']!.amount = value);
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    min: -1,
-                    max: 1,
-                    value: nodes['WheelFront.L']!.amount,
-                    onChanged: (value) {
-                      setState(() => nodes['WheelFront.L']!.amount = value);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        ExampleOverlay.bottomLeftPanel(child: _buildControls()),
       ],
     );
   }
+
+  Widget _buildControls() => SizedBox(
+    width: 280,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final bodyHeight = constraints.hasBoundedHeight
+            ? min(360.0, max(0.0, constraints.maxHeight - 57.0))
+            : 360.0;
+
+        return Card(
+          color: Colors.black54,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Keep the title available while the long control list scrolls.
+              InkWell(
+                onTap: () => setState(() => _controlsOpen = !_controlsOpen),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.directions_car,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Car controls',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        _controlsOpen
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_controlsOpen) ...[
+                const Divider(height: 1, color: Colors.white24),
+                SizedBox(
+                  height: bodyHeight,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _slider('Sky blur', _skySource.blurriness, 0, 1, (
+                          value,
+                        ) {
+                          setState(() => _skySource.blurriness = value);
+                        }),
+                        for (final (label, name) in const [
+                          ('Front door L', 'DoorFront.L'),
+                          ('Front door R', 'DoorFront.R'),
+                          ('Back door L', 'DoorBack.L'),
+                          ('Back door R', 'DoorBack.R'),
+                          ('Frunk', 'Frunk'),
+                          ('Trunk', 'Trunk'),
+                        ])
+                          _slider(label, nodes[name]!.amount, 0, 1, (value) {
+                            setState(() => _applyDoorPose(name, value));
+                          }),
+                        _slider(
+                          'Rear wheel speed',
+                          nodes['WheelBack.L']!.amount,
+                          0,
+                          1,
+                          (value) {
+                            setState(
+                              () => nodes['WheelBack.L']!.amount = value,
+                            );
+                          },
+                        ),
+                        _slider(
+                          'Front wheel steer',
+                          nodes['WheelFront.L']!.amount,
+                          -1,
+                          1,
+                          (value) {
+                            setState(
+                              () => nodes['WheelFront.L']!.amount = value,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    ),
+  );
+
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        '$label: ${value.toStringAsFixed(2)}',
+        style: const TextStyle(color: Colors.white70, fontSize: 12),
+      ),
+      Slider(value: value, min: min, max: max, onChanged: onChanged),
+    ],
+  );
 
   // Advances the wheel spin/steer each frame from the slider-driven amounts.
   void _updateWheels() {

@@ -11,6 +11,8 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'lighting_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
@@ -339,6 +341,14 @@ class _StressSceneState extends State<_StressScene> {
   @override
   void initState() {
     super.initState();
+    // Keep an actual scene visible while a remote stress asset is downloading.
+    _scene.skybox = Skybox(
+      GradientSkySource(
+        zenithColor: vm.Vector3(0.06, 0.08, 0.12),
+        horizonColor: vm.Vector3(0.18, 0.22, 0.29),
+        groundColor: vm.Vector3(0.035, 0.045, 0.065),
+      ),
+    );
     // Lighting (the directional key light and shadows) is driven by the
     // shared settings panel via ExampleSettings.applyTo.
     unawaited(_load());
@@ -549,6 +559,7 @@ class _StressSceneState extends State<_StressScene> {
   @override
   void dispose() {
     _focusNode.dispose();
+    _environmentSelector.dispose();
     _scene.removeAll();
     super.dispose();
   }
@@ -561,13 +572,16 @@ class _StressSceneState extends State<_StressScene> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        if (_ready)
-          Focus(
-            focusNode: _focusNode,
-            autofocus: true,
-            onKeyEvent: _quake.onKeyEvent,
+        Focus(
+          focusNode: _focusNode,
+          autofocus: _ready,
+          onKeyEvent: _quake.onKeyEvent,
+          child: IgnorePointer(
+            ignoring: !_ready,
             child: MouseRegion(
-              cursor: SystemMouseCursors.move,
+              cursor: _ready
+                  ? SystemMouseCursors.move
+                  : SystemMouseCursors.basic,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onPanDown: (_) => _focusNode.requestFocus(),
@@ -584,109 +598,58 @@ class _StressSceneState extends State<_StressScene> {
                 ),
               ),
             ),
-          )
-        else if (_error != null)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Text(
-                'Failed to load ${widget.test.title}:\n$_error',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          )
-        else
+          ),
+        ),
+        if (_error != null)
+          _LoadFailure(title: widget.test.title, detail: '$_error')
+        else if (!_ready)
           _LoadingOverlay(
             title: widget.test.title,
             downloaded: _downloaded,
             total: _total,
           ),
-        // Below the example picker: the settings sidebar owns the
-        // top-right corner, and the app dropdown owns the top-left.
-        Positioned(
-          left: 8,
-          top: 56,
-          child: Material(
-            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-            shape: const CircleBorder(),
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: widget.onBack,
-              tooltip: 'Back to stress tests',
-            ),
-          ),
-        ),
-        // Importer toggle (single-file .glb only; offline has no multi-file
-        // path). Lets the offline ahead-of-time importer be compared against
-        // the runtime importer on the same model.
         if (_ready && !widget.test.isMultiFile)
-          Positioned(
-            top: 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Material(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(right: 8),
-                        child: Text('Importer'),
-                      ),
-                      SegmentedButton<_ImporterMode>(
-                        showSelectedIcon: false,
-                        segments: const [
-                          ButtonSegment(
-                            value: _ImporterMode.runtime,
-                            label: Text('Runtime'),
-                          ),
-                          ButtonSegment(
-                            value: _ImporterMode.offline,
-                            label: Text('Offline'),
-                          ),
-                        ],
-                        selected: {_importerMode},
-                        onSelectionChanged: (selection) =>
-                            _setImporterMode(selection.first),
-                      ),
-                    ],
-                  ),
+          ExampleOverlay.topCenterAction(
+            maxWidth: 400,
+            leadingReservation: 160,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ExampleActionButton(
+                      tooltip: 'Back to stress tests',
+                      icon: Icons.arrow_back,
+                      onPressed: widget.onBack,
+                    ),
+                    const SizedBox(width: 12),
+                    _ImporterModeControl(
+                      selected: _importerMode,
+                      onChanged: _setImporterMode,
+                    ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                const ExampleActionHint(
+                  message:
+                      'WASD move  ·  QE up/down  ·  Drag: look  ·  Shift: boost',
+                ),
+              ],
+            ),
+          ),
+        if (!_ready || widget.test.isMultiFile)
+          ExampleOverlay.topLeadingAction(
+            child: ExampleActionButton(
+              tooltip: 'Back to stress tests',
+              icon: Icons.arrow_back,
+              onPressed: widget.onBack,
             ),
           ),
         if (_ready)
-          Positioned(
-            left: 8,
-            bottom: 8,
+          ExampleOverlay.bottomLeftPanel(
             child: LightingPanel(scene: _scene, selector: _environmentSelector),
-          ),
-        if (_ready)
-          Positioned(
-            right: 8,
-            bottom: 8,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'WASD move · QE up/down · drag to look · shift to boost',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
-            ),
           ),
       ],
     );
@@ -709,29 +672,127 @@ class _LoadingOverlay extends StatelessWidget {
     final total = this.total;
     final progress = (total != null && total > 0) ? downloaded / total : null;
     return Center(
-      child: SizedBox(
-        width: 260,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Downloading $title',
-              style: Theme.of(context).textTheme.titleMedium,
+      child: Material(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(8),
+        elevation: 2,
+        child: SizedBox(
+          width: 280,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Downloading $title',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(
+                  value: progress,
+                  color: Colors.deepPurpleAccent,
+                  backgroundColor: Colors.white24,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  total == null
+                      ? _formatBytes(downloaded)
+                      : '${_formatBytes(downloaded)} / ${_formatBytes(total)}',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            LinearProgressIndicator(value: progress),
-            const SizedBox(height: 8),
-            Text(
-              total == null
-                  ? _formatBytes(downloaded)
-                  : '${_formatBytes(downloaded)} / ${_formatBytes(total)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _LoadFailure extends StatelessWidget {
+  const _LoadFailure({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 2,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'Failed to load $title:\n$detail',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ImporterModeControl extends StatelessWidget {
+  const _ImporterModeControl({required this.selected, required this.onChanged});
+
+  final _ImporterMode selected;
+  final ValueChanged<_ImporterMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.black54,
+    borderRadius: BorderRadius.circular(8),
+    elevation: 2,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4, right: 8),
+            child: Text('Importer', style: TextStyle(color: Colors.white)),
+          ),
+          SegmentedButton<_ImporterMode>(
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? Colors.white24
+                    : Colors.transparent,
+              ),
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+              side: const WidgetStatePropertyAll(
+                BorderSide(color: Colors.white38),
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+            segments: const [
+              ButtonSegment(
+                value: _ImporterMode.runtime,
+                label: Text('Runtime'),
+              ),
+              ButtonSegment(
+                value: _ImporterMode.offline,
+                label: Text('Offline'),
+              ),
+            ],
+            selected: {selected},
+            onSelectionChanged: (selection) => onChanged(selection.first),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 // Downloads (and caches) the model for `test` and imports it.

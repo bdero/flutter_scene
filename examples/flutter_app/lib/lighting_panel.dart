@@ -54,6 +54,7 @@ class LightingPanel extends StatefulWidget {
 }
 
 class _LightingPanelState extends State<LightingPanel> {
+  bool _panelOpen = true;
   late bool _showSkybox = widget.showSkybox;
   final EnvironmentSkySource _skySource = EnvironmentSkySource();
   late double _exposure = widget.initialExposure;
@@ -121,104 +122,160 @@ class _LightingPanelState extends State<LightingPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 248,
-      constraints: const BoxConstraints(maxHeight: 440),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EnvironmentMenu(
-              active: widget.selector.active,
-              loading: widget.selector.loading,
-              onSelected: _selectEnvironment,
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Skybox',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 360.0;
+        final panelHeight = maxHeight < 360 ? maxHeight : 360.0;
+        final availableBodyHeight = panelHeight - 136;
+        final bodyMaxHeight = availableBodyHeight < 300
+            ? availableBodyHeight
+            : 300.0;
+
+        return Container(
+          width: 340,
+          height: _panelOpen ? null : 48,
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: () => setState(() => _panelOpen = !_panelOpen),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.light_mode_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Lighting',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        _panelOpen ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.white,
+                      ),
+                    ],
                   ),
                 ),
-                Switch(
-                  value: _showSkybox,
-                  onChanged: (value) => setState(() {
-                    _showSkybox = value;
-                    _applySkybox();
-                  }),
+              ),
+              if (_panelOpen) ...[
+                const SizedBox(height: 4),
+                EnvironmentMenu(
+                  active: widget.selector.active,
+                  loading: widget.selector.loading,
+                  onSelected: _selectEnvironment,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Skybox',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                    Switch(
+                      value: _showSkybox,
+                      onChanged: (value) => setState(() {
+                        _showSkybox = value;
+                        _applySkybox();
+                      }),
+                    ),
+                  ],
+                ),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: bodyMaxHeight),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        LabeledSlider(
+                          label: 'Sky blur',
+                          value: _skySource.blurriness,
+                          min: 0.0,
+                          max: 1.0,
+                          onChanged: _showSkybox
+                              ? (value) => setState(
+                                  () => _skySource.blurriness = value,
+                                )
+                              : null,
+                        ),
+                        LabeledSlider(
+                          label: 'Exposure',
+                          value: _exposure,
+                          min: 0.1,
+                          max: 8.0,
+                          onChanged: (value) => setState(() {
+                            _exposure = value;
+                            widget.scene.exposure = value;
+                          }),
+                        ),
+                        LabeledSlider(
+                          label: 'IBL intensity',
+                          value: _environmentIntensity,
+                          min: 0.0,
+                          max: 4.0,
+                          onChanged: (value) => setState(() {
+                            _environmentIntensity = value;
+                            widget.scene.environmentIntensity = value;
+                          }),
+                        ),
+                        LabeledSlider(
+                          label: 'Env rotation X',
+                          value: _envRotationX,
+                          min: -180.0,
+                          max: 180.0,
+                          onChanged: (value) => setState(() {
+                            _envRotationX = value;
+                            _applyEnvironmentRotation();
+                          }),
+                        ),
+                        LabeledSlider(
+                          label: 'Env rotation Y',
+                          value: _envRotationY,
+                          min: -180.0,
+                          max: 180.0,
+                          onChanged: (value) => setState(() {
+                            _envRotationY = value;
+                            _applyEnvironmentRotation();
+                          }),
+                        ),
+                        LabeledSlider(
+                          label: 'Env rotation Z',
+                          value: _envRotationZ,
+                          min: -180.0,
+                          max: 180.0,
+                          onChanged: (value) => setState(() {
+                            _envRotationZ = value;
+                            _applyEnvironmentRotation();
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
-            ),
-            LabeledSlider(
-              label: 'Sky blur',
-              value: _skySource.blurriness,
-              min: 0.0,
-              max: 1.0,
-              onChanged: _showSkybox
-                  ? (value) => setState(() => _skySource.blurriness = value)
-                  : null,
-            ),
-            LabeledSlider(
-              label: 'Exposure',
-              value: _exposure,
-              min: 0.1,
-              max: 8.0,
-              onChanged: (value) => setState(() {
-                _exposure = value;
-                widget.scene.exposure = value;
-              }),
-            ),
-            LabeledSlider(
-              label: 'IBL intensity',
-              value: _environmentIntensity,
-              min: 0.0,
-              max: 4.0,
-              onChanged: (value) => setState(() {
-                _environmentIntensity = value;
-                widget.scene.environmentIntensity = value;
-              }),
-            ),
-            LabeledSlider(
-              label: 'Env rotation X',
-              value: _envRotationX,
-              min: -180.0,
-              max: 180.0,
-              onChanged: (value) => setState(() {
-                _envRotationX = value;
-                _applyEnvironmentRotation();
-              }),
-            ),
-            LabeledSlider(
-              label: 'Env rotation Y',
-              value: _envRotationY,
-              min: -180.0,
-              max: 180.0,
-              onChanged: (value) => setState(() {
-                _envRotationY = value;
-                _applyEnvironmentRotation();
-              }),
-            ),
-            LabeledSlider(
-              label: 'Env rotation Z',
-              value: _envRotationZ,
-              min: -180.0,
-              max: 180.0,
-              onChanged: (value) => setState(() {
-                _envRotationZ = value;
-                _applyEnvironmentRotation();
-              }),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -41,6 +41,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart' show EnvironmentSelector, fetchResource;
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart';
 import 'materialize_settings.dart';
@@ -87,10 +88,9 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
 
   PerspectiveCamera _camera = PerspectiveCamera(position: vm.Vector3(0, 0, -3));
 
-  // Timeline. _t runs past [0, 1] a little so the effect holds briefly when
-  // fully materialized and fully hidden.
-  double _t = -0.05;
-  bool _playing = true;
+  // Timeline owns the frame-driven progress and exposes it to the playback
+  // bar without rebuilding the whole scene on every tick.
+  final MaterializeTimeline _timeline = MaterializeTimeline();
 
   @override
   void initState() {
@@ -291,7 +291,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   void _applyProgress(double elapsedSeconds) {
     if (_shellMaterials.isEmpty) return;
     final s = _settings;
-    final p = _t.clamp(0.0, 1.0);
+    final p = _timeline.progress;
     final eased = p * p * (3 - 2 * p);
 
     // Pad past the noise amplitude so the wobbled boundaries fully clear.
@@ -329,6 +329,8 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
 
   @override
   void dispose() {
+    _timeline.dispose();
+    _environmentSelector.dispose();
     scene.removeAll();
     super.dispose();
   }
@@ -336,10 +338,11 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return Center(
+      return _MaterializeStatusCard(
         child: Text(
           'Failed to load the model.\n$_error',
           textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white),
         ),
       );
     }
@@ -347,18 +350,24 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       final fraction = (_downloaded / _kHelmetSizeBytes)
           .clamp(0.0, 1.0)
           .toDouble();
-      return Center(
+      return _MaterializeStatusCard(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
               width: 240,
-              child: LinearProgressIndicator(value: fraction),
+              child: LinearProgressIndicator(
+                value: fraction,
+                color: Colors.deepPurpleAccent,
+                backgroundColor: Colors.white24,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
               'Downloading DamagedHelmet '
               '(${(_downloaded / (1024 * 1024)).toStringAsFixed(1)} MB)',
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -373,20 +382,18 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
             camera: _camera,
             onTick: (elapsed, deltaSeconds) {
               final seconds = elapsed.inMicroseconds / 1e6;
-              if (_playing) {
-                _t += deltaSeconds / _settings.duration;
-                // Hold briefly at both ends, then loop.
-                if (_t > 1.3) _t = -0.08;
-              }
+              _timeline.advance(
+                deltaSeconds: deltaSeconds,
+                cycleSeconds: _settings.duration,
+              );
               _spin.localTransform = vm.Matrix4.rotationY(seconds * 0.25);
               _applyProgress(seconds);
               exampleSettings.applyTo(scene);
             },
           ),
         ),
-        Positioned(
-          left: 8,
-          bottom: 8,
+        ExampleOverlay.bottomLeftPanel(
+          paired: true,
           child: LightingPanel(
             scene: scene,
             selector: _environmentSelector,
@@ -397,37 +404,44 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
             initialRotationDegrees: vm.Vector3(0.0, -80.7, 0.0),
           ),
         ),
-        // The panel starts below the debug banner and the global settings
-        // buttons in the top-right corner.
-        Positioned(
-          top: 72,
-          right: 8,
-          bottom: 8,
+        // Long editable panels share the left/right bottom slots. The fixed
+        // header remains visible while settings scroll inside the panel.
+        ExampleOverlay.bottomRightPanel(
+          paired: true,
           child: MaterializeSettingsPanel(
             settings: _settings,
             onChanged: _applySettings,
           ),
         ),
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: MaterializePlaybackBar(
-              playing: _playing,
-              progress: _t.clamp(0.0, 1.0).toDouble(),
-              onPlayingChanged: (playing) => setState(() => _playing = playing),
-              onRestart: () => setState(() {
-                _t = -0.05;
-                _playing = true;
-              }),
-              onScrub: (value) => setState(() => _t = value),
+        ExampleOverlay.topCenterAction(
+          child: ListenableBuilder(
+            listenable: _timeline,
+            builder: (context, child) => MaterializePlaybackBar(
+              playing: _timeline.playing,
+              progress: _timeline.progress,
+              onPlayingChanged: _timeline.setPlaying,
+              onRestart: _timeline.restart,
+              onScrub: _timeline.scrub,
             ),
           ),
         ),
       ],
     );
   }
+}
+
+class _MaterializeStatusCard extends StatelessWidget {
+  const _MaterializeStatusCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Card(
+      color: Colors.black87,
+      child: Padding(padding: const EdgeInsets.all(20), child: child),
+    ),
+  );
 }
 
 /// Derives the Materialize passes' geometry from one node's merged source

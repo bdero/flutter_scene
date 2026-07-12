@@ -249,16 +249,23 @@ class EnvironmentMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white12,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(8),
       child: PopupMenuButton<ExampleEnvironment>(
         tooltip: 'Select environment',
         position: PopupMenuPosition.over,
+        color: const Color(0xFF1E1E1E),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
         onSelected: onSelected,
         itemBuilder: (context) => [
           for (final environment in exampleEnvironments)
             PopupMenuItem<ExampleEnvironment>(
               value: environment,
-              child: Text(environment.title),
+              child: Text(
+                environment.title,
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
         ],
         child: Padding(

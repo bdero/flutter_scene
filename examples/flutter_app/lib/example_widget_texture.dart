@@ -5,6 +5,8 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'lighting_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
@@ -41,6 +43,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   WidgetComponent? _component;
   double _elapsedSeconds = 0.0;
   final EnvironmentSelector _environmentSelector = EnvironmentSelector();
+  String _widgetInputDebugLabel = 'no hit';
 
   @override
   void initState() {
@@ -119,6 +122,27 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
     return hit?.node.getComponent<WidgetComponent>() != null;
   }
 
+  void _updateWidgetInputDebug(Offset position, Size viewSize) {
+    final camera = _camera;
+    if (camera == null || viewSize.isEmpty) return;
+    final hit = scene.raycast(camera.screenPointToRay(position, viewSize));
+    final label = hit == null
+        ? 'no hit'
+        : '${hit.node.name.isEmpty ? '(unnamed)' : hit.node.name}  '
+              'd=${hit.distance.toStringAsFixed(2)}  '
+              'uv=${hit.uv == null ? 'none' : '(${hit.uv!.x.toStringAsFixed(3)}, ${hit.uv!.y.toStringAsFixed(3)})'}'
+              '${hit.node.getComponent<WidgetComponent>() != null ? '  [widget]' : ''}';
+    if (label != _widgetInputDebugLabel) {
+      setState(() => _widgetInputDebugLabel = label);
+    }
+  }
+
+  @override
+  void dispose() {
+    _environmentSelector.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -127,89 +151,124 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
       child: Stack(
         children: [
           LayoutBuilder(
-            builder: (context, constraints) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (details) {
-                // Camera look only when the drag starts off the screen; on
-                // the screen, SceneView's automatic input drives the
-                // widgets (including drag-scrolling the panel).
-                _looking = !_overWidget(
-                  details.localPosition,
-                  constraints.biggest,
-                );
-              },
-              onPanUpdate: (details) {
-                if (_looking) _quakeCamera.look(details.delta);
-              },
-              onPanEnd: (details) => _looking = false,
-              onPanCancel: () => _looking = false,
-              child: SceneView(
-                scene,
-                debugWidgetInput: true,
-                cameraBuilder: (elapsed) {
-                  _quakeCamera.move(elapsed.inMicroseconds / 1e6);
-                  return _camera = _quakeCamera.camera;
+            builder: (context, constraints) => Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) => _updateWidgetInputDebug(
+                event.localPosition,
+                constraints.biggest,
+              ),
+              onPointerHover: (event) => _updateWidgetInputDebug(
+                event.localPosition,
+                constraints.biggest,
+              ),
+              onPointerMove: (event) => _updateWidgetInputDebug(
+                event.localPosition,
+                constraints.biggest,
+              ),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (details) {
+                  // Camera look only when the drag starts off the screen; on
+                  // the screen, SceneView's automatic input drives the
+                  // widgets (including drag-scrolling the panel).
+                  _looking = !_overWidget(
+                    details.localPosition,
+                    constraints.biggest,
+                  );
                 },
-                onTick: (elapsed, deltaSeconds) {
-                  exampleSettings.applyTo(scene);
-                  _elapsedSeconds = elapsed.inMicroseconds / 1e6;
-                  _material?.parameters.setFloat('time', _elapsedSeconds);
-                  // Recursive mode samples the scene's own previous frame,
-                  // a one-frame feedback loop through the CRT filter.
-                  final material = _material;
-                  final component = _component;
-                  if (material != null && component != null) {
-                    final feedback = _recursive
-                        ? scene.surface.lastSwapchainColorTexture()
-                        : null;
-                    final texture = feedback ?? component.controller.texture;
-                    if (texture != null) {
-                      material.parameters.setTexture('screen_texture', texture);
+                onPanUpdate: (details) {
+                  if (_looking) _quakeCamera.look(details.delta);
+                },
+                onPanEnd: (details) => _looking = false,
+                onPanCancel: () => _looking = false,
+                child: SceneView(
+                  scene,
+                  cameraBuilder: (elapsed) {
+                    _quakeCamera.move(elapsed.inMicroseconds / 1e6);
+                    return _camera = _quakeCamera.camera;
+                  },
+                  onTick: (elapsed, deltaSeconds) {
+                    exampleSettings.applyTo(scene);
+                    _elapsedSeconds = elapsed.inMicroseconds / 1e6;
+                    _material?.parameters.setFloat('time', _elapsedSeconds);
+                    // Recursive mode samples the scene's own previous frame,
+                    // a one-frame feedback loop through the CRT filter.
+                    final material = _material;
+                    final component = _component;
+                    if (material != null && component != null) {
+                      final feedback = _recursive
+                          ? scene.surface.lastSwapchainColorTexture()
+                          : null;
+                      final texture = feedback ?? component.controller.texture;
+                      if (texture != null) {
+                        material.parameters.setTexture(
+                          'screen_texture',
+                          texture,
+                        );
+                      }
                     }
-                  }
-                },
+                  },
+                ),
               ),
             ),
           ),
-          Positioned(
-            left: 8,
-            bottom: 8,
+          ExampleOverlay.topCenterAction(
+            child: ExampleActionHint(message: _widgetInputDebugLabel),
+          ),
+          ExampleOverlay.bottomLeftPanel(
             child: LightingPanel(scene: scene, selector: _environmentSelector),
           ),
-          Positioned(
-            right: 8,
-            bottom: 8,
-            child: Row(
+          ExampleOverlay.bottomRight(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                const Text(
-                  'recursive',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                Switch(
-                  value: _recursive,
-                  onChanged: (value) => setState(() => _recursive = value),
-                ),
-              ],
-            ),
-          ),
-          // Capture diagnostics.
-          Positioned(
-            right: 8,
-            bottom: 48,
-            child: _component == null
-                ? const SizedBox.shrink()
-                : ListenableBuilder(
-                    listenable: _component!.controller,
-                    builder: (context, _) => Text(
-                      'captures: ${_component!.controller.captureCount}  '
-                      'last: ${_component!.controller.lastCaptureDuration.inMilliseconds}ms',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                if (_component != null)
+                  Card(
+                    color: Colors.black54,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: ListenableBuilder(
+                        listenable: _component!.controller,
+                        builder: (context, _) => Text(
+                          'captures: ${_component!.controller.captureCount}  '
+                          'last: ${_component!.controller.lastCaptureDuration.inMilliseconds}ms',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
                   ),
+                Card(
+                  color: Colors.black54,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'recursive',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                        Switch(
+                          value: _recursive,
+                          onChanged: (value) =>
+                              setState(() => _recursive = value),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

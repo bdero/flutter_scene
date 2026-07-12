@@ -8,6 +8,8 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -291,10 +293,12 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       position,
       rotation,
     );
-    _dropped.add(node);
-    if (_dropped.length > _maxDropped) {
-      scene.remove(_dropped.removeAt(0));
-    }
+    setState(() {
+      _dropped.add(node);
+      if (_dropped.length > _maxDropped) {
+        scene.remove(_dropped.removeAt(0));
+      }
+    });
   }
 
   Node _addBodyMesh(
@@ -361,35 +365,20 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
             ),
           ),
         ),
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Card(
-              color: Colors.black54,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Tap to drop a shape  •  drag to look  •  WASD/QE to move',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    const SizedBox(height: 6),
-                    FilledButton.tonal(
-                      onPressed: _dropped.isEmpty ? null : _clear,
-                      child: const Text('Clear dropped'),
-                    ),
-                  ],
-                ),
+        ExampleOverlay.topCenterAction(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ExampleActionHint(
+                message: 'Tap: drop  ·  Drag: look  ·  WASD/QE: move',
               ),
-            ),
+              const SizedBox(width: 8),
+              ExampleActionButton(
+                tooltip: 'Clear dropped bodies',
+                onPressed: _dropped.isEmpty ? null : _clear,
+                icon: Icons.delete_outline,
+              ),
+            ],
           ),
         ),
       ],

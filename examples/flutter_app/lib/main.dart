@@ -185,6 +185,16 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
+        cardTheme: const CardThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
+        ),
+        popupMenuTheme: const PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
+        ),
       ),
       home: Scaffold(
         body: FutureBuilder<void>(
@@ -201,26 +211,34 @@ class _MyAppState extends State<MyApp> {
               children: [
                 SizedBox.expand(child: examples[selectedExample]!(context)),
                 // Example picker (top-left, overlaid on the scene).
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: _ExamplePicker(
-                    examples: examples.keys.toList(growable: false),
-                    selected: selectedExample,
-                    onSelected: (next) {
-                      setState(() {
-                        selectedExample = next;
-                        // Every example runs on its own settings instance;
-                        // examples listed in settingsDefaults start from
-                        // their own defaults instead of the stock ones.
-                        resetExampleSettings(settingsDefaults[next]);
-                      });
-                    },
+                SafeArea(
+                  minimum: const EdgeInsets.all(8),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: _ExamplePicker(
+                      examples: examples.keys.toList(growable: false),
+                      selected: selectedExample,
+                      onSelected: (next) {
+                        setState(() {
+                          selectedExample = next;
+                          // Every example runs on its own settings instance;
+                          // examples listed in settingsDefaults start from
+                          // their own defaults instead of the stock ones.
+                          resetExampleSettings(settingsDefaults[next]);
+                        });
+                      },
+                    ),
                   ),
                 ),
                 // Settings sidebar (top-right): global post-processing
                 // controls applied to whichever example is on screen.
-                const Positioned(top: 8, right: 8, child: _SettingsSidebar()),
+                const SafeArea(
+                  minimum: EdgeInsets.all(8),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: _SettingsSidebar(),
+                  ),
+                ),
               ],
             );
           },
@@ -259,15 +277,18 @@ class _ExamplePicker extends StatelessWidget {
           for (final name in examples)
             PopupMenuItem<String>(value: name, child: Text(name)),
         ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(selected, style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(width: 4),
-              const Icon(Icons.arrow_drop_down, size: 20),
-            ],
+        child: SizedBox(
+          height: 48,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(selected, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_drop_down, size: 20),
+              ],
+            ),
           ),
         ),
       ),

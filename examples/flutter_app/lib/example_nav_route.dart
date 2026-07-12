@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -79,7 +80,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // The car's animated parts (doors, wheels), keyed by node name.
   final Map<String, _CarPart> _carParts = {};
   bool _carPartsReady = false;
-  bool _controlsOpen = false;
+  bool _controlsOpen = true;
   // Rolling wheel-spin angle, advanced from the spin slider each frame.
   double _wheelRotation = 0.0;
 
@@ -337,9 +338,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
             ),
           ),
           if (_carPartsReady)
-            Positioned(
-              top: 56,
-              left: 8,
+            ExampleOverlay.bottomLeftPanel(
               child: _CarControlsMenu(
                 open: _controlsOpen,
                 onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
@@ -348,9 +347,7 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
                     setState(() => _carParts[key]!.amount = value),
               ),
             ),
-          Positioned(
-            left: 8,
-            bottom: 8,
+          ExampleOverlay.bottomCenter(
             child: _CameraToggle(
               freeCamera: _freeCamera,
               onToggle: _toggleFreeCamera,
@@ -648,68 +645,78 @@ class _CarControlsMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Colors.black54,
-      child: SizedBox(
-        width: 340,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // The toggle header.
-            InkWell(
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.directions_car,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Car Controls',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The card includes its header and margins in this slot. Keep the
+        // scroll body within the actual remaining height on short viewports.
+        final bodyHeight = constraints.hasBoundedHeight
+            ? min(300.0, max(0.0, constraints.maxHeight - 72.0))
+            : 300.0;
+
+        return Card(
+          color: Colors.black54,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // This header stays visible while the long list below scrolls.
+              InkWell(
+                onTap: onToggle,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.directions_car,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Car Controls',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    Icon(
-                      open ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.white,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (open) ...[
-              const Divider(height: 1, color: Colors.white24),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final (label, key, lo, hi) in _carControls)
-                      _SliderRow(
-                        label: label,
-                        value: parts[key]!.amount,
-                        min: lo,
-                        max: hi,
-                        onChanged: (value) => onControl(key, value),
+                      Icon(
+                        open ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.white,
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              if (open) ...[
+                const Divider(height: 1, color: Colors.white24),
+                SizedBox(
+                  height: bodyHeight,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final (label, key, lo, hi) in _carControls)
+                          _SliderRow(
+                            label: label,
+                            value: parts[key]!.amount,
+                            min: lo,
+                            max: hi,
+                            onChanged: (value) => onControl(key, value),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
