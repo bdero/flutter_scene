@@ -8,6 +8,11 @@
 //      hot-reloadable parameters; assign it to scene.skybox.
 // The engine owns the full-screen draw, depth, and draw order; no geometry is
 // placed for the sky. (For a raw fragment shader instead, see ShaderSkySource.)
+//
+// assets/menger_sky.fmat is a second, much heavier sky (a raymarched Menger
+// sponge interior) driven the same way; its light, glow, and fog parameters
+// change the emitted light dramatically, so re-baking visibly relights the
+// spheres.
 
 import 'dart:math';
 
@@ -27,7 +32,8 @@ class ExampleSkybox extends StatefulWidget {
 enum _SkyType {
   fmatGradient('Gradient (.fmat)'),
   gradient('Gradient (built-in)'),
-  physical('Physical atmosphere');
+  physical('Physical atmosphere'),
+  fmatMenger('Menger sponge (.fmat)');
 
   const _SkyType(this.label);
   final String label;
@@ -38,6 +44,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   bool loaded = false;
 
   PreprocessedSky? _fmatSky;
+  PreprocessedSky? _mengerSky;
   GradientSkySource? _gradientSky;
   PhysicalSkySource? _physicalSky;
   _SkyType _skyType = _SkyType.fmatGradient;
@@ -48,6 +55,20 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   double _sunAzimuth = 0.6; // radians around +Y
   double _sunSharpness = 400.0; // higher = tighter sun disk
 
+  // Menger sky controls. Hues are in degrees; colors are derived per emitter
+  // with a saturation that suits it.
+  double _mengerTravel = 1.0;
+  double _mengerSpin = 0.5;
+  double _mengerHoleSize = 0.03;
+  double _mengerLightHue = 37.0;
+  double _mengerLightIntensity = 1.6;
+  double _mengerLightHeight = 1.0;
+  double _mengerGlowHue = 200.0;
+  double _mengerGlowIntensity = 2.0;
+  double _mengerFogHue = 220.0;
+  double _mengerFogBrightness = 2.5;
+  double _mengerGrade = 0.5;
+
   @override
   void initState() {
     super.initState();
@@ -56,8 +77,10 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
 
   Future<void> _load() async {
     final sky = await loadFmatSky('assets/gradient_sky.fmat');
+    final menger = await loadFmatSky('assets/menger_sky.fmat');
     if (!mounted) return;
     _fmatSky = sky;
+    _mengerSky = menger;
     _applySkyType(_skyType);
 
     // Left: a smooth metallic sphere mirrors the baked environment (specular).
@@ -101,6 +124,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
       _SkyType.fmatGradient => _fmatSky!,
       _SkyType.gradient => _gradientSky ??= GradientSkySource(),
       _SkyType.physical => _physicalSky ??= PhysicalSkySource(),
+      _SkyType.fmatMenger => _mengerSky!,
     };
   }
 
@@ -117,6 +141,17 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
       refresh: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.manual,
     );
     scene.skyEnvironment = _skyEnvironment;
+  }
+
+  // A slider hue as a light color, with a per-emitter saturation.
+  vm.Vector3 _hueColor(double hueDegrees, double saturation) {
+    final c = HSVColor.fromAHSV(
+      1.0,
+      hueDegrees % 360.0,
+      saturation,
+      1.0,
+    ).toColor();
+    return vm.Vector3(c.r, c.g, c.b);
   }
 
   void _refreshSky() {
@@ -141,7 +176,96 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
         // The physical sun is a disk with a fixed angular size; the sharpness
         // slider does not apply.
         _physicalSky!.sunDirection = dir;
+      case _SkyType.fmatMenger:
+        final sky = _mengerSky;
+        if (sky == null) return;
+        sky.parameters
+          ..setFloat('travel', _mengerTravel)
+          ..setFloat('spin', _mengerSpin)
+          ..setFloat('hole_size', _mengerHoleSize)
+          ..setVec3('light_color', _hueColor(_mengerLightHue, 0.45))
+          ..setFloat('light_intensity', _mengerLightIntensity)
+          ..setFloat('light_height', _mengerLightHeight)
+          ..setVec3('glow_color', _hueColor(_mengerGlowHue, 0.9))
+          ..setFloat('glow_intensity', _mengerGlowIntensity)
+          ..setVec3('fog_color', _hueColor(_mengerFogHue, 0.3))
+          ..setFloat('fog_brightness', _mengerFogBrightness)
+          ..setFloat('grade', _mengerGrade);
     }
+  }
+
+  // One slider per parameter of the active sky. Each one pushes the new
+  // value into the sky source; with the lighting refresh on manual, the
+  // skybox updates immediately while the scene lighting holds until re-bake,
+  // making the environment recompute visible.
+  List<Widget> _parameterRows() {
+    _SliderRow slider(
+      String label,
+      double value,
+      double min,
+      double max,
+      void Function(double) assign,
+    ) {
+      return _SliderRow(
+        label: label,
+        value: value,
+        min: min,
+        max: max,
+        onChanged: (v) => setState(() {
+          assign(v);
+          _refreshSky();
+        }),
+      );
+    }
+
+    if (_skyType != _SkyType.fmatMenger) {
+      return [
+        slider('Sun elevation', _sunElevation, -0.3, 1.4, (v) {
+          _sunElevation = v;
+        }),
+        slider('Sun azimuth', _sunAzimuth, -pi, pi, (v) {
+          _sunAzimuth = v;
+        }),
+        slider('Sun sharpness', _sunSharpness, 16, 2000, (v) {
+          _sunSharpness = v;
+        }),
+      ];
+    }
+    return [
+      slider('Travel', _mengerTravel, 0, 60, (v) {
+        _mengerTravel = v;
+      }),
+      slider('Spin', _mengerSpin, -pi, pi, (v) {
+        _mengerSpin = v;
+      }),
+      slider('Hole size', _mengerHoleSize, -0.02, 0.1, (v) {
+        _mengerHoleSize = v;
+      }),
+      slider('Light hue', _mengerLightHue, 0, 360, (v) {
+        _mengerLightHue = v;
+      }),
+      slider('Light intensity', _mengerLightIntensity, 0, 8, (v) {
+        _mengerLightIntensity = v;
+      }),
+      slider('Light height', _mengerLightHeight, -1.4, 1.4, (v) {
+        _mengerLightHeight = v;
+      }),
+      slider('Glow hue', _mengerGlowHue, 0, 360, (v) {
+        _mengerGlowHue = v;
+      }),
+      slider('Glow intensity', _mengerGlowIntensity, 0, 12, (v) {
+        _mengerGlowIntensity = v;
+      }),
+      slider('Fog hue', _mengerFogHue, 0, 360, (v) {
+        _mengerFogHue = v;
+      }),
+      slider('Fog brightness', _mengerFogBrightness, 0, 8, (v) {
+        _mengerFogBrightness = v;
+      }),
+      slider('Grade', _mengerGrade, 0, 1, (v) {
+        _mengerGrade = v;
+      }),
+    ];
   }
 
   @override
@@ -234,35 +358,11 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
                       ),
                     ],
                   ),
-                  _SliderRow(
-                    label: 'Sun elevation',
-                    value: _sunElevation,
-                    min: -0.3,
-                    max: 1.4,
-                    onChanged: (v) => setState(() {
-                      _sunElevation = v;
-                      _refreshSky();
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Sun azimuth',
-                    value: _sunAzimuth,
-                    min: -pi,
-                    max: pi,
-                    onChanged: (v) => setState(() {
-                      _sunAzimuth = v;
-                      _refreshSky();
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Sun sharpness',
-                    value: _sunSharpness,
-                    min: 16,
-                    max: 2000,
-                    onChanged: (v) => setState(() {
-                      _sunSharpness = v;
-                      _refreshSky();
-                    }),
+                  Wrap(
+                    children: [
+                      for (final row in _parameterRows())
+                        SizedBox(width: 380, child: row),
+                    ],
                   ),
                 ],
               ),
