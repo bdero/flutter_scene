@@ -84,7 +84,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   double _mengerLightIntensity = 0.25;
   double _mengerLightHeight = 0.51;
   double _mengerGlowHue = 134.60;
-  double _mengerGlowIntensity = 8.59;
+  double _mengerGlowIntensity = 1.85;
   double _mengerFogHue = 259.43;
   double _mengerFogBrightness = 3.15;
   double _mengerGrade = 0.59;
@@ -101,7 +101,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   final List<double> _shapeAngles = [];
   final List<double> _shapeRates = [];
   double _shapeSpinSpeed = 1.0; // radians per second, per-shape scaled
-  double _cameraDistance = 8.0;
+  double _cameraDistance = 10.14;
 
   // Optional detached "quake" fly camera, as in the DICOM example.
   bool _freeCamera = false;
@@ -462,7 +462,7 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               manageSkybox: false,
               initialEnvironmentId: 'field',
               initialExposure: 1.63,
-              initialIblIntensity: 1.14,
+              initialIblIntensity: 1.06,
               onEnvironmentResolved: _onEnvironmentResolved,
             ),
           ),

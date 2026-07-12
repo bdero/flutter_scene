@@ -67,6 +67,22 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..chromaticAberration.enabled = true
     ..chromaticAberration.intensity = 0.14
     ..vignette.enabled = true,
+  // The Menger sky's look: no key light (the sky's emitters and the baked
+  // environment carry it), a bright cool saturated grade, bloom for the neon
+  // bracing, and a lens treatment.
+  'Custom Skybox': () => ExampleSettings()
+    ..directionalLightEnabled = false
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 1.15
+    ..colorGrading.contrast = 1.07
+    ..colorGrading.saturation = 1.19
+    ..colorGrading.temperature = -0.37
+    ..colorGrading.tint = -0.05
+    ..bloom.enabled = true
+    ..bloom.threshold = 1.35
+    ..chromaticAberration.enabled = true
+    ..chromaticAberration.intensity = 0.32
+    ..vignette.enabled = true,
 };
 
 class MyApp extends StatefulWidget {
