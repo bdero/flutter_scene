@@ -108,6 +108,9 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   final QuakeCamera _freeCam = QuakeCamera();
   double _elapsedSeconds = 0.0;
 
+  // Whether the bottom controls card shows more than its header row.
+  bool _controlsExpanded = true;
+
   @override
   void initState() {
     super.initState();
@@ -502,75 +505,92 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
                             if (type != null) _applySkyType(type);
                           }),
                         ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: _controlsExpanded
+                              ? 'Collapse controls'
+                              : 'Expand controls',
+                          icon: Icon(
+                            _controlsExpanded
+                                ? Icons.keyboard_arrow_down
+                                : Icons.keyboard_arrow_up,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => setState(
+                            () => _controlsExpanded = !_controlsExpanded,
+                          ),
+                        ),
                       ],
                     ),
-                    Row(
-                      children: [
-                        const Text(
-                          'Lighting refresh:',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        const SizedBox(width: 8),
-                        DropdownButton<SkyEnvironmentRefresh>(
-                          value:
-                              _skyEnvironment?.refresh ??
-                              SkyEnvironmentRefresh.manual,
-                          dropdownColor: Colors.black87,
-                          style: const TextStyle(color: Colors.white),
-                          items: const [
-                            DropdownMenuItem(
-                              value: SkyEnvironmentRefresh.manual,
-                              child: Text('Manual'),
+                    if (_controlsExpanded)
+                      Row(
+                        children: [
+                          const Text(
+                            'Lighting refresh:',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          const SizedBox(width: 8),
+                          DropdownButton<SkyEnvironmentRefresh>(
+                            value:
+                                _skyEnvironment?.refresh ??
+                                SkyEnvironmentRefresh.manual,
+                            dropdownColor: Colors.black87,
+                            style: const TextStyle(color: Colors.white),
+                            items: const [
+                              DropdownMenuItem(
+                                value: SkyEnvironmentRefresh.manual,
+                                child: Text('Manual'),
+                              ),
+                              DropdownMenuItem(
+                                value: SkyEnvironmentRefresh.interval,
+                                child: Text('Interval (1s)'),
+                              ),
+                              DropdownMenuItem(
+                                value: SkyEnvironmentRefresh.everyFrame,
+                                child: Text('Every frame'),
+                              ),
+                            ],
+                            onChanged: (mode) => setState(() {
+                              if (mode != null) _skyEnvironment?.refresh = mode;
+                            }),
+                          ),
+                          const SizedBox(width: 16),
+                          ElevatedButton(
+                            onPressed: () => _skyEnvironment?.invalidate(),
+                            child: const Text('Re-bake lighting'),
+                          ),
+                          const SizedBox(width: 16),
+                          ElevatedButton.icon(
+                            onPressed: _toggleFreeCamera,
+                            icon: Icon(
+                              _freeCamera
+                                  ? Icons.videocam
+                                  : Icons.videocam_outlined,
                             ),
-                            DropdownMenuItem(
-                              value: SkyEnvironmentRefresh.interval,
-                              child: Text('Interval (1s)'),
+                            label: Text(
+                              _freeCamera ? 'Quake camera' : 'Orbit camera',
                             ),
-                            DropdownMenuItem(
-                              value: SkyEnvironmentRefresh.everyFrame,
-                              child: Text('Every frame'),
+                          ),
+                          if (_freeCamera) ...[
+                            const SizedBox(width: 12),
+                            const Text(
+                              'WASD move · QE up/down · drag to look · '
+                              'shift to boost',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
-                          onChanged: (mode) => setState(() {
-                            if (mode != null) _skyEnvironment?.refresh = mode;
-                          }),
-                        ),
-                        const SizedBox(width: 16),
-                        ElevatedButton(
-                          onPressed: () => _skyEnvironment?.invalidate(),
-                          child: const Text('Re-bake lighting'),
-                        ),
-                        const SizedBox(width: 16),
-                        ElevatedButton.icon(
-                          onPressed: _toggleFreeCamera,
-                          icon: Icon(
-                            _freeCamera
-                                ? Icons.videocam
-                                : Icons.videocam_outlined,
-                          ),
-                          label: Text(
-                            _freeCamera ? 'Quake camera' : 'Orbit camera',
-                          ),
-                        ),
-                        if (_freeCamera) ...[
-                          const SizedBox(width: 12),
-                          const Text(
-                            'WASD move · QE up/down · drag to look · '
-                            'shift to boost',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
                         ],
-                      ],
-                    ),
-                    Wrap(
-                      children: [
-                        for (final row in _parameterRows())
-                          SizedBox(width: 380, child: row),
-                      ],
-                    ),
+                      ),
+                    if (_controlsExpanded)
+                      Wrap(
+                        children: [
+                          for (final row in _parameterRows())
+                            SizedBox(width: 380, child: row),
+                        ],
+                      ),
                   ],
                 ),
               ),
