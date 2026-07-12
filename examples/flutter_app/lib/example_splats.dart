@@ -86,6 +86,14 @@ class ExampleSplatsState extends State<ExampleSplats> {
   bool _cropSweep = false;
   bool _orbit = true;
 
+  // The solid sphere that sits inside the capture (a splats-vs-geometry
+  // depth-sort demo). It wanders on a bounded noise orbit around its home.
+  // Off by default; toggle it on in the panel.
+  bool _showSphere = false;
+  Node? _sphereNode;
+  final vm.Vector3 _sphereHome = vm.Vector3(2.2, 1.0, 0);
+  static const double _sphereWander = 1.1;
+
   // The free "inspection" camera. While inactive it is kept synced to the
   // orbit camera so toggling it on does not jump the view.
   bool _freeCamera = false;
@@ -153,18 +161,18 @@ class ExampleSplatsState extends State<ExampleSplats> {
     }
 
     // A shiny sphere inside each capture. Splats in front of it must cover
-    // it, and it must occlude the splats behind it.
-    scene.add(
-      Node(
-        mesh: Mesh(
-          SphereGeometry(radius: 0.8),
-          PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.9, 0.85, 0.8, 1.0)
-            ..metallicFactor = 1.0
-            ..roughnessFactor = 0.15,
-        ),
-      )..localTransform = vm.Matrix4.translation(vm.Vector3(2.2, 1.0, 0)),
-    );
+    // it, and it must occlude the splats behind it. Animated in _tickSphere.
+    _sphereNode = Node(
+      mesh: Mesh(
+        SphereGeometry(radius: 0.5),
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = vm.Vector4(0.9, 0.85, 0.8, 1.0)
+          ..metallicFactor = 1.0
+          ..roughnessFactor = 0.15,
+      ),
+    )..localTransform = vm.Matrix4.translation(_sphereHome);
+    _sphereNode!.visible = _showSphere;
+    scene.add(_sphereNode!);
 
     if (mounted) setState(() => _ready = true);
   }
@@ -249,6 +257,31 @@ class ExampleSplatsState extends State<ExampleSplats> {
     }
   }
 
+  // Wanders the sphere on a bounded, noise-driven orbit around its home, so it
+  // never strays far from the capture yet never repeats a clean loop.
+  void _tickSphere() {
+    final node = _sphereNode;
+    if (node == null || !_showSphere) return;
+    final t = _elapsedSeconds;
+    final offset = vm.Vector3(
+      _wanderNoise(t, 11.3),
+      _wanderNoise(t, 41.7) * 0.6, // less vertical drift
+      _wanderNoise(t, 73.1),
+    )..scale(_sphereWander);
+    node.localTransform = vm.Matrix4.translation(_sphereHome + offset);
+  }
+
+  // Smooth, bounded [-1, 1] value noise from layered incommensurate sines.
+  // Self-contained (no dependency on the CPU noise library, which is broken on
+  // web-dart2js) and never repeats a short loop.
+  static double _wanderNoise(double t, double seed) {
+    final v =
+        math.sin(t * 0.31 + seed) +
+        math.sin(t * 0.53 + seed * 1.7) * 0.5 +
+        math.sin(t * 0.83 + seed * 2.9) * 0.25;
+    return v / 1.75;
+  }
+
   vm.Vector3 _cameraPosition = vm.Vector3(0, 4, 14);
 
   @override
@@ -312,6 +345,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
                 },
                 onTick: (elapsed, deltaSeconds) {
                   _tickCrop(elapsed);
+                  _tickSphere();
                   _tickFps(deltaSeconds);
                   exampleSettings.applyTo(scene);
                 },
@@ -388,7 +422,8 @@ class ExampleSplatsState extends State<ExampleSplats> {
                 _applyKnobs();
               }),
             ),
-            Row(
+            Wrap(
+              spacing: 12,
               children: [
                 _toggle(
                   'Antialiased',
@@ -398,7 +433,6 @@ class ExampleSplatsState extends State<ExampleSplats> {
                     _applyKnobs();
                   }),
                 ),
-                const SizedBox(width: 12),
                 _toggle(
                   'Crop sweep',
                   _cropSweep,
@@ -407,8 +441,15 @@ class ExampleSplatsState extends State<ExampleSplats> {
                     _applyKnobs();
                   }),
                 ),
-                const SizedBox(width: 12),
                 _toggle('Orbit', _orbit, (v) => setState(() => _orbit = v)),
+                _toggle(
+                  'Sphere',
+                  _showSphere,
+                  (v) => setState(() {
+                    _showSphere = v;
+                    _sphereNode?.visible = v;
+                  }),
+                ),
               ],
             ),
           ],
