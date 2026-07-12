@@ -35,7 +35,7 @@ material {
 
     // Emissive tint applied to the chrome bracing.
     { type: vec3, name: glow_color, hint: source_color, default: [0.1, 1.0, 0.32] },
-    { type: float, name: glow_intensity, hint: range(0, 12, 0.01), default: 8.59 },
+    { type: float, name: glow_intensity, hint: range(0, 12, 0.01), default: 1.85 },
 
     // Distance fog, the dominant emitter for most of the sky sphere.
     { type: vec3, name: fog_color, hint: source_color, default: [0.8, 0.7, 1.0] },
