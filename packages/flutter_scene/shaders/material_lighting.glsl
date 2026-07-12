@@ -88,7 +88,9 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // in light.dart, _casterReachRadii + _forwardMarginRadii, over the half-width
   // that makes box) so a caster crosses the shadow threshold at the same world
   // height in every cascade, with no discontinuity where cascades meet.
-  float receiver_depth = proj.z - frag_info.shadow_bias / (7.0 * box);
+  const float kMinShadowBias = 0.0005;
+  float receiver_depth =
+      proj.z - max(frag_info.shadow_bias / (7.0 * box), kMinShadowBias);
 
   // World-space penumbra -> this cascade's UV space, floored at a texel.
   float radius =
