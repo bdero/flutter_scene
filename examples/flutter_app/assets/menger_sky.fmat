@@ -25,27 +25,27 @@ material {
     { type: float, name: travel, hint: range(0, 3, 0.001), default: 1.0 },
     { type: float, name: spin, hint: range(0, 6.2832, 0.001), default: 0.0 },
     // Grows or shrinks the sponge's primary holes.
-    { type: float, name: hole_size, hint: range(-0.02, 0.1, 0.001), default: -0.01 },
+    { type: float, name: hole_size, hint: range(-0.02, 0.1, 0.001), default: -0.02 },
 
     // The point light carried with the viewer.
-    { type: vec3, name: light_color, hint: source_color, default: [0.83, 1.0, 0.55] },
-    { type: float, name: light_intensity, hint: range(0, 8, 0.01), default: 1.6 },
+    { type: vec3, name: light_color, hint: source_color, default: [0.55, 1.0, 0.80] },
+    { type: float, name: light_intensity, hint: range(0, 8, 0.01), default: 0.25 },
     { type: float, name: light_height, hint: range(-1.4, 1.4, 0.01), default: 0.51 },
     { type: float, name: light_forward, hint: range(-3, 3, 0.01), default: 0.0 },
 
     // Emissive tint applied to the chrome bracing.
-    { type: vec3, name: glow_color, hint: source_color, default: [0.1, 0.7, 1.0] },
+    { type: vec3, name: glow_color, hint: source_color, default: [0.1, 1.0, 0.32] },
     { type: float, name: glow_intensity, hint: range(0, 12, 0.01), default: 8.59 },
 
     // Distance fog, the dominant emitter for most of the sky sphere.
-    { type: vec3, name: fog_color, hint: source_color, default: [0.7, 0.8, 1.0] },
-    { type: float, name: fog_brightness, hint: range(0, 8, 0.01), default: 6.82 },
+    { type: vec3, name: fog_color, hint: source_color, default: [0.8, 0.7, 1.0] },
+    { type: float, name: fog_brightness, hint: range(0, 8, 0.01), default: 3.15 },
 
     // Strength of the red-to-blue vertical color grade.
-    { type: float, name: grade, hint: range(0, 1, 0.01), default: 0.48 },
+    { type: float, name: grade, hint: range(0, 1, 0.01), default: 0.59 },
 
     // Strength of the environment-mapped reflections.
-    { type: float, name: reflection, hint: range(0, 2, 0.01), default: 0.7 },
+    { type: float, name: reflection, hint: range(0, 2, 0.01), default: 1.44 },
 
     // Surface tints for the sponge's outer shell and inner core.
     { type: vec3, name: shell_color, default: [1.25, 1.0, 0.75] },
