@@ -24,6 +24,8 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'dicom/dicom_loader.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -51,6 +53,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
   String? _error;
 
   bool _darkBackground = true;
+  bool _controlsOpen = true;
 
   // View controls.
   _VolumeMode _mode = _VolumeMode.dvr;
@@ -344,6 +347,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
             ),
           ),
           if (_material != null && _atlas != null) _buildTopBar(),
+          if (_material != null && _atlas != null) _buildCameraHint(),
           if (_material != null && _atlas != null) _buildCameraToggle(),
           if (_material == null || _atlas == null) _buildOverlay(),
           if (_material != null && _atlas != null) _buildControls(),
@@ -353,9 +357,7 @@ class _ExampleDicomState extends State<ExampleDicom> {
   }
 
   Widget _buildTopBar() {
-    return Positioned(
-      top: 12,
-      right: 12,
+    return ExampleOverlay.topRight(
       child: Row(
         children: [
           // Orientation compass: a mirror/orientation self-check. The letters
@@ -374,45 +376,40 @@ class _ExampleDicomState extends State<ExampleDicom> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filledTonal(
-            tooltip: 'Toggle background',
+          ExampleActionButton(
+            tooltip: _darkBackground
+                ? 'Use light background'
+                : 'Use dark background',
             onPressed: () => setState(() => _darkBackground = !_darkBackground),
-            icon: Icon(_darkBackground ? Icons.light_mode : Icons.dark_mode),
+            icon: _darkBackground ? Icons.light_mode : Icons.dark_mode,
           ),
         ],
       ),
     );
   }
 
+  Widget _buildCameraHint() {
+    return ExampleOverlay.topCenterAction(
+      leadingReservation: 176,
+      maxWidth: _freeCamera ? 520 : 280,
+      minHeaderWidth: _freeCamera ? 400 : null,
+      child: ExampleActionHint(
+        message: _freeCamera
+            ? 'WASD: move  ·  Q/E: down/up  ·  Drag: look  ·  Shift: boost'
+            : 'Drag: orbit  ·  Scroll: zoom',
+      ),
+    );
+  }
+
   Widget _buildCameraToggle() {
-    return Positioned(
-      right: 12,
-      bottom: 12,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_freeCamera)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'WASD move  ·  Q/E down/up  ·  drag look  ·  Shift boost',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          FloatingActionButton.extended(
-            heroTag: null,
-            onPressed: _toggleFreeCamera,
-            backgroundColor: _freeCamera ? Colors.tealAccent.shade700 : null,
-            icon: Icon(_freeCamera ? Icons.videocam : Icons.videocam_outlined),
-            label: Text(_freeCamera ? 'Quake camera' : 'Orbit camera'),
-          ),
-        ],
+    return ExampleOverlay.bottomCenter(
+      child: ExampleCameraToggle(
+        active: _freeCamera,
+        inactiveLabel: 'Orbit camera',
+        activeLabel: 'Fly camera',
+        inactiveIcon: Icons.videocam_outlined,
+        activeIcon: Icons.videocam,
+        onToggle: _toggleFreeCamera,
       ),
     );
   }
@@ -451,138 +448,191 @@ class _ExampleDicomState extends State<ExampleDicom> {
 
   Widget _buildControls() {
     const labelStyle = TextStyle(color: Colors.white, fontSize: 12);
-    return Positioned(
-      left: 12,
-      bottom: 12,
-      // Anchored in the bottom-left corner with a fixed width so it does not
-      // cover the volume.
+    return ExampleOverlay.bottomLeftPanel(
       child: SizedBox(
         width: 340,
-        child: Card(
-          color: Colors.black54,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const Text('View', style: labelStyle),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButton<_VolumeMode>(
-                        isExpanded: true,
-                        dropdownColor: Colors.black87,
-                        value: _mode,
-                        onChanged: (v) => setState(() => _mode = v ?? _mode),
-                        items: [
-                          for (final m in _VolumeMode.values)
-                            DropdownMenuItem(
-                              value: m,
-                              child: Text(
-                                m.name.toUpperCase(),
-                                style: const TextStyle(color: Colors.white),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bodyMaxHeight = constraints.hasBoundedHeight
+                ? math.min(360.0, math.max(0.0, constraints.maxHeight - 57.0))
+                : 360.0;
+
+            return Card(
+              color: Colors.black54,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () =>
+                        setState(() => _controlsOpen = !_controlsOpen),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.view_in_ar_outlined,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Volume controls',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
+                          ),
+                          Icon(
+                            _controlsOpen
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                            color: Colors.white,
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    DropdownButton<_Colormap>(
-                      dropdownColor: Colors.black87,
-                      value: _colormap,
-                      onChanged: (v) =>
-                          setState(() => _colormap = v ?? _colormap),
-                      items: [
-                        for (final c in _Colormap.values)
-                          DropdownMenuItem(
-                            value: c,
-                            child: Text(
-                              c.name,
-                              style: const TextStyle(color: Colors.white),
-                            ),
+                  ),
+                  if (_controlsOpen) ...[
+                    const Divider(height: 1, color: Colors.white24),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: bodyMaxHeight),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                    Row(
+                      children: [
+                        const Text('View', style: labelStyle),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ExampleDropdown<_VolumeMode>(
+                            value: _mode,
+                            onChanged: (v) =>
+                                setState(() => _mode = v ?? _mode),
+                            items: [
+                              for (final m in _VolumeMode.values)
+                                DropdownMenuItem(
+                                  value: m,
+                                  child: Text(
+                                    m.name.toUpperCase(),
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                            ],
                           ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ExampleDropdown<_Colormap>(
+                            value: _colormap,
+                            onChanged: (v) =>
+                                setState(() => _colormap = v ?? _colormap),
+                            items: [
+                              for (final c in _Colormap.values)
+                                DropdownMenuItem(
+                                  value: c,
+                                  child: Text(
+                                    c.name,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
-                  ],
-                ),
-                _slider(
-                  'Level',
-                  _windowCenter,
-                  0,
-                  1,
-                  (v) => setState(() => _windowCenter = v),
-                ),
-                _slider(
-                  'Window',
-                  _windowWidth,
-                  0.01,
-                  1,
-                  (v) => setState(() => _windowWidth = v),
-                ),
-                if (_mode == _VolumeMode.dvr) ...[
-                  _slider(
-                    'Density',
-                    _density,
-                    0,
-                    4,
-                    (v) => setState(() => _density = v),
-                  ),
-                  _slider(
-                    'Brightness',
-                    _brightness,
-                    0,
-                    4,
-                    (v) => setState(() => _brightness = v),
-                  ),
-                ],
-                if (_mode == _VolumeMode.mpr) ...[
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 76,
-                        child: Text(
-                          'Axis',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
+                    _slider(
+                      'Level',
+                      _windowCenter,
+                      0,
+                      1,
+                      (v) => setState(() => _windowCenter = v),
+                    ),
+                    _slider(
+                      'Window',
+                      _windowWidth,
+                      0.01,
+                      1,
+                      (v) => setState(() => _windowWidth = v),
+                    ),
+                    if (_mode == _VolumeMode.dvr) ...[
+                      _slider(
+                        'Density',
+                        _density,
+                        0,
+                        4,
+                        (v) => setState(() => _density = v),
                       ),
-                      Expanded(
-                        child: SegmentedButton<int>(
-                          style: const ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          segments: const [
-                            ButtonSegment(value: 0, label: Text('X')),
-                            ButtonSegment(value: 1, label: Text('Y')),
-                            ButtonSegment(value: 2, label: Text('Z')),
-                          ],
-                          selected: {_sliceAxis},
-                          onSelectionChanged: (s) =>
-                              setState(() => _sliceAxis = s.first),
-                        ),
+                      _slider(
+                        'Brightness',
+                        _brightness,
+                        0,
+                        4,
+                        (v) => setState(() => _brightness = v),
                       ),
                     ],
-                  ),
-                  _slider(
-                    'Slice',
-                    _slicePos,
-                    0,
-                    1,
-                    (v) => setState(() => _slicePos = v),
-                  ),
+                    if (_mode == _VolumeMode.mpr) ...[
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 76,
+                            child: Text(
+                              'Axis',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: SegmentedButton<int>(
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              segments: const [
+                                ButtonSegment(value: 0, label: Text('X')),
+                                ButtonSegment(value: 1, label: Text('Y')),
+                                ButtonSegment(value: 2, label: Text('Z')),
+                              ],
+                              selected: {_sliceAxis},
+                              onSelectionChanged: (s) =>
+                                  setState(() => _sliceAxis = s.first),
+                            ),
+                          ),
+                        ],
+                      ),
+                      _slider(
+                        'Slice',
+                        _slicePos,
+                        0,
+                        1,
+                        (v) => setState(() => _slicePos = v),
+                      ),
+                    ],
+                    if (_mode != _VolumeMode.mpr)
+                      _slider(
+                        'Steps',
+                        _stepCount,
+                        32,
+                        512,
+                        (v) => setState(() => _stepCount = v),
+                        decimals: 0,
+                      ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-                if (_mode != _VolumeMode.mpr)
-                  _slider(
-                    'Steps',
-                    _stepCount,
-                    32,
-                    512,
-                    (v) => setState(() => _stepCount = v),
-                    decimals: 0,
-                  ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

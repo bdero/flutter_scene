@@ -5,6 +5,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart';
 import 'quake_camera.dart';
@@ -137,6 +139,12 @@ class ExampleSsrState extends State<ExampleSsr> {
   }
 
   @override
+  void dispose() {
+    _environmentSelector.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Focus(
       autofocus: true,
@@ -166,9 +174,8 @@ class ExampleSsrState extends State<ExampleSsr> {
               ),
             ),
           ),
-          Positioned(
-            top: 56,
-            right: 8,
+          ExampleOverlay.bottomRightPanel(
+            paired: true,
             child: _SsrPanel(
               open: _panelOpen,
               settings: scene.screenSpaceReflections,
@@ -176,14 +183,11 @@ class ExampleSsrState extends State<ExampleSsr> {
               onChanged: () => setState(() {}),
             ),
           ),
-          Positioned(
-            left: 8,
-            bottom: 8,
+          ExampleOverlay.bottomLeftPanel(
+            paired: true,
             child: LightingPanel(scene: scene, selector: _environmentSelector),
           ),
-          Positioned(
-            right: 8,
-            bottom: 8,
+          ExampleOverlay.bottomCenter(
             child: _CameraToggle(
               freeCamera: _freeCamera,
               onToggle: _toggleFreeCamera,
@@ -212,6 +216,15 @@ class _SsrPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final topInset = media.padding.top > 8 ? media.padding.top : 8.0;
+    final bottomInset = media.padding.bottom > 8 ? media.padding.bottom : 8.0;
+    final panelHeight = media.size.height - topInset - 64 - bottomInset;
+    final availableBodyHeight = panelHeight - 56;
+    final bodyMaxHeight = availableBodyHeight < 560
+        ? availableBodyHeight
+        : 560.0;
+
     return Card(
       color: Colors.black54,
       child: SizedBox(
@@ -246,146 +259,144 @@ class _SsrPanel extends StatelessWidget {
             ),
             if (open) ...[
               const Divider(height: 1, color: Colors.white24),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Enabled',
-                            style: TextStyle(color: Colors.white),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: bodyMaxHeight),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Enabled',
+                              style: TextStyle(color: Colors.white),
+                            ),
                           ),
-                        ),
-                        Switch(
-                          value: settings.enabled,
-                          onChanged: (v) {
-                            settings.enabled = v;
-                            onChanged();
-                          },
-                        ),
-                      ],
-                    ),
-                    _SliderRow(
-                      label: 'Intensity',
-                      value: settings.intensity,
-                      min: 0,
-                      max: 2,
-                      onChanged: (v) {
-                        settings.intensity = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Max dist',
-                      value: settings.maxDistance,
-                      min: 1,
-                      max: 60,
-                      onChanged: (v) {
-                        settings.maxDistance = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Thickness',
-                      value: settings.thickness,
-                      min: 0.01,
-                      max: 3,
-                      onChanged: (v) {
-                        settings.thickness = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Stride',
-                      value: settings.stride,
-                      min: 1,
-                      max: 12,
-                      onChanged: (v) {
-                        settings.stride = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Max steps',
-                      value: settings.maxSteps.toDouble(),
-                      min: 16,
-                      max: 256,
-                      onChanged: (v) {
-                        settings.maxSteps = v.round();
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Blur',
-                      value: settings.blur,
-                      min: 0,
-                      max: 1,
-                      onChanged: (v) {
-                        settings.blur = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Fade start',
-                      value: settings.distanceFadeStart,
-                      min: 0,
-                      max: 1,
-                      onChanged: (v) {
-                        settings.distanceFadeStart = v;
-                        onChanged();
-                      },
-                    ),
-                    _SliderRow(
-                      label: 'Resolution',
-                      value: settings.resolutionScale,
-                      min: 0.25,
-                      max: 1,
-                      onChanged: (v) {
-                        settings.resolutionScale = v;
-                        onChanged();
-                      },
-                    ),
-                    Row(
-                      children: [
-                        const SizedBox(
-                          width: 110,
-                          child: Text(
-                            'Debug',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        Expanded(
-                          child: DropdownButton<SsrDebugView>(
-                            isExpanded: true,
-                            dropdownColor: Colors.black87,
-                            value: settings.debugView,
+                          Switch(
+                            value: settings.enabled,
                             onChanged: (v) {
-                              if (v != null) {
-                                settings.debugView = v;
-                                onChanged();
-                              }
+                              settings.enabled = v;
+                              onChanged();
                             },
-                            items: [
-                              for (final view in SsrDebugView.values)
-                                DropdownMenuItem(
-                                  value: view,
-                                  child: Text(
-                                    view.name,
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      _SliderRow(
+                        label: 'Intensity',
+                        value: settings.intensity,
+                        min: 0,
+                        max: 2,
+                        onChanged: (v) {
+                          settings.intensity = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Max dist',
+                        value: settings.maxDistance,
+                        min: 1,
+                        max: 60,
+                        onChanged: (v) {
+                          settings.maxDistance = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Thickness',
+                        value: settings.thickness,
+                        min: 0.01,
+                        max: 3,
+                        onChanged: (v) {
+                          settings.thickness = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Stride',
+                        value: settings.stride,
+                        min: 1,
+                        max: 12,
+                        onChanged: (v) {
+                          settings.stride = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Max steps',
+                        value: settings.maxSteps.toDouble(),
+                        min: 16,
+                        max: 256,
+                        onChanged: (v) {
+                          settings.maxSteps = v.round();
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Blur',
+                        value: settings.blur,
+                        min: 0,
+                        max: 1,
+                        onChanged: (v) {
+                          settings.blur = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Fade start',
+                        value: settings.distanceFadeStart,
+                        min: 0,
+                        max: 1,
+                        onChanged: (v) {
+                          settings.distanceFadeStart = v;
+                          onChanged();
+                        },
+                      ),
+                      _SliderRow(
+                        label: 'Resolution',
+                        value: settings.resolutionScale,
+                        min: 0.25,
+                        max: 1,
+                        onChanged: (v) {
+                          settings.resolutionScale = v;
+                          onChanged();
+                        },
+                      ),
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 110,
+                            child: Text(
+                              'Debug',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                          Expanded(
+                            child: ExampleDropdown<SsrDebugView>(
+                              value: settings.debugView,
+                              onChanged: (v) {
+                                if (v != null) {
+                                  settings.debugView = v;
+                                  onChanged();
+                                }
+                              },
+                              items: [
+                                for (final view in SsrDebugView.values)
+                                  DropdownMenuItem(
+                                    value: view,
+                                    child: Text(view.name),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

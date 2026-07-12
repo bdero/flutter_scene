@@ -1,10 +1,12 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_cuboid.dart' show SpinComponent;
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 /// Offscreen render targets displayed as HUD widgets.
@@ -114,14 +116,8 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
     super.initState();
   }
 
-  Widget _label(String text) => Container(
-    color: Colors.black54,
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-    child: Text(
-      text,
-      style: const TextStyle(color: Colors.white, fontSize: 12),
-    ),
-  );
+  static const double _previewWidth = 240;
+  static const double _stripHeight = 328;
 
   Widget _dropdownRow<T>({
     required String label,
@@ -140,78 +136,147 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
             style: const TextStyle(color: Colors.white, fontSize: 12),
           ),
         ),
-        DropdownButton<T>(
-          value: value,
-          isDense: true,
-          dropdownColor: Colors.black87,
-          style: const TextStyle(color: Colors.white, fontSize: 12),
-          items: [
-            for (final item in items)
-              DropdownMenuItem(value: item, child: Text(name(item))),
-          ],
-          onChanged: (value) {
-            if (value != null) {
-              setState(() => onChanged(value));
-            }
-          },
+        Expanded(
+          child: ExampleDropdown<T>(
+            value: value,
+            triggerColor: Colors.white12,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            isDense: true,
+            iconSize: 18,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+            items: [
+              for (final item in items)
+                DropdownMenuItem(value: item, child: Text(name(item))),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => onChanged(value));
+              }
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _comparePanel(_ComparePanel panel) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 240,
-          height: 240 / _aspect,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white54),
-            color: Colors.black26,
+  Widget _minimapPanel() => Card(
+    color: Colors.black54,
+    clipBehavior: Clip.antiAlias,
+    child: SizedBox(
+      width: 180,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: Text(
+              'Top-down view',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
           ),
-          child: RenderTextureView(
-            panel.target,
-            fit: BoxFit.fill,
-            filterQuality: panel.filter,
+          const Divider(height: 1, color: Colors.white24),
+          AspectRatio(aspectRatio: 1, child: RenderTextureView(_minimap)),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(10, 6, 10, 8),
+            child: Text(
+              'Refreshes every 500 ms',
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
           ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _comparePanel(_ComparePanel panel, {required String title}) {
+    return Card(
+      color: Colors.black54,
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: _previewWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: Colors.white24),
+            SizedBox(
+              height: _previewWidth / _aspect,
+              child: RenderTextureView(
+                panel.target,
+                fit: BoxFit.fill,
+                filterQuality: panel.filter,
+              ),
+            ),
+            const Divider(height: 1, color: Colors.white24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _dropdownRow<int>(
+                    label: 'Size',
+                    value: panel.height,
+                    items: _heights,
+                    name: (h) => '${_widthFor(h)}x$h',
+                    onChanged: (h) {
+                      panel.height = h;
+                      panel.target.resize(_widthFor(h), h);
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  _dropdownRow<FilterQuality>(
+                    label: 'Filter',
+                    value: panel.filter,
+                    items: FilterQuality.values,
+                    name: (f) => f.name,
+                    onChanged: (f) => panel.filter = f,
+                  ),
+                  const SizedBox(height: 4),
+                  _dropdownRow<AntiAliasingMode>(
+                    label: 'AA',
+                    value: panel.view.antiAliasingMode!,
+                    items: AntiAliasingMode.values,
+                    name: (m) => m.name,
+                    onChanged: (m) => panel.view.antiAliasingMode = m,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        Container(
-          color: Colors.black54,
-          padding: const EdgeInsets.all(6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _dropdownRow<int>(
-                label: 'Height',
-                value: panel.height,
-                items: _heights,
-                name: (h) => '${_widthFor(h)}x$h',
-                onChanged: (h) {
-                  panel.height = h;
-                  panel.target.resize(_widthFor(h), h);
-                },
-              ),
-              _dropdownRow<FilterQuality>(
-                label: 'Filter',
-                value: panel.filter,
-                items: FilterQuality.values,
-                name: (f) => f.name,
-                onChanged: (f) => panel.filter = f,
-              ),
-              _dropdownRow<AntiAliasingMode>(
-                label: 'AA',
-                value: panel.view.antiAliasingMode!,
-                items: AntiAliasingMode.values,
-                name: (m) => m.name,
-                onChanged: (m) => panel.view.antiAliasingMode = m,
-              ),
-            ],
-          ),
-        ),
-      ],
+      ),
+    );
+  }
+
+  Widget _renderTargetStrip() {
+    final items = <Widget>[
+      _minimapPanel(),
+      _comparePanel(_panels[0], title: 'No anti-aliasing'),
+      _comparePanel(_panels[1], title: 'Automatic anti-aliasing'),
+    ];
+
+    return SizedBox(
+      height: _stripHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: items.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+        itemBuilder: (context, index) => items[index],
+      ),
     );
   }
 
@@ -230,42 +295,7 @@ class ExampleRenderTargetState extends State<ExampleRenderTarget> {
           },
           onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
         ),
-        // Scrolls horizontally so the panels fit a narrow (phone) screen
-        // instead of overflowing.
-        Positioned(
-          bottom: 12,
-          left: 0,
-          right: 0,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white54),
-                        color: Colors.black26,
-                      ),
-                      child: RenderTextureView(_minimap),
-                    ),
-                    _label('Top-down view (re-renders every 500 ms)'),
-                  ],
-                ),
-                const SizedBox(width: 12),
-                _comparePanel(_panels[0]),
-                const SizedBox(width: 12),
-                _comparePanel(_panels[1]),
-              ],
-            ),
-          ),
-        ),
+        ExampleOverlay.bottomCenter(child: _renderTargetStrip()),
       ],
     );
   }

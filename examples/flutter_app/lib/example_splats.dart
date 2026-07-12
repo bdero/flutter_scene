@@ -3,9 +3,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -15,7 +18,7 @@ import 'quake_camera.dart';
 /// `tool/fetch_splat_asset.sh`. A PBR sphere sits inside each scene proving
 /// splats and forward-rendered geometry occlude each other, an animated
 /// crop box demonstrates GPU-side cropping, and a Quake-style free camera
-/// (bottom right) explores the room from inside.
+/// (bottom center) explores the room from inside.
 class ExampleSplats extends StatefulWidget {
   const ExampleSplats({super.key});
 
@@ -71,6 +74,141 @@ const List<_SourceConfig> _sourceConfigs = [
   ),
 ];
 
+/// Boolean splat controls arranged to fit the standard side-panel width.
+class GaussianSplatToggleControls extends StatelessWidget {
+  const GaussianSplatToggleControls({
+    super.key,
+    required this.antialiased,
+    required this.cropSweep,
+    required this.orbit,
+    required this.sphere,
+    required this.onAntialiasedChanged,
+    required this.onCropSweepChanged,
+    required this.onOrbitChanged,
+    required this.onSphereChanged,
+  });
+
+  final bool antialiased;
+  final bool cropSweep;
+  final bool orbit;
+  final bool sphere;
+  final ValueChanged<bool> onAntialiasedChanged;
+  final ValueChanged<bool> onCropSweepChanged;
+  final ValueChanged<bool> onOrbitChanged;
+  final ValueChanged<bool> onSphereChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _toggle('Antialiased', antialiased, onAntialiasedChanged),
+      _toggle('Crop sweep', cropSweep, onCropSweepChanged),
+      _toggle('Orbit', orbit, onOrbitChanged),
+      _toggle('Sphere', sphere, onSphereChanged),
+    ],
+  );
+
+  Widget _toggle(String label, bool value, ValueChanged<bool> onChanged) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+      ),
+      Switch(value: value, onChanged: onChanged),
+    ],
+  );
+}
+
+/// Keeps system icons readable over this example's consistently dark skybox.
+class GaussianSplatSystemChrome extends StatelessWidget {
+  const GaussianSplatSystemChrome({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: SystemUiOverlayStyle.light,
+    child: child,
+  );
+}
+
+/// A compact side-panel surface with a fixed source header and scrollable
+/// settings, so short landscape viewports keep every control reachable.
+class GaussianSplatSettingsPanel extends StatelessWidget {
+  const GaussianSplatSettingsPanel({
+    super.key,
+    required this.header,
+    required this.controls,
+    this.open = true,
+    this.onToggle,
+  });
+
+  final Widget header;
+  final Widget controls;
+  final bool open;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Card(
+      color: Colors.black.withValues(alpha: 0.55),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: constraints.maxHeight),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.blur_on, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Gaussian splat controls',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      open ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (open) ...[
+              const Divider(height: 1, color: Colors.white24),
+              Flexible(
+                fit: FlexFit.loose,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [header, const SizedBox(height: 4), controls],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class ExampleSplatsState extends State<ExampleSplats> {
   Scene scene = Scene();
   bool _ready = false;
@@ -85,6 +223,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
   bool _antialiased = true;
   bool _cropSweep = false;
   bool _orbit = true;
+  bool _controlsOpen = true;
 
   // The solid sphere that sits inside the capture (a splats-vs-geometry
   // depth-sort demo). It wanders on a bounded noise orbit around its home.
@@ -285,7 +424,10 @@ class ExampleSplatsState extends State<ExampleSplats> {
   vm.Vector3 _cameraPosition = vm.Vector3(0, 4, 14);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      GaussianSplatSystemChrome(child: _buildContent(context));
+
+  Widget _buildContent(BuildContext context) {
     if (!_ready) {
       return const ColoredBox(
         color: Color(0xFF040408),
@@ -352,21 +494,15 @@ class ExampleSplatsState extends State<ExampleSplats> {
               ),
             ),
           ),
-          Positioned(left: 12, bottom: 12, child: _panel()),
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: Tooltip(
-              message: _freeCamera
-                  ? 'Back to the orbit camera'
-                  : 'Free camera (WASD + drag)',
-              child: FilledButton.tonalIcon(
-                onPressed: _toggleFreeCamera,
-                icon: Icon(
-                  _freeCamera ? Icons.threesixty : Icons.videogame_asset,
-                ),
-                label: Text(_freeCamera ? 'Orbit cam' : 'Free cam'),
-              ),
+          ExampleOverlay.bottomLeftPanel(child: _panel()),
+          ExampleOverlay.bottomCenter(
+            child: ExampleCameraToggle(
+              active: _freeCamera,
+              inactiveLabel: 'Orbit camera',
+              activeLabel: 'Free camera',
+              inactiveIcon: Icons.threesixty,
+              activeIcon: Icons.videogame_asset,
+              onToggle: _toggleFreeCamera,
             ),
           ),
         ],
@@ -377,83 +513,86 @@ class ExampleSplatsState extends State<ExampleSplats> {
   Widget _panel() {
     final splats = _activeSplats;
     if (splats == null) return const SizedBox.shrink();
-    return Card(
-      color: Colors.black.withValues(alpha: 0.55),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_sources.length > 1)
-              SegmentedButton<_SourceConfig>(
-                segments: [
-                  for (final config in _sources.keys)
-                    ButtonSegment(value: config, label: Text(config.label)),
-                ],
-                selected: {_active!},
-                onSelectionChanged: (s) => _setActive(s.first),
+    return GaussianSplatSettingsPanel(
+      open: _controlsOpen,
+      onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_sources.length > 1)
+            SegmentedButton<_SourceConfig>(
+              expandedInsets: EdgeInsets.zero,
+              style: SegmentedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                backgroundColor: Colors.black26,
+                selectedForegroundColor: Colors.white,
+                selectedBackgroundColor: Colors.white24,
+                side: const BorderSide(color: Colors.white24),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-            const SizedBox(height: 4),
-            ValueListenableBuilder<double>(
-              valueListenable: _fps,
-              builder: (context, fps, _) => Text(
-                '${splats.splats.count} splats · ${fps.toStringAsFixed(0)} fps',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
-            _slider(
-              'Opacity',
-              _opacity,
-              0.0,
-              1.0,
-              (v) => setState(() {
-                _opacity = v;
-                _applyKnobs();
-              }),
-            ),
-            _slider(
-              'Splat scale',
-              _splatScale,
-              0.2,
-              2.5,
-              (v) => setState(() {
-                _splatScale = v;
-                _applyKnobs();
-              }),
-            ),
-            Wrap(
-              spacing: 12,
-              children: [
-                _toggle(
-                  'Antialiased',
-                  _antialiased,
-                  (v) => setState(() {
-                    _antialiased = v;
-                    _applyKnobs();
-                  }),
-                ),
-                _toggle(
-                  'Crop sweep',
-                  _cropSweep,
-                  (v) => setState(() {
-                    _cropSweep = v;
-                    _applyKnobs();
-                  }),
-                ),
-                _toggle('Orbit', _orbit, (v) => setState(() => _orbit = v)),
-                _toggle(
-                  'Sphere',
-                  _showSphere,
-                  (v) => setState(() {
-                    _showSphere = v;
-                    _sphereNode?.visible = v;
-                  }),
-                ),
+              segments: [
+                for (final config in _sources.keys)
+                  ButtonSegment(value: config, label: Text(config.label)),
               ],
+              selected: {_active!},
+              onSelectionChanged: (s) => _setActive(s.first),
             ),
-          ],
-        ),
+          const SizedBox(height: 4),
+          ValueListenableBuilder<double>(
+            valueListenable: _fps,
+            builder: (context, fps, _) => Text(
+              '${splats.splats.count} splats · ${fps.toStringAsFixed(0)} fps',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+      controls: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _slider(
+            'Opacity',
+            _opacity,
+            0.0,
+            1.0,
+            (v) => setState(() {
+              _opacity = v;
+              _applyKnobs();
+            }),
+          ),
+          _slider(
+            'Splat scale',
+            _splatScale,
+            0.2,
+            2.5,
+            (v) => setState(() {
+              _splatScale = v;
+              _applyKnobs();
+            }),
+          ),
+          GaussianSplatToggleControls(
+            antialiased: _antialiased,
+            cropSweep: _cropSweep,
+            orbit: _orbit,
+            sphere: _showSphere,
+            onAntialiasedChanged: (v) => setState(() {
+              _antialiased = v;
+              _applyKnobs();
+            }),
+            onCropSweepChanged: (v) => setState(() {
+              _cropSweep = v;
+              _applyKnobs();
+            }),
+            onOrbitChanged: (v) => setState(() => _orbit = v),
+            onSphereChanged: (v) => setState(() {
+              _showSphere = v;
+              _sphereNode?.visible = v;
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -486,19 +625,6 @@ class ExampleSplatsState extends State<ExampleSplats> {
             style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _toggle(String label, bool value, ValueChanged<bool> onChanged) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
-        ),
-        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

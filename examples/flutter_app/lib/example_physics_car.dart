@@ -14,6 +14,8 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'character/character_controls.dart';
 import 'character/character_input.dart';
 import 'character/third_person_camera.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'raycast_vehicle.dart';
 
@@ -409,14 +411,18 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
             onTick: _onTick,
           ),
         ),
-        Positioned(top: 16, right: 16, child: _Speedometer(_speed)),
-        Positioned(
-          top: 16,
-          right: 140,
-          child: FloatingActionButton.small(
-            heroTag: 'car-reset',
-            onPressed: _reset,
-            child: const Icon(Icons.refresh),
+        ExampleOverlay.topCenterAction(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ExampleActionButton(
+                tooltip: 'Reset car',
+                onPressed: _reset,
+                icon: Icons.refresh,
+              ),
+              const SizedBox(width: 12),
+              _Speedometer(_speed),
+            ],
           ),
         ),
       ],

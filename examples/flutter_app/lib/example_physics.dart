@@ -16,6 +16,8 @@ import 'character/character_controller.dart';
 import 'character/character_controls.dart';
 import 'character/character_input.dart';
 import 'character/third_person_camera.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 /// A third-person physics playground. Drive Dash with WASD / arrow keys
@@ -964,16 +966,10 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
             child: CustomPaint(painter: _VignettePainter(_vignetteListenable)),
           ),
         ),
-        // Top-centre, clear of the example picker (top-left) and the
-        // settings sidebar (top-right).
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: _HintCard(onReset: () => setState(_reset)),
-          ),
+        // Below the picker so the character remains visible in the scene
+        // centre, with no overlap with system chrome.
+        ExampleOverlay.topCenterAction(
+          child: _PhysicsHeaderActions(onReset: () => setState(_reset)),
         ),
       ],
     );
@@ -1012,37 +1008,24 @@ class _VignettePainter extends CustomPainter {
   bool shouldRepaint(covariant _VignettePainter oldDelegate) => true;
 }
 
-class _HintCard extends StatelessWidget {
-  const _HintCard({required this.onReset});
+class _PhysicsHeaderActions extends StatelessWidget {
+  const _PhysicsHeaderActions({required this.onReset});
 
   final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(
-      context,
-    ).colorScheme.surface.withValues(alpha: 0.85);
-    final textStyle = Theme.of(context).textTheme.bodyMedium;
-    return Material(
-      color: surface,
-      borderRadius: BorderRadius.circular(8),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Move: WASD / arrows or joystick', style: textStyle),
-            Text('Jump: space or the button', style: textStyle),
-            const SizedBox(height: 6),
-            FilledButton.tonal(
-              onPressed: onReset,
-              child: const Text('Respawn'),
-            ),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const ExampleActionHint(message: 'Move: WASD/arrows  ·  Jump: Space'),
+        const SizedBox(width: 8),
+        ExampleActionButton(
+          tooltip: 'Respawn character',
+          onPressed: onReset,
+          icon: Icons.restart_alt,
         ),
-      ),
+      ],
     );
   }
 }
