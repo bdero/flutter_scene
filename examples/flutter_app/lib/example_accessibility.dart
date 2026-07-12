@@ -141,6 +141,10 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   double _elevation = 0.38;
   static const double _radius = 11;
   bool _pointerInside = false;
+  // Any pointer button held over the scene (a hover leaving on button-press
+  // must not resume the orbit mid-drag, which would move the panel and break
+  // a slider drag's UV tracking).
+  bool _pointerDown = false;
   bool _draggingCamera = false;
   Offset _lastDragPosition = Offset.zero;
   Camera? _lastCamera;
@@ -303,9 +307,10 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   }
 
   void _onTick(double deltaSeconds) {
-    // Auto-orbit only while idle (the pointer is off the scene and not
-    // dragging); a hover or drag holds the view still.
-    if (!_pointerInside && !_draggingCamera) {
+    // Auto-orbit only while idle: no pointer over the scene and no button
+    // held. Any press (a slider drag, a part tap, a camera drag) holds the
+    // view still, so the camera stays stable while forwarding input.
+    if (!_pointerInside && !_pointerDown) {
       _azimuth += deltaSeconds * 0.2;
     }
     _animateParts(deltaSeconds);
@@ -359,6 +364,7 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    _pointerDown = true;
     final hit = _rawPick(event.localPosition);
     // A press on the panel drives its sliders through the scene's widget
     // input forwarding; leave it alone.
@@ -390,11 +396,13 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    _pointerDown = false;
     _draggingCamera = false;
     _pressedPart = null;
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    _pointerDown = false;
     if (_draggingCamera) {
       _draggingCamera = false;
       return;
