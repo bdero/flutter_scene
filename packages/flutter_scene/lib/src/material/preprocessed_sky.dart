@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
 import 'package:flutter_scene/src/skybox.dart';
@@ -63,25 +64,22 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     parameters.bind(pass, fragmentShader, transientsBuffer);
     // Zero keep-alive, mirroring PreprocessedMaterial; the generated sky
     // references every declared parameter resource through it so none can be
-    // optimized out.
-    if (parameters.hasAnyParameters) {
+    // optimized out. Environment skies always declare the block (it keeps
+    // the radiance samplers live even when the author never samples them).
+    if (parameters.hasAnyParameters || useEnvironment) {
       pass.bindUniform(
         fragmentShader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }
-    // A `requires: [environment]` sky samples the scene's prefiltered
-    // radiance, bound the same way the standard material binds it.
+    // A `requires: [environment]` sky samples the prefiltered radiance
+    // through SampleEnvironment, bound the same way the standard material
+    // binds it (both layout samplers plus the layout selector block).
     if (useEnvironment) {
-      pass.bindTexture(
-        fragmentShader.getUniformSlot('prefiltered_radiance'),
-        environment.prefilteredRadianceTexture,
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-          widthAddressMode: gpu.SamplerAddressMode.repeat,
-          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        ),
+      EngineLightingUniforms.bindPrefilteredRadiance(
+        pass,
+        fragmentShader,
+        sampledEnvironment ?? environment,
       );
     }
   }

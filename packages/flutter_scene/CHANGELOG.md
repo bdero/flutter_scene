@@ -1,5 +1,12 @@
 ## 0.19.0
 
+* `.fmat` skies declaring `requires: [environment]` now sample through a
+  generated `SampleEnvironment(direction, roughness)` helper that binds every
+  radiance layout correctly (the roughness-mip cube layout previously sampled
+  black), and `ShaderSkySource.sampledEnvironment` pins the environment such a
+  sky samples, so a sky that drives scene lighting through `SkyEnvironment`
+  can reflect a fixed map instead of its own bake.
+
 * The lit shader reads both cross-fade environments' diffuse SH through a
   single `sh_coefficients` sampler (a 9x2 composite row per environment during
   a cross-fade), dropping the fragment sampler count from 16 to 15. Skinned

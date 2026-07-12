@@ -141,10 +141,16 @@ class EnvironmentSelector extends ChangeNotifier {
   /// Whether a selection is downloading or decoding.
   bool get loading => _loading;
 
-  /// Selects [environment] and applies it to [scene]. Throws when the
+  /// Selects [environment] and applies it to [scene], returning the resolved
+  /// map (null for the renderer's built-in studio default). Throws when the
   /// download or decode fails (the previous environment stays active).
-  Future<void> select(ExampleEnvironment environment, Scene scene) async {
-    if (environment.id == _active.id && !_loading) return;
+  Future<EnvironmentMap?> select(
+    ExampleEnvironment environment,
+    Scene scene,
+  ) async {
+    if (environment.id == _active.id && !_loading) {
+      return _cache[environment.id];
+    }
     final previous = _active;
     _active = environment;
     _loading = true;
@@ -152,6 +158,7 @@ class EnvironmentSelector extends ChangeNotifier {
     try {
       final map = await _resolve(environment);
       scene.environment = map;
+      return map;
     } catch (_) {
       _active = previous;
       rethrow;

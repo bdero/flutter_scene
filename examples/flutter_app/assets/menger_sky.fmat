@@ -1,43 +1,51 @@
 // A raymarched Menger sponge interior authored as a `.fmat` sky. The viewer
 // sits inside an infinitely repeating sponge lattice with chrome bracing, lit
-// by a movable point light, distance fog, and an optional neon glow on the
-// bracing. Every parameter feeds the same Sky() function the environment bake
-// samples, so relighting the sky relights the whole scene.
+// by a movable point light, distance fog, an optional neon glow on the
+// bracing, and environment-mapped reflections sampled from the environment
+// the engine binds. Every parameter feeds the same Sky() function the
+// environment bake samples, so relighting the sky relights the whole scene.
 //
 // Adapted from "Menger Sponge Variation" by Shane
 // (https://www.shadertoy.com/view/ldScRt), used and modified under the
 // Shadertoy default license, CC BY-NC-SA 3.0 Unported
 // (https://creativecommons.org/licenses/by-nc-sa/3.0/). Changes include
 // reworking the full-screen camera raymarcher into a directional sky
-// function, replacing the texture lookup with procedural noise, dropping the
-// reflection pass and screen-space post effects, and parameterizing the
-// lighting. This derived shader is likewise CC BY-NC-SA 3.0.
+// function, replacing the texture lookup with procedural noise, replacing
+// the raymarched reflection pass with prefiltered environment sampling,
+// dropping the screen-space post effects, and parameterizing the lighting.
+// This derived shader is likewise CC BY-NC-SA 3.0.
 
 material {
   name: "MengerSky",
+  requires: [environment],
   parameters: [
     // Where along the corridor the viewer sits and how the view is twisted.
-    { type: float, name: travel, hint: range(0, 60, 0.01), default: 1.0 },
-    { type: float, name: spin, hint: range(-3.1416, 3.1416, 0.001), default: 0.5 },
+    // Both are animated from the app; the sponge repeats every 3 units so
+    // travel wraps there.
+    { type: float, name: travel, hint: range(0, 3, 0.001), default: 1.0 },
+    { type: float, name: spin, hint: range(0, 6.2832, 0.001), default: 0.0 },
     // Grows or shrinks the sponge's primary holes.
-    { type: float, name: hole_size, hint: range(-0.02, 0.1, 0.001), default: 0.03 },
+    { type: float, name: hole_size, hint: range(-0.02, 0.1, 0.001), default: -0.01 },
 
     // The point light carried with the viewer.
-    { type: vec3, name: light_color, hint: source_color, default: [1.0, 0.85, 0.6] },
+    { type: vec3, name: light_color, hint: source_color, default: [0.83, 1.0, 0.55] },
     { type: float, name: light_intensity, hint: range(0, 8, 0.01), default: 1.6 },
-    { type: float, name: light_height, hint: range(-1.4, 1.4, 0.01), default: 1.0 },
+    { type: float, name: light_height, hint: range(-1.4, 1.4, 0.01), default: 0.51 },
     { type: float, name: light_forward, hint: range(-3, 3, 0.01), default: 0.0 },
 
     // Emissive tint applied to the chrome bracing.
     { type: vec3, name: glow_color, hint: source_color, default: [0.1, 0.7, 1.0] },
-    { type: float, name: glow_intensity, hint: range(0, 12, 0.01), default: 0.0 },
+    { type: float, name: glow_intensity, hint: range(0, 12, 0.01), default: 8.59 },
 
     // Distance fog, the dominant emitter for most of the sky sphere.
     { type: vec3, name: fog_color, hint: source_color, default: [0.7, 0.8, 1.0] },
-    { type: float, name: fog_brightness, hint: range(0, 8, 0.01), default: 2.5 },
+    { type: float, name: fog_brightness, hint: range(0, 8, 0.01), default: 6.82 },
 
     // Strength of the red-to-blue vertical color grade.
-    { type: float, name: grade, hint: range(0, 1, 0.01), default: 0.5 },
+    { type: float, name: grade, hint: range(0, 1, 0.01), default: 0.48 },
+
+    // Strength of the environment-mapped reflections.
+    { type: float, name: reflection, hint: range(0, 2, 0.01), default: 0.7 },
 
     // Surface tints for the sponge's outer shell and inner core.
     { type: vec3, name: shell_color, default: [1.25, 1.0, 0.75] },
@@ -226,6 +234,14 @@ sky {
       sh = (sh + ao * 0.3) * ao;
 
       col = shade_point(sp, rd, sn, lp, ao, id);
+
+      // Environment-mapped reflection, sharp on the chrome bracing and
+      // glossier, fresnel-weighted on the sponge.
+      float fres = clamp(1.0 + dot(rd, sn), 0.0, 1.0);
+      vec3 env = SampleEnvironment(reflect(rd, sn), id < 0.5 ? 0.1 : 0.5);
+      col += env * material_params.reflection *
+          (id < 0.5 ? 1.0 : fres * fres + 0.1);
+
       col *= 1.0 - edge * 0.9;
       col *= sh;
 

@@ -241,8 +241,9 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
 /// see [prefilterEquirectRadiance]) and the 9-texel diffuse SH coefficient
 /// texture, all in one call. [noEnvironment] is passed to the sky fragment's
 /// bind for any `useEnvironment` samplers (a sky baked into the environment
-/// cannot sample the environment it is producing). For a bake spread across
-/// frames, use [SkyBakeJob].
+/// cannot sample the environment it is producing; a source with a fixed
+/// `sampledEnvironment` override still samples that override). For a bake
+/// spread across frames, use [SkyBakeJob].
 ({gpu.Texture atlas, gpu.Texture sh}) bakeSkyEnvironment(
   ShaderSkySource source,
   EnvironmentMap noEnvironment, {
