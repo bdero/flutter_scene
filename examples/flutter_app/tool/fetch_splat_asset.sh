@@ -40,6 +40,8 @@ for value in meta.values():
         files.update(value['files'])
 print('\n'.join(sorted(files)))
 EOF
+    # Windows Python writes CRLF; read removes only the trailing LF.
+    f=${f%$'\r'}
     curl -fsS -o "$out_dir/$f" "$url_dir/$f"
   done
 }
@@ -63,7 +65,8 @@ fetch_asset() {
     metas+=("$TMP/$name$sub/meta.json")
   done
   npx -y @playcanvas/splat-transform "${metas[@]}" "$TMP/$name.ply"
-  dart run tool/ply_to_splat.dart "$TMP/$name.ply" "$out"
+  # Avoid running unrelated native build hooks while retaining package imports.
+  dart --packages=../../.dart_tool/package_config.json tool/ply_to_splat.dart "$TMP/$name.ply" "$out"
   echo "Wrote $out"
 }
 
