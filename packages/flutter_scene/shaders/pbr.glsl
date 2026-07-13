@@ -1,4 +1,3 @@
-#include <impeller/constants.glsl>
 
 const float kPi = 3.14159265358979323846;
 
