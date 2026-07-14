@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -352,7 +353,19 @@ base class SceneEncoder {
     bool windingFlipped,
     double fade,
   ) {
-    _renderPass.clearBindings();
+    // Bindings persist across draws within a pass, and every draw binds its
+    // full slot set, so clearing is only needed when the pipeline (and with
+    // it the shaders' slot layouts) changes; a stale entry from a different
+    // layout could otherwise leak into the next command. Opaque draws are
+    // pipeline-sorted, so same-pipeline runs skip the clear, which lets the
+    // per-draw engine-lighting rebind be skipped too (see
+    // EngineLightingUniforms); each bind marshals its slot name across the
+    // FFI, and re-issuing the full set per item dominated main-thread frame
+    // time in draw-heavy scenes.
+    if (!identical(_boundPipeline, pipeline)) {
+      _renderPass.clearBindings();
+      EngineLightingUniforms.invalidateBindMemo();
+    }
     _bindPipeline(pipeline);
     // The material reads its cross-fade coverage from this transient field as
     // it binds; reset for every draw so a shared material does not leak a
