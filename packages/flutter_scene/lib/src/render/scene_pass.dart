@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -8,6 +9,8 @@ import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
+import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -18,6 +21,7 @@ import 'package:flutter_scene/src/render/ssao_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// Render-graph blackboard key for the current scene-color texture.
 ///
@@ -25,6 +29,11 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// passes read it and republish their own output, so the resolve pass
 /// reads whatever the last pass produced.
 const String kSceneColorBlackboardKey = 'scene_color';
+
+/// Render-graph blackboard key for the opaque-phase color snapshot, published
+/// by [ScenePass] only when a visible material declares
+/// `RenderInput.opaqueSceneColor` (see `Material.sceneInputs`).
+const String kOpaqueSceneColorBlackboardKey = 'opaque_scene_color';
 
 /// Draws the scene's render items (opaque, then depth-sorted
 /// translucent) into a floating-point HDR color target, publishing it on
@@ -50,7 +59,13 @@ class ScenePass extends RenderGraphPass {
     double specularOcclusionMode = 0.0,
     int layerMask = kRenderLayerAll,
     Fog? fog,
-  }) : _camera = camera,
+    bool captureOpaqueColor = false,
+    bool bindSceneDepth = false,
+    double time = 0.0,
+  }) : _captureOpaqueColor = captureOpaqueColor,
+       _bindSceneDepth = bindSceneDepth,
+       _time = time,
+       _camera = camera,
        _layerMask = layerMask,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -86,6 +101,13 @@ class ScenePass extends RenderGraphPass {
   final double _specularOcclusionMode;
   final Fog? _fog;
 
+  // Material scene inputs (see Material.sceneInputs): whether to split the
+  // pass and snapshot the opaque color, whether to hand materials the
+  // prepass linear depth, and the engine time for material animation.
+  final bool _captureOpaqueColor;
+  final bool _bindSceneDepth;
+  final double _time;
+
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
   @override
@@ -96,6 +118,7 @@ class ScenePass extends RenderGraphPass {
     final width = _dimensions.width.toInt();
     final height = _dimensions.height.toInt();
 
+    final capture = _captureOpaqueColor;
     final hdrColor = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
@@ -104,37 +127,73 @@ class ScenePass extends RenderGraphPass {
         debugName: 'hdr_scene_color',
       ),
     );
+    // The split's depth must survive across the two passes, so it cannot be
+    // tile-transient there.
     final depth = context.texturePool.acquire(
       TransientTextureDescriptor.depth(
         width: width,
         height: height,
         format: gpu.gpuContext.defaultDepthStencilFormat,
         sampleCount: _enableMsaa ? 4 : 1,
+        shaderReadable: capture,
         debugName: 'scene_depth',
       ),
     );
-    final colorAttachment = gpu.ColorAttachment(texture: hdrColor);
+    // The opaque-phase snapshot translucent materials sample (refraction).
+    final opaqueColor = capture
+        ? context.texturePool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: height,
+              format: _hdrFormat,
+              debugName: 'opaque_scene_color',
+            ),
+          )
+        : null;
+    // The multisample color target. Tile-transient normally; when the pass
+    // splits it must be stored and reloaded, so it becomes device-resident
+    // (a cost paid only when a material requests the snapshot).
+    gpu.Texture? msaaColor;
     if (_enableMsaa) {
-      final msaaColor = context.texturePool.acquire(
+      msaaColor = context.texturePool.acquire(
         TransientTextureDescriptor(
           width: width,
           height: height,
           format: _hdrFormat,
           sampleCount: 4,
-          storageMode: gpu.StorageMode.deviceTransient,
+          storageMode: capture
+              ? gpu.StorageMode.devicePrivate
+              : gpu.StorageMode.deviceTransient,
           enableShaderReadUsage: false,
           debugName: 'hdr_scene_color_msaa',
         ),
       );
-      colorAttachment.texture = msaaColor;
-      colorAttachment.resolveTexture = hdrColor;
-      colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
+    }
+
+    final colorAttachment = gpu.ColorAttachment(
+      texture: capture ? (msaaColor ?? opaqueColor!) : hdrColor,
+    );
+    if (_enableMsaa) {
+      colorAttachment.texture = msaaColor!;
+      if (capture) {
+        // Resolve the opaque phase into the snapshot while keeping the
+        // multisample contents for the translucent pass to continue on.
+        colorAttachment.resolveTexture = opaqueColor;
+        colorAttachment.storeAction =
+            gpu.StoreAction.storeAndMultisampleResolve;
+      } else {
+        colorAttachment.resolveTexture = hdrColor;
+        colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
+      }
     }
     final target = gpu.RenderTarget.singleColor(
       colorAttachment,
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
         depthClearValue: 1.0,
+        depthStoreAction: capture
+            ? gpu.StoreAction.store
+            : gpu.StoreAction.dontCare,
       ),
     );
 
@@ -166,6 +225,7 @@ class ScenePass extends RenderGraphPass {
         envB.diffuseShTexture,
       );
     }
+    final camera = _camera;
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentMapB: _environmentMapB,
@@ -193,6 +253,12 @@ class ScenePass extends RenderGraphPass {
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
       viewportSize: _dimensions,
       fog: _fog,
+      sceneDepthLinear: _bindSceneDepth
+          ? context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey)
+          : null,
+      cameraPosition: camera.position,
+      cameraForward: camera.forward.normalized(),
+      time: _time,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
@@ -226,9 +292,89 @@ class ScenePass extends RenderGraphPass {
       _layerMask,
     );
     _renderScene.cull(encoder.frustum, encoder.submit);
-    encoder.flush();
-    rendererSubmissions.submit(commandBuffer);
 
+    if (!capture) {
+      encoder.flush();
+      rendererSubmissions.submit(commandBuffer);
+      context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
+      return;
+    }
+
+    // Split path: finish the opaque phase (pass 1 resolves/stores the
+    // snapshot), then draw translucents in a second pass that can sample it.
+    encoder.flushOpaque();
+    rendererSubmissions.submit(commandBuffer);
+    lighting.opaqueSceneColor = opaqueColor;
+
+    final translucentAttachment = gpu.ColorAttachment(
+      texture: _enableMsaa ? msaaColor! : hdrColor,
+      loadAction: _enableMsaa ? gpu.LoadAction.load : gpu.LoadAction.dontCare,
+    );
+    if (_enableMsaa) {
+      translucentAttachment.resolveTexture = hdrColor;
+      translucentAttachment.storeAction = gpu.StoreAction.multisampleResolve;
+    }
+    final translucentTarget = gpu.RenderTarget.singleColor(
+      translucentAttachment,
+      depthStencilAttachment: gpu.DepthStencilAttachment(
+        texture: depth,
+        depthLoadAction: gpu.LoadAction.load,
+        depthClearValue: 1.0,
+      ),
+    );
+    final translucentCommands = gpu.gpuContext.createCommandBuffer();
+    final translucentPass = translucentCommands.createRenderPass(
+      translucentTarget,
+    );
+    if (!_enableMsaa) {
+      // Without a multisample attachment to carry across the split, replay
+      // the snapshot into the final HDR target before drawing over it.
+      _encodeCopy(translucentPass, opaqueColor!);
+    }
+    encoder.flushTranslucent(translucentPass: translucentPass);
+    rendererSubmissions.submit(translucentCommands);
+
+    context.blackboard.set(kOpaqueSceneColorBlackboardKey, opaqueColor!);
     context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
+  }
+
+  static final gpu.Shader _copyVertexShader =
+      baseShaderLibrary['FullscreenVertex']!;
+  static final gpu.Shader _copyFragmentShader =
+      baseShaderLibrary['CopyFragment']!;
+
+  // Two triangles of NDC positions covering the screen (6 vec2s).
+  static final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext
+      .createDeviceBufferWithCopy(
+        ByteData.sublistView(
+          Float32List.fromList(<double>[
+            -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, //
+            -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, //
+          ]),
+        ),
+      );
+  static final gpu.BufferView _quadView = gpu.BufferView(
+    _quadBuffer,
+    offsetInBytes: 0,
+    lengthInBytes: 6 * 2 * 4,
+  );
+
+  /// Replays [source] over the whole target: the first draw of the split's
+  /// translucent pass on the non-MSAA path. Depth writes/tests off so it
+  /// composites under nothing and disturbs no depth.
+  void _encodeCopy(gpu.RenderPass pass, gpu.Texture source) {
+    final pipeline = gpu.gpuContext.createRenderPipeline(
+      _copyVertexShader,
+      _copyFragmentShader,
+    );
+    pass.bindPipeline(pipeline);
+    pass.setDepthWriteEnable(false);
+    pass.setDepthCompareOperation(gpu.CompareFunction.always);
+    bindVertexBufferCompat(pass, _quadView, 6);
+    pass.bindTexture(
+      _copyFragmentShader.getUniformSlot('source_texture'),
+      source,
+    );
+    drawCompat(pass, 6);
   }
 }

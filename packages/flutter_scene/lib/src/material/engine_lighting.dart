@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// Packs the engine lighting half of the shared `FragInfo` uniform block and
@@ -131,6 +132,21 @@ class EngineLightingUniforms {
     fragInfo[13] = lighting.spotShadowDepthBias;
     fragInfo[14] = lighting.spotShadowNormalBias;
     fragInfo[15] = lighting.spotShadowSoftness;
+    // scene_inputs [16..19] (more of the unused SH region): gates for the
+    // material scene-input samplers (bound only into materials that declare
+    // engine_inputs) and the engine time. The opaque snapshot exists only
+    // while translucent draws encode, so opaque draws read 0 for x.
+    fragInfo[16] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
+    fragInfo[17] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
+    fragInfo[18] = lighting.time;
+    // camera_forward [20..23]: the camera's world-space forward direction,
+    // for a fragment's planar view depth (dot(-v_viewvector, forward)).
+    final forward = lighting.cameraForward;
+    if (forward != null) {
+      fragInfo[20] = forward.x;
+      fragInfo[21] = forward.y;
+      fragInfo[22] = forward.z;
+    }
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
@@ -389,6 +405,33 @@ class EngineLightingUniforms {
       Material.whitePlaceholder(lighting.ssaoMap),
       sampler: _clampLinearSampler,
     );
+  }
+
+  /// Binds the material scene-input samplers for a material that declared
+  /// them (`Material.sceneInputs`); their slots exist only in shaders
+  /// emitted with `engine_inputs`, so this must not run for other
+  /// materials. Placeholders cover frames where an input was not produced
+  /// (the `scene_inputs` gates read 0 then).
+  static void bindSceneInputTextures(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    Lighting lighting,
+    Set<RenderInput> sceneInputs,
+  ) {
+    if (sceneInputs.contains(RenderInput.opaqueSceneColor)) {
+      pass.bindTexture(
+        shader.getUniformSlot('scene_opaque_color'),
+        Material.whitePlaceholder(lighting.opaqueSceneColor),
+        sampler: _clampLinearSampler,
+      );
+    }
+    if (sceneInputs.contains(RenderInput.depth)) {
+      pass.bindTexture(
+        shader.getUniformSlot('scene_depth'),
+        Material.whitePlaceholder(lighting.sceneDepthLinear),
+        sampler: _nearestClampSampler,
+      );
+    }
   }
 
   /// Binds the secondary cross-fade environment's prefiltered radiance to the

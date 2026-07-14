@@ -96,6 +96,15 @@ enum RenderInput {
   /// cascade transforms. Null unless the scene has a shadow-casting directional
   /// light.
   shadowMap,
+
+  /// A snapshot of the scene color after the opaque phase (skybox plus opaque
+  /// draws) and before translucent draws. Declared by materials (see
+  /// `Material.sceneInputs`) so a translucent surface can sample what is
+  /// behind it (refraction, absorption). Requesting it splits the scene pass
+  /// in two with a resolve in between, so it costs nothing when unused.
+  /// Custom render passes read the finished scene color from their pass
+  /// texture instead and should not request this.
+  opaqueSceneColor,
 }
 
 /// A user-supplied render pass inserted into the built-in pipeline at a

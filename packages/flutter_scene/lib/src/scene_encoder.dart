@@ -177,7 +177,10 @@ base class SceneEncoder {
   final Camera _camera;
   final Lighting _lighting;
   final int _layerMask;
-  final gpu.RenderPass _renderPass;
+  // Not final: when the scene pass splits into two GPU passes to snapshot
+  // the opaque color, [flushTranslucent] switches recording to the second
+  // pass.
+  gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
   // The camera's vertical field of view in radians, or null for a
@@ -492,6 +495,14 @@ base class SceneEncoder {
   /// has finished recording into its render pass; the caller submits the
   /// owning command buffer.
   void flush() {
+    flushOpaque();
+    flushTranslucent();
+  }
+
+  /// Emits only the opaque phase (see [flush]). Used with
+  /// [flushTranslucent] when the scene pass splits the frame into two GPU
+  /// passes to snapshot the opaque color between them.
+  void flushOpaque() {
     _opaqueRecords.sort((a, b) {
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
@@ -524,6 +535,19 @@ base class SceneEncoder {
       }
     }
     _opaqueRecords.clear();
+  }
+
+  /// Emits only the translucent phase (see [flush]). When [translucentPass]
+  /// is given, recording switches to it first (the split-pass path: the
+  /// opaque color was resolved between the passes, so translucent materials
+  /// can sample it); the new pass starts with no bound pipeline and needs
+  /// the depth test re-asserted.
+  void flushTranslucent({gpu.RenderPass? translucentPass}) {
+    if (translucentPass != null) {
+      _renderPass = translucentPass;
+      _boundPipeline = null;
+      _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    }
 
     _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
     _renderPass.setDepthWriteEnable(false);

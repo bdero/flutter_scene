@@ -168,6 +168,54 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `blending` | `opaque`, `alpha` | `opaque` | `alpha` routes the material through the depth-sorted translucent pass. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
+| `engine_inputs` | list of `scene_color`, `scene_depth` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
+
+## Engine inputs (`engine_inputs`)
+
+A material can sample what the scene rendered behind it by declaring engine
+inputs. The engine produces these only when a visible material asks, so they
+cost nothing when unused:
+
+- `scene_color` binds `scene_opaque_color`, a snapshot of the scene taken
+  after the opaque phase (skybox + opaque draws) and before translucent
+  draws. Requesting it splits the scene pass into two GPU passes with a
+  resolve in between. Use it for refraction and translucent compositing.
+- `scene_depth` binds `scene_depth`, the opaque geometry's linear
+  (planar view-space) depth in world units. Requesting it forces the depth
+  prepass (already produced when SSAO or reflections are on). Use it for
+  depth-fade absorption, shoreline foam, and soft-particle edges.
+
+Declaring an input emits the sampler and these accessors into your shader:
+
+```glsl
+vec2  GetScreenUv();                  // this fragment's screen UV
+vec3  GetSceneColor(vec2 uv_offset);  // opaque scene color behind the fragment
+float GetSceneDepth(vec2 uv_offset);  // opaque linear depth behind the fragment
+float GetFragmentViewDepth();         // this fragment's own linear depth
+float GetTime();                      // engine seconds, for animation
+```
+
+`GetFragmentViewDepth()` and `GetSceneDepth(vec2(0.0))` are directly
+comparable: their difference is the world-space thickness between this
+surface and whatever is behind it. When an input is unavailable for a frame
+(for example a non-perspective camera produces no depth), the accessors
+return inert values (black, a huge depth) so effects fade out instead of
+misrendering.
+
+Typical use, a translucent water surface:
+
+```glsl
+float thickness = GetSceneDepth(vec2(0.0)) - GetFragmentViewDepth();
+float foam = 1.0 - smoothstep(0.0, foam_width, thickness);       // shoreline
+vec3 refracted = GetSceneColor(normal_offset * refraction_strength);
+vec3 absorbed = refracted * exp(-absorption * thickness);         // Beer-Lambert
+```
+
+Only `lit` surface materials may declare engine inputs (the gates and screen
+mapping ride the engine lighting data). Budget note: the lit framework is
+close to Metal's 16-sampler limit, so with both inputs declared keep the
+material's own samplers to two or fewer; prefer in-shader procedural noise
+over noise textures.
 
 ## Parameters
 

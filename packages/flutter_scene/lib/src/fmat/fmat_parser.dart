@@ -563,6 +563,7 @@ FmatMaterial _build(
     'varyings',
     'attributes',
     'requires',
+    'engine_inputs',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -638,6 +639,48 @@ FmatMaterial _build(
     }
   }
 
+  // `engine_inputs` lists per-frame engine textures the shader samples:
+  // `scene_color` (the opaque-phase color snapshot) and `scene_depth` (the
+  // opaque linear depth). Lit surface materials only: the samplers and their
+  // gates ride the engine-lighting frame data, which unlit shaders and skies
+  // do not carry.
+  final engineInputs = <String>[];
+  final engineInputsRaw = tree['engine_inputs'];
+  if (engineInputsRaw != null) {
+    if (engineInputsRaw is! List) {
+      throw FmatException(
+        '`engine_inputs` must be a list.',
+        fileName: fileName,
+      );
+    }
+    for (final entry in engineInputsRaw) {
+      if (entry is _Ident &&
+          (entry.name == 'scene_color' || entry.name == 'scene_depth')) {
+        if (!engineInputs.contains(entry.name)) engineInputs.add(entry.name);
+      } else {
+        throw FmatException(
+          'Unknown `engine_inputs` entry; supported: `scene_color`, '
+          '`scene_depth`.',
+          fileName: fileName,
+          line: entry is _Ident ? entry.line : null,
+        );
+      }
+    }
+    if (engineInputs.isNotEmpty && domain != FmatDomain.surface) {
+      throw FmatException(
+        '`engine_inputs` is only supported in surface materials.',
+        fileName: fileName,
+      );
+    }
+    if (engineInputs.isNotEmpty && shadingModel != FmatShadingModel.lit) {
+      throw FmatException(
+        '`engine_inputs` requires `shading_model: lit` (the samplers ride '
+        'the engine lighting frame data).',
+        fileName: fileName,
+      );
+    }
+  }
+
   // Loose check: the code block must define the expected entry function. We do
   // not fully parse GLSL; this catches the common omission with a clear
   // message.
@@ -704,6 +747,7 @@ FmatMaterial _build(
     vertexSourceLine: vertex?.startLine ?? 0,
     varyings: varyings,
     attributes: attributes,
+    engineInputs: engineInputs,
   );
 }
 

@@ -4,6 +4,13 @@ analyzer:
   exclude:
     # flatc-generated reader for the Shaders tab.
     - lib/src/shader_bundle_generated.dart
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   rules:

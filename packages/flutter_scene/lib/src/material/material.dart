@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/material/dfg_lut.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
@@ -287,6 +288,17 @@ abstract class Material {
   bool isOpaque() {
     return true;
   }
+
+  /// Per-frame engine inputs this material samples, produced only when a
+  /// visible material asks for them: [RenderInput.depth] binds the linear
+  /// scene depth of the opaque geometry (forcing the depth prepass), and
+  /// [RenderInput.opaqueSceneColor] binds a snapshot of the scene color
+  /// taken after the opaque phase (splitting the scene pass in two).
+  /// Together they enable refraction, depth-fade absorption, shoreline
+  /// foam, and soft-particle style effects on translucent surfaces. The
+  /// base material requests nothing; a `.fmat` material declares these with
+  /// `engine_inputs:`.
+  Set<RenderInput> get sceneInputs => const {};
 
   /// The metallic-roughness texture the camera depth prepass samples so
   /// screen-space reflections have a per-pixel roughness (roughness in G),

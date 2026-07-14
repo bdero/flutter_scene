@@ -87,6 +87,56 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(m.parameters, isEmpty);
     });
 
+    test('parses engine_inputs and rejects invalid combinations', () {
+      final m = parseFmat('''
+material {
+  name: "Water",
+  shading_model: lit,
+  blending: alpha,
+  engine_inputs: [scene_color, scene_depth],
+}
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(m.engineInputs, ['scene_color', 'scene_depth']);
+      final sidecar = buildSidecar(m);
+      expect(sidecar['engine_inputs'], ['scene_color', 'scene_depth']);
+      final glsl = emitFragmentGlsl(m);
+      expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
+      expect(glsl, contains('uniform sampler2D scene_depth;'));
+      expect(glsl, contains('vec3 GetSceneColor(vec2 uv_offset)'));
+      expect(glsl, contains('float GetSceneDepth(vec2 uv_offset)'));
+
+      // Unknown entries are rejected.
+      expect(
+        () => parseFmat('''
+material { name: "X", engine_inputs: [shadow_map] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('Unknown `engine_inputs` entry'),
+      );
+      // Unlit materials cannot declare engine inputs (the samplers ride the
+      // engine lighting frame data).
+      expect(
+        () => parseFmat('''
+material { name: "X", shading_model: unlit, engine_inputs: [scene_color] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('requires `shading_model: lit`'),
+      );
+    });
+
+    test('materials without engine_inputs get no scene-input samplers', () {
+      final m = parseFmat('''
+material { name: "Plain" }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(m.engineInputs, isEmpty);
+      final glsl = emitFragmentGlsl(m);
+      expect(glsl, isNot(contains('scene_opaque_color')));
+      expect(glsl, isNot(contains('uniform sampler2D scene_depth;')));
+      expect(buildSidecar(m).containsKey('engine_inputs'), isFalse);
+    });
+
     test('tracks the fragment block source line for #line mapping', () {
       // Explicit newlines so the line count is unambiguous: the fragment
       // block keyword is on line 2.

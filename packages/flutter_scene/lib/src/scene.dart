@@ -1112,6 +1112,21 @@ base class Scene implements SceneGraph {
     }
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
+    // Scene inputs requested by materials (Material.sceneInputs): depth
+    // forces the prepass like a custom pass would, and opaqueSceneColor
+    // splits the scene pass around an opaque color snapshot. Scenes whose
+    // materials request nothing skip all of it.
+    final materialInputs = <RenderInput>{};
+    for (final item in renderScene.items) {
+      final inputs = item.material.sceneInputs;
+      if (inputs.isNotEmpty) materialInputs.addAll(inputs);
+    }
+    final captureOpaqueColor = materialInputs.contains(
+      RenderInput.opaqueSceneColor,
+    );
+    final bindSceneDepth = materialInputs.contains(RenderInput.depth);
+    if (bindSceneDepth) customInputs.add(RenderInput.depth);
+
     final graph = RenderGraph();
     // Directional cascades and shadow-casting spots share one atlas (and so one
     // sampler in the lit shader). All tiles use one resolution, the directional
@@ -1225,6 +1240,10 @@ base class Scene implements SceneGraph {
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         layerMask: view.layerMask,
         fog: fog,
+        captureOpaqueColor: captureOpaqueColor,
+        // Depth binding needs the prepass, which needs a perspective camera.
+        bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
+        time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
       ),
     );
     // Screen-space reflections refine the lit HDR color in place, before

@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
@@ -38,10 +39,32 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   }) : _shadingModel = _parseShadingModel(metadata['shading_model']),
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
+       _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
   }
+
+  /// Parses the sidecar's `engine_inputs` list (`scene_color`,
+  /// `scene_depth`) into the [RenderInput]s the material requests.
+  static Set<RenderInput> _parseSceneInputs(Object? value) {
+    if (value is! List) return const {};
+    final inputs = <RenderInput>{};
+    for (final entry in value) {
+      switch (entry) {
+        case 'scene_color':
+          inputs.add(RenderInput.opaqueSceneColor);
+        case 'scene_depth':
+          inputs.add(RenderInput.depth);
+      }
+    }
+    return inputs;
+  }
+
+  Set<RenderInput> _sceneInputs;
+
+  @override
+  Set<RenderInput> get sceneInputs => _sceneInputs;
 
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
@@ -104,6 +127,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _shadingModel = _parseShadingModel(metadata['shading_model']);
     _blending = _parseBlending(metadata['blending']);
     _culling = _parseCulling(metadata['culling']);
+    _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
     setFragmentShader(fragmentShader);
     parameters.updateFromMetadata(fragmentShader, metadata);
   }
@@ -139,6 +163,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         lighting,
         env,
       );
+      if (_sceneInputs.isNotEmpty) {
+        EngineLightingUniforms.bindSceneInputTextures(
+          pass,
+          fragmentShader,
+          lighting,
+          _sceneInputs,
+        );
+      }
       // Lit `.fmat` shaders include the lighting framework (and thus fog.glsl),
       // so they carry the FogInfo block. Unlit `.fmat` shaders do not; fog on
       // those is a TODO(fog): give the unlit `.fmat` template the fog block.

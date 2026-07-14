@@ -19,8 +19,20 @@ uniform FragInfo {
   // y: clip-space depth bias. z: world-space normal bias. w: PCF softness in
   // texels.
   vec4 spot_shadow_params;
-  vec4 diffuse_sh2;
-  vec4 diffuse_sh3;
+  // Material scene inputs (more of the unused SH region; see
+  // Material.sceneInputs). x: the opaque scene-color snapshot is bound this
+  // draw (scene_opaque_color sampler, emitted only into materials that
+  // declare engine_inputs). y: the opaque linear-depth texture is bound
+  // (scene_depth sampler, same). z: engine time in seconds, for material
+  // animation (GetTime()). w reserved. Screen UVs for both samplers come
+  // from gl_FragCoord.xy * ssao_params.zw (the reciprocal render-target
+  // size, packed regardless of occlusion).
+  vec4 scene_inputs;
+  // xyz: the camera's world-space forward direction (unit length), so a
+  // material can compute its fragment's planar view depth
+  // (dot(-v_viewvector, camera_forward.xyz)) and difference it against the
+  // scene_depth sample. w reserved.
+  vec4 camera_forward;
   vec4 diffuse_sh4;
   vec4 diffuse_sh5;
   vec4 diffuse_sh6;
@@ -143,3 +155,18 @@ uniform sampler2D punctual_lights;
 // computed UV (punctual_dims.yz give its width/height). A white placeholder is
 // bound and never read when the per-object count is 0.
 uniform sampler2D punctual_index;
+
+// Engine time in seconds (wrapped to keep float precision), for material
+// animation. Zero when the engine provides no time.
+float GetTime() { return frag_info.scene_inputs.z; }
+
+// The screen UV of this fragment, for sampling screen-space engine inputs
+// (the scene_opaque_color / scene_depth samplers emitted into materials that
+// declare engine_inputs).
+vec2 GetScreenUv() { return gl_FragCoord.xy * frag_info.ssao_params.zw; }
+
+// This fragment's planar view-space depth (world units along the camera
+// forward axis), comparable against the opaque scene depth.
+float GetFragmentViewDepth() {
+  return dot(-v_viewvector, frag_info.camera_forward.xyz);
+}
