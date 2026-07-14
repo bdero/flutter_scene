@@ -143,6 +143,11 @@ class EngineLightingUniforms {
     TransientWriter transientsBuffer,
     Lighting lighting,
   ) {
+    // Frame-constant per (pass, shader, lighting); see the bind memo above.
+    if (_memoPassIs(pass) && identical(_fogMemo[shader], lighting)) {
+      return;
+    }
+    _fogMemo[shader] = lighting;
     final fog = lighting.fog;
     final buffer = Float32List(24);
     if (fog != null && fog.enabled && fog.mode != FogMode.none) {
@@ -286,6 +291,33 @@ class EngineLightingUniforms {
     );
   }
 
+  // Pass-scoped memo for the engine-constant bind set. Bindings persist
+  // across draws within a pass, and the lighting samplers plus the fog block
+  // are identical for a given (pass, shader, lighting, environment), so
+  // re-issuing them per item only burns main-thread time (each bind marshals
+  // its slot name across the FFI). The scene encoder invalidates the memo
+  // whenever it clears the pass's bindings (on pipeline changes), keeping the
+  // skip exactly as safe as re-binding.
+  static gpu.RenderPass? _memoPass;
+  static final Map<gpu.Shader, (Lighting, EnvironmentMap)> _texturesMemo = {};
+  static final Map<gpu.Shader, Lighting> _fogMemo = {};
+
+  /// Forgets all memoized bindings; the encoder calls this whenever it clears
+  /// the render pass's bindings.
+  static void invalidateBindMemo() {
+    _memoPass = null;
+    _texturesMemo.clear();
+    _fogMemo.clear();
+  }
+
+  static bool _memoPassIs(gpu.RenderPass pass) {
+    if (identical(pass, _memoPass)) return true;
+    _memoPass = pass;
+    _texturesMemo.clear();
+    _fogMemo.clear();
+    return false;
+  }
+
   /// Binds the engine image-based-lighting and shadow samplers
   /// (`prefiltered_radiance`, `brdf_lut`, `shadow_map`) on [shader].
   static void bindEngineTextures(
@@ -294,6 +326,15 @@ class EngineLightingUniforms {
     Lighting lighting,
     EnvironmentMap env,
   ) {
+    if (_memoPassIs(pass)) {
+      final previous = _texturesMemo[shader];
+      if (previous != null &&
+          identical(previous.$1, lighting) &&
+          identical(previous.$2, env)) {
+        return;
+      }
+    }
+    _texturesMemo[shader] = (lighting, env);
     bindPrefilteredRadiance(pass, shader, env);
     pass.bindTexture(
       shader.getUniformSlot('brdf_lut'),
