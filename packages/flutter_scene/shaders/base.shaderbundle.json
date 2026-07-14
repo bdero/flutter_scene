@@ -142,5 +142,9 @@
   "SplatsFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_splats.frag"
+  },
+  "CopyFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_copy.frag"
   }
 }

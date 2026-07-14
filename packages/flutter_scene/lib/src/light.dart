@@ -542,6 +542,10 @@ class Lighting {
     this.specularOcclusionMode = 0.0,
     this.viewportSize = ui.Size.zero,
     this.fog,
+    this.sceneDepthLinear,
+    this.cameraPosition,
+    this.cameraForward,
+    this.time = 0.0,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
@@ -635,4 +639,27 @@ class Lighting {
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.
   final ui.Size viewportSize;
+
+  /// The opaque geometry's linear (planar view-space) depth texture for
+  /// materials that declare `RenderInput.depth` in `Material.sceneInputs`
+  /// (depth-fade, absorption, shoreline foam), or null when no visible
+  /// material asked for it. Same texture the SSAO/SSR passes consume.
+  final gpu.Texture? sceneDepthLinear;
+
+  /// The scene color snapshot taken between the opaque and translucent
+  /// phases, for materials that declare `RenderInput.opaqueSceneColor`
+  /// (refraction). Null during the opaque phase and when unrequested; the
+  /// scene pass sets it before translucent draws encode.
+  gpu.Texture? opaqueSceneColor;
+
+  /// Camera world position and normalized forward direction for this view,
+  /// letting a material compute its fragment's planar view depth
+  /// (`dot(worldPos - cameraPosition, cameraForward)`) to compare against
+  /// [sceneDepthLinear]. Null when no material requests scene inputs.
+  final Vector3? cameraPosition;
+  final Vector3? cameraForward;
+
+  /// Seconds since the scene started rendering, for engine-driven material
+  /// animation (the same clock custom post passes receive).
+  final double time;
 }

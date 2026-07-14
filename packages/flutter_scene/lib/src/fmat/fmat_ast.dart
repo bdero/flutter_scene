@@ -181,6 +181,7 @@ class FmatMaterial {
     this.vertexSourceLine = 0,
     this.varyings = const [],
     this.attributes = const [],
+    this.engineInputs = const [],
   });
 
   final String name;
@@ -225,6 +226,14 @@ class FmatMaterial {
   /// Custom per-vertex attributes the mesh supplies to `Vertex()`, in declared
   /// order. Empty unless the material declares an `attributes` list.
   final List<FmatAttribute> attributes;
+
+  /// Per-frame engine inputs the shader samples (`engine_inputs:` in the
+  /// material block): `scene_color` (the opaque-phase color snapshot, for
+  /// refraction) and `scene_depth` (the opaque linear depth, for depth-fade
+  /// and shoreline effects). The emitter declares the matching samplers and
+  /// accessors only when listed, and the engine produces the textures only
+  /// when a visible material asks. Lit surface materials only.
+  final List<String> engineInputs;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.

@@ -123,6 +123,43 @@ String emitFragmentGlsl(FmatMaterial material) {
   }
   if (samplers.isNotEmpty) sb.writeln();
 
+  // Engine scene-input samplers and accessors, only for materials that
+  // declared them (the lit framework sits near Metal's 16-sampler ceiling,
+  // so these must never be unconditional). The gates and screen-UV helpers
+  // ride the engine lighting block (scene_inputs / ssao_params.zw).
+  if (material.engineInputs.contains('scene_color')) {
+    sb.writeln('// The opaque-phase scene color snapshot (linear HDR).');
+    sb.writeln('uniform sampler2D scene_opaque_color;');
+    sb.writeln('// Samples the opaque scene behind this fragment, offset in');
+    sb.writeln('// screen UV (pass vec2(0.0) for no distortion). Returns the');
+    sb.writeln("// fragment's own black when the snapshot is unavailable.");
+    sb.writeln('vec3 GetSceneColor(vec2 uv_offset) {');
+    sb.writeln('  if (frag_info.scene_inputs.x < 0.5) return vec3(0.0);');
+    sb.writeln(
+      '  vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), '
+      'vec2(0.999));',
+    );
+    sb.writeln('  return texture(scene_opaque_color, uv).rgb;');
+    sb.writeln('}');
+    sb.writeln();
+  }
+  if (material.engineInputs.contains('scene_depth')) {
+    sb.writeln('// The opaque linear (planar view-space) depth, world units.');
+    sb.writeln('uniform sampler2D scene_depth;');
+    sb.writeln('// The opaque depth behind this fragment, offset in screen');
+    sb.writeln('// UV. Returns a huge depth when unavailable, so');
+    sb.writeln('// depth-difference effects fade out instead of popping.');
+    sb.writeln('float GetSceneDepth(vec2 uv_offset) {');
+    sb.writeln('  if (frag_info.scene_inputs.y < 0.5) return 1.0e8;');
+    sb.writeln(
+      '  vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), '
+      'vec2(0.999));',
+    );
+    sb.writeln('  return texture(scene_depth, uv).r;');
+    sb.writeln('}');
+    sb.writeln();
+  }
+
   // Map compiler errors in the author's code back to the .fmat source line.
   sb.writeln('#line ${material.fragmentSourceLine}');
   sb.write(material.fragmentSource);
@@ -425,6 +462,8 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'shading_model': material.shadingModel.name,
     'blending': material.blending.name,
     'culling': material.culling.name,
+    if (material.engineInputs.isNotEmpty)
+      'engine_inputs': material.engineInputs,
     'uniform_block': kMaterialParamsBlock,
     if (material.hasVertexStage)
       'vertex': <String, Object?>{
