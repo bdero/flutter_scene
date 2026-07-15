@@ -43,6 +43,26 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_shadow_copy.frag"
   },
+  "DofCocFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_dof_coc.frag"
+  },
+  "DofDilateFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_dof_dilate.frag"
+  },
+  "DofGatherFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_dof_gather.frag"
+  },
+  "DofPostFilterFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_dof_postfilter.frag"
+  },
+  "DofCompositeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_dof_composite.frag"
+  },
   "LinearDepthFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth.frag"

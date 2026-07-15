@@ -36,6 +36,8 @@ import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
+import 'depth_of_field.dart';
+import 'render/dof_pass.dart';
 import 'render/shadow_cache.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
@@ -609,6 +611,12 @@ base class Scene implements SceneGraph {
   final GodRaysSettings godRays = GodRaysSettings();
   late final GodRaysPass _godRaysPass = GodRaysPass(godRays);
 
+  /// Depth of field with bokeh. Off by default; set [DepthOfField.enabled]
+  /// to turn it on. Requires a [PerspectiveCamera] (it reconstructs blur from
+  /// the camera depth prepass, which it forces while enabled); skipped
+  /// otherwise.
+  final DepthOfField depthOfField = DepthOfField();
+
   // Cross-frame cache for the directional light's shadow tiles, created the
   // first frame any visible caster is `shadowStatic` and dropped when none
   // are (or the light stops casting). See DirectionalShadowCache.
@@ -1148,6 +1156,9 @@ base class Scene implements SceneGraph {
     );
     final bindSceneDepth = materialInputs.contains(RenderInput.depth);
     if (bindSceneDepth) customInputs.add(RenderInput.depth);
+    // Depth of field reconstructs blur from the camera depth, so it forces
+    // the prepass like a depth-consuming custom pass would.
+    if (depthOfField.enabled) customInputs.add(RenderInput.depth);
 
     // When any visible caster is static, route the cascades through the
     // shadow cache: static casters render into persistent tiles only when
@@ -1359,6 +1370,20 @@ base class Scene implements SceneGraph {
       view.layerMask,
       postTime,
     );
+
+    // Depth of field on the linear HDR scene color, before the custom
+    // effects and bloom so both act on the defocused image (bokeh highlights
+    // still bloom). Needs the perspective camera's FOV for the thin-lens
+    // math and the prepass depth (forced via customInputs above).
+    if (depthOfField.enabled && perspectiveCamera != null) {
+      graph.addPass(
+        DofPass(
+          settings: depthOfField,
+          dimensions: pixelSize,
+          fovRadiansY: perspectiveCamera.fovRadiansY,
+        ),
+      );
+    }
 
     // Custom effects on the linear HDR scene color, ping-ponging through
     // HDR buffers and republishing the scene-color handle that bloom and
