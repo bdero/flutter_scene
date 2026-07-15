@@ -191,7 +191,10 @@ class PhysicallyBasedMaterial extends Material {
     //   [133]     float alpha_cutoff
     //   [138]     float specular_aa_variance
     //   [139]     float specular_aa_threshold
-    final fragInfo = Float32List(EngineLightingUniforms.fragInfoFloatCount);
+    // A shared scratch (zeroed each bind, matching a fresh allocation's
+    // unwritten slots) instead of a per-draw allocation; emplace below copies
+    // the bytes out immediately.
+    final fragInfo = _fragInfoScratch..fillRange(0, _fragInfoScratch.length, 0);
     EngineLightingUniforms.packInto(fragInfo, lighting, env);
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
@@ -243,6 +246,10 @@ class PhysicallyBasedMaterial extends Material {
       lighting,
     );
   }
+
+  static final Float32List _fragInfoScratch = Float32List(
+    EngineLightingUniforms.fragInfoFloatCount,
+  );
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
     widthAddressMode: gpu.SamplerAddressMode.repeat,

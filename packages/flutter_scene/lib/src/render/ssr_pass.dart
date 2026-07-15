@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/screen_space_reflections.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 // Two triangles of NDC positions covering the screen (6 vec2s).
 gpu.BufferView _fullscreenQuad() {
@@ -152,9 +153,7 @@ class SsrPass extends RenderGraphPass {
     final tracePass = traceCmd.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: reflection)),
     );
-    tracePass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
-    );
+    tracePass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     tracePass.setColorBlendEnable(false);
     bindVertexBufferCompat(tracePass, _fullscreenQuad(), 6);
     tracePass.bindUniform(
@@ -190,7 +189,7 @@ class SsrPass extends RenderGraphPass {
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: output)),
     );
     compositePass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _compositeShader),
+      resolvePipeline(_vertexShader, _compositeShader),
     );
     compositePass.setColorBlendEnable(false);
     bindVertexBufferCompat(compositePass, _fullscreenQuad(), 6);

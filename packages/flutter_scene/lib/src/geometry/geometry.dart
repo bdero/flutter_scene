@@ -1209,6 +1209,11 @@ final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
 /// passes, which drive the position-only shader but use the identical
 /// `FrameInfo` block; the slot is resolved against whichever shader the bound
 /// pipeline uses.
+// Reused across every call: this runs for every draw of every pass, and
+// [TransientWriter.emplace] copies the bytes out immediately, so a shared
+// scratch is safe and avoids a per-draw allocation.
+final Float32List _unskinnedFrameInfoScratch = Float32List(19);
+
 @internal
 void bindUnskinnedFrameInfo(
   gpu.RenderPass pass,
@@ -1218,29 +1223,13 @@ void bindUnskinnedFrameInfo(
   vm.Vector3 cameraPosition,
 ) {
   final frameInfoSlot = shader.getUniformSlot('FrameInfo');
-  final frameInfoFloats = Float32List.fromList([
-    cameraTransform.storage[0],
-    cameraTransform.storage[1],
-    cameraTransform.storage[2],
-    cameraTransform.storage[3],
-    cameraTransform.storage[4],
-    cameraTransform.storage[5],
-    cameraTransform.storage[6],
-    cameraTransform.storage[7],
-    cameraTransform.storage[8],
-    cameraTransform.storage[9],
-    cameraTransform.storage[10],
-    cameraTransform.storage[11],
-    cameraTransform.storage[12],
-    cameraTransform.storage[13],
-    cameraTransform.storage[14],
-    cameraTransform.storage[15],
-    cameraPosition.x,
-    cameraPosition.y,
-    cameraPosition.z,
-  ]);
+  final scratch = _unskinnedFrameInfoScratch
+    ..setAll(0, cameraTransform.storage)
+    ..[16] = cameraPosition.x
+    ..[17] = cameraPosition.y
+    ..[18] = cameraPosition.z;
   pass.bindUniform(
     frameInfoSlot,
-    transientsBuffer.emplace(frameInfoFloats.buffer.asByteData()),
+    transientsBuffer.emplace(ByteData.sublistView(scratch)),
   );
 }

@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Render-graph blackboard key for the display-referred color the resolve
 /// pass produces. After-tone-mapping custom effects read it and republish
@@ -73,10 +74,7 @@ class ResolvePass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _outputColor)),
     );
-    final pipeline = gpu.gpuContext.createRenderPipeline(
-      _vertexShader,
-      _fragmentShader,
-    );
+    final pipeline = resolvePipeline(_vertexShader, _fragmentShader);
     renderPass.bindPipeline(pipeline);
     bindVertexBufferCompat(renderPass, _quadView, 6);
 

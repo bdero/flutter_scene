@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Packs the `PostShadowInfo` std140 block a depth-aware custom pass reads
 /// (exposed as [RenderPassContext.shadowInfo]) from the frame's [cascades],
@@ -388,9 +389,7 @@ class RenderPassContext {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _destination)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, fragmentShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, fragmentShader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(

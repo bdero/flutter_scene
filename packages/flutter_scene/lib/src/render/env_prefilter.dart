@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Number of roughness bands in a prefiltered-radiance atlas (band 0 =
 /// mirror, band `kPrefilterBandCount - 1` = fully rough; band `i` covers
@@ -183,9 +184,7 @@ void prefilterEquirectRadianceCubeFace(
       ),
     ),
   );
-  renderPass.bindPipeline(
-    gpu.gpuContext.createRenderPipeline(vertexShader, fragmentShader),
-  );
+  renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
     fragmentShader.getUniformSlot('source_equirect'),
@@ -309,9 +308,7 @@ void _prefilterPass(
             ),
     ),
   );
-  renderPass.bindPipeline(
-    gpu.gpuContext.createRenderPipeline(vertexShader, fragmentShader),
-  );
+  renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
     fragmentShader.getUniformSlot('source_equirect'),

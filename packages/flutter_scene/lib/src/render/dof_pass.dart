@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
@@ -183,10 +184,7 @@ class DofPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
     );
-    final pipeline = gpu.gpuContext.createRenderPipeline(
-      _vertexShader,
-      fragment,
-    );
+    final pipeline = resolvePipeline(_vertexShader, fragment);
     renderPass.bindPipeline(pipeline);
     renderPass.setColorBlendEnable(false);
     renderPass.setCullMode(gpu.CullMode.none);
