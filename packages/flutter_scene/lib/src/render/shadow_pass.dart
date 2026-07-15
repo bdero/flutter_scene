@@ -175,16 +175,33 @@ class ShadowPass extends RenderGraphPass {
 
     // Cascade tiles first (0..cascades.length), then the spot cones. With a
     // cache plan, each cascade tile replays its cached static content and
-    // draws only the dynamic casters; otherwise everything renders.
+    // draws only the dynamic casters; otherwise everything renders. The
+    // dynamic composite iterates the flat item list instead of culling the
+    // spatial structure: dynamic casters are typically a handful, and four
+    // per-cascade BVH traversals of a large static world cost far more than
+    // one flag check per item (the encoder still frustum-culls each caster).
     for (var c = 0; c < _cascades.length; c++) {
       if (plan != null) {
         _encodeTileCopy(renderPass, c, plan.entries[c].tile!);
-        renderTile(
-          c,
+        renderPass.setViewport(
+          gpu.Viewport(
+            x: c * _tileResolution,
+            y: 0,
+            width: _tileResolution,
+            height: _tileResolution,
+          ),
+        );
+        final encoder = ShadowEncoder(
+          renderPass,
+          context.transientsBuffer,
           _cascades[c].lightSpaceMatrix,
+          _cameraPosition,
           _casterFaces,
           filter: ShadowCasterFilter.dynamicOnly,
         );
+        for (final item in _renderScene.items) {
+          encoder.submit(item);
+        }
       } else {
         renderTile(c, _cascades[c].lightSpaceMatrix, _casterFaces);
       }

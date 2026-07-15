@@ -89,10 +89,13 @@ class ShadowEncoder {
   /// Records [item]'s depth, unless it is hidden, translucent (no shadow),
   /// or culled by the light frustum.
   void submit(RenderItem item) {
-    if (!item.visible) return;
-    if (!item.material.isOpaque()) return;
+    // The filter checks run first: the dynamic composite iterates the whole
+    // item list (most of which is static), so the common case must reject on
+    // a plain flag before any virtual call.
     if (_filter == ShadowCasterFilter.staticOnly && !item.shadowStatic) return;
     if (_filter == ShadowCasterFilter.dynamicOnly && item.shadowStatic) return;
+    if (!item.visible) return;
+    if (!item.material.isOpaque()) return;
     if (item.frustumCulled) {
       final bounds = item.cullBounds;
       if (bounds != null) {
