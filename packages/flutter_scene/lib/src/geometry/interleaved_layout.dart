@@ -227,33 +227,26 @@ abstract final class InterleavedLayoutAdapter {
       _checkLength('colors', colors.length, 4 * vertexCount);
     }
 
+    // Supplied attributes copy in bulk (setAll on typed data is a memmove);
+    // only absent attributes walk per vertex to fill their defaults. Large
+    // streamed meshes construct on the UI thread, so per-element Dart loops
+    // here are a frame hitch.
     final position = Float32List(3 * vertexCount)..setAll(0, positions);
     final normal = Float32List(3 * vertexCount);
-    final texCoord = Float32List(2 * vertexCount);
-    final color = Float32List(4 * vertexCount);
-    for (var v = 0; v < vertexCount; v++) {
-      if (normals != null) {
-        normal[v * 3] = normals[v * 3];
-        normal[v * 3 + 1] = normals[v * 3 + 1];
-        normal[v * 3 + 2] = normals[v * 3 + 2];
-      } else {
+    if (normals != null) {
+      normal.setAll(0, normals);
+    } else {
+      for (var v = 0; v < vertexCount; v++) {
         normal[v * 3 + 2] = 1.0;
       }
-      if (texCoords != null) {
-        texCoord[v * 2] = texCoords[v * 2];
-        texCoord[v * 2 + 1] = texCoords[v * 2 + 1];
-      }
-      if (colors != null) {
-        color[v * 4] = colors[v * 4];
-        color[v * 4 + 1] = colors[v * 4 + 1];
-        color[v * 4 + 2] = colors[v * 4 + 2];
-        color[v * 4 + 3] = colors[v * 4 + 3];
-      } else {
-        color[v * 4] = 1.0;
-        color[v * 4 + 1] = 1.0;
-        color[v * 4 + 2] = 1.0;
-        color[v * 4 + 3] = 1.0;
-      }
+    }
+    final texCoord = Float32List(2 * vertexCount);
+    if (texCoords != null) texCoord.setAll(0, texCoords);
+    final color = Float32List(4 * vertexCount);
+    if (colors != null) {
+      color.setAll(0, colors);
+    } else {
+      color.fillRange(0, color.length, 1.0);
     }
     return UnskinnedAttributeStreams(
       position: position.buffer.asUint8List(),
@@ -269,6 +262,28 @@ abstract final class InterleavedLayoutAdapter {
   /// needed; a 16-bit buffer is used when every index is at most
   /// `0xFFFF`. Throws an [ArgumentError] if any index is negative.
   static ({Uint8List bytes, bool is32Bit}) packIndices(List<int> indices) {
+    // Already-typed index lists pass through without the validation scan or
+    // a repack: their element types cannot hold negatives, and a caller
+    // supplying Uint32List has chosen the 32-bit width (a streamed mesh
+    // decides this off the UI thread).
+    if (indices is Uint16List) {
+      return (
+        bytes: indices.buffer.asUint8List(
+          indices.offsetInBytes,
+          indices.lengthInBytes,
+        ),
+        is32Bit: false,
+      );
+    }
+    if (indices is Uint32List) {
+      return (
+        bytes: indices.buffer.asUint8List(
+          indices.offsetInBytes,
+          indices.lengthInBytes,
+        ),
+        is32Bit: true,
+      );
+    }
     var maxIndex = 0;
     for (final index in indices) {
       if (index < 0) {

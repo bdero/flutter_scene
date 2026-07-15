@@ -1,5 +1,14 @@
 ## 0.19.0
 
+* Cheaper `MeshGeometry.fromArrays` construction for streamed meshes.
+  Supplied attributes now bulk-copy instead of walking every vertex, an
+  already-typed index list (`Uint16List`/`Uint32List`) uploads without the
+  width scan and repack, and a new optional `bounds` parameter accepts a
+  caller-computed culling AABB (skipping the construction-time position
+  scan), so an app that assembles vertex data on a worker isolate can build
+  large geometry on the UI thread with nothing but memcpys and the GPU
+  upload.
+
 * Depth of field with bokeh, off by default via `scene.depthOfField`. A
   thin-lens camera model drives the blur (`fStop`, `focalLength` derived from
   the camera FOV or set explicitly, `sensorHeight`, `focusDistance`, plus an
