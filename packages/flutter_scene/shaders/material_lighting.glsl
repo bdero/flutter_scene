@@ -240,7 +240,8 @@ float FetchPunctualIndex(int j) {
 // the directional light and every punctual light so the BRDF lives in one place.
 vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
                            vec3 camera_normal, vec3 albedo, float metallic,
-                           float roughness, vec3 reflectance, float n_dot_v) {
+                           float roughness, vec3 reflectance, float n_dot_v,
+                           float specular_scale) {
   float n_dot_l = max(dot(normal, light_vector), 0.0);
   if (n_dot_l <= 0.0) {
     return vec3(0.0);
@@ -253,7 +254,8 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   vec3 specular_fresnel =
       FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
   // `visibility` already folds in 1 / (4 * NoL * NoV).
-  vec3 specular = distribution * visibility * specular_fresnel;
+  vec3 specular =
+      distribution * visibility * specular_fresnel * specular_scale;
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
   return (diffuse + specular) * radiance * n_dot_l;
@@ -424,7 +426,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 diffuse_color = albedo * (1.0 - metallic);
   vec3 k_D = diffuse_color * (1.0 - FssEss + FmsEms);
 
-  vec3 indirect_specular = FssEss * prefiltered_color;
+  vec3 indirect_specular = FssEss * prefiltered_color * material.specular;
   vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
   // Occluding indirect specular with the diffuse factor over-darkens glossy
   // reflections, so derive a dedicated specular occlusion when it is
@@ -479,7 +481,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     direct = EvaluateAnalyticLight(light_vector,
                                    frag_info.directional_light_color.rgb, normal,
                                    camera_normal, albedo, metallic, roughness,
-                                   reflectance, n_dot_v) *
+                                   reflectance, n_dot_v, material.specular) *
              shadow;
   }
 
@@ -547,7 +549,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     }
     direct += EvaluateAnalyticLight(punctual_light_vector, radiance, normal,
                                     camera_normal, albedo, metallic, roughness,
-                                    reflectance, n_dot_v);
+                                    reflectance, n_dot_v, material.specular);
   }
 
   vec3 emissive = material.emissive;

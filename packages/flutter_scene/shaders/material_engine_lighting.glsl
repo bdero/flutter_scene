@@ -24,14 +24,15 @@ uniform FragInfo {
   // draw (scene_opaque_color sampler, emitted only into materials that
   // declare engine_inputs). y: the opaque linear-depth texture is bound
   // (scene_depth sampler, same). z: engine time in seconds, for material
-  // animation (GetTime()). w reserved. Screen UVs for both samplers come
+  // animation (GetTime()). w: tan of the half horizontal field of view
+  // (0 when non-perspective), for screen-space marches. Screen UVs come
   // from gl_FragCoord.xy * ssao_params.zw (the reciprocal render-target
   // size, packed regardless of occlusion).
   vec4 scene_inputs;
   // xyz: the camera's world-space forward direction (unit length), so a
   // material can compute its fragment's planar view depth
   // (dot(-v_viewvector, camera_forward.xyz)) and difference it against the
-  // scene_depth sample. w reserved.
+  // scene_depth sample. w: tan of the half vertical field of view.
   vec4 camera_forward;
   vec4 diffuse_sh4;
   vec4 diffuse_sh5;

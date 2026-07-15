@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -226,6 +227,11 @@ class ScenePass extends RenderGraphPass {
       );
     }
     final camera = _camera;
+    final projection = camera.projection;
+    final tanHalfFovY = projection is PerspectiveProjection
+        ? math.tan(projection.fovRadiansY / 2.0)
+        : 0.0;
+    final tanHalfFovX = height > 0 ? tanHalfFovY * width / height : 0.0;
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentMapB: _environmentMapB,
@@ -258,6 +264,8 @@ class ScenePass extends RenderGraphPass {
           : null,
       cameraPosition: camera.position,
       cameraForward: camera.forward.normalized(),
+      tanHalfFovX: tanHalfFovX,
+      tanHalfFovY: tanHalfFovY,
       time: _time,
     );
 

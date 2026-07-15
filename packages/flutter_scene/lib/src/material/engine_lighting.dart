@@ -139,6 +139,10 @@ class EngineLightingUniforms {
     fragInfo[16] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
     fragInfo[17] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
     fragInfo[18] = lighting.time;
+    // scene_inputs.w / camera_forward.w: the projection's half-fov
+    // tangents, for materials that project world positions to screen UV
+    // (screen-space reflection marches). Zero when non-perspective.
+    fragInfo[19] = lighting.tanHalfFovX;
     // camera_forward [20..23]: the camera's world-space forward direction,
     // for a fragment's planar view depth (dot(-v_viewvector, forward)).
     final forward = lighting.cameraForward;
@@ -147,6 +151,7 @@ class EngineLightingUniforms {
       fragInfo[21] = forward.y;
       fragInfo[22] = forward.z;
     }
+    fragInfo[23] = lighting.tanHalfFovY;
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
