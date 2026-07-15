@@ -1,5 +1,19 @@
 ## 0.19.0
 
+* Depth of field with bokeh, off by default via `scene.depthOfField`. A
+  thin-lens camera model drives the blur (`fStop`, `focalLength` derived from
+  the camera FOV or set explicitly, `sensorHeight`, `focusDistance`, plus an
+  artistic `blurScale`), sharing the physical-camera vocabulary of
+  `Scene.physicalCameraExposure`. The bokeh aperture is shaped by
+  `bladeCount`/`bladeRotation`/`bladeCurvature`, baked into the gather kernel
+  on the CPU so shape costs nothing per frame. Renders as half-resolution
+  fragment passes (CoC downsample, near-field CoC dilation so foreground blur
+  crosses silhouettes, a Vogel-disc gather with occlusion weighting, an
+  optional noise postfilter, and a full-resolution composite) on the linear
+  HDR scene color before bloom, on every backend including web. Three quality
+  tiers via `DepthOfFieldQuality`. Requires a perspective camera and forces
+  the depth prepass while enabled.
+
 * Cached shadow tiles for static geometry. Marking a node `shadowStatic`
   promises its meshes will not move or change while mounted, letting the
   engine render them into persistent per-cascade shadow tiles that are reused
