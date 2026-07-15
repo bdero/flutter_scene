@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/post_process/post_effect.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Runs one custom [PostEffect] as a full-screen pass.
 ///
@@ -76,9 +77,7 @@ class PostEffectPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _output)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, shader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, shader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(

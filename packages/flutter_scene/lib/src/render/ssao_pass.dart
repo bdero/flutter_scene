@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Render-graph blackboard key under which [SsaoBlurPass] publishes the
 /// final ambient-occlusion texture (occlusion factor in `.r`, 1 =
@@ -135,9 +136,7 @@ class SsaoPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _downsampleShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _downsampleShader));
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
     renderPass.bindTexture(
@@ -204,9 +203,7 @@ class SsaoPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: occlusion)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
 
@@ -315,9 +312,7 @@ class SsaoBlurPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: blurred)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
 

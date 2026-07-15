@@ -371,10 +371,7 @@ class ScenePass extends RenderGraphPass {
   /// translucent pass on the non-MSAA path. Depth writes/tests off so it
   /// composites under nothing and disturbs no depth.
   void _encodeCopy(gpu.RenderPass pass, gpu.Texture source) {
-    final pipeline = gpu.gpuContext.createRenderPipeline(
-      _copyVertexShader,
-      _copyFragmentShader,
-    );
+    final pipeline = resolvePipeline(_copyVertexShader, _copyFragmentShader);
     pass.bindPipeline(pipeline);
     pass.setDepthWriteEnable(false);
     pass.setDepthCompareOperation(gpu.CompareFunction.always);

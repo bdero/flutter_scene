@@ -1,5 +1,15 @@
 ## 0.19.0
 
+* Steady-state frame allocations cut sharply. Every fullscreen pass (bloom,
+  ambient occlusion, reflections, god rays, depth of field, resolve, FXAA,
+  the shadow and scene-split copies) now goes through the process-lifetime
+  pipeline cache instead of creating its render pipeline every frame (about
+  25 pipeline creations per frame in a fully featured scene), and the
+  per-draw uniform packs (`FrameInfo`, the lit `FragInfo`, the single-draw
+  instance transform) reuse shared scratch buffers instead of allocating. At
+  high draw counts this removes hundreds of megabytes per second of garbage
+  and the GC pauses that came with it.
+
 * Cheaper `MeshGeometry.fromArrays` construction for streamed meshes.
   Supplied attributes now bulk-copy instead of walking every vertex, an
   already-typed index list (`Uint16List`/`Uint32List`) uploads without the

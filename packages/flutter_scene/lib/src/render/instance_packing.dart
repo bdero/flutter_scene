@@ -65,6 +65,10 @@ PackedInstanceTransforms packInstanceTransforms(
 /// Every draw through the unskinned vertex shader needs this: the model
 /// matrix arrives via instance attributes whether or not the draw is
 /// instanced.
+// Reused across every call (one per non-instanced draw); the arena emplace
+// copies the bytes out immediately, so a shared scratch is safe.
+final Float32List _singleTransformScratch = Float32List(16);
+
 void bindSingleInstanceTransform(
   gpu.RenderPass pass,
   Matrix4 worldTransform, {
@@ -72,7 +76,7 @@ void bindSingleInstanceTransform(
 }) {
   bindInstanceTransforms(
     pass,
-    Float32List.fromList(worldTransform.storage),
+    _singleTransformScratch..setAll(0, worldTransform.storage),
     slot: slot,
   );
 }

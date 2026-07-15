@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Render-graph blackboard key for the bloom texture [BloomPass] produces.
 /// The resolve pass reads it and adds it to the HDR scene color.
@@ -131,9 +132,7 @@ class BloomPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _thresholdShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _thresholdShader));
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
@@ -172,9 +171,7 @@ class BloomPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(attachment),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, shader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, shader));
     if (additive) {
       renderPass.setColorBlendEnable(true);
       renderPass.setColorBlendEquation(

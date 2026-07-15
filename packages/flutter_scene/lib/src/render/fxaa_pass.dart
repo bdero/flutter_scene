@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Anti-aliases the display-referred image as a single full-screen FXAA
 /// pass. Reads the resolve output from the blackboard, writes [_output],
@@ -61,9 +62,7 @@ class FxaaPass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _output)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(

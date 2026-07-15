@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/render/shadow_encoder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the shadow
 /// map atlas (a depth-in-`.r` fp32 texture). The downstream scene pass reads it
@@ -283,10 +284,7 @@ class ShadowPass extends RenderGraphPass {
       ),
     );
     pass.clearBindings();
-    final pipeline = gpu.gpuContext.createRenderPipeline(
-      _copyVertexShader,
-      _copyFragmentShader,
-    );
+    final pipeline = resolvePipeline(_copyVertexShader, _copyFragmentShader);
     pass.bindPipeline(pipeline);
     pass.setColorBlendEnable(false);
     pass.setCullMode(gpu.CullMode.none);

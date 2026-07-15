@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
 /// Render-graph blackboard key for the selection mask: highlighted objects
 /// drawn flat in their highlight color (coverage in alpha), everything else 0.
@@ -161,9 +162,7 @@ class SelectionOutlinePass extends RenderGraphPass {
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _output)),
     );
-    renderPass.bindPipeline(
-      gpu.gpuContext.createRenderPipeline(_vertexShader, _fragmentShader),
-    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(
