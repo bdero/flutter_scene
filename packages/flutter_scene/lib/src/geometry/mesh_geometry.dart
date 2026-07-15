@@ -71,6 +71,11 @@ class MeshGeometry extends UnskinnedGeometry {
   /// supplying [indices] makes [rebuild] require indices thereafter, and
   /// omitting them makes it reject them. To start empty, pass a
   /// zero-length [positions] array with [GeometryStorage.updatable].
+  ///
+  /// [bounds], when supplied, becomes the local-space culling AABB and skips
+  /// the construction-time position scan; a caller that assembled the
+  /// vertices off the UI thread (a worker isolate) can compute it there. It
+  /// must cover every position or the mesh over-culls.
   MeshGeometry.fromArrays({
     required Float32List positions,
     Float32List? normals,
@@ -78,6 +83,7 @@ class MeshGeometry extends UnskinnedGeometry {
     Float32List? colors,
     List<int>? indices,
     gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
+    Aabb3? bounds,
     this.storage = GeometryStorage.fixed,
   }) {
     if (positions.length % 3 != 0) {
@@ -88,6 +94,14 @@ class MeshGeometry extends UnskinnedGeometry {
     }
     final vertexCount = positions.length ~/ 3;
     this.primitiveType = primitiveType;
+
+    if (bounds != null) {
+      final center = (bounds.min + bounds.max) * 0.5;
+      setLocalBounds(
+        bounds,
+        Sphere.centerRadius(center, (bounds.max - center).length),
+      );
+    }
 
     // Normals are generated from triangle faces; line and point
     // geometry has none, so absent normals are left at their default.
