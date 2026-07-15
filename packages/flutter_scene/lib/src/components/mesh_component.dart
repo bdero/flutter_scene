@@ -110,6 +110,7 @@ class MeshComponent extends Component {
       item.layers = layers;
       item.worldTransform.setFrom(worldTransform);
       item.windingFlipped = windingFlipped;
+      item.shadowStatic = node.shadowStatic;
       item.highlightColor = highlightColor;
 
       final wasBounded = item.worldBounds != null;

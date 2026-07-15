@@ -1,5 +1,16 @@
 ## 0.19.0
 
+* Cached shadow tiles for static geometry. Marking a node `shadowStatic`
+  promises its meshes will not move or change while mounted, letting the
+  engine render them into persistent per-cascade shadow tiles that are reused
+  across frames; each frame then replays the cached tiles and draws only the
+  dynamic casters on top. Tiles are fit with slack so the camera can move and
+  turn without re-rendering, re-fit amortized (nearest cascade first) when
+  static content changes, and rebuilt outright when the light or shadow
+  parameters change. Large static worlds drop from re-encoding every caster
+  into every cascade every frame to near-zero steady-state shadow cost;
+  scenes with no `shadowStatic` nodes render exactly as before.
+
 * Alpha-masked materials (`AlphaMode.mask`) are now alpha-tested in the
   depth-writing passes, not just the color pass. The shadow map and the camera
   depth prepass draw them through masked fragment variants that discard below

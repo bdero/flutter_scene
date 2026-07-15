@@ -3,12 +3,15 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/shadow_cache.dart';
 import 'package:flutter_scene/src/render/shadow_encoder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the shadow
 /// map atlas (a depth-in-`.r` fp32 texture). The downstream scene pass reads it
@@ -31,6 +34,12 @@ const String kShadowUniformBlackboardKey = 'shadow_uniform';
 /// attachment backs the depth test). It is cleared to 1.0 so texels no caster
 /// covers read as "lit". Sharing one atlas keeps every shadow type on a single
 /// sampler in the lit shader.
+///
+/// With a [cachePlan] (some casters are `shadowStatic`), static casters render
+/// into the plan's persistent per-cascade tiles only when the plan asks, and
+/// each frame's cascade tile is composed by replaying the cached tile (color
+/// and fragment depth) and drawing just the dynamic casters on top. Without a
+/// plan every caster renders every frame.
 class ShadowPass extends RenderGraphPass {
   ShadowPass({
     required RenderScene renderScene,
@@ -40,19 +49,22 @@ class ShadowPass extends RenderGraphPass {
     ShadowCasterFaces casterFaces = ShadowCasterFaces.front,
     SpotShadowFrame? spotShadows,
     ByteData? shadowUniform,
+    ShadowCachePlan? cachePlan,
   }) : _renderScene = renderScene,
        _cascades = cascades,
        _tileResolution = tileResolution,
        _casterFaces = casterFaces,
        _cameraPosition = cameraPosition,
        _spotShadows = spotShadows,
-       _shadowUniform = shadowUniform;
+       _shadowUniform = shadowUniform,
+       _cachePlan = cachePlan;
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
   final int _tileResolution;
   final ShadowCasterFaces _casterFaces;
   final SpotShadowFrame? _spotShadows;
+  final ShadowCachePlan? _cachePlan;
 
   // The packed PostShadowInfo block, published for depth-aware custom passes.
   final ByteData? _shadowUniform;
@@ -62,11 +74,37 @@ class ShadowPass extends RenderGraphPass {
   // color pass (see ShadowEncoder).
   final Vector3 _cameraPosition;
 
+  static final gpu.Shader _copyVertexShader =
+      baseShaderLibrary['FullscreenVertex']!;
+  static final gpu.Shader _copyFragmentShader =
+      baseShaderLibrary['ShadowCopyFragment']!;
+
+  // Two triangles of NDC positions covering the viewport (6 vec2s).
+  static final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext
+      .createDeviceBufferWithCopy(
+        ByteData.sublistView(
+          Float32List.fromList(<double>[
+            -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, //
+            -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, //
+          ]),
+        ),
+      );
+  static final gpu.BufferView _quadView = gpu.BufferView(
+    _quadBuffer,
+    offsetInBytes: 0,
+    lengthInBytes: 6 * 2 * 4,
+  );
+
   @override
   String get name => 'ShadowPass';
 
   @override
   void execute(RenderGraphContext context) {
+    final plan = _cachePlan;
+    if (plan != null) {
+      _renderStaticTiles(context, plan);
+    }
+
     final spotCount = _spotShadows?.matrices.length ?? 0;
     final totalTiles = _cascades.length + spotCount;
     final atlasWidth = _tileResolution * totalTiles;
@@ -110,7 +148,12 @@ class ShadowPass extends RenderGraphPass {
     // Each tile renders into its own slot of the strip. The viewport restricts
     // rasterization to the tile; the shared depth attachment is cleared once for
     // the whole atlas. Renders a tile from a light-space matrix.
-    void renderTile(int tile, Matrix4 matrix, ShadowCasterFaces faces) {
+    void renderTile(
+      int tile,
+      Matrix4 matrix,
+      ShadowCasterFaces faces, {
+      ShadowCasterFilter filter = ShadowCasterFilter.all,
+    }) {
       renderPass.setViewport(
         gpu.Viewport(
           x: tile * _tileResolution,
@@ -125,13 +168,26 @@ class ShadowPass extends RenderGraphPass {
         matrix,
         _cameraPosition,
         faces,
+        filter: filter,
       );
       _renderScene.cull(encoder.frustum, encoder.submit);
     }
 
-    // Cascade tiles first (0..cascades.length), then the spot cones.
+    // Cascade tiles first (0..cascades.length), then the spot cones. With a
+    // cache plan, each cascade tile replays its cached static content and
+    // draws only the dynamic casters; otherwise everything renders.
     for (var c = 0; c < _cascades.length; c++) {
-      renderTile(c, _cascades[c].lightSpaceMatrix, _casterFaces);
+      if (plan != null) {
+        _encodeTileCopy(renderPass, c, plan.entries[c].tile!);
+        renderTile(
+          c,
+          _cascades[c].lightSpaceMatrix,
+          _casterFaces,
+          filter: ShadowCasterFilter.dynamicOnly,
+        );
+      } else {
+        renderTile(c, _cascades[c].lightSpaceMatrix, _casterFaces);
+      }
     }
     final spots = _spotShadows;
     if (spots != null) {
@@ -146,5 +202,84 @@ class ShadowPass extends RenderGraphPass {
     if (shadowUniform != null) {
       context.blackboard.set(kShadowUniformBlackboardKey, shadowUniform);
     }
+  }
+
+  /// Renders the plan's refresh jobs: static casters into the persistent
+  /// per-cascade tiles. One command buffer per tile (a command buffer holds
+  /// a single render pass encoder), submitted before the atlas buffer so the
+  /// composite below reads the fresh content.
+  void _renderStaticTiles(RenderGraphContext context, ShadowCachePlan plan) {
+    for (final refresh in plan.refreshes) {
+      final commandBuffer = gpu.gpuContext.createCommandBuffer();
+      final entry = refresh.entry;
+      entry.tile ??= gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        _tileResolution,
+        _tileResolution,
+        format: gpu.PixelFormat.r32g32b32a32Float,
+      );
+      // The depth attachment only backs this pass's depth test; the same
+      // pooled texture serves every refresh this frame (passes run in order
+      // and each clears it).
+      final depth = context.texturePool.acquire(
+        TransientTextureDescriptor.depth(
+          width: _tileResolution,
+          height: _tileResolution,
+          format: gpu.gpuContext.defaultDepthStencilFormat,
+          debugName: 'static_shadow_tile_depth',
+        ),
+      );
+      final target = gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(
+          texture: entry.tile!,
+          clearValue: Vector4(1.0, 1.0, 1.0, 1.0),
+        ),
+        depthStencilAttachment: gpu.DepthStencilAttachment(
+          texture: depth,
+          depthClearValue: 1.0,
+        ),
+      );
+      final renderPass = commandBuffer.createRenderPass(target);
+      final encoder = ShadowEncoder(
+        renderPass,
+        context.transientsBuffer,
+        entry.matrix,
+        _cameraPosition,
+        _casterFaces,
+        filter: ShadowCasterFilter.staticOnly,
+      );
+      _renderScene.cull(encoder.frustum, encoder.submit);
+      rendererSubmissions.submit(commandBuffer);
+    }
+  }
+
+  /// Replays cascade [tile]'s cached static content into its atlas slot,
+  /// writing the stored depth to both the color channel and the fragment
+  /// depth so the dynamic casters drawn after depth-test against it.
+  void _encodeTileCopy(gpu.RenderPass pass, int tile, gpu.Texture source) {
+    pass.setViewport(
+      gpu.Viewport(
+        x: tile * _tileResolution,
+        y: 0,
+        width: _tileResolution,
+        height: _tileResolution,
+      ),
+    );
+    pass.clearBindings();
+    final pipeline = gpu.gpuContext.createRenderPipeline(
+      _copyVertexShader,
+      _copyFragmentShader,
+    );
+    pass.bindPipeline(pipeline);
+    pass.setColorBlendEnable(false);
+    pass.setCullMode(gpu.CullMode.none);
+    pass.setDepthWriteEnable(true);
+    pass.setDepthCompareOperation(gpu.CompareFunction.always);
+    bindVertexBufferCompat(pass, _quadView, 6);
+    pass.bindTexture(
+      _copyFragmentShader.getUniformSlot('source_texture'),
+      source,
+    );
+    drawCompat(pass, 6);
   }
 }

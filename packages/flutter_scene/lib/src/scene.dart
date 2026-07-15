@@ -36,6 +36,7 @@ import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
+import 'render/shadow_cache.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
@@ -608,6 +609,11 @@ base class Scene implements SceneGraph {
   final GodRaysSettings godRays = GodRaysSettings();
   late final GodRaysPass _godRaysPass = GodRaysPass(godRays);
 
+  // Cross-frame cache for the directional light's shadow tiles, created the
+  // first frame any visible caster is `shadowStatic` and dropped when none
+  // are (or the light stops casting). See DirectionalShadowCache.
+  DirectionalShadowCache? _directionalShadowCache;
+
   @override
   void add(Node child) {
     root.add(child);
@@ -1115,17 +1121,53 @@ base class Scene implements SceneGraph {
     // Scene inputs requested by materials (Material.sceneInputs): depth
     // forces the prepass like a custom pass would, and opaqueSceneColor
     // splits the scene pass around an opaque color snapshot. Scenes whose
-    // materials request nothing skip all of it.
+    // materials request nothing skip all of it. The same walk fingerprints
+    // the static shadow casters (geometry identity + world translation), so
+    // the shadow cache notices content appearing, vanishing, or moving.
     final materialInputs = <RenderInput>{};
+    var staticShadowSignature = 0;
+    var hasStaticShadowCasters = false;
     for (final item in renderScene.items) {
       final inputs = item.material.sceneInputs;
       if (inputs.isNotEmpty) materialInputs.addAll(inputs);
+      if (item.shadowStatic && item.visible) {
+        hasStaticShadowCasters = true;
+        final t = item.worldTransform.storage;
+        staticShadowSignature =
+            0x3fffffff &
+            (staticShadowSignature * 31 +
+                identityHashCode(item.geometry) +
+                identityHashCode(item.instanceTransforms) +
+                t[12].hashCode * 3 +
+                t[13].hashCode * 7 +
+                t[14].hashCode * 13);
+      }
     }
     final captureOpaqueColor = materialInputs.contains(
       RenderInput.opaqueSceneColor,
     );
     final bindSceneDepth = materialInputs.contains(RenderInput.depth);
     if (bindSceneDepth) customInputs.add(RenderInput.depth);
+
+    // When any visible caster is static, route the cascades through the
+    // shadow cache: static casters render into persistent tiles only when
+    // coverage or content changes, and every consumer samples through the
+    // cached matrices. Without static casters the cache is dropped and the
+    // shadow pass renders everything per frame, exactly as before.
+    ShadowCachePlan? shadowCachePlan;
+    var effectiveCascades = cascades;
+    if (cascades.isNotEmpty && hasStaticShadowCasters) {
+      shadowCachePlan = (_directionalShadowCache ??= DirectionalShadowCache())
+          .plan(
+            light: light!,
+            lightDirection: lightDirection ?? light.direction,
+            idealCascades: cascades,
+            staticSignature: staticShadowSignature,
+          );
+      effectiveCascades = shadowCachePlan.cascades;
+    } else {
+      _directionalShadowCache = null;
+    }
 
     final graph = RenderGraph();
     // Directional cascades and shadow-casting spots share one atlas (and so one
@@ -1135,7 +1177,7 @@ base class Scene implements SceneGraph {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
-          cascades: cascades,
+          cascades: effectiveCascades,
           tileResolution: cascades.isNotEmpty
               ? light!.shadowMapResolution
               : spotShadowFrame!.tileResolution,
@@ -1144,13 +1186,14 @@ base class Scene implements SceneGraph {
               : ShadowCasterFaces.front,
           cameraPosition: camera.position,
           spotShadows: spotShadowFrame,
+          cachePlan: shadowCachePlan,
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
           shadowUniform:
               cascades.isNotEmpty &&
                   customInputs.contains(RenderInput.shadowMap)
               ? packPostShadowInfo(
-                  cascades,
+                  effectiveCascades,
                   lightDirection ?? light!.direction,
                   light!.color * light.intensity,
                 )
@@ -1236,7 +1279,7 @@ base class Scene implements SceneGraph {
         directionalLight: light,
         directionalLightDirection: lightDirection,
         punctualLighting: punctualLighting,
-        cascades: cascades,
+        cascades: effectiveCascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         layerMask: view.layerMask,
         fog: fog,

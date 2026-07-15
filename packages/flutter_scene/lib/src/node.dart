@@ -69,6 +69,20 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
+  /// Marks this node's meshes as static shadow casters: their geometry,
+  /// material coverage, and world transform are promised not to change while
+  /// mounted, so the engine may render them into cached shadow-map tiles that
+  /// are reused across frames instead of re-encoding every caster every
+  /// frame. Large static worlds become dramatically cheaper to shadow; nodes
+  /// left dynamic (the default) still cast per-frame shadows on top of the
+  /// cache. A static node that does change (moves, remesh, material coverage
+  /// edit) shows stale shadows until its render item re-registers, so flag
+  /// only genuinely static content. Not inherited by children; set it on each
+  /// mesh-bearing node. Materials with a `vertex { }` displacement stage
+  /// should stay dynamic, since their cached shadows would not follow a
+  /// camera-dependent displacement.
+  bool shadowStatic = false;
+
   /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.
   ///
   /// Disable for geometry that renders but should be transparent to rays

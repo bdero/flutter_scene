@@ -39,6 +39,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_only_masked.frag"
   },
+  "ShadowCopyFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_shadow_copy.frag"
+  },
   "LinearDepthFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth.frag"
