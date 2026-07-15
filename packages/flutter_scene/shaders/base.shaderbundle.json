@@ -35,9 +35,17 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_only.frag"
   },
+  "DepthOnlyMaskedFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_depth_only_masked.frag"
+  },
   "LinearDepthFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth.frag"
+  },
+  "LinearDepthMaskedFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_linear_depth_masked.frag"
   },
   "MaskFragment": {
     "type": "fragment",
@@ -74,6 +82,10 @@
   "LinearDepthNormalFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth_normal.frag"
+  },
+  "LinearDepthNormalMaskedFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_linear_depth_normal_masked.frag"
   },
   "FullscreenVertex": {
     "type": "vertex",

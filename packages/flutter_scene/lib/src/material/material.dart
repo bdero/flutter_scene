@@ -312,4 +312,24 @@ abstract class Material {
   /// depth prepass (the material's roughness factor).
   @internal
   double get reflectionRoughnessFactor => 1.0;
+
+  /// Whether the depth-writing passes (the shadow map and the camera depth
+  /// prepass) must alpha-test this material's coverage instead of writing its
+  /// full geometry, so cutout surfaces (foliage, fences) occlude, shadow, and
+  /// receive screen-space effects only where they are actually opaque. When
+  /// true, those passes draw with a masked fragment shader (which needs the
+  /// full-vertex varyings, so the position-only depth path is skipped) and
+  /// call [bindDepthAlphaMask]. The base material writes full geometry.
+  @internal
+  bool get depthAlphaMasked => false;
+
+  /// Binds the mask texture and MaskInfo parameters consumed by the masked
+  /// depth fragment shaders; [shader] is the masked variant the pass drew
+  /// with. Called only when [depthAlphaMasked] is true.
+  @internal
+  void bindDepthAlphaMask(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) {}
 }

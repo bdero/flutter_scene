@@ -195,6 +195,10 @@ class _DepthPrepassEncoder {
       baseShaderLibrary['LinearDepthFragment']!;
   static final gpu.Shader _depthNormalShader =
       baseShaderLibrary['LinearDepthNormalFragment']!;
+  static final gpu.Shader _maskedDepthShader =
+      baseShaderLibrary['LinearDepthMaskedFragment']!;
+  static final gpu.Shader _maskedDepthNormalShader =
+      baseShaderLibrary['LinearDepthNormalMaskedFragment']!;
 
   // The roughness map is a tiled material texture; sample it with repeat.
   static final gpu.SamplerOptions _roughnessSampler = gpu.SamplerOptions(
@@ -204,9 +208,11 @@ class _DepthPrepassEncoder {
     heightAddressMode: gpu.SamplerAddressMode.repeat,
   );
 
-  // The fragment shader and its uniform-block name for this pass.
-  gpu.Shader get _fragmentShader =>
-      _writeNormals ? _depthNormalShader : _depthShader;
+  // The fragment shader for this pass; alpha-masked materials draw through
+  // the masked variant so only their opaque texels write depth.
+  gpu.Shader _fragmentShaderFor(bool masked) => _writeNormals
+      ? (masked ? _maskedDepthNormalShader : _depthNormalShader)
+      : (masked ? _maskedDepthShader : _depthShader);
   String get _infoBlockName => _writeNormals ? 'DepthNormalInfo' : 'DepthInfo';
 
   /// Frustum of the camera view-projection, used for per-item culling.
@@ -241,12 +247,18 @@ class _DepthPrepassEncoder {
     // absent from the prepass and SSAO/SSR read the farther surface behind them.
     _renderPass.setCullMode(item.material.renderCullMode);
     final geometry = item.geometry;
+    // An alpha-masked material samples its mask through the full-vertex
+    // varyings, so it skips the position-only path too.
+    final masked = item.material.depthAlphaMasked;
+    final fragmentShader = _fragmentShaderFor(masked);
     // Unskinned geometry draws depth through a position-only shader and layout
     // (fetching only position); skinned geometry has no such variant, so it
     // falls back to its full vertex shader and bind. The normal-writing path
     // always uses the full vertex shader, since the position-only path
     // carries no normal.
-    final depthVertex = _writeNormals ? null : geometry.depthOnlyVertex;
+    final depthVertex = (_writeNormals || masked)
+        ? null
+        : geometry.depthOnlyVertex;
     // A `vertex { }` material displaces geometry in the color pass, so the
     // prepass must apply the same displacement or its depth mismatches. Prefer
     // the material's vertex variant for this pass (its position-only `depth`
@@ -261,7 +273,7 @@ class _DepthPrepassEncoder {
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
     final pipeline = resolvePipeline(
       activeVertex,
-      _fragmentShader,
+      fragmentShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
@@ -276,15 +288,22 @@ class _DepthPrepassEncoder {
       // per-pixel roughness in its green channel.
       _depthInfo[3] = item.material.reflectionRoughnessFactor;
       _renderPass.bindTexture(
-        _fragmentShader.getUniformSlot('metallic_roughness_texture'),
+        fragmentShader.getUniformSlot('metallic_roughness_texture'),
         Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
         sampler: _roughnessSampler,
       );
     }
     _renderPass.bindUniform(
-      _fragmentShader.getUniformSlot(_infoBlockName),
+      fragmentShader.getUniformSlot(_infoBlockName),
       _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
     );
+    if (masked) {
+      item.material.bindDepthAlphaMask(
+        _renderPass,
+        fragmentShader,
+        _transientsBuffer,
+      );
+    }
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
     // The position-only path resolves FrameInfo against the depth shader; the
