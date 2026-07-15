@@ -545,6 +545,8 @@ class Lighting {
     this.sceneDepthLinear,
     this.cameraPosition,
     this.cameraForward,
+    this.tanHalfFovX = 0.0,
+    this.tanHalfFovY = 0.0,
     this.time = 0.0,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
@@ -658,6 +660,12 @@ class Lighting {
   /// [sceneDepthLinear]. Null when no material requests scene inputs.
   final Vector3? cameraPosition;
   final Vector3? cameraForward;
+
+  /// Tangents of the half field of view (x and y), letting a material
+  /// project world positions to screen UV (screen-space marches). Zero
+  /// for non-perspective cameras; materials treat that as unavailable.
+  final double tanHalfFovX;
+  final double tanHalfFovY;
 
   /// Seconds since the scene started rendering, for engine-driven material
   /// animation (the same clock custom post passes receive).

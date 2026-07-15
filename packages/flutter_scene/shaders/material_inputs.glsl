@@ -20,6 +20,10 @@ struct MaterialInputs {
   float metallic;
   // Perceptual roughness in [0, 1].
   float roughness;
+  // Scales the specular reflectance, direct and image-based (1 is the
+  // physical default). Water-style materials lower it, or trade it
+  // against reflections they trace themselves from the scene inputs.
+  float specular;
   // Ambient occlusion in [0, 1]: 1 unoccluded.
   float occlusion;
 };
@@ -35,6 +39,7 @@ MaterialInputs InitMaterialInputs() {
   material.emissive = vec3(0.0);
   material.metallic = 0.0;
   material.roughness = 1.0;
+  material.specular = 1.0;
   material.occlusion = 1.0;
   return material;
 }
