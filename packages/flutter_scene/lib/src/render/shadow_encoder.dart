@@ -10,6 +10,11 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
+/// Which shadow casters a [ShadowEncoder] draws, keyed off
+/// `RenderItem.shadowStatic`. The shadow cache renders static casters into
+/// reusable tiles and dynamic casters on top every frame.
+enum ShadowCasterFilter { all, staticOnly, dynamicOnly }
+
 /// Records each opaque shadow caster's depth into a shadow-map render
 /// pass, from a directional light's point of view.
 ///
@@ -23,8 +28,9 @@ class ShadowEncoder {
     this._transientsBuffer,
     this._lightSpaceMatrix,
     this._cameraPosition,
-    ShadowCasterFaces casterFaces,
-  ) {
+    ShadowCasterFaces casterFaces, {
+    ShadowCasterFilter filter = ShadowCasterFilter.all,
+  }) : _filter = filter {
     frustum = Frustum.matrix(_lightSpaceMatrix);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
@@ -47,6 +53,7 @@ class ShadowEncoder {
   final gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   final Matrix4 _lightSpaceMatrix;
+  final ShadowCasterFilter _filter;
 
   // The scene camera position, bound as FrameInfo.camera_position so a
   // `vertex { }` material's camera-relative displacement (e.g. a world curve)
@@ -84,6 +91,8 @@ class ShadowEncoder {
   void submit(RenderItem item) {
     if (!item.visible) return;
     if (!item.material.isOpaque()) return;
+    if (_filter == ShadowCasterFilter.staticOnly && !item.shadowStatic) return;
+    if (_filter == ShadowCasterFilter.dynamicOnly && item.shadowStatic) return;
     if (item.frustumCulled) {
       final bounds = item.cullBounds;
       if (bounds != null) {

@@ -62,6 +62,11 @@ class RenderItem {
   /// set so mirrored nodes don't render inside-out.
   bool windingFlipped = false;
 
+  /// Mirrors the owning node's `shadowStatic` promise, refreshed each frame.
+  /// Static casters render into cached shadow tiles; dynamic casters render
+  /// every frame (see the shadow cache).
+  bool shadowStatic = false;
+
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
 

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -225,6 +226,8 @@ class DirectionalLight {
           lightSpaceMatrix: _cascadeLightSpaceMatrix(lightDir, center, radius),
           splitDistance: splits[c + 1],
           boxSize: radius * 2.0,
+          center: center,
+          radius: radius,
         ),
       );
     }
@@ -243,6 +246,16 @@ class DirectionalLight {
   // must match: (12 + 2) / 2 = 7.
   static const double _casterReachRadii = 12.0;
   static const double _forwardMarginRadii = 2.0;
+
+  /// The world -> light-clip matrix for a cascade covering the sphere
+  /// ([center], [radius]); see [_cascadeLightSpaceMatrix]. The shadow cache
+  /// uses this to rebuild a cascade's matrix with a slack-enlarged radius.
+  @internal
+  Matrix4 cascadeLightSpaceMatrix(
+    Vector3 lightDir,
+    Vector3 center,
+    double radius,
+  ) => _cascadeLightSpaceMatrix(lightDir, center, radius);
 
   // The world -> light-clip matrix for a cascade whose frustum slice is
   // bounded by a sphere ([sphereCenter], [sphereRadius]). The orthographic box
@@ -495,6 +508,8 @@ class ShadowCascade {
     required this.lightSpaceMatrix,
     required this.splitDistance,
     required this.boxSize,
+    this.center,
+    this.radius = 0.0,
   });
 
   /// World -> light-clip-space matrix that renders and samples this
@@ -509,6 +524,15 @@ class ShadowCascade {
   /// to convert world-space softness and fade widths into the
   /// cascade's UV space.
   final double boxSize;
+
+  /// World-space center of the frustum-slice bounding sphere this cascade
+  /// was fit to, or null when the cascade was built directly from a matrix.
+  /// The shadow cache uses it to decide when a cached tile still covers the
+  /// current view.
+  final Vector3? center;
+
+  /// Radius of the bounding sphere behind [center] (0 when unknown).
+  final double radius;
 }
 
 /// The lighting state handed to a [Material] when it binds for a draw.
