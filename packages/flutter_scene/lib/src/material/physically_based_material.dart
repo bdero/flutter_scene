@@ -277,6 +277,32 @@ class PhysicallyBasedMaterial extends Material {
   double get reflectionRoughnessFactor => roughnessFactor;
 
   @override
+  bool get depthAlphaMasked => alphaMode == AlphaMode.mask;
+
+  @override
+  void bindDepthAlphaMask(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) {
+    // Mirrors the coverage the color pass tests in Surface():
+    // texture.a * weighted vertex-color alpha * baseColorFactor alpha.
+    final params = Float32List(4)
+      ..[0] = alphaCutoff
+      ..[1] = baseColorFactor.a
+      ..[2] = vertexColorWeight;
+    pass.bindUniform(
+      shader.getUniformSlot('MaskInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(params)),
+    );
+    pass.bindTexture(
+      shader.getUniformSlot('mask_texture'),
+      Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
+      sampler: textureSourceSampler(baseColorTexture) ?? _repeatSampler,
+    );
+  }
+
+  @override
   bool isOpaque() {
     // BLEND always goes through the translucent pass. OPAQUE and MASK
     // are drawn in the opaque pass (MASK relies on the shader's

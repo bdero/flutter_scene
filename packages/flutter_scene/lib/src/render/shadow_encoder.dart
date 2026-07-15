@@ -34,11 +34,13 @@ class ShadowEncoder {
     // winding (flipped per-item for mirrored casters below), back-face culling
     // keeps the light-facing faces. [ShadowCasterFaces.back] (second-depth)
     // suits solid geometry, recording the far face to avoid self-shadow acne.
-    _renderPass.setCullMode(switch (casterFaces) {
+    _casterCullMode = switch (casterFaces) {
       ShadowCasterFaces.front => gpu.CullMode.backFace,
       ShadowCasterFaces.back => gpu.CullMode.frontFace,
       ShadowCasterFaces.both => gpu.CullMode.none,
-    });
+    };
+    _renderPass.setCullMode(_casterCullMode);
+    _currentCullMode = _casterCullMode;
     _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
@@ -54,6 +56,16 @@ class ShadowEncoder {
 
   static final gpu.Shader _depthShader =
       baseShaderLibrary['DepthOnlyFragment']!;
+  static final gpu.Shader _maskedDepthShader =
+      baseShaderLibrary['DepthOnlyMaskedFragment']!;
+
+  /// The cull mode the light's caster-face setting maps to, applied to
+  /// non-masked casters.
+  late final gpu.CullMode _casterCullMode;
+
+  /// The cull mode currently set on the pass; alpha-masked casters switch to
+  /// their material's own culling and back (see [submit]).
+  late gpu.CullMode _currentCullMode;
 
   /// Frustum of the light-space view-projection, used for per-item
   /// culling.
@@ -83,11 +95,23 @@ class ShadowEncoder {
     }
     _renderPass.clearBindings();
     final geometry = item.geometry;
+    // An alpha-masked caster draws through the masked depth shader (so only
+    // its opaque texels cast) and needs the full-vertex varyings, so it skips
+    // the position-only path. It also keeps the material's own culling, so the
+    // faces that are visible are the faces that cast; the caster-face mode's
+    // second-depth trick has no meaning for cutout sheets.
+    final masked = item.material.depthAlphaMasked;
+    final fragmentShader = masked ? _maskedDepthShader : _depthShader;
+    final cullMode = masked ? item.material.renderCullMode : _casterCullMode;
+    if (cullMode != _currentCullMode) {
+      _renderPass.setCullMode(cullMode);
+      _currentCullMode = cullMode;
+    }
     // Unskinned casters draw depth through a position-only shader and layout;
     // skinned geometry falls back to its full vertex shader and bind.
     // A `vertex { }` material displaces geometry in the color pass, so run its
     // vertex variant here too or the shadow detaches from the visible surface.
-    final depthVertex = geometry.depthOnlyVertex;
+    final depthVertex = masked ? null : geometry.depthOnlyVertex;
     final materialVertex = item.material.materialVertexShader(
       depthVertex != null ? 'depth' : geometry.materialVertexVariant,
     );
@@ -95,7 +119,7 @@ class ShadowEncoder {
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
     final pipeline = resolvePipeline(
       activeVertex,
-      _depthShader,
+      fragmentShader,
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
@@ -135,7 +159,20 @@ class ShadowEncoder {
           _transientsBuffer,
         );
       }
+      if (masked) {
+        item.material.bindDepthAlphaMask(
+          _renderPass,
+          fragmentShader,
+          _transientsBuffer,
+        );
+      }
     }
+
+    // The instance-rate model transform sits in the slot after the bound
+    // vertex streams: slot 1 on the position-only path, slot
+    // [vertexStreamCount] when the full stream set is bound (masked casters),
+    // matching the prepass and color encoders.
+    final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
 
     final instances = item.instanceTransforms;
     if (instances != null) {
@@ -161,12 +198,12 @@ class ShadowEncoder {
         nodeWindingFlipped: item.windingFlipped,
       );
       if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.ccw);
+        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.cw);
+        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }
@@ -175,10 +212,15 @@ class ShadowEncoder {
 
     bindDraw(item.worldTransform);
     // Skip the model-transform instance buffer for geometry that supplies its
-    // own per-instance buffer (see the color encoder), or it clobbers slot 1.
+    // own per-instance buffer (see the color encoder), or it clobbers the
+    // stream slot.
     if (geometry.instancedVertexLayout != null &&
         geometry.bindsModelTransformInstance) {
-      bindSingleInstanceTransform(_renderPass, item.worldTransform);
+      bindSingleInstanceTransform(
+        _renderPass,
+        item.worldTransform,
+        slot: instanceSlot,
+      );
     }
     // Mirrored casters reverse winding; flip the cull order so the same faces
     // that are visible also cast shadows.

@@ -1,5 +1,15 @@
 ## 0.19.0
 
+* Alpha-masked materials (`AlphaMode.mask`) are now alpha-tested in the
+  depth-writing passes, not just the color pass. The shadow map and the camera
+  depth prepass draw them through masked fragment variants that discard below
+  the material's cutoff, so cutout surfaces such as foliage cast shadows,
+  occlude ambient light, block god rays, and receive screen-space effects only
+  where they are actually opaque. Masked shadow casters also keep the
+  material's own face culling (a double-sided cutout casts from both sides)
+  instead of the light's caster-face mode. Fully opaque and translucent
+  materials render exactly as before.
+
 * `.fmat` skies declaring `requires: [environment]` now sample through a
   generated `SampleEnvironment(direction, roughness)` helper that binds every
   radiance layout correctly (the roughness-mip cube layout previously sampled
