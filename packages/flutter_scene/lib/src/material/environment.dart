@@ -97,10 +97,26 @@ base class EnvironmentMap {
   ///
   /// Currently false on the native GLES backend (Impeller does not yet
   /// implement render-to-mip-level there), where new environments build
-  /// the legacy band atlas regardless of [useMipRadianceLayout].
+  /// the legacy band atlas regardless of [useMipRadianceLayout]. Native
+  /// Android also stays on the atlas: Impeller Vulkan currently produces
+  /// incorrect roughness-dependent cubemap reflections there.
   static bool get mipRadianceLayoutSupported =>
-      gpu.gpuContext.doesSupportFramebufferRenderMipmap &&
-      gpu.gpuContext.doesSupportManuallyMippedTextures;
+      shouldUseMipRadianceLayout(
+        isWeb: kIsWeb,
+        targetPlatform: defaultTargetPlatform,
+        backendSupportsMips:
+            gpu.gpuContext.doesSupportFramebufferRenderMipmap &&
+            gpu.gpuContext.doesSupportManuallyMippedTextures,
+      );
+
+  /// Applies the backend capability and the known Android Vulkan workaround.
+  @visibleForTesting
+  static bool shouldUseMipRadianceLayout({
+    required bool isWeb,
+    required TargetPlatform targetPlatform,
+    required bool backendSupportsMips,
+  }) =>
+      backendSupportsMips && (isWeb || targetPlatform != TargetPlatform.android);
 
   /// The layout new environments build: [useMipRadianceLayout] resolved
   /// against backend support.
