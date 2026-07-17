@@ -10,6 +10,17 @@
   high draw counts this removes hundreds of megabytes per second of garbage
   and the GC pauses that came with it.
 
+* Draw submission binds far less. Render-pass bindings persist across
+  draws, so the scene encoder now clears bindings only when the pipeline
+  changes (opaque draws are already pipeline-sorted) instead of before
+  every draw, and the engine lighting set (the IBL, shadow, SH,
+  punctual-light, and occlusion samplers plus their uniform blocks)
+  rebinds only when the pass, shader, lighting, or environment actually
+  changes instead of once per item. Every bind marshals its slot name
+  across the FFI, so draw-heavy scenes gain a lot; a 100-tile streaming
+  scene on Metal dropped from 13.0 ms to 5.7 ms average frame build
+  time with identical output.
+
 * Cheaper `MeshGeometry.fromArrays` construction for streamed meshes.
   Supplied attributes now bulk-copy instead of walking every vertex, an
   already-typed index list (`Uint16List`/`Uint32List`) uploads without the
@@ -54,6 +65,18 @@
   instead of the light's caster-face mode. Fully opaque and translucent
   materials render exactly as before.
 
+* Materials can declare per-frame scene inputs. A `.fmat` declaring
+  `engine_inputs: [scene_color, scene_depth]` samples an opaque-phase
+  color snapshot (the scene pass splits in two around the translucent
+  phase) and the prepass linear depth, enabling refraction, depth-fade
+  absorption, shoreline foam, and in-material reflection marches on
+  translucent surfaces such as water. The accessors are emitted only
+  into materials that declare them, so scenes that use none of this pay
+  nothing. `MaterialInputs` also gains a `specular` scale, and the
+  per-frame uniforms now carry the camera's half-fov tangents so
+  materials can project between world and screen space. Documented in
+  MATERIALS.md.
+
 * `.fmat` skies declaring `requires: [environment]` now sample through a
   generated `SampleEnvironment(direction, roughness)` helper that binds every
   radiance layout correctly (the roughness-mip cube layout previously sampled
@@ -70,12 +93,35 @@
   engine-side validation fix is upstream; this keeps skinned rendering working
   on stable drivers today and buys back sampler headroom everywhere.
 
+* Fixed white speckles baked into compressed textures on devices whose
+  preferred compressed-texture family is BC, most visibly on the web on
+  Windows, where browsers typically expose only s3tc. Near-flat BC1
+  blocks that quantize both endpoints to the same RGB565 value landed
+  in BC1's 3-color mode, where one index decodes to transparent black,
+  and premultiplied rendering showed the holes as bright speckles.
+  Equal packed endpoints now emit zero index bits, which decodes
+  exactly.
+
 * Scene-graph conveniences for working with a loaded model. `Node.meshNodes`
   iterates the drawable nodes in a subtree, `Node.combinedWorldBounds` gives
   the subtree's world-space AABB (the bound the renderer culls against), and
   `PerspectiveCamera.framing(bounds)` places a camera to fit that AABB in the
   view. Together they turn "load a model, find its meshes, frame the camera on
   it" into a few lines instead of a hand-rolled vertex loop.
+
+* 3D Gaussian splatting. Load a `.ply` or `.splat` capture with
+  `GaussianSplats.fromAsset`/`fromBytes`, attach a `SplatComponent` to
+  a node, and the set composites with the forward-rendered scene, depth
+  tested against opaque geometry and blended premultiplied. A set draws
+  as one instanced batch of screen-space Gaussian footprints with
+  per-splat covariance, color, opacity, and spherical harmonics fetched
+  from vertex-stage data textures; a background worker keeps the splats
+  depth sorted, and sets of at most 4096 splats sort synchronously in
+  frame. `SplatComponent` exposes opacity, footprint scale, tint, SH
+  degree, antialiasing, and crop boxes, with `SplatData` and the
+  `SplatColorSpace`, `SplatCropMode`, and `SplatFormat` enums rounding
+  out a new "Gaussian splatting" doc category. The example app gains a
+  Gaussian Splats page with two real captures.
 
 * Scene content can now be exposed to assistive technology (screen
   readers, switch access). Attaching the new `SemanticsComponent` to a
@@ -102,6 +148,35 @@
 * A failed static-resource load no longer marks the engine ready to
   render (which crashed mid-frame); the scene keeps skipping frames and
   the load is retried on the next `Scene.initializeStaticResources` call.
+
+* Point and spot lights. `PointLightComponent` and `SpotLightComponent`
+  attach lights to nodes (taking position, and for spots aim, from the
+  node transform), with a range-windowed inverse-square falloff and an
+  inner/outer cone for spots, and more than one directional light now
+  shades as well. A scene may hold an unlimited number of lights; each
+  frame the lights pack into a parameters texture and are culled per
+  object through the scene BVH, so a fragment only shades the lights
+  that reach its object. Spot lights cast perspective shadow maps
+  through the shared shadow atlas, softened with a rotated PCF kernel
+  and defaulting to a normal-offset bias. The runtime glTF importer
+  reads `KHR_lights_punctual`, and `.fscene` gains `pointLight` and
+  `spotLight` component codecs, so authored lights round-trip. A Lights
+  example shows a grid of many culled point lights and an adjustable
+  spot shadow.
+
+* Geometry readback and derivation. `Geometry.extractMeshData()` (with
+  `Geometry.isReadable`) copies a geometry's retained vertex and index
+  data out as `MeshData`, an isolate-transferable structure-of-arrays
+  snapshot, and `MeshData` gains pure derivation ops that compose on
+  background isolates, `unweld` (flat-shaded triangle soup with
+  optional canned per-triangle attributes), `extractEdges` (unique
+  edges with an optional crease-angle filter), `merge`, and a
+  `triangles` iterator, feeding geometry back in through
+  `MeshGeometry.fromMeshData` or `applyMeshData`.
+  `LineSegmentsGeometry` renders bulk disconnected segments (a
+  wireframe from `extractEdges`, debug lines) as thick camera-facing
+  ribbons with world-space width in one instanced draw, shaded by any
+  material's fragment.
 
 * Per-frame transient GPU data (uniform blocks, instance transforms) now
   rides an engine-owned, completion-aware arena allocator instead of
@@ -141,6 +216,13 @@
   that use it directly; the engine itself no longer allocates through
   `HostBuffer` on any backend.
 
+* On the web backend, a uniform block a linked program keeps active but
+  never binds no longer rejects the draw with `GL_INVALID_OPERATION`
+  (Impeller tolerates the same situation). The shim pre-binds a shared
+  zero-filled buffer to every active block and explicit binds override
+  it, so unbound blocks read zeros instead of erroring. This fixes
+  unlit `.fmat` materials rendering nothing on the web.
+
 * Ambient occlusion and screen-space reflections no longer sample the wrong
   depth for double-sided (`culling: none`) materials. The depth prepass they
   read culled every material back-face regardless of its own mode, so a
@@ -148,11 +230,17 @@
   and the effects shaded the farther surface behind them. The prepass now culls
   each material with its own mode, matching the color pass.
 
-* A `.fmat` whose parameters are used only in its `vertex { }` stage no longer
-  crashes at draw time. When `Surface()` reads no parameter the compiler stripped
-  the fragment's `MaterialParams` block, and binding the parameters then pointed
-  at a missing uniform slot. The generated fragment now keeps the block
-  referenced through a zero-bound keep-alive, with no visible effect.
+* The `.fmat` compiler no longer lets a declared resource the author's
+  code never reads strip out of the generated shaders. Reflection still
+  listed stripped resources and the runtime binds every declared one,
+  so the strips surfaced as cryptic shader-bundle build errors or
+  native crashes at draw time. Every case now keeps the resource
+  genuinely live at zero cost, a leading `mat4` or `int` material
+  parameter, a `Vertex()` hook that fully replaces `world_position`
+  (the instance transform attributes), a `Vertex()` hook that reads no
+  parameter (the vertex `MaterialParams` block), a declared custom
+  attribute `Vertex()` never reads, and a declared sampler the fragment
+  never samples.
 
 * Built-in noise, matched between CPU and GPU. `package:flutter_scene/noise.dart`
   adds `FastNoiseLite` (OpenSimplex2/2S, Perlin, Value, and Cellular with
@@ -188,7 +276,16 @@
   view direction, so distant geometry dissolves into the sky and horizon instead
   of a flat wall.
 
-* Custom render passes can now read the scene's geometry, not just its color. A
+* Custom render passes. A `CustomRenderPass` added through
+  `Scene.addRenderPass` renders at a chosen `RenderStage` with a
+  `RenderPassContext` (targets, camera, transients), and
+  object-filtered draws through `NodeFilter` let a pass re-render a
+  chosen subset of the scene. Built on it, `Node.highlightColor` plus
+  `Scene.highlightStyle` (`HighlightStyle`) draw per-node selection
+  outlines (a mask pass and an outline post-process), which is what the
+  scene editor uses for viewport selection.
+
+* Custom render passes can also read the scene's geometry, not just its color. A
   `CustomRenderPass` declares the buffers it needs through a `RenderInput` set
   (`depth`, `normals`, `shadowMap`); the engine produces them that frame and
   exposes them on `RenderPassContext` (`sceneDepthLinear`, `shadowMap`,
@@ -203,6 +300,22 @@
   distance, jitter, and a color. It requires a shadow-casting directional light
   and a perspective camera.
 
+* Scenes can hold rendering until their content is loaded, instead of
+  flashing half-built while assets stream in. `ResourceGroup` tracks a
+  set of in-flight loads and reports aggregate progress; `SceneView`
+  gains `loading`, `loadingBuilder`, and `revealMinDuration`, holding
+  the scene off-screen behind a loading widget until the engine's
+  static resources and the tracked loads settle, then revealing the
+  assembled scene in one frame. `Scene.warmUp` (and the
+  `SceneView.warmUp` flag) compiles the scene's render pipelines and
+  uploads its GPU resources ahead of the first visible frame by
+  encoding one tiny offscreen frame, so the first frame does not stall
+  on shader compilation. The runtime glTF/GLB importer now packs mesh
+  geometry on a background isolate, so loading a large model no longer
+  stalls the UI thread, and `Scene.isReadyToRender` exposes the shared
+  static-resource state. All of it is opt-in; a view with no loading
+  arguments renders as before.
+
 * Widget-texture captures (`WidgetTexture`, `WidgetComponent`) now stay on the
   GPU. Each capture wraps the rasterized image's backing texture directly
   (`Texture.fromImage`) instead of reading the pixels back and re-uploading
@@ -212,6 +325,20 @@
   `WidgetTextureController` is now replaced across captures on the wrapped
   path, so `WidgetComponent`'s `bind` callback re-fires per capture; listeners
   that re-bind on change (the documented contract) are unaffected.
+
+* `.fmat` materials gain a vertex stage. A surface material may include
+  a `vertex { void Vertex(inout VertexInputs vertex) }` block that
+  displaces geometry, perturbs normals, and feeds data to the fragment,
+  and the engine runs that one hook across every mesh type and pass
+  (static, skinned, and the position-only depth/shadow variants), so a
+  material never branches on skinned vs unskinned. A declarative
+  `varyings` list forwards interpolants from `Vertex()` to `Surface()`,
+  an `attributes` list declares named per-vertex inputs supplied
+  through `Geometry.setCustomAttribute`, and `MaterialParams` are
+  shared with the vertex stage. The stage applies consistently in the
+  color, shadow-map, depth-prepass, and object-pick passes, so
+  displaced geometry casts a matching shadow and picks on its displaced
+  silhouette. Documented in MATERIALS.md ("The vertex block").
 
 * Built-in materials and geometries can now be constructed before
   `Scene.initializeStaticResources()` finishes loading the base shader bundle.
@@ -236,6 +363,122 @@
   asserting, so a bare `SceneView(scene)` always renders. The `SceneView`
   constraint relaxes from exactly one to at most one of `camera`,
   `cameraBuilder`, or `viewsBuilder`.
+
+* Camera-facing billboards and sprites. `BillboardGeometry` draws any
+  number of camera-facing quads in a single instanced call (spherical,
+  axis-locked, or velocity-stretched `BillboardFacing`, with flipbook
+  atlas support), `SpriteMaterial` shades them with alpha or additive
+  compositing in one translucent pass (`SpriteBlendMode`), and `Sprite`
+  wraps a single billboard. The example app's Sprites and Particles
+  pages build on them, the latter through a CPU-simulated particle
+  system that is not yet part of the public barrel. The
+  selection-mask, depth-prepass, and shadow passes now honor a
+  geometry that supplies its own per-instance buffer and a geometry's
+  double-sidedness.
+
+* Three directional-shadow controls, each defaulting to the previous
+  behavior. `shadowAmbientStrength` lets the cast shadow also darken
+  the image-based ambient, which matters when a sky-baked environment
+  already contains the sun and a shadow otherwise reads as a no-op on
+  ambient light. `shadowCasterFaces` selects which faces render into
+  the shadow map (`front` as before, second-depth `back` to remove
+  self-shadow acne on watertight geometry, or `both`). And each
+  cascade's light-space box now extends far toward the sun at no
+  shadow-map resolution cost, so at low sun angles the long shadows of
+  occluders outside the old box no longer drop out as lit bands.
+
+* Fixed the cascaded-shadow lookup on OpenGL ES and Windows. The lookup
+  indexed the cascade uniforms with a non-literal index, which is
+  invalid in GLSL ES 1.00 and misread every cascade past the first on
+  GLES backends (wrong shadows on distant ground), and its early-return
+  loop shape crashed the Direct3D shader compiler the moment a lit
+  object rendered on Windows. The selection is now unrolled with
+  literal indices and passes each cascade's data by value. A Windows
+  smoke-render CI job now guards the platform.
+
+* BREAKING: vertex layouts are described by value and unskinned
+  geometry is stored as structure of arrays. Geometry carries a
+  `VertexLayoutDescriptor` (attributes by name, format, slot, and
+  offset, with per-buffer stride and step mode) that lowers to the GPU
+  layout, `Geometry.instancedVertexLayout` changes to that type, and
+  the render-pipeline cache keys on the layout so two layouts sharing a
+  shader no longer collide. Each unskinned attribute (position, normal,
+  texcoord, color) now lives in its own tightly packed stream end to
+  end; the depth, shadow, and mask passes fetch only the 12-byte
+  position stream, updatable geometry rewrites only the dirty stream
+  (and the `update*` methods take an optional dirty vertex range), and
+  the per-geometry `kInterleavedVertexBytes` constants are gone. The
+  `.fscene` format stores unskinned vertices de-interleaved (a new
+  `unskinned_soa` payload layout); old interleaved `.fsceneb` files
+  still load, and skinned geometry stays interleaved.
+
+* New procedural primitives alongside the existing
+  cuboid/plane/sphere/wedge, a cylinder (separate top and bottom radii,
+  so it also covers cones), capsule, torus, disc, ring, and geodesic
+  icosphere, each an indexed mesh with outward normals and UVs and each
+  with a `collisionShape` bridge for the physics backends (compound
+  shapes preserve the torus and ring holes). `MeshData` snapshots are
+  isolate-transferable so meshing can run off the render isolate and
+  upload via `MeshGeometry.fromMeshData`. A Shapes example drops the
+  primitives into a physics playground.
+
+* Geometry level of detail. An `LodComponent` draws one of several
+  `LodLevel` variants chosen per view from the object's projected
+  on-screen size (field-of-view aware and resolution independent), with
+  a per-instance bias, a hysteresis dead-band, and a cull floor;
+  selection runs in the encoder next to frustum culling. An optional
+  dithered cross-fade blends adjacent levels across a screen-size band
+  so the switch does not pop, honored by the built-in lit and unlit
+  materials. A Geometry LOD example shows a field of icospheres
+  switching detail with distance.
+
+* Image-based lighting now prefilters into a radiance cubemap, a
+  roughness band per mip sampled with hardware trilinear filtering,
+  with `EnvironmentMap.radianceCubeSize` selecting the face size and
+  the web backend gaining cube-texture support to match. Each
+  environment carries its own layout, detected from its texture, so
+  environments built with the earlier equirect layouts keep loading
+  and binding correctly. `EnvironmentMap.fromEquirectHdr` builds an
+  environment from linear HDR equirect pixels, so radiance above 1.0
+  (bright skies, the sun) survives the prefilter and lights the scene
+  at its true intensity. The prefilter also pre-averages bright
+  sources through a mipped source (no more firefly blocks in the rough
+  bands) and no longer shows cube-face seams.
+
+* Spatial environment volumes with camera-driven blending.
+  `EnvironmentSettings` captures a scene's look (environment, skybox,
+  exposure, tone mapping) as an interpolable snapshot,
+  `Scene.baseEnvironment` holds the global look, and
+  `EnvironmentVolume`s (box or sphere bounds, or attached to nodes via
+  `EnvironmentVolumeComponent`) blend over it by camera position with
+  per-volume priority, weight, and blend distance. The lit shaders
+  cross-fade between two full environments while a blend is in flight,
+  so lighting, reflections, and the skybox all transition smoothly
+  instead of popping. `Scene.environmentSettings` applies a snapshot
+  directly, and `blendEnvironmentVolumes` exposes the resolver.
+
+* Sky-driven sun light. Assigning a `SunLight` to `Scene.sunLight` aims
+  the scene's directional light at a sky's sun each frame and recolors
+  it from the sky, so the hard shadow tracks the same sun the sky draws
+  and agrees with the sky-baked image-based lighting. The built-in
+  gradient and physical sky sources implement the `SunSky` interface it
+  consumes and expose `sunLightColor`/`sunLightIntensity`.
+
+* BREAKING: in the `.fscene` format, a stage's global look is now a
+  referenced environment resource instead of inline stage fields
+  (`StageMetadata` loses its environment/exposure/tone-mapping/skybox
+  fields, and `realizeStage` takes an `environmentLoader`), backed by
+  pooled `EnvironmentResource`s, and prefab host-node additions are
+  expressed as `Attachment`s (replacing `PrefabInstanceSpec.addedNodes`).
+  Imported textures and image or HDR environments stay external files
+  next to the lean `.fscene` and are embedded into the self-contained
+  `.fsceneb` at build time, multi-file `.gltf` (external resources)
+  imports, prefab composition reports member origins
+  (`composeScene(memberOrigins:)`) and gains `applyPrefabOverride`, and
+  components declare a property schema (`ComponentPropertyDef`) that
+  editors drive generically. These serve the in-development scene
+  editor now hosted in the repository (unpublished, a desktop app over
+  a headless command core and an MCP surface).
 
 * Added `Texture2D` for textures with generated mipmaps and trilinear plus
   anisotropic filtering, built from an asset, a `ui.Image`, or raw pixels
@@ -271,6 +514,20 @@
   geometric normal; the reflection direction still follows the normal map.
 
 * Fixed `normalScale` not being applied to the perturbed normal.
+
+* Screen-space reflections, off by default via
+  `Scene.screenSpaceReflections`. An optional pass layers sharp,
+  view-dependent reflections on top of the image-based environment
+  reflections every surface already receives, reconstructing each
+  pixel's position and smooth normal from the shared camera depth
+  prepass (no G-buffer), marching the reflected ray through the depth
+  buffer in screen space, and sampling the already-lit scene color on
+  a hit with the environment as the miss fallback, so it only ever
+  adds detail. `ScreenSpaceReflectionsSettings` exposes intensity,
+  range and thickness, `stride` (the quality dial) and `maxSteps` (a
+  cost ceiling), glossy `blur`, a distance fade, `resolutionScale` to
+  trace below full resolution, and a `debugView`, and a Screen-space
+  Reflections example ships with a live tuning panel.
 
 * Screen-space reflections now fade out on rough surfaces. The camera depth
   prepass carries per-pixel roughness, so smooth surfaces still reflect while

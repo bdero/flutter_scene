@@ -14,7 +14,7 @@ environment:
 
 dependencies:
   dart_mcp: ^0.5.1
-  flutter_scene: ^0.18.0
+  flutter_scene: ^0.19.0
   flutter_scene_editor_core:
     path: ../flutter_scene_editor_core
   meta: ^1.15.0

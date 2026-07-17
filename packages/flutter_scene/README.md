@@ -43,7 +43,7 @@
 - On native platforms this package requires [Impeller](https://docs.flutter.dev/perf/impeller#availability) to be enabled. On the web it runs on a built-in WebGL2 backend instead.
 - This package uses the experimental [Dart "Native Assets"](https://github.com/dart-lang/sdk/issues/50565) feature to automate some build tasks.
 - Zero-manifest `.fmat` material builds use the experimental Dart DataAssets feature. On supported Flutter master builds, enable it with `flutter config --enable-dart-data-assets`.
-- Given the reliance on non-production features, Flutter Scene requires the Flutter [master channel](https://docs.flutter.dev/release/upgrade#other-channels). Version 0.18.0 needs a master build from 2026-06-09 or later, which is when render-to-mip-level Flutter GPU support landed (flutter/flutter#187685). The `flutter` lower bound in `pubspec.yaml` is set to the latest stable instead (so pub.dev can resolve and score the package), which is looser than the real requirement, so a recent master is what you actually want.
+- Given the reliance on non-production features, Flutter Scene requires the Flutter [master channel](https://docs.flutter.dev/release/upgrade#other-channels). Version 0.19.0 needs a master build from 2026-06-09 or later, which is when render-to-mip-level Flutter GPU support landed (flutter/flutter#187685). The `flutter` lower bound in `pubspec.yaml` is set to the latest stable instead (so pub.dev can resolve and score the package), which is looser than the real requirement, so a recent master is what you actually want.
 
 ## Features
 

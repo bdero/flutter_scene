@@ -13,7 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_gpu_shaders: ^0.5.1
-  flutter_scene: ^0.18.0
+  flutter_scene: ^0.19.0
   # Native Rapier physics backend, used by the Physics example. Pulls
   # in a Rust build hook, so building this app now requires cargo.
   flutter_scene_rapier:
