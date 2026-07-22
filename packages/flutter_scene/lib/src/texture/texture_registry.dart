@@ -6,6 +6,7 @@ library;
 import 'package:flutter/services.dart';
 
 import '../gpu/gpu.dart' as gpu;
+import '../hot_reload/hot_reload_coordinator.dart';
 import 'compressed_texture.dart';
 import 'texture2d.dart';
 
@@ -54,11 +55,34 @@ final class TextureEntry {
 }
 
 /// Uploaded textures shared across [loadTexture] calls, keyed by asset key,
-/// so repeated loads of the same source share one GPU texture.
-// TODO(texture-hot-reload): drop an entry when its asset hot reloads, like the
-// scene and material registries do through the HotReloadCoordinator, so an
-// edited source image refreshes without a restart.
-final Map<String, Future<gpu.Texture>> _textureCache = {};
+/// so repeated loads of the same source share one GPU texture (and every
+/// holder sees the same hot-reload swap).
+final Map<String, Future<_ReloadableTextureSource>> _textureCache = {};
+
+/// The live handle [loadTexture] returns. Materials re-resolve
+/// [sampledTexture] at bind time, so swapping the GPU texture here (the
+/// hot-reload path) updates every bound material on its next frame.
+final class _ReloadableTextureSource implements TextureSource {
+  _ReloadableTextureSource(gpu.Texture texture) {
+    _swap(texture);
+  }
+
+  late gpu.Texture _texture;
+  late gpu.SamplerOptions _sampler;
+
+  void _swap(gpu.Texture texture) {
+    _texture = texture;
+    // Borrow GpuTextureSource's default sampler (trilinear repeat when the
+    // texture carries mips), recomputed since a reload can change the chain.
+    _sampler = GpuTextureSource(texture).sampler;
+  }
+
+  @override
+  gpu.Texture? get sampledTexture => _texture;
+
+  @override
+  gpu.SamplerOptions get sampledSampler => _sampler;
+}
 
 /// Resolves DataAssets-backed `.fstex` textures by source path.
 final class TextureRegistry {
@@ -139,22 +163,36 @@ String _textureId(String sourcePath) {
 /// DataAssets mode. The payload transcodes to a device-supported block format
 /// (or decodes to rgba8) off the main isolate, uploads with its full mip
 /// chain, and is cached, so repeated loads of the same source share one GPU
-/// texture. Pass [package] to disambiguate when the same source path is
-/// provided by more than one package.
+/// texture. In debug builds the texture hot reloads: editing the source image
+/// re-cooks it and the next hot reload swaps the new texture into every bound
+/// material in place. Pass [package] to disambiguate when the same source
+/// path is provided by more than one package.
 /// {@category Assets and loading}
-Future<GpuTextureSource> loadTexture(
+Future<TextureSource> loadTexture(
   String sourcePath, {
   String? package,
   AssetBundle? bundle,
-}) async {
-  final registry = await TextureRegistry.load(bundle: bundle);
-  final key = registry.resolveKey(sourcePath, package: package);
+}) {
   final assetBundle = bundle ?? rootBundle;
-  final texture = await _textureCache.putIfAbsent(key, () async {
+  Future<Uint8List> loadBytes(String key) async {
     final data = await assetBundle.load(key);
-    return gpuTextureFromKtx2Async(
-      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-    );
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  return TextureRegistry.load(bundle: bundle).then((registry) {
+    final key = registry.resolveKey(sourcePath, package: package);
+    return _textureCache.putIfAbsent(key, () async {
+      final source = _ReloadableTextureSource(
+        await gpuTextureFromKtx2Async(await loadBytes(key)),
+      );
+      HotReloadCoordinator.instance.registerTexture(
+        source,
+        assetKey: key,
+        bundle: assetBundle,
+        onReload: () async =>
+            source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
+      );
+      return source;
+    });
   });
-  return GpuTextureSource(texture);
 }
