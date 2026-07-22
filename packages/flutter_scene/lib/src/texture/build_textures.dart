@@ -88,6 +88,18 @@ void buildTextures({
   String outputDirectory = 'build/textures/',
   TextureAssetMode assetMode = TextureAssetMode.legacyOnly,
 }) {
+  // A typo here would silently cook a normal map with the sRGB color
+  // downsample, so unknown keys fail the build instead.
+  final unknownContentKeys = contents.keys
+      .where((key) => !textures.contains(key))
+      .toList();
+  if (unknownContentKeys.isNotEmpty) {
+    throw Exception(
+      'contents names sources that are not listed in textures: '
+      '${unknownContentKeys.join(', ')}. Fix the path or add it to textures.',
+    );
+  }
+
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == TextureAssetMode.dataAssetsRequired &&
       !dataAssetsAvailable) {
@@ -108,7 +120,14 @@ void buildTextures({
       );
     }
     final sourceUri = packageRoot.resolve(inputFilePath);
-    final sourceBytes = File(sourceUri.toFilePath()).readAsBytesSync();
+    final sourceFile = File(sourceUri.toFilePath());
+    if (!sourceFile.existsSync()) {
+      throw Exception(
+        'Texture source not found: $inputFilePath (resolved to '
+        '${sourceFile.path})',
+      );
+    }
+    final sourceBytes = sourceFile.readAsBytesSync();
 
     final dot = inputFilePath.lastIndexOf('.');
     final slash = inputFilePath.lastIndexOf('/');

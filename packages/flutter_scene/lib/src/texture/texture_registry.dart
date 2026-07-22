@@ -84,6 +84,22 @@ final class _ReloadableTextureSource implements TextureSource {
   gpu.SamplerOptions get sampledSampler => _sampler;
 }
 
+/// A caller's sampling override of a shared [_ReloadableTextureSource]. The
+/// texture is delegated (so hot-reload swaps still propagate); only the
+/// sampler differs.
+final class _SampledTextureView implements TextureSource {
+  _SampledTextureView(this._source, this._sampler);
+
+  final _ReloadableTextureSource _source;
+  final gpu.SamplerOptions _sampler;
+
+  @override
+  gpu.Texture? get sampledTexture => _source.sampledTexture;
+
+  @override
+  gpu.SamplerOptions get sampledSampler => _sampler;
+}
+
 /// Resolves DataAssets-backed `.fstex` textures by source path.
 final class TextureRegistry {
   TextureRegistry._(this._entries);
@@ -165,34 +181,52 @@ String _textureId(String sourcePath) {
 /// chain, and is cached, so repeated loads of the same source share one GPU
 /// texture. In debug builds the texture hot reloads: editing the source image
 /// re-cooks it and the next hot reload swaps the new texture into every bound
-/// material in place. Pass [package] to disambiguate when the same source
-/// path is provided by more than one package.
+/// material in place.
+///
+/// The default sampling is trilinear repeat; pass [sampling] to override it
+/// (the underlying GPU texture stays shared). Prefer [sampling] over wrapping
+/// the returned source's raw texture yourself, which would pin the texture
+/// handle and stop hot reload from reaching that holder. Pass [package] to
+/// disambiguate when the same source path is provided by more than one
+/// package.
 /// {@category Assets and loading}
 Future<TextureSource> loadTexture(
   String sourcePath, {
   String? package,
   AssetBundle? bundle,
-}) {
+  TextureSampling? sampling,
+}) async {
   final assetBundle = bundle ?? rootBundle;
   Future<Uint8List> loadBytes(String key) async {
     final data = await assetBundle.load(key);
     return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
   }
 
-  return TextureRegistry.load(bundle: bundle).then((registry) {
-    final key = registry.resolveKey(sourcePath, package: package);
-    return _textureCache.putIfAbsent(key, () async {
-      final source = _ReloadableTextureSource(
-        await gpuTextureFromKtx2Async(await loadBytes(key)),
-      );
-      HotReloadCoordinator.instance.registerTexture(
-        source,
-        assetKey: key,
-        bundle: assetBundle,
-        onReload: () async =>
-            source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
-      );
-      return source;
-    });
+  final registry = await TextureRegistry.load(bundle: bundle);
+  final key = registry.resolveKey(sourcePath, package: package);
+  final future = _textureCache.putIfAbsent(key, () async {
+    final source = _ReloadableTextureSource(
+      await gpuTextureFromKtx2Async(await loadBytes(key)),
+    );
+    HotReloadCoordinator.instance.registerTexture(
+      source,
+      assetKey: key,
+      bundle: assetBundle,
+      onReload: () async =>
+          source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
+    );
+    return source;
   });
+  final _ReloadableTextureSource source;
+  try {
+    source = await future;
+  } catch (_) {
+    // Do not pin a failed load; the next call retries it.
+    if (identical(_textureCache[key], future)) {
+      _textureCache.remove(key);
+    }
+    rethrow;
+  }
+  if (sampling == null) return source;
+  return _SampledTextureView(source, sampling.toSamplerOptions());
 }
