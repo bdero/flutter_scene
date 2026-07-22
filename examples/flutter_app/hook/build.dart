@@ -24,6 +24,15 @@ void main(List<String> args) {
       // textures shrink the most).
       compressTextures: true,
     );
+    // A loose (non-glTF) image cooked into the engine's compressed texture
+    // container, loaded by source path through loadTexture (the Logo
+    // example's ground).
+    buildTextures(
+      buildInput: config,
+      buildOutput: output,
+      textures: ['assets/ground_grid.png'],
+      assetMode: TextureAssetMode.dataAssetsIfAvailable,
+    );
     await buildShaderBundleJson(
       buildInput: config,
       buildOutput: output,

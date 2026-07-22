@@ -28,6 +28,9 @@ class ExampleLogoState extends State<ExampleLogo> {
     // this node automatically, and the logo holds only the root, so no reload
     // callback is needed.
     final value = await loadScene('assets_src/flutter_logo_baked.glb');
+    // The ground's texture is a loose image cooked by the buildTextures hook
+    // (see hook/build.dart), loaded by its source path.
+    final groundTexture = await loadTexture('assets/ground_grid.png');
     if (!mounted) {
       return;
     }
@@ -40,7 +43,7 @@ class ExampleLogoState extends State<ExampleLogo> {
       mesh: Mesh(
         CuboidGeometry(vm.Vector3(8.0, 0.1, 8.0)),
         PhysicallyBasedMaterial()
-          ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.8, 1.0)
+          ..baseColorTexture = groundTexture
           ..metallicFactor = 0.0
           ..roughnessFactor = 0.9,
       ),
