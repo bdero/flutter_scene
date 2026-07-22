@@ -33,10 +33,22 @@ class AutoExposureState {
   gpu.Texture? _b;
   int _current = 0;
 
-  /// Whether the adaptation state holds a value from a previous frame.
-  /// False on the first metered frame, which snaps to the target instead
-  /// of easing from uninitialized memory.
-  bool seeded = false;
+  // Remaining startup frames that snap to the target instead of easing.
+  // Two, not one: easing must never start from uninitialized memory, and
+  // the first rendered frame is not always representative either (the web
+  // backend re-bakes a degenerate cold-context environment after the first
+  // present, so frame one can meter junk-bright there). The second snap
+  // lands on the first trustworthy frame; on backends whose first frame is
+  // already good both snaps compute the same value.
+  int _startupSnapFrames = 2;
+
+  /// Whether this frame should snap to the target instead of easing, and
+  /// consumes one startup-snap frame when so.
+  bool takeStartupSnap() {
+    if (_startupSnapFrames == 0) return false;
+    _startupSnapFrames--;
+    return true;
+  }
 
   final Stopwatch _clock = Stopwatch()..start();
 
@@ -174,7 +186,8 @@ class AutoExposurePass extends RenderGraphPass {
     // simultaneous views meter into one shared factor (the later view wins,
     // with a near-zero dt); per-view state needs a keyed state map.
     final dt = _state.takeDeltaSeconds();
-    final snap = !_state.seeded || _settings.takeResetRequest();
+    final startupSnap = _state.takeStartupSnap();
+    final snap = _settings.takeResetRequest() || startupSnap;
     final info = Float32List(8)
       ..[0] = _settings.strength
       ..[1] = _exp2(_settings.compensation)
@@ -204,7 +217,6 @@ class AutoExposurePass extends RenderGraphPass {
 
     context.blackboard.set(kAutoExposureFactorBlackboardKey, _state.next);
     _state.flip();
-    _state.seeded = true;
   }
 
   void _draw({
