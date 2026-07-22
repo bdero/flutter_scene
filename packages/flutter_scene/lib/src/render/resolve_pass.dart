@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/post_process/post_process.dart';
+import 'package:flutter_scene/src/render/auto_exposure_pass.dart';
 import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/resolve_info.dart';
@@ -116,6 +117,22 @@ class ResolvePass extends RenderGraphPass {
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
         magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    // The adapted auto exposure factor is present only when
+    // AutoExposurePass ran this frame; otherwise the white placeholder
+    // supplies a neutral 1.0.
+    final exposureFactor =
+        context.blackboard.get<gpu.Texture>(kAutoExposureFactorBlackboardKey) ??
+        Material.getWhitePlaceholderTexture();
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('exposure_factor'),
+      exposureFactor,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
         widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),

@@ -9,6 +9,7 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
 import 'package:example_app/example_animation.dart';
 
 import 'example_accessibility.dart';
+import 'example_auto_exposure.dart';
 import 'example_cuboid.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -51,6 +52,9 @@ void main() {
 /// (see [resetExampleSettings]), so tuning one scene never leaks into
 /// another.
 final Map<String, ExampleSettings Function()> settingsDefaults = {
+  // A strong sun for the adaptation walk: the outdoor half of the path
+  // should overexpose while the meter is adapted to the room.
+  'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
   // A cinematic grade for the dark materialize stage: no key light (the
   // effect's own emissives and the environment carry it), bloom for the hot
   // seam and shard glows, and a subtle lens treatment.
@@ -120,6 +124,7 @@ class _MyAppState extends State<MyApp> {
       'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
       'Screen-space Reflections': (context) => const ExampleSsr(),
+      'Auto Exposure': (context) => const ExampleAutoExposure(),
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),

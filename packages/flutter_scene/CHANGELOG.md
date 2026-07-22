@@ -7,6 +7,17 @@
   TRS transforms (both importers, `.fscene` documents, and scene hot
   reload) now keep the authored decomposition and blending anchors to it.
 
+* Automatic exposure (eye adaptation). `Scene.autoExposure` meters the
+  average luminance of the rendered HDR image each frame and eases a
+  correction factor toward it, so the image brightens in dark surroundings
+  and darkens in bright ones. The factor multiplies on top of
+  `Scene.exposure`, which stays the artistic base. Settings cover the
+  correction strength, EV compensation, EV clamps relative to the base
+  exposure, asymmetric adaptation speeds, and a `reset()` snap for camera
+  cuts. Metering runs entirely on the GPU (a log-luminance downsample chain
+  and a one-pixel adaptation state), so it works on every backend with no
+  readback.
+
 * Imported materials keep their source names. `Material` gained a `name`
   field (empty when unnamed), and both import paths set it from the glTF
   material name, so materials can be looked up after loading. `.fscene`
