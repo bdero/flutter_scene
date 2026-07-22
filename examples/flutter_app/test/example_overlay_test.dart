@@ -1,5 +1,6 @@
 import 'package:example_app/example_action_hint.dart';
 import 'package:example_app/example_overlay.dart';
+import 'package:example_app/example_panel.dart';
 import 'package:example_app/example_splats.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -54,7 +55,7 @@ void main() {
   });
 
   testWidgets(
-    'header actions move below chrome when the centred slot is narrow',
+    'header actions move below chrome when the centered slot is narrow',
     (tester) async {
       await tester.pumpWidget(
         MediaQuery(
@@ -80,7 +81,7 @@ void main() {
     },
   );
 
-  testWidgets('header actions use the safe viewport geometric centre', (
+  testWidgets('header actions use the safe viewport geometric center', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -240,7 +241,7 @@ void main() {
     );
   });
 
-  testWidgets('centred actions avoid a leading navigation action', (
+  testWidgets('centered actions avoid a leading navigation action', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -261,12 +262,14 @@ void main() {
     );
 
     expect(
-      tester.getTopLeft(find.byKey(const ValueKey('centred-leading-probe'))).dy,
+      tester
+          .getTopLeft(find.byKey(const ValueKey('centered-leading-probe')))
+          .dy,
       88,
     );
   });
 
-  testWidgets('centred header groups stay centred when chrome has room', (
+  testWidgets('centered header groups stay centered when chrome has room', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -286,7 +289,7 @@ void main() {
       ),
     );
 
-    final group = find.byKey(const ValueKey('centred-header-group'));
+    final group = find.byKey(const ValueKey('centered-header-group'));
     expect(tester.getRect(group).center.dx, 400);
     expect(tester.getTopLeft(group).dy, 24);
   });
@@ -341,7 +344,7 @@ void main() {
     );
   });
 
-  testWidgets('paired side panels keep a centre gap on compact screens', (
+  testWidgets('paired side panels keep a center gap on compact screens', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -539,7 +542,7 @@ void main() {
     expect(region.value.statusBarIconBrightness, Brightness.light);
   });
 
-  testWidgets('Gaussian splat settings scroll inside a short side panel', (
+  testWidgets('panel cards scroll their body inside a short side panel', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -549,11 +552,12 @@ void main() {
             child: SizedBox(
               width: 340,
               height: 264,
-              child: GaussianSplatSettingsPanel(
-                header: const SizedBox(height: 68),
-                controls: const SizedBox(
-                  key: ValueKey('splat-controls-end'),
-                  height: 300,
+              child: ExamplePanelCard(
+                icon: Icons.blur_on,
+                title: 'Gaussian splat controls',
+                body: const SizedBox(
+                  key: ValueKey('panel-body-end'),
+                  height: 400,
                 ),
               ),
             ),
@@ -564,7 +568,38 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.byKey(const ValueKey('splat-controls-end')), findsOneWidget);
+    expect(find.byKey(const ValueKey('panel-body-end')), findsOneWidget);
+  });
+
+  testWidgets('panel cards collapse from the header and keep the trailing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 340,
+              child: ExamplePanelCard(
+                icon: Icons.tune,
+                title: 'Controls',
+                trailing: const Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(key: ValueKey('panel-trailing'), width: 40),
+                ),
+                body: const SizedBox(key: ValueKey('panel-body'), height: 120),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('panel-body')), findsOneWidget);
+    await tester.tap(find.text('Controls'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('panel-body')), findsNothing);
+    expect(find.byKey(const ValueKey('panel-trailing')), findsOneWidget);
   });
 }
 
@@ -689,7 +724,7 @@ class _CentredWithLeadingProbe extends StatelessWidget {
     leadingReservation: 280,
     maxWidth: 280,
     child: const SizedBox(
-      key: ValueKey('centred-leading-probe'),
+      key: ValueKey('centered-leading-probe'),
       width: 280,
       height: 48,
     ),
@@ -704,7 +739,7 @@ class _CentredHeaderGroupProbe extends StatelessWidget {
     leadingReservation: 160,
     maxWidth: 400,
     child: const SizedBox(
-      key: ValueKey('centred-header-group'),
+      key: ValueKey('centered-header-group'),
       width: 400,
       height: 96,
     ),

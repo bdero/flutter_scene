@@ -1,10 +1,9 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -31,8 +30,6 @@ class _ExampleLodState extends State<ExampleLod> {
   // The spawned LOD components, so the controls can update them all.
   final List<LodComponent> _lods = [];
   bool _crossFade = true;
-  bool _controlsOpen = true;
-  bool _legendOpen = true;
   double _blendRange = 0.12;
   double _lodBias = 1.0;
 
@@ -157,108 +154,53 @@ class _ExampleLodState extends State<ExampleLod> {
             ),
           ),
         ),
-        ExampleOverlay.bottomRightPanel(
-          paired: true,
-          child: _controlsPanel(),
-        ),
+        ExampleOverlay.bottomRightPanel(paired: true, child: _controlsPanel()),
         ExampleOverlay.bottomLeftPanel(paired: true, child: _legend()),
       ],
     );
   }
 
-  Widget _controlsPanel() => SizedBox(
+  Widget _controlsPanel() => ExamplePanelCard(
+    icon: Icons.tune,
+    title: 'LOD controls',
     width: double.infinity,
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final bodyMaxHeight = constraints.hasBoundedHeight
-            ? min(300.0, max(0.0, constraints.maxHeight - 57.0))
-            : 300.0;
-
-        return Card(
-          color: Colors.black54,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              InkWell(
-                onTap: () => setState(() => _controlsOpen = !_controlsOpen),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.tune, color: Colors.white, size: 20),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'LOD controls',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        _controlsOpen
-                            ? Icons.expand_less
-                            : Icons.expand_more,
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_controlsOpen) ...[
-                const Divider(height: 1, color: Colors.white24),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: bodyMaxHeight),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Each sphere swaps detail by on-screen size  •  '
-                          'fly with WASD/QE, drag to look',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Checkbox(
-                              value: _crossFade,
-                              onChanged: (v) => _setCrossFade(v ?? false),
-                              side: const BorderSide(color: Colors.white70),
-                              checkColor: Colors.black,
-                              activeColor: Colors.white,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            const Text(
-                              'Cross-fade (dither)',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ],
-                        ),
-                        _slider('LOD bias', _lodBias, 0.3, 3.0, _setLodBias),
-                        _slider(
-                          'Blend range',
-                          _blendRange,
-                          0.02,
-                          0.3,
-                          _setBlendRange,
-                          enabled: _crossFade,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
+    maxBodyHeight: 300,
+    body: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Each sphere swaps detail by on-screen size  •  '
+          'fly with WASD/QE, drag to look',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: _crossFade,
+              onChanged: (v) => _setCrossFade(v ?? false),
+              side: const BorderSide(color: Colors.white70),
+              checkColor: Colors.black,
+              activeColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+            ),
+            const Text(
+              'Cross-fade (dither)',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        _slider('LOD bias', _lodBias, 0.3, 3.0, _setLodBias),
+        _slider(
+          'Blend range',
+          _blendRange,
+          0.02,
+          0.3,
+          _setBlendRange,
+          enabled: _crossFade,
+        ),
+      ],
     ),
   );
 
@@ -330,55 +272,19 @@ class _ExampleLodState extends State<ExampleLod> {
         ],
       ),
     );
-    return Card(
-      color: Colors.black54,
-      child: Column(
+    return ExamplePanelCard(
+      icon: Icons.layers_outlined,
+      title: 'Detail level',
+      body: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: () => setState(() => _legendOpen = !_legendOpen),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              child: Row(
-                children: [
-                  const Icon(Icons.layers_outlined, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Detail level',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _legendOpen ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
+          for (var i = 0; i < _levels.length; i++)
+            row(
+              'L$i  (${_levels[i].subdivisions} subdiv)',
+              toColor(_levelColors[i]),
             ),
-          ),
-          if (_legendOpen) ...[
-            const Divider(height: 1, color: Colors.white24),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < _levels.length; i++)
-                    row(
-                      'L$i  (${_levels[i].subdivisions} subdiv)',
-                      toColor(_levelColors[i]),
-                    ),
-                  row('culled', null),
-                ],
-              ),
-            ),
-          ],
+          row('culled', null),
         ],
       ),
     );

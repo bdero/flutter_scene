@@ -260,7 +260,7 @@ class EnvironmentMenu extends StatelessWidget {
       child: PopupMenuButton<ExampleEnvironment>(
         tooltip: 'Select environment',
         position: PopupMenuPosition.over,
-        color: const Color(0xFF1E1E1E),
+        color: const Color(0xFF303030),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),

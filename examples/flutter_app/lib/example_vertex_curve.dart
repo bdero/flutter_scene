@@ -14,6 +14,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 
 enum _Demo {
@@ -302,69 +303,20 @@ class _RunnerDemoState extends State<_RunnerDemo> {
 // Shared controls.
 // ---------------------------------------------------------------------------
 
-class _Controls extends StatefulWidget {
+class _Controls extends StatelessWidget {
   const _Controls({required this.rows});
 
   final List<Widget> rows;
 
   @override
-  State<_Controls> createState() => _ControlsState();
-}
-
-class _ControlsState extends State<_Controls> {
-  bool _open = true;
-
-  @override
   Widget build(BuildContext context) {
     return ExampleOverlay.bottomLeftPanel(
-      child: Card(
-        color: Colors.black54,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            InkWell(
-              onTap: () => setState(() => _open = !_open),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.waves_outlined, color: Colors.white),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Vertex controls',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      _open ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.white,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_open) ...[
-              const Divider(height: 1, color: Colors.white24),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 240),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: widget.rows,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+      child: ExamplePanelCard(
+        icon: Icons.waves_outlined,
+        title: 'Vertex controls',
+        maxBodyHeight: 240,
+        bodyPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        body: Column(mainAxisSize: MainAxisSize.min, children: rows),
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_panel.dart';
 
 /// The lighting controls panel. Owns its state and applies every change to
 /// [scene]; environments resolve through [selector] (shared with any other
@@ -67,7 +68,6 @@ class LightingPanel extends StatefulWidget {
 
 class _LightingPanelState extends State<LightingPanel> {
   late bool _showSkybox = widget.showSkybox;
-  bool _expanded = true;
   final EnvironmentSkySource _skySource = EnvironmentSkySource();
   late double _exposure = widget.initialExposure;
   late double _environmentIntensity = widget.initialIblIntensity;
@@ -135,125 +135,101 @@ class _LightingPanelState extends State<LightingPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 248,
-      constraints: const BoxConstraints(maxHeight: 440),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return ExamplePanelCard(
+      icon: Icons.light_mode_outlined,
+      title: 'Lighting',
+      width: 340,
+      maxBodyHeight: 340,
+      bodyPadding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          EnvironmentMenu(
+            active: widget.selector.active,
+            loading: widget.selector.loading,
+            onSelected: _selectEnvironment,
+          ),
+          const SizedBox(height: 4),
+          if (widget.manageSkybox) ...[
             Row(
               children: [
-                Expanded(
-                  child: EnvironmentMenu(
-                    active: widget.selector.active,
-                    loading: widget.selector.loading,
-                    onSelected: _selectEnvironment,
+                const Expanded(
+                  child: Text(
+                    'Skybox',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ),
-                IconButton(
-                  tooltip: _expanded ? 'Collapse' : 'Expand',
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  onPressed: () => setState(() => _expanded = !_expanded),
+                Switch(
+                  value: _showSkybox,
+                  onChanged: (value) => setState(() {
+                    _showSkybox = value;
+                    _applySkybox();
+                  }),
                 ),
               ],
             ),
-            if (_expanded) ...[
-              const SizedBox(height: 4),
-              if (widget.manageSkybox) ...[
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Skybox',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ),
-                    Switch(
-                      value: _showSkybox,
-                      onChanged: (value) => setState(() {
-                        _showSkybox = value;
-                        _applySkybox();
-                      }),
-                    ),
-                  ],
-                ),
-                LabeledSlider(
-                  label: 'Sky blur',
-                  value: _skySource.blurriness,
-                  min: 0.0,
-                  max: 1.0,
-                  onChanged: _showSkybox
-                      ? (value) => setState(() => _skySource.blurriness = value)
-                      : null,
-                ),
-              ],
-              LabeledSlider(
-                label: 'Exposure',
-                value: _exposure,
-                min: 0.1,
-                max: 8.0,
-                onChanged: (value) => setState(() {
-                  _exposure = value;
-                  widget.scene.exposure = value;
-                }),
-              ),
-              LabeledSlider(
-                label: 'IBL intensity',
-                value: _environmentIntensity,
-                min: 0.0,
-                max: 4.0,
-                onChanged: (value) => setState(() {
-                  _environmentIntensity = value;
-                  widget.scene.environmentIntensity = value;
-                }),
-              ),
-              LabeledSlider(
-                label: 'Env rotation X',
-                value: _envRotationX,
-                min: -180.0,
-                max: 180.0,
-                onChanged: (value) => setState(() {
-                  _envRotationX = value;
-                  _applyEnvironmentRotation();
-                }),
-              ),
-              LabeledSlider(
-                label: 'Env rotation Y',
-                value: _envRotationY,
-                min: -180.0,
-                max: 180.0,
-                onChanged: (value) => setState(() {
-                  _envRotationY = value;
-                  _applyEnvironmentRotation();
-                }),
-              ),
-              LabeledSlider(
-                label: 'Env rotation Z',
-                value: _envRotationZ,
-                min: -180.0,
-                max: 180.0,
-                onChanged: (value) => setState(() {
-                  _envRotationZ = value;
-                  _applyEnvironmentRotation();
-                }),
-              ),
-            ],
+            LabeledSlider(
+              label: 'Sky blur',
+              value: _skySource.blurriness,
+              min: 0.0,
+              max: 1.0,
+              onChanged: _showSkybox
+                  ? (value) => setState(() => _skySource.blurriness = value)
+                  : null,
+            ),
           ],
-        ),
+          LabeledSlider(
+            label: 'Exposure',
+            value: _exposure,
+            min: 0.1,
+            max: 8.0,
+            onChanged: (value) => setState(() {
+              _exposure = value;
+              widget.scene.exposure = value;
+            }),
+          ),
+          LabeledSlider(
+            label: 'IBL intensity',
+            value: _environmentIntensity,
+            min: 0.0,
+            max: 4.0,
+            onChanged: (value) => setState(() {
+              _environmentIntensity = value;
+              widget.scene.environmentIntensity = value;
+            }),
+          ),
+          LabeledSlider(
+            label: 'Env rotation X',
+            value: _envRotationX,
+            min: -180.0,
+            max: 180.0,
+            onChanged: (value) => setState(() {
+              _envRotationX = value;
+              _applyEnvironmentRotation();
+            }),
+          ),
+          LabeledSlider(
+            label: 'Env rotation Y',
+            value: _envRotationY,
+            min: -180.0,
+            max: 180.0,
+            onChanged: (value) => setState(() {
+              _envRotationY = value;
+              _applyEnvironmentRotation();
+            }),
+          ),
+          LabeledSlider(
+            label: 'Env rotation Z',
+            value: _envRotationZ,
+            min: -180.0,
+            max: 180.0,
+            onChanged: (value) => setState(() {
+              _envRotationZ = value;
+              _applyEnvironmentRotation();
+            }),
+          ),
+        ],
       ),
     );
   }

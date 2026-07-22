@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'environment_menu.dart';
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'lighting_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
@@ -601,7 +602,10 @@ class _StressSceneState extends State<_StressScene> {
           ),
         ),
         if (_error != null)
-          _LoadFailure(title: widget.test.title, detail: '$_error')
+          ExampleLoadFailureCard(
+            title: 'Failed to load ${widget.test.title}',
+            detail: '$_error',
+          )
         else if (!_ready)
           _LoadingOverlay(
             title: widget.test.title,
@@ -671,72 +675,37 @@ class _LoadingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = this.total;
     final progress = (total != null && total > 0) ? downloaded / total : null;
-    return Center(
-      child: Material(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(8),
-        elevation: 2,
-        child: SizedBox(
-          width: 280,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Downloading $title',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: Colors.white),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: progress,
-                  color: Colors.deepPurpleAccent,
-                  backgroundColor: Colors.white24,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  total == null
-                      ? _formatBytes(downloaded)
-                      : '${_formatBytes(downloaded)} / ${_formatBytes(total)}',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ],
+    return ExampleStatusCard(
+      child: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Downloading $title',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(color: Colors.white),
+              textAlign: TextAlign.center,
             ),
-          ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: progress,
+              color: Colors.deepPurpleAccent,
+              backgroundColor: Colors.white24,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              total == null
+                  ? _formatBytes(downloaded)
+                  : '${_formatBytes(downloaded)} / ${_formatBytes(total)}',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _LoadFailure extends StatelessWidget {
-  const _LoadFailure({required this.title, required this.detail});
-
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Material(
-      color: Colors.black54,
-      borderRadius: BorderRadius.circular(8),
-      elevation: 2,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            'Failed to load $title:\n$detail',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 class _ImporterModeControl extends StatelessWidget {

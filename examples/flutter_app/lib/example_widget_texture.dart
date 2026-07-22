@@ -43,7 +43,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
   WidgetComponent? _component;
   double _elapsedSeconds = 0.0;
   final EnvironmentSelector _environmentSelector = EnvironmentSelector();
-  String _widgetInputDebugLabel = 'no hit';
+  final ValueNotifier<String> _widgetInputDebugLabel = ValueNotifier('no hit');
 
   @override
   void initState() {
@@ -132,13 +132,12 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
               'd=${hit.distance.toStringAsFixed(2)}  '
               'uv=${hit.uv == null ? 'none' : '(${hit.uv!.x.toStringAsFixed(3)}, ${hit.uv!.y.toStringAsFixed(3)})'}'
               '${hit.node.getComponent<WidgetComponent>() != null ? '  [widget]' : ''}';
-    if (label != _widgetInputDebugLabel) {
-      setState(() => _widgetInputDebugLabel = label);
-    }
+    _widgetInputDebugLabel.value = label;
   }
 
   @override
   void dispose() {
+    _widgetInputDebugLabel.dispose();
     _environmentSelector.dispose();
     super.dispose();
   }
@@ -183,6 +182,7 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
                 onPanCancel: () => _looking = false,
                 child: SceneView(
                   scene,
+                  debugWidgetInput: true,
                   cameraBuilder: (elapsed) {
                     _quakeCamera.move(elapsed.inMicroseconds / 1e6);
                     return _camera = _quakeCamera.camera;
@@ -213,7 +213,10 @@ class _ExampleWidgetTextureState extends State<ExampleWidgetTexture> {
             ),
           ),
           ExampleOverlay.topCenterAction(
-            child: ExampleActionHint(message: _widgetInputDebugLabel),
+            child: ValueListenableBuilder<String>(
+              valueListenable: _widgetInputDebugLabel,
+              builder: (context, label, _) => ExampleActionHint(message: label),
+            ),
           ),
           ExampleOverlay.bottomLeftPanel(
             child: LightingPanel(scene: scene, selector: _environmentSelector),

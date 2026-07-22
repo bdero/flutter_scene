@@ -42,6 +42,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart' show EnvironmentSelector, fetchResource;
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart';
 import 'materialize_settings.dart';
@@ -338,7 +339,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return _MaterializeStatusCard(
+      return ExampleStatusCard(
         child: Text(
           'Failed to load the model.\n$_error',
           textAlign: TextAlign.center,
@@ -350,7 +351,7 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       final fraction = (_downloaded / _kHelmetSizeBytes)
           .clamp(0.0, 1.0)
           .toDouble();
-      return _MaterializeStatusCard(
+      return ExampleStatusCard(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -428,20 +429,6 @@ class _ExampleMaterializeState extends State<ExampleMaterialize> {
       ],
     );
   }
-}
-
-class _MaterializeStatusCard extends StatelessWidget {
-  const _MaterializeStatusCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Card(
-      color: Colors.black87,
-      child: Padding(padding: const EdgeInsets.all(20), child: child),
-    ),
-  );
 }
 
 /// Derives the Materialize passes' geometry from one node's merged source

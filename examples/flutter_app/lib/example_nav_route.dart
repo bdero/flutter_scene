@@ -5,6 +5,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -80,7 +81,6 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
   // The car's animated parts (doors, wheels), keyed by node name.
   final Map<String, _CarPart> _carParts = {};
   bool _carPartsReady = false;
-  bool _controlsOpen = true;
   // Rolling wheel-spin angle, advanced from the spin slider each frame.
   double _wheelRotation = 0.0;
 
@@ -340,8 +340,6 @@ class ExampleNavRouteState extends State<ExampleNavRoute> {
           if (_carPartsReady)
             ExampleOverlay.bottomLeftPanel(
               child: _CarControlsMenu(
-                open: _controlsOpen,
-                onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
                 parts: _carParts,
                 onControl: (key, value) =>
                     setState(() => _carParts[key]!.amount = value),
@@ -631,92 +629,30 @@ class _CarPart {
 // A collapsible submenu of sliders that pose the car's doors and
 // wheels, styled to match the Toon example's control card.
 class _CarControlsMenu extends StatelessWidget {
-  const _CarControlsMenu({
-    required this.open,
-    required this.onToggle,
-    required this.parts,
-    required this.onControl,
-  });
+  const _CarControlsMenu({required this.parts, required this.onControl});
 
-  final bool open;
-  final VoidCallback onToggle;
   final Map<String, _CarPart> parts;
   final void Function(String key, double value) onControl;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // The card includes its header and margins in this slot. Keep the
-        // scroll body within the actual remaining height on short viewports.
-        final bodyHeight = constraints.hasBoundedHeight
-            ? min(300.0, max(0.0, constraints.maxHeight - 72.0))
-            : 300.0;
-
-        return Card(
-          color: Colors.black54,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // This header stays visible while the long list below scrolls.
-              InkWell(
-                onTap: onToggle,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.directions_car,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Car Controls',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        open ? Icons.expand_less : Icons.expand_more,
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (open) ...[
-                const Divider(height: 1, color: Colors.white24),
-                SizedBox(
-                  height: bodyHeight,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final (label, key, lo, hi) in _carControls)
-                          _SliderRow(
-                            label: label,
-                            value: parts[key]!.amount,
-                            min: lo,
-                            max: hi,
-                            onChanged: (value) => onControl(key, value),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
+    return ExamplePanelCard(
+      icon: Icons.directions_car,
+      title: 'Car controls',
+      maxBodyHeight: 300,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (label, key, lo, hi) in _carControls)
+            _SliderRow(
+              label: label,
+              value: parts[key]!.amount,
+              min: lo,
+              max: hi,
+              onChanged: (value) => onControl(key, value),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -6,6 +6,8 @@
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_panel.dart';
+
 /// Every tunable of the effect. Lengths are fractions of the model's height;
 /// noise scales are cycles per model height. The print button dumps the
 /// current values.
@@ -141,264 +143,230 @@ class MaterializeSettingsPanel extends StatefulWidget {
 }
 
 class _MaterializeSettingsPanelState extends State<MaterializeSettingsPanel> {
-  bool _panelOpen = true;
   MaterializeSettings get _settings => widget.settings;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return ExamplePanelCard(
+      icon: Icons.auto_fix_high,
+      title: 'Effect settings',
       width: 340,
-      height: _panelOpen ? 480 : null,
-      child: Card(
-        color: Colors.black54,
-        child: Column(
-          mainAxisSize: _panelOpen ? MainAxisSize.max : MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: _panelOpen
-                        ? 'Collapse effect settings'
-                        : 'Expand effect settings',
-                    icon: Icon(
-                      _panelOpen ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.white,
-                    ),
-                    onPressed: () => setState(() => _panelOpen = !_panelOpen),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'Effect settings',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Print settings to console',
-                    icon: const Icon(Icons.print, color: Colors.white),
-                    onPressed: () => debugPrint(_settings.dump()),
-                  ),
-                ],
-              ),
-            ),
-            if (_panelOpen) const Divider(height: 1, color: Colors.white24),
-            if (_panelOpen)
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  children: [
-                    _section('Wireframe', [
-                      _slider(
-                        'Thickness',
-                        _settings.wireThickness,
-                        0.001,
-                        0.03,
-                        (v) => _settings.wireThickness = v,
-                      ),
-                      _colorRow(
-                        'Color',
-                        _settings.wireColor,
-                        (v) => _settings.wireColor = v,
-                      ),
-                      _slider(
-                        'Opacity',
-                        _settings.wireAlpha,
-                        0.0,
-                        1.0,
-                        (v) => _settings.wireAlpha = v,
-                      ),
-                      _slider(
-                        'Front glow',
-                        _settings.wireGlow,
-                        0.0,
-                        30.0,
-                        (v) => _settings.wireGlow = v,
-                      ),
-                    ]),
-                    _section('Glass', [
-                      _colorRow(
-                        'Tint',
-                        _settings.glassTint,
-                        (v) => _settings.glassTint = v,
-                      ),
-                      _slider(
-                        'Translucency',
-                        _settings.glassAlpha,
-                        0.0,
-                        1.0,
-                        (v) => _settings.glassAlpha = v,
-                      ),
-                      _colorRow(
-                        'Glow color',
-                        _settings.glassGlowColor,
-                        (v) => _settings.glassGlowColor = v,
-                      ),
-                      _slider(
-                        'Glow intensity',
-                        _settings.glassGlowStrength,
-                        0.0,
-                        30.0,
-                        (v) => _settings.glassGlowStrength = v,
-                      ),
-                      _slider(
-                        'Fly-in X',
-                        _settings.flyDir.x,
-                        -1.0,
-                        1.0,
-                        (v) => _settings.flyDir.x = v,
-                      ),
-                      _slider(
-                        'Fly-in Y',
-                        _settings.flyDir.y,
-                        -1.0,
-                        1.0,
-                        (v) => _settings.flyDir.y = v,
-                      ),
-                      _slider(
-                        'Fly-in Z',
-                        _settings.flyDir.z,
-                        -1.0,
-                        1.0,
-                        (v) => _settings.flyDir.z = v,
-                      ),
-                      _slider(
-                        'Fly distance',
-                        _settings.flyDistance,
-                        0.0,
-                        4.0,
-                        (v) => _settings.flyDistance = v,
-                      ),
-                      _slider(
-                        'From center',
-                        _settings.centerDistance,
-                        0.0,
-                        3.0,
-                        (v) => _settings.centerDistance = v,
-                      ),
-                      _slider(
-                        'Off normal',
-                        _settings.normalDistance,
-                        0.0,
-                        2.0,
-                        (v) => _settings.normalDistance = v,
-                      ),
-                      _slider(
-                        'Jitter',
-                        _settings.jitter,
-                        0.0,
-                        1.0,
-                        (v) => _settings.jitter = v,
-                      ),
-                      _slider(
-                        'Fade portion',
-                        _settings.fadePortion,
-                        0.05,
-                        1.0,
-                        (v) => _settings.fadePortion = v,
-                      ),
-                      _slider(
-                        'Glow cool span',
-                        _settings.coolSpan,
-                        0.05,
-                        4.0,
-                        (v) => _settings.coolSpan = v,
-                      ),
-                      _slider(
-                        'Tumble',
-                        _settings.tumble,
-                        0.0,
-                        3.0,
-                        (v) => _settings.tumble = v,
-                      ),
-                      _slider(
-                        'Assembly band',
-                        _settings.glassBand,
-                        0.05,
-                        1.0,
-                        (v) => _settings.glassBand = v,
-                      ),
-                    ]),
-                    _section('Reveal', [
-                      _slider(
-                        'Seam thickness',
-                        _settings.seamWidth,
-                        0.005,
-                        0.3,
-                        (v) => _settings.seamWidth = v,
-                      ),
-                      _colorRow(
-                        'Seam color',
-                        _settings.seamColor,
-                        (v) => _settings.seamColor = v,
-                      ),
-                      _slider(
-                        'Seam brightness',
-                        _settings.seamStrength,
-                        0.0,
-                        40.0,
-                        (v) => _settings.seamStrength = v,
-                      ),
-                      _slider(
-                        'Noise scale X',
-                        _settings.noiseScale.x,
-                        0.5,
-                        30.0,
-                        (v) => _settings.noiseScale.x = v,
-                      ),
-                      _slider(
-                        'Noise scale Y',
-                        _settings.noiseScale.y,
-                        0.5,
-                        30.0,
-                        (v) => _settings.noiseScale.y = v,
-                      ),
-                      _slider(
-                        'Noise scale Z',
-                        _settings.noiseScale.z,
-                        0.5,
-                        30.0,
-                        (v) => _settings.noiseScale.z = v,
-                      ),
-                      _slider(
-                        'Noise amount',
-                        _settings.noiseAmp,
-                        0.0,
-                        0.3,
-                        (v) => _settings.noiseAmp = v,
-                      ),
-                    ]),
-                    _section('Timing', [
-                      _slider(
-                        'Cycle seconds',
-                        _settings.duration,
-                        3.0,
-                        20.0,
-                        (v) => _settings.duration = v,
-                      ),
-                      _slider(
-                        'Wire to glass lag',
-                        _settings.lagWireToGlass,
-                        0.0,
-                        1.0,
-                        (v) => _settings.lagWireToGlass = v,
-                      ),
-                      _slider(
-                        'Glass to solid lag',
-                        _settings.lagGlassToSolid,
-                        0.0,
-                        1.5,
-                        (v) => _settings.lagGlassToSolid = v,
-                      ),
-                    ]),
-                  ],
-                ),
-              ),
-          ],
+      maxBodyHeight: 480,
+      trailing: Align(
+        alignment: Alignment.centerRight,
+        child: IconButton(
+          tooltip: 'Print settings to console',
+          icon: const Icon(Icons.print, color: Colors.white),
+          onPressed: () => debugPrint(_settings.dump()),
         ),
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _section('Wireframe', [
+            _slider(
+              'Thickness',
+              _settings.wireThickness,
+              0.001,
+              0.03,
+              (v) => _settings.wireThickness = v,
+            ),
+            _colorRow(
+              'Color',
+              _settings.wireColor,
+              (v) => _settings.wireColor = v,
+            ),
+            _slider(
+              'Opacity',
+              _settings.wireAlpha,
+              0.0,
+              1.0,
+              (v) => _settings.wireAlpha = v,
+            ),
+            _slider(
+              'Front glow',
+              _settings.wireGlow,
+              0.0,
+              30.0,
+              (v) => _settings.wireGlow = v,
+            ),
+          ]),
+          _section('Glass', [
+            _colorRow(
+              'Tint',
+              _settings.glassTint,
+              (v) => _settings.glassTint = v,
+            ),
+            _slider(
+              'Translucency',
+              _settings.glassAlpha,
+              0.0,
+              1.0,
+              (v) => _settings.glassAlpha = v,
+            ),
+            _colorRow(
+              'Glow color',
+              _settings.glassGlowColor,
+              (v) => _settings.glassGlowColor = v,
+            ),
+            _slider(
+              'Glow intensity',
+              _settings.glassGlowStrength,
+              0.0,
+              30.0,
+              (v) => _settings.glassGlowStrength = v,
+            ),
+            _slider(
+              'Fly-in X',
+              _settings.flyDir.x,
+              -1.0,
+              1.0,
+              (v) => _settings.flyDir.x = v,
+            ),
+            _slider(
+              'Fly-in Y',
+              _settings.flyDir.y,
+              -1.0,
+              1.0,
+              (v) => _settings.flyDir.y = v,
+            ),
+            _slider(
+              'Fly-in Z',
+              _settings.flyDir.z,
+              -1.0,
+              1.0,
+              (v) => _settings.flyDir.z = v,
+            ),
+            _slider(
+              'Fly distance',
+              _settings.flyDistance,
+              0.0,
+              4.0,
+              (v) => _settings.flyDistance = v,
+            ),
+            _slider(
+              'From center',
+              _settings.centerDistance,
+              0.0,
+              3.0,
+              (v) => _settings.centerDistance = v,
+            ),
+            _slider(
+              'Off normal',
+              _settings.normalDistance,
+              0.0,
+              2.0,
+              (v) => _settings.normalDistance = v,
+            ),
+            _slider(
+              'Jitter',
+              _settings.jitter,
+              0.0,
+              1.0,
+              (v) => _settings.jitter = v,
+            ),
+            _slider(
+              'Fade portion',
+              _settings.fadePortion,
+              0.05,
+              1.0,
+              (v) => _settings.fadePortion = v,
+            ),
+            _slider(
+              'Glow cool span',
+              _settings.coolSpan,
+              0.05,
+              4.0,
+              (v) => _settings.coolSpan = v,
+            ),
+            _slider(
+              'Tumble',
+              _settings.tumble,
+              0.0,
+              3.0,
+              (v) => _settings.tumble = v,
+            ),
+            _slider(
+              'Assembly band',
+              _settings.glassBand,
+              0.05,
+              1.0,
+              (v) => _settings.glassBand = v,
+            ),
+          ]),
+          _section('Reveal', [
+            _slider(
+              'Seam thickness',
+              _settings.seamWidth,
+              0.005,
+              0.3,
+              (v) => _settings.seamWidth = v,
+            ),
+            _colorRow(
+              'Seam color',
+              _settings.seamColor,
+              (v) => _settings.seamColor = v,
+            ),
+            _slider(
+              'Seam brightness',
+              _settings.seamStrength,
+              0.0,
+              40.0,
+              (v) => _settings.seamStrength = v,
+            ),
+            _slider(
+              'Noise scale X',
+              _settings.noiseScale.x,
+              0.5,
+              30.0,
+              (v) => _settings.noiseScale.x = v,
+            ),
+            _slider(
+              'Noise scale Y',
+              _settings.noiseScale.y,
+              0.5,
+              30.0,
+              (v) => _settings.noiseScale.y = v,
+            ),
+            _slider(
+              'Noise scale Z',
+              _settings.noiseScale.z,
+              0.5,
+              30.0,
+              (v) => _settings.noiseScale.z = v,
+            ),
+            _slider(
+              'Noise amount',
+              _settings.noiseAmp,
+              0.0,
+              0.3,
+              (v) => _settings.noiseAmp = v,
+            ),
+          ]),
+          _section('Timing', [
+            _slider(
+              'Cycle seconds',
+              _settings.duration,
+              3.0,
+              20.0,
+              (v) => _settings.duration = v,
+            ),
+            _slider(
+              'Wire to glass lag',
+              _settings.lagWireToGlass,
+              0.0,
+              1.0,
+              (v) => _settings.lagWireToGlass = v,
+            ),
+            _slider(
+              'Glass to solid lag',
+              _settings.lagGlassToSolid,
+              0.0,
+              1.5,
+              (v) => _settings.lagGlassToSolid = v,
+            ),
+          ]),
+        ],
       ),
     );
   }

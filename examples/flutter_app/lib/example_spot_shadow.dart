@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 
 /// A single shadow-casting spot light orbiting above a few occluders on a
 /// floor, with a live settings panel (bottom-left) for the shadow parameters
@@ -39,7 +40,6 @@ class _OrbitAimDownComponent extends Component {
 
 class ExampleSpotShadowState extends State<ExampleSpotShadow> {
   Scene scene = Scene();
-  bool _controlsOpen = true;
 
   // The live spot light, mutated by the settings panel. The renderer reads its
   // fields fresh each frame, so edits take effect immediately.
@@ -140,12 +140,7 @@ class ExampleSpotShadowState extends State<ExampleSpotShadow> {
           },
         ),
         ExampleOverlay.bottomLeftPanel(
-          child: _SettingsPanel(
-            open: _controlsOpen,
-            onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
-            spot: spot,
-            onChanged: () => setState(() {}),
-          ),
+          child: _SettingsPanel(spot: spot, onChanged: () => setState(() {})),
         ),
       ],
     );
@@ -156,186 +151,83 @@ class ExampleSpotShadowState extends State<ExampleSpotShadow> {
 /// called after every edit so the host rebuilds (the slider positions update;
 /// the scene picks up the new values on its next frame).
 class _SettingsPanel extends StatelessWidget {
-  const _SettingsPanel({
-    required this.open,
-    required this.onToggle,
-    required this.spot,
-    required this.onChanged,
-  });
+  const _SettingsPanel({required this.spot, required this.onChanged});
 
-  final bool open;
-  final VoidCallback onToggle;
   final SpotLight spot;
   final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return ExamplePanelCard(
+      icon: Icons.highlight,
+      title: 'Spot shadow controls',
       width: 340,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final bodyHeight = constraints.hasBoundedHeight
-              ? min(420.0, max(0.0, constraints.maxHeight - 57.0))
-              : 420.0;
-
-          return Card(
-            color: Colors.black54,
-            child: DefaultTextStyle(
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  InkWell(
-                    onTap: onToggle,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.highlight,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Spot shadow controls',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          Icon(
-                            open ? Icons.expand_less : Icons.expand_more,
-                            color: Colors.white,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (open) ...[
-                    const Divider(height: 1, color: Colors.white24),
-                    SizedBox(
-                      height: bodyHeight,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _header('Shadow'),
-                            _dropdown<ShadowCasterFaces>(
-                              context,
-                              'Caster faces',
-                              spot.shadowCasterFaces,
-                              ShadowCasterFaces.values,
-                              (v) => v.name,
-                              (v) {
-                                spot.shadowCasterFaces = v;
-                                onChanged();
-                              },
-                            ),
-                            _dropdown<int>(
-                              context,
-                              'Resolution',
-                              spot.shadowMapResolution,
-                              const [256, 512, 1024, 2048],
-                              (v) => '$v',
-                              (v) {
-                                spot.shadowMapResolution = v;
-                                onChanged();
-                              },
-                            ),
-                            _slider(
-                              'Depth bias',
-                              spot.shadowDepthBias,
-                              0.0,
-                              0.02,
-                              4,
-                              (v) {
-                                spot.shadowDepthBias = v;
-                                onChanged();
-                              },
-                            ),
-                            _slider(
-                              'Normal bias',
-                              spot.shadowNormalBias,
-                              0.0,
-                              0.2,
-                              3,
-                              (v) {
-                                spot.shadowNormalBias = v;
-                                onChanged();
-                              },
-                            ),
-                            _slider('Near', spot.shadowNear, 0.02, 3.0, 2, (v) {
-                              spot.shadowNear = v;
-                              onChanged();
-                            }),
-                            _slider(
-                              'Softness',
-                              spot.shadowSoftness,
-                              0.0,
-                              4.0,
-                              2,
-                              (v) {
-                                spot.shadowSoftness = v;
-                                onChanged();
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            _header('Spot light'),
-                            _slider(
-                              'Intensity',
-                              spot.intensity,
-                              0.0,
-                              300.0,
-                              0,
-                              (v) {
-                                spot.intensity = v;
-                                onChanged();
-                              },
-                            ),
-                            _slider('Range', spot.range, 5.0, 60.0, 1, (v) {
-                              spot.range = v;
-                              onChanged();
-                            }),
-                            _slider(
-                              'Inner cone',
-                              spot.innerConeAngle,
-                              0.0,
-                              1.4,
-                              2,
-                              (v) {
-                                spot.innerConeAngle = min(
-                                  v,
-                                  spot.outerConeAngle - 0.01,
-                                );
-                                onChanged();
-                              },
-                            ),
-                            _slider(
-                              'Outer cone',
-                              spot.outerConeAngle,
-                              0.1,
-                              1.5,
-                              2,
-                              (v) {
-                                spot.outerConeAngle = max(
-                                  v,
-                                  spot.innerConeAngle + 0.01,
-                                );
-                                onChanged();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+      maxBodyHeight: 420,
+      body: DefaultTextStyle(
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _header('Shadow'),
+            _dropdown<ShadowCasterFaces>(
+              context,
+              'Caster faces',
+              spot.shadowCasterFaces,
+              ShadowCasterFaces.values,
+              (v) => v.name,
+              (v) {
+                spot.shadowCasterFaces = v;
+                onChanged();
+              },
             ),
-          );
-        },
+            _dropdown<int>(
+              context,
+              'Resolution',
+              spot.shadowMapResolution,
+              const [256, 512, 1024, 2048],
+              (v) => '$v',
+              (v) {
+                spot.shadowMapResolution = v;
+                onChanged();
+              },
+            ),
+            _slider('Depth bias', spot.shadowDepthBias, 0.0, 0.02, 4, (v) {
+              spot.shadowDepthBias = v;
+              onChanged();
+            }),
+            _slider('Normal bias', spot.shadowNormalBias, 0.0, 0.2, 3, (v) {
+              spot.shadowNormalBias = v;
+              onChanged();
+            }),
+            _slider('Near', spot.shadowNear, 0.02, 3.0, 2, (v) {
+              spot.shadowNear = v;
+              onChanged();
+            }),
+            _slider('Softness', spot.shadowSoftness, 0.0, 4.0, 2, (v) {
+              spot.shadowSoftness = v;
+              onChanged();
+            }),
+            const SizedBox(height: 8),
+            _header('Spot light'),
+            _slider('Intensity', spot.intensity, 0.0, 300.0, 0, (v) {
+              spot.intensity = v;
+              onChanged();
+            }),
+            _slider('Range', spot.range, 5.0, 60.0, 1, (v) {
+              spot.range = v;
+              onChanged();
+            }),
+            _slider('Inner cone', spot.innerConeAngle, 0.0, 1.4, 2, (v) {
+              spot.innerConeAngle = min(v, spot.outerConeAngle - 0.01);
+              onChanged();
+            }),
+            _slider('Outer cone', spot.outerConeAngle, 0.1, 1.5, 2, (v) {
+              spot.outerConeAngle = max(v, spot.innerConeAngle + 0.01);
+              onChanged();
+            }),
+          ],
+        ),
       ),
     );
   }
