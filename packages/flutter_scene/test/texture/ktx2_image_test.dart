@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+import 'package:flutter_scene/src/texture/mipmap.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 double _psnr(Uint8List a, Uint8List b) {
@@ -83,6 +84,51 @@ void main() {
         expect(decoded.width, size.width);
         expect(decoded.height, size.height);
       }
+    });
+
+    test('mip downsampling averages sRGB color in linear light', () {
+      const w = 8, h = 8;
+      final rgba = Uint8List(w * h * 4);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          final i = (y * w + x) * 4;
+          final v = x.isEven ? 0 : 255;
+          rgba[i] = v;
+          rgba[i + 1] = v;
+          rgba[i + 2] = v;
+          rgba[i + 3] = 255;
+        }
+      }
+      final texture = encodeImageToKtx2(rgba, w, h, generateMips: true);
+      final mip = decodeKtx2Level(texture, level: 1);
+      // A black/white stripe averages to sRGB ~188 in linear light; averaging
+      // the encoded bytes directly would give 128.
+      expect(mip.rgba[0], greaterThan(170));
+    });
+
+    test('normal-map mips renormalize instead of averaging channels', () {
+      const w = 8, h = 8;
+      final rgba = Uint8List(w * h * 4);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          final i = (y * w + x) * 4;
+          rgba[i] = x.isEven ? 255 : 0; // Opposed +x/-x tangent normals.
+          rgba[i + 1] = 128;
+          rgba[i + 2] = 128;
+          rgba[i + 3] = 255;
+        }
+      }
+      final texture = encodeImageToKtx2(
+        rgba,
+        w,
+        h,
+        generateMips: true,
+        content: TextureContent.normal,
+      );
+      final mip = decodeKtx2Level(texture, level: 1);
+      // Opposed normals cancel; renormalization falls back to +z, where plain
+      // channel averaging would leave z near 128.
+      expect(mip.rgba[2], greaterThan(200));
     });
 
     test('engine mip count stops one level short of 1x1', () {

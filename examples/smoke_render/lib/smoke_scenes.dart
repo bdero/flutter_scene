@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/compressed_texture.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/ktx2_image.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Side length of the captured render, in logical pixels. Fixed for
@@ -244,6 +248,46 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           vm.Matrix4.rotationY(0.6);
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
+  }),
+  // A cuboid textured from an in-memory compressed KTX2 payload (mipped and
+  // supercompressed), the shape an imported compressed texture takes. Covers
+  // the whole compressed-texture path per backend: block encode, the device's
+  // per-family transcode (or the rgba8 decode fallback), and the per-level
+  // mip-chain upload.
+  SmokeScene('compressed_texture', () {
+    const size = 256;
+    final pixels = Uint8List(size * size * 4);
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        final i = (y * size + x) * 4;
+        final checker = ((x >> 3) + (y >> 3)).isEven;
+        pixels[i] = checker ? 235 : 30;
+        pixels[i + 1] = checker ? 120 : 160;
+        pixels[i + 2] = checker ? 40 : 220;
+        pixels[i + 3] = 255;
+      }
+    }
+    final texture = gpuTextureFromKtx2Texture(
+      encodeImageToKtx2(
+        pixels,
+        size,
+        size,
+        generateMips: true,
+        supercompress: true,
+      ),
+    );
+    final material = PhysicallyBasedMaterial()
+      ..baseColorTexture = GpuTextureSource(texture)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.7
+      ..vertexColorWeight = 0.0;
+    final scene = Scene();
+    scene.add(
+      Node(
+        mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material),
+      )..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3),
+    );
+    return (scene: scene, camera: _camera());
   }),
   // The single custom-material scene: one .fmat that customizes BOTH the
   // vertex stage (a world-space ripple, which also displaces the shadow) and
