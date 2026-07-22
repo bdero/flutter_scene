@@ -16,6 +16,8 @@ const int _saltSize = 3;
 const int _saltRotation = 4;
 const int _saltAngularVelocity = 5;
 const int _saltColor = 6;
+const int _saltAxisTheta = 7;
+const int _saltAxisZ = 8;
 
 // Lifetimes are clamped to this minimum so normalized age never divides by
 // zero and particles always live at least one step.
@@ -229,6 +231,15 @@ class ParticleSystem {
 
     // Slots are reused, so clear the frame a prior occupant may have left.
     s.frame[index] = 0.0;
+
+    // A uniformly random unit rotation axis for mesh-particle tumbling
+    // (billboards ignore it).
+    final az = s.randomFor(index, _saltAxisZ) * 2.0 - 1.0;
+    final at = s.randomFor(index, _saltAxisTheta) * 2.0 * math.pi;
+    final ar = math.sqrt(math.max(0.0, 1.0 - az * az));
+    s.axisX[index] = ar * math.cos(at);
+    s.axisY[index] = ar * math.sin(at);
+    s.axisZ[index] = az;
 
     // Spawn-phase modules can refine the birth state.
     for (final module in modules) {

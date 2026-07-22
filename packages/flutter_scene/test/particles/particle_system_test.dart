@@ -73,6 +73,25 @@ void main() {
   });
 
   group('emission and motion', () {
+    test('spawns a unit 3D rotation axis per particle', () {
+      final system = ParticleSystem(
+        shape: PointShape(),
+        spawner: Spawner(rate: 300.0),
+        seed: 4,
+      );
+      system.step(_fixed);
+      final s = system.storage;
+      expect(s.aliveCount, greaterThan(1));
+      for (var i = 0; i < s.aliveCount; i++) {
+        final length =
+            s.axisX[i] * s.axisX[i] +
+            s.axisY[i] * s.axisY[i] +
+            s.axisZ[i] * s.axisZ[i];
+        expect(length, closeTo(1.0, 1e-5));
+      }
+      expect(s.axisX[0] == s.axisX[1] && s.axisY[0] == s.axisY[1], isFalse);
+    });
+
     test('emits and integrates velocity over a step', () {
       final system = ParticleSystem(
         shape: PointShape(direction: Vector3(0, 1, 0)),
