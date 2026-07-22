@@ -175,6 +175,7 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
   MaterialResource m => MaterialResource(
     remap(m.id),
     type: m.type,
+    name: m.name,
     properties: {
       for (final e in m.properties.entries) e.key: _copyValue(e.value, remap),
     },

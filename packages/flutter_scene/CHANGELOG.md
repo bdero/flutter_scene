@@ -1,3 +1,10 @@
+## 0.20.0
+
+* Imported materials keep their source names. `Material` gained a `name`
+  field (empty when unnamed), and both import paths set it from the glTF
+  material name, so materials can be looked up after loading. `.fscene`
+  documents store it as an optional `name` on material resources.
+
 ## 0.19.0
 
 * Steady-state frame allocations cut sharply. Every fullscreen pass (bloom,

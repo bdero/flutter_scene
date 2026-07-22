@@ -391,12 +391,16 @@ class MaterialResource extends ResourceSpec {
   MaterialResource(
     super.id, {
     required this.type,
+    this.name = '',
     Map<String, PropertyValue>? properties,
     this.asset,
   }) : properties = properties ?? {};
 
   /// The material kind (`physicallyBased`, `unlit`, `fmat`, ...).
   final String type;
+
+  /// The material's name, empty when the source asset left it unnamed.
+  final String name;
 
   /// Typed material parameters (factors, texture refs, alpha mode, ...).
   final Map<String, PropertyValue> properties;

@@ -371,10 +371,16 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
         if (filter != 'linear') 'filter': filter,
         if (wrap != 'clampToEdge') 'wrap': wrap,
       };
-    case MaterialResource(:final type, :final properties, :final asset):
+    case MaterialResource(
+      :final type,
+      :final name,
+      :final properties,
+      :final asset,
+    ):
       return {
         'kind': 'material',
         'type': type,
+        if (name.isNotEmpty) 'name': name,
         if (asset != null) 'ref': asset.key,
         if (properties.isNotEmpty)
           'properties': {
@@ -734,6 +740,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
       return MaterialResource(
         id,
         type: json['type'] as String,
+        name: json['name'] as String? ?? '',
         asset: json['ref'] != null ? AssetRef(json['ref'] as String) : null,
         properties: _decodeProperties(json['properties']),
       );

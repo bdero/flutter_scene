@@ -545,6 +545,7 @@ LocalId _buildMaterial(
           MaterialResource(
             document.newId(),
             type: 'unlit',
+            name: material.name ?? '',
             properties: properties,
           ),
         )
@@ -590,6 +591,7 @@ LocalId _buildMaterial(
         MaterialResource(
           document.newId(),
           type: 'physicallyBased',
+          name: material.name ?? '',
           properties: properties,
         ),
       )
