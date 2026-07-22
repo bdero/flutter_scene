@@ -36,6 +36,7 @@ class ParticleStorage {
       colorG = Float32List(capacity),
       colorB = Float32List(capacity),
       colorA = Float32List(capacity),
+      frame = Float32List(capacity),
       random01 = Float32List(capacity);
 
   /// The maximum number of simultaneous particles.
@@ -62,6 +63,10 @@ class ParticleStorage {
 
   /// Current linear RGBA color (premultiplication happens in the shader).
   final Float32List colorR, colorG, colorB, colorA;
+
+  /// Flipbook frame index (fractional values round to the nearest cell). Left
+  /// at zero unless a module (or spawn code) writes it.
+  final Float32List frame;
 
   /// Per-particle random in `[0, 1)`, written at spawn. Distributions sample
   /// against it (directly, or via [randomFor] for an independent stream) so a
@@ -131,6 +136,7 @@ class ParticleStorage {
     colorG[to] = colorG[from];
     colorB[to] = colorB[from];
     colorA[to] = colorA[from];
+    frame[to] = frame[from];
     random01[to] = random01[from];
   }
 }

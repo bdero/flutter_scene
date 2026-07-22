@@ -65,6 +65,30 @@ class ParticleEmitterComponent extends MeshComponent {
   double get velocityStretch => _geometry.velocityStretch;
   set velocityStretch(double value) => _geometry.velocityStretch = value;
 
+  /// Flipbook atlas columns and rows for the material's texture. `1 x 1` (the
+  /// default) samples the whole texture; pair a larger grid with a
+  /// `FlipbookModule` so particles animate through the cells.
+  int get flipbookColumns => _geometry.flipbookColumns;
+  set flipbookColumns(int value) => _geometry.flipbookColumns = value;
+
+  /// Flipbook atlas rows (see [flipbookColumns]).
+  int get flipbookRows => _geometry.flipbookRows;
+  set flipbookRows(int value) => _geometry.flipbookRows = value;
+
+  /// Whether fractional frames crossfade between adjacent flipbook cells
+  /// (see [BillboardGeometry.flipbookBlend]).
+  bool get flipbookBlend => _geometry.flipbookBlend;
+  set flipbookBlend(bool value) => _geometry.flipbookBlend = value;
+
+  /// When true, each particle has a stable 50% chance of rendering mirrored
+  /// horizontally (negative width), doubling a flipbook's apparent variety
+  /// for free.
+  bool randomFlipX = false;
+
+  /// Billboard width as a multiple of the particle's size (height stays the
+  /// size itself). `1.0` keeps square sprites.
+  double aspectRatio = 1.0;
+
   @override
   void update(double deltaSeconds) {
     if (!paused) system.step(deltaSeconds);
@@ -77,16 +101,19 @@ class ParticleEmitterComponent extends MeshComponent {
     final count = s.aliveCount;
     for (var i = 0; i < count; i++) {
       final size = s.size[i];
+      var width = size * aspectRatio;
+      if (randomFlipX && s.random01[i] < 0.5) width = -width;
       _center.setValues(s.posX[i], s.posY[i], s.posZ[i]);
       _color.setValues(s.colorR[i], s.colorG[i], s.colorB[i], s.colorA[i]);
       _velocity.setValues(s.velX[i], s.velY[i], s.velZ[i]);
       _geometry.setInstance(
         i,
         center: _center,
-        width: size,
+        width: width,
         height: size,
         rotation: s.rotation[i],
         color: _color,
+        frame: s.frame[i],
         velocity: _velocity,
       );
     }

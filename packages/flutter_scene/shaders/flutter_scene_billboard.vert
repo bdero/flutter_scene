@@ -2,7 +2,8 @@ uniform FrameInfo {
   mat4 camera_transform; // view-projection
   mat4 model_transform;  // emitter / node world transform
   vec4 camera_position;  // world-space camera position (xyz)
-  vec4 world_up;         // world up axis for the billboard basis (xyz)
+  vec4 world_up;         // xyz: world up axis for the billboard basis.
+                         // w: 1 to crossfade adjacent flipbook frames.
   // x: facing mode (0 spherical, 1 axis-locked, 2 velocity-stretched).
   // y: flipbook columns. z: flipbook rows. w: velocity stretch factor.
   vec4 params;
@@ -23,6 +24,10 @@ in vec3 i_velocity; // local-space velocity, for velocity stretching
 
 out vec2 v_uv;
 out vec4 v_color;
+// Second flipbook cell and the crossfade factor toward it (both zero when
+// frame blending is off).
+out vec2 v_uv2;
+out float v_frame_blend;
 
 const float kSpherical = 0.0;
 const float kAxisLocked = 1.0;
@@ -87,14 +92,20 @@ void main() {
   vec3 world_pos = world_center + right * scaled.x + up * scaled.y;
   gl_Position = frame_info.camera_transform * vec4(world_pos, 1.0);
 
-  // Flipbook cell. A 1x1 grid leaves the UV untouched.
+  // Flipbook cells. A 1x1 grid leaves the UV untouched. With blending on,
+  // the fractional frame crossfades between its two neighboring cells
+  // (wrapping, which also bridges a looping atlas's last frame back to its
+  // first); with it off, the frame snaps to the nearest cell.
   float cols = max(grid.x, 1.0);
   float rows = max(grid.y, 1.0);
-  float frame = floor(i_frame + 0.5);
-  float fx = mod(frame, cols);
-  float fy = floor(frame / cols);
+  float total = cols * rows;
   vec2 cell = vec2(1.0 / cols, 1.0 / rows);
-  v_uv = (vec2(fx, fy) + quad_uv) * cell;
+  float blend_on = frame_info.world_up.w;
+  float frame0 = mix(floor(i_frame + 0.5), floor(i_frame), blend_on);
+  float frame1 = mod(frame0 + 1.0, total);
+  v_frame_blend = (i_frame - frame0) * blend_on;
+  v_uv = (vec2(mod(frame0, cols), floor(frame0 / cols)) + quad_uv) * cell;
+  v_uv2 = (vec2(mod(frame1, cols), floor(frame1 / cols)) + quad_uv) * cell;
 
   v_color = i_color;
 }

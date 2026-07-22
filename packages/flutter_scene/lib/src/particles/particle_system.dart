@@ -227,6 +227,9 @@ class ParticleSystem {
     s.colorB[index] = c.z;
     s.colorA[index] = c.w;
 
+    // Slots are reused, so clear the frame a prior occupant may have left.
+    s.frame[index] = 0.0;
+
     // Spawn-phase modules can refine the birth state.
     for (final module in modules) {
       module.spawn(s, index);
