@@ -1,7 +1,12 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/noise/curl.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/particle_storage.dart';
+
+// Salt for the flipbook start-frame random. The system reserves 1-6 and
+// emitter shapes 20+, so module salts live in the 10-19 range.
+const int _saltFlipbookStart = 10;
 
 /// A unit of per-particle behaviour layered onto a system's simulation.
 ///
@@ -113,6 +118,112 @@ class ColorOverLifeModule extends ParticleModule {
       storage.colorG[i] = _tmp.y;
       storage.colorB[i] = _tmp.z;
       storage.colorA[i] = _tmp.w;
+    }
+  }
+}
+
+/// Animates each particle's flipbook [ParticleStorage.frame] through a
+/// [frameCount]-cell atlas.
+///
+/// With [framesPerSecond] unset the sequence plays exactly once over the
+/// particle's life (frame = normalized age * frameCount), the natural mode
+/// for baked erosion/dissolve sequences. With it set, frames advance at that
+/// fixed rate and wrap, for looping atlases. [randomStartFrame] offsets each
+/// particle by a stable random frame so simultaneous spawns do not animate in
+/// lockstep; leave it off for once-over-life erosion sequences, which must
+/// start at frame zero.
+class FlipbookModule extends ParticleModule {
+  /// Creates a flipbook animator over [frameCount] cells.
+  const FlipbookModule({
+    required this.frameCount,
+    this.framesPerSecond,
+    this.randomStartFrame = false,
+  }) : assert(frameCount > 0),
+       assert(framesPerSecond == null || framesPerSecond > 0);
+
+  /// The number of cells in the atlas (columns * rows).
+  final int frameCount;
+
+  /// Fixed playback rate; `null` plays the sequence once over each particle's
+  /// life instead.
+  final double? framesPerSecond;
+
+  /// Whether each particle starts at a stable random frame offset (wrapped).
+  final bool randomStartFrame;
+
+  @override
+  void update(ParticleStorage storage, double dt) {
+    final count = frameCount.toDouble();
+    final fps = framesPerSecond;
+    final n = storage.aliveCount;
+    for (var i = 0; i < n; i++) {
+      var frame = 0.0;
+      if (fps == null) {
+        final life = storage.lifetime[i];
+        final nAge = life > 0.0 ? storage.age[i] / life : 0.0;
+        // Clamp shy of the end so the last cell holds instead of wrapping.
+        frame = nAge * count;
+        if (frame > count - 1.0) frame = count - 1.0;
+      } else {
+        frame = storage.age[i] * fps;
+      }
+      if (randomStartFrame) {
+        frame += storage.randomFor(i, _saltFlipbookStart) * count;
+      }
+      storage.frame[i] = frame % count;
+    }
+  }
+}
+
+/// Advects particles through a curl-noise field, the divergence-free swirl
+/// that gives fire, smoke, and drifting embers their turbulent motion.
+///
+/// Each step samples [noiseCurl3] at the particle's position (scaled by
+/// [frequency], with the field scrolled by [scroll] per second) and adds
+/// `curl * strength * dt` to its velocity. Larger [frequency] gives smaller,
+/// busier eddies; [scroll] drifts the whole field (an upward scroll makes
+/// rising flames lick).
+class TurbulenceModule extends ParticleModule {
+  /// Creates a curl-noise force.
+  TurbulenceModule({
+    this.strength = 1.0,
+    this.frequency = 1.0,
+    Vector3? scroll,
+    this.seed = 1337,
+  }) : scroll = scroll?.clone() ?? Vector3.zero();
+
+  /// Velocity change per second at unit curl magnitude.
+  double strength;
+
+  /// Spatial scale applied to particle positions before sampling.
+  double frequency;
+
+  /// How fast the noise field itself drifts, in world units per second
+  /// (applied in field space after [frequency] scaling of time).
+  final Vector3 scroll;
+
+  /// The curl field's seed; emitters with different seeds swirl differently.
+  final int seed;
+
+  double _time = 0.0;
+
+  @override
+  void update(ParticleStorage storage, double dt) {
+    _time += dt;
+    final ox = scroll.x * _time * frequency;
+    final oy = scroll.y * _time * frequency;
+    final oz = scroll.z * _time * frequency;
+    final n = storage.aliveCount;
+    for (var i = 0; i < n; i++) {
+      final curl = noiseCurl3(
+        storage.posX[i] * frequency - ox,
+        storage.posY[i] * frequency - oy,
+        storage.posZ[i] * frequency - oz,
+        seed: seed,
+      );
+      storage.velX[i] += curl.x * strength * dt;
+      storage.velY[i] += curl.y * strength * dt;
+      storage.velZ[i] += curl.z * strength * dt;
     }
   }
 }

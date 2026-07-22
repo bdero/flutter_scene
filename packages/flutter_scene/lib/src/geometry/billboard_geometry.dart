@@ -77,6 +77,11 @@ class BillboardGeometry extends Geometry {
   int flipbookColumns = 1;
   int flipbookRows = 1;
 
+  /// When true, fractional frame values crossfade between the two adjacent
+  /// flipbook cells (wrapping at the end of the grid) instead of snapping to
+  /// the nearest cell, so low-rate flipbooks still animate smoothly.
+  bool flipbookBlend = false;
+
   /// World units of extra length added per unit of speed in
   /// [BillboardFacing.velocityStretched].
   double velocityStretch = 0.0;
@@ -210,7 +215,7 @@ class BillboardGeometry extends Geometry {
     frameInfo[36] = worldUp.x;
     frameInfo[37] = worldUp.y;
     frameInfo[38] = worldUp.z;
-    // [39] padding
+    frameInfo[39] = flipbookBlend ? 1.0 : 0.0;
     frameInfo[40] = _facingValue(facing);
     frameInfo[41] = flipbookColumns.toDouble();
     frameInfo[42] = flipbookRows.toDouble();
