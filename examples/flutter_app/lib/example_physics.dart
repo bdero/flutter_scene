@@ -967,7 +967,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
           ),
         ),
         // Below the picker so the character remains visible in the scene
-        // centre, with no overlap with system chrome.
+        // center, with no overlap with system chrome.
         ExampleOverlay.topCenterAction(
           child: _PhysicsHeaderActions(onReset: () => setState(_reset)),
         ),

@@ -8,21 +8,42 @@ import 'package:flutter/widgets.dart';
 /// controls also start below the picker and settings button shared by every
 /// example screen.
 abstract final class ExampleOverlay {
-  static const double _edge = 8;
-  static const double _appChromeHeight = 64;
+  /// Minimum padding kept between controls and the screen edge.
+  static const double edge = 8;
+
+  /// Height reserved for the shared picker/settings chrome row.
+  static const double appChromeHeight = 64;
+
+  /// Width reserved for the shared example picker (top-left).
+  static const double pickerReservation = 224;
+
+  /// Width reserved for the shared settings button (top-right).
+  static const double settingsReservation = 64;
+
   static const double _sidePanelWidth = 340;
+
+  /// System insets clamped to at least [edge] on every side.
+  static EdgeInsets safeInsetsOf(BuildContext context) {
+    final padding = MediaQuery.paddingOf(context);
+    return EdgeInsets.fromLTRB(
+      math.max(padding.left, edge),
+      math.max(padding.top, edge),
+      math.max(padding.right, edge),
+      math.max(padding.bottom, edge),
+    );
+  }
 
   static Widget topCenter({required Widget child}) =>
       _TopOverlay(alignment: Alignment.topCenter, child: child);
 
-  /// A compact, single-purpose action centred in the safe viewport. Narrow
-  /// layouts fall back below the shared chrome when the exact centre is not
+  /// A compact, single-purpose action centered in the safe viewport. Narrow
+  /// layouts fall back below the shared chrome when the exact center is not
   /// wide enough to avoid both global controls.
   static Widget topCenterAction({
     required Widget child,
     double maxWidth = 360,
     double? minHeaderWidth,
-    double leadingReservation = 224,
+    double leadingReservation = pickerReservation,
   }) => _TopCenterAction(
     maxWidth: maxWidth,
     minHeaderWidth: minHeaderWidth ?? maxWidth,
@@ -65,7 +86,7 @@ abstract final class ExampleOverlay {
   /// Positions a tall right-side panel with the same bounds as a left panel.
   ///
   /// Pass [paired] for pages that show editable panels on both sides. On a
-  /// compact viewport each panel is narrowed enough to preserve a centre gap
+  /// compact viewport each panel is narrowed enough to preserve a center gap
   /// instead of overlapping the other panel.
   static Widget bottomRightPanel({
     required Widget child,
@@ -91,29 +112,19 @@ class _TopOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    final edgeLeft = padding.left > ExampleOverlay._edge
-        ? padding.left
-        : ExampleOverlay._edge;
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    final top =
-        (padding.top > ExampleOverlay._edge
-            ? padding.top
-            : ExampleOverlay._edge) +
-        ExampleOverlay._appChromeHeight;
+    final insets = ExampleOverlay.safeInsetsOf(context);
+    final top = insets.top + ExampleOverlay.appChromeHeight;
 
     if (alignment == Alignment.topLeft) {
-      return Positioned(top: top, left: edgeLeft, child: child);
+      return Positioned(top: top, left: insets.left, child: child);
     }
     if (alignment == Alignment.topRight) {
-      return Positioned(top: top, right: edgeRight, child: child);
+      return Positioned(top: top, right: insets.right, child: child);
     }
     return Positioned(
       top: top,
-      left: edgeLeft,
-      right: edgeRight,
+      left: insets.left,
+      right: insets.right,
       child: Center(
         heightFactor: 1,
         child: ConstrainedBox(
@@ -141,37 +152,29 @@ class _TopCenterAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    final edgeLeft = padding.left > ExampleOverlay._edge
-        ? padding.left
-        : ExampleOverlay._edge;
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    const settingsReservation = 64.0;
+    final insets = ExampleOverlay.safeInsetsOf(context);
 
-    final safeCenter = (edgeLeft + size.width - edgeRight) / 2;
-    final safeLeft = edgeLeft + leadingReservation;
-    final safeRight = size.width - edgeRight - settingsReservation;
-    final centredMaxWidth = math
+    final safeCenter = (insets.left + size.width - insets.right) / 2;
+    final safeLeft = insets.left + leadingReservation;
+    final safeRight =
+        size.width - insets.right - ExampleOverlay.settingsReservation;
+    final centeredMaxWidth = math
         .max(0.0, 2 * math.min(safeCenter - safeLeft, safeRight - safeCenter))
         .toDouble();
 
-    if (centredMaxWidth < minHeaderWidth) {
+    if (centeredMaxWidth < minHeaderWidth) {
       return ExampleOverlay.topCenter(child: child);
     }
 
     return Positioned(
-      top: padding.top > ExampleOverlay._edge
-          ? padding.top
-          : ExampleOverlay._edge,
-      left: edgeLeft,
-      right: edgeRight,
+      top: insets.top,
+      left: insets.left,
+      right: insets.right,
       child: Center(
         heightFactor: 1,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: math.min(maxWidth, centredMaxWidth),
+            maxWidth: math.min(maxWidth, centeredMaxWidth),
           ),
           child: child,
         ),
@@ -189,29 +192,16 @@ class _TopLeadingAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    final edgeLeft = padding.left > ExampleOverlay._edge
-        ? padding.left
-        : ExampleOverlay._edge;
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    const pickerReservation = 224.0;
-    const settingsReservation = 64.0;
-    final left = edgeLeft + pickerReservation;
-    final availableWidth = size.width - left - edgeRight - settingsReservation;
+    final insets = ExampleOverlay.safeInsetsOf(context);
+    final left = insets.left + ExampleOverlay.pickerReservation;
+    final availableWidth =
+        size.width - left - insets.right - ExampleOverlay.settingsReservation;
 
     if (availableWidth < minWidth) {
       return ExampleOverlay.topCenter(child: child);
     }
 
-    return Positioned(
-      top: padding.top > ExampleOverlay._edge
-          ? padding.top
-          : ExampleOverlay._edge,
-      left: left,
-      child: child,
-    );
+    return Positioned(top: insets.top, left: left, child: child);
   }
 }
 
@@ -222,24 +212,14 @@ class _TopRightPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
     final size = MediaQuery.sizeOf(context);
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    final edgeBottom = padding.bottom > ExampleOverlay._edge
-        ? padding.bottom
-        : ExampleOverlay._edge;
-    final top =
-        (padding.top > ExampleOverlay._edge
-            ? padding.top
-            : ExampleOverlay._edge) +
-        ExampleOverlay._appChromeHeight;
-    final maxHeight = size.height - top - edgeBottom;
+    final insets = ExampleOverlay.safeInsetsOf(context);
+    final top = insets.top + ExampleOverlay.appChromeHeight;
+    final maxHeight = size.height - top - insets.bottom;
 
     return Positioned(
       top: top,
-      right: edgeRight,
+      right: insets.right,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
         child: child,
@@ -256,27 +236,22 @@ class _BottomOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    final edgeLeft = padding.left > ExampleOverlay._edge
-        ? padding.left
-        : ExampleOverlay._edge;
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    final bottom = padding.bottom > ExampleOverlay._edge
-        ? padding.bottom
-        : ExampleOverlay._edge;
+    final insets = ExampleOverlay.safeInsetsOf(context);
 
     if (alignment == Alignment.bottomLeft) {
-      return Positioned(bottom: bottom, left: edgeLeft, child: child);
+      return Positioned(bottom: insets.bottom, left: insets.left, child: child);
     }
     if (alignment == Alignment.bottomRight) {
-      return Positioned(bottom: bottom, right: edgeRight, child: child);
+      return Positioned(
+        bottom: insets.bottom,
+        right: insets.right,
+        child: child,
+      );
     }
     return Positioned(
-      bottom: bottom,
-      left: edgeLeft,
-      right: edgeRight,
+      bottom: insets.bottom,
+      left: insets.left,
+      right: insets.right,
       child: Center(
         heightFactor: 1,
         child: ConstrainedBox(
@@ -301,35 +276,25 @@ class _BottomSidePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    final edgeLeft = padding.left > ExampleOverlay._edge
-        ? padding.left
-        : ExampleOverlay._edge;
-    final edgeRight = padding.right > ExampleOverlay._edge
-        ? padding.right
-        : ExampleOverlay._edge;
-    final edgeBottom = padding.bottom > ExampleOverlay._edge
-        ? padding.bottom
-        : ExampleOverlay._edge;
-    final top =
-        (padding.top > ExampleOverlay._edge
-            ? padding.top
-            : ExampleOverlay._edge) +
-        ExampleOverlay._appChromeHeight;
     final size = MediaQuery.sizeOf(context);
-    final availableWidth = math.max(0.0, size.width - edgeLeft - edgeRight);
+    final insets = ExampleOverlay.safeInsetsOf(context);
+    final top = insets.top + ExampleOverlay.appChromeHeight;
+    final availableWidth = math.max(
+      0.0,
+      size.width - insets.left - insets.right,
+    );
     final panelWidth = paired
         ? math.min(
             ExampleOverlay._sidePanelWidth,
-            math.max(0.0, (availableWidth - ExampleOverlay._edge) / 2),
+            math.max(0.0, (availableWidth - ExampleOverlay.edge) / 2),
           )
         : math.min(ExampleOverlay._sidePanelWidth, availableWidth);
 
     return Positioned(
       top: top,
-      bottom: edgeBottom,
-      left: alignment == Alignment.bottomLeft ? edgeLeft : null,
-      right: alignment == Alignment.bottomRight ? edgeRight : null,
+      bottom: insets.bottom,
+      left: alignment == Alignment.bottomLeft ? insets.left : null,
+      right: alignment == Alignment.bottomRight ? insets.right : null,
       child: SizedBox(
         width: panelWidth,
         child: Align(alignment: alignment, child: child),

@@ -20,6 +20,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'environment_menu.dart';
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -87,8 +88,6 @@ class _ExampleShapesState extends State<ExampleShapes> {
   Size _viewSize = Size.zero;
 
   _ShapeKind _kind = _ShapeKind.box;
-  bool _shapePanelOpen = true;
-  bool _physicsPanelOpen = true;
   final Map<_ShapeKind, _ShapeParams> _params = {
     for (final k in _ShapeKind.values) k: _ShapeParams(),
   };
@@ -462,6 +461,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 720;
     return Stack(
       children: [
         Positioned.fill(
@@ -496,25 +496,32 @@ class _ExampleShapesState extends State<ExampleShapes> {
             ),
           ),
         ),
+        // On wide screens the preview gets the free bottom-center slot. On
+        // narrow ones that slot is covered by the paired side panels, so the
+        // preview stacks under the hint row in the top slot instead.
         ExampleOverlay.topCenterAction(
-          child: Row(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ExampleActionHint(
-                message: 'Tap: drop  ·  Drag: look  ·  WASD/QE: move',
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ExampleActionHint(
+                    message: 'Tap: drop  ·  Drag: look  ·  WASD/QE: move',
+                  ),
+                  const SizedBox(width: 8),
+                  ExampleActionButton(
+                    tooltip: 'Clear dropped shapes',
+                    onPressed: _spawned.isEmpty ? null : _clear,
+                    icon: Icons.delete_outline,
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              ExampleActionButton(
-                tooltip: 'Clear dropped shapes',
-                onPressed: _spawned.isEmpty ? null : _clear,
-                icon: Icons.delete_outline,
-              ),
+              if (!wide) ...[const SizedBox(height: 8), _previewPanel()],
             ],
           ),
         ),
-        MediaQuery.sizeOf(context).width >= 720
-            ? ExampleOverlay.bottomCenter(child: _previewPanel())
-            : ExampleOverlay.topCenter(child: _previewPanel()),
+        if (wide) ExampleOverlay.bottomCenter(child: _previewPanel()),
         ExampleOverlay.bottomRightPanel(
           paired: true,
           child: SizedBox(width: double.infinity, child: _controlPanel()),
@@ -531,165 +538,51 @@ class _ExampleShapesState extends State<ExampleShapes> {
   }
 
   Widget _physicsEnvironmentControls() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final fillAvailableHeight = constraints.maxHeight <= 520;
-        final body = SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _physicsPanel(),
-              const Divider(height: 20, color: Colors.white24),
-              _environmentPanel(),
-            ],
-          ),
-        );
-
-        return Card(
-          color: Colors.black54,
-          child: SizedBox(
-            height: _physicsPanelOpen && fillAvailableHeight
-                ? constraints.maxHeight
-                : null,
-            child: Column(
-              mainAxisSize: _physicsPanelOpen && fillAvailableHeight
-                  ? MainAxisSize.max
-                  : MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                InkWell(
-                  onTap: () =>
-                      setState(() => _physicsPanelOpen = !_physicsPanelOpen),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.tune, color: Colors.white),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Physics & environment',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          _physicsPanelOpen
-                              ? Icons.expand_less
-                              : Icons.expand_more,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (_physicsPanelOpen) ...[
-                  const Divider(height: 1, color: Colors.white24),
-                  if (fillAvailableHeight)
-                    Expanded(child: body)
-                  else
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 360),
-                      child: body,
-                    ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
+    return ExamplePanelCard(
+      icon: Icons.tune,
+      title: 'Physics & environment',
+      width: double.infinity,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _physicsPanel(),
+          const Divider(height: 20, color: Colors.white24),
+          _environmentPanel(),
+        ],
+      ),
     );
   }
 
   Widget _controlPanel() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final availableBodyHeight = constraints.maxHeight - 56;
-        final bodyMaxHeight = availableBodyHeight < 280
-            ? availableBodyHeight
-            : 280.0;
-
-        return Card(
-          color: Colors.black54,
-          child: SizedBox(
-            height: null,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Shape:',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ExampleDropdown<_ShapeKind>(
-                          value: _kind,
-                          triggerColor: Colors.white12,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          onChanged: (kind) {
-                            if (kind != null) {
-                              setState(() {
-                                _kind = kind;
-                                _rebuildPreview();
-                              });
-                            }
-                          },
-                          items: [
-                            for (final kind in _ShapeKind.values)
-                              DropdownMenuItem(
-                                value: kind,
-                                child: Text(kind.label),
-                              ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: _shapePanelOpen
-                            ? 'Collapse shape controls'
-                            : 'Expand shape controls',
-                        onPressed: () =>
-                            setState(() => _shapePanelOpen = !_shapePanelOpen),
-                        icon: Icon(
-                          _shapePanelOpen
-                              ? Icons.expand_less
-                              : Icons.expand_more,
-                        ),
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-                ),
-                if (_shapePanelOpen) ...[
-                  const Divider(height: 1, color: Colors.white24),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: bodyMaxHeight),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [..._buildSliders()],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
+    return ExamplePanelCard(
+      icon: Icons.category_outlined,
+      title: 'Shape',
+      width: double.infinity,
+      maxBodyHeight: 280,
+      trailing: ExampleDropdown<_ShapeKind>(
+        value: _kind,
+        triggerColor: Colors.white12,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        isDense: true,
+        onChanged: (kind) {
+          if (kind != null) {
+            setState(() {
+              _kind = kind;
+              _rebuildPreview();
+            });
+          }
+        },
+        items: [
+          for (final kind in _ShapeKind.values)
+            DropdownMenuItem(value: kind, child: Text(kind.label)),
+        ],
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [..._buildSliders()],
+      ),
     );
   }
 

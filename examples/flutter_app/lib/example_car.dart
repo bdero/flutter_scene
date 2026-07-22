@@ -5,7 +5,9 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 
 class ExampleCar extends StatefulWidget {
   const ExampleCar({super.key});
@@ -25,7 +27,6 @@ class NodeState {
 class ExampleCarState extends State<ExampleCar> {
   Scene scene = Scene();
   bool loaded = false;
-  bool _controlsOpen = true;
 
   double wheelRotation = 0;
 
@@ -169,129 +170,55 @@ class ExampleCarState extends State<ExampleCar> {
     );
   }
 
-  Widget _buildControls() => SizedBox(
+  Widget _buildControls() => ExamplePanelCard(
+    icon: Icons.directions_car,
+    title: 'Car controls',
     width: 280,
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final bodyHeight = constraints.hasBoundedHeight
-            ? min(360.0, max(0.0, constraints.maxHeight - 57.0))
-            : 360.0;
-
-        return Card(
-          color: Colors.black54,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Keep the title available while the long control list scrolls.
-              InkWell(
-                onTap: () => setState(() => _controlsOpen = !_controlsOpen),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.directions_car,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Car controls',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        _controlsOpen
-                            ? Icons.expand_less
-                            : Icons.expand_more,
-                        color: Colors.white,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_controlsOpen) ...[
-                const Divider(height: 1, color: Colors.white24),
-                SizedBox(
-                  height: bodyHeight,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _slider('Sky blur', _skySource.blurriness, 0, 1, (
-                          value,
-                        ) {
-                          setState(() => _skySource.blurriness = value);
-                        }),
-                        for (final (label, name) in const [
-                          ('Front door L', 'DoorFront.L'),
-                          ('Front door R', 'DoorFront.R'),
-                          ('Back door L', 'DoorBack.L'),
-                          ('Back door R', 'DoorBack.R'),
-                          ('Frunk', 'Frunk'),
-                          ('Trunk', 'Trunk'),
-                        ])
-                          _slider(label, nodes[name]!.amount, 0, 1, (value) {
-                            setState(() => _applyDoorPose(name, value));
-                          }),
-                        _slider(
-                          'Rear wheel speed',
-                          nodes['WheelBack.L']!.amount,
-                          0,
-                          1,
-                          (value) {
-                            setState(
-                              () => nodes['WheelBack.L']!.amount = value,
-                            );
-                          },
-                        ),
-                        _slider(
-                          'Front wheel steer',
-                          nodes['WheelFront.L']!.amount,
-                          -1,
-                          1,
-                          (value) {
-                            setState(
-                              () => nodes['WheelFront.L']!.amount = value,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
+    maxBodyHeight: 360,
+    body: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LabeledSlider(
+          label: 'Sky blur',
+          value: _skySource.blurriness,
+          min: 0,
+          max: 1,
+          onChanged: (value) => setState(() => _skySource.blurriness = value),
+        ),
+        for (final (label, name) in const [
+          ('Front door L', 'DoorFront.L'),
+          ('Front door R', 'DoorFront.R'),
+          ('Back door L', 'DoorBack.L'),
+          ('Back door R', 'DoorBack.R'),
+          ('Frunk', 'Frunk'),
+          ('Trunk', 'Trunk'),
+        ])
+          LabeledSlider(
+            label: label,
+            value: nodes[name]!.amount,
+            min: 0,
+            max: 1,
+            onChanged: (value) => setState(() => _applyDoorPose(name, value)),
           ),
-        );
-      },
+        LabeledSlider(
+          label: 'Rear wheel speed',
+          value: nodes['WheelBack.L']!.amount,
+          min: 0,
+          max: 1,
+          onChanged: (value) =>
+              setState(() => nodes['WheelBack.L']!.amount = value),
+        ),
+        LabeledSlider(
+          label: 'Front wheel steer',
+          value: nodes['WheelFront.L']!.amount,
+          min: -1,
+          max: 1,
+          onChanged: (value) =>
+              setState(() => nodes['WheelFront.L']!.amount = value),
+        ),
+      ],
     ),
-  );
-
-  Widget _slider(
-    String label,
-    double value,
-    double min,
-    double max,
-    ValueChanged<double> onChanged,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text(
-        '$label: ${value.toStringAsFixed(2)}',
-        style: const TextStyle(color: Colors.white70, fontSize: 12),
-      ),
-      Slider(value: value, min: min, max: max, onChanged: onChanged),
-    ],
   );
 
   // Advances the wheel spin/steer each frame from the slider-driven amounts.

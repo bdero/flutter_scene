@@ -9,6 +9,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -134,81 +135,6 @@ class GaussianSplatSystemChrome extends StatelessWidget {
   );
 }
 
-/// A compact side-panel surface with a fixed source header and scrollable
-/// settings, so short landscape viewports keep every control reachable.
-class GaussianSplatSettingsPanel extends StatelessWidget {
-  const GaussianSplatSettingsPanel({
-    super.key,
-    required this.header,
-    required this.controls,
-    this.open = true,
-    this.onToggle,
-  });
-
-  final Widget header;
-  final Widget controls;
-  final bool open;
-  final VoidCallback? onToggle;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => Card(
-      color: Colors.black.withValues(alpha: 0.55),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: constraints.maxHeight),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            InkWell(
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.blur_on, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Gaussian splat controls',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      open ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.white,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (open) ...[
-              const Divider(height: 1, color: Colors.white24),
-              Flexible(
-                fit: FlexFit.loose,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [header, const SizedBox(height: 4), controls],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 class ExampleSplatsState extends State<ExampleSplats> {
   Scene scene = Scene();
   bool _ready = false;
@@ -223,7 +149,6 @@ class ExampleSplatsState extends State<ExampleSplats> {
   bool _antialiased = true;
   bool _cropSweep = false;
   bool _orbit = true;
-  bool _controlsOpen = true;
 
   // The solid sphere that sits inside the capture (a splats-vs-geometry
   // depth-sort demo). It wanders on a bounded noise orbit around its home.
@@ -513,10 +438,10 @@ class ExampleSplatsState extends State<ExampleSplats> {
   Widget _panel() {
     final splats = _activeSplats;
     if (splats == null) return const SizedBox.shrink();
-    return GaussianSplatSettingsPanel(
-      open: _controlsOpen,
-      onToggle: () => setState(() => _controlsOpen = !_controlsOpen),
-      header: Column(
+    return ExamplePanelCard(
+      icon: Icons.blur_on,
+      title: 'Gaussian splat controls',
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_sources.length > 1)
@@ -547,12 +472,7 @@ class ExampleSplatsState extends State<ExampleSplats> {
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
-        ],
-      ),
-      controls: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+          const SizedBox(height: 4),
           _slider(
             'Opacity',
             _opacity,

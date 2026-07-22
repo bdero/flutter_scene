@@ -7,6 +7,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'environment_menu.dart';
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart';
 import 'quake_camera.dart';
@@ -24,8 +25,6 @@ class ExampleSsr extends StatefulWidget {
 
 class ExampleSsrState extends State<ExampleSsr> {
   final Scene scene = Scene();
-
-  bool _panelOpen = true;
 
   // Drives the image-based-lighting environment / skybox menu (the same one
   // the stress-tests example uses). The environment is what a reflection
@@ -177,9 +176,7 @@ class ExampleSsrState extends State<ExampleSsr> {
           ExampleOverlay.bottomRightPanel(
             paired: true,
             child: _SsrPanel(
-              open: _panelOpen,
               settings: scene.screenSpaceReflections,
-              onToggle: () => setState(() => _panelOpen = !_panelOpen),
               onChanged: () => setState(() {}),
             ),
           ),
@@ -202,206 +199,139 @@ class ExampleSsrState extends State<ExampleSsr> {
 // The SSR tuning panel: a collapsible card of sliders and a debug-view
 // dropdown that mutate the scene's ScreenSpaceReflectionsSettings live.
 class _SsrPanel extends StatelessWidget {
-  const _SsrPanel({
-    required this.open,
-    required this.settings,
-    required this.onToggle,
-    required this.onChanged,
-  });
+  const _SsrPanel({required this.settings, required this.onChanged});
 
-  final bool open;
   final ScreenSpaceReflectionsSettings settings;
-  final VoidCallback onToggle;
   final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final topInset = media.padding.top > 8 ? media.padding.top : 8.0;
-    final bottomInset = media.padding.bottom > 8 ? media.padding.bottom : 8.0;
-    final panelHeight = media.size.height - topInset - 64 - bottomInset;
-    final availableBodyHeight = panelHeight - 56;
-    final bodyMaxHeight = availableBodyHeight < 560
-        ? availableBodyHeight
-        : 560.0;
-
-    return Card(
-      color: Colors.black54,
-      child: SizedBox(
-        width: 340,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            InkWell(
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.tune, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'SSR Settings',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      open ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.white,
-                    ),
+    return ExamplePanelCard(
+      icon: Icons.tune,
+      title: 'SSR settings',
+      width: 340,
+      maxBodyHeight: 560,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Enabled', style: TextStyle(color: Colors.white)),
+              ),
+              Switch(
+                value: settings.enabled,
+                onChanged: (v) {
+                  settings.enabled = v;
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+          _SliderRow(
+            label: 'Intensity',
+            value: settings.intensity,
+            min: 0,
+            max: 2,
+            onChanged: (v) {
+              settings.intensity = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Max dist',
+            value: settings.maxDistance,
+            min: 1,
+            max: 60,
+            onChanged: (v) {
+              settings.maxDistance = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Thickness',
+            value: settings.thickness,
+            min: 0.01,
+            max: 3,
+            onChanged: (v) {
+              settings.thickness = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Stride',
+            value: settings.stride,
+            min: 1,
+            max: 12,
+            onChanged: (v) {
+              settings.stride = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Max steps',
+            value: settings.maxSteps.toDouble(),
+            min: 16,
+            max: 256,
+            onChanged: (v) {
+              settings.maxSteps = v.round();
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Blur',
+            value: settings.blur,
+            min: 0,
+            max: 1,
+            onChanged: (v) {
+              settings.blur = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Fade start',
+            value: settings.distanceFadeStart,
+            min: 0,
+            max: 1,
+            onChanged: (v) {
+              settings.distanceFadeStart = v;
+              onChanged();
+            },
+          ),
+          _SliderRow(
+            label: 'Resolution',
+            value: settings.resolutionScale,
+            min: 0.25,
+            max: 1,
+            onChanged: (v) {
+              settings.resolutionScale = v;
+              onChanged();
+            },
+          ),
+          Row(
+            children: [
+              const SizedBox(
+                width: 110,
+                child: Text('Debug', style: TextStyle(color: Colors.white)),
+              ),
+              Expanded(
+                child: ExampleDropdown<SsrDebugView>(
+                  value: settings.debugView,
+                  onChanged: (v) {
+                    if (v != null) {
+                      settings.debugView = v;
+                      onChanged();
+                    }
+                  },
+                  items: [
+                    for (final view in SsrDebugView.values)
+                      DropdownMenuItem(value: view, child: Text(view.name)),
                   ],
                 ),
               ),
-            ),
-            if (open) ...[
-              const Divider(height: 1, color: Colors.white24),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: bodyMaxHeight),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Enabled',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          Switch(
-                            value: settings.enabled,
-                            onChanged: (v) {
-                              settings.enabled = v;
-                              onChanged();
-                            },
-                          ),
-                        ],
-                      ),
-                      _SliderRow(
-                        label: 'Intensity',
-                        value: settings.intensity,
-                        min: 0,
-                        max: 2,
-                        onChanged: (v) {
-                          settings.intensity = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Max dist',
-                        value: settings.maxDistance,
-                        min: 1,
-                        max: 60,
-                        onChanged: (v) {
-                          settings.maxDistance = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Thickness',
-                        value: settings.thickness,
-                        min: 0.01,
-                        max: 3,
-                        onChanged: (v) {
-                          settings.thickness = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Stride',
-                        value: settings.stride,
-                        min: 1,
-                        max: 12,
-                        onChanged: (v) {
-                          settings.stride = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Max steps',
-                        value: settings.maxSteps.toDouble(),
-                        min: 16,
-                        max: 256,
-                        onChanged: (v) {
-                          settings.maxSteps = v.round();
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Blur',
-                        value: settings.blur,
-                        min: 0,
-                        max: 1,
-                        onChanged: (v) {
-                          settings.blur = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Fade start',
-                        value: settings.distanceFadeStart,
-                        min: 0,
-                        max: 1,
-                        onChanged: (v) {
-                          settings.distanceFadeStart = v;
-                          onChanged();
-                        },
-                      ),
-                      _SliderRow(
-                        label: 'Resolution',
-                        value: settings.resolutionScale,
-                        min: 0.25,
-                        max: 1,
-                        onChanged: (v) {
-                          settings.resolutionScale = v;
-                          onChanged();
-                        },
-                      ),
-                      Row(
-                        children: [
-                          const SizedBox(
-                            width: 110,
-                            child: Text(
-                              'Debug',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                          Expanded(
-                            child: ExampleDropdown<SsrDebugView>(
-                              value: settings.debugView,
-                              onChanged: (v) {
-                                if (v != null) {
-                                  settings.debugView = v;
-                                  onChanged();
-                                }
-                              },
-                              items: [
-                                for (final view in SsrDebugView.values)
-                                  DropdownMenuItem(
-                                    value: view,
-                                    child: Text(view.name),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -19,6 +19,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 
 class ExampleToonFmat extends StatefulWidget {
@@ -31,7 +32,6 @@ class ExampleToonFmat extends StatefulWidget {
 class _ExampleToonFmatState extends State<ExampleToonFmat> {
   Scene scene = Scene();
   bool loaded = false;
-  bool _controlsOpen = true;
   Object? _loadError;
 
   // Wrapper around the loaded Dash node. Spinning this instead of the
@@ -152,7 +152,7 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
   Widget build(BuildContext context) {
     final loadError = _loadError;
     if (loadError != null) {
-      return _LoadFailure(
+      return ExampleLoadFailureCard(
         title: 'Toon (.fmat) could not load',
         detail: '$loadError',
       );
@@ -189,93 +189,57 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
           ),
         ),
         ExampleOverlay.bottomLeftPanel(
-          child: Card(
-            color: Colors.black54,
-            child: Column(
+          child: ExamplePanelCard(
+            icon: Icons.palette_outlined,
+            title: 'Toon controls',
+            maxBodyHeight: 260,
+            bodyPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
+            body: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                InkWell(
-                  onTap: () => setState(() => _controlsOpen = !_controlsOpen),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.palette_outlined, color: Colors.white),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Toon controls',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          _controlsOpen ? Icons.expand_less : Icons.expand_more,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
+                _SliderRow(
+                  label: 'Band count',
+                  value: bandCount,
+                  min: 1,
+                  max: 8,
+                  onChanged: (v) => setState(() {
+                    bandCount = v.roundToDouble();
+                    _refreshParameters(_toonMaterial!);
+                  }),
                 ),
-                if (_controlsOpen) ...[
-                  const Divider(height: 1, color: Colors.white24),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 260),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _SliderRow(
-                            label: 'Band count',
-                            value: bandCount,
-                            min: 1,
-                            max: 8,
-                            onChanged: (v) => setState(() {
-                              bandCount = v.roundToDouble();
-                              _refreshParameters(_toonMaterial!);
-                            }),
-                          ),
-                          _SliderRow(
-                            label: 'Rim strength',
-                            value: rimStrength,
-                            min: 0,
-                            max: 2,
-                            onChanged: (v) => setState(() {
-                              rimStrength = v;
-                              _refreshParameters(_toonMaterial!);
-                            }),
-                          ),
-                          _SliderRow(
-                            label: 'Rim width',
-                            value: rimWidth,
-                            min: 0,
-                            max: 1,
-                            onChanged: (v) => setState(() {
-                              rimWidth = v;
-                              _refreshParameters(_toonMaterial!);
-                            }),
-                          ),
-                          _SliderRow(
-                            label: 'Ambient',
-                            value: ambient,
-                            min: 0,
-                            max: 1,
-                            onChanged: (v) => setState(() {
-                              ambient = v;
-                              _refreshParameters(_toonMaterial!);
-                            }),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                _SliderRow(
+                  label: 'Rim strength',
+                  value: rimStrength,
+                  min: 0,
+                  max: 2,
+                  onChanged: (v) => setState(() {
+                    rimStrength = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+                _SliderRow(
+                  label: 'Rim width',
+                  value: rimWidth,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) => setState(() {
+                    rimWidth = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+                _SliderRow(
+                  label: 'Ambient',
+                  value: ambient,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) => setState(() {
+                    ambient = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
               ],
             ),
           ),
@@ -316,33 +280,4 @@ class _SliderRow extends StatelessWidget {
       ],
     );
   }
-}
-
-class _LoadFailure extends StatelessWidget {
-  const _LoadFailure({required this.title, required this.detail});
-
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Card(
-      color: Colors.black87,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(color: Colors.white)),
-              const SizedBox(height: 8),
-              Text(detail, style: const TextStyle(color: Colors.white70)),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
