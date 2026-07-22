@@ -1,0 +1,22 @@
+name: stress_bench
+description: "CPU stress benchmark for flutter_scene hot paths (dev-only, not published)."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene: ^0.19.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
