@@ -11,9 +11,9 @@ import 'package:flutter_scene/src/widgets/declarative.dart'
     show SceneAnimationBinder;
 import 'package:flutter_test/flutter_test.dart';
 
-/// SceneModel widget tests: the import is replaced with a GPU-free
-/// hand-built node tree via [SceneModel.debugImportOverride], so the full
-/// load / template-cache / clone / variant / animation path runs headless.
+/// SceneModel widget tests. Sources override [SceneModelSource.createNode]
+/// to produce GPU-free hand-built node trees, so the full
+/// load/template-cache/clone/variant/animation path runs headless.
 
 class _FakeMaterial implements Material {
   _FakeMaterial(this.label);
@@ -28,18 +28,42 @@ class _FakeGeometry implements Geometry {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-/// A source whose load completes on demand, to hold the widget in its
-/// loading phase.
-class _GatedSource extends SceneModelSource {
-  _GatedSource(this.key);
+/// Counts template imports across all fake sources, mirroring the shared
+/// template cache's behavior.
+int importCalls = 0;
+
+/// A source that imports a hand-built template, keyed like an app source.
+class _FakeSource extends SceneModelSource {
+  _FakeSource(this.key, {Node Function()? buildTemplate})
+    : _buildTemplate = buildTemplate ?? _buildDefaultTemplate;
+
   final String key;
-  final Completer<Uint8List> gate = Completer<Uint8List>();
+  final Node Function() _buildTemplate;
 
   @override
-  String get cacheKey => 'gated:$key';
+  String get cacheKey => 'fake:$key';
 
   @override
-  Future<Uint8List> load() => gate.future;
+  Future<Uint8List> load() async => Uint8List(0);
+
+  @override
+  Future<Node> createNode() async {
+    importCalls++;
+    return _buildTemplate();
+  }
+}
+
+/// A source whose import completes on demand, to hold the widget in its
+/// loading phase.
+class _GatedSource extends _FakeSource {
+  _GatedSource(super.key);
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<Node> createNode() async {
+    await gate.future;
+    return super.createNode();
+  }
 }
 
 class _FailingSource extends SceneModelSource {
@@ -53,21 +77,39 @@ class _FailingSource extends SceneModelSource {
   Future<Uint8List> load() async => throw StateError('no bytes for $key');
 }
 
-/// Builds a template like the runtime importer would: a root carrying a
-/// variants component and a parsed animation, over a child with a mesh.
-Node _buildTemplate({List<String> variants = const ['a', 'b']}) {
+/// A source that fails on the first import and succeeds after, for the
+/// failed-imports-are-not-cached path.
+class _FlakySource extends _FakeSource {
+  _FlakySource(super.key);
+
+  @override
+  Future<Node> createNode() async {
+    importCalls++;
+    if (importCalls == 1) throw StateError('flaky');
+    return _buildDefaultTemplate();
+  }
+}
+
+/// Builds a template like the runtime importer would. A root carrying a
+/// variants component, parsed animations, and a punctual light, over a child
+/// with a mesh.
+Node _buildDefaultTemplate({List<String> variants = const ['a', 'b']}) {
   final defaultMaterial = _FakeMaterial('default');
   final variantMaterial = _FakeMaterial('variant-b');
   final primitive = MeshPrimitive(_FakeGeometry(), defaultMaterial);
   final child = Node(name: 'shoe')
     ..mesh = Mesh.primitives(primitives: [primitive]);
-  final root = Node(name: 'root')..add(child);
+  final light = Node(name: 'lamp')
+    ..addComponent(PointLightComponent(PointLight(intensity: 3.0, range: 5.0)));
+  final root = Node(name: 'root')
+    ..add(child)
+    ..add(light);
   if (variants.isNotEmpty) {
     root.addComponent(
       MaterialsVariantsComponent.internal(variants, [
         MaterialsVariantBinding(
           node: child,
-          primitive: primitive,
+          primitiveIndex: 0,
           defaultMaterial: defaultMaterial,
           materialsByVariant: {1: variantMaterial},
         ),
@@ -81,28 +123,17 @@ Node _buildTemplate({List<String> variants = const ['a', 'b']}) {
 
 void main() {
   late Node sceneRoot;
-  late int importCalls;
 
   setUp(() {
     sceneRoot = Node(name: 'scene-root');
     importCalls = 0;
-    SceneModel.debugImportOverride = (bytes) async {
-      importCalls++;
-      return _buildTemplate();
-    };
     SceneModel.debugClearModelTemplateCache();
   });
 
-  tearDown(() {
-    SceneModel.debugImportOverride = null;
-    SceneModel.debugClearModelTemplateCache();
-  });
+  tearDown(SceneModel.debugClearModelTemplateCache);
 
   Widget host(List<Widget> children) =>
       SceneSubtree(parent: sceneRoot, children: children);
-
-  MemoryModelSource source(String key) =>
-      MemoryModelSource(Uint8List(0), key: key);
 
   group('loading phases', () {
     testWidgets('placeholder mounts while loading, model replaces it', (
@@ -121,7 +152,7 @@ void main() {
       expect(wrapper.getChildByName('placeholder'), isNotNull);
       expect(wrapper.getChildByName('shoe'), isNull);
 
-      gated.gate.complete(Uint8List(0));
+      gated.gate.complete();
       await tester.pump();
       await tester.pump();
       expect(wrapper.getChildByName('placeholder'), isNull);
@@ -151,8 +182,8 @@ void main() {
       final roots = <Node>[];
       await tester.pumpWidget(
         host([
-          SceneModel.from(source('m'), onLoaded: roots.add),
-          SceneModel.from(source('m'), onLoaded: roots.add),
+          SceneModel.from(_FakeSource('m'), onLoaded: roots.add),
+          SceneModel.from(_FakeSource('m'), onLoaded: roots.add),
         ]),
       );
       await tester.pump();
@@ -177,20 +208,39 @@ void main() {
       );
     });
 
+    testWidgets('clones carry importer-attached components', (tester) async {
+      final roots = <Node>[];
+      await tester.pumpWidget(
+        host([SceneModel.from(_FakeSource('m'), onLoaded: roots.add)]),
+      );
+      await tester.pump();
+      await tester.pump();
+      final lamp = roots.single.getChildByName('lamp')!;
+      final component = lamp.getComponent<PointLightComponent>();
+      expect(component, isNotNull);
+      expect(component!.light.intensity, 3.0);
+    });
+
     testWidgets('the template is evicted when the last user unmounts', (
       tester,
     ) async {
       await tester.pumpWidget(
-        host([SceneModel.from(source('m')), SceneModel.from(source('m'))]),
+        host([
+          SceneModel.from(_FakeSource('m')),
+          SceneModel.from(_FakeSource('m')),
+        ]),
       );
       await tester.pump();
       await tester.pump();
       expect(importCalls, 1);
 
       // Dropping one keeps the template alive for the other.
-      await tester.pumpWidget(host([SceneModel.from(source('m'))]));
+      await tester.pumpWidget(host([SceneModel.from(_FakeSource('m'))]));
       await tester.pumpWidget(
-        host([SceneModel.from(source('m')), SceneModel.from(source('m'))]),
+        host([
+          SceneModel.from(_FakeSource('m')),
+          SceneModel.from(_FakeSource('m')),
+        ]),
       );
       await tester.pump();
       await tester.pump();
@@ -198,7 +248,7 @@ void main() {
 
       // Dropping all evicts; the next mount imports again.
       await tester.pumpWidget(host([]));
-      await tester.pumpWidget(host([SceneModel.from(source('m'))]));
+      await tester.pumpWidget(host([SceneModel.from(_FakeSource('m'))]));
       await tester.pump();
       await tester.pump();
       expect(importCalls, 2);
@@ -207,22 +257,15 @@ void main() {
     testWidgets('a failed import is not cached; a retry imports again', (
       tester,
     ) async {
-      SceneModel.debugImportOverride = (bytes) async {
-        importCalls++;
-        if (importCalls == 1) throw StateError('flaky');
-        return _buildTemplate();
-      };
-      await tester.pumpWidget(host([SceneModel.from(source('m'))]));
+      await tester.pumpWidget(host([SceneModel.from(_FlakySource('m'))]));
       await tester.pump();
       await tester.pump();
       expect(importCalls, 1);
 
-      // A different key forces a reload; same key would too after eviction,
-      // but exercise the recovery path through a fresh source.
       await tester.pumpWidget(host([]));
       final roots = <Node>[];
       await tester.pumpWidget(
-        host([SceneModel.from(source('m'), onLoaded: roots.add)]),
+        host([SceneModel.from(_FlakySource('m'), onLoaded: roots.add)]),
       );
       await tester.pump();
       await tester.pump();
@@ -237,8 +280,8 @@ void main() {
       final roots = <Node>[];
       await tester.pumpWidget(
         host([
-          SceneModel.from(source('m'), variant: 'b', onLoaded: roots.add),
-          SceneModel.from(source('m'), onLoaded: roots.add),
+          SceneModel.from(_FakeSource('m'), variant: 'b', onLoaded: roots.add),
+          SceneModel.from(_FakeSource('m'), onLoaded: roots.add),
         ]),
       );
       await tester.pump();
@@ -256,7 +299,7 @@ void main() {
     ) async {
       final roots = <Node>[];
       await tester.pumpWidget(
-        host([SceneModel.from(source('m'), onLoaded: roots.add)]),
+        host([SceneModel.from(_FakeSource('m'), onLoaded: roots.add)]),
       );
       await tester.pump();
       await tester.pump();
@@ -268,35 +311,59 @@ void main() {
       expect((primitive.material as _FakeMaterial).label, 'default');
 
       await tester.pumpWidget(
-        host([SceneModel.from(source('m'), variant: 'b')]),
+        host([SceneModel.from(_FakeSource('m'), variant: 'b')]),
       );
       expect((primitive.material as _FakeMaterial).label, 'variant-b');
     });
   });
 
   group('animations', () {
-    testWidgets('specs flow to clips on load and on rebuild', (tester) async {
-      final binderProbe = <Node>[];
+    testWidgets('specs flow to clips on load', (tester) async {
+      final roots = <Node>[];
       await tester.pumpWidget(
         host([
           SceneModel.from(
-            source('m'),
+            _FakeSource('m'),
             animations: const [
               SceneAnimationSpec('Spin', weight: 0.5, speed: 2.0),
             ],
-            onLoaded: binderProbe.add,
+            onLoaded: roots.add,
           ),
         ]),
       );
       await tester.pump();
       await tester.pump();
-      // The clip is observable through a second binder on the same root: the
-      // player is per node and clips are name-keyed, so creating again
-      // returns fresh clips; instead assert through spec-driven state below.
-      final root = binderProbe.single;
-      final binder = SceneAnimationBinder()..bind(root);
+      final binder = SceneAnimationBinder()..bind(roots.single);
       binder.apply(const [SceneAnimationSpec('Spin')]);
       expect(binder.clips.containsKey('Spin'), isTrue);
+    });
+  });
+
+  group('component lifecycle', () {
+    testWidgets('a stable component survives unmount and remount', (
+      tester,
+    ) async {
+      final spin = _CountingComponent();
+      Widget build(bool show) => host([
+        if (show) SceneNode(name: 'n', components: [spin]),
+      ]);
+
+      await tester.pumpWidget(build(true));
+      expect(spin.attaches, 1);
+      expect(spin.isAttached, isTrue);
+
+      // Unmounting detaches the component (running onDetach cleanup)...
+      await tester.pumpWidget(build(false));
+      expect(spin.detaches, 1);
+      expect(spin.isAttached, isFalse);
+
+      // ...so the same instance can attach again on the next mount.
+      await tester.pumpWidget(build(true));
+      expect(spin.attaches, 2);
+      expect(
+        sceneRoot.children.single.getComponent<_CountingComponent>(),
+        spin,
+      );
     });
   });
 
@@ -305,7 +372,7 @@ void main() {
     late SceneAnimationBinder binder;
 
     setUp(() {
-      root = _buildTemplate();
+      root = _buildDefaultTemplate();
       binder = SceneAnimationBinder()..bind(root);
     });
 
@@ -338,7 +405,7 @@ void main() {
       expect(clip.playing, isTrue);
     });
 
-    test('a removed spec stops its clip', () {
+    test('a removed spec stops its clip and unregisters it', () {
       binder.apply(const [
         SceneAnimationSpec('Spin'),
         SceneAnimationSpec('Wave'),
@@ -348,6 +415,13 @@ void main() {
       expect(wave.playing, isFalse);
       expect(binder.clips.containsKey('Wave'), isFalse);
       expect(binder.clips.containsKey('Spin'), isTrue);
+      // Re-adding creates a fresh registration rather than resurrecting the
+      // stopped clip.
+      binder.apply(const [
+        SceneAnimationSpec('Spin'),
+        SceneAnimationSpec('Wave'),
+      ]);
+      expect(identical(binder.clips['Wave'], wave), isFalse);
     });
 
     test('unknown names warn without throwing and known ones still apply', () {
@@ -373,7 +447,7 @@ void main() {
 
   group('MaterialsVariantsComponent.rebindClone', () {
     test('rebinds to the clone and leaves the template untouched', () {
-      final template = _buildTemplate();
+      final template = _buildDefaultTemplate();
       final clone = template.clone();
       final component = MaterialsVariantsComponent.rebindClone(
         template,
@@ -399,10 +473,21 @@ void main() {
     });
 
     test('returns null for templates without variants', () {
-      final template = _buildTemplate(variants: const []);
+      final template = _buildDefaultTemplate(variants: const []);
       final clone = template.clone();
       expect(MaterialsVariantsComponent.rebindClone(template, clone), isNull);
       expect(clone.getComponent<MaterialsVariantsComponent>(), isNull);
     });
   });
+}
+
+class _CountingComponent extends Component {
+  int attaches = 0;
+  int detaches = 0;
+
+  @override
+  void onAttach() => attaches++;
+
+  @override
+  void onDetach() => detaches++;
 }

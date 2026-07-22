@@ -899,22 +899,28 @@ class CameraCodec extends ComponentCodec {
 ///
 /// ```text
 /// variants: [String, ...]                    variant names, in order
+/// selected: String                           active variant, absent = default
 /// bindings: [{node: NodeRef,                 the node whose mesh is bound
 ///             primitive: int,                index into the mesh's primitives
+///             default: ResourceRef,          the default material
 ///             materials: {"<variantIndex>": ResourceRef, ...}}, ...]
 /// ```
 ///
-/// The binding's default material is not serialized; the mesh primitive's
-/// own material is the default, so whatever material the mesh carries at
-/// serialize time realizes as the default. Bindings resolve after the whole
+/// The default material is serialized explicitly so a document saved while a
+/// variant is selected keeps its authored defaults (the mesh's serialized
+/// material is the selected one in that case); documents without a `default`
+/// entry fall back to the mesh primitive's realized material. The selection
+/// itself round-trips through `selected`. Bindings resolve after the whole
 /// tree realizes (they reference other nodes' mesh components), through
 /// [RealizeContext.afterRealize].
 class MaterialsVariantsCodec extends ComponentCodec {
   @override
   String get type => 'materialsVariants';
 
-  // The nested bindings list is not schema-described (like the mesh codec's
-  // multi-primitive form); editing it stays inspector-opaque for now.
+  // TODO(materials-variants-schema): the nested bindings list is not
+  // schema-described (like the mesh codec's multi-primitive form), so the
+  // editor inspector cannot edit it; describe it once the schema system
+  // grows nested-list support.
   @override
   List<ComponentPropertyDef> get propertySchema => const [];
 
@@ -938,6 +944,8 @@ class MaterialsVariantsCodec extends ComponentCodec {
       for (final value in _stringList(spec.properties['variants'])) value,
     ];
     final rawBindings = spec.properties['bindings'];
+    final selectedProp = spec.properties['selected'];
+    final selected = selectedProp is StringValue ? selectedProp.value : null;
     final bindings = <MaterialsVariantBinding>[];
     final component = MaterialsVariantsComponent.internal(variants, bindings);
     context.afterRealize.add(() {
@@ -948,45 +956,59 @@ class MaterialsVariantsCodec extends ComponentCodec {
         );
         return;
       }
-      if (rawBindings is! ListValue) return;
-      for (final entry in rawBindings.values) {
-        if (entry is! MapValue) continue;
-        final nodeRef = entry.values['node'];
-        final primitiveIndex = entry.values['primitive'];
-        final materials = entry.values['materials'];
-        if (nodeRef is! NodeRefValue ||
-            primitiveIndex is! IntValue ||
-            materials is! MapValue) {
-          continue;
-        }
-        final node = resolveNode(nodeRef.id);
-        final mesh = node?.mesh;
-        if (node == null ||
-            mesh == null ||
-            primitiveIndex.value < 0 ||
-            primitiveIndex.value >= mesh.primitives.length) {
-          debugPrint(
-            'fscene: materialsVariants binding dropped (missing node or '
-            'primitive ${primitiveIndex.value})',
+      if (rawBindings is ListValue) {
+        for (final entry in rawBindings.values) {
+          if (entry is! MapValue) continue;
+          final nodeRef = entry.values['node'];
+          final primitiveIndex = entry.values['primitive'];
+          final materials = entry.values['materials'];
+          final defaultRef = entry.values['default'];
+          if (nodeRef is! NodeRefValue ||
+              primitiveIndex is! IntValue ||
+              materials is! MapValue) {
+            continue;
+          }
+          final node = resolveNode(nodeRef.id);
+          final mesh = node?.mesh;
+          if (node == null ||
+              mesh == null ||
+              primitiveIndex.value < 0 ||
+              primitiveIndex.value >= mesh.primitives.length) {
+            debugPrint(
+              'fscene: materialsVariants binding dropped (missing node or '
+              'primitive ${primitiveIndex.value})',
+            );
+            continue;
+          }
+          // The serialized default keeps authored defaults stable across
+          // saves and reloads made while a variant was selected; older
+          // documents without one fall back to the realized mesh material.
+          final defaultMaterial = defaultRef is ResourceRefValue
+              ? realizer.material(defaultRef.id)
+              : mesh.primitives[primitiveIndex.value].material;
+          final materialsByVariant = <int, Material>{};
+          for (final mapping in materials.values.entries) {
+            final variantIndex = int.tryParse(mapping.key);
+            final ref = mapping.value;
+            if (variantIndex == null || ref is! ResourceRefValue) continue;
+            materialsByVariant[variantIndex] = realizer.material(ref.id);
+          }
+          bindings.add(
+            MaterialsVariantBinding(
+              node: node,
+              primitiveIndex: primitiveIndex.value,
+              defaultMaterial: defaultMaterial,
+              materialsByVariant: materialsByVariant,
+            ),
           );
-          continue;
         }
-        final primitive = mesh.primitives[primitiveIndex.value];
-        final materialsByVariant = <int, Material>{};
-        for (final mapping in materials.values.entries) {
-          final variantIndex = int.tryParse(mapping.key);
-          final ref = mapping.value;
-          if (variantIndex == null || ref is! ResourceRefValue) continue;
-          materialsByVariant[variantIndex] = realizer.material(ref.id);
-        }
-        bindings.add(
-          MaterialsVariantBinding(
-            node: node,
-            primitive: primitive,
-            defaultMaterial: primitive.material,
-            materialsByVariant: materialsByVariant,
-          ),
-        );
+      }
+      if (selected != null && variants.contains(selected)) {
+        component.select(selected);
+      } else {
+        // Bindings may target primitives that currently carry a stale
+        // material (a reload while selected); re-apply the defaults.
+        component.reapply();
       }
     });
     return component;
@@ -998,9 +1020,7 @@ class MaterialsVariantsCodec extends ComponentCodec {
     final bindings = <PropertyValue>[];
     for (final binding in component.internalBindings) {
       final nodeId = nodeFsceneId(binding.node);
-      final mesh = binding.node.mesh;
-      final primitiveIndex = mesh?.primitives.indexOf(binding.primitive) ?? -1;
-      if (nodeId == null || primitiveIndex < 0) {
+      if (nodeId == null || binding.resolvePrimitive() == null) {
         debugPrint(
           'fscene: materialsVariants binding not serialized; its node was '
           'not realized from this document',
@@ -1016,29 +1036,35 @@ class MaterialsVariantsCodec extends ComponentCodec {
         if (materialId == null) continue;
         materials['${entry.key}'] = ResourceRefValue(materialId);
       }
+      final defaultId = _resourceSerializer._serializeResource(
+        binding.defaultMaterial,
+        context,
+      );
       bindings.add(
         MapValue({
           'node': NodeRefValue(nodeId),
-          'primitive': IntValue(primitiveIndex),
+          'primitive': IntValue(binding.primitiveIndex),
+          if (defaultId != null) 'default': ResourceRefValue(defaultId),
           'materials': MapValue(materials),
         }),
       );
     }
+    final selected = component.selected;
     return ComponentSpec(
       type,
       properties: {
         'variants': ListValue([
           for (final name in component.variants) StringValue(name),
         ]),
+        if (selected != null) 'selected': StringValue(selected),
         'bindings': ListValue(bindings),
       },
     );
   }
 
-  static Iterable<String> _stringList(PropertyValue? value) sync* {
-    if (value is! ListValue) return;
-    for (final entry in value.values) {
-      if (entry is StringValue) yield entry.value;
-    }
-  }
+  static List<String> _stringList(PropertyValue? value) => [
+    if (value is ListValue)
+      for (final entry in value.values)
+        if (entry is StringValue) entry.value,
+  ];
 }

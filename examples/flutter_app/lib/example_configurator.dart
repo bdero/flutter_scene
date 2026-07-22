@@ -37,12 +37,19 @@ const String _kShoeUrl =
     'Models/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb';
 const int _kShoeSizeBytes = 7833592;
 
+/// A colorway pairing the shoe's declared variant with swatch and lighting
+/// accent colors.
+typedef _Colorway = ({
+  String name,
+  String label,
+  Color swatch,
+  Color rimLeft,
+  Color rimRight,
+});
+
 /// The shoe's declared variants, with swatch colors for the chips and the
 /// accent colors the lighting rig glides to.
-const List<
-  ({String name, String label, Color swatch, Color rimLeft, Color rimRight})
->
-_kColorways = [
+const List<_Colorway> _kColorways = [
   (
     name: 'midnight',
     label: 'Midnight',
@@ -76,9 +83,9 @@ class _TurntableComponent extends Component {
 
   @override
   void update(double deltaSeconds) {
-    node.localTransform =
-        node.localTransform *
-        vm.Matrix4.rotationY(radiansPerSecond * deltaSeconds);
+    // In place, so the per-frame path allocates nothing.
+    node.localTransform.rotateY(radiansPerSecond * deltaSeconds);
+    node.markTransformDirty();
   }
 }
 
@@ -92,8 +99,12 @@ class _ColorGlideComponent extends Component {
 
   @override
   void update(double deltaSeconds) {
+    // Component-wise in place, so the per-frame path allocates nothing.
     final blend = 1.0 - exp(-deltaSeconds * 6.0);
-    light.color.setFrom(light.color + (target - light.color) * blend);
+    final color = light.color;
+    color.x += (target.x - color.x) * blend;
+    color.y += (target.y - color.y) * blend;
+    color.z += (target.z - color.z) * blend;
   }
 }
 
@@ -112,9 +123,11 @@ class _RingPulseComponent extends Component {
   void update(double deltaSeconds) {
     _elapsed += deltaSeconds;
     final blend = 1.0 - exp(-deltaSeconds * 6.0);
-    _eased.setFrom(_eased + (target - _eased) * blend);
+    _eased.x += (target.x - _eased.x) * blend;
+    _eased.y += (target.y - _eased.y) * blend;
+    _eased.z += (target.z - _eased.z) * blend;
     final pulse = 0.8 + 0.2 * sin(_elapsed * 1.8);
-    material.baseColorFactor = vm.Vector4(
+    material.baseColorFactor.setValues(
       _eased.x * pulse,
       _eased.y * pulse,
       _eased.z * pulse,
@@ -216,10 +229,7 @@ class ExampleConfiguratorState extends State<ExampleConfigurator> {
     }
   }
 
-  void _selectColorway(
-    ({String name, String label, Color swatch, Color rimLeft, Color rimRight})
-    colorway,
-  ) {
+  void _selectColorway(_Colorway colorway) {
     setState(() => _variant = colorway.name);
     // Retarget the engine-side glides; they ease over the next frames.
     _rimLeftGlide.target = _colorToVec3(colorway.rimLeft);
@@ -252,7 +262,7 @@ class ExampleConfiguratorState extends State<ExampleConfigurator> {
             );
           },
           children: [
-            // Key light: warm, shadow casting, above front-left.
+            // Warm shadow-casting key light above front-left.
             SceneNode(
               position: vm.Vector3(1.3, 3.3, -1.9),
               components: [SpotLightComponent(_keyLight)],
@@ -326,7 +336,7 @@ class ExampleConfiguratorState extends State<ExampleConfigurator> {
           const SizedBox(height: 12),
           Text(
             'Downloading shoe model '
-            '(${(_downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} / '
+            '(${(_downloadedBytes / (1024 * 1024)).toStringAsFixed(1)} of '
             '${(_kShoeSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB)',
           ),
         ],

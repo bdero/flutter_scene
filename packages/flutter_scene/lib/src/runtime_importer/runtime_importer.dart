@@ -265,7 +265,7 @@ void _populateNode({
         variantBindings.add(
           MaterialsVariantBinding(
             node: engineNode,
-            primitive: primitive,
+            primitiveIndex: primitives.length,
             defaultMaterial: material,
             materialsByVariant: {
               for (final entry in p.variantMappings.entries)

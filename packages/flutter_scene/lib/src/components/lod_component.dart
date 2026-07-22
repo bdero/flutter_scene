@@ -76,10 +76,10 @@ class LodComponent extends MeshComponent {
   set lodBias(double value) => _selection.lodBias = value;
 
   @override
-  void onMount() {
-    super.onMount();
-    // Tag the item the base class just registered so the encoder selects a
-    // level per view instead of drawing the highest-detail fallback.
+  void onRenderItemsRegistered() {
+    // Tag the items the base class just registered so the encoder selects a
+    // level per view instead of drawing the highest-detail fallback. Runs on
+    // every re-registration, so the tags survive material refreshes.
     for (final item in renderItems) {
       item.lod = _selection;
     }

@@ -59,6 +59,10 @@ class ExampleAnimationState extends State<ExampleAnimation> {
               );
             },
             onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
+            // Gating on a loadingBuilder holds the reveal until the
+            // declarative model below has loaded.
+            loadingBuilder: (context, progress) =>
+                const Center(child: CircularProgressIndicator()),
             children: [
               SceneModel(
                 'assets_src/dash.glb',

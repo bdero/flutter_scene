@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/node.dart';
 
 /// An engine [Component] that places a [PointLight] in the scene.
 ///
@@ -37,4 +38,9 @@ class PointLightComponent extends Component {
   /// The light's world-space position: the owning node's world-space
   /// translation.
   Vector3 get worldPosition => node.globalTransform.getTranslation();
+
+  /// Clones carry the light, sharing the light object like other clone
+  /// payloads (geometry, materials).
+  @override
+  Component? cloneFor(Node cloneOwner) => PointLightComponent(light);
 }

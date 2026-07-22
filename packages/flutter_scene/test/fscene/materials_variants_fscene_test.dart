@@ -29,7 +29,7 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:test/test.dart';
 
-/// KHR_materials_variants through the `.fscene` document pipeline: the glTF
+/// KHR_materials_variants through the `.fscene` document pipeline. The glTF
 /// importer emits a `materialsVariants` component, it survives the JSON
 /// round-trip, and the codec realizes and serializes it (GPU-free via fake
 /// materials).
@@ -221,13 +221,18 @@ void main() {
         final resource = document.resources[(value as ResourceRefValue).id];
         expect(resource, isA<MaterialResource>());
       }
-      // Variant 0 maps the same material the mesh uses as its default.
+      // Variant 0 maps the same material the mesh uses as its default, and
+      // the authored default is serialized explicitly so a save made while a
+      // variant is selected keeps it.
       final meshComponent = rootSpec.components.firstWhere(
         (c) => c.type == 'mesh',
       );
+      final meshMaterialId =
+          (meshComponent.properties['material'] as ResourceRefValue).id;
+      expect((materials.values['0'] as ResourceRefValue).id, meshMaterialId);
       expect(
-        (materials.values['0'] as ResourceRefValue).id,
-        (meshComponent.properties['material'] as ResourceRefValue).id,
+        (binding.values['default'] as ResourceRefValue).id,
+        meshMaterialId,
       );
     });
 
@@ -290,25 +295,84 @@ void main() {
       final component =
           MaterialsVariantsCodec().realize(spec, context)
               as MaterialsVariantsComponent;
-      // Bindings resolve only after the deferred pass runs.
+      // Bindings resolve only after the deferred pass runs; a selection made
+      // before that is re-applied by the pass.
       component.select('beta');
       expect(identical(primitive.material, defaultMaterial), isTrue);
 
       context.runAfterRealize();
-      component.select('beta');
       expect(identical(primitive.material, betaMaterial), isTrue);
       component.select(null);
       expect(identical(primitive.material, defaultMaterial), isTrue);
     });
 
-    test('serializes variants, node ref, primitive index, and materials', () {
+    test('a serialized selection re-applies after realize', () {
+      final document = SceneDocument();
+      final nodeId = document.newId();
+      final defaultId = document.newId();
+      final betaId = document.newId();
+
+      final defaultMaterial = _FakeMaterial('default');
+      final betaMaterial = _FakeMaterial('beta');
+      final primitive = MeshPrimitive(_FakeGeometry(), defaultMaterial);
+      final liveNode = tagNodeId(
+        Node(name: 'tri')..mesh = Mesh.primitives(primitives: [primitive]),
+        nodeId,
+      );
+
+      final context = RealizeContext(
+        document,
+        resources: _FakeRealizer({
+          defaultId: defaultMaterial,
+          betaId: betaMaterial,
+        }),
+      );
+      context.resolveNode = (id) => id == nodeId ? liveNode : null;
+
+      final spec = ComponentSpec(
+        'materialsVariants',
+        properties: {
+          'variants': ListValue([StringValue('alpha'), StringValue('beta')]),
+          'selected': StringValue('beta'),
+          'bindings': ListValue([
+            MapValue({
+              'node': NodeRefValue(nodeId),
+              'primitive': const IntValue(0),
+              'default': ResourceRefValue(defaultId),
+              'materials': MapValue({'1': ResourceRefValue(betaId)}),
+            }),
+          ]),
+        },
+      );
+
+      final component =
+          MaterialsVariantsCodec().realize(spec, context)
+              as MaterialsVariantsComponent;
+      context.runAfterRealize();
+      expect(component.selected, 'beta');
+      expect(identical(primitive.material, betaMaterial), isTrue);
+      // The serialized default wins over the primitive's current material,
+      // so deselecting restores the authored default.
+      component.select(null);
+      expect(identical(primitive.material, defaultMaterial), isTrue);
+    });
+
+    test('serializes variants, node ref, primitive index, default material, '
+        'and the active selection', () {
       final source = SceneDocument();
       final nodeId = source.newId();
+      final defaultResource = source.addResource(
+        MaterialResource(source.newId(), type: 'physicallyBased', name: 'd'),
+      );
       final betaResource = source.addResource(
         MaterialResource(source.newId(), type: 'physicallyBased', name: 'b'),
       );
 
-      final defaultMaterial = _FakeMaterial('default');
+      final defaultMaterial = tagResourceOrigin(
+        _FakeMaterial('default'),
+        source,
+        defaultResource.id,
+      );
       final betaMaterial = tagResourceOrigin(
         _FakeMaterial('beta'),
         source,
@@ -324,12 +388,12 @@ void main() {
         [
           MaterialsVariantBinding(
             node: liveNode,
-            primitive: primitive,
+            primitiveIndex: 0,
             defaultMaterial: defaultMaterial,
             materialsByVariant: {1: betaMaterial},
           ),
         ],
-      );
+      )..select('beta');
 
       final dest = SceneDocument();
       final spec = MaterialsVariantsCodec().serialize(
@@ -342,15 +406,21 @@ void main() {
         [for (final v in variants.values) (v as StringValue).value],
         ['alpha', 'beta'],
       );
+      expect((spec.properties['selected'] as StringValue).value, 'beta');
       final binding =
           (spec.properties['bindings'] as ListValue).values.single as MapValue;
       expect((binding.values['node'] as NodeRefValue).id, nodeId);
       expect((binding.values['primitive'] as IntValue).value, 0);
       final materials = binding.values['materials'] as MapValue;
       expect(materials.values.keys.toList(), ['1']);
-      // The variant material was copied into the destination document.
-      final copiedId = (materials.values['1'] as ResourceRefValue).id;
-      expect(dest.resources[copiedId], isA<MaterialResource>());
+      // The variant and default materials were copied into the destination
+      // document; even while 'beta' is selected, the serialized default is
+      // the authored one.
+      final copiedVariantId = (materials.values['1'] as ResourceRefValue).id;
+      expect(dest.resources[copiedVariantId], isA<MaterialResource>());
+      final copiedDefaultId =
+          (binding.values['default'] as ResourceRefValue).id;
+      expect((dest.resources[copiedDefaultId] as MaterialResource?)?.name, 'd');
     });
   });
 }

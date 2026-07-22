@@ -1238,6 +1238,10 @@ base class Scene implements SceneGraph {
             (staticShadowSignature * 31 +
                 identityHashCode(item.geometry) +
                 identityHashCode(item.instanceTransforms) +
+                // Material identity matters to the depth pass (alpha-masked
+                // casters render through the masked depth shader), so a
+                // swapped material must invalidate cached static tiles.
+                identityHashCode(item.material) +
                 t[12].hashCode * 3 +
                 t[13].hashCode * 7 +
                 t[14].hashCode * 13);
