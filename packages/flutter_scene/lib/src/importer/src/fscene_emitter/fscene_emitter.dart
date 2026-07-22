@@ -31,6 +31,7 @@ import '../../../fscene/scene_document.dart';
 import '../../../fscene/specs.dart';
 import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/ktx2_image.dart';
+import '../../../texture/mipmap.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
 import '../gltf/primitive_packer.dart';
@@ -80,14 +81,16 @@ SceneDocument buildSceneDocument(
 
   // Textures, then materials (which reference textures), then mesh geometry
   // (which references materials).
+  final textureContents = _textureContents(doc);
   final textureIds = [
-    for (final texture in doc.textures)
+    for (var i = 0; i < doc.textures.length; i++)
       _buildTexture(
         document,
-        texture,
+        doc.textures[i],
         doc,
         bufferData,
         compressTextures: compressTextures,
+        content: textureContents[i],
       ),
   ];
   final materialIds = [
@@ -608,12 +611,49 @@ void _addTexture(
   if (id != null) properties[key] = ResourceRefValue(id);
 }
 
+/// The downsample rule for each glTF texture, derived from the material slots
+/// referencing it. A texture shared across slot kinds takes the highest
+/// priority interpretation (normal > color > data); unreferenced textures
+/// default to color.
+List<TextureContent> _textureContents(GltfDocument doc) {
+  const priority = {
+    TextureContent.data: 0,
+    TextureContent.color: 1,
+    TextureContent.normal: 2,
+  };
+  final contents = List<TextureContent>.filled(
+    doc.textures.length,
+    TextureContent.color,
+  );
+  final marked = List<bool>.filled(doc.textures.length, false);
+  void mark(GltfTextureInfo? info, TextureContent content) {
+    final index = info?.index;
+    if (index == null || index < 0 || index >= contents.length) return;
+    if (marked[index] && priority[contents[index]]! >= priority[content]!) {
+      return;
+    }
+    marked[index] = true;
+    contents[index] = content;
+  }
+
+  for (final material in doc.materials) {
+    final pbr = material.pbrMetallicRoughness;
+    mark(pbr?.baseColorTexture, TextureContent.color);
+    mark(material.emissiveTexture, TextureContent.color);
+    mark(material.normalTexture, TextureContent.normal);
+    mark(pbr?.metallicRoughnessTexture, TextureContent.data);
+    mark(material.occlusionTexture, TextureContent.data);
+  }
+  return contents;
+}
+
 LocalId? _buildTexture(
   SceneDocument document,
   GltfTexture texture,
   GltfDocument doc,
   Uint8List bufferData, {
   bool compressTextures = false,
+  TextureContent content = TextureContent.color,
 }) {
   if (texture.source == null || texture.source! >= doc.images.length) {
     return null;
@@ -632,13 +672,9 @@ LocalId? _buildTexture(
       final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
       // sRGB needs no per-role handling here: the engine linearizes sRGB in
       // the fragment shaders (SRGBToLinear on the sampled base color), so
-      // every texture uploads as a non-sRGB format regardless of role and
-      // the compressed path matches the uncompressed one.
-      // TODO(texture-compression): set generateMips once the GPU upload uploads
-      // the full chain (see compressed_texture.dart); today the upload uses the
-      // base level only, so storing mips would just bloat the container. Mip
-      // downsampling should then be gamma-correct for base-color (sRGB) roles,
-      // which is where knowing the texture's material slot becomes relevant.
+      // every texture uploads as a non-sRGB format regardless of role. The
+      // role ([content]) only steers mip downsampling, which must average
+      // sRGB color in linear light and renormalize normals.
       // ASTC 4x4 (the compressed format) requires both dimensions to be a
       // multiple of the 4x4 block size; a non-aligned compressed texture is
       // rejected at GPU load and shows a placeholder. Fall back to uncompressed
@@ -652,6 +688,8 @@ LocalId? _buildTexture(
               raw,
               rgba.width,
               rgba.height,
+              generateMips: true,
+              content: content,
               supercompress: true,
             )
           : raw;

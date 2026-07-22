@@ -483,8 +483,9 @@ class ResourceRealizer {
   // Resolves a texture property to either a gpu.Texture or, when the ref
   // points at a render-texture resource, the live RenderTexture handle
   // (material slots accept both).
-  // TODO(mipmaps): route offline (.fscene) textures through Texture2D so they
-  // get mipmaps too, like the runtime importer.
+  // TODO(mipmaps): route offline rgba8 payload textures through Texture2D so
+  // they get mipmaps too; ktx2 payloads already carry their chain
+  // in-container.
   TextureSource? _textureRef(Map<String, PropertyValue> p, String key) {
     final v = p[key];
     if (v is! ResourceRefValue) return null;

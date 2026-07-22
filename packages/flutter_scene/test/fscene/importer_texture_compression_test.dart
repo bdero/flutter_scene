@@ -60,6 +60,28 @@ void main() {
       expect(compressed.length, lessThan(plain.length));
     });
 
+    test('ktx2 payloads carry the engine mip chain', () {
+      final glb = load();
+      if (glb == null) return;
+
+      final document = readFsceneb(
+        importGlbToFscenebBytes(glb, compressTextures: true),
+      );
+      for (final payload in _imagePayloads(document)) {
+        final texture = readKtx2(payload.bytes!);
+        expect(
+          texture.levels,
+          hasLength(engineMipLevelCount(payload.width!, payload.height!)),
+        );
+        for (var level = 0; level < texture.levels.length; level++) {
+          final size = mipSize(payload.width!, payload.height!, level);
+          final decoded = decodeKtx2Level(texture, level: level);
+          expect(decoded.width, size.width);
+          expect(decoded.height, size.height);
+        }
+      }
+    });
+
     test('ktx2 payloads decode back to the source image dimensions', () {
       final glb = load();
       if (glb == null) return;

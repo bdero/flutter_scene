@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/texture/block/universal_block.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
+import 'package:flutter_scene/src/texture/mipmap.dart';
 import 'package:flutter_scene/src/texture/supercompress/lz.dart';
 
 /// Key/value marker naming the block payload format inside our KTX2 files.
@@ -41,13 +42,15 @@ int _levelBlockBytes(int width, int height, int level) {
 }
 
 /// Encodes [width] x [height] rgba8 pixels into a KTX2 texture holding our 4x4
-/// block payload. When [generateMips] is set, a full box-filtered mip chain is
-/// built and each level encoded.
+/// block payload. When [generateMips] is set, a mip chain is built with the
+/// downsample appropriate for [content] (sRGB color averages in linear light,
+/// normals renormalize) and each level encoded.
 Ktx2Texture encodeImageToKtx2(
   Uint8List rgba,
   int width,
   int height, {
   bool generateMips = false,
+  TextureContent content = TextureContent.color,
   bool supercompress = false,
 }) {
   if (rgba.length < width * height * 4) {
@@ -63,15 +66,10 @@ Ktx2Texture encodeImageToKtx2(
   final blockLevels = <Uint8List>[encodeUniversalBlocks(rgba, width, height)];
   if (generateMips) {
     final levelCount = engineMipLevelCount(width, height);
-    var w = width, h = height;
-    var src = rgba;
+    final chain = generateMipChain(rgba, width, height, content);
     for (var level = 1; level < levelCount; level++) {
-      final nw = math.max(1, w >> 1);
-      final nh = math.max(1, h >> 1);
-      src = _downsampleBox(src, w, h, nw, nh);
-      blockLevels.add(encodeUniversalBlocks(src, nw, nh));
-      w = nw;
-      h = nh;
+      final mip = chain[level];
+      blockLevels.add(encodeUniversalBlocks(mip.pixels, mip.width, mip.height));
     }
   }
   final levels = [
@@ -109,6 +107,7 @@ Uint8List encodeImageToKtx2Bytes(
   int width,
   int height, {
   bool generateMips = false,
+  TextureContent content = TextureContent.color,
   bool supercompress = false,
 }) => writeKtx2(
   encodeImageToKtx2(
@@ -116,6 +115,7 @@ Uint8List encodeImageToKtx2Bytes(
     width,
     height,
     generateMips: generateMips,
+    content: content,
     supercompress: supercompress,
   ),
 );
@@ -184,36 +184,4 @@ Uint8List _levelPayload(Ktx2Texture texture, int level) {
     stored,
     _levelBlockBytes(texture.pixelWidth, texture.pixelHeight, level),
   );
-}
-
-/// Box-filters [src] (rgba8, [sw] x [sh]) down to [dw] x [dh].
-// TODO(texture-compression): do gamma-correct downsampling for sRGB base color
-// (decode to linear, average, re-encode) instead of averaging in sRGB.
-Uint8List _downsampleBox(Uint8List src, int sw, int sh, int dw, int dh) {
-  final out = Uint8List(dw * dh * 4);
-  for (var y = 0; y < dh; y++) {
-    final y0 = y * sh ~/ dh;
-    final y1 = math.max(y0 + 1, (y + 1) * sh ~/ dh);
-    for (var x = 0; x < dw; x++) {
-      final x0 = x * sw ~/ dw;
-      final x1 = math.max(x0 + 1, (x + 1) * sw ~/ dw);
-      var r = 0, g = 0, b = 0, a = 0, n = 0;
-      for (var sy = y0; sy < y1; sy++) {
-        for (var sx = x0; sx < x1; sx++) {
-          final i = (sy * sw + sx) * 4;
-          r += src[i];
-          g += src[i + 1];
-          b += src[i + 2];
-          a += src[i + 3];
-          n++;
-        }
-      }
-      final o = (y * dw + x) * 4;
-      out[o] = r ~/ n;
-      out[o + 1] = g ~/ n;
-      out[o + 2] = b ~/ n;
-      out[o + 3] = a ~/ n;
-    }
-  }
-  return out;
 }
