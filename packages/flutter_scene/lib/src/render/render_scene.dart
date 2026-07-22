@@ -87,6 +87,11 @@ class RenderItem {
   /// draws only highlighted items, using this as the mask color.
   Vector4? highlightColor;
 
+  /// Index into [RenderScene.items] while registered, or `-1`. Maintained
+  /// by [RenderScene.add] and [RenderScene.remove] so unregistering is a
+  /// swap removal instead of a list scan.
+  int sceneSlot = -1;
+
   /// Per-instance model transforms, or `null` for a non-instanced item.
   ///
   /// When set, this item draws [geometry] / [material] once per entry,
@@ -307,12 +312,20 @@ class RenderScene {
   bool _boundsDirty = false;
 
   void add(RenderItem item) {
+    item.sceneSlot = items.length;
     items.add(item);
     _structureDirty = true;
   }
 
   void remove(RenderItem item) {
-    items.remove(item);
+    final slot = item.sceneSlot;
+    if (slot < 0) return;
+    final last = items.removeLast();
+    if (!identical(last, item)) {
+      items[slot] = last;
+      last.sceneSlot = slot;
+    }
+    item.sceneSlot = -1;
     _structureDirty = true;
   }
 
