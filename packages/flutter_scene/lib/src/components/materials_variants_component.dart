@@ -1,21 +1,27 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/mesh.dart';
+import 'package:flutter_scene/src/node.dart';
 
 /// One primitive's material choices under `KHR_materials_variants`.
 ///
 /// Holds the primitive's default material and its per-variant alternates so
-/// [MaterialsVariantsComponent.select] can swap them in place.
+/// [MaterialsVariantsComponent.select] can swap them in place. [node] is the
+/// node whose mesh owns [primitive], so the swap can refresh its registered
+/// render items.
 @internal
 class MaterialsVariantBinding {
   MaterialsVariantBinding({
+    required this.node,
     required this.primitive,
     required this.defaultMaterial,
     required this.materialsByVariant,
   });
 
+  final Node node;
   final MeshPrimitive primitive;
   final Material defaultMaterial;
 
@@ -75,6 +81,7 @@ class MaterialsVariantsComponent extends Component {
       for (final binding in _bindings) {
         binding.primitive.material = binding.defaultMaterial;
       }
+      _refreshRenderItems();
       return;
     }
     final index = variants.indexOf(name);
@@ -89,6 +96,19 @@ class MaterialsVariantsComponent extends Component {
     for (final binding in _bindings) {
       binding.primitive.material =
           binding.materialsByVariant[index] ?? binding.defaultMaterial;
+    }
+    _refreshRenderItems();
+  }
+
+  // Render items capture materials at registration, so mounted meshes must
+  // re-register for a swap to take effect on screen.
+  void _refreshRenderItems() {
+    final seen = <Node>{};
+    for (final binding in _bindings) {
+      if (!seen.add(binding.node)) continue;
+      for (final meshComponent in binding.node.getComponents<MeshComponent>()) {
+        meshComponent.refreshMaterials();
+      }
     }
   }
 }

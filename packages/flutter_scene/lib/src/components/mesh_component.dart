@@ -62,6 +62,20 @@ class MeshComponent extends Component {
     }
   }
 
+  /// Re-registers the render items so a changed [MeshPrimitive.material]
+  /// takes effect.
+  ///
+  /// Render items capture the primitive's material when registered, so
+  /// mutating `primitive.material` on a mounted mesh is invisible until the
+  /// items are rebuilt. Re-registering also re-buckets items whose new
+  /// material changes translucency. No-op while unmounted (mounting
+  /// registers fresh items).
+  @internal
+  void refreshMaterials() {
+    _unregisterRenderItems();
+    _registerRenderItems();
+  }
+
   void _unregisterRenderItems() {
     // Guard on attachment, not mount state: [Component.unmount] clears
     // the mounted flag before invoking [onUnmount], so checking

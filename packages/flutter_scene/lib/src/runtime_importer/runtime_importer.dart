@@ -264,6 +264,7 @@ void _populateNode({
         // default material index reuses the default instance.
         variantBindings.add(
           MaterialsVariantBinding(
+            node: engineNode,
             primitive: primitive,
             defaultMaterial: material,
             materialsByVariant: {
