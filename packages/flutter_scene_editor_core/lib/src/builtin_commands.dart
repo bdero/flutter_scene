@@ -989,6 +989,7 @@ final setMaterialProperties = CommandEntry(
     final merged = MaterialResource(
       existing.id,
       type: existing.type,
+      name: existing.name,
       properties: {
         ...existing.properties,
         ...optionalPropertyMap(params, 'properties'),

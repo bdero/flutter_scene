@@ -72,7 +72,12 @@ LocalId copyResourceInto(
           wrap: wrap,
         ),
       );
-    case MaterialResource(:final type, :final properties, :final asset):
+    case MaterialResource(
+      :final type,
+      :final name,
+      :final properties,
+      :final asset,
+    ):
       for (final value in properties.values) {
         if (value is! ResourceRefValue) continue;
         final referenced = source.resource(value.id);
@@ -85,6 +90,7 @@ LocalId copyResourceInto(
         MaterialResource(
           resourceId,
           type: type,
+          name: name,
           properties: Map<String, PropertyValue>.of(properties),
           asset: asset,
         ),

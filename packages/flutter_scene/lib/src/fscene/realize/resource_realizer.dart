@@ -229,7 +229,7 @@ class ResourceRealizer {
     if (asset == null) {
       debugPrint('fscene: fmat material ${res.id} has no asset; using unlit');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties),
+        _unlit(res.properties)..name = res.name,
         document,
         res.id,
       );
@@ -237,6 +237,7 @@ class ResourceRealizer {
     }
     try {
       final material = await loadFmatMaterial(asset.key, bundle: bundle);
+      material.name = res.name;
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.
       applyFmatParameterOverrides(
@@ -248,7 +249,7 @@ class ResourceRealizer {
     } catch (e) {
       debugPrint('fscene: failed to load fmat ${res.id} ("${asset.key}"): $e');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties),
+        _unlit(res.properties)..name = res.name,
         document,
         res.id,
       );
@@ -403,6 +404,10 @@ class ResourceRealizer {
     if (res is! MaterialResource) {
       throw FsceneFormatException('Resource $id is not a material');
     }
+    return _materialForType(res)..name = res.name;
+  }
+
+  Material _materialForType(MaterialResource res) {
     switch (res.type) {
       case 'unlit':
         return _unlit(res.properties);

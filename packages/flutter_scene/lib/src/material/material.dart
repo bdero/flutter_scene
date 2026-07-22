@@ -159,6 +159,12 @@ abstract class Material {
     return Future<void>.value();
   }
 
+  /// The name of this material, used for identification.
+  ///
+  /// The importers set it from the source asset's material name; empty when
+  /// the source material is unnamed or the material was created directly.
+  String name = '';
+
   /// Whether to render both faces of triangles drawn with this material
   /// (glTF's `material.doubleSided`). When true, [bind] disables back-face
   /// culling so the geometry is visible from both sides; otherwise back faces

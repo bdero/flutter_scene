@@ -526,6 +526,7 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
       MaterialResource() => MaterialResource(
         remap(r.id),
         type: r.type,
+        name: r.name,
         properties: _remapProperties(r.properties, remap),
         asset: r.asset,
       ),
