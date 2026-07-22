@@ -108,6 +108,8 @@ export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
 export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
+export 'src/components/materials_variants_component.dart'
+    show MaterialsVariantsComponent;
 export 'src/components/point_light_component.dart' show PointLightComponent;
 export 'src/components/semantics_component.dart' show SemanticsComponent;
 export 'src/components/splat_component.dart' show SplatComponent;
@@ -215,6 +217,17 @@ export 'src/skybox.dart'
     show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox, SunSky;
 export 'src/sun_light.dart' show SunLight;
 export 'src/surface.dart' show Surface;
+export 'src/widgets/declarative.dart'
+    show
+        AssetModelSource,
+        MemoryModelSource,
+        SceneMesh,
+        SceneModel,
+        SceneModelSource,
+        SceneNode,
+        SceneNodeController,
+        SceneNodeHost,
+        SceneSubtree;
 export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
     show
