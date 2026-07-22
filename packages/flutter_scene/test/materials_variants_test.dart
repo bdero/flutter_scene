@@ -4,6 +4,8 @@ import 'package:flutter_scene/src/components/materials_variants_component.dart'
     show MaterialsVariantBinding;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/gltf.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/render_scene.dart' show RenderScene;
 import 'package:test/test.dart';
 
 /// KHR_materials_variants: parsing (pure data, no GPU) and the selection
@@ -120,6 +122,8 @@ void main() {
     late _FakeMaterial beachA;
     late MeshPrimitive primitiveA;
     late MeshPrimitive primitiveB;
+    late Node nodeA;
+    late Node nodeB;
     late MaterialsVariantsComponent component;
 
     setUp(() {
@@ -128,16 +132,20 @@ void main() {
       beachA = _FakeMaterial('beachA');
       primitiveA = MeshPrimitive(_FakeGeometry(), defaultA);
       primitiveB = MeshPrimitive(_FakeGeometry(), defaultB);
+      nodeA = Node()..mesh = Mesh.primitives(primitives: [primitiveA]);
+      nodeB = Node()..mesh = Mesh.primitives(primitives: [primitiveB]);
       component = MaterialsVariantsComponent.internal(
         ['midnight', 'beach'],
         [
           MaterialsVariantBinding(
+            node: nodeA,
             primitive: primitiveA,
             defaultMaterial: defaultA,
             materialsByVariant: {0: defaultA, 1: beachA},
           ),
           // primitiveB only maps variant 0; 'beach' leaves it on its default.
           MaterialsVariantBinding(
+            node: nodeB,
             primitive: primitiveB,
             defaultMaterial: defaultB,
             materialsByVariant: {0: defaultB},
@@ -172,6 +180,22 @@ void main() {
 
     test('variants list is unmodifiable', () {
       expect(() => component.variants.add('x'), throwsUnsupportedError);
+    });
+
+    test('select refreshes a mounted mesh\'s render items', () {
+      // Render items capture the material at registration; a variant swap on
+      // a live scene must re-register so the new material actually draws.
+      final renderScene = RenderScene();
+      nodeA.debugMountInto(renderScene);
+      expect(renderScene.items, hasLength(1));
+      expect(identical(renderScene.items.single.material, defaultA), isTrue);
+
+      component.select('beach');
+      expect(renderScene.items, hasLength(1));
+      expect(identical(renderScene.items.single.material, beachA), isTrue);
+
+      component.select(null);
+      expect(identical(renderScene.items.single.material, defaultA), isTrue);
     });
   });
 
