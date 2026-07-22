@@ -62,9 +62,10 @@ DecodedHdr decodeOpenExr(Uint8List bytes, {int? maxWidth}) {
 }
 
 // Rejects an EXR whose channels are not 16-bit half, since the underlying
-// decoder mis-reads 32-bit-float and uint channels. Best-effort: parses only
-// the channel list, and stays silent if the header does not parse cleanly (the
-// decoder then reports any real problem).
+// decoder mis-reads 32-bit-float and uint channels. Best-effort, it parses
+// only the first header's channel list (enough for single-part files, the
+// common HDRI case) and stays silent when the header does not parse cleanly,
+// letting the decoder report any real problem.
 void _requireHalfChannels(Uint8List bytes) {
   var pos = 8; // skip the 4-byte magic and 4-byte version.
   String readString() {
@@ -93,6 +94,11 @@ void _requireHalfChannels(Uint8List bytes) {
       if (name.isEmpty) return; // end of header, no channel list seen.
       readString(); // attribute type.
       final size = readInt32();
+      if (size < 0 || size > bytes.length - pos) {
+        // A corrupt size (readInt32 is signed) could otherwise walk pos
+        // backward and loop forever; bail and let the decoder report it.
+        return;
+      }
       if (name != 'channels') {
         pos += size; // skip other attributes.
         continue;

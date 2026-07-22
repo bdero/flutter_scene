@@ -39,7 +39,6 @@ import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
-import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -1259,8 +1258,9 @@ class EditorController extends ChangeNotifier {
   final Map<String, EnvironmentMap> _diskEnvCache = {};
 
   // The environment-asset loader handed to the realizer and to realizeStage, so
-  // an AssetEnvironment that resolves to a file on disk (an imported `.hdr` or
-  // LDR equirect) is decoded and prefiltered as part of the environment's own
+  // an AssetEnvironment that resolves to a file on disk (an imported `.hdr`,
+  // `.exr`, or LDR equirect) is decoded and prefiltered as part of the
+  // environment's own
   // realization. Returns null for an asset not on disk, so the realizer falls
   // back to the asset bundle (the in-bundle example assets). The realizer sets
   // EnvironmentMap.radianceCubeSize around this call, so the built cube honors
@@ -1273,22 +1273,13 @@ class EditorController extends ChangeNotifier {
     if (cached != null) return cached;
     try {
       final bytes = await File(path).readAsBytes();
-      final EnvironmentMap env;
-      if (path.toLowerCase().endsWith('.hdr')) {
-        // Cap the working equirect width; a realtime environment does not need
-        // more, and a 16K source would otherwise upload ~1 GB.
-        const maxEnvironmentWidth = 4096;
-        final hdr = decodeRadianceHdr(bytes, maxWidth: maxEnvironmentWidth);
-        env = await EnvironmentMap.fromEquirectHdr(
-          linearPixels: hdr.pixels,
-          width: hdr.width,
-          height: hdr.height,
-        );
-      } else {
-        final codec = await ui.instantiateImageCodec(bytes);
-        final frame = await codec.getNextFrame();
-        env = await EnvironmentMap.fromUIImages(radianceImage: frame.image);
-      }
+      // Detects Radiance HDR, OpenEXR, or an LDR image from the bytes and
+      // decodes off the UI isolate. The width cap keeps a 16K source from
+      // uploading ~1 GB; a realtime environment does not need more.
+      final env = await EnvironmentMap.fromEquirectImageBytes(
+        bytes: bytes,
+        maxWidth: 4096,
+      );
       _diskEnvCache[cacheKey] = env;
       return env;
     } catch (e) {

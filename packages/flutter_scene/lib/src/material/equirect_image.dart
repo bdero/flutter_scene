@@ -29,7 +29,7 @@ EquirectImageFormat detectEquirectImageFormat(Uint8List bytes) {
   if (bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x3f) {
     return EquirectImageFormat.radianceHdr;
   }
-  // OpenEXR magic number 20000630, little-endian: 0x76 0x2f 0x31 0x01.
+  // The OpenEXR magic number 20000630, little-endian (0x76 0x2f 0x31 0x01).
   if (bytes.length >= 4 &&
       bytes[0] == 0x76 &&
       bytes[1] == 0x2f &&
@@ -60,9 +60,9 @@ DecodedHdr? decodeEquirectHdrImage(Uint8List bytes, {int? maxWidth}) {
 }
 
 /// Box-downsamples an equirect [source] by the smallest integer factor that
-/// brings its width to at most [maxWidth], averaging in linear space
-/// (longitude wraps, latitude clamps at the poles). Returns [source] unchanged
-/// when it is already narrow enough.
+/// brings its width to at most [maxWidth], averaging in linear space. Trailing
+/// rows and columns that do not fill a whole block are dropped. Returns
+/// [source] unchanged when it is already narrow enough.
 DecodedHdr boxDownsampleEquirect(DecodedHdr source, int maxWidth) {
   if (source.width <= maxWidth) return source;
   final factor = (source.width / maxWidth).ceil();

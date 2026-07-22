@@ -15,7 +15,7 @@ import 'package:flutter/foundation.dart';
 /// final loading = ResourceGroup();
 /// final terrain = loading.add(loadScene('terrain.fscene'));
 /// final env = loading.add(
-///   EnvironmentMap.fromAssets(radianceImagePath: 'sky.png'),
+///   EnvironmentMap.fromEquirectImageAsset(assetPath: 'sky.hdr'),
 /// );
 /// loading.addAll([
 ///   Node.fromGlbAsset('player.glb'),

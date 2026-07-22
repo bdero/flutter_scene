@@ -70,8 +70,8 @@ class ExampleCarState extends State<ExampleCar> {
       'assets_src/fcar.glb',
       onReload: _onCarReloaded,
     );
-    final environment = await EnvironmentMap.fromAssets(
-      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+    final environment = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: 'assets/little_paris_eiffel_tower.png',
     );
     if (!mounted) {
       return;
