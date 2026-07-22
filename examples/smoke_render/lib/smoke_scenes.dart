@@ -393,6 +393,20 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _camera());
   }),
+  // Auto exposure pinned at its upper clamp: the mostly-empty background
+  // meters far below the reference luminance, so the adapted factor lands on
+  // exp2(maxEv) on the first (snapped) frame and holds there on every later
+  // frame, deterministically brightening the dimly-lit cuboid. Covers the
+  // whole chain (seed, downsample, adaptation, resolve composite) with a
+  // clamp-pinned value that is robust to small cross-backend metering
+  // differences.
+  SmokeScene('auto_exposure', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.4;
+    scene.autoExposure.enabled = true;
+    scene.add(_cuboid(vm.Vector4(0.30, 0.60, 0.85, 1.0), 0.0, 0.5));
+    return (scene: scene, camera: _camera());
+  }),
   // A procedural anisotropic splat cloud (degree-1 SH) composited around an
   // opaque cuboid, with a crop box carving one side. One scene covers the
   // splat path across backends, the vertex-stage data texture fetch, the EWA

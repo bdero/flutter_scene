@@ -56,6 +56,10 @@ resolve_info;
 
 uniform sampler2D scene_color;
 uniform sampler2D bloom_color;
+// 1x1 auto exposure correction factor in r, produced by the adaptation
+// pass. A white placeholder (factor 1.0) fills the slot when auto exposure
+// is disabled.
+uniform sampler2D exposure_factor;
 
 in vec2 v_uv;
 
@@ -133,7 +137,7 @@ void main() {
     color += texture(bloom_color, uv).rgb * resolve_info.bloom_intensity;
   }
 
-  color *= resolve_info.exposure;
+  color *= resolve_info.exposure * texture(exposure_factor, vec2(0.5, 0.5)).r;
   if (resolve_info.grading_enabled > 0.5) {
     color = ApplyColorGrading(color);
   }

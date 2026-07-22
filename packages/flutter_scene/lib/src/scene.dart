@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
+import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
@@ -25,6 +26,7 @@ import 'environment_settings.dart';
 import 'environment_volume.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
+import 'render/auto_exposure_pass.dart';
 import 'render/bloom_pass.dart';
 import 'render/custom_render_pass.dart';
 import 'render/depth_prepass.dart';
@@ -695,6 +697,17 @@ base class Scene implements SceneGraph {
   /// the camera depth prepass, which it forces while enabled); skipped
   /// otherwise.
   final DepthOfField depthOfField = DepthOfField();
+
+  /// Automatic exposure (eye adaptation). Off by default; set
+  /// [AutoExposureSettings.enabled] to turn it on. Meters the rendered HDR
+  /// image on the GPU each frame and eases a correction factor the resolve
+  /// multiplies with [exposure], so [exposure] stays the artistic base.
+  final AutoExposureSettings autoExposure = AutoExposureSettings();
+
+  // Cross-frame auto exposure adaptation state (the persistent 1x1 factor
+  // ping-pong), created the first enabled frame and dropped when disabled,
+  // so re-enabling starts fresh and snaps to the metered target.
+  AutoExposureState? _autoExposureState;
 
   // Cross-frame cache for the directional light's shadow tiles, created the
   // first frame any visible caster is `shadowStatic` and dropped when none
@@ -1486,6 +1499,21 @@ base class Scene implements SceneGraph {
           time: postTime,
         ),
       );
+    }
+
+    // Auto exposure meters the HDR image the resolve will consume, after
+    // depth of field and the custom effects republish the scene color and
+    // before bloom (bloom feeds off the exposure-independent HDR color and
+    // its own contribution should not drive the metering).
+    if (autoExposure.enabled) {
+      graph.addPass(
+        AutoExposurePass(
+          settings: autoExposure,
+          state: _autoExposureState ??= AutoExposureState(),
+        ),
+      );
+    } else {
+      _autoExposureState = null;
     }
 
     // Bloom runs in HDR before the resolve, which composites it back in.
