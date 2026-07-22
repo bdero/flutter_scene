@@ -21,6 +21,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_overlay.dart';
 import 'example_panel.dart';
 import 'example_settings.dart';
+import 'vfx_textures.dart';
 
 /// A layered CPU-particle campfire at night: flipbook flames (a rolling core
 /// plus fast edge tongues) baked from domain-warped fbm noise with a blackbody
@@ -102,6 +103,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _wind = 0.26;
   double _smokeAmount = 0.25;
   double _emberAmount = 0.4;
+  double _fogAmount = 1.0;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
@@ -114,12 +116,14 @@ class ExampleParticlesState extends State<ExampleParticles> {
   static const double _glowRate = 7.0;
   static const double _smokeRate = 10.0;
   static const double _emberRate = 14.0;
+  static const double _fogRate = 2.2;
 
   late ParticleSystem _coreSystem;
   late ParticleSystem _tongueSystem;
   late ParticleSystem _glowSystem;
   late ParticleSystem _smokeSystem;
   late ParticleSystem _emberSystem;
+  late ParticleSystem _fogSystem;
   late ParticleEmitterComponent _coreEmitter;
   late ParticleEmitterComponent _tongueEmitter;
   late PreprocessedMaterial _grassMaterial;
@@ -156,13 +160,13 @@ class ExampleParticlesState extends State<ExampleParticles> {
     // spinner keeps animating): the flame and smoke flipbooks, the ember dot,
     // and the ground/stone albedos.
     final flameAtlas = GpuTextureSource(
-      await gpuTextureFromImage(await _bakeFlameAtlas()),
+      await gpuTextureFromImage(await bakeFlameAtlas()),
     );
     final smokeAtlas = GpuTextureSource(
-      await gpuTextureFromImage(await _bakeSmokeAtlas()),
+      await gpuTextureFromImage(await bakeSmokeAtlas()),
     );
     final dot = GpuTextureSource(
-      await gpuTextureFromImage(await _bakeSoftDot()),
+      await gpuTextureFromImage(await bakeSoftDot()),
     );
     final groundTexture = GpuTextureSource(
       await gpuTextureFromImage(await _bakeGroundTexture()),
@@ -179,6 +183,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
     scene.add(_glow(dot));
     scene.add(_smoke(smokeAtlas));
     scene.add(_embers(dot));
+    scene.add(_groundFog(smokeAtlas));
 
     final firelight = PointLight(
       color: vm.Vector3(1.0, 0.52, 0.18),
@@ -206,6 +211,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _glowSystem.spawner.rate = _glowRate * _intensity;
     _smokeSystem.spawner.rate = _smokeRate * _smokeAmount;
     _emberSystem.spawner.rate = _emberRate * _emberAmount;
+    _fogSystem.spawner.rate = _fogRate * _fogAmount;
     _coreSystem.startSize = UniformFloat(
       0.85 * _flameScale,
       1.15 * _flameScale,
@@ -792,7 +798,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
       prewarm: 5.0,
     );
     final material = SpriteMaterial(colorTexture: atlas)
-      ..blendMode = SpriteBlendMode.alpha;
+      ..blendMode = SpriteBlendMode.alpha
+      // Soft particles: the column dissolves through the logs, terrain, and
+      // grass instead of slicing them with quad edges.
+      ..softDepthFade = 0.6;
     return _emitterNode(
       _smokeSystem,
       material,
@@ -801,6 +810,60 @@ class ExampleParticlesState extends State<ExampleParticles> {
       flipbookBlend: true,
       randomFlipX: true,
       y: 1.35,
+    ).$1;
+  }
+
+  // Ground fog: huge, faint, slow moonlit puffs hugging the hollow. Soft
+  // depth fade melts them into the hills and props, and a camera near fade
+  // keeps the orbiting camera from clipping through a hard quad.
+  Node _groundFog(TextureSource atlas) {
+    _fogSystem = ParticleSystem(
+      maxParticles: 32,
+      shape: const shape.ConeShape(angle: 0.02, radius: 6.5),
+      spawner: Spawner(rate: _fogRate),
+      lifetime: const UniformFloat(7.0, 11.0),
+      startSpeed: const UniformFloat(0.02, 0.06),
+      startSize: const UniformFloat(2.6, 4.2),
+      startRotation: const UniformFloat(0.0, 6.283),
+      startAngularVelocity: const UniformFloat(-0.05, 0.05),
+      modules: [
+        _windFor(0.9),
+        const RotationModule(),
+        const FlipbookModule(frameCount: 16),
+        SizeOverLifeModule(
+          CurveFloat(
+            ParticleCurve([
+              const ParticleKeyframe(0.0, 0.8),
+              const ParticleKeyframe(1.0, 1.4),
+            ]),
+          ),
+        ),
+        ColorOverLifeModule(
+          GradientColor(
+            ColorGradient([
+              ColorStop(0.0, vm.Vector4(0.30, 0.36, 0.5, 0.0)),
+              ColorStop(0.25, vm.Vector4(0.30, 0.36, 0.5, 0.07)),
+              ColorStop(0.75, vm.Vector4(0.26, 0.31, 0.44, 0.06)),
+              ColorStop(1.0, vm.Vector4(0.22, 0.27, 0.4, 0.0)),
+            ]),
+          ),
+        ),
+      ],
+      seed: 7,
+      prewarm: 12.0,
+    );
+    final material = SpriteMaterial(colorTexture: atlas)
+      ..blendMode = SpriteBlendMode.alpha
+      ..softDepthFade = 1.4
+      ..cameraNearFade = 2.0;
+    return _emitterNode(
+      _fogSystem,
+      material,
+      flipbookColumns: 4,
+      flipbookRows: 4,
+      flipbookBlend: true,
+      randomFlipX: true,
+      y: 0.5,
     ).$1;
   }
 
@@ -994,6 +1057,16 @@ class ExampleParticlesState extends State<ExampleParticles> {
             }),
           ),
           _SliderRow(
+            label: 'Fog',
+            value: _fogAmount,
+            min: 0.0,
+            max: 2.0,
+            onChanged: (v) => setState(() {
+              _fogAmount = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
             label: 'Hill freq',
             value: _hillFrequency,
             min: 0.05,
@@ -1107,204 +1180,6 @@ double _smoothstep(double a, double b, double x) {
   return t * t * (3 - 2 * t);
 }
 
-/// Maps a normalized temperature to an approximate blackbody color (sRGB),
-/// from extinguished black through deep red, orange, and yellow to near-white.
-(double, double, double) _blackbody(double temp) {
-  const stops = <(double, double, double, double)>[
-    (0.0, 0.0, 0.0, 0.0),
-    (0.20, 0.32, 0.02, 0.0),
-    (0.45, 0.85, 0.22, 0.01),
-    (0.70, 1.0, 0.62, 0.10),
-    (0.88, 1.0, 0.86, 0.42),
-    (1.0, 1.0, 0.98, 0.82),
-  ];
-  final t = temp.clamp(0.0, 1.0);
-  for (var i = 1; i < stops.length; i++) {
-    if (t <= stops[i].$1) {
-      final a = stops[i - 1];
-      final b = stops[i];
-      final f = (t - a.$1) / (b.$1 - a.$1);
-      return (
-        a.$2 + (b.$2 - a.$2) * f,
-        a.$3 + (b.$3 - a.$3) * f,
-        a.$4 + (b.$4 - a.$4) * f,
-      );
-    }
-  }
-  return (1.0, 0.98, 0.82);
-}
-
-Future<ui.Image> _imageFromPixels(Uint8List pixels, int size) {
-  final completer = Completer<ui.Image>();
-  ui.decodeImageFromPixels(
-    pixels,
-    size,
-    size,
-    ui.PixelFormat.rgba8888,
-    completer.complete,
-  );
-  return completer.future;
-}
-
-/// Bakes the 8x8 flame flipbook (frame 0 top-left, row major). Each frame is
-/// one flame tongue's whole life: it grows from the base, rolls upward under
-/// a domain-warped fbm field, then detaches and erodes away, with brightness
-/// mapped through the blackbody ramp. A particle plays the sequence exactly
-/// once over its lifetime, so erosion is baked rather than shaded.
-Future<ui.Image> _bakeFlameAtlas() async {
-  const grid = 8;
-  const cell = 96;
-  const size = grid * cell;
-  const frames = grid * grid;
-  final pixels = Uint8List(size * size * 4);
-
-  final warpNoise = FastNoiseLite()
-    ..seed = 7
-    ..frequency = 1.0
-    ..fractalType = FractalType.fbm
-    ..octaves = 3;
-  final mainNoise = FastNoiseLite()
-    ..seed = 8
-    ..frequency = 1.0
-    ..fractalType = FractalType.fbm
-    ..octaves = 3;
-
-  for (var f = 0; f < frames; f++) {
-    final t = f / (frames - 1);
-    // Small per-frame steps keep adjacent frames similar; the sequence plays
-    // at ~40-50 fps over a particle's life, so large steps read as strobing.
-    final evolve = f * 0.055;
-    final scroll = f * 0.10;
-
-    // Lifecycle envelope: the flame grows in quickly, then its base lifts off
-    // the ground late in life while the whole tongue shortens and erodes.
-    final grow = _smoothstep(0.0, 0.18, t);
-    final baseY = 0.5 * pow(_smoothstep(0.40, 1.0, t), 1.2);
-    final height =
-        0.92 * (0.3 + 0.7 * grow) * (1 - 0.35 * _smoothstep(0.5, 1.0, t));
-    final erosion = 0.12 + 0.55 * _smoothstep(0.35, 1.0, t);
-    final cooling = 1.0 - 0.40 * _smoothstep(0.45, 1.0, t);
-
-    final cellX = (f % grid) * cell;
-    final cellY = (f ~/ grid) * cell;
-    for (var py = 0; py < cell; py++) {
-      // Row 0 renders at the sprite's top, so flip to a bottom-up y.
-      final y = 1.0 - (py + 0.5) / cell;
-      final rowBase = ((cellY + py) * size + cellX) * 4;
-      for (var px = 0; px < cell; px++) {
-        final x = ((px + 0.5) / cell) * 2.0 - 1.0;
-
-        var value = 0.0;
-        var detail = 0.5;
-        final h = height > 0 ? (y - baseY) / height : -1.0;
-        if (h >= 0.0 && h <= 1.0) {
-          // Horizontal domain warp, stronger toward the tip, makes the
-          // silhouette lick and split instead of staying a teardrop.
-          final w = warpNoise.getNoise3(
-            x * 2.2,
-            y * 2.2 - scroll * 1.6,
-            evolve + 37.7,
-          );
-          final xw = x + w * 0.30 * (0.35 + 0.65 * h);
-
-          final halfW =
-              0.52 *
-              (1 - 0.30 * t) *
-              pow(1 - h, 0.65) *
-              (0.30 + 0.70 * _smoothstep(0.0, 0.18, h));
-          if (halfW > 1e-4) {
-            final d = (xw / halfW).abs();
-            final radial = (1 - d * d).clamp(0.0, 1.0);
-            final n =
-                mainNoise.getNoise3(xw * 2.6, y * 3.2 - scroll * 2.2, evolve) *
-                    0.5 +
-                0.5;
-            final density = radial * (0.45 + 0.55 * n) * 1.35;
-            final threshold = erosion + 0.30 * h;
-            value = ((density - threshold) / 0.22).clamp(0.0, 1.0);
-            detail = n;
-          }
-        }
-
-        // Modulate the interior by the same noise so the core keeps hot and
-        // cool filaments instead of saturating to a flat white.
-        final temp =
-            (value *
-                    (1.12 - 0.45 * h.clamp(0.0, 1.0)) *
-                    (0.68 + 0.55 * detail) *
-                    cooling)
-                .clamp(0.0, 1.0);
-        final (r, g, b) = _blackbody(temp);
-        final alpha = (value * 1.45).clamp(0.0, 1.0);
-        final o = rowBase + px * 4;
-        pixels[o] = (r * 255).round();
-        pixels[o + 1] = (g * 255).round();
-        pixels[o + 2] = (b * 255).round();
-        pixels[o + 3] = (alpha * 255).round();
-      }
-    }
-    // Yield between frames so the loading UI stays responsive.
-    if (f % 8 == 7) await Future<void>.delayed(Duration.zero);
-  }
-  return _imageFromPixels(pixels, size);
-}
-
-/// Bakes the 4x4 smoke flipbook (played once over life): a billowy fbm puff
-/// with baked shading that is progressively eaten by a rising erosion
-/// threshold, so old smoke tears apart instead of uniformly fading.
-Future<ui.Image> _bakeSmokeAtlas() async {
-  const grid = 4;
-  const cell = 128;
-  const size = grid * cell;
-  const frames = grid * grid;
-  final pixels = Uint8List(size * size * 4);
-
-  final noise = FastNoiseLite()
-    ..seed = 17
-    ..frequency = 1.0
-    ..fractalType = FractalType.fbm
-    ..octaves = 4;
-
-  for (var f = 0; f < frames; f++) {
-    final t = f / (frames - 1);
-    final evolve = f * 0.22;
-    final erosion = 0.18 + 0.55 * _smoothstep(0.2, 1.0, t);
-
-    final cellX = (f % grid) * cell;
-    final cellY = (f ~/ grid) * cell;
-    for (var py = 0; py < cell; py++) {
-      final y = ((py + 0.5) / cell) * 2.0 - 1.0;
-      final rowBase = ((cellY + py) * size + cellX) * 4;
-      for (var px = 0; px < cell; px++) {
-        final x = ((px + 0.5) / cell) * 2.0 - 1.0;
-        final r2 = x * x + y * y;
-        final base = (1 - r2).clamp(0.0, 1.0);
-
-        // Billow noise (folded fbm) gives the cauliflower look.
-        final n = noise.getNoise3(x * 1.9, y * 1.9, evolve);
-        final billow = 1.0 - n.abs();
-        final density = base * (0.35 + 0.65 * billow * billow);
-        // A softer edge and a late-life fade keep eroded frames wispy rather
-        // than stringy.
-        final value =
-            ((density - erosion) / 0.42).clamp(0.0, 1.0) *
-            (1.0 - 0.45 * _smoothstep(0.5, 1.0, t));
-
-        // Bake soft self-shading, brighter toward the puff's upper lobe.
-        final shade = (0.62 + 0.38 * billow) * (0.85 - 0.15 * y);
-        final o = rowBase + px * 4;
-        final v = (shade.clamp(0.0, 1.0) * 255).round();
-        pixels[o] = v;
-        pixels[o + 1] = v;
-        pixels[o + 2] = v;
-        pixels[o + 3] = (value * 255).round();
-      }
-    }
-    if (f % 4 == 3) await Future<void>.delayed(Duration.zero);
-  }
-  return _imageFromPixels(pixels, size);
-}
-
 /// Bakes the ground albedo: mottled dirt with a noisy-edged scorch circle
 /// under the fire and a faint ash ring around it. The disc's planar UVs put
 /// the fire at (0.5, 0.5); world radius 9 spans UV radius 0.5.
@@ -1362,7 +1237,7 @@ Future<ui.Image> _bakeGroundTexture() async {
     }
     if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
   }
-  return _imageFromPixels(pixels, size);
+  return vfxImageFromPixels(pixels, size);
 }
 
 /// Bakes the stone albedo: granite-like fbm mottling with darker ridged
@@ -1396,30 +1271,5 @@ Future<ui.Image> _bakeStoneTexture() async {
       pixels[o + 3] = 255;
     }
   }
-  return _imageFromPixels(pixels, size);
-}
-
-/// A 64x64 white dot with a Gaussian falloff (slope zero at the rim), for the
-/// embers and the ground glow.
-Future<ui.Image> _bakeSoftDot() {
-  const size = 64;
-  final pixels = Uint8List(size * size * 4);
-  const half = size / 2;
-  const sigma = size * 0.20;
-  final rim = exp(-0.5 * (half / sigma) * (half / sigma));
-  for (var y = 0; y < size; y++) {
-    for (var x = 0; x < size; x++) {
-      final dx = x + 0.5 - half;
-      final dy = y + 0.5 - half;
-      final r = sqrt(dx * dx + dy * dy);
-      final g = exp(-0.5 * (r / sigma) * (r / sigma));
-      final a = ((g - rim) / (1.0 - rim)).clamp(0.0, 1.0);
-      final i = (y * size + x) * 4;
-      pixels[i] = 255;
-      pixels[i + 1] = 255;
-      pixels[i + 2] = 255;
-      pixels[i + 3] = (a * 255).round();
-    }
-  }
-  return _imageFromPixels(pixels, size);
+  return vfxImageFromPixels(pixels, size);
 }

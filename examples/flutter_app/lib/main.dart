@@ -37,6 +37,7 @@ import 'example_physics_car.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
+import 'example_explosion.dart';
 import 'example_particles.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
@@ -126,6 +127,7 @@ class _MyAppState extends State<MyApp> {
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Particles': (context) => const ExampleParticles(),
+      'Explosions': (context) => const ExampleExplosion(),
       'Gaussian Splats': (context) => const ExampleSplats(),
       'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
