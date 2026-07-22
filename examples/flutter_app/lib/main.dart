@@ -10,6 +10,7 @@ import 'package:example_app/example_animation.dart';
 
 import 'example_accessibility.dart';
 import 'example_auto_exposure.dart';
+import 'example_configurator.dart';
 import 'example_cuboid.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -116,6 +117,7 @@ class _MyAppState extends State<MyApp> {
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
       'Cuboid': (context) => const ExampleCuboid(),
+      'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Sprites': (context) => const ExampleSprites(),

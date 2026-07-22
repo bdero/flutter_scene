@@ -6,6 +6,7 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
   // KHR_lights_punctual declares its lights at the document's extensions.
   final docExtensions = json['extensions'] as Map?;
   final punctual = docExtensions?['KHR_lights_punctual'] as Map?;
+  final variants = docExtensions?['KHR_materials_variants'] as Map?;
   return GltfDocument(
     scene: json['scene'] as int?,
     scenes: _list(json['scenes'], _parseScene),
@@ -21,6 +22,10 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
     skins: _list(json['skins'], _parseSkin),
     animations: _list(json['animations'], _parseAnimation),
     lights: _list(punctual?['lights'], _parsePunctualLight),
+    materialsVariants: [
+      for (final v in (variants?['variants'] as List?) ?? const [])
+        ((v as Map)['name'] as String?) ?? '',
+    ],
   );
 }
 
@@ -106,11 +111,26 @@ GltfMesh _parseMesh(Map<String, Object?> j) {
         final attrs =
             (pj['attributes'] as Map?)?.cast<String, int>() ??
             const <String, int>{};
+        // KHR_materials_variants: flatten each mapping's variant list into
+        // variant index -> material index. Later mappings do not overwrite
+        // earlier ones (the spec forbids a variant appearing twice).
+        final variantMappings = <int, int>{};
+        final variantsExt =
+            (pj['extensions'] as Map?)?['KHR_materials_variants'] as Map?;
+        for (final m in (variantsExt?['mappings'] as List?) ?? const []) {
+          final mapping = m as Map;
+          final material = mapping['material'] as int?;
+          if (material == null) continue;
+          for (final v in (mapping['variants'] as List?) ?? const []) {
+            variantMappings.putIfAbsent(v as int, () => material);
+          }
+        }
         return GltfMeshPrimitive(
           attributes: attrs,
           indices: pj['indices'] as int?,
           material: pj['material'] as int?,
           mode: (pj['mode'] as int?) ?? 4,
+          variantMappings: variantMappings,
         );
       })
       .toList(growable: false);

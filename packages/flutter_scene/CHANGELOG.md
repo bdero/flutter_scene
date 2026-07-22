@@ -1,5 +1,31 @@
 ## 0.20.0
 
+* New declarative scene API. Scenes can now be described in `build()`
+  with widgets that own and reconcile retained scene-graph nodes:
+  `SceneView.declarative` (a view-owned `Scene` configured through
+  constructor props), `SceneNode` (transform, components, children),
+  `SceneMesh` (geometry plus material), and `SceneModel` (async `.glb`
+  loading with `placeholder`/`error` scene subtrees, sourced from the
+  asset bundle or app-supplied bytes via `SceneModelSource`). Rebuilds
+  apply only changed properties to the retained nodes; structure changes
+  reconcile through the element tree (keys, `GlobalKey` reparenting, and
+  hot reload of scene structure all work). Bridges connect the two styles
+  in both directions, `SceneNodeHost` mounts an app-owned node inside a
+  declarative tree, `SceneSubtree` mounts declarative children under any
+  node of an app-owned scene (both `SceneView` constructors take
+  `children`), and `SceneNodeController` hands imperative code the
+  widget-managed node. The imperative API is unchanged and remains fully
+  supported.
+
+* `KHR_materials_variants` support in the runtime importer. Models
+  declaring material variants get a `MaterialsVariantsComponent` on their
+  root with the declared names; `select(name)` swaps the mapped
+  primitives' materials in place (`select(null)` restores defaults), so
+  variant switching is instant. `SceneModel` exposes it declaratively as
+  a `variant` property. The example app gained a Configurator example, a
+  product configurator that live-downloads the Khronos
+  MaterialsVariantsShoe and switches its colorways.
+
 * Animation blending no longer flattens rigs with mirrored bones. Recovering
   the bind pose from the composed matrix put a mirrored axis's negative
   scale on X, so weighted blends faded the bone through zero scale and the
