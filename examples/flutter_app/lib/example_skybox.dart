@@ -29,6 +29,9 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart';
 import 'quake_camera.dart';
@@ -41,18 +44,23 @@ class ExampleSkybox extends StatefulWidget {
 }
 
 enum _SkyType {
-  fmatGradient('Gradient (.fmat)'),
-  gradient('Gradient (built-in)'),
-  physical('Physical atmosphere'),
-  fmatMenger('Menger sponge (.fmat)');
+  fmatGradient('Gradient (.fmat)', 'Gradient .fmat'),
+  gradient('Gradient (built-in)', 'Gradient'),
+  physical('Physical atmosphere', 'Physical'),
+  fmatMenger('Menger sponge (.fmat)', 'Menger sponge');
 
-  const _SkyType(this.label);
+  const _SkyType(this.label, this.shortLabel);
   final String label;
+
+  /// Compact form for the panel-header trigger, which is much narrower than
+  /// the open menu.
+  final String shortLabel;
 }
 
 class _ExampleSkyboxState extends State<ExampleSkybox> {
   final Scene scene = Scene();
   bool loaded = false;
+  Object? _loadError;
 
   PreprocessedSky? _fmatSky;
   PreprocessedSky? _mengerSky;
@@ -108,9 +116,6 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   final QuakeCamera _freeCam = QuakeCamera();
   double _elapsedSeconds = 0.0;
 
-  // Whether the bottom controls card shows more than its header row.
-  bool _controlsExpanded = true;
-
   @override
   void initState() {
     super.initState();
@@ -118,16 +123,21 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
   }
 
   Future<void> _load() async {
-    final sky = await loadFmatSky('assets/gradient_sky.fmat');
-    final menger = await loadFmatSky('assets/menger_sky.fmat');
-    if (!mounted) return;
-    _fmatSky = sky;
-    _mengerSky = menger..sampledEnvironment = _sampledEnvironment;
-    _applySkyType(_skyType);
+    try {
+      final sky = await loadFmatSky('assets/gradient_sky.fmat');
+      final menger = await loadFmatSky('assets/menger_sky.fmat');
+      if (!mounted) return;
+      _fmatSky = sky;
+      _mengerSky = menger..sampledEnvironment = _sampledEnvironment;
+      _applySkyType(_skyType);
 
-    _buildShapeGrid();
+      _buildShapeGrid();
 
-    setState(() => loaded = true);
+      setState(() => loaded = true);
+    } catch (error, stackTrace) {
+      debugPrint('Custom Skybox could not load: $error\n$stackTrace');
+      if (mounted) setState(() => _loadError = error);
+    }
   }
 
   // A random primitive, roughly matched in visual size.
@@ -422,6 +432,13 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
 
   @override
   Widget build(BuildContext context) {
+    final loadError = _loadError;
+    if (loadError != null) {
+      return ExampleLoadFailureCard(
+        title: 'Custom Skybox could not load',
+        detail: '$loadError',
+      );
+    }
     if (!loaded) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -456,9 +473,19 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               ),
             ),
           ),
-          Positioned(
-            right: 16,
-            top: 16,
+          if (_freeCamera)
+            ExampleOverlay.topCenterAction(
+              leadingReservation: 176,
+              maxWidth: 520,
+              minHeaderWidth: 400,
+              child: const ExampleActionHint(
+                message:
+                    'WASD: move  ·  Q/E: down/up  ·  Drag: look  ·  '
+                    'Shift: boost',
+              ),
+            ),
+          ExampleOverlay.bottomRightPanel(
+            paired: true,
             child: LightingPanel(
               scene: scene,
               selector: _environmentSelector,
@@ -469,133 +496,101 @@ class _ExampleSkyboxState extends State<ExampleSkybox> {
               onEnvironmentResolved: _onEnvironmentResolved,
             ),
           ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 16,
-            child: Card(
-              color: Colors.black54,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Sky:',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        const SizedBox(width: 8),
-                        DropdownButton<_SkyType>(
-                          value: _skyType,
-                          dropdownColor: Colors.black87,
-                          style: const TextStyle(color: Colors.white),
-                          items: [
-                            for (final type in _SkyType.values)
-                              DropdownMenuItem(
-                                value: type,
-                                child: Text(type.label),
-                              ),
-                          ],
-                          onChanged: (type) => setState(() {
-                            if (type != null) _applySkyType(type);
-                          }),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: _controlsExpanded
-                              ? 'Collapse controls'
-                              : 'Expand controls',
-                          icon: Icon(
-                            _controlsExpanded
-                                ? Icons.keyboard_arrow_down
-                                : Icons.keyboard_arrow_up,
-                            color: Colors.white,
-                          ),
-                          onPressed: () => setState(
-                            () => _controlsExpanded = !_controlsExpanded,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_controlsExpanded)
-                      Row(
-                        children: [
-                          const Text(
-                            'Lighting refresh:',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          const SizedBox(width: 8),
-                          DropdownButton<SkyEnvironmentRefresh>(
-                            value:
-                                _skyEnvironment?.refresh ??
-                                SkyEnvironmentRefresh.manual,
-                            dropdownColor: Colors.black87,
-                            style: const TextStyle(color: Colors.white),
-                            items: const [
-                              DropdownMenuItem(
-                                value: SkyEnvironmentRefresh.manual,
-                                child: Text('Manual'),
-                              ),
-                              DropdownMenuItem(
-                                value: SkyEnvironmentRefresh.interval,
-                                child: Text('Interval (1s)'),
-                              ),
-                              DropdownMenuItem(
-                                value: SkyEnvironmentRefresh.everyFrame,
-                                child: Text('Every frame'),
-                              ),
-                            ],
-                            onChanged: (mode) => setState(() {
-                              if (mode != null) _skyEnvironment?.refresh = mode;
-                            }),
-                          ),
-                          const SizedBox(width: 16),
-                          ElevatedButton(
-                            onPressed: () => _skyEnvironment?.invalidate(),
-                            child: const Text('Re-bake lighting'),
-                          ),
-                          const SizedBox(width: 16),
-                          ElevatedButton.icon(
-                            onPressed: _toggleFreeCamera,
-                            icon: Icon(
-                              _freeCamera
-                                  ? Icons.videocam
-                                  : Icons.videocam_outlined,
-                            ),
-                            label: Text(
-                              _freeCamera ? 'Quake camera' : 'Orbit camera',
-                            ),
-                          ),
-                          if (_freeCamera) ...[
-                            const SizedBox(width: 12),
-                            const Text(
-                              'WASD move · QE up/down · drag to look · '
-                              'shift to boost',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    if (_controlsExpanded)
-                      Wrap(
-                        children: [
-                          for (final row in _parameterRows())
-                            SizedBox(width: 380, child: row),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
+          ExampleOverlay.bottomLeftPanel(paired: true, child: _skyControls()),
+          ExampleOverlay.bottomCenter(
+            child: ExampleCameraToggle(
+              active: _freeCamera,
+              inactiveLabel: 'Orbit camera',
+              activeLabel: 'Fly camera',
+              inactiveIcon: Icons.videocam_outlined,
+              activeIcon: Icons.videocam,
+              onToggle: _toggleFreeCamera,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _skyControls() {
+    return ExamplePanelCard(
+      icon: Icons.wb_sunny_outlined,
+      title: 'Sky',
+      width: double.infinity,
+      maxBodyHeight: 420,
+      trailing: ExampleDropdown<_SkyType>(
+        value: _skyType,
+        triggerColor: Colors.white12,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        isDense: true,
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        items: [
+          for (final type in _SkyType.values)
+            DropdownMenuItem(value: type, child: Text(type.label)),
+        ],
+        selectedItemBuilder: (context) => [
+          for (final type in _SkyType.values)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                type.shortLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: (type) => setState(() {
+          if (type != null) _applySkyType(type);
+        }),
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Lighting refresh',
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          const SizedBox(height: 4),
+          ExampleDropdown<SkyEnvironmentRefresh>(
+            value: _skyEnvironment?.refresh ?? SkyEnvironmentRefresh.manual,
+            triggerColor: Colors.white12,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            isDense: true,
+            items: const [
+              DropdownMenuItem(
+                value: SkyEnvironmentRefresh.manual,
+                child: Text('Manual'),
+              ),
+              DropdownMenuItem(
+                value: SkyEnvironmentRefresh.interval,
+                child: Text('Interval (1s)'),
+              ),
+              DropdownMenuItem(
+                value: SkyEnvironmentRefresh.everyFrame,
+                child: Text('Every frame'),
+              ),
+            ],
+            onChanged: (mode) => setState(() {
+              if (mode != null) _skyEnvironment?.refresh = mode;
+            }),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.white12,
+                side: const BorderSide(color: Colors.white24),
+              ),
+              onPressed: () => _skyEnvironment?.invalidate(),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Re-bake lighting'),
+            ),
+          ),
+          const SizedBox(height: 4),
+          ..._parameterRows(),
         ],
       ),
     );
