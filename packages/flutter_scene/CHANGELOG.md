@@ -1,5 +1,12 @@
 ## 0.20.0
 
+* Animation blending no longer flattens rigs with mirrored bones. Recovering
+  the bind pose from the composed matrix put a mirrored axis's negative
+  scale on X, so weighted blends faded the bone through zero scale and the
+  attached geometry collapsed until the blend finished. Nodes built from
+  TRS transforms (both importers, `.fscene` documents, and scene hot
+  reload) now keep the authored decomposition and blending anchors to it.
+
 * Imported materials keep their source names. `Material` gained a `name`
   field (empty when unnamed), and both import paths set it from the glTF
   material name, so materials can be looked up after loading. `.fscene`

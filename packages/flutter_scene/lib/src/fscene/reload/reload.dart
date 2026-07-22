@@ -70,13 +70,15 @@ Future<SceneDiff> reloadScene(
   // then attach those still without a parent under their document parent.
   for (final id in diff.added) {
     final spec = newDocument.nodes[id]!;
-    live[id] = tagNodeId(
-      Node(name: spec.name, localTransform: spec.transform.toMatrix4())
+    final node = tagNodeId(
+      Node(name: spec.name)
         ..layers = spec.layers
         ..excludeFromWindingParity = spec.excludeFromWindingParity
         ..visible = spec.visible,
       id,
     );
+    applyTransformSpec(node, spec.transform);
+    live[id] = node;
   }
   for (final id in diff.added) {
     final spec = newDocument.nodes[id]!;
@@ -97,7 +99,7 @@ Future<SceneDiff> reloadScene(
     final node = live[change.id]!;
     final spec = newDocument.nodes[change.id]!;
     if (change.transform) {
-      node.localTransform = spec.transform.toMatrix4();
+      applyTransformSpec(node, spec.transform);
       node.excludeFromWindingParity = spec.excludeFromWindingParity;
     }
     if (change.name) node.name = spec.name;
@@ -130,19 +132,23 @@ Future<SceneDiff> reloadScene(
 
   // 5. Rebuild and re-bind animations. Clips created from the old animations
   // keep playing (matched by name); rest poses come from the document so a
-  // node frozen mid-playback is not captured at its animated pose.
+  // node frozen mid-playback is not captured at its animated pose. Applying
+  // the transform specs directly (rather than via `restPoseOf` matrices)
+  // keeps authored TRS decompositions for the rebound bind poses.
   if (diff.animationsChanged) {
+    for (final spec in newDocument.animations.values) {
+      for (final channel in spec.channels) {
+        final node = live[channel.target];
+        final nodeSpec = newDocument.nodes[channel.target];
+        if (node == null || nodeSpec == null) continue;
+        applyTransformSpec(node, nodeSpec.transform);
+      }
+    }
     final animations = [
       for (final spec in newDocument.animations.values)
         buildAnimation(newDocument, spec, live),
     ].whereType<Animation>().toList();
-    liveRoot.reloadParsedAnimations(
-      animations,
-      restPoseOf: (node) {
-        final id = nodeFsceneId(node);
-        return id == null ? null : newDocument.nodes[id]?.transform.toMatrix4();
-      },
-    );
+    liveRoot.reloadParsedAnimations(animations);
   }
 
   return diff;

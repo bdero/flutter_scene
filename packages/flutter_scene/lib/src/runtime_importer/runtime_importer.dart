@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
+import '../animation.dart';
 import '../components/component.dart';
 import '../components/directional_light_component.dart';
 import '../components/point_light_component.dart';
@@ -205,7 +206,21 @@ void _populateNode({
   required List<Texture2D> textures,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
-  engineNode.localTransform = _localTransformFor(gltfNode);
+  final matrix = gltfNode.matrix;
+  if (matrix != null) {
+    engineNode.localTransform = matrix.clone();
+  } else {
+    // Keep the authored TRS. Recovering it from the composed matrix puts
+    // a mirrored bone's negative scale on the wrong axis, which breaks
+    // animation blending.
+    engineNode.setLocalTransformTrs(
+      DecomposedTransform(
+        translation: gltfNode.translation?.clone() ?? Vector3.zero(),
+        rotation: gltfNode.rotation?.clone() ?? Quaternion.identity(),
+        scale: gltfNode.scale?.clone() ?? Vector3(1.0, 1.0, 1.0),
+      ),
+    );
+  }
 
   if (gltfNode.mesh != null) {
     final gltfMesh = doc.meshes[gltfNode.mesh!];
@@ -292,16 +307,6 @@ Component? _buildLightComponent(GltfPunctualLight light) {
       debugPrint('Skipping unsupported KHR_lights_punctual type ${light.type}');
       return null;
   }
-}
-
-Matrix4 _localTransformFor(GltfNode n) {
-  if (n.matrix != null) return n.matrix!.clone();
-  final t = n.translation ?? Vector3.zero();
-  final r = n.rotation ?? Quaternion.identity();
-  final s = n.scale ?? Vector3(1.0, 1.0, 1.0);
-  // T * R * S
-  final m = Matrix4.compose(t, r, s);
-  return m;
 }
 
 /// Returns the binary buffer that backs the document's bufferViews.

@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart';
 
 // A tagged component plus its codec, for the registry-extensibility test.
 class _TagComponent extends Component {
@@ -140,6 +141,32 @@ void main() {
       final lightSpec = sunSpec.components.single;
       expect(lightSpec.type, 'directionalLight');
       expect((lightSpec.properties['intensity'] as DoubleValue).value, 5.0);
+    });
+
+    test('round-trips a TRS transform without matrix decomposition', () {
+      // A mirrored-axis scale must survive as authored; recovering it from
+      // the composed matrix would move the negative sign to X and break
+      // animation blending on mirrored bones.
+      final doc = SceneDocument();
+      doc.createNode(
+        name: 'mirrored',
+        root: true,
+        transform: TrsTransform(
+          translation: Vector3(1, 2, 3),
+          scale: Vector3(1, -1, 1),
+        ),
+      );
+
+      final root = realizeScene(doc);
+      final node = root.children.single;
+      final trs = node.localTransformTrs!;
+      expect(trs.scale.y, -1);
+      expect(trs.translation, Vector3(1, 2, 3));
+
+      final back = serializeScene(root);
+      final spec = back.rootNodes.single.transform as TrsTransform;
+      expect(spec.scale.y, -1);
+      expect(spec.translation, Vector3(1, 2, 3));
     });
   });
 
