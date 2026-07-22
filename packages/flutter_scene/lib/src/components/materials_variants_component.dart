@@ -47,10 +47,10 @@ class MaterialsVariantBinding {
 /// ```
 /// {@category Materials}
 class MaterialsVariantsComponent extends Component {
-  // TODO(materials-variants): the offline document importer and the .fscene
-  // format do not carry variants yet (runtime importer only). Clones get
-  // variant switching back through [rebindClone] (Node.clone itself does not
-  // carry components).
+  // Carried by both import paths: the runtime importer attaches it directly,
+  // and the .fscene document serializes it as a materialsVariants component.
+  // Clones get variant switching back through [rebindClone] (Node.clone
+  // itself does not carry components).
 
   /// Used by the importer; not for application construction.
   @internal
@@ -60,10 +60,33 @@ class MaterialsVariantsComponent extends Component {
   ) : variants = List.unmodifiable(variants),
       _bindings = bindings;
 
+  /// Finds the variants component for a loaded model.
+  ///
+  /// The runtime importer attaches the component to the model's root; the
+  /// `.fscene` realizer attaches it to the document root node it was
+  /// serialized on, which sits below the synthesized scene root. This
+  /// searches [root] and then its subtree (breadth-first), so callers work
+  /// with either import path.
+  static MaterialsVariantsComponent? of(Node root) {
+    final direct = root.getComponent<MaterialsVariantsComponent>();
+    if (direct != null) return direct;
+    final queue = <Node>[...root.children];
+    for (var i = 0; i < queue.length; i++) {
+      final component = queue[i].getComponent<MaterialsVariantsComponent>();
+      if (component != null) return component;
+      queue.addAll(queue[i].children);
+    }
+    return null;
+  }
+
   /// The variant names declared by the source, in declaration order.
   final List<String> variants;
 
   final List<MaterialsVariantBinding> _bindings;
+
+  /// The per-primitive bindings, for the fscene codec.
+  @internal
+  List<MaterialsVariantBinding> get internalBindings => _bindings;
 
   String? _selected;
 
@@ -114,7 +137,7 @@ class MaterialsVariantsComponent extends Component {
     Node templateRoot,
     Node cloneRoot,
   ) {
-    final source = templateRoot.getComponent<MaterialsVariantsComponent>();
+    final source = MaterialsVariantsComponent.of(templateRoot);
     if (source == null) return null;
     final bindings = <MaterialsVariantBinding>[];
     for (final binding in source._bindings) {

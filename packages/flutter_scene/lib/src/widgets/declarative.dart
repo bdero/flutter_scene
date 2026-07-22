@@ -1121,7 +1121,10 @@ class _SceneModelState extends State<SceneModel>
   }
 
   void _applyVariant() {
-    final component = _modelRoot?.getComponent<MaterialsVariantsComponent>();
+    final modelRoot = _modelRoot;
+    final component = modelRoot == null
+        ? null
+        : MaterialsVariantsComponent.of(modelRoot);
     if (component == null) return;
     final variant = widget.variant;
     if (variant != null && !component.variants.contains(variant)) {

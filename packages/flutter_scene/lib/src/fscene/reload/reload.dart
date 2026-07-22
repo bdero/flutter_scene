@@ -57,6 +57,7 @@ Future<SceneDiff> reloadScene(
   }
 
   collect(liveRoot);
+  context.resolveNode = (id) => live[id];
 
   final newParents = _parents(newDocument);
   Node parentFor(LocalId id) => live[newParents[id]] ?? liveRoot;
@@ -150,6 +151,9 @@ Future<SceneDiff> reloadScene(
     ].whereType<Animation>().toList();
     liveRoot.reloadParsedAnimations(animations);
   }
+
+  // Cross-node component resolution for components realized in this pass.
+  context.runAfterRealize();
 
   return diff;
 }

@@ -196,6 +196,23 @@ SceneDocument buildSceneDocument(
     }
   }
 
+  // KHR_materials_variants: attach a materialsVariants component to each
+  // document root whose subtree has variant-mapped primitives. Bindings
+  // reference nodes and their mesh primitive index (triangle primitives
+  // only, matching the emitted mesh); the mapped materials are already in
+  // the resource pool ([materialIds] covers every source material).
+  if (doc.materialsVariants.isNotEmpty &&
+      sceneIndex >= 0 &&
+      sceneIndex < doc.scenes.length) {
+    _emitMaterialsVariants(
+      document,
+      doc,
+      sceneRoots: doc.scenes[sceneIndex].nodes,
+      nodeIds: nodeIds,
+      materialIds: materialIds,
+    );
+  }
+
   // Animations (one keyframe timeline/value payload per channel).
   for (final animation in doc.animations) {
     _buildAnimation(document, animation, doc, bufferData, nodeIds);
@@ -742,4 +759,74 @@ int _seedFrom(Uint8List data) {
     hash = (hash * 0x01000193) & 0xffffffff;
   }
   return hash == 0 ? 1 : hash;
+}
+
+/// Emits `KHR_materials_variants` as `materialsVariants` components, one per
+/// scene root whose subtree contains variant-mapped primitives, with each
+/// component's bindings scoped to that subtree.
+void _emitMaterialsVariants(
+  SceneDocument document,
+  GltfDocument doc, {
+  required List<int> sceneRoots,
+  required List<LocalId> nodeIds,
+  required List<LocalId> materialIds,
+}) {
+  // Per glTF node, the binding specs for its variant-mapped primitives. The
+  // primitive index counts emitted (triangle) primitives so it matches the
+  // realized mesh's primitive order.
+  final bindingsByNode = <int, List<PropertyValue>>{};
+  for (var i = 0; i < doc.nodes.length; i++) {
+    final meshIndex = doc.nodes[i].mesh;
+    if (meshIndex == null || meshIndex < 0 || meshIndex >= doc.meshes.length) {
+      continue;
+    }
+    var primIndex = 0;
+    for (final primitive in doc.meshes[meshIndex].primitives) {
+      if (primitive.mode != 4) continue;
+      if (primitive.variantMappings.isNotEmpty) {
+        final materials = <String, PropertyValue>{
+          for (final entry in primitive.variantMappings.entries)
+            if (entry.value >= 0 && entry.value < materialIds.length)
+              '${entry.key}': ResourceRefValue(materialIds[entry.value]),
+        };
+        if (materials.isNotEmpty) {
+          bindingsByNode
+              .putIfAbsent(i, () => [])
+              .add(
+                MapValue({
+                  'node': NodeRefValue(nodeIds[i]),
+                  'primitive': IntValue(primIndex),
+                  'materials': MapValue(materials),
+                }),
+              );
+        }
+      }
+      primIndex++;
+    }
+  }
+  if (bindingsByNode.isEmpty) return;
+
+  document.featuresUsed.add('materialsVariants');
+  final variantNames = ListValue([
+    for (final name in doc.materialsVariants) StringValue(name),
+  ]);
+  for (final root in sceneRoots) {
+    if (root < 0 || root >= nodeIds.length) continue;
+    // Collect the root's subtree (including itself) in the glTF index space.
+    final subtree = <int>[root];
+    final bindings = <PropertyValue>[];
+    for (var i = 0; i < subtree.length; i++) {
+      bindings.addAll(bindingsByNode[subtree[i]] ?? const []);
+      for (final child in doc.nodes[subtree[i]].children) {
+        if (child >= 0 && child < doc.nodes.length) subtree.add(child);
+      }
+    }
+    if (bindings.isEmpty) continue;
+    document.nodes[nodeIds[root]]!.components.add(
+      ComponentSpec(
+        'materialsVariants',
+        properties: {'variants': variantNames, 'bindings': ListValue(bindings)},
+      ),
+    );
+  }
 }
