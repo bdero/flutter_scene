@@ -221,6 +221,7 @@ export 'src/widgets/declarative.dart'
     show
         AssetModelSource,
         MemoryModelSource,
+        SceneAnimationSpec,
         SceneMesh,
         SceneModel,
         SceneModelSource,

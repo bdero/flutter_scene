@@ -48,8 +48,9 @@ class MaterialsVariantBinding {
 /// {@category Materials}
 class MaterialsVariantsComponent extends Component {
   // TODO(materials-variants): the offline document importer and the .fscene
-  // format do not carry variants yet (runtime importer only), and Node.clone
-  // does not clone components, so a cloned model loses variant switching.
+  // format do not carry variants yet (runtime importer only). Clones get
+  // variant switching back through [rebindClone] (Node.clone itself does not
+  // carry components).
 
   /// Used by the importer; not for application construction.
   @internal
@@ -98,6 +99,52 @@ class MaterialsVariantsComponent extends Component {
           binding.materialsByVariant[index] ?? binding.defaultMaterial;
     }
     _refreshRenderItems();
+  }
+
+  /// Rebuilds this component for a [Node.clone] of the tree it was built
+  /// against, rebinding every binding to the clone's corresponding node and
+  /// primitive, and attaches the result to [cloneRoot].
+  ///
+  /// [Node.clone] does not carry components, so cloned models would lose
+  /// variant switching without this. Bindings whose node or primitive cannot
+  /// be resolved in the clone are dropped. Returns null (attaching nothing)
+  /// when [templateRoot] has no variants component.
+  @internal
+  static MaterialsVariantsComponent? rebindClone(
+    Node templateRoot,
+    Node cloneRoot,
+  ) {
+    final source = templateRoot.getComponent<MaterialsVariantsComponent>();
+    if (source == null) return null;
+    final bindings = <MaterialsVariantBinding>[];
+    for (final binding in source._bindings) {
+      final path = Node.getIndexPath(templateRoot, binding.node);
+      final cloneNode = path == null
+          ? null
+          : cloneRoot.getChildByIndexPath(path);
+      final templateMesh = binding.node.mesh;
+      final cloneMesh = cloneNode?.mesh;
+      if (cloneNode == null || templateMesh == null || cloneMesh == null) {
+        continue;
+      }
+      // Mesh.clone preserves primitive order, so positions correspond.
+      final index = templateMesh.primitives.indexOf(binding.primitive);
+      if (index < 0 || index >= cloneMesh.primitives.length) continue;
+      bindings.add(
+        MaterialsVariantBinding(
+          node: cloneNode,
+          primitive: cloneMesh.primitives[index],
+          defaultMaterial: binding.defaultMaterial,
+          materialsByVariant: binding.materialsByVariant,
+        ),
+      );
+    }
+    final clone = MaterialsVariantsComponent.internal(
+      source.variants,
+      bindings,
+    );
+    cloneRoot.addComponent(clone);
+    return clone;
   }
 
   // Render items capture materials at registration, so mounted meshes must

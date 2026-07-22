@@ -17,6 +17,18 @@
   widget-managed node. The imperative API is unchanged and remains fully
   supported.
 
+* Declarative animation control and shared model templates. `SceneModel`
+  gained `animations`, a list of `SceneAnimationSpec`s declaring which
+  imported animations play by name with per-spec `playing`/`loop`/
+  `weight`/`speed`; rebuilding applies the differences to the underlying
+  clips as plain property writes, so blend weights compose with ordinary
+  Flutter animations. Models are also now cached and shared: widgets
+  whose sources have equal cache keys load and import once, each
+  mounting its own clone of the shared template (geometry, textures, and
+  materials stay shared on the GPU; primitives, skins, and the variants
+  component are rebound per instance), with the template evicted when
+  the last user unmounts.
+
 * `KHR_materials_variants` support in the runtime importer. Models
   declaring material variants get a `MaterialsVariantsComponent` on their
   root with the declared names; `select(name)` swaps the mapped

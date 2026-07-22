@@ -1,4 +1,11 @@
-import 'package:flutter/foundation.dart' show Uint8List, debugPrint;
+import 'package:flutter/foundation.dart'
+    show
+        Uint8List,
+        debugPrint,
+        immutable,
+        internal,
+        listEquals,
+        visibleForTesting;
 import 'package:flutter/rendering.dart'
     show
         BoxConstraints,
@@ -23,9 +30,11 @@ import 'package:flutter/widgets.dart'
         StatelessWidget,
         Widget,
         WidgetBuilder;
+import 'package:collection/collection.dart' show IterableExtension;
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
-import 'package:flutter_scene/src/animation.dart' show DecomposedTransform;
+import 'package:flutter_scene/src/animation.dart'
+    show AnimationClip, DecomposedTransform;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/materials_variants_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -701,6 +710,173 @@ class MemoryModelSource extends SceneModelSource {
   Future<Uint8List> load() async => bytes;
 }
 
+/// Declares the playback state of one of a [SceneModel]'s imported
+/// animations.
+///
+/// An immutable value: rebuild with different values and the widget applies
+/// the differences to the underlying [AnimationClip] as plain property
+/// writes, so [weight] and [speed] can be driven by ordinary Flutter
+/// animations (a `TweenAnimationBuilder` cross-fading two clips' weights,
+/// for example). Clips for the same [name] persist across rebuilds; a spec
+/// that disappears from [SceneModel.animations] stops its clip.
+///
+/// A one-shot spec ([loop] false) whose [playing] flips from false to true
+/// restarts from the beginning; a looping spec resumes.
+/// {@category Widgets}
+@immutable
+class SceneAnimationSpec {
+  const SceneAnimationSpec(
+    this.name, {
+    this.playing = true,
+    this.loop = true,
+    this.weight = 1.0,
+    this.speed = 1.0,
+  });
+
+  /// The imported animation's name.
+  final String name;
+
+  /// Whether the clip advances. Pausing keeps the current playback time.
+  final bool playing;
+
+  /// Whether the clip wraps at the end instead of pausing.
+  final bool loop;
+
+  /// Blend weight in `[0, 1]`; overlapping clips are weight-blended and
+  /// normalized by the engine when the sum exceeds one.
+  final double weight;
+
+  /// Playback rate multiplier (negative plays in reverse).
+  final double speed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SceneAnimationSpec &&
+      other.name == name &&
+      other.playing == playing &&
+      other.loop == loop &&
+      other.weight == weight &&
+      other.speed == speed;
+
+  @override
+  int get hashCode => Object.hash(name, playing, loop, weight, speed);
+}
+
+/// Applies [SceneAnimationSpec]s to a model root's animation clips: creates
+/// clips lazily by name, diffs spec fields onto them, and stops clips whose
+/// specs disappear. Kept separate from the widget so it is testable without
+/// a GPU import.
+@internal
+class SceneAnimationBinder {
+  final Map<String, AnimationClip> _clips = {};
+  final Set<String> _warnedUnknown = {};
+  List<SceneAnimationSpec> _applied = const [];
+  Node? _modelRoot;
+
+  /// The clips created so far, keyed by animation name.
+  Map<String, AnimationClip> get clips => Map.unmodifiable(_clips);
+
+  /// Targets [modelRoot] (or null to unbind), clearing all clip state.
+  void bind(Node? modelRoot) {
+    _modelRoot = modelRoot;
+    _clips.clear();
+    _warnedUnknown.clear();
+    _applied = const [];
+  }
+
+  /// Diffs [specs] against the previously applied set.
+  void apply(List<SceneAnimationSpec> specs) {
+    final root = _modelRoot;
+    if (root == null) return;
+    final wanted = {for (final spec in specs) spec.name};
+    for (final entry in _clips.entries) {
+      if (!wanted.contains(entry.key)) {
+        entry.value.stop();
+      }
+    }
+    _clips.removeWhere((name, _) => !wanted.contains(name));
+    for (final spec in specs) {
+      var clip = _clips[spec.name];
+      if (clip == null) {
+        final animation = root.findAnimationByName(spec.name);
+        if (animation == null) {
+          if (_warnedUnknown.add(spec.name)) {
+            debugPrint(
+              'SceneModel: unknown animation "${spec.name}" (available: '
+              '${root.parsedAnimations.map((a) => a.name).toList()}).',
+            );
+          }
+          continue;
+        }
+        clip = root.createAnimationClip(animation);
+        _clips[spec.name] = clip;
+      }
+      final previous = _applied.firstWhereOrNull((s) => s.name == spec.name);
+      clip.loop = spec.loop;
+      clip.weight = spec.weight;
+      clip.playbackTimeScale = spec.speed;
+      if (spec.playing) {
+        // A one-shot re-triggered after finishing (or after an explicit
+        // pause) restarts; a looping clip just resumes.
+        final restarted = previous != null && !previous.playing;
+        if (restarted && !spec.loop) {
+          clip.replay();
+        } else {
+          clip.play();
+        }
+      } else {
+        clip.pause();
+      }
+    }
+    _applied = List.of(specs);
+  }
+}
+
+/// A refcounted template per [SceneModelSource.cacheKey]: bytes are loaded
+/// and imported once, and each [SceneModel] instance mounts a [Node.clone]
+/// of the shared template (geometry, textures, and materials stay shared;
+/// primitives, skins, and the variants component are per instance). The
+/// entry is evicted when the last user releases it.
+class _ModelTemplateCache {
+  static final Map<String, _ModelTemplateEntry> _entries = {};
+
+  static Future<Node> acquire(SceneModelSource source) {
+    final entry = _entries.putIfAbsent(
+      source.cacheKey,
+      () => _ModelTemplateEntry(_import(source)),
+    );
+    entry.refCount++;
+    return entry.template;
+  }
+
+  static Future<Node> _import(SceneModelSource source) async {
+    try {
+      final bytes = await source.load();
+      final import = SceneModel.debugImportOverride ?? Node.fromGlbBytes;
+      return await import(bytes);
+    } catch (_) {
+      // Evict so a later mount retries instead of caching the failure.
+      _entries.remove(source.cacheKey);
+      rethrow;
+    }
+  }
+
+  static void release(String cacheKey) {
+    final entry = _entries[cacheKey];
+    if (entry == null) return;
+    entry.refCount--;
+    if (entry.refCount <= 0) {
+      _entries.remove(cacheKey);
+    }
+  }
+}
+
+class _ModelTemplateEntry {
+  _ModelTemplateEntry(this.template);
+  final Future<Node> template;
+  int refCount = 0;
+}
+
 /// A declarative imported model: loads a `.glb` and mounts it as a node.
 ///
 /// The widget owns a wrapper [Node] carrying the transform props; the
@@ -714,22 +890,25 @@ class MemoryModelSource extends SceneModelSource {
 /// can change on rebuild for interactive switching (a product configurator).
 /// Null keeps the model's default materials.
 ///
+/// [animations] declares which imported animations play and how (see
+/// [SceneAnimationSpec]); rebuilding with changed specs applies the
+/// differences to the underlying clips.
+///
+/// Models are cached and shared: widgets whose sources have equal cache keys
+/// load and import once, and each mounts its own clone of the shared
+/// template (geometry, textures, and materials stay shared on the GPU). The
+/// template is evicted when the last widget using it unmounts.
+///
 /// ```dart
 /// SceneModel(
 ///   'models/shoe.glb',
 ///   variant: selectedColorway,
+///   animations: [SceneAnimationSpec('Spin', speed: 0.5)],
 ///   position: Vector3(0, 1, 0),
 /// )
 /// ```
 /// {@category Widgets}
 class SceneModel extends StatefulWidget {
-  // TODO(model-cache): each SceneModel instance imports (and uploads) its own
-  // copy of the model; share decoded templates across equal-keyed sources
-  // once component-aware Node cloning exists.
-  // TODO(model-animation): add a declarative prop for playing a named
-  // imported animation; until then use [onLoaded] and the imperative
-  // animation API.
-
   /// Loads the model from the asset bundle at [assetPath].
   ///
   /// Not const because the source is derived; use [SceneModel.from] with a
@@ -738,6 +917,7 @@ class SceneModel extends StatefulWidget {
     String assetPath, {
     super.key,
     this.variant,
+    this.animations = const [],
     this.placeholder,
     this.error,
     this.onLoaded,
@@ -762,6 +942,7 @@ class SceneModel extends StatefulWidget {
     this.source, {
     super.key,
     this.variant,
+    this.animations = const [],
     this.placeholder,
     this.error,
     this.onLoaded,
@@ -780,8 +961,21 @@ class SceneModel extends StatefulWidget {
          'Provide either transform or position/rotation/scale, not both.',
        );
 
+  /// Replaces the model import for tests, so widget tests can exercise the
+  /// full load/cache/clone path with hand-built node trees and no GPU.
+  @visibleForTesting
+  static Future<Node> Function(Uint8List bytes)? debugImportOverride;
+
+  /// Clears the shared model template cache (tests only).
+  @visibleForTesting
+  static void debugClearModelTemplateCache() =>
+      _ModelTemplateCache._entries.clear();
+
   /// Where the model bytes come from. Diffed by [SceneModelSource.cacheKey].
   final SceneModelSource source;
+
+  /// The animations to play, declared by name. See [SceneAnimationSpec].
+  final List<SceneAnimationSpec> animations;
 
   /// The `KHR_materials_variants` variant to select, or null for the
   /// model's default materials. Unknown names log a warning and keep the
@@ -835,6 +1029,8 @@ class _SceneModelState extends State<SceneModel>
   Node? _modelRoot;
   Object? _loadError;
   int _loadGeneration = 0;
+  String? _acquiredCacheKey;
+  final SceneAnimationBinder _animations = SceneAnimationBinder();
 
   @override
   String? get _name => widget.name;
@@ -869,22 +1065,41 @@ class _SceneModelState extends State<SceneModel>
 
   Future<void> _load() async {
     final generation = ++_loadGeneration;
+    final cacheKey = widget.source.cacheKey;
+    _acquiredCacheKey = cacheKey;
     try {
-      final bytes = await widget.source.load();
-      if (!mounted || generation != _loadGeneration) return;
-      final modelRoot = await Node.fromGlbBytes(bytes);
-      if (!mounted || generation != _loadGeneration) return;
+      final template = await _ModelTemplateCache.acquire(widget.source);
+      if (!mounted || generation != _loadGeneration) {
+        _ModelTemplateCache.release(cacheKey);
+        return;
+      }
+      // Each widget mounts its own clone of the shared template; heavy GPU
+      // resources stay shared, primitives/skins/variants are per instance.
+      final modelRoot = template.clone();
+      MaterialsVariantsComponent.rebindClone(template, modelRoot);
       _node.add(modelRoot);
       setState(() {
         _modelRoot = modelRoot;
         _loadError = null;
       });
       _applyVariant();
+      _animations.bind(modelRoot);
+      _animations.apply(widget.animations);
       widget.onLoaded?.call(modelRoot);
     } catch (e) {
-      if (!mounted || generation != _loadGeneration) return;
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
       setState(() => _loadError = e);
     }
+  }
+
+  void _releaseTemplate() {
+    final acquired = _acquiredCacheKey;
+    if (acquired != null && _modelRoot != null) {
+      _ModelTemplateCache.release(acquired);
+    }
+    _acquiredCacheKey = null;
   }
 
   void _resetModel() {
@@ -893,8 +1108,16 @@ class _SceneModelState extends State<SceneModel>
     if (modelRoot != null) {
       _node.remove(modelRoot);
     }
+    _releaseTemplate();
+    _animations.bind(null);
     _modelRoot = null;
     _loadError = null;
+  }
+
+  @override
+  void dispose() {
+    _resetModel();
+    super.dispose();
   }
 
   void _applyVariant() {
@@ -919,8 +1142,13 @@ class _SceneModelState extends State<SceneModel>
     if (widget.source.cacheKey != oldWidget.source.cacheKey) {
       setState(_resetModel);
       _load();
-    } else if (widget.variant != oldWidget.variant) {
+      return;
+    }
+    if (widget.variant != oldWidget.variant) {
       _applyVariant();
+    }
+    if (!listEquals(widget.animations, oldWidget.animations)) {
+      _animations.apply(widget.animations);
     }
   }
 
