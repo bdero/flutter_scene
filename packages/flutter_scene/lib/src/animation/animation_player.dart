@@ -29,7 +29,7 @@ class AnimationPlayer {
     // will mutate.
     for (final binding in clip._bindings) {
       _targetTransforms[binding.node] = AnimationTransforms(
-        bindPose: DecomposedTransform.fromMatrix(binding.node.localTransform),
+        bindPose: _bindPoseOf(binding.node),
       );
     }
 
@@ -58,10 +58,18 @@ class AnimationPlayer {
       clip.rebind(newRoot, animation: byName[clip._animation.name]);
       for (final binding in clip._bindings) {
         _targetTransforms[binding.node] = AnimationTransforms(
-          bindPose: DecomposedTransform.fromMatrix(binding.node.localTransform),
+          bindPose: _bindPoseOf(binding.node),
         );
       }
     }
+  }
+
+  /// Prefers the node's authored decomposition over decomposing the
+  /// matrix, which would move a mirrored axis's negative scale onto X and
+  /// make blends on mirrored bones fade through zero scale.
+  static DecomposedTransform _bindPoseOf(Node node) {
+    return node.localTransformTrs?.clone() ??
+        DecomposedTransform.fromMatrix(node.localTransform);
   }
 
   /// Advances all registered clips by [deltaSeconds] and applies their
@@ -90,11 +98,12 @@ class AnimationPlayer {
       clip.applyToBindings(_targetTransforms, weightMultiplier);
     }
 
-    // Apply the animated pose to the bound joints.
+    // Apply the animated pose to the bound joints, keeping the
+    // decomposition so a later rebind anchors to consistent scale signs.
     for (final entry in _targetTransforms.entries) {
       final node = entry.key;
       final transforms = entry.value;
-      node.localTransform = transforms.animatedPose.toMatrix4();
+      node.setLocalTransformTrs(transforms.animatedPose);
     }
   }
 }
