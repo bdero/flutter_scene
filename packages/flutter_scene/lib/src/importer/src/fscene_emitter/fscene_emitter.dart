@@ -81,7 +81,7 @@ SceneDocument buildSceneDocument(
 
   // Textures, then materials (which reference textures), then mesh geometry
   // (which references materials).
-  final textureContents = _textureContents(doc);
+  final textureContents = gltfTextureContents(doc);
   final textureIds = [
     for (var i = 0; i < doc.textures.length; i++)
       _buildTexture(
@@ -616,8 +616,8 @@ void _addTexture(
 /// The downsample rule for each glTF texture, derived from the material slots
 /// referencing it. A texture shared across slot kinds takes the highest
 /// priority interpretation (normal > color > data); unreferenced textures
-/// default to color.
-List<TextureContent> _textureContents(GltfDocument doc) {
+/// default to color. Library-visible for tests; not exported.
+List<TextureContent> gltfTextureContents(GltfDocument doc) {
   const priority = {
     TextureContent.data: 0,
     TextureContent.color: 1,

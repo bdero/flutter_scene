@@ -253,9 +253,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // supercompressed), the shape an imported compressed texture takes. Covers
   // the whole compressed-texture path per backend: block encode, the device's
   // per-family transcode (or the rgba8 decode fallback), and the per-level
-  // mip-chain upload.
+  // mip-chain upload. Run with --dart-define=SMOKE_FORCE_RGBA8_TEXTURES=true
+  // to skip the compressed families and exercise the rgba8 decode fallback
+  // (and its mip upload) on a device that supports compression.
   SmokeScene('compressed_texture', () {
     const size = 256;
+    if (const bool.fromEnvironment('SMOKE_FORCE_RGBA8_TEXTURES')) {
+      compressionFamilyPreference = [];
+    }
     final pixels = Uint8List(size * size * 4);
     for (var y = 0; y < size; y++) {
       for (var x = 0; x < size; x++) {

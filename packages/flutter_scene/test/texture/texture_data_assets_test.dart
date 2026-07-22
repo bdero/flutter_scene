@@ -6,6 +6,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:data_assets/data_assets.dart';
+import 'package:flutter_scene/src/importer/src/fscene_emitter/fscene_emitter.dart';
+import 'package:flutter_scene/src/importer/src/gltf/types.dart';
 import 'package:flutter_scene/src/texture/build_textures.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
@@ -116,6 +118,53 @@ void main() {
     } finally {
       temp.deleteSync(recursive: true);
     }
+  });
+
+  test('rejects contents keys that are not listed textures', () {
+    final temp = Directory.systemTemp.createTempSync('texture_build');
+    try {
+      expect(
+        () => buildTextures(
+          buildInput: _buildInput(packageRoot: temp.uri, buildDataAssets: true),
+          buildOutput: BuildOutputBuilder(),
+          textures: ['assets/dirt.png'],
+          contents: {'assets/dirt_normal.png': TextureContent.normal},
+        ),
+        throwsA(predicate((e) => e.toString().contains('dirt_normal'))),
+      );
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('emitter derives texture roles from glTF material slots', () {
+    final doc = GltfDocument(
+      textures: [for (var i = 0; i < 5; i++) GltfTexture(source: i)],
+      materials: [
+        GltfMaterial(
+          pbrMetallicRoughness: GltfPbrMetallicRoughness(
+            baseColorTexture: GltfTextureInfo(index: 0),
+            metallicRoughnessTexture: GltfTextureInfo(index: 1),
+          ),
+          normalTexture: GltfTextureInfo(index: 2),
+          occlusionTexture: GltfTextureInfo(index: 3),
+        ),
+        // Reuses the metallic-roughness texture as a base color; the color
+        // interpretation outranks data.
+        GltfMaterial(
+          pbrMetallicRoughness: GltfPbrMetallicRoughness(
+            baseColorTexture: GltfTextureInfo(index: 1),
+          ),
+        ),
+      ],
+    );
+    expect(gltfTextureContents(doc), [
+      TextureContent.color, // base color
+      TextureContent.color, // metallic-roughness shared with a color slot
+      TextureContent.normal, // normal map
+      TextureContent.data, // occlusion
+      TextureContent.color, // unreferenced defaults to color
+    ]);
   });
 
   test('registry resolves source paths with or without extension', () async {
