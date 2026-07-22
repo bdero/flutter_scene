@@ -59,6 +59,7 @@ class ExampleDropdown<T> extends StatelessWidget {
     this.isDense = false,
     this.iconSize,
     this.style = const TextStyle(color: Colors.white),
+    this.selectedItemBuilder,
   });
 
   final T value;
@@ -69,6 +70,10 @@ class ExampleDropdown<T> extends StatelessWidget {
   final bool isDense;
   final double? iconSize;
   final TextStyle style;
+
+  /// Builds the closed-state trigger per item, so a long label can be
+  /// ellipsized without truncating it in the open menu.
+  final DropdownButtonBuilder? selectedItemBuilder;
 
   @override
   Widget build(BuildContext context) => ScrollbarTheme(
@@ -92,6 +97,7 @@ class ExampleDropdown<T> extends StatelessWidget {
             value: value,
             items: items,
             onChanged: onChanged,
+            selectedItemBuilder: selectedItemBuilder,
             dropdownColor: const Color(0xFF303030),
             borderRadius: BorderRadius.circular(8),
             icon: Icon(
