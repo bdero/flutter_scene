@@ -29,12 +29,17 @@
   component are rebound per instance), with the template evicted when
   the last user unmounts.
 
-* `KHR_materials_variants` support in the runtime importer. Models
-  declaring material variants get a `MaterialsVariantsComponent` on their
-  root with the declared names; `select(name)` swaps the mapped
-  primitives' materials in place (`select(null)` restores defaults), so
-  variant switching is instant. `SceneModel` exposes it declaratively as
-  a `variant` property. The example app gained a Configurator example, a
+* `KHR_materials_variants` support in both import paths. Models
+  declaring material variants get a `MaterialsVariantsComponent` (found
+  via `MaterialsVariantsComponent.of(root)`) with the declared names;
+  `select(name)` swaps the mapped primitives' materials in place
+  (`select(null)` restores defaults), so variant switching is instant.
+  The `.fscene` document format carries variants as a
+  `materialsVariants` component (variant names plus per-primitive
+  material mappings), so pre-converted `.fsceneb` assets keep their
+  variants; no container change was needed and existing files are
+  unaffected. `SceneModel` exposes selection declaratively as a
+  `variant` property. The example app gained a Configurator example, a
   product configurator that live-downloads the Khronos
   MaterialsVariantsShoe and switches its colorways.
 

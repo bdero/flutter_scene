@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/scene_document.dart';
 import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:flutter_scene/src/node.dart';
 
 /// Context handed to a [ComponentCodec] when realizing a [ComponentSpec] into
 /// a live [Component]. Carries the source [document] and a [resources]
@@ -23,6 +24,25 @@ class RealizeContext {
   /// Realizes referenced geometry/material resources, or null when resource
   /// realization is unavailable (a codec needing it should return null).
   final ResourceRealizer? resources;
+
+  /// Resolves a document node id to its realized [Node]. Set by the realizer
+  /// once its node map exists; null in contexts without one.
+  Node? Function(LocalId id)? resolveNode;
+
+  /// Callbacks the realizer runs after every node and component has been
+  /// realized. A codec whose spec references other nodes' components (for
+  /// example material variants binding into mesh primitives) registers its
+  /// resolution here rather than resolving during its own realize call,
+  /// when those components may not exist yet.
+  final List<void Function()> afterRealize = [];
+
+  /// Runs and clears [afterRealize]. The realizer calls this once per pass.
+  void runAfterRealize() {
+    for (final callback in afterRealize) {
+      callback();
+    }
+    afterRealize.clear();
+  }
 }
 
 /// Context handed to a [ComponentCodec] when serializing a live [Component]

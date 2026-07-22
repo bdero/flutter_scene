@@ -107,6 +107,7 @@ Node _realizeWith(
 
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};
+  context.resolveNode = (id) => nodes[id];
   for (final spec in document.nodes.values) {
     final node = tagNodeId(
       Node(name: spec.name)
@@ -155,6 +156,10 @@ Node _realizeWith(
       node.addComponent(component);
     }
   }
+
+  // Cross-node component resolution (for example material-variant bindings
+  // into mesh primitives) runs once every component exists.
+  context.runAfterRealize();
 
   final root = Node(
     name: 'root',
