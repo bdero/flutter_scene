@@ -658,11 +658,12 @@ class EmptyEnvironment extends EnvironmentSpec {
   const EmptyEnvironment();
 }
 
-/// An environment built from an embedded image [payload] chunk (an HDR or LDR
-/// equirect), the self-contained form a build produces by inlining an
-/// [AssetEnvironment]'s external image. The payload's `format` selects the
-/// decoder (`hdr` for Radiance HDR, an image codec otherwise). Not part of the
-/// public surface; produced by the build hook and consumed by the realizer.
+/// An environment built from an embedded image [payload] chunk (a Radiance
+/// HDR, OpenEXR, or LDR equirect), the self-contained form a build produces by
+/// inlining an [AssetEnvironment]'s external image. The realizer detects the
+/// decoder from the payload bytes; the payload's `format` tag (the source file
+/// extension) is informational. Not part of the public surface; produced by
+/// the build hook and consumed by the realizer.
 class PayloadEnvironment extends EnvironmentSpec {
   /// An environment sourced from the embedded image [payload].
   const PayloadEnvironment(this.payload);

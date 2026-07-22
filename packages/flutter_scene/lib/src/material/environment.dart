@@ -27,8 +27,9 @@ const int kDiffuseShCoefficientCount = 9;
 /// computed up front, so constructing an environment from images does GPU
 /// work and is best done once.
 ///
-/// Construct one with [EnvironmentMap.fromAssets] / [EnvironmentMap.fromUIImages]
-/// (which compute the SH and prefilter the radiance for you),
+/// Construct one with [EnvironmentMap.fromEquirectImageAsset] /
+/// [EnvironmentMap.fromEquirectImageBytes] (which detect HDR, EXR, or sRGB
+/// sources and compute the SH and prefilter the radiance for you),
 /// [EnvironmentMap.studio] (the built-in procedural default),
 /// [EnvironmentMap.fromGpuTextures] when you already hold a prefiltered
 /// atlas, or [EnvironmentMap.empty] for a no-op black environment.
@@ -163,6 +164,10 @@ base class EnvironmentMap {
 
   /// Loads an [EnvironmentMap] from an equirectangular sRGB radiance image
   /// in the asset bundle (see [fromUIImages]).
+  ///
+  /// [fromEquirectImageAsset] does everything this does and also detects
+  /// Radiance HDR and OpenEXR sources; prefer it.
+  @Deprecated('Use fromEquirectImageAsset instead')
   static Future<EnvironmentMap> fromAssets({
     required String radianceImagePath,
     List<Vector3>? diffuseSphericalHarmonics,
@@ -225,9 +230,13 @@ base class EnvironmentMap {
   /// LDR images are interpreted as sRGB.
   ///
   /// The decode runs on a background isolate. [maxWidth] caps the working
-  /// equirect so a very large panorama is box-downsampled during decode instead
-  /// of materializing at full resolution. Pass [diffuseSphericalHarmonics] to
-  /// supply your own diffuse term instead of projecting it.
+  /// equirect so a very large panorama is box-downsampled (HDR/EXR) or decoded
+  /// scaled down (LDR) instead of materializing at full resolution. Pass
+  /// [diffuseSphericalHarmonics] to supply your own diffuse term instead of
+  /// projecting it.
+  ///
+  /// In debug builds, a `Scene.loadEnvironment` built on this re-runs on hot
+  /// reload when the asset's content changes.
   static Future<EnvironmentMap> fromEquirectImageAsset({
     required String assetPath,
     int maxWidth = 4096,
@@ -247,6 +256,9 @@ base class EnvironmentMap {
   /// detecting Radiance HDR, OpenEXR, or a standard sRGB image (see
   /// [fromEquirectImageAsset]). Useful for an image fetched over the network or
   /// picked by the user.
+  ///
+  /// On the web there are no isolates, so an HDR/EXR decode runs on the main
+  /// thread and a large panorama can jank; prefer a modest [maxWidth] there.
   static Future<EnvironmentMap> fromEquirectImageBytes({
     required Uint8List bytes,
     int maxWidth = 4096,
@@ -256,7 +268,7 @@ base class EnvironmentMap {
     // the CPU-heavy HDR/EXR decode (and its SH projection) is worth an isolate.
     if (detectEquirectImageFormat(bytes) == EquirectImageFormat.ldr) {
       return fromUIImages(
-        radianceImage: await imageFromBytes(bytes),
+        radianceImage: await imageFromBytes(bytes, maxWidth: maxWidth),
         diffuseSphericalHarmonics: diffuseSphericalHarmonics,
       );
     }
@@ -884,7 +896,7 @@ base class EnvironmentMap {
   }
 }
 
-// Isolate entry point for EnvironmentMap.fromEquirectImageBytes: decodes an
+// Isolate entry point for EnvironmentMap.fromEquirectImageBytes. Decodes an
 // HDR/EXR equirect off the platform thread and, when projectSh is set, also
 // projects its diffuse SH there (so the main isolate does not re-scan the
 // pixels). Returns the linear pixels, dimensions, and the flattened SH (or
@@ -912,15 +924,16 @@ base class EnvironmentMap {
   return (decoded.pixels, decoded.width, decoded.height, sh);
 }
 
-/// Radiance asset paths recorded for [EnvironmentMap.fromAssets] results, so
-/// provenance-aware tooling (the scene serializer) can recover where a live
-/// environment came from.
+/// Radiance asset paths recorded for [EnvironmentMap.fromEquirectImageAsset]
+/// (and the deprecated `fromAssets`) results, so provenance-aware tooling (the
+/// scene serializer) can recover where a live environment came from.
 final Expando<String> _environmentAssetPaths = Expando(
   'environment asset path',
 );
 
 /// The radiance asset path [environment] was loaded from through
-/// [EnvironmentMap.fromAssets], or null for environments built another way.
+/// [EnvironmentMap.fromEquirectImageAsset] (or the deprecated `fromAssets`),
+/// or null for environments built another way.
 /// {@category Lighting and environment}
 String? environmentAssetPathOf(EnvironmentMap environment) =>
     _environmentAssetPaths[environment];

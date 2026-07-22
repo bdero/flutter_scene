@@ -70,10 +70,10 @@ List<ExternalImageAsset> resolveExternalImageAssets(
 /// asset.
 ///
 /// A texture's image is decoded to an `rgba8` payload (the realizer uploads it
-/// directly). An environment's image is embedded as its encoded bytes with a
-/// format tag (`hdr` for Radiance HDR, the file extension otherwise), so the
-/// realizer decodes it with the right path (HDR float decode preserves the
-/// radiance range, unlike an `rgba8` clamp). After this, [writeFsceneb] embeds
+/// directly). An environment's image is embedded as its encoded bytes (tagged
+/// with its file extension), so the realizer decodes it with the right path
+/// (HDR/EXR float decode preserves the radiance range, unlike an `rgba8`
+/// clamp). After this, [writeFsceneb] embeds
 /// the bytes and realizing needs no asset-bundle lookup. An image that fails to
 /// load is left as its external reference (and reported).
 void inlineExternalImageAssets(
@@ -145,9 +145,9 @@ LocalId? _embedRgba8(SceneDocument document, String key, File file) {
       .id;
 }
 
-// Embeds [file]'s encoded bytes as an image payload tagged with its format
-// (`hdr` for Radiance HDR, the file extension otherwise), for an environment the
-// realizer decodes itself.
+// Embeds [file]'s encoded bytes as an image payload tagged with its file
+// extension, for an environment the realizer decodes itself (detecting the
+// format from the bytes).
 LocalId _embedEncoded(SceneDocument document, String key, File file) {
   final bytes = file.readAsBytesSync();
   return document

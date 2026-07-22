@@ -54,7 +54,6 @@ Future<ui.Image> imageFromAsset(String assetPath, {AssetBundle? bundle}) async {
 }
 
 /// Reads the raw bytes of the asset at [assetPath] from the bundle.
-/// {@category Assets and loading}
 Future<Uint8List> bytesFromAsset(
   String assetPath, {
   AssetBundle? bundle,
@@ -65,13 +64,25 @@ Future<Uint8List> bytesFromAsset(
 
 /// Decodes an encoded image (PNG, JPEG, etc.) from raw [bytes].
 ///
-/// Uses `dart:ui`'s built-in image codecs. Throws if the bytes can't be
-/// decoded as an image.
+/// Uses `dart:ui`'s built-in image codecs. When [maxWidth] is set and the
+/// image is wider, it is decoded scaled down to [maxWidth] (aspect ratio
+/// preserved); a narrower image is never upscaled. Throws if the bytes can't
+/// be decoded as an image.
 /// {@category Assets and loading}
-Future<ui.Image> imageFromBytes(Uint8List bytes) async {
+Future<ui.Image> imageFromBytes(Uint8List bytes, {int? maxWidth}) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-  final codec = await ui.instantiateImageCodecFromBuffer(buffer);
+  final ui.Codec codec;
+  ui.ImageDescriptor? descriptor;
+  if (maxWidth == null) {
+    codec = await ui.instantiateImageCodecFromBuffer(buffer);
+  } else {
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    codec = await descriptor.instantiateCodec(
+      targetWidth: descriptor.width <= maxWidth ? null : maxWidth,
+    );
+  }
   final frame = await codec.getNextFrame();
+  descriptor?.dispose();
   return frame.image;
 }
 

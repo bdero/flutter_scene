@@ -36,11 +36,11 @@ const _modelTypeGroup = XTypeGroup(
 
 const _environmentTypeGroup = XTypeGroup(
   label: 'Environment map',
-  extensions: <String>['hdr', 'png', 'jpg', 'jpeg'],
+  extensions: <String>['hdr', 'exr', 'png', 'jpg', 'jpeg'],
 );
 
-/// Shows the native open dialog filtered to environment images (`.hdr` plus
-/// LDR equirect formats), and returns the chosen path, or null on cancel.
+/// Shows the native open dialog filtered to environment images (`.hdr`/`.exr`
+/// plus LDR equirect formats), and returns the chosen path, or null on cancel.
 Future<String?> pickEnvironmentPath() async {
   final file = await openFile(
     acceptedTypeGroups: const [_environmentTypeGroup],
@@ -48,8 +48,8 @@ Future<String?> pickEnvironmentPath() async {
   return file?.path;
 }
 
-/// Imports the equirectangular environment image at [path] (a `.hdr` HDR map or
-/// an LDR image) and sets it as an environment resource's look.
+/// Imports the equirectangular environment image at [path] (a `.hdr`/`.exr`
+/// HDR map or an LDR image) and sets it as an environment resource's look.
 ///
 /// [environmentId] is the target environment resource (the stage's global
 /// environment or a volume's); when null the stage's global resource is used

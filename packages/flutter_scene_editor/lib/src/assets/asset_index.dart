@@ -76,7 +76,7 @@ class EmbeddedResource {
 /// Extensions classified into [FileAssetKind]s.
 const _modelExt = {'.glb', '.gltf', '.fsceneb'};
 const _imageExt = {'.png', '.jpg', '.jpeg', '.webp'};
-const _hdrExt = {'.hdr'};
+const _hdrExt = {'.hdr', '.exr'};
 const _sceneExt = {'.fscene'};
 
 FileAssetKind? _classify(String name) {

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show AssetBundle;
+import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
@@ -417,26 +419,76 @@ base class Scene implements SceneGraph {
   /// one-call setup so [environment] and [skybox] cannot drift apart.
   ///
   /// [skyBlur] blurs the visible sky (0 sharp, 1 fully blurred) without
-  /// touching the lighting; [intensity], [exposure], and [rotationY] set
-  /// [environmentIntensity], [exposure], and [environmentTransform].
+  /// touching the lighting. [intensity], [exposure], and [rotationY] set
+  /// [environmentIntensity], [exposure], and [environmentTransform]; each
+  /// defaults to null, which leaves the scene's current value untouched.
+  /// [maxWidth] caps the working equirect for high-dynamic-range sources
+  /// (see [EnvironmentMap.fromEquirectImageBytes]).
+  ///
+  /// Clears [skyEnvironment], which would otherwise own [environment] and
+  /// re-bake over the loaded image on its next refresh. In debug builds the
+  /// load re-runs automatically when the asset's content changes on hot
+  /// reload, as long as the loaded environment is still active.
+  ///
+  /// Overlapping calls resolve to the most recent one; an earlier call that
+  /// finishes late does not clobber a later call's environment.
   Future<void> loadEnvironment(
     String assetPath, {
     bool showSkybox = true,
     double skyBlur = 0.0,
-    double intensity = 1.0,
-    double exposure = 1.0,
-    double rotationY = 0.0,
+    double? intensity,
+    double? exposure,
+    double? rotationY,
+    int maxWidth = 4096,
+    AssetBundle? bundle,
   }) async {
-    environment = await EnvironmentMap.fromEquirectImageAsset(
+    final epoch = ++_environmentLoadEpoch;
+    final map = await EnvironmentMap.fromEquirectImageAsset(
       assetPath: assetPath,
+      maxWidth: maxWidth,
+      bundle: bundle,
     );
-    environmentIntensity = intensity;
-    this.exposure = exposure;
-    environmentTransform = Matrix3.rotationY(rotationY);
+    if (epoch != _environmentLoadEpoch) return;
+    skyEnvironment = null;
+    environment = map;
+    if (intensity != null) environmentIntensity = intensity;
+    if (exposure != null) this.exposure = exposure;
+    if (rotationY != null) environmentTransform = Matrix3.rotationY(rotationY);
     skybox = showSkybox
         ? Skybox(EnvironmentSkySource(blurriness: skyBlur))
         : null;
+    if (!kDebugMode) return;
+    // Weak captures so the registration never keeps the scene (or a replaced
+    // environment) alive; the coordinator prunes it once the scene is gone.
+    final weakScene = WeakReference(this);
+    final weakMap = WeakReference(map);
+    HotReloadCoordinator.instance.registerEnvironment(
+      this,
+      assetKey: assetPath,
+      bundle: bundle,
+      onReload: () async {
+        final scene = weakScene.target;
+        // Reload only while the loaded environment is still active; an
+        // environment the caller swapped in manually is left alone.
+        if (scene == null || !identical(scene.environment, weakMap.target)) {
+          return;
+        }
+        await scene.loadEnvironment(
+          assetPath,
+          showSkybox: showSkybox,
+          skyBlur: skyBlur,
+          intensity: intensity,
+          exposure: exposure,
+          rotationY: rotationY,
+          maxWidth: maxWidth,
+          bundle: bundle,
+        );
+      },
+    );
   }
+
+  // Orders overlapping loadEnvironment calls; only the newest applies.
+  int _environmentLoadEpoch = 0;
 
   /// Drives [environment] from a sky on a refresh policy, or null (the
   /// default) to leave [environment] caller-managed.
