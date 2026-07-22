@@ -40,7 +40,6 @@ import 'example_shapes.dart';
 import 'example_particles.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
-import 'example_sprites.dart';
 import 'example_ssr.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
@@ -126,7 +125,6 @@ class _MyAppState extends State<MyApp> {
       'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
-      'Sprites': (context) => const ExampleSprites(),
       'Particles': (context) => const ExampleParticles(),
       'Gaussian Splats': (context) => const ExampleSplats(),
       'Instancing': (context) => const ExampleInstancing(),
