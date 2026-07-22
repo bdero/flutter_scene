@@ -3,7 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
@@ -56,6 +58,24 @@ class SpriteMaterial extends Material {
   /// How sprites of this material composite into the scene.
   SpriteBlendMode blendMode = SpriteBlendMode.alpha;
 
+  /// Soft-particle fade distance in world units, `0` (the default) off.
+  ///
+  /// When set, fragments fade out as they approach the opaque geometry
+  /// behind them, so fog, smoke, and dust dissolve through terrain and props
+  /// instead of cutting a hard intersection edge. A nonzero value requests
+  /// the scene depth input, which turns on the camera depth prepass.
+  double softDepthFade = 0.0;
+
+  /// Camera fade distance in world units, `0` (the default) off. Sprites
+  /// dissolve as the camera gets within this distance, so it never clips
+  /// through a hard-edged quad.
+  double cameraNearFade = 0.0;
+
+  // Soft particles read the opaque linear depth.
+  @override
+  Set<RenderInput> get sceneInputs =>
+      softDepthFade > 0.0 ? const {RenderInput.depth} : const <RenderInput>{};
+
   /// The sampler used for [colorTexture]. Defaults to linear filtering with
   /// edge clamping, which suits both single sprites and flipbook atlases.
   gpu.SamplerOptions sampler = gpu.SamplerOptions(
@@ -83,13 +103,20 @@ class SpriteMaterial extends Material {
     // (so opaque geometry occludes them) with depth writes off (so the
     // overlapping instances of one instanced draw do not self-occlude).
 
-    final fragInfo = Float32List(6);
+    final viewport = lighting.viewportSize;
+    final depthAvailable = lighting.sceneDepthLinear != null;
+    final fragInfo = Float32List(12);
     fragInfo[0] = tint.r;
     fragInfo[1] = tint.g;
     fragInfo[2] = tint.b;
     fragInfo[3] = tint.a;
     fragInfo[4] = blendMode == SpriteBlendMode.additive ? 1.0 : 0.0;
-    fragInfo[5] = 0.0; // soft (reserved)
+    fragInfo[5] = depthAvailable && softDepthFade > 0.0
+        ? 1.0 / softDepthFade
+        : 0.0;
+    fragInfo[6] = cameraNearFade > 0.0 ? 1.0 / cameraNearFade : 0.0;
+    fragInfo[8] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
+    fragInfo[9] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
     pass.bindUniform(
       fragmentShader.getUniformSlot('FragInfo'),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
@@ -98,6 +125,14 @@ class SpriteMaterial extends Material {
       fragmentShader.getUniformSlot('base_color_texture'),
       Material.whitePlaceholder(resolveTextureSource(colorTexture)),
       sampler: textureSourceSampler(colorTexture) ?? sampler,
+    );
+    // Always bound (a white placeholder when the prepass did not run) so the
+    // sampler is never left dangling; the fade is disabled in that case.
+    EngineLightingUniforms.bindSceneInputTextures(
+      pass,
+      fragmentShader,
+      lighting,
+      const {RenderInput.depth},
     );
   }
 }

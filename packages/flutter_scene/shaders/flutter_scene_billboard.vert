@@ -28,6 +28,9 @@ out vec4 v_color;
 // frame blending is off).
 out vec2 v_uv2;
 out float v_frame_blend;
+// Planar view-space depth in world units, for soft-particle depth fade
+// (matches the linear depth prepass encoding).
+out float v_view_depth;
 
 const float kSpherical = 0.0;
 const float kAxisLocked = 1.0;
@@ -91,6 +94,8 @@ void main() {
 
   vec3 world_pos = world_center + right * scaled.x + up * scaled.y;
   gl_Position = frame_info.camera_transform * vec4(world_pos, 1.0);
+  // For a perspective projection clip w is the planar view-space depth.
+  v_view_depth = gl_Position.w;
 
   // Flipbook cells. A 1x1 grid leaves the UV untouched. With blending on,
   // the fractional frame crossfades between its two neighboring cells
