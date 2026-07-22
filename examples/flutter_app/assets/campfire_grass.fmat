@@ -1,0 +1,118 @@
+// Wind-swept campsite grass, authored in the vertex stage. Thousands of
+// blades are baked into one geometry rooted on the terrain; this material
+// animates them entirely on the GPU, so the whole field is one draw that
+// still ripples. Each blade bends from its anchored root by a gust phased on
+// world position (uv.x carries the height above the root, so sway anchors
+// correctly wherever the blade stands on the hills).
+//
+// Two scales of variation give the carpet life. Up close, a base-to-tip
+// gradient and a per-blade tint (baked into the vertex color) vary each
+// blade. At the large scale, a smooth simplex-noise field makes areas drift
+// between short deep-green and taller dry-yellow.
+
+material {
+  name: "CampfireGrass",
+  shading_model: lit,
+  culling: none,
+  parameters: [
+    { type: float, name: time, default: 0.0 },
+    { type: float, name: wind_strength, hint: range(0.0, 1.5, 0.01), default: 0.5 },
+    { type: float, name: wind_speed, hint: range(0.0, 5.0, 0.05), default: 1.6 },
+    { type: float, name: wind_turbulence, hint: range(0.0, 1.5, 0.01), default: 0.55 },
+    // Signed static lean downwind, driven by the example's wind slider.
+    { type: float, name: wind_lean, hint: range(-1.0, 1.0, 0.01), default: 0.1 },
+    { type: float, name: macro_scale, hint: range(0.05, 1.0, 0.01), default: 0.22 },
+    { type: float, name: height_low, hint: range(0.3, 1.2, 0.01), default: 0.55 },
+    { type: float, name: height_high, hint: range(1.0, 2.5, 0.01), default: 1.55 },
+    { type: vec4, name: base_color, hint: source_color, default: [0.10, 0.20, 0.08, 1.0] },
+    { type: vec4, name: tip_color, hint: source_color, default: [0.34, 0.46, 0.20, 1.0] },
+    // Multiplier tints for the two ends of the macro field (short deep-green
+    // vs tall dry-yellow); not source_color, since they scale past 1.
+    { type: vec4, name: short_color, default: [0.72, 0.92, 0.60, 1.0] },
+    { type: vec4, name: tall_color, default: [1.35, 1.15, 0.48, 1.0] },
+  ],
+  varyings: [
+    { type: float, name: blade_h },
+    { type: float, name: macro },
+    { type: vec3, name: tint },
+  ],
+}
+
+vertex {
+  // Ashima-style 2D simplex noise: smooth, gradient-based, no directional
+  // grid artifacts. Lays out the macro grass regions.
+  vec3 mod289v3(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec3 permute(vec3 x) { return mod289v3(((x * 34.0) + 1.0) * x); }
+
+  float snoise(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                        -0.577350269189626, 0.024390243902439);
+    vec2 i = floor(v + dot(v, C.yy));
+    vec2 x0 = v - i + dot(i, C.xx);
+    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = i - floor(i * (1.0 / 289.0)) * 289.0;
+    vec3 p = permute(
+        permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(
+        0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+    m = m * m;
+    m = m * m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+    vec3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+  }
+
+  void Vertex(inout VertexInputs vertex) {
+    // Macro field: remap to 0..1 and ease the extremes so regions linger
+    // in-between short and tall.
+    vec2 np = vertex.world_position.xz * material_params.macro_scale;
+    macro = smoothstep(0.2, 0.8, snoise(np) * 0.5 + 0.5);
+    float heightScale =
+        mix(material_params.height_low, material_params.height_high, macro);
+
+    // Sway grows from the anchored root (uv.x is the height above this
+    // blade's root) toward the tip, phased by world position so neighbours
+    // wave out of step. Taller patches sway more.
+    float bend = vertex.uv.x;
+    float phase = material_params.time * material_params.wind_speed +
+                  vertex.world_position.x * 1.3 + vertex.world_position.z * 1.1;
+    float gust =
+        sin(phase) + material_params.wind_turbulence * sin(2.7 * phase + 1.3);
+    float amount =
+        material_params.wind_strength * gust * bend * bend * heightScale;
+    float lean = material_params.wind_lean * bend * heightScale;
+    vertex.world_position.x += amount * 0.75 + lean;
+    vertex.world_position.z += amount * 0.66 + lean * 0.4;
+
+    // Stretch the blade to the macro height, anchored at the root.
+    vertex.world_position.y += (heightScale - 1.0) * vertex.uv.x;
+
+    blade_h = vertex.uv.y;
+    tint = vertex.color.rgb;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 col = mix(material_params.base_color.rgb, material_params.tip_color.rgb,
+                   blade_h);
+    // Shift the whole blade between the deep-green and dry-yellow palettes by
+    // the macro field, then apply the per-blade tint.
+    vec3 palette =
+        mix(material_params.short_color.rgb, material_params.tall_color.rgb,
+            macro);
+    col *= palette * tint;
+    material.base_color = vec4(col, 1.0);
+    material.metallic = 0.0;
+    material.roughness = 0.9;
+    PrepareMaterial(material);
+  }
+}
