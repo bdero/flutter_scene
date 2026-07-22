@@ -10,6 +10,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
+import 'package:flutter_scene/src/components/trail_component.dart';
+import 'package:flutter_scene/src/geometry/primitives.dart'
+    show buildIcosphereArrays;
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart' as shape;
@@ -60,6 +63,83 @@ class _FirelightFlicker extends Component {
   }
 }
 
+/// One firefly: steers a bounded-speed wander over the grass (noise turns
+/// the heading, so it can never teleport), bobbing over the terrain,
+/// blinking its point light, additive sprite, and faint trail together.
+class _Firefly extends Component {
+  _Firefly(this.light, this.sprite, this.trail, this.phase, this.groundHeight)
+    : _x = cos(phase * 2 * pi) * 4.0,
+      _z = sin(phase * 2 * pi) * 4.0,
+      _heading = phase * 2 * pi;
+
+  final PointLight light;
+  final SpriteMaterial sprite;
+  final TrailComponent trail;
+  final double phase;
+  final double Function(double x, double z) groundHeight;
+
+  // Live tuning, pushed from the panel through _applyParams.
+  double speedScale = 1.0;
+  double wanderScale = 1.0;
+  double blinkThreshold = 0.0;
+  double lightIntensity = 1.2;
+  double trailWidth = 0.07;
+
+  final FastNoiseLite _noise = FastNoiseLite()
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 2;
+  double _t = 0;
+  double _x;
+  double _z;
+  double _heading;
+
+  @override
+  void update(double deltaSeconds) {
+    _t += deltaSeconds;
+    // Meander: noise steers the heading, position integrates at a bounded
+    // speed, so a firefly can dart but never teleport.
+    _heading +=
+        _noise.getNoise2(_t * 0.6, phase * 91.7) *
+        3.2 *
+        wanderScale *
+        deltaSeconds;
+    var dx = cos(_heading);
+    var dz = sin(_heading);
+    // Steer back over the grass band, away from the fire and the far edge.
+    final r = sqrt(_x * _x + _z * _z);
+    if (r < 2.6 || r > 6.8) {
+      final outward = r < 2.6 ? 1.0 : -1.0;
+      dx += (_x / max(r, 1e-3)) * outward * 1.6;
+      dz += (_z / max(r, 1e-3)) * outward * 1.6;
+      final len = sqrt(dx * dx + dz * dz);
+      dx /= len;
+      dz /= len;
+      _heading = atan2(dz, dx);
+    }
+    final speed =
+        (0.55 + 0.35 * _noise.getNoise2(_t * 0.8, phase * 3.1)) * speedScale;
+    _x += dx * speed * deltaSeconds;
+    _z += dz * speed * deltaSeconds;
+    final y =
+        groundHeight(_x, _z) +
+        0.55 +
+        0.3 * _noise.getNoise2(_t * 0.6, phase * 7.7);
+    node.localTransform = vm.Matrix4.translation(vm.Vector3(_x, y, _z));
+
+    // Smooth on/off pulses, each firefly on its own rhythm; the threshold
+    // shifts the visible duty cycle and the trail breathes with the blink.
+    final blink = _smoothstep(
+      blinkThreshold,
+      blinkThreshold + 0.45,
+      _noise.getNoise2(_t * 0.7 + phase * 11.3, 3.3),
+    );
+    light.intensity = lightIntensity * blink;
+    sprite.tint = vm.Vector4(1.2, 2.2, 0.55, blink);
+    trail.width = trailWidth * (0.35 + 0.65 * blink);
+  }
+}
+
 /// Pulses a coal's emissive with slow noise, each coal on its own phase, so
 /// the bed breathes like embers being fanned.
 class _CoalGlow extends Component {
@@ -103,7 +183,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _wind = 0.26;
   double _smokeAmount = 0.25;
   double _emberAmount = 0.4;
-  double _fogAmount = 1.0;
+  double _emberSpeed = 1.0;
+  double _emberLife = 1.0;
+  double _fogAmount = 1.28;
+
+  // Firefly tuning (see _applyParams).
+  double _fireflySpeed = 1.4;
+  double _fireflyWander = 1.0;
+  double _fireflyBlink = 0.55;
+  double _fireflyLight = 1.2;
+  double _fireflyTrailWidth = 0.07;
+  double _fireflyTrailLife = 1.4;
+  double _fireflyTrailGlow = 1.0;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
@@ -135,10 +226,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
   final List<(TurbulenceModule, double)> _emberTurbs = [];
   final List<(AccelerationModule, double)> _winds = [];
   final List<(Node, double)> _fireNodes = [];
+  // Stray rocks seated on the terrain (node, x, z, half height), re-seated
+  // when the hill sliders rebuild the ground.
+  final List<(Node, double, double, double)> _terrainRocks = [];
+  final List<_Firefly> _fireflies = [];
+  final List<TrailComponent> _fireflyTrails = [];
 
   @override
   void initState() {
     super.initState();
+    // Ambient occlusion grounds the rocks, logs, and grass clumps under the
+    // firelight (the shared settings panel can still turn it off).
+    exampleSettings.ambientOcclusion.enabled = true;
     _load();
   }
 
@@ -171,12 +270,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
     final groundTexture = GpuTextureSource(
       await gpuTextureFromImage(await _bakeGroundTexture()),
     );
+    final groundNormal = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeGroundNormal()),
+    );
+    final groundRough = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeGroundRoughness()),
+    );
     final stoneTexture = GpuTextureSource(
       await gpuTextureFromImage(await _bakeStoneTexture()),
     );
     _grassMaterial = await loadFmatMaterial('assets/campfire_grass.fmat');
 
-    _buildCampsite(groundTexture, stoneTexture);
+    _buildCampsite(groundTexture, groundNormal, groundRough, stoneTexture);
 
     scene.add(_flameCore(flameAtlas));
     scene.add(_flameTongues(flameAtlas));
@@ -198,8 +303,63 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ..addComponent(_flicker),
     );
 
+    // Fireflies drifting over the grass, each pairing a green point light
+    // with a small additive sprite and a faint ribbon trail, all blinking in
+    // sync.
+    for (var i = 0; i < 4; i++) {
+      final flyLight = PointLight(
+        color: vm.Vector3(0.55, 1.0, 0.35),
+        intensity: 0.0,
+        range: 3.0,
+      );
+      final flySprite = Sprite(texture: dot, width: 0.045, height: 0.045);
+      flySprite.material.blendMode = SpriteBlendMode.additive;
+      final flyTrail = TrailComponent(
+        width: _fireflyTrailWidth,
+        lifetime: _fireflyTrailLife,
+        minVertexDistance: 0.03,
+        maxPoints: 48,
+      );
+      final fly = _Firefly(
+        flyLight,
+        flySprite.material,
+        flyTrail,
+        i / 4,
+        _groundHeight,
+      );
+      _fireflies.add(fly);
+      _fireflyTrails.add(flyTrail);
+      scene.add(
+        Node(mesh: flySprite.mesh)
+          ..addComponent(PointLightComponent(flyLight))
+          ..add(Node()..addComponent(flyTrail))
+          ..addComponent(fly),
+      );
+    }
+
+    // Prewarm only after the panel defaults are applied, so the scene opens
+    // already-populated with particles that were simulated under the same
+    // parameters they will keep running with (a constructor-time prewarm
+    // would bake the raw base turbulence and lifetimes into the first
+    // seconds of the fire).
     _applyParams();
+    _prewarm(_coreSystem, 1.5);
+    _prewarm(_tongueSystem, 1.0);
+    _prewarm(_glowSystem, 1.0);
+    _prewarm(_smokeSystem, 5.0);
+    _prewarm(_emberSystem, 2.0);
+    _prewarm(_fogSystem, 12.0);
     if (mounted) setState(() => _ready = true);
+  }
+
+  // Advances a system in max-frame-sized chunks (step clamps a single call).
+  static void _prewarm(ParticleSystem system, double seconds) {
+    var remaining = seconds;
+    while (remaining > 0) {
+      final chunk = min(0.25, remaining);
+      system.step(chunk);
+      remaining -= chunk;
+    }
   }
 
   // Pushes the slider values into the live systems: spawn rates, sprite
@@ -212,6 +372,31 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _smokeSystem.spawner.rate = _smokeRate * _smokeAmount;
     _emberSystem.spawner.rate = _emberRate * _emberAmount;
     _fogSystem.spawner.rate = _fogRate * _fogAmount;
+    _emberSystem.startSpeed = UniformFloat(
+      1.2 * _emberSpeed,
+      2.6 * _emberSpeed,
+    );
+    _emberSystem.lifetime = UniformFloat(1.1 * _emberLife, 2.1 * _emberLife);
+    // Fireflies: motion, blink duty cycle (the noise threshold shifts how
+    // often they light up), light brightness, and their trails.
+    for (final fly in _fireflies) {
+      fly
+        ..speedScale = _fireflySpeed
+        ..wanderScale = _fireflyWander
+        ..blinkThreshold = 0.75 - 1.5 * _fireflyBlink
+        ..lightIntensity = _fireflyLight
+        ..trailWidth = _fireflyTrailWidth;
+    }
+    final g = _fireflyTrailGlow;
+    for (final trail in _fireflyTrails) {
+      trail
+        ..lifetime = _fireflyTrailLife
+        ..colorOverTrail = ColorGradient([
+          ColorStop(0.0, vm.Vector4(2.0 * g, 3.6 * g, 0.9 * g, 0.6)),
+          ColorStop(0.6, vm.Vector4(1.2 * g, 2.2 * g, 0.55 * g, 0.35)),
+          ColorStop(1.0, vm.Vector4(0.5 * g, 1.0 * g, 0.25 * g, 0.0)),
+        ]);
+    }
     _coreSystem.startSize = UniformFloat(
       0.85 * _flameScale,
       1.15 * _flameScale,
@@ -480,32 +665,100 @@ class ExampleParticlesState extends State<ExampleParticles> {
     );
   }
 
-  // Rebuilds the terrain-shaped geometry (ground mesh and grass roots) after
-  // the hill sliders change.
+  // Rebuilds the terrain-shaped geometry (ground mesh, grass roots, rock
+  // seats) after the hill sliders change.
   void _rebuildTerrain() {
     _groundNode.mesh = Mesh(_buildGroundGeometry(), _groundMaterial);
     _grassNode.mesh = Mesh(_buildGrassGeometry(), _grassMaterial);
+    _seatTerrainRocks();
+  }
+
+  // Drops each stray rock onto the terrain surface, keeping its baked
+  // rotation and scale (only the translation moves).
+  void _seatTerrainRocks() {
+    for (final (node, x, z, halfHeight) in _terrainRocks) {
+      node.localTransform.setTranslationRaw(
+        x,
+        _groundHeight(x, z) + halfHeight,
+        z,
+      );
+    }
+  }
+
+  // A jagged rock: an icosphere displaced by fbm noise, exploded into
+  // per-face vertices so the auto-generated normals stay flat and faceted.
+  MeshGeometry _rockGeometry(int seed) {
+    final arrays = buildIcosphereArrays(radius: 1.0, subdivisions: 1);
+    final noise = FastNoiseLite()
+      ..seed = seed
+      ..frequency = 1.0
+      ..fractalType = FractalType.fbm
+      ..octaves = 3;
+    final displaced = Float32List.fromList(arrays.positions);
+    for (var i = 0; i < displaced.length; i += 3) {
+      final x = displaced[i];
+      final y = displaced[i + 1];
+      final z = displaced[i + 2];
+      final len = sqrt(x * x + y * y + z * z);
+      final nx = x / len;
+      final ny = y / len;
+      final nz = z / len;
+      final bump =
+          1.0 +
+          0.30 * noise.getNoise3(nx * 1.6, ny * 1.6, nz * 1.6) +
+          0.10 * noise.getNoise3(nx * 4.5 + 9, ny * 4.5, nz * 4.5);
+      displaced[i] = nx * bump;
+      displaced[i + 1] = ny * bump;
+      displaced[i + 2] = nz * bump;
+    }
+    final srcIndices = arrays.indices;
+    final srcUv = arrays.texCoords;
+    final positions = Float32List(srcIndices.length * 3);
+    final texCoords = Float32List(srcIndices.length * 2);
+    for (var i = 0; i < srcIndices.length; i++) {
+      final v = srcIndices[i];
+      positions[i * 3] = displaced[v * 3];
+      positions[i * 3 + 1] = displaced[v * 3 + 1];
+      positions[i * 3 + 2] = displaced[v * 3 + 2];
+      if (srcUv != null) {
+        texCoords[i * 2] = srcUv[v * 2];
+        texCoords[i * 2 + 1] = srcUv[v * 2 + 1];
+      }
+    }
+    return MeshGeometry.fromArrays(
+      positions: positions,
+      texCoords: texCoords,
+      indices: List<int>.generate(srcIndices.length, (i) => i),
+    );
   }
 
   // Ground terrain, grass, stone ring, log teepee, and a glowing coal bed.
-  void _buildCampsite(TextureSource ground, TextureSource stone) {
-    _groundMaterial = PhysicallyBasedMaterial(baseColorTexture: ground)
-      ..baseColorFactor = vm.Vector4(1, 1, 1, 1)
-      ..roughnessFactor = 0.95
-      ..metallicFactor = 0.0;
+  void _buildCampsite(
+    TextureSource ground,
+    TextureSource groundNormal,
+    TextureSource groundRough,
+    TextureSource stone,
+  ) {
+    _groundMaterial =
+        PhysicallyBasedMaterial(
+            baseColorTexture: ground,
+            normalTexture: groundNormal,
+            metallicRoughnessTexture: groundRough,
+          )
+          ..baseColorFactor = vm.Vector4(1, 1, 1, 1)
+          ..roughnessFactor = 1.0
+          ..normalScale = 1.2
+          ..metallicFactor = 1.0;
     _groundNode = Node(mesh: Mesh(_buildGroundGeometry(), _groundMaterial));
     scene.add(_groundNode);
     _grassNode = Node(mesh: Mesh(_buildGrassGeometry(), _grassMaterial));
     scene.add(_grassNode);
 
     final rng = Random(5);
-    const stoneCount = 9;
-    for (var i = 0; i < stoneCount; i++) {
-      final a = i * 2 * pi / stoneCount + rng.nextDouble() * 0.3;
-      final r = 0.95 + rng.nextDouble() * 0.12;
-      final s = 0.14 + rng.nextDouble() * 0.08;
-      // Warm/cool tint and roughness variation so the ring reads as a pile of
-      // different rocks under the firelight, not nine copies.
+    // Three jagged rock shapes shared by every stone, each placed with its
+    // own tint, roughness, yaw, and squash so no two read alike.
+    final rockShapes = [for (var i = 0; i < 3; i++) _rockGeometry(60 + i)];
+    Node rock(double x, double y, double z, double s) {
       final warm = rng.nextDouble();
       final tint = vm.Vector4(
         0.75 + 0.25 * warm,
@@ -513,25 +766,50 @@ class ExampleParticlesState extends State<ExampleParticles> {
         0.78 - 0.18 * warm,
         1,
       );
-      scene.add(
-        Node(
-          mesh: Mesh(
-            SphereGeometry(radius: 1.0),
-            PhysicallyBasedMaterial(baseColorTexture: stone)
-              ..baseColorFactor = tint
-              ..roughnessFactor = 0.55 + rng.nextDouble() * 0.35
-              ..metallicFactor = 0.0,
-          ),
-          localTransform:
-              vm.Matrix4.translation(
-                vm.Vector3(cos(a) * r, s * 0.5, sin(a) * r),
-              )..multiply(
-                vm.Matrix4.rotationY(rng.nextDouble() * 2 * pi)
-                  ..multiply(vm.Matrix4.diagonal3Values(s, s * 0.62, s)),
-              ),
+      return Node(
+        mesh: Mesh(
+          rockShapes[rng.nextInt(rockShapes.length)],
+          PhysicallyBasedMaterial(baseColorTexture: stone)
+            ..baseColorFactor = tint
+            ..roughnessFactor = 0.55 + rng.nextDouble() * 0.4
+            ..metallicFactor = 0.0,
         ),
+        localTransform: vm.Matrix4.translation(vm.Vector3(x, y, z))
+          ..multiply(
+            vm.Matrix4.rotationY(rng.nextDouble() * 2 * pi)
+              ..multiply(vm.Matrix4.rotationX((rng.nextDouble() - 0.5) * 0.4))
+              ..multiply(
+                vm.Matrix4.diagonal3Values(
+                  s * (0.85 + rng.nextDouble() * 0.3),
+                  s * (0.55 + rng.nextDouble() * 0.3),
+                  s,
+                ),
+              ),
+          ),
       );
     }
+
+    // The fire ring: a denser circle of medium stones.
+    const stoneCount = 13;
+    for (var i = 0; i < stoneCount; i++) {
+      final a = i * 2 * pi / stoneCount + rng.nextDouble() * 0.25;
+      final r = 0.95 + rng.nextDouble() * 0.14;
+      final s = 0.11 + rng.nextDouble() * 0.13;
+      scene.add(rock(cos(a) * r, s * 0.45, sin(a) * r, s));
+    }
+    // Strays scattered across the terrain, small pebbles to half-buried
+    // boulders, re-seated by _rebuildTerrain when the hills change.
+    for (var i = 0; i < 9; i++) {
+      final a = rng.nextDouble() * 2 * pi;
+      final r = 1.9 + rng.nextDouble() * 4.8;
+      final s = 0.07 + pow(rng.nextDouble(), 2.0) * 0.4;
+      final x = cos(a) * r;
+      final z = sin(a) * r;
+      final node = rock(x, 0, z, s);
+      _terrainRocks.add((node, x, z, s * 0.4));
+      scene.add(node);
+    }
+    _seatTerrainRocks();
 
     const logCount = 5;
     for (var i = 0; i < logCount; i++) {
@@ -560,23 +838,37 @@ class ExampleParticlesState extends State<ExampleParticles> {
       );
     }
 
-    // Coal bed: small near-black lumps whose pulsing emissive makes the base
-    // of the fire glow from within.
-    const coalCount = 9;
+    // Coal bed: jagged near-black shards (the same faceted rock shapes as
+    // the stones, smaller and more broken) whose pulsing emissive makes the
+    // base of the fire glow from within.
+    const coalCount = 12;
     for (var i = 0; i < coalCount; i++) {
       final a = rng.nextDouble() * 2 * pi;
-      final r = rng.nextDouble() * 0.28;
-      final s = 0.05 + rng.nextDouble() * 0.05;
+      final r = rng.nextDouble() * 0.32;
+      final s = 0.035 + rng.nextDouble() * 0.055;
       final material = PhysicallyBasedMaterial()
         ..baseColorFactor = vm.Vector4(0.02, 0.015, 0.01, 1)
         ..roughnessFactor = 0.9
         ..metallicFactor = 0.0;
       scene.add(
         Node(
-          mesh: Mesh(SphereGeometry(radius: 1.0), material),
-          localTransform: vm.Matrix4.translation(
-            vm.Vector3(cos(a) * r, s * 0.4 + 0.03, sin(a) * r),
-          )..multiply(vm.Matrix4.diagonal3Values(s, s * 0.6, s)),
+          mesh: Mesh(rockShapes[rng.nextInt(rockShapes.length)], material),
+          localTransform:
+              vm.Matrix4.translation(
+                vm.Vector3(cos(a) * r, s * 0.35 + 0.02, sin(a) * r),
+              )..multiply(
+                vm.Matrix4.rotationY(rng.nextDouble() * 2 * pi)
+                  ..multiply(
+                    vm.Matrix4.rotationZ((rng.nextDouble() - 0.5) * 0.8),
+                  )
+                  ..multiply(
+                    vm.Matrix4.diagonal3Values(
+                      s * (0.8 + rng.nextDouble() * 0.5),
+                      s * 0.55,
+                      s,
+                    ),
+                  ),
+              ),
         )..addComponent(_CoalGlow(material, i / coalCount)),
       );
     }
@@ -636,7 +928,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 2,
-      prewarm: 1.5,
     );
     final material = SpriteMaterial(colorTexture: atlas)
       ..blendMode = SpriteBlendMode.additive;
@@ -700,7 +991,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 3,
-      prewarm: 1.0,
     );
     final material = SpriteMaterial(colorTexture: atlas)
       ..blendMode = SpriteBlendMode.additive;
@@ -740,10 +1030,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 4,
-      prewarm: 1.0,
     );
     final material = SpriteMaterial(colorTexture: dot)
-      ..blendMode = SpriteBlendMode.additive;
+      ..blendMode = SpriteBlendMode.additive
+      // The halo quads intersect the coal bed and ground; the soft depth
+      // fade dissolves the intersection instead of clipping a hard line.
+      ..softDepthFade = 1.1;
     return _emitterNode(_glowSystem, material, y: 0.5).$1;
   }
 
@@ -795,7 +1087,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 5,
-      prewarm: 5.0,
     );
     final material = SpriteMaterial(colorTexture: atlas)
       ..blendMode = SpriteBlendMode.alpha
@@ -850,7 +1141,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 7,
-      prewarm: 12.0,
     );
     final material = SpriteMaterial(colorTexture: atlas)
       ..blendMode = SpriteBlendMode.alpha
@@ -908,7 +1198,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ),
       ],
       seed: 6,
-      prewarm: 2.0,
     );
     final material = SpriteMaterial(colorTexture: dot)
       ..blendMode = SpriteBlendMode.additive;
@@ -1057,12 +1346,102 @@ class ExampleParticlesState extends State<ExampleParticles> {
             }),
           ),
           _SliderRow(
+            label: 'Ember speed',
+            value: _emberSpeed,
+            min: 0.3,
+            max: 2.5,
+            onChanged: (v) => setState(() {
+              _emberSpeed = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Ember life',
+            value: _emberLife,
+            min: 0.3,
+            max: 2.5,
+            onChanged: (v) => setState(() {
+              _emberLife = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
             label: 'Fog',
             value: _fogAmount,
             min: 0.0,
             max: 2.0,
             onChanged: (v) => setState(() {
               _fogAmount = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fly speed',
+            value: _fireflySpeed,
+            min: 0.2,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _fireflySpeed = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fly wander',
+            value: _fireflyWander,
+            min: 0.2,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _fireflyWander = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fly blink',
+            value: _fireflyBlink,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _fireflyBlink = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fly light',
+            value: _fireflyLight,
+            min: 0.0,
+            max: 4.0,
+            onChanged: (v) => setState(() {
+              _fireflyLight = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Trail width',
+            value: _fireflyTrailWidth,
+            min: 0.0,
+            max: 0.25,
+            onChanged: (v) => setState(() {
+              _fireflyTrailWidth = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Trail life',
+            value: _fireflyTrailLife,
+            min: 0.2,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _fireflyTrailLife = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Trail glow',
+            value: _fireflyTrailGlow,
+            min: 0.0,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _fireflyTrailGlow = v;
               _applyParams();
             }),
           ),
@@ -1236,6 +1615,84 @@ Future<ui.Image> _bakeGroundTexture() async {
       pixels[o + 3] = 255;
     }
     if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  return vfxImageFromPixels(pixels, size);
+}
+
+/// Bakes the ground's tangent-space normal map from the same grain and patch
+/// noise as the albedo, so pebbly micro-relief catches the grazing
+/// firelight.
+Future<ui.Image> _bakeGroundNormal() async {
+  const size = 512;
+  final pixels = Uint8List(size * size * 4);
+  final grainNoise = FastNoiseLite()
+    ..seed = 27
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 4;
+  final patchNoise = FastNoiseLite()
+    ..seed = 28
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 3;
+
+  double height(double u, double v) {
+    final grain = grainNoise.getNoise2(u * 60.0, v * 60.0);
+    final patch = patchNoise.getNoise2(u * 7.0, v * 7.0);
+    return 0.012 * grain + 0.02 * patch;
+  }
+
+  const eps = 1.0 / size;
+  const strength = 90.0;
+  for (var py = 0; py < size; py++) {
+    final v = (py + 0.5) / size;
+    for (var px = 0; px < size; px++) {
+      final u = (px + 0.5) / size;
+      final du = height(u + eps, v) - height(u - eps, v);
+      final dv = height(u, v + eps) - height(u, v - eps);
+      final n = vm.Vector3(-du * strength, -dv * strength, 1.0)..normalize();
+      final o = (py * size + px) * 4;
+      pixels[o] = ((n.x * 0.5 + 0.5) * 255).round();
+      pixels[o + 1] = ((n.y * 0.5 + 0.5) * 255).round();
+      pixels[o + 2] = ((n.z * 0.5 + 0.5) * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  return vfxImageFromPixels(pixels, size);
+}
+
+/// Bakes the ground's metallic-roughness map (roughness in G, metallic in
+/// B): rough dirt, slightly polished ash and char where the fire has baked
+/// the soil.
+Future<ui.Image> _bakeGroundRoughness() async {
+  const size = 256;
+  final pixels = Uint8List(size * size * 4);
+  final grainNoise = FastNoiseLite()
+    ..seed = 27
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 4;
+  for (var py = 0; py < size; py++) {
+    final v = (py + 0.5) / size;
+    for (var px = 0; px < size; px++) {
+      final u = (px + 0.5) / size;
+      final dx = u - 0.5;
+      final dy = v - 0.5;
+      final r = sqrt(dx * dx + dy * dy);
+      final grain = grainNoise.getNoise2(u * 60.0, v * 60.0) * 0.5 + 0.5;
+      final edgeNoise = grainNoise.getNoise2(u * 24.0, v * 24.0) * 0.012;
+      // Dirt stays fully rough (a specular sheen reads as wet plastic under
+      // the point light); only the fire-baked char tightens slightly.
+      final char = 1.0 - _smoothstep(0.045, 0.085, r + edgeNoise);
+      var rough = 0.92 + 0.08 * grain;
+      rough += (0.78 - rough) * char;
+      final o = (py * size + px) * 4;
+      pixels[o] = 0;
+      pixels[o + 1] = (rough.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = 0;
+      pixels[o + 3] = 255;
+    }
   }
   return vfxImageFromPixels(pixels, size);
 }
