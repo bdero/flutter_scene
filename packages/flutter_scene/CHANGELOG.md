@@ -14,8 +14,13 @@
   declarative tree, `SceneSubtree` mounts declarative children under any
   node of an app-owned scene (both `SceneView` constructors take
   `children`), and `SceneNodeController` hands imperative code the
-  widget-managed node. The imperative API is unchanged and remains fully
-  supported.
+  widget-managed node. Gated views (`loading`/`warmUp`) hold their reveal
+  until declarative models finish loading, asset-sourced models
+  participate in asset hot reload, template clones carry importer-attached
+  components (punctual lights) through the new `Component.cloneFor` hook,
+  and removing an animation spec fully unregisters its clip
+  (`AnimationPlayer.removeClip`). The imperative API is unchanged and
+  remains fully supported.
 
 * Declarative animation control and shared model templates. `SceneModel`
   gained `animations`, a list of `SceneAnimationSpec`s declaring which
@@ -31,14 +36,19 @@
 
 * `KHR_materials_variants` support in both import paths. Models
   declaring material variants get a `MaterialsVariantsComponent` (found
-  via `MaterialsVariantsComponent.of(root)`) with the declared names;
+  via `MaterialsVariantsComponent.of(root)`, or `allOf` for multi-root
+  documents) with the declared names;
   `select(name)` swaps the mapped primitives' materials in place
   (`select(null)` restores defaults), so variant switching is instant.
   The `.fscene` document format carries variants as a
   `materialsVariants` component (variant names plus per-primitive
-  material mappings), so pre-converted `.fsceneb` assets keep their
-  variants; no container change was needed and existing files are
-  unaffected. `SceneModel` exposes selection declaratively as a
+  material mappings, the authored default, and the active selection), so
+  pre-converted `.fsceneb` assets keep their variants and an editor save
+  made while a variant is selected keeps the authored defaults; no
+  container change was needed and existing files are unaffected. Bindings
+  resolve primitives by index at selection time, so meshes rebuilt by
+  scene hot reload stay bound, and re-registered render items keep
+  subclass state (LOD tags) through the new mesh re-registration hook. `SceneModel` exposes selection declaratively as a
   `variant` property. The example app gained a Configurator example, a
   product configurator that live-downloads the Khronos
   MaterialsVariantsShoe and switches its colorways.

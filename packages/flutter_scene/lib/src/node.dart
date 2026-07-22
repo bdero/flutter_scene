@@ -536,6 +536,11 @@ base class Node implements SceneGraph {
     return _animationPlayer!.createAnimationClip(animation, this);
   }
 
+  /// Unregisters [clip] from this node's animation player so it no longer
+  /// contributes to the blend. No-op when [clip] is not registered here.
+  void removeAnimationClip(AnimationClip clip) =>
+      _animationPlayer?.removeClip(clip);
+
   /// Load a glTF binary (GLB) model directly from raw bytes.
   ///
   /// No offline conversion is required, useful for runtime use cases such
@@ -830,6 +835,14 @@ base class Node implements SceneGraph {
     // clone renders with reversed cull winding: see-through, inverted geometry).
     result.excludeFromWindingParity = excludeFromWindingParity;
     result._animations.addAll(_animations);
+    // Components opt into cloning through [Component.cloneFor]; mesh
+    // components are excluded because the mesh is already cloned through the
+    // constructor above.
+    for (final component in _components) {
+      if (component is MeshComponent) continue;
+      final copy = component.cloneFor(result);
+      if (copy != null) result.addComponent(copy);
+    }
     if (recursive) {
       for (var child in children) {
         result.add(child._cloneAndCollectSkins(recursive, clonedSkins));

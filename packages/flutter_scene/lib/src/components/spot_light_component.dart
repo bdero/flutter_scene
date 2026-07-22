@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/node.dart';
 
 /// An engine [Component] that places a [SpotLight] in the scene.
 ///
@@ -45,4 +46,9 @@ class SpotLightComponent extends Component {
   /// length (the shader normalizes it).
   Vector3 get worldDirection =>
       node.globalTransform.getRotation() * light.direction;
+
+  /// Clones carry the light, sharing the light object like other clone
+  /// payloads (geometry, materials).
+  @override
+  Component? cloneFor(Node cloneOwner) => SpotLightComponent(light);
 }

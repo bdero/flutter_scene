@@ -790,12 +790,20 @@ void _emitMaterialsVariants(
               '${entry.key}': ResourceRefValue(materialIds[entry.value]),
         };
         if (materials.isNotEmpty) {
+          final defaultIndex = primitive.material;
           bindingsByNode
               .putIfAbsent(i, () => [])
               .add(
                 MapValue({
                   'node': NodeRefValue(nodeIds[i]),
                   'primitive': IntValue(primIndex),
+                  // The authored default, kept explicit so an editor save
+                  // made while a variant is selected does not bake the
+                  // selection in as the default.
+                  if (defaultIndex != null &&
+                      defaultIndex >= 0 &&
+                      defaultIndex < materialIds.length)
+                    'default': ResourceRefValue(materialIds[defaultIndex]),
                   'materials': MapValue(materials),
                 }),
               );

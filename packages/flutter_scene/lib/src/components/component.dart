@@ -73,6 +73,18 @@ abstract class Component {
   /// Called when this component is removed from a node.
   void onDetach() {}
 
+  /// Returns a copy of this component for [cloneOwner], the [Node.clone]
+  /// counterpart of the owning node, or null to not carry the component to
+  /// clones (the default).
+  ///
+  /// Follows the clone's sharing rule for meshes, heavyweight payloads stay
+  /// shared while per-node identity is fresh, so an override typically wraps
+  /// the same payload in a new component instance (the light components
+  /// share their light object). Components whose state references other
+  /// nodes cannot self-clone through this hook and need caller-driven
+  /// rebinding instead (see `MaterialsVariantsComponent`).
+  Component? cloneFor(Node cloneOwner) => null;
+
   @internal
   void attachTo(Node node) {
     _node = node;

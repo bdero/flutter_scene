@@ -289,6 +289,10 @@ class _SceneViewState extends State<SceneView>
 
   Scene get _scene => widget.scene ?? _ownedScene!;
 
+  // Loads declared by declarative children (SceneModel), so a gated view's
+  // reveal waits for them. Handed to descendants through SceneScope.
+  final ResourceGroup _childLoads = ResourceGroup();
+
   final _Repaint _repaint = _Repaint();
   final ValueNotifier<Duration> _elapsed = ValueNotifier<Duration>(
     Duration.zero,
@@ -324,9 +328,7 @@ class _SceneViewState extends State<SceneView>
   void initState() {
     super.initState();
     if (widget.scene == null) {
-      _ownedScene = Scene();
-      _ownedDefaultEnvironment = _ownedScene!.environment;
-      _applySceneProps(null);
+      _ensureOwnedScene();
     }
     _sceneSemantics = SceneSemanticsCoordinator(_scene);
     SemanticsBinding.instance.addSemanticsEnabledListener(_onSemanticsChanged);
@@ -340,6 +342,15 @@ class _SceneViewState extends State<SceneView>
     if (_gated) {
       _startRevealWatch();
     }
+  }
+
+  // Creates the owned scene for the declarative form and applies every scene
+  // prop, the single creation path for initState and constructor-form
+  // switches.
+  void _ensureOwnedScene() {
+    _ownedScene = Scene();
+    _ownedDefaultEnvironment = _ownedScene!.environment;
+    _applySceneProps(null);
   }
 
   // Applies the declarative constructor's scene-level props to the owned
@@ -378,13 +389,20 @@ class _SceneViewState extends State<SceneView>
       _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
     }
     final oldScene = oldWidget.scene ?? _ownedScene;
-    if (widget.scene == null && _ownedScene == null) {
-      // Switched from an app-owned scene to the declarative form.
-      _ownedScene = Scene();
-      _ownedDefaultEnvironment = _ownedScene!.environment;
-    }
     if (widget.scene == null) {
-      _applySceneProps(oldWidget.scene == null ? oldWidget : null);
+      if (oldWidget.scene != null || _ownedScene == null) {
+        // Switched from an app-owned scene to the declarative form. A stale
+        // owned scene from an earlier declarative phase is discarded so
+        // leftover imperative state cannot resurface.
+        _ensureOwnedScene();
+      } else {
+        _applySceneProps(oldWidget);
+      }
+    } else if (_ownedScene != null) {
+      // Switched from the declarative form to an app-owned scene; drop the
+      // owned scene so a later switch back starts fresh.
+      _ownedScene = null;
+      _ownedDefaultEnvironment = null;
     }
     if (!identical(_scene, oldScene)) {
       oldScene?.renderScene.semanticsComponentsChanged.removeListener(
@@ -396,13 +414,15 @@ class _SceneViewState extends State<SceneView>
       _sceneSemantics = SceneSemanticsCoordinator(_scene);
       _autoPointer = null;
     }
-    // A new set of resources to wait for (or newly gated): hold the scene again
-    // until they load.
+    // A new set of resources to wait for, a newly gated view, or a different
+    // scene: hold the scene again until its loads and warm-up complete.
     final gatedBefore =
         oldWidget.loading != null ||
         oldWidget.loadingBuilder != null ||
         oldWidget.warmUp;
-    if (widget.loading != oldWidget.loading || _gated != gatedBefore) {
+    if (widget.loading != oldWidget.loading ||
+        _gated != gatedBefore ||
+        !identical(_scene, oldScene)) {
       _revealed = !_gated;
       if (_gated) {
         _startRevealWatch();
@@ -422,6 +442,13 @@ class _SceneViewState extends State<SceneView>
     await Scene.initializeStaticResources();
     if (!mounted || generation != _revealGeneration) return;
     await widget.loading?.ready;
+    if (!mounted || generation != _revealGeneration) return;
+    // Wait a frame so declarative children have built and registered their
+    // loads, then wait for those loads, so gated views (and warm-up) cover
+    // SceneModel content too.
+    await SchedulerBinding.instance.endOfFrame;
+    if (!mounted || generation != _revealGeneration) return;
+    await _childLoads.ready;
     if (!mounted || generation != _revealGeneration) return;
     // Compile the pipelines the first frame needs while the loading widget is
     // still up, so the reveal frame does not stall.
@@ -592,11 +619,19 @@ class _SceneViewState extends State<SceneView>
         fit: StackFit.passthrough,
         children: [
           view,
-          SceneSubtree(children: widget.children),
+          // The explicit parent pins children to THIS view's scene; resolving
+          // through context could find an outer declarative tree's parent
+          // scope when views nest.
+          SceneSubtree(parent: _scene.root, children: widget.children),
         ],
       );
     }
-    return SceneScope(scene: _scene, elapsed: _elapsed, child: view);
+    return SceneScope(
+      scene: _scene,
+      elapsed: _elapsed,
+      internalChildLoads: _childLoads,
+      child: view,
+    );
   }
 
   Widget _buildView(BuildContext context) {
@@ -913,15 +948,15 @@ class _RenderSceneCustomPaint extends RenderCustomPaint {
 /// of a [SceneView].
 ///
 /// Resolve the scene from a descendant's [BuildContext] with [SceneScope.of].
-/// Today [SceneView] is the only producer and there are no built-in consumers;
-/// this plumbing exists so a future declarative node API can attach widgets to
-/// the right scene subtree without restructuring the view.
+/// Declarative scene widgets resolve their default attachment point through
+/// it, and other descendants may read the scene for queries.
 /// {@category Widgets}
 class SceneScope extends InheritedWidget {
   const SceneScope({
     super.key,
     required this.scene,
     required this.elapsed,
+    this.internalChildLoads,
     required super.child,
   });
 
@@ -934,6 +969,11 @@ class SceneScope extends InheritedWidget {
   /// about per-frame time can listen without forcing every dependent to rebuild
   /// each frame.
   final ValueListenable<Duration> elapsed;
+
+  /// The enclosing view's tracker for declarative child loads, so a gated
+  /// view's reveal waits for them. Engine plumbing, not application surface.
+  @internal
+  final ResourceGroup? internalChildLoads;
 
   /// The nearest [SceneScope], or null if there is none.
   static SceneScope? maybeOf(BuildContext context) =>

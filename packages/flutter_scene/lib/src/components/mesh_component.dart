@@ -60,7 +60,17 @@ class MeshComponent extends Component {
       _renderItems.add(item);
       renderScene.add(item);
     }
+    onRenderItemsRegistered();
   }
+
+  /// Called after this component registers its render items, on mount and on
+  /// every re-registration ([mesh] assignment, [refreshMaterials]).
+  ///
+  /// Subclasses that decorate the registered items (the LOD component tags
+  /// them with its selection) must do so here rather than in [onMount], or
+  /// the decoration is lost when the items are rebuilt.
+  @protected
+  void onRenderItemsRegistered() {}
 
   /// Re-registers the render items so a changed [MeshPrimitive.material]
   /// takes effect.

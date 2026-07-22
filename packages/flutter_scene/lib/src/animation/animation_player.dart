@@ -25,16 +25,27 @@ class AnimationPlayer {
   AnimationClip createAnimationClip(Animation animation, Node bindTarget) {
     final clip = AnimationClip(animation, bindTarget);
 
-    // Record all of the unique default transforms that this AnimationClip
-    // will mutate.
+    // Record the default transforms this clip will mutate. Nodes already
+    // bound by another clip keep their recorded bind pose; re-capturing here
+    // would snapshot the current (possibly mid-playback, animated) transform
+    // as the rest pose and corrupt the blend baseline for every clip.
     for (final binding in clip._bindings) {
-      _targetTransforms[binding.node] = AnimationTransforms(
-        bindPose: _bindPoseOf(binding.node),
+      _targetTransforms.putIfAbsent(
+        binding.node,
+        () => AnimationTransforms(bindPose: _bindPoseOf(binding.node)),
       );
     }
 
     _clips[animation.name] = clip;
     return clip;
+  }
+
+  /// Unregisters [clip] so it no longer contributes to the blend.
+  ///
+  /// Bind poses recorded for its nodes are kept (other clips may share
+  /// them). No-op when [clip] is not registered.
+  void removeClip(AnimationClip clip) {
+    _clips.removeWhere((_, registered) => identical(registered, clip));
   }
 
   /// Returns the registered clip whose [Animation.name] equals [name],
