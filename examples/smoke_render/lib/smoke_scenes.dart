@@ -395,9 +395,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   }),
   // Auto exposure pinned at its upper clamp: the mostly-empty background
   // meters far below the reference luminance, so the adapted factor lands on
-  // exp2(maxEv) on the first (snapped) frame and holds there on every later
-  // frame, deterministically brightening the dimly-lit cuboid. Covers the
-  // whole chain (seed, downsample, adaptation, resolve composite) with a
+  // exp2(maxEv) during the startup snap frames and holds there on every
+  // later frame, deterministically brightening the dimly-lit cuboid. Covers
+  // the whole chain (seed, downsample, adaptation, resolve composite) with a
   // clamp-pinned value that is robust to small cross-backend metering
   // differences.
   SmokeScene('auto_exposure', () {
