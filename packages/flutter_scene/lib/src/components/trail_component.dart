@@ -8,7 +8,10 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/geometry/polyline_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/material/sprite_material.dart';
+import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/physically_based_material.dart'
+    show AlphaMode;
+import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -31,12 +34,14 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 ///
 /// Points are recorded in world space, so the ribbon hangs in the world
 /// where the node has been rather than dragging along rigidly with it. The
-/// default [material] is an additive [SpriteMaterial]; any material whose
-/// fragment stage reads `v_uv`/`v_color`-style varyings works, and the
-/// strip's texture coordinates run head to tail along `u`.
+/// strip is an ordinary triangle mesh (the trail gradient rides the vertex
+/// colors and its texture coordinates run head to tail along `u`), so it
+/// pairs with any standard material; the default is a translucent
+/// [UnlitMaterial] weighted fully to the vertex color.
 class TrailComponent extends MeshComponent {
   /// Creates a trail. [maxPoints] bounds the recorded path (oldest points
-  /// expire first); [material] defaults to an additive sprite material.
+  /// expire first); [material] defaults to a translucent unlit material
+  /// driven by the trail's vertex colors.
   factory TrailComponent({
     double width = 0.25,
     double lifetime = 0.6,
@@ -44,11 +49,14 @@ class TrailComponent extends MeshComponent {
     int maxPoints = 48,
     ParticleCurve? widthOverTrail,
     ColorGradient? colorOverTrail,
-    SpriteMaterial? material,
+    Material? material,
   }) {
     final geometry = _TrailGeometry(maxPoints);
     final resolved =
-        material ?? (SpriteMaterial()..blendMode = SpriteBlendMode.additive);
+        material ??
+        (UnlitMaterial()
+          ..alphaMode = AlphaMode.blend
+          ..vertexColorWeight = 1.0);
     return TrailComponent._(
       geometry,
       resolved,
@@ -62,7 +70,7 @@ class TrailComponent extends MeshComponent {
 
   TrailComponent._(
     this._geometry,
-    SpriteMaterial material, {
+    Material material, {
     required this.width,
     required this.lifetime,
     required this.minVertexDistance,
