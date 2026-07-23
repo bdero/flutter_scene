@@ -43,6 +43,7 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/resource_group.dart';
 import 'package:flutter_scene/src/widgets/scene_view.dart';
 
 /// The declarative scene layer, widgets that own and reconcile [Node]s in a
@@ -747,29 +748,97 @@ class SceneAnimationBinder {
   }
 }
 
+/// Ties a [SceneModel]'s load into an enclosing view's reveal gate (the
+/// `loading`/`warmUp` machinery): [register] arms a completer against the
+/// gate group once, and [settle] resolves it, so a gated [SceneView] stays
+/// on its loading widget until declarative models are mounted.
+///
+/// [settle] only completes the gate when called for the generation that is
+/// still current. Without that check, a load whose source changed while it
+/// was still in flight could have its stale, superseded attempt complete
+/// the gate in a `finally` block after the fact, revealing (or warming up)
+/// the view before the replacement load that the widget actually settled on
+/// has finished. [forceSettle] (used on dispose, where no later generation
+/// will ever run) completes it unconditionally.
+///
+/// Kept separate from the widget so this generation-safety invariant is
+/// testable without a GPU-backed [Scene].
+@internal
+class SceneModelLoadGate {
+  Completer<void>? _completer;
+  bool _armed = false;
+
+  /// Arms the gate against [group] the first time this is called; later
+  /// calls no-op, matching the once-only "first load" gate contract. A null
+  /// [group] (no enclosing gated view) also no-ops. [alreadySettled] marks
+  /// the gate complete immediately, for a load that resolved before the
+  /// gate was armed (a warm cache).
+  void register(ResourceGroup? group, {required bool alreadySettled}) {
+    if (_armed) return;
+    _armed = true;
+    if (group == null) return;
+    final completer = Completer<void>();
+    _completer = completer;
+    if (alreadySettled) completer.complete();
+    group.add(completer.future);
+  }
+
+  /// Completes the gate if [generation] is still [currentGeneration];
+  /// otherwise a stale generation's completion is silently dropped.
+  void settle(int generation, int currentGeneration) {
+    if (generation != currentGeneration) return;
+    forceSettle();
+  }
+
+  /// Completes the gate unconditionally (idempotent).
+  void forceSettle() {
+    final completer = _completer;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+}
+
 /// A refcounted template per [SceneModelSource.cacheKey]: bytes are loaded
 /// and imported once, and each [SceneModel] instance mounts a [Node.clone]
 /// of the shared template (geometry, textures, and materials stay shared;
 /// primitives, skins, and the variants component are per instance). The
 /// entry is evicted when the last user releases it.
+///
+/// [acquire] returns a lease tied to the specific entry it incremented, not
+/// just the cache key: after a hot-reload evict + reacquire, an older lease
+/// and the current entry can share a cache key while being different
+/// objects, and a release must not decrement (or evict) whichever entry a
+/// later acquire happened to install under that key.
 class _ModelTemplateCache {
   static final Map<String, _ModelTemplateEntry> _entries = {};
 
-  static Future<Node> acquire(SceneModelSource source) {
-    final entry = _entries.putIfAbsent(
-      source.cacheKey,
-      () => _ModelTemplateEntry(_import(source)),
-    );
+  static _ModelTemplateLease acquire(SceneModelSource source) {
+    final cacheKey = source.cacheKey;
+    final entry = _entries.putIfAbsent(cacheKey, () {
+      final newEntry = _ModelTemplateEntry();
+      newEntry.template = _import(source, cacheKey, newEntry);
+      return newEntry;
+    });
     entry.refCount++;
-    return entry.template;
+    return _ModelTemplateLease._(entry, cacheKey);
   }
 
-  static Future<Node> _import(SceneModelSource source) async {
+  static Future<Node> _import(
+    SceneModelSource source,
+    String cacheKey,
+    _ModelTemplateEntry entry,
+  ) async {
     try {
       return await source.createNode();
     } catch (_) {
-      // Evict so a later mount retries instead of caching the failure.
-      _entries.remove(source.cacheKey);
+      // Evict so a later mount retries instead of caching the failure. Only
+      // if this entry is still the one installed for the key: a hot reload
+      // may have already evicted and reacquired it, and that replacement
+      // must not be torn down by this stale import's failure.
+      if (identical(_entries[cacheKey], entry)) {
+        _entries.remove(cacheKey);
+      }
       rethrow;
     }
   }
@@ -782,19 +851,28 @@ class _ModelTemplateCache {
   // an unmount/remount cycle (a list scrolling a model off and back)
   // re-imports from scratch; add a small keep-alive or unify with the
   // SceneRegistry template cache.
-  static void release(String cacheKey) {
-    final entry = _entries[cacheKey];
-    if (entry == null) return;
+  static void release(_ModelTemplateLease lease) {
+    final entry = lease._entry;
     entry.refCount--;
-    if (entry.refCount <= 0) {
-      _entries.remove(cacheKey);
+    if (entry.refCount <= 0 && identical(_entries[lease._cacheKey], entry)) {
+      _entries.remove(lease._cacheKey);
     }
   }
 }
 
+/// An [_ModelTemplateCache.acquire] handle bound to the entry it
+/// incremented, so [_ModelTemplateCache.release] always affects that same
+/// entry even if the cache has since evicted and reacquired a different one
+/// under the same cache key.
+class _ModelTemplateLease {
+  _ModelTemplateLease._(this._entry, this._cacheKey);
+  final _ModelTemplateEntry _entry;
+  final String _cacheKey;
+  Future<Node> get template => _entry.template;
+}
+
 class _ModelTemplateEntry {
-  _ModelTemplateEntry(this.template);
-  final Future<Node> template;
+  late final Future<Node> template;
   int refCount = 0;
 }
 
@@ -878,6 +956,14 @@ class SceneModel extends _SceneNodeWidgetBase {
   static void debugClearModelTemplateCache() =>
       _ModelTemplateCache._entries.clear();
 
+  /// Evicts the shared model template cache entry for [cacheKey], as a hot
+  /// reload would, without going through the asset hot-reload machinery
+  /// (tests only). Live holders keep their clones; a later acquire under the
+  /// same key installs a new entry alongside them.
+  @visibleForTesting
+  static void debugEvictModelTemplateCache(String cacheKey) =>
+      _ModelTemplateCache.evict(cacheKey);
+
   /// Where the model bytes come from. Diffed by [SceneModelSource.cacheKey].
   final SceneModelSource source;
 
@@ -908,15 +994,14 @@ class _SceneModelState extends State<SceneModel>
   Node? _modelRoot;
   Object? _loadError;
   int _loadGeneration = 0;
-  String? _heldTemplateKey;
+  _ModelTemplateLease? _heldTemplateLease;
   bool _warnedUnknownVariant = false;
   final SceneAnimationBinder _animations = SceneAnimationBinder();
 
   // Ties this widget's load into the enclosing SceneView's reveal gate (the
   // loading/warmUp machinery), so a gated view stays on its loading widget
   // until declarative models are mounted. Registered once, on first build.
-  Completer<void>? _loadGate;
-  bool _gateChecked = false;
+  final SceneModelLoadGate _loadGate = SceneModelLoadGate();
 
   @override
   List<Widget> get _children => [
@@ -936,10 +1021,11 @@ class _SceneModelState extends State<SceneModel>
   Future<void> _load() async {
     final generation = ++_loadGeneration;
     final source = widget.source;
+    final lease = _ModelTemplateCache.acquire(source);
     try {
-      final template = await _ModelTemplateCache.acquire(source);
+      final template = await lease.template;
       if (!mounted || generation != _loadGeneration) {
-        _ModelTemplateCache.release(source.cacheKey);
+        _ModelTemplateCache.release(lease);
         return;
       }
       // Each widget mounts its own clone of the shared template; heavy GPU
@@ -949,7 +1035,7 @@ class _SceneModelState extends State<SceneModel>
       final modelRoot = template.clone();
       MaterialsVariantsComponent.rebindClone(template, modelRoot);
       _node.add(modelRoot);
-      _heldTemplateKey = source.cacheKey;
+      _heldTemplateLease = lease;
       setState(() {
         _modelRoot = modelRoot;
         _loadError = null;
@@ -965,7 +1051,11 @@ class _SceneModelState extends State<SceneModel>
       }
       setState(() => _loadError = e);
     } finally {
-      _settleLoadGate();
+      // Only the generation that is still current settles the once-only
+      // gate: a stale generation finishing after a source change (or
+      // dispose, which bumps the generation itself) must not complete the
+      // gate on the current generation's behalf and reveal the view early.
+      _loadGate.settle(generation, _loadGeneration);
     }
   }
 
@@ -991,31 +1081,20 @@ class _SceneModelState extends State<SceneModel>
   }
 
   void _registerLoadGate(BuildContext context) {
-    if (_gateChecked) return;
-    _gateChecked = true;
     final group = SceneScope.maybeOf(context)?.internalChildLoads;
-    if (group == null) return;
     // Already-settled loads (a warm cache) register a completed future, so
     // the gate never waits on them.
-    _loadGate = Completer<void>();
-    if (_modelRoot != null || _loadError != null) {
-      _loadGate!.complete();
-    }
-    group.add(_loadGate!.future);
-  }
-
-  void _settleLoadGate() {
-    final gate = _loadGate;
-    if (gate != null && !gate.isCompleted) {
-      gate.complete();
-    }
+    _loadGate.register(
+      group,
+      alreadySettled: _modelRoot != null || _loadError != null,
+    );
   }
 
   void _releaseTemplate() {
-    final held = _heldTemplateKey;
+    final held = _heldTemplateLease;
     if (held != null) {
       _ModelTemplateCache.release(held);
-      _heldTemplateKey = null;
+      _heldTemplateLease = null;
     }
   }
 
@@ -1034,7 +1113,10 @@ class _SceneModelState extends State<SceneModel>
   @override
   void dispose() {
     _resetModel();
-    _settleLoadGate();
+    // Unconditional: disposal means no later generation will ever run to
+    // settle the gate itself, so it must complete now regardless of which
+    // generation was in flight.
+    _loadGate.forceSettle();
     super.dispose();
   }
 
