@@ -67,6 +67,13 @@ abstract class AudioEngine extends Component {
   /// playable clip. Completes after the engine finishes initializing.
   Future<AudioClip> loadClip(String assetKey);
 
+  /// Loads and decodes in-memory encoded audio [bytes] (any container
+  /// the backend decodes, typically wav/ogg/mp3) into a playable clip,
+  /// for downloaded or generated audio. [key] names the clip for
+  /// backend bookkeeping and should be unique per logical clip.
+  /// Completes after the engine finishes initializing.
+  Future<AudioClip> loadClipFromBytes(String key, Uint8List bytes);
+
   /// Creates a paused single-use voice playing [clip]. See [AudioVoice]
   /// for the configure-then-[AudioVoice.start] flow. Throws when the
   /// engine is not ready or [clip] is disposed.

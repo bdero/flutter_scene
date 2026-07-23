@@ -2,6 +2,8 @@
 // listener resolution and pose math, velocity derivation, clip-source
 // playback lifecycle, buses, and the fscene codec round-trip.
 
+import 'dart:typed_data';
+
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
@@ -121,6 +123,12 @@ class FakeAudioEngine extends AudioEngine {
   Future<AudioClip> loadClip(String assetKey) async {
     loadedAssets.add(assetKey);
     return FakeClip(assetKey);
+  }
+
+  @override
+  Future<AudioClip> loadClipFromBytes(String key, Uint8List bytes) async {
+    loadedAssets.add(key);
+    return FakeClip(key);
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -197,8 +198,18 @@ class FmodAudioEngine extends AudioEngine with WidgetsBindingObserver {
   @override
   Future<AudioClip> loadClip(String assetKey) async {
     await ready;
-    final fmod = _requireFmod;
     final bytes = await rootBundle.load(assetKey);
+    return _clipFromBytes(bytes.buffer.asUint8List());
+  }
+
+  @override
+  Future<AudioClip> loadClipFromBytes(String key, Uint8List bytes) async {
+    await ready;
+    return _clipFromBytes(bytes);
+  }
+
+  Future<AudioClip> _clipFromBytes(Uint8List bytes) async {
+    final fmod = _requireFmod;
     // FMOD_OPENMEMORY needs the version-sensitive FMOD_CREATESOUNDEXINFO
     // struct, so the bytes go through a temp file instead; the sample is
     // fully decoded at create time and the file is deleted right after.
@@ -206,7 +217,7 @@ class FmodAudioEngine extends AudioEngine with WidgetsBindingObserver {
     // skip the temp-file round trip.
     final directory = await Directory.systemTemp.createTemp('fscene_fmod');
     final file = File('${directory.path}/clip');
-    await file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
+    await file.writeAsBytes(bytes, flush: true);
     try {
       final pathUtf8 = file.path.toNativeUtf8();
       final soundOut = calloc<Pointer<Void>>();
