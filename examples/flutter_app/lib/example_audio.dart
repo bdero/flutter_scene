@@ -12,10 +12,10 @@ import 'example_panel.dart';
 import 'example_settings.dart';
 import 'lighting_panel.dart' show LabeledSlider;
 
-/// Spatial audio through the SoLoud backend. An emitter orbits the scene
-/// carrying a looping hum (pan and doppler as it passes), tapping plays
-/// a one-shot chime at a random position marked by a brief cube, and a
-/// CC0 music track downloads at startup and loops through a `music` bus.
+/// Spatial audio through the SoLoud backend. A CC0 recording of Bach's
+/// Goldberg Aria downloads at startup and plays from a sphere orbiting
+/// the listener, so the music pans and swells as it circles. Tapping
+/// plays a one-shot chime at a random position marked by a brief cube.
 /// The mixer panel drives the contract's bus volumes. The listener
 /// follows the camera automatically.
 class ExampleAudio extends StatefulWidget {
@@ -42,11 +42,12 @@ class _OrbitComponent extends Component {
   }
 }
 
-// "Merfolk Music Box" by Komiku, CC0 1.0, hosted on Wikimedia Commons.
+// Bach, Goldberg Variations, Aria. Musopen recording, CC0 1.0, hosted
+// on Wikimedia Commons.
 const _musicUrl =
-    'https://upload.wikimedia.org/wikipedia/commons/6/69/'
-    'Komiku_-_46_-_Merfolk_Music_Box.ogg';
-const _musicCredit = '"Merfolk Music Box" by Komiku (CC0)';
+    'https://upload.wikimedia.org/wikipedia/commons/a/af/'
+    'Bach%2C_Goldberg_Variations%2C_Aria_%28Musopen_version%29.ogg';
+const _musicCredit = 'Bach, Goldberg Aria. Musopen recording (CC0)';
 
 class ExampleAudioState extends State<ExampleAudio> {
   Scene scene = Scene();
@@ -63,6 +64,9 @@ class ExampleAudioState extends State<ExampleAudio> {
   // mutates the child list mid-iteration).
   final List<(Node, DateTime)> _markers = [];
 
+  // The orbiting sphere the music plays from once it downloads.
+  late final Node emitter;
+
   @override
   void initState() {
     engine = SoloudAudioEngine();
@@ -72,27 +76,12 @@ class ExampleAudioState extends State<ExampleAudio> {
     engine.loadClip('assets/sounds/chime.wav').then((clip) => chime = clip);
     _loadMusic();
 
-    // The orbiting emitter, audible and visible.
-    final emitter =
-        Node(
-            mesh: Mesh(
-              SphereGeometry(radius: 0.3),
-              UnlitMaterial()..baseColorFactor = vm.Vector4(1.0, 0.6, 0.1, 1.0),
-            ),
-          )
-          ..addComponent(_OrbitComponent(5.0, 0.9))
-          ..addComponent(
-            ClipAudioSource(
-              asset: 'assets/sounds/hum_loop.wav',
-              autoplay: true,
-              looping: true,
-              bus: sfxBus,
-              attenuation: AudioAttenuation(
-                minDistance: 2.0,
-                maxDistance: 40.0,
-              ),
-            ),
-          );
+    emitter = Node(
+      mesh: Mesh(
+        SphereGeometry(radius: 0.3),
+        UnlitMaterial()..baseColorFactor = vm.Vector4(1.0, 0.6, 0.1, 1.0),
+      ),
+    )..addComponent(_OrbitComponent(5.0, 0.9));
     scene.add(emitter);
 
     // A reference cube at the origin so the orbit reads spatially.
@@ -115,24 +104,26 @@ class ExampleAudioState extends State<ExampleAudio> {
         throw StateError('HTTP ${response.statusCode}');
       }
       final clip = await engine.loadClipFromBytes(
-        'merfolk_music_box',
+        'goldberg_aria',
         response.bodyBytes,
       );
       if (!mounted) {
         clip.dispose();
         return;
       }
+      // The music itself is the spatial source, riding the orbiting
+      // sphere so it circles the listener.
       final source = ClipAudioSource(
         clip: clip,
         autoplay: true,
         looping: true,
-        positional: false,
         bus: musicBus,
+        attenuation: AudioAttenuation(minDistance: 4.0, maxDistance: 60.0),
       );
-      scene.add(Node()..addComponent(source));
+      emitter.addComponent(source);
       setState(() {
         music = source;
-        musicStatus = 'Music: $_musicCredit';
+        musicStatus = _musicCredit;
       });
     } catch (error) {
       debugPrint('Music download failed. $error');
