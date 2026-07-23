@@ -15,7 +15,7 @@ import 'lighting_panel.dart' show LabeledSlider;
 /// Spatial audio through the SoLoud backend. A CC0 recording of Bach's
 /// Goldberg Aria downloads at startup and plays from a sphere orbiting
 /// the listener, so the music pans and swells as it circles. Tapping
-/// plays a one-shot chime at a random position marked by a brief cube.
+/// plucks a one-shot note at a random position marked by a brief cube.
 /// The mixer panel drives the contract's bus volumes. The listener
 /// follows the camera automatically.
 class ExampleAudio extends StatefulWidget {
@@ -54,12 +54,12 @@ class ExampleAudioState extends State<ExampleAudio> {
   late final SoloudAudioEngine engine;
   late final AudioBus musicBus;
   late final AudioBus sfxBus;
-  AudioClip? chime;
+  AudioClip? pluck;
   ClipAudioSource? music;
   String musicStatus = 'Downloading music…';
   final random = Random();
 
-  // Chime markers with their removal deadlines. Expired outside the
+  // Pluck markers with their removal deadlines. Expired outside the
   // scene's component walk (removing a node from a component's update
   // mutates the child list mid-iteration).
   final List<(Node, DateTime)> _markers = [];
@@ -73,7 +73,12 @@ class ExampleAudioState extends State<ExampleAudio> {
     scene.root.addComponent(engine);
     musicBus = engine.createBus('music');
     sfxBus = engine.createBus('sfx');
-    engine.loadClip('assets/sounds/chime.wav').then((clip) => chime = clip);
+    engine.loadClip('assets/sounds/pluck.wav').then((clip) => pluck = clip);
+    // Leave headroom under SoLoud's output clipper; the music is
+    // mastered near full scale, so unity buses crunch when plucks land
+    // on top.
+    musicBus.volume = 0.8;
+    sfxBus.volume = 0.8;
     _loadMusic();
 
     emitter = Node(
@@ -113,12 +118,18 @@ class ExampleAudioState extends State<ExampleAudio> {
       }
       // The music itself is the spatial source, riding the orbiting
       // sphere so it circles the listener.
+      // Doppler off; stepped per-frame pitch shifts read as warble on
+      // tonal music. The orbit demo is the panning and distance swell.
       final source = ClipAudioSource(
         clip: clip,
         autoplay: true,
         looping: true,
         bus: musicBus,
-        attenuation: AudioAttenuation(minDistance: 4.0, maxDistance: 60.0),
+        attenuation: AudioAttenuation(
+          minDistance: 4.0,
+          maxDistance: 60.0,
+          dopplerFactor: 0.0,
+        ),
       );
       emitter.addComponent(source);
       setState(() {
@@ -135,27 +146,30 @@ class ExampleAudioState extends State<ExampleAudio> {
 
   @override
   void dispose() {
-    chime?.dispose();
+    pluck?.dispose();
     music?.clip?.dispose();
     super.dispose();
   }
 
-  void _playChime() {
-    final clip = chime;
+  void _playPluck() {
+    final clip = pluck;
     if (clip == null) return;
     final position = vm.Vector3(
       (random.nextDouble() - 0.5) * 12,
       random.nextDouble() * 3,
       (random.nextDouble() - 0.5) * 12,
     );
+    // Pentatonic pitches keep overlapping plucks consonant with each
+    // other and the music.
+    const pitches = [1.0, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2.0];
     engine.playOneShot(
       clip,
       position: position,
       volume: 0.6,
-      pitch: 0.9 + random.nextDouble() * 0.2,
+      pitch: pitches[random.nextInt(pitches.length)],
       bus: sfxBus,
     );
-    // Mark where the chime came from, briefly.
+    // Mark where the note came from, briefly.
     final marker = Node(
       mesh: Mesh(
         CuboidGeometry(vm.Vector3(0.4, 0.4, 0.4)),
@@ -230,7 +244,7 @@ class ExampleAudioState extends State<ExampleAudio> {
     return Stack(
       children: [
         GestureDetector(
-          onTapDown: (_) => _playChime(),
+          onTapDown: (_) => _playPluck(),
           child: SceneView(
             scene,
             cameraBuilder: (elapsed) => PerspectiveCamera(
@@ -245,7 +259,7 @@ class ExampleAudioState extends State<ExampleAudio> {
         ),
         ExampleOverlay.topCenterAction(
           child: const ExampleActionHint(
-            message: 'Tap to play a chime at a random position',
+            message: 'Tap to pluck a note at a random position',
           ),
         ),
         ExampleOverlay.bottomRightPanel(

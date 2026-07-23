@@ -107,6 +107,19 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
     return voice;
   }
 
+  // Last listener pose pushed natively. Every SoLoud 3D setter runs a
+  // full native 3D update under the audio mutex, so a listener that has
+  // not moved (the common static-camera case) skips the call entirely.
+  final Vector3 _lastListenerPosition = Vector3(double.nan, 0, 0);
+  final Vector3 _lastListenerForward = Vector3.zero();
+  final Vector3 _lastListenerUp = Vector3.zero();
+  final Vector3 _lastListenerVelocity = Vector3.zero();
+
+  static bool _closeEnough(Vector3 a, Vector3 b) =>
+      (a.x - b.x).abs() < 1e-4 &&
+      (a.y - b.y).abs() < 1e-4 &&
+      (a.z - b.z).abs() < 1e-4;
+
   @override
   void onSyncListener(
     Vector3 position,
@@ -115,6 +128,16 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
     Vector3 velocity,
   ) {
     if (!_soloud.isInitialized) return;
+    if (_closeEnough(position, _lastListenerPosition) &&
+        _closeEnough(forward, _lastListenerForward) &&
+        _closeEnough(up, _lastListenerUp) &&
+        _closeEnough(velocity, _lastListenerVelocity)) {
+      return;
+    }
+    _lastListenerPosition.setFrom(position);
+    _lastListenerForward.setFrom(forward);
+    _lastListenerUp.setFrom(up);
+    _lastListenerVelocity.setFrom(velocity);
     _soloud.set3dListenerParameters(
       position.x,
       position.y,
@@ -404,11 +427,18 @@ class SoloudAudioVoice implements AudioVoice {
     Vector3 velocity,
     AudioAttenuation attenuation,
   ) {
+    final moved =
+        !SoloudAudioEngine._closeEnough(position, _position) ||
+        !SoloudAudioEngine._closeEnough(velocity, _velocity);
     _position.setFrom(position);
     _velocity.setFrom(velocity);
     final handle = _handle;
     if (handle == null || !isPlaying) return;
     final soloud = _engine._soloud;
+    if (!moved) {
+      _apply3dConfig(soloud, handle, attenuation);
+      return;
+    }
     soloud.set3dSourceParameters(
       handle,
       position.x,
@@ -418,6 +448,16 @@ class SoloudAudioVoice implements AudioVoice {
       velocity.y,
       -velocity.z,
     );
+    _apply3dConfig(soloud, handle, attenuation);
+  }
+
+  // Pushes attenuation changes only; the values rarely change, and each
+  // native 3D setter is a full update pass.
+  void _apply3dConfig(
+    sl.SoLoud soloud,
+    sl.SoundHandle handle,
+    AudioAttenuation attenuation,
+  ) {
     if (attenuation.minDistance != _appliedMin ||
         attenuation.maxDistance != _appliedMax) {
       _appliedMin = attenuation.minDistance;
