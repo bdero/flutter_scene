@@ -149,6 +149,14 @@ export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
 export 'src/texture/texture_registry.dart' show loadTexture;
 export 'src/texture/mipmap.dart' show TextureContent;
+export 'src/audio/audio_attenuation.dart' show AudioAttenuation, AudioRolloff;
+export 'src/audio/audio_bus.dart' show AudioBus;
+export 'src/audio/audio_clip.dart' show AudioClip;
+export 'src/audio/audio_engine.dart' show AudioEngine;
+export 'src/audio/audio_listener.dart' show AudioListener;
+export 'src/audio/audio_source.dart' show AudioSource;
+export 'src/audio/audio_voice.dart' show AudioVoice;
+export 'src/audio/clip_audio_source.dart' show ClipAudioSource;
 export 'src/physics/basic/basic_collider.dart' show BasicCollider;
 export 'src/physics/basic/basic_kinematic_body.dart' show BasicKinematicBody;
 export 'src/physics/basic/basic_world.dart' show BasicPhysicsWorld;

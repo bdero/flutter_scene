@@ -9,6 +9,7 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
 import 'package:example_app/example_animation.dart';
 
 import 'example_accessibility.dart';
+import 'example_audio.dart';
 import 'example_auto_exposure.dart';
 import 'example_configurator.dart';
 import 'example_cuboid.dart';
@@ -134,6 +135,7 @@ class _MyAppState extends State<MyApp> {
       'Materialize (.fmat)': (context) => const ExampleMaterialize(),
       'DICOM Volume': (context) => const ExampleDicom(),
       'Custom Skybox': (context) => const ExampleSkybox(),
+      'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
