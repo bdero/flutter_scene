@@ -18,6 +18,9 @@ dependencies:
   # in a Rust build hook, so building this app now requires cargo.
   flutter_scene_rapier:
     path: ../../packages/flutter_scene_rapier
+  # SoLoud audio backend, used by the Audio example.
+  flutter_scene_soloud:
+    path: ../../packages/flutter_scene_soloud
   # box3d physics backend, used by the Physics (box3d) example. Compiles
   # box3d from source through a C build hook.
   flutter_scene_box3d:
@@ -39,6 +42,8 @@ flutter:
 
   assets:
     - assets/little_paris_eiffel_tower.png
+    # Generated test tones for the Audio example.
+    - assets/sounds/
     # Imported scenes are registered as DataAssets by buildScenes (loaded via
     # loadScene); no pubspec entry is needed. Requires Dart data assets
     # (flutter config --enable-dart-data-assets).

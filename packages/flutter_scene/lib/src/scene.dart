@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
+import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
@@ -755,6 +756,17 @@ base class Scene implements SceneGraph {
     _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
     _stepPhysics(deltaSeconds);
     root.scenePrePass(deltaSeconds);
+    _syncAudio(deltaSeconds);
+  }
+
+  // Syncs the active [AudioEngine] (if any) after component ticks, so
+  // source transforms pushed during the tick land in the same frame's
+  // backend flush.
+  void _syncAudio(double frameDt) {
+    root.getComponent<AudioEngine>()?.frameSync(
+      frameDt,
+      fallbackCamera: camera,
+    );
   }
 
   // Advances the active [PhysicsWorld] (if any) on a fixed timestep.

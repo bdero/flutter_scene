@@ -46,7 +46,12 @@ import '../io/glb_import_options.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
-  EditorController._(this.session, this.scene, this.baseDirectory);
+  EditorController._(
+    this.session,
+    this.scene,
+    this.baseDirectory,
+    this._componentRegistry,
+  );
 
   /// The headless editing session (document, commands, history, selection).
   final EditorSession session;
@@ -153,12 +158,18 @@ class EditorController extends ChangeNotifier {
   static Future<EditorController> open(
     EditorSession session, {
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) async {
     // The global look lives in an environment resource the stage references.
     // Guarantee one exists (a studio default for an imported or legacy scene
     // that has none), so the look is always editable through the resource path.
     _ensureStageEnvironment(session.document);
-    final controller = EditorController._(session, Scene(), baseDirectory);
+    final controller = EditorController._(
+      session,
+      Scene(),
+      baseDirectory,
+      componentRegistry ?? defaultComponentRegistry(),
+    );
     // Keep prefab-internal nodes (which live only in the composed document)
     // selectable across edits, not just source nodes; but not synthetic compose
     // machinery (the handedness adapter), which is not editable.
@@ -217,7 +228,9 @@ class EditorController extends ChangeNotifier {
   /// image-based lighting and casting sun shadows, a usable look-dev default
   /// rather than a black void. The skybox and the sky-lighting binding take
   /// their own sky-source instances (as the `setSkybox` command does).
-  static Future<EditorController> empty() {
+  static Future<EditorController> empty({
+    FsceneComponentRegistry? componentRegistry,
+  }) {
     final document = SceneDocument();
     // The global look lives in an environment resource the stage references, so
     // it dedupes and shares the authoring path with volume environments.
@@ -233,7 +246,7 @@ class EditorController extends ChangeNotifier {
       ),
     );
     document.stage.environmentRef = environment.id;
-    return open(EditorSession(document));
+    return open(EditorSession(document), componentRegistry: componentRegistry);
   }
 
   /// Opens a controller over a document loaded from `.fscene` [source].
@@ -241,7 +254,12 @@ class EditorController extends ChangeNotifier {
   static Future<EditorController> fromFscene(
     String source, {
     String? baseDirectory,
-  }) => open(EditorSession.fromFscene(source), baseDirectory: baseDirectory);
+    FsceneComponentRegistry? componentRegistry,
+  }) => open(
+    EditorSession.fromFscene(source),
+    baseDirectory: baseDirectory,
+    componentRegistry: componentRegistry,
+  );
 
   /// Opens a controller over an already-imported [document] (from a `.glb` or
   /// multi-file `.gltf`), ready to edit and save as `.fscene`. [scale] and
@@ -252,12 +270,17 @@ class EditorController extends ChangeNotifier {
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) {
     final transform = _importTransform(scale, upAxis);
     if (transform != null) {
       wrapRootsUnderGroup(document, name: 'Imported', transform: transform);
     }
-    return open(EditorSession(document), baseDirectory: baseDirectory);
+    return open(
+      EditorSession(document),
+      baseDirectory: baseDirectory,
+      componentRegistry: componentRegistry,
+    );
   }
 
   /// Opens a controller over a glTF binary ([glbBytes]) imported in memory.
@@ -268,11 +291,13 @@ class EditorController extends ChangeNotifier {
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) => fromImportedScene(
     importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
     scale: scale,
     upAxis: upAxis,
     baseDirectory: baseDirectory,
+    componentRegistry: componentRegistry,
   );
 
   /// The current selection.
@@ -288,8 +313,10 @@ class EditorController extends ChangeNotifier {
   SceneDocument get document => session.document;
 
   // The component registry, for reading component-type schemas (the editable
-  // properties each type declares). Matches the registry realize uses.
-  final FsceneComponentRegistry _componentRegistry = defaultComponentRegistry();
+  // properties each type declares) and for realization, so codecs from
+  // backend packages injected through [open] show up in the inspector and
+  // realize in the viewport.
+  final FsceneComponentRegistry _componentRegistry;
 
   /// The component type names that can be added to a node.
   List<String> componentTypes() => _componentRegistry.types.toList();
@@ -1235,7 +1262,11 @@ class EditorController extends ChangeNotifier {
       textureLoader: _loadAssetTexture,
     );
     await realizer.preload();
-    final root = await realizeSceneAsync(toRealize, resources: realizer);
+    final root = await realizeSceneAsync(
+      toRealize,
+      resources: realizer,
+      registry: _componentRegistry,
+    );
     scene.removeAll();
     scene.add(root);
     // Apply the document's scene-wide settings (environment/lighting, exposure,

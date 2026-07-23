@@ -7,6 +7,8 @@ environment:
 workspace:
   - packages/flutter_scene
   - packages/flutter_scene_rapier
+  - packages/flutter_scene_soloud
+  - packages/flutter_scene_fmod
   - packages/flutter_scene_box3d
   - packages/flutter_scene_editor_core
   - packages/flutter_scene_editor
