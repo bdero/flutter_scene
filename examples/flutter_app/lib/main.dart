@@ -29,6 +29,7 @@ import 'example_fscene_stream.dart';
 import 'example_lod.dart';
 import 'example_logo.dart';
 import 'example_materialize.dart';
+import 'example_multiplayer.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_physics_box3d.dart';
@@ -165,6 +166,7 @@ class _MyAppState extends State<MyApp> {
       'Car': (context) => const ExampleCar(),
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
+      'Multiplayer': (context) => const ExampleMultiplayer(),
       'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
