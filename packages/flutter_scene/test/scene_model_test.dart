@@ -8,7 +8,7 @@ import 'package:flutter_scene/src/components/materials_variants_component.dart'
     show MaterialsVariantBinding;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/widgets/declarative.dart'
-    show SceneAnimationBinder;
+    show SceneAnimationBinder, SceneModelLoadGate;
 import 'package:flutter_test/flutter_test.dart';
 
 /// SceneModel widget tests. Sources override [SceneModelSource.createNode]
@@ -272,6 +272,72 @@ void main() {
       expect(importCalls, 2);
       expect(roots, hasLength(1));
     });
+
+    testWidgets(
+      'a stale holder releasing after a hot-reload evict+reacquire does not '
+      'evict the replacement entry',
+      (tester) async {
+        const keyA = ValueKey('a');
+        const keyB = ValueKey('b');
+        const keyC = ValueKey('c');
+
+        // A's load is held open on the gate, so it is still the sole holder
+        // of the original cache entry when that entry is evicted below.
+        final gated = _GatedSource('shared');
+        await tester.pumpWidget(
+          host([SceneModel.from(gated, key: keyA)]),
+        );
+        await tester.pump();
+
+        // Simulate the hot-reload path (evict the cache key, independent of
+        // any live holder) without the asset-bundle machinery it normally
+        // runs through.
+        SceneModel.debugEvictModelTemplateCache(gated.cacheKey);
+
+        // A's load resolves after the evict, against the entry it originally
+        // acquired (the cache holds no entry, and later a different one,
+        // under the same key by then).
+        gated.gate.complete();
+        await tester.pump();
+        await tester.pump();
+        expect(importCalls, 1);
+
+        // B acquires under the same key post-evict: a fresh entry, a second
+        // import.
+        await tester.pumpWidget(
+          host([
+            SceneModel.from(gated, key: keyA),
+            SceneModel.from(_FakeSource('shared'), key: keyB),
+          ]),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(importCalls, 2);
+
+        // A unmounts and releases the lease it acquired before the evict.
+        // With the bug, that release decrements (and, at refcount zero,
+        // evicts) whatever entry currently sits under "shared" -- B's --
+        // even though A never held a reference to it.
+        await tester.pumpWidget(
+          host([SceneModel.from(_FakeSource('shared'), key: keyB)]),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        // C mounts under the same key while B is still live. If A's stale
+        // release wrongly tore down B's entry, the cache is empty and C
+        // re-imports; with the fix B's entry is untouched and C reuses it.
+        await tester.pumpWidget(
+          host([
+            SceneModel.from(_FakeSource('shared'), key: keyB),
+            SceneModel.from(_FakeSource('shared'), key: keyC),
+          ]),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(importCalls, 2);
+      },
+    );
   });
 
   group('variants on clones', () {
@@ -442,6 +508,66 @@ void main() {
         const SceneAnimationSpec('A'),
         isNot(const SceneAnimationSpec('B')),
       );
+    });
+  });
+
+  group('SceneModelLoadGate', () {
+    test(
+      'settle only resolves the gate for the generation that is current',
+      () async {
+        final group = ResourceGroup();
+        final gate = SceneModelLoadGate();
+        gate.register(group, alreadySettled: false);
+
+        // Generation 1 (a source change's superseded first load) resolving
+        // after the widget has already moved on to generation 2 must not
+        // settle the gate on generation 2's behalf.
+        gate.settle(1, 2);
+        await Future<void>.value();
+        expect(group.isReady, isFalse);
+
+        // The generation that is actually current settles it.
+        gate.settle(2, 2);
+        await Future<void>.value();
+        expect(group.isReady, isTrue);
+      },
+    );
+
+    test('forceSettle resolves the gate regardless of generation', () async {
+      final group = ResourceGroup();
+      final gate = SceneModelLoadGate();
+      gate.register(group, alreadySettled: false);
+
+      gate.forceSettle();
+      await Future<void>.value();
+      expect(group.isReady, isTrue);
+    });
+
+    test('register only arms once; later calls (and groups) are ignored', () {
+      final first = ResourceGroup();
+      final second = ResourceGroup();
+      final gate = SceneModelLoadGate();
+
+      gate.register(first, alreadySettled: false);
+      gate.register(second, alreadySettled: false);
+
+      expect(first.total, 1);
+      expect(second.total, 0);
+    });
+
+    test('a null group is a safe no-op throughout', () {
+      final gate = SceneModelLoadGate();
+      expect(() => gate.register(null, alreadySettled: false), returnsNormally);
+      expect(() => gate.settle(1, 1), returnsNormally);
+      expect(() => gate.forceSettle(), returnsNormally);
+    });
+
+    test('alreadySettled registers a pre-completed load', () async {
+      final group = ResourceGroup();
+      final gate = SceneModelLoadGate();
+      gate.register(group, alreadySettled: true);
+      await Future<void>.value();
+      expect(group.isReady, isTrue);
     });
   });
 
