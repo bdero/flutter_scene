@@ -3,15 +3,21 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
+import 'package:http/http.dart' as http;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_action_hint.dart';
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart' show LabeledSlider;
 
-/// Spatial audio through the SoLoud backend. An emitter orbits the camera
-/// carrying a looping hum (pan and doppler as it passes), and tapping
-/// plays a one-shot chime at a random position, marked by a brief cube.
-/// The listener follows the camera automatically.
+/// Spatial audio through the SoLoud backend. An emitter orbits the scene
+/// carrying a looping hum (pan and doppler as it passes), tapping plays
+/// a one-shot chime at a random position marked by a brief cube, and a
+/// CC0 music track downloads at startup and loops through a `music` bus.
+/// The mixer panel drives the contract's bus volumes. The listener
+/// follows the camera automatically.
 class ExampleAudio extends StatefulWidget {
   const ExampleAudio({super.key});
 
@@ -36,10 +42,20 @@ class _OrbitComponent extends Component {
   }
 }
 
+// "Merfolk Music Box" by Komiku, CC0 1.0, hosted on Wikimedia Commons.
+const _musicUrl =
+    'https://upload.wikimedia.org/wikipedia/commons/6/69/'
+    'Komiku_-_46_-_Merfolk_Music_Box.ogg';
+const _musicCredit = '"Merfolk Music Box" by Komiku (CC0)';
+
 class ExampleAudioState extends State<ExampleAudio> {
   Scene scene = Scene();
   late final SoloudAudioEngine engine;
+  late final AudioBus musicBus;
+  late final AudioBus sfxBus;
   AudioClip? chime;
+  ClipAudioSource? music;
+  String musicStatus = 'Downloading music…';
   final random = Random();
 
   // Chime markers with their removal deadlines. Expired outside the
@@ -51,7 +67,10 @@ class ExampleAudioState extends State<ExampleAudio> {
   void initState() {
     engine = SoloudAudioEngine();
     scene.root.addComponent(engine);
+    musicBus = engine.createBus('music');
+    sfxBus = engine.createBus('sfx');
     engine.loadClip('assets/sounds/chime.wav').then((clip) => chime = clip);
+    _loadMusic();
 
     // The orbiting emitter, audible and visible.
     final emitter =
@@ -67,6 +86,7 @@ class ExampleAudioState extends State<ExampleAudio> {
               asset: 'assets/sounds/hum_loop.wav',
               autoplay: true,
               looping: true,
+              bus: sfxBus,
               attenuation: AudioAttenuation(
                 minDistance: 2.0,
                 maxDistance: 40.0,
@@ -88,9 +108,44 @@ class ExampleAudioState extends State<ExampleAudio> {
     super.initState();
   }
 
+  Future<void> _loadMusic() async {
+    try {
+      final response = await http.get(Uri.parse(_musicUrl));
+      if (response.statusCode != 200) {
+        throw StateError('HTTP ${response.statusCode}');
+      }
+      final clip = await engine.loadClipFromBytes(
+        'merfolk_music_box',
+        response.bodyBytes,
+      );
+      if (!mounted) {
+        clip.dispose();
+        return;
+      }
+      final source = ClipAudioSource(
+        clip: clip,
+        autoplay: true,
+        looping: true,
+        positional: false,
+        bus: musicBus,
+      );
+      scene.add(Node()..addComponent(source));
+      setState(() {
+        music = source;
+        musicStatus = 'Music: $_musicCredit';
+      });
+    } catch (error) {
+      debugPrint('Music download failed. $error');
+      if (mounted) {
+        setState(() => musicStatus = 'Music download failed (offline?)');
+      }
+    }
+  }
+
   @override
   void dispose() {
     chime?.dispose();
+    music?.clip?.dispose();
     super.dispose();
   }
 
@@ -105,7 +160,9 @@ class ExampleAudioState extends State<ExampleAudio> {
     engine.playOneShot(
       clip,
       position: position,
+      volume: 0.6,
       pitch: 0.9 + random.nextDouble() * 0.2,
+      bus: sfxBus,
     );
     // Mark where the chime came from, briefly.
     final marker = Node(
@@ -130,6 +187,53 @@ class ExampleAudioState extends State<ExampleAudio> {
     });
   }
 
+  Widget _mixerPanel() {
+    final music = this.music;
+    return ExamplePanelCard(
+      icon: Icons.music_note,
+      title: 'Mixer',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LabeledSlider(
+            label: 'Music',
+            value: musicBus.volume,
+            min: 0,
+            max: 1,
+            onChanged: (value) => setState(() => musicBus.volume = value),
+          ),
+          LabeledSlider(
+            label: 'Effects',
+            value: sfxBus.volume,
+            min: 0,
+            max: 1,
+            onChanged: (value) => setState(() => sfxBus.volume = value),
+          ),
+          if (music != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(
+                  () => music.isPlaying ? music.pause() : music.play(),
+                ),
+                icon: Icon(
+                  music.isPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 18,
+                ),
+                label: Text(music.isPlaying ? 'Pause music' : 'Play music'),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Text(
+            musicStatus,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -148,8 +252,13 @@ class ExampleAudioState extends State<ExampleAudio> {
             },
           ),
         ),
-        const ExampleActionHint(
-          message: 'Tap to play a chime at a random position',
+        ExampleOverlay.topCenterAction(
+          child: const ExampleActionHint(
+            message: 'Tap to play a chime at a random position',
+          ),
+        ),
+        ExampleOverlay.bottomRightPanel(
+          child: SizedBox(width: 300, child: _mixerPanel()),
         ),
       ],
     );

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
@@ -80,6 +81,13 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
   Future<AudioClip> loadClip(String assetKey) async {
     await _ready.future;
     final source = await _soloud.loadAsset(assetKey);
+    return SoloudAudioClip._(this, source, _soloud.getLength(source));
+  }
+
+  @override
+  Future<AudioClip> loadClipFromBytes(String key, Uint8List bytes) async {
+    await _ready.future;
+    final source = await _soloud.loadMem(key, bytes);
     return SoloudAudioClip._(this, source, _soloud.getLength(source));
   }
 
