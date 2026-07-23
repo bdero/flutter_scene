@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/geometry/polyline_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
     show AlphaMode;
@@ -37,7 +38,10 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// strip is an ordinary triangle mesh (the trail gradient rides the vertex
 /// colors and its texture coordinates run head to tail along `u`), so it
 /// pairs with any standard material; the default is a translucent
-/// [UnlitMaterial] weighted fully to the vertex color.
+/// [UnlitMaterial] weighted fully to the vertex color, drawn without
+/// culling. A custom [Material] must also disable culling, since a
+/// camera-facing strip's winding flips wherever the path doubles back on
+/// itself.
 class TrailComponent extends MeshComponent {
   /// Creates a trail. [maxPoints] bounds the recorded path (oldest points
   /// expire first); [material] defaults to a translucent unlit material
@@ -54,7 +58,7 @@ class TrailComponent extends MeshComponent {
     final geometry = _TrailGeometry(maxPoints);
     final resolved =
         material ??
-        (UnlitMaterial()
+        (_TrailDefaultMaterial()
           ..alphaMode = AlphaMode.blend
           ..vertexColorWeight = 1.0);
     return TrailComponent._(
@@ -167,6 +171,22 @@ class TrailComponent extends MeshComponent {
   }
 }
 
+/// The default trail material: translucent unlit, drawn without culling. A
+/// camera-facing strip's winding flips with the path direction relative to
+/// the view (hairpins, direction reversals), so back-face culling would
+/// blink segments in and out as the emitter turns.
+class _TrailDefaultMaterial extends UnlitMaterial {
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    super.bind(pass, transientsBuffer, lighting);
+    pass.setCullMode(gpu.CullMode.none);
+  }
+}
+
 /// The trail's strip geometry: a fixed-topology two-vertices-per-point
 /// ribbon whose positions are expanded toward the camera at bind time (the
 /// bind arguments carry the camera), with widths, colors, and points fed by
@@ -184,6 +204,11 @@ class _TrailGeometry extends MeshGeometry {
       );
 
   final int maxPoints;
+
+  // The strip's winding flips with the view, so the material-less passes
+  // (selection mask) must not cull it either.
+  @override
+  bool get isDoubleSided => true;
 
   final List<Vector3> _localPoints = [];
   final List<double> _widths = [];
