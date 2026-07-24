@@ -15,6 +15,8 @@ import 'package:flutter_scene/src/fscene/scene_document.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/property_value.dart' show AssetRef;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/specs.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
@@ -393,6 +395,7 @@ Future<String> importLinkedModel(
     modelPath,
     compressTextures: options.compressTextures,
   );
+  _externalizeTextureAssets(document, modelPath, sceneDir);
   final baseName = _modelBaseName(modelPath);
   final transform = importGroupTransform(options);
   if (transform != null) {
@@ -422,6 +425,47 @@ Future<String> importLinkedModel(
     if (parentId != null) 'parentId': parentId.toToken(),
   });
   return relative;
+}
+
+// Rewrites texture resources referencing files outside the scene (a model's
+// external image URIs, resolved next to the model source) to copies under
+// `imported/textures/`, named by content hash so identically-named files from
+// different packs (each kit's `Textures/colormap.png`) cannot collide and
+// identical files are shared. A reference that cannot be resolved is left
+// alone.
+void _externalizeTextureAssets(
+  SceneDocument document,
+  String modelPath,
+  String sceneDir,
+) {
+  final modelDir = File(modelPath).parent.path;
+  final sep = Platform.pathSeparator;
+  for (final entry in document.resources.entries.toList()) {
+    final resource = entry.value;
+    if (resource is! TextureResource) continue;
+    final asset = resource.asset;
+    if (asset == null) continue;
+    final source = File(
+      asset.key.startsWith('/') ? asset.key : '$modelDir$sep${asset.key}',
+    );
+    if (!source.existsSync()) continue;
+    final bytes = source.readAsBytesSync();
+    final stem = source.uri.pathSegments.last;
+    final dot = stem.lastIndexOf('.');
+    final name = dot <= 0 ? stem : stem.substring(0, dot);
+    final ext = dot <= 0 ? '' : stem.substring(dot);
+    final relative =
+        'imported/textures/$name-${_hashBytes(bytes).substring(0, 8)}$ext';
+    final target = File('$sceneDir$sep$relative');
+    if (!target.existsSync()) {
+      target.parent.createSync(recursive: true);
+      target.writeAsBytesSync(bytes);
+    }
+    document.resources[entry.key] = TextureResource(
+      entry.key,
+      asset: AssetRef(relative),
+    );
+  }
 }
 
 /// Reads the [ImportRecord] for a linked asset at [assetPath] (the sidecar
@@ -531,6 +575,7 @@ Future<void> reimportLinkedModel(
     linked.sourcePath,
     compressTextures: options.compressTextures,
   );
+  _externalizeTextureAssets(document, linked.sourcePath, sceneDir);
   final baseName = _modelBaseName(linked.sourcePath);
   final transform = importGroupTransform(options);
   if (transform != null) {

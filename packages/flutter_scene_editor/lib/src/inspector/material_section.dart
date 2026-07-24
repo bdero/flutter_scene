@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/fscene/specs.dart';
 import '../controller/editor_controller.dart';
 import '../io/scene_io.dart';
 import 'live_fields.dart';
+import 'property_editors.dart';
 
 // Material texture-property slots offered per material type. The key is the
 // material property the realizer reads (a ResourceRefValue to a texture).
@@ -209,11 +210,10 @@ class MaterialSection extends StatelessWidget {
         final current = value is StringValue
             ? value.value
             : field.options!.first;
-        return ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: Text(field.label, style: const TextStyle(fontSize: 13)),
-          trailing: DropdownButton<String>(
+        return LabeledControlRow(
+          label: field.label,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          control: DropdownButton<String>(
             value: field.options!.contains(current)
                 ? current
                 : field.options!.first,

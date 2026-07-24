@@ -21,6 +21,11 @@ ViewportScreenshot viewportScreenshot(
   double pixelRatio = 1.0,
 }) {
   return () async {
+    // Capture after the next painted frame, so a mutation made just before
+    // the screenshot (an agent moving the camera, then looking) is in the
+    // image. The boundary otherwise serves whatever frame painted last.
+    WidgetsBinding.instance.scheduleFrame();
+    await WidgetsBinding.instance.endOfFrame;
     final boundary =
         boundaryKey.currentContext?.findRenderObject()
             as RenderRepaintBoundary?;

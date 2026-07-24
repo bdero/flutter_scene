@@ -733,11 +733,18 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bumped on every live transform preview, so every open viewport repaints
+  /// its overlays (gizmos, guides) while a drag in one of them is still in
+  /// progress. Cheaper than [notifyListeners], which would rebuild the whole
+  /// panel set per mouse move.
+  final ValueNotifier<int> previewEpoch = ValueNotifier<int>(0);
+
   /// Previews a transform on the live node for [id] without touching the
   /// document or the history. Used during a gizmo drag; the final value is
   /// committed once with `setNodeTransform` on release.
   void previewLocalTransform(LocalId id, Matrix4 localTransform) {
     _liveById[id]?.localTransform = localTransform;
+    previewEpoch.value++;
   }
 
   /// Live-previews a material factor on node [id]'s realized mesh without
@@ -1390,6 +1397,7 @@ class EditorController extends ChangeNotifier {
   void dispose() {
     session.selection.removeListener(_onSelectionChanged);
     lastError.dispose();
+    previewEpoch.dispose();
     scene.removeAll();
     super.dispose();
   }
