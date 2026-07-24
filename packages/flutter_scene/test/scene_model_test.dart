@@ -284,9 +284,7 @@ void main() {
         // A's load is held open on the gate, so it is still the sole holder
         // of the original cache entry when that entry is evicted below.
         final gated = _GatedSource('shared');
-        await tester.pumpWidget(
-          host([SceneModel.from(gated, key: keyA)]),
-        );
+        await tester.pumpWidget(host([SceneModel.from(gated, key: keyA)]));
         await tester.pump();
 
         // Simulate the hot-reload path (evict the cache key, independent of
