@@ -72,7 +72,7 @@ class _EditorLoaderState extends State<_EditorLoader> {
           .first
           .devicePixelRatio;
       _mcpServer = await serveEditorMcpOverTcp(
-        () => EditorToolSurface(
+        () => EditorToolSurface.of(
           _controller!.session,
           screenshot: viewportScreenshot(_viewportKey, pixelRatio: dpr),
         ),
