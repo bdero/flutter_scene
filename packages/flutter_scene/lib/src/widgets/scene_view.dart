@@ -662,7 +662,12 @@ class _SceneViewState extends State<SceneView>
               viewsForFrame: widget.viewsBuilder == null
                   ? null
                   : _viewsForFrame,
-              pixelRatio: widget.pixelRatio,
+              // Resolve against the hosting view, not the implicit
+              // view (Scene.render's fallback), which does not exist
+              // in multi-window apps whose windows are all created
+              // through the windowing API.
+              pixelRatio:
+                  widget.pixelRatio ?? View.of(context).devicePixelRatio,
               semantics: _sceneSemantics,
               repaint: _repaint,
             ),
