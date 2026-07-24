@@ -1,5 +1,12 @@
 ## 0.20.0
 
+* Fixed the web backend binding uniform block ranges smaller than the
+  driver-reported block data size, which made browsers on drivers that pad
+  block sizes (Mesa on Linux, in Chromium and Firefox) reject draws with
+  "It is undefined behavior to use a uniform buffer that is too small" and
+  render nothing. Uniform binds now cover the linked program's reported
+  block size, and GL buffer stores carry tail padding so the extended
+  range stays in bounds.
 * New declarative scene API. Scenes can now be described in `build()`
   with widgets that own and reconcile retained scene-graph nodes:
   `SceneView.declarative` (a view-owned `Scene` configured through
