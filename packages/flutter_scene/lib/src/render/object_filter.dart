@@ -141,6 +141,9 @@ class _ObjectMaskEncoder {
     }
     _renderPass.clearBindings();
     final geometry = item.geometry;
+    // Skinned items draw through the full bind path below; apply this item's
+    // skeleton to the (possibly shared) geometry first.
+    item.applyJointsTexture(geometry);
     // Unskinned geometry fills the mask through a position-only shader and
     // layout; skinned geometry falls back to its full vertex shader and bind.
     // A `vertex { }` material displaces geometry, so pick against its displaced

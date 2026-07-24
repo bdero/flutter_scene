@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/lod.dart';
@@ -66,6 +67,26 @@ class RenderItem {
   /// Static casters render into cached shadow tiles; dynamic casters render
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
+
+  /// The owning node's joints texture and its edge length in texels, or
+  /// null/0 for an unskinned node. Refreshed each frame from the node's
+  /// [Skin]. Carried per item rather than on the geometry so nodes sharing
+  /// one skinned geometry (clones of a skinned model) each draw with their
+  /// own skeleton; every render pass applies it via [applyJointsTexture]
+  /// just before binding a draw.
+  gpu.Texture? jointsTexture;
+  int jointsTextureWidth = 0;
+
+  /// Applies this item's joints texture to [drawnGeometry] (which differs
+  /// from [geometry] when a level of detail was selected). No-op for
+  /// unskinned items. Render passes call this immediately before the
+  /// geometry's bind, so a geometry shared between skinned items holds the
+  /// right skeleton for each draw.
+  void applyJointsTexture(Geometry drawnGeometry) {
+    final texture = jointsTexture;
+    if (texture == null) return;
+    drawnGeometry.setJointsTexture(texture, jointsTextureWidth);
+  }
 
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();

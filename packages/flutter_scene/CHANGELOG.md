@@ -76,6 +76,14 @@
   material name, so materials can be looked up after loading. `.fscene`
   documents store it as an optional `name` on material resources.
 
+* Cloned skinned meshes no longer render as a single body. Clones share
+  their template's skinned geometry, and the shared geometry held the
+  per-frame joints texture, so every clone drew whichever skeleton
+  updated last (at that skeleton's position). Joint state now rides each
+  render item and is applied to the geometry per draw, so clones of a
+  skinned model animate and place independently in every pass (color,
+  shadows, depth prepass, and picking masks).
+
 ## 0.19.0
 
 * Steady-state frame allocations cut sharply. Every fullscreen pass (bloom,
