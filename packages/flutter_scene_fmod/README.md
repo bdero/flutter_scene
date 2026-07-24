@@ -8,7 +8,10 @@ FMOD is proprietary and its license does not permit redistributing the SDK, so t
 
 1. Register at [fmod.com](https://www.fmod.com) and download the FMOD Engine SDK for your target platforms (free license tiers are available; check the terms and the attribution requirement for your project).
 2. Extract the SDK and set `FMOD_SDK_PATH` to the extracted root (the directory containing `api/`). Alternatively set `FMOD_LIBRARY_PATH` to any directory holding the core and studio dynamic libraries.
-3. Build and run. With `FMOD_SDK_PATH` set, the build hook bundles the libraries into the app; the runtime also falls back to the same environment variables during development.
+3. On macOS, clear the download quarantine from the extracted SDK or the system refuses to load the dylibs (`library load disallowed by system policy`): `xattr -dr com.apple.quarantine "<sdk root>"`.
+4. Build and run. With `FMOD_SDK_PATH` set, the build hook bundles the libraries into the app; the runtime also falls back to the same environment variables during development.
+
+The package's SDK smoke tests run with `FMOD_SDK_PATH="<sdk root>" flutter test test/fmod_sdk_smoke_test.dart` (they skip when the variable is unset, so CI needs no SDK). Verified against FMOD Engine 2.03.14.
 
 Your app is responsible for FMOD's attribution requirement (the FMOD logo in your credits or splash).
 

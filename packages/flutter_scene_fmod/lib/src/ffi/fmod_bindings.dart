@@ -25,7 +25,7 @@ const int kFmodDefaultHeaderVersion = 0x00020300;
 // FMOD_RESULT values this backend special-cases.
 const int fmodOk = 0;
 const int fmodErrInvalidHandle = 30;
-const int fmodErrChannelStolen = 5;
+const int fmodErrChannelStolen = 3;
 
 // FMOD_MODE flags (fmod_common.h).
 const int fmodLoopOff = 0x00000001;
@@ -55,8 +55,6 @@ const int fmodStudioPlaybackStarting = 3;
 const int fmodStudioPlaybackStopping = 4;
 
 /// FMOD_STUDIO_EVENT_PROPERTY indices for distance overrides.
-// TODO(audio): verify these indices against fmod_studio_common.h for
-// the supported SDK series once tested against a real SDK.
 const int fmodStudioEventPropertyMinDistance = 3;
 const int fmodStudioEventPropertyMaxDistance = 4;
 
