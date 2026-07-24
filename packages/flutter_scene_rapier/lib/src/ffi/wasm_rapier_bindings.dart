@@ -15,7 +15,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/scene.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:flutter_scene_rapier/src/ffi/wasm_runtime_web.dart';
 import 'package:vector_math/vector_math.dart';
@@ -1283,7 +1283,7 @@ class WasmRapierBindings extends RapierBindings {
 
   // FsrCharacterMovement: t @0..8, grounded u8 @12, sliding u8 @13.
   @override
-  CharacterMovement moveCharacter(
+  RawCharacterMovement moveCharacter(
     int collider,
     double cx,
     double cy,

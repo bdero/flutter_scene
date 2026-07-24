@@ -1,5 +1,5 @@
 name: flutter_scene_rapier
-description: Rapier 3D physics backend for flutter_scene. Implements the abstract physics contract from flutter_scene against Rapier via FFI.
+description: Rapier 3D physics backend for flutter_scene. Implements the scene package's physics simulation contract against Rapier via FFI.
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
 version: 0.2.2
@@ -30,13 +30,16 @@ dependencies:
   ffi: ^2.1.0
   flutter:
     sdk: flutter
-  # The physics contract this package implements lands in flutter_scene
-  # 0.16.0. Within this workspace it resolves to the local package; on
-  # pub.dev it requires flutter_scene 0.16.0 to be published first.
-  flutter_scene: ^0.19.0
   hooks: ^2.0.0
+  # The engine-agnostic physics contract this package implements.
+  scene: ^0.1.0
   vector_math: ^2.1.4
 
 dev_dependencies:
   flutter_lints: ^5.0.0
+  # Tests drive the backend through flutter_scene's generic physics
+  # components; the library itself depends only on the scene contract.
+  flutter_scene: ^0.19.0
+  flutter_test:
+    sdk: flutter
   test: ^1.25.15

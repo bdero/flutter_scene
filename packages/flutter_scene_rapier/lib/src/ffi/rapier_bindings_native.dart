@@ -6,7 +6,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_rapier/src/ffi/bindings.dart' as native;
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:vector_math/vector_math.dart';
@@ -1159,7 +1159,7 @@ class NativeRapierBindings extends RapierBindings {
   }
 
   @override
-  CharacterMovement moveCharacter(
+  RawCharacterMovement moveCharacter(
     int collider,
     double cx,
     double cy,

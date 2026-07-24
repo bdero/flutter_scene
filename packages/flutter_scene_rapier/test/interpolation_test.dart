@@ -8,14 +8,14 @@ import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
-(RapierWorld, RapierRigidBody, Node) _boot({Vector3? velocity}) {
+(PhysicsWorld, RigidBody, Node) _boot({Vector3? velocity}) {
   final root = Node();
-  final world = RapierWorld(gravity: Vector3.zero());
+  final world = PhysicsWorld(RapierWorld(gravity: Vector3.zero()));
   root.addComponent(world);
   world.mount();
 
   final ballNode = Node();
-  final ball = RapierRigidBody(
+  final ball = RigidBody(
     type: BodyType.dynamic_,
     mass: 1.0,
     linearVelocity: velocity ?? Vector3(1, 0, 0),
@@ -59,8 +59,8 @@ void main() {
     // Need a collider for inertia so angular velocity actually
     // changes the rotation.
     final colliderNode = ball.node;
-    colliderNode.addComponent(RapierCollider(shape: SphereShape(radius: 1)));
-    colliderNode.getComponents<RapierCollider>().first.mount();
+    colliderNode.addComponent(Collider(shape: SphereShape(radius: 1)));
+    colliderNode.getComponents<Collider>().first.mount();
     ball.angularVelocity = Vector3(0, 1.0, 0);
 
     world.step(1.0 / 60.0);

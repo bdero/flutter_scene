@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// One wheel of a [RaycastVehicle]: the visual node to pose, whether it is
@@ -42,7 +41,7 @@ class VehicleWheel {
 /// friction circle. The wheel model nodes are posed to follow the
 /// suspension, steering, and roll.
 ///
-/// Attach it to the chassis node alongside a [RapierRigidBody] and a
+/// Attach it to the chassis node alongside a [RigidBody] and a
 /// collider. Drive it by writing [throttle], [steer], and [handbrake] each
 /// frame.
 ///
@@ -122,8 +121,8 @@ class RaycastVehicle extends Component {
   bool handbrake = false;
   bool boost = false;
 
-  RapierRigidBody? _body;
-  RapierWorld? _world;
+  RigidBody? _body;
+  PhysicsWorld? _world;
   double _steerAngle = 0.0;
 
   /// Forward speed along the chassis, in world units per second. Useful for a
@@ -133,10 +132,10 @@ class RaycastVehicle extends Component {
 
   @override
   void onMount() {
-    final body = node.getComponent<RapierRigidBody>();
+    final body = node.getComponent<RigidBody>();
     if (body == null) return;
     _body = body;
-    _world = body.nativeWorld;
+    _world = body.world;
 
     // Capture each wheel's rest pose and its rest center in the chassis body
     // frame. Reading it from the live transforms keeps the controller
@@ -172,8 +171,8 @@ class RaycastVehicle extends Component {
     final world = _world;
     if (body == null || world == null || fixedDt <= 0) return;
 
-    final origin = body.readNativeTranslation();
-    final basis = body.readNativeRotation().asRotationMatrix();
+    final origin = body.readSimulationPose().$1;
+    final basis = body.readSimulationPose().$2.asRotationMatrix();
     final up = basis.transformed(Vector3(0, 1, 0));
     final chassisForward = basis.transformed(Vector3(1, 0, 0));
 

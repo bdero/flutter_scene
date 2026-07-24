@@ -1,6 +1,6 @@
 // Scene queries (raycast, raycastAll, overlapSphere, overlapBox,
 // shapeCast) run through Rapier's QueryPipeline and resolve hits back
-// to the owning RapierCollider / Node.
+// to the owning Collider / Node.
 //
 // ignore_for_file: invalid_use_of_internal_member
 
@@ -13,7 +13,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot() {
   final root = Node();
-  final world = RapierWorld(gravity: Vector3.zero());
+  final world = PhysicsWorld(RapierWorld(gravity: Vector3.zero()));
   root.addComponent(world);
   world.mount();
   return root;
@@ -34,19 +34,19 @@ Node _addStatic(
   bool isTrigger = false,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  node.addComponent(RapierRigidBody(type: BodyType.fixed));
-  node.addComponent(RapierCollider(shape: shape, isTrigger: isTrigger));
+  node.addComponent(RigidBody(type: BodyType.fixed));
+  node.addComponent(Collider(shape: shape, isTrigger: isTrigger));
   root.add(node);
-  node.getComponents<RapierRigidBody>().first.mount();
-  node.getComponents<RapierCollider>().first.mount();
-  root.getComponent<RapierWorld>()!.step(1.0 / 60.0);
+  node.getComponents<RigidBody>().first.mount();
+  node.getComponents<Collider>().first.mount();
+  root.getComponent<PhysicsWorld>()!.step(1.0 / 60.0);
   return node;
 }
 
 void main() {
   test('raycast returns the closest hit and resolves the node', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final near = _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5));
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 10));
@@ -64,7 +64,7 @@ void main() {
 
   test('raycast returns null when nothing is in the path', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5));
 
     final hit = world.raycast(
@@ -75,7 +75,7 @@ void main() {
 
   test('raycast honors maxDistance', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 50));
 
     expect(
@@ -96,7 +96,7 @@ void main() {
 
   test('raycastAll returns every hit, sorted by distance', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 10));
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5));
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 15));
@@ -112,7 +112,7 @@ void main() {
 
   test('overlapSphere finds colliders within the probe', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final inside = _addStatic(root, SphereShape(radius: 1), Vector3(1, 0, 0));
     _addStatic(root, SphereShape(radius: 1), Vector3(20, 0, 0));
 
@@ -123,7 +123,7 @@ void main() {
 
   test('overlapBox finds colliders within an oriented box', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final inside = _addStatic(root, SphereShape(radius: 0.5), Vector3(0, 2, 0));
     _addStatic(root, SphereShape(radius: 0.5), Vector3(0, 20, 0));
 
@@ -138,7 +138,7 @@ void main() {
 
   test('triggers are excluded unless includeTriggers is set', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5), isTrigger: true);
 
     final ray = Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1));
@@ -148,7 +148,7 @@ void main() {
 
   test('includeFixed=false skips static colliders', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addStatic(root, SphereShape(radius: 1), Vector3(0, 0, 5));
 
     final ray = Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1));
@@ -158,7 +158,7 @@ void main() {
 
   test('shapeCast sweeps a sphere and finds the first contact', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final target = _addStatic(
       root,
       BoxShape(halfExtents: Vector3(2, 2, 2)),
@@ -179,7 +179,7 @@ void main() {
 
   test('shapeCast sweeps a box and finds the first contact', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final target = _addStatic(
       root,
       BoxShape(halfExtents: Vector3(2, 2, 2)),
@@ -200,7 +200,7 @@ void main() {
 
   test('shapeCast sweeps a capsule and finds the first contact', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final target = _addStatic(
       root,
       BoxShape(halfExtents: Vector3(2, 2, 2)),
@@ -221,7 +221,7 @@ void main() {
 
   test('shapeCast sweeps a cylinder and finds the first contact', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final target = _addStatic(
       root,
       BoxShape(halfExtents: Vector3(2, 2, 2)),
@@ -242,7 +242,7 @@ void main() {
 
   test('shapeCast rejects an unsupported probe shape', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     expect(
       () => world.shapeCast(
         ConvexHullShape(

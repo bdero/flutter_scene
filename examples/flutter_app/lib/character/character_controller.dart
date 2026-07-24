@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'character_input.dart';
@@ -11,8 +10,8 @@ import 'third_person_camera.dart';
 /// character controller.
 ///
 /// Attach to a node that also carries (in this order) a kinematic
-/// [RapierRigidBody], a capsule [RapierCollider], and a
-/// [RapierKinematicCharacterController]. The character node is positioned
+/// [RigidBody], a capsule [Collider], and a
+/// [KinematicCharacterController]. The character node is positioned
 /// entirely by the kinematic controller; this component owns the higher
 /// level behaviour:
 ///
@@ -120,8 +119,8 @@ class CharacterController extends Component {
   /// and bridge feeling the same. Zero disables it.
   final double shoveStrength;
 
-  RapierKinematicCharacterController? _mover;
-  RapierWorld? _world;
+  KinematicCharacterController? _mover;
+  PhysicsWorld? _world;
   Node? _pivot;
   final Map<String, AnimationClip> _clips = {};
 
@@ -209,8 +208,8 @@ class CharacterController extends Component {
 
   @override
   void onMount() {
-    _mover = node.getComponent<RapierKinematicCharacterController>();
-    _world = findAncestorRapierWorld(node);
+    _mover = node.getComponent<KinematicCharacterController>();
+    _world = findAncestorWorld(node);
     final centre = node.globalTransform.getTranslation();
     _prevCenter.setFrom(centre);
     _currCenter.setFrom(centre);
@@ -382,7 +381,7 @@ class CharacterController extends Component {
     );
     for (final hit in hits) {
       if (hit.node == node) continue;
-      final body = hit.node.getComponent<RapierRigidBody>();
+      final body = hit.node.getComponent<RigidBody>();
       if (body == null) continue;
       // Only push bodies ahead of him, so passing alongside one does not
       // fling it.

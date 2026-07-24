@@ -7,7 +7,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/geometry/primitives.dart';
-import 'package:flutter_scene/src/physics/shape.dart';
+import 'package:scene/scene.dart' hide SceneDocument;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 

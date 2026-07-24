@@ -11,7 +11,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot() {
   final root = Node();
-  final world = RapierWorld(gravity: Vector3(0, -9.81, 0));
+  final world = PhysicsWorld(RapierWorld(gravity: Vector3(0, -9.81, 0)));
   root.addComponent(world);
   world.mount();
   return root;
@@ -20,23 +20,23 @@ Node _boot() {
 // Adds a fixed box collider (a floor or wall) and mounts it.
 void _addBox(Node root, Vector3 position, Vector3 halfExtents) {
   final node = Node(localTransform: Matrix4.translation(position));
-  node.addComponent(RapierRigidBody(type: BodyType.fixed));
-  node.addComponent(RapierCollider(shape: BoxShape(halfExtents: halfExtents)));
+  node.addComponent(RigidBody(type: BodyType.fixed));
+  node.addComponent(Collider(shape: BoxShape(halfExtents: halfExtents)));
   root.add(node);
-  node.getComponents<RapierRigidBody>().first.mount();
-  node.getComponents<RapierCollider>().first.mount();
+  node.getComponents<RigidBody>().first.mount();
+  node.getComponents<Collider>().first.mount();
 }
 
 // Adds a fixed *sensor* box (a trigger volume) and mounts it.
 void _addSensorBox(Node root, Vector3 position, Vector3 halfExtents) {
   final node = Node(localTransform: Matrix4.translation(position));
-  node.addComponent(RapierRigidBody(type: BodyType.fixed));
+  node.addComponent(RigidBody(type: BodyType.fixed));
   node.addComponent(
-    RapierCollider(shape: BoxShape(halfExtents: halfExtents), isTrigger: true),
+    Collider(shape: BoxShape(halfExtents: halfExtents), isTrigger: true),
   );
   root.add(node);
-  node.getComponents<RapierRigidBody>().first.mount();
-  node.getComponents<RapierCollider>().first.mount();
+  node.getComponents<RigidBody>().first.mount();
+  node.getComponents<Collider>().first.mount();
 }
 
 // Adds a dynamic box and mounts it, returning its node.
@@ -47,34 +47,30 @@ Node _addDynamicBox(
   double mass = 1.0,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  node.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: mass));
-  node.addComponent(RapierCollider(shape: BoxShape(halfExtents: halfExtents)));
+  node.addComponent(RigidBody(type: BodyType.dynamic_, mass: mass));
+  node.addComponent(Collider(shape: BoxShape(halfExtents: halfExtents)));
   root.add(node);
-  node.getComponents<RapierRigidBody>().first.mount();
-  node.getComponents<RapierCollider>().first.mount();
+  node.getComponents<RigidBody>().first.mount();
+  node.getComponents<Collider>().first.mount();
   return node;
 }
 
 // Adds a kinematic capsule character with a controller and mounts it.
-(Node, RapierKinematicCharacterController) _addCharacter(
+(Node, KinematicCharacterController) _addCharacter(
   Node root,
   Vector3 position, {
-  bool withCollider = true,
+  double mass = 0.0,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  node.addComponent(RapierRigidBody(type: BodyType.kinematic));
-  if (withCollider) {
-    node.addComponent(
-      RapierCollider(shape: CapsuleShape(radius: 0.3, halfHeight: 0.5)),
-    );
-  }
-  final controller = RapierKinematicCharacterController();
+  node.addComponent(RigidBody(type: BodyType.kinematic));
+  node.addComponent(
+    Collider(shape: CapsuleShape(radius: 0.3, halfHeight: 0.5)),
+  );
+  final controller = KinematicCharacterController(mass: mass);
   node.addComponent(controller);
   root.add(node);
-  node.getComponents<RapierRigidBody>().first.mount();
-  if (withCollider) {
-    node.getComponents<RapierCollider>().first.mount();
-  }
+  node.getComponents<RigidBody>().first.mount();
+  node.getComponents<Collider>().first.mount();
   controller.mount();
   return (node, controller);
 }
@@ -82,7 +78,7 @@ Node _addDynamicBox(
 void main() {
   test('a grounded character moves horizontally without sinking', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10)); // floor, top y=0
     // Capsule (half-extent 0.8 along Y) resting with its base on the floor.
     final (node, controller) = _addCharacter(root, Vector3(0, 0.8, 0));
@@ -98,7 +94,7 @@ void main() {
 
   test('the floor blocks a downward move', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10));
     final (_, controller) = _addCharacter(root, Vector3(0, 0.8, 0));
     world.step(1.0 / 60.0);
@@ -111,7 +107,7 @@ void main() {
 
   test('a wall blocks forward motion instead of tunneling', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10)); // floor
     // A thin tall wall whose near face is at x = 0.9.
     _addBox(root, Vector3(1.0, 1.0, 0), Vector3(0.1, 2.0, 5.0));
@@ -127,7 +123,7 @@ void main() {
 
   test('a sensor volume does not block the character', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10)); // floor
     // Same layout as the wall test, but the obstacle is a trigger: the
     // character passes through it instead of stopping against it.
@@ -141,12 +137,11 @@ void main() {
 
   test('a heavy character pushes a dynamic body it runs into', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10)); // floor
     // A 1 kg box just in front of the capsule's right edge (x = 0.3).
     final box = _addDynamicBox(root, Vector3(0.6, 0.8, 0), Vector3.all(0.2));
-    final (_, controller) = _addCharacter(root, Vector3(0, 0.8, 0));
-    controller.mass = 5.0;
+    final (_, controller) = _addCharacter(root, Vector3(0, 0.8, 0), mass: 5.0);
     world.step(1.0 / 60.0);
 
     final startX = box.globalTransform.getTranslation().x;
@@ -162,7 +157,7 @@ void main() {
 
   test('a zero-mass character leaves a dynamic body in place', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBox(root, Vector3(0, -0.5, 0), Vector3(10, 0.5, 10)); // floor
     final box = _addDynamicBox(root, Vector3(0.6, 0.8, 0), Vector3.all(0.2));
     // Default mass is 0: the character slides against the box like a wall.
@@ -181,19 +176,19 @@ void main() {
 
   test('parking a kinematic platform as fixed frees a stuck rider', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     // A wide kinematic platform (like the lift), parked (zero velocity).
     final platformNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 0, 0)),
     );
-    final platformBody = RapierRigidBody(type: BodyType.kinematic);
+    final platformBody = RigidBody(type: BodyType.kinematic);
     platformNode.addComponent(platformBody);
     platformNode.addComponent(
-      RapierCollider(shape: BoxShape(halfExtents: Vector3(5, 0.5, 5))),
+      Collider(shape: BoxShape(halfExtents: Vector3(5, 0.5, 5))),
     );
     root.add(platformNode);
     platformBody.mount();
-    platformNode.getComponents<RapierCollider>().first.mount();
+    platformNode.getComponents<Collider>().first.mount();
 
     // Character standing on the platform (top y == 0.5).
     final (_, controller) = _addCharacter(root, Vector3(0, 1.3, 0));
@@ -213,13 +208,16 @@ void main() {
     expect(freed.translation.x, greaterThan(0.15));
   });
 
-  test('move throws without a collider on the node', () {
+  test('mounting without a collider on the node throws', () {
     final root = _boot();
-    final (_, controller) = _addCharacter(
-      root,
-      Vector3(0, 1, 0),
-      withCollider: false,
-    );
+    final node = Node(localTransform: Matrix4.translation(Vector3(0, 1, 0)));
+    node.addComponent(RigidBody(type: BodyType.kinematic));
+    final controller = KinematicCharacterController();
+    node.addComponent(controller);
+    root.add(node);
+    node.getComponents<RigidBody>().first.mount();
+    expect(controller.mount, throwsStateError);
+    // Never mounted, so moving throws too.
     expect(() => controller.move(Vector3(0.1, 0, 0)), throwsStateError);
   });
 }

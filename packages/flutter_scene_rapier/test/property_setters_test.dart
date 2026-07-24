@@ -10,7 +10,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _bootZeroGravity() {
   final root = Node();
-  final world = RapierWorld(gravity: Vector3.zero());
+  final world = PhysicsWorld(RapierWorld(gravity: Vector3.zero()));
   root.addComponent(world);
   world.mount();
   return root;
@@ -19,10 +19,10 @@ Node _bootZeroGravity() {
 void main() {
   test('initial linearVelocity from constructor reaches the native body', () {
     final root = _bootZeroGravity();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node();
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 1.0,
       linearVelocity: Vector3(3, 0, 0),
@@ -32,15 +32,15 @@ void main() {
     body.mount();
 
     world.step(1.0 / 60.0);
-    expect(body.readNativeTranslation().x, closeTo(3.0 / 60.0, 1e-3));
+    expect(body.readSimulationPose().$1.x, closeTo(3.0 / 60.0, 1e-3));
   });
 
   test('linearVelocity setter pushes through the FFI', () {
     final root = _bootZeroGravity();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final body = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     node.addComponent(body);
     root.add(node);
     body.mount();
@@ -50,19 +50,19 @@ void main() {
     expect(body.linearVelocity.y, closeTo(2.0, 1e-5));
 
     world.step(1.0 / 60.0);
-    expect(body.readNativeTranslation().y, closeTo(2.0 / 60.0, 1e-3));
+    expect(body.readSimulationPose().$1.y, closeTo(2.0 / 60.0, 1e-3));
   });
 
   test('angularVelocity setter round-trips', () {
     final root = _bootZeroGravity();
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.dynamic_);
+    final body = RigidBody(type: BodyType.dynamic_);
     node.addComponent(body);
-    node.addComponent(RapierCollider(shape: SphereShape(radius: 1.0)));
+    node.addComponent(Collider(shape: SphereShape(radius: 1.0)));
     root.add(node);
     body.mount();
-    node.getComponents<RapierCollider>().first.mount();
+    node.getComponents<Collider>().first.mount();
 
     body.angularVelocity = Vector3(0, 3.0, 0);
     expect(body.angularVelocity.y, closeTo(3.0, 1e-5));
@@ -70,10 +70,10 @@ void main() {
 
   test('linearDamping decays a moving body', () {
     final root = _bootZeroGravity();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node();
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 1.0,
       linearVelocity: Vector3(10, 0, 0),
@@ -92,10 +92,10 @@ void main() {
 
   test('changing mass at runtime affects impulse response', () {
     final root = _bootZeroGravity();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final body = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     node.addComponent(body);
     root.add(node);
     body.mount();

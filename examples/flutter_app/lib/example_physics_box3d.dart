@@ -26,7 +26,7 @@ class ExamplePhysicsBox3d extends StatefulWidget {
 
 class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
   final Scene scene = Scene();
-  late final Box3dPhysicsWorld world;
+  late final PhysicsWorld world;
 
   final QuakeCamera _camera = QuakeCamera(
     position: vm.Vector3(0, 5, 14),
@@ -70,7 +70,7 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
     );
     scene.environmentIntensity = 0.6;
 
-    world = Box3dPhysicsWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(Box3dPhysicsWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
 
     _buildGround();
@@ -110,13 +110,13 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
         : vm.Matrix4.compose(position, rotation, vm.Vector3.all(1.0));
     final node = Node(mesh: mesh, localTransform: transform);
     node.addComponent(
-      Box3dRigidBody(
+      RigidBody(
         type: type,
         linearDamping: linearDamping,
         angularDamping: angularDamping,
       ),
     );
-    node.addComponent(Box3dCollider(shape: shape, material: material));
+    node.addComponent(Collider(shape: shape, material: material));
     scene.add(node);
     return node;
   }
@@ -176,21 +176,21 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
         ),
       );
       node.addComponent(
-        Box3dRigidBody(
+        RigidBody(
           type: BodyType.dynamic_,
           linearDamping: 0.2,
           angularDamping: 0.4,
         ),
       );
-      node.addComponent(Box3dCollider(shape: const SphereShape(radius: beadR)));
+      node.addComponent(Collider(shape: const SphereShape(radius: beadR)));
       scene.add(node);
       node.addComponent(
         i == 0
-            ? Box3dSphericalJoint(
+            ? SphericalJoint(
                 localAnchorA: vm.Vector3(0, half, 0),
                 localAnchorB: anchor.clone(),
               )
-            : Box3dSphericalJoint(
+            : SphericalJoint(
                 otherNode: prev,
                 localAnchorA: vm.Vector3(0, half, 0),
                 localAnchorB: vm.Vector3(0, -half, 0),
@@ -199,7 +199,7 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       prev = node;
     }
     // Give the bottom bead a shove so the pendulum starts swinging.
-    prev?.getComponent<Box3dRigidBody>()?.linearVelocity = vm.Vector3(0, 0, 4);
+    prev?.getComponent<RigidBody>()?.linearVelocity = vm.Vector3(0, 0, 4);
   }
 
   // A kinematic bar sweeping a horizontal circle, driven by code each frame.
@@ -311,9 +311,9 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       mesh: mesh,
       localTransform: vm.Matrix4.compose(position, rotation, vm.Vector3.all(1)),
     );
-    node.addComponent(Box3dRigidBody(type: BodyType.dynamic_));
+    node.addComponent(RigidBody(type: BodyType.dynamic_));
     node.addComponent(
-      Box3dCollider(
+      Collider(
         shape: shape,
         material: const PhysicsMaterial(friction: 0.6, restitution: 0.1),
       ),

@@ -11,7 +11,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _bootWorld({Vector3? gravity}) {
   final root = Node();
-  final world = RapierWorld(gravity: gravity);
+  final world = PhysicsWorld(RapierWorld(gravity: gravity));
   root.addComponent(world);
   world.mount();
   return root;
@@ -20,27 +20,27 @@ Node _bootWorld({Vector3? gravity}) {
 void main() {
   test('a dynamic sphere collides with a fixed sphere and settles', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Static floor (a huge sphere far below the origin acts as a
     // ground plane). Box cooking lands in the next commit.
     final floor = Node(
       localTransform: Matrix4.translation(Vector3(0, -100, 0)),
     );
-    final floorBody = RapierRigidBody(type: BodyType.fixed);
+    final floorBody = RigidBody(type: BodyType.fixed);
     floor.addComponent(floorBody);
-    floor.addComponent(RapierCollider(shape: SphereShape(radius: 100.0)));
+    floor.addComponent(Collider(shape: SphereShape(radius: 100.0)));
     root.add(floor);
     floorBody.mount();
-    floor.getComponents<RapierCollider>().first.mount();
+    floor.getComponents<Collider>().first.mount();
 
     final ball = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_);
+    final ballBody = RigidBody(type: BodyType.dynamic_);
     ball.addComponent(ballBody);
-    ball.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+    ball.addComponent(Collider(shape: SphereShape(radius: 0.5)));
     root.add(ball);
     ballBody.mount();
-    ball.getComponents<RapierCollider>().first.mount();
+    ball.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
@@ -56,15 +56,15 @@ void main() {
 
   test('interpolateTransforms writes the body pose back to the node', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final ball = Node(localTransform: Matrix4.translation(Vector3(0, 10, 0)));
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_);
+    final ballBody = RigidBody(type: BodyType.dynamic_);
     ball.addComponent(ballBody);
-    ball.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+    ball.addComponent(Collider(shape: SphereShape(radius: 0.5)));
     root.add(ball);
     ballBody.mount();
-    ball.getComponents<RapierCollider>().first.mount();
+    ball.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 30; i++) {
       world.step(1.0 / 60.0);
@@ -75,21 +75,21 @@ void main() {
 
     final pos = ball.localTransform.getTranslation();
     expect(pos.y, lessThan(10.0));
-    expect(pos.y, closeTo(ballBody.readNativeTranslation().y, 1e-5));
+    expect(pos.y, closeTo(ballBody.readSimulationPose().$1.y, 1e-5));
   });
 
   test('writeback leaves a fixed body node alone', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final start = Matrix4.translation(Vector3(1, 2, 3));
     final node = Node(localTransform: start.clone());
-    final rb = RapierRigidBody(type: BodyType.fixed);
+    final rb = RigidBody(type: BodyType.fixed);
     node.addComponent(rb);
-    node.addComponent(RapierCollider(shape: SphereShape(radius: 1)));
+    node.addComponent(Collider(shape: SphereShape(radius: 1)));
     root.add(node);
     rb.mount();
-    node.getComponents<RapierCollider>().first.mount();
+    node.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 30; i++) {
       world.step(1.0 / 60.0);
@@ -102,12 +102,23 @@ void main() {
     expect(t.z, closeTo(3, 1e-5));
   });
 
-  test('RapierCollider without a sibling body throws', () {
-    final root = _bootWorld();
-    final node = Node();
-    final collider = RapierCollider(shape: SphereShape(radius: 1));
+  test('Collider without a sibling body becomes static geometry', () {
+    final root = _bootWorld(gravity: Vector3.zero());
+    final world = root.getComponent<PhysicsWorld>()!;
+    final node = Node(localTransform: Matrix4.translation(Vector3(0, 0, 5)));
+    final collider = Collider(shape: SphereShape(radius: 1));
     node.addComponent(collider);
     root.add(node);
-    expect(collider.mount, throwsStateError);
+    collider.mount();
+    expect(collider.handles, isNotEmpty);
+
+    // The implicit fixed body holds the collider in the world; a ray
+    // from the origin hits it and resolves back to the node.
+    world.step(1.0 / 60.0);
+    final hit = world.raycast(
+      Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1)),
+    );
+    expect(hit, isNotNull);
+    expect(identical(hit!.node, node), isTrue);
   });
 }

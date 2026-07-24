@@ -1,8 +1,9 @@
-// Tests for the pure-Dart basic backend: intersection math, query
-// routing, body-type guard, and trigger event diffing.
+// Tests for the pure-Dart basic backend through the generic component
+// layer, intersection math, query routing, the dynamic-body guard, and
+// trigger event diffing.
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/physics/basic/basic_queries.dart';
+import 'package:scene/scene.dart' show rayHitsShape;
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -112,9 +113,9 @@ void main() {
     });
   });
 
-  group('BasicPhysicsWorld', () {
+  group('BasicSimulation', () {
     test('raycast on an empty world returns null', () {
-      final world = BasicPhysicsWorld();
+      final world = PhysicsWorld(BasicSimulation());
       Node().addComponent(world);
       world.mount();
 
@@ -128,7 +129,7 @@ void main() {
       'raycast returns the closest collider; raycastAll sorts by distance',
       () {
         final root = _bootWorld();
-        final world = root.getComponent<BasicPhysicsWorld>()!;
+        final world = root.getComponent<PhysicsWorld>()!;
 
         _attachStaticCollider(root, SphereShape(radius: 1), Vector3(0, 0, 5));
         _attachStaticCollider(root, SphereShape(radius: 1), Vector3(0, 0, 10));
@@ -146,7 +147,7 @@ void main() {
 
     test('triggers excluded by default; opt-in via includeTriggers', () {
       final root = _bootWorld();
-      final world = root.getComponent<BasicPhysicsWorld>()!;
+      final world = root.getComponent<PhysicsWorld>()!;
 
       _attachStaticCollider(
         root,
@@ -162,7 +163,7 @@ void main() {
 
     test('overlapSphere finds colliders whose AABBs overlap', () {
       final root = _bootWorld();
-      final world = root.getComponent<BasicPhysicsWorld>()!;
+      final world = root.getComponent<PhysicsWorld>()!;
 
       _attachStaticCollider(root, SphereShape(radius: 1), Vector3(0, 0, 0));
       _attachStaticCollider(root, SphereShape(radius: 1), Vector3(10, 0, 0));
@@ -171,18 +172,20 @@ void main() {
       expect(hits, hasLength(1));
     });
 
-    test('constructing a dynamic body throws', () {
-      expect(
-        () => BasicKinematicBody(type: BodyType.dynamic_),
-        throwsStateError,
-      );
+    test('mounting a dynamic body throws', () {
+      final root = _bootWorld();
+      final node = Node();
+      final body = RigidBody();
+      node.addComponent(body);
+      root.add(node);
+      expect(body.mount, throwsUnsupportedError);
     });
 
     test(
       'AABB overlap that is not actual overlap does not fire trigger',
       () async {
         final root = _bootWorld();
-        final world = root.getComponent<BasicPhysicsWorld>()!;
+        final world = root.getComponent<PhysicsWorld>()!;
 
         // Sphere trigger of radius 1 at origin. A second sphere whose
         // AABB overlaps the trigger's AABB at the corners, but whose
@@ -219,7 +222,7 @@ void main() {
 
     test('trigger entry and exit events fire on the right step', () async {
       final root = _bootWorld();
-      final world = root.getComponent<BasicPhysicsWorld>()!;
+      final world = root.getComponent<PhysicsWorld>()!;
 
       // A trigger sphere at the origin and a kinematic body that the
       // test moves into and out of it.
@@ -231,9 +234,9 @@ void main() {
       );
 
       final mover = Node(localTransform: Matrix4.translation(Vector3(5, 0, 0)));
-      final moverBody = BasicKinematicBody();
+      final moverBody = RigidBody(type: BodyType.kinematic);
       mover.addComponent(moverBody);
-      final moverCollider = BasicCollider(shape: SphereShape(radius: 0.5));
+      final moverCollider = Collider(shape: SphereShape(radius: 0.5));
       mover.addComponent(moverCollider);
       root.add(mover);
       moverBody.mount();
@@ -271,13 +274,13 @@ void main() {
   });
 }
 
-// Builds a root node with a mounted BasicPhysicsWorld. Children added
+// Builds a root node with a mounted basic-simulation world. Children added
 // later must have their components mounted manually because the root is
 // not attached to a live RenderScene (constructing Scene requires a GPU
 // context which unit tests do not have).
 Node _bootWorld() {
   final root = Node();
-  final world = BasicPhysicsWorld();
+  final world = PhysicsWorld(BasicSimulation());
   root.addComponent(world);
   world.mount();
   return root;
@@ -290,7 +293,7 @@ void _attachStaticCollider(
   bool isTrigger = false,
 }) {
   final node = Node(localTransform: Matrix4.translation(worldPosition));
-  final collider = BasicCollider(shape: shape, isTrigger: isTrigger);
+  final collider = Collider(shape: shape, isTrigger: isTrigger);
   node.addComponent(collider);
   root.add(node);
   collider.mount();

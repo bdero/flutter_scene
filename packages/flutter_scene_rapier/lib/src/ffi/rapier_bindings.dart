@@ -7,7 +7,7 @@
 
 import 'dart:typed_data';
 
-import 'package:flutter_scene/scene.dart';
+import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Body-kind bytes shared with the shim's C ABI.
@@ -73,7 +73,8 @@ class RawContactPoint {
 }
 
 /// The corrected movement returned by a character-controller move.
-typedef CharacterMovement = ({
+/// Named Raw to stay clear of the contract's CharacterMovement class.
+typedef RawCharacterMovement = ({
   Vector3 translation,
   bool grounded,
   bool slidingDownSlope,
@@ -483,7 +484,7 @@ abstract class RapierBindings {
   RawContactPoint? contactPointAt(int absoluteIndex);
 
   // Character controller.
-  CharacterMovement moveCharacter(
+  RawCharacterMovement moveCharacter(
     int collider,
     double cx,
     double cy,

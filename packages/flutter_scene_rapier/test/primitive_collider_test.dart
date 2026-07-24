@@ -11,7 +11,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _bootWorld() {
   final root = Node();
-  final world = RapierWorld();
+  final world = PhysicsWorld(RapierWorld());
   root.addComponent(world);
   world.mount();
   return root;
@@ -25,9 +25,9 @@ Node _addBody(
   PhysicsMaterial material = PhysicsMaterial.defaultMaterial,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  final body = RapierRigidBody(type: type);
+  final body = RigidBody(type: type);
   node.addComponent(body);
-  final collider = RapierCollider(shape: shape, material: material);
+  final collider = Collider(shape: shape, material: material);
   node.addComponent(collider);
   root.add(node);
   body.mount();
@@ -38,7 +38,7 @@ Node _addBody(
 void main() {
   test('sphere falls onto a fixed box floor and comes to rest', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     _addBody(
       root,
@@ -65,7 +65,7 @@ void main() {
 
   test('capsule body settles upright on the floor', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     _addBody(
       root,
@@ -94,7 +94,7 @@ void main() {
 
   test('cylinder body settles on the floor', () {
     final root = _bootWorld();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     _addBody(
       root,

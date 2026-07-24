@@ -10,13 +10,15 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot({Vector3? gravity}) {
   final root = Node();
-  final world = RapierWorld(gravity: gravity ?? Vector3(0, -9.81, 0));
+  final world = PhysicsWorld(
+    RapierWorld(gravity: gravity ?? Vector3(0, -9.81, 0)),
+  );
   root.addComponent(world);
   world.mount();
   return root;
 }
 
-(Node, RapierRigidBody, RapierCollider) _add(
+(Node, RigidBody, Collider) _add(
   Node root,
   Shape shape,
   Vector3 position,
@@ -25,9 +27,9 @@ Node _boot({Vector3? gravity}) {
   double? mass,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  final body = RapierRigidBody(type: type, mass: mass);
+  final body = RigidBody(type: type, mass: mass);
   node.addComponent(body);
-  final collider = RapierCollider(shape: shape, isTrigger: isTrigger);
+  final collider = Collider(shape: shape, isTrigger: isTrigger);
   node.addComponent(collider);
   root.add(node);
   body.mount();
@@ -38,7 +40,7 @@ Node _boot({Vector3? gravity}) {
 void main() {
   test('a dynamic body landing on a floor emits CollisionBegan', () async {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final events = <CollisionEvent>[];
     final sub = world.collisions.listen(events.add);
@@ -74,7 +76,7 @@ void main() {
 
   test('CollisionBegan carries solved contact-manifold points', () async {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final events = <CollisionEvent>[];
     final sub = world.collisions.listen(events.add);
@@ -114,7 +116,7 @@ void main() {
 
   test('a body entering and leaving a trigger emits enter then exit', () async {
     final root = _boot(gravity: Vector3.zero());
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final events = <CollisionEvent>[];
     final sub = world.collisions.listen(events.add);
@@ -156,7 +158,7 @@ void main() {
 
   test('no events fire when bodies never touch', () async {
     final root = _boot(gravity: Vector3.zero());
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final events = <CollisionEvent>[];
     final sub = world.collisions.listen(events.add);

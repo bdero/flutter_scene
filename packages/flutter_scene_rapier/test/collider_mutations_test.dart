@@ -11,7 +11,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot({Vector3? gravity}) {
   final root = Node();
-  final world = RapierWorld(gravity: gravity);
+  final world = PhysicsWorld(RapierWorld(gravity: gravity));
   root.addComponent(world);
   world.mount();
   return root;
@@ -20,28 +20,28 @@ Node _boot({Vector3? gravity}) {
 void main() {
   test('changing collision groups stops two colliders from interacting', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Static floor.
     final floorNode = Node(
       localTransform: Matrix4.translation(Vector3(0, -0.5, 0)),
     );
-    floorNode.addComponent(RapierRigidBody(type: BodyType.fixed));
+    floorNode.addComponent(RigidBody(type: BodyType.fixed));
     floorNode.addComponent(
-      RapierCollider(shape: BoxShape(halfExtents: Vector3(10, 0.5, 10))),
+      Collider(shape: BoxShape(halfExtents: Vector3(10, 0.5, 10))),
     );
     root.add(floorNode);
-    floorNode.getComponents<RapierRigidBody>().first.mount();
-    floorNode.getComponents<RapierCollider>().first.mount();
+    floorNode.getComponents<RigidBody>().first.mount();
+    floorNode.getComponents<Collider>().first.mount();
 
     // Dynamic sphere starting just above the floor. With matching
     // groups it should settle; with disjoint groups it falls through.
     final ballNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 2, 0)),
     );
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final ballBody = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     ballNode.addComponent(ballBody);
-    final ballCollider = RapierCollider(shape: SphereShape(radius: 0.5));
+    final ballCollider = Collider(shape: SphereShape(radius: 0.5));
     ballNode.addComponent(ballCollider);
     root.add(ballNode);
     ballBody.mount();
@@ -50,8 +50,8 @@ void main() {
     // Disjoint groups: ball is in group 0x2, floor accepts only 0x1.
     ballCollider.collisionLayer = 0x2;
     ballCollider.collisionMask = 0x1;
-    floorNode.getComponents<RapierCollider>().first.collisionLayer = 0x1;
-    floorNode.getComponents<RapierCollider>().first.collisionMask = 0x2;
+    floorNode.getComponents<Collider>().first.collisionLayer = 0x1;
+    floorNode.getComponents<Collider>().first.collisionMask = 0x2;
 
     // Actually our setup makes them MATCH (ball's layer 0x2 is in
     // floor's mask 0x2; floor's layer 0x1 is in ball's mask 0x1). So
@@ -63,7 +63,7 @@ void main() {
       world.step(1.0 / 60.0);
     }
     expect(
-      ballBody.readNativeTranslation().y,
+      ballBody.readSimulationPose().$1.y,
       lessThan(-1.0),
       reason: 'ball with non-matching groups should pass through the floor',
     );
@@ -71,26 +71,26 @@ void main() {
 
   test('switching a collider to a sensor lets a ball pass through', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final floorNode = Node(
       localTransform: Matrix4.translation(Vector3(0, -0.5, 0)),
     );
-    floorNode.addComponent(RapierRigidBody(type: BodyType.fixed));
-    final floorCollider = RapierCollider(
+    floorNode.addComponent(RigidBody(type: BodyType.fixed));
+    final floorCollider = Collider(
       shape: BoxShape(halfExtents: Vector3(10, 0.5, 10)),
     );
     floorNode.addComponent(floorCollider);
     root.add(floorNode);
-    floorNode.getComponents<RapierRigidBody>().first.mount();
+    floorNode.getComponents<RigidBody>().first.mount();
     floorCollider.mount();
 
     final ballNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 2, 0)),
     );
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final ballBody = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     ballNode.addComponent(ballBody);
-    final ballCollider = RapierCollider(shape: SphereShape(radius: 0.5));
+    final ballCollider = Collider(shape: SphereShape(radius: 0.5));
     ballNode.addComponent(ballCollider);
     root.add(ballNode);
     ballBody.mount();
@@ -101,11 +101,11 @@ void main() {
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(ballBody.readNativeTranslation().y, lessThan(-1.0));
+    expect(ballBody.readSimulationPose().$1.y, lessThan(-1.0));
   });
 
   test('localPose setter is a safe runtime no-op when not mounted', () {
-    final collider = RapierCollider(shape: SphereShape(radius: 1));
+    final collider = Collider(shape: SphereShape(radius: 1));
     expect(
       () => collider.localPose = Matrix4.translation(Vector3(0, 5, 0)),
       returnsNormally,
@@ -117,9 +117,9 @@ void main() {
     final root = _boot(gravity: Vector3.zero());
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.fixed);
+    final body = RigidBody(type: BodyType.fixed);
     node.addComponent(body);
-    final collider = RapierCollider(shape: SphereShape(radius: 0.5));
+    final collider = Collider(shape: SphereShape(radius: 0.5));
     node.addComponent(collider);
     root.add(node);
     body.mount();
@@ -135,17 +135,17 @@ void main() {
     final root = _boot();
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.fixed);
+    final body = RigidBody(type: BodyType.fixed);
     node.addComponent(body);
-    final collider = RapierCollider(shape: SphereShape(radius: 0.5));
+    final collider = Collider(shape: SphereShape(radius: 0.5));
     node.addComponent(collider);
     root.add(node);
     body.mount();
     collider.mount();
-    final initialHandle = collider.nativeHandle;
-    expect(initialHandle, isNotNull);
+    expect(collider.handles, isNotEmpty);
+    final initialHandle = collider.handles.first;
 
     collider.shape = BoxShape(halfExtents: Vector3(1, 1, 1));
-    expect(collider.nativeHandle, isNot(initialHandle));
+    expect(collider.handles.first, isNot(initialHandle));
   });
 }

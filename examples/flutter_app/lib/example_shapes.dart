@@ -75,7 +75,7 @@ class _ShapeParams {
 
 class _ExampleShapesState extends State<ExampleShapes> {
   final Scene scene = Scene();
-  late final RapierWorld world;
+  late final PhysicsWorld world;
 
   final QuakeCamera _quakeCamera = QuakeCamera(
     position: vm.Vector3(0, 4, 11),
@@ -112,7 +112,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
   double _density = 1.0;
   double _linearDamping = 0.0;
   double _angularDamping = 0.0;
-  RapierCollider? _groundCollider;
+  Collider? _groundCollider;
 
   PhysicsMaterial get _physicsMaterial => PhysicsMaterial(
     friction: _friction,
@@ -132,7 +132,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
   @override
   void initState() {
     super.initState();
-    world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
     _buildGround();
     _rebuildPreview();
@@ -157,11 +157,11 @@ class _ExampleShapesState extends State<ExampleShapes> {
       mesh: Mesh(CuboidGeometry(half * 2.0), material),
       localTransform: vm.Matrix4.translation(vm.Vector3(0, -0.5, 0)),
     );
-    final collider = RapierCollider(
+    final collider = Collider(
       shape: BoxShape(halfExtents: half),
       material: _physicsMaterial,
     );
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(RigidBody(type: BodyType.fixed));
     node.addComponent(collider);
     scene.add(node);
     _groundCollider = collider;
@@ -422,14 +422,14 @@ class _ExampleShapesState extends State<ExampleShapes> {
     );
     // No explicit mass, so the material density derives it from the shape.
     node.addComponent(
-      RapierRigidBody(
+      RigidBody(
         type: BodyType.dynamic_,
         linearDamping: _linearDamping,
         angularDamping: _angularDamping,
       ),
     );
     node.addComponent(
-      RapierCollider(shape: solid.collisionShape, material: _physicsMaterial),
+      Collider(shape: solid.collisionShape, material: _physicsMaterial),
     );
     scene.add(node);
     _spawned.add(node);
