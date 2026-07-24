@@ -97,7 +97,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -211,7 +214,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -277,7 +283,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -346,7 +355,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
