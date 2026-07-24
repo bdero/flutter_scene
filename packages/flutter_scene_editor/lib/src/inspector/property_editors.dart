@@ -452,3 +452,36 @@ class _AxisFieldState extends State<_AxisField> {
     );
   }
 }
+
+/// A labeled control row that stays valid at any panel width. Dockable
+/// panels can get arbitrarily narrow, where a [ListTile] with a wide
+/// trailing control fails its layout assertion; here the control wraps to
+/// its own line instead, scaling down as a last resort.
+class LabeledControlRow extends StatelessWidget {
+  const LabeledControlRow({
+    super.key,
+    required this.label,
+    required this.control,
+    this.padding = const EdgeInsets.symmetric(vertical: 2),
+  });
+
+  final String label;
+  final Widget control;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13)),
+          FittedBox(fit: BoxFit.scaleDown, child: control),
+        ],
+      ),
+    );
+  }
+}

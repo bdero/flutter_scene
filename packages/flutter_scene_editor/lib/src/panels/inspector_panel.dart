@@ -37,7 +37,6 @@ class InspectorPanel extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _PanelHeader(label: 'Inspector'),
             Expanded(
               child: node == null
                   ? StageSection(controller: controller)
@@ -1538,30 +1537,6 @@ class _DoubleRowState extends State<_DoubleRow> {
                 onSubmitted: (_) => _commit(),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ],
       ),

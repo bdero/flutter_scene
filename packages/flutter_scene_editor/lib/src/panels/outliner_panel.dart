@@ -34,14 +34,6 @@ class OutlinerPanel extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _PanelHeader(
-              label: 'Outliner',
-              trailing: IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                tooltip: 'Create node',
-                onPressed: () => controller.run('createNode', {'name': 'Node'}),
-              ),
-            ),
             Expanded(
               child: roots.isEmpty
                   ? const Center(
@@ -414,33 +406,6 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
             draggable: childrenDraggable,
           ),
       ],
-    );
-  }
-}
-
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({required this.label, this.trailing});
-  final String label;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const Spacer(),
-          if (trailing != null) trailing!,
-        ],
-      ),
     );
   }
 }

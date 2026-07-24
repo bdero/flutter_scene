@@ -11,6 +11,7 @@ export 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
         EditorMcpServer,
         EditorToolSurface,
         ScreenshotResult,
+        ViewportCameraPose,
         ViewportScreenshot;
 
 export 'src/controller/editor_controller.dart' show EditorController;
@@ -18,11 +19,16 @@ export 'src/io/glb_import_options.dart'
     show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
 export 'src/io/scene_io.dart'
     show
+        importEnvironmentMap,
+        importLinkedModel,
         importModel,
         importModelDocument,
         openFscene,
         pickModelPath,
-        pickOpenPath;
+        pickOpenPath,
+        saveFscene;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/shell/editor_shell.dart' show EditorShell;
+export 'src/shell/editor_theme.dart' show editorDarkTheme;
+export 'src/viewport/viewport_camera_handle.dart' show ViewportCameraHandle;
 export 'src/viewport/viewport_panel.dart' show ViewportPanel;

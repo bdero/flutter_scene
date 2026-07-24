@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../controller/editor_controller.dart';
 import '../io/scene_io.dart';
+import 'property_editors.dart';
 import 'live_fields.dart';
 
 const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear'];
@@ -119,11 +120,9 @@ class EnvironmentControls extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Environment', style: TextStyle(fontSize: 13)),
-          trailing: SegmentedButton<String>(
+        LabeledControlRow(
+          label: 'Environment',
+          control: SegmentedButton<String>(
             showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: 'studio', label: Text('Studio')),
@@ -182,11 +181,9 @@ class EnvironmentControls extends StatelessWidget {
           onPreview: (v) => _previewExposure(exposure: v),
           onCommit: (v) => _set('exposure', v),
         ),
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Tone mapping', style: TextStyle(fontSize: 13)),
-          trailing: DropdownButton<String>(
+        LabeledControlRow(
+          label: 'Tone mapping',
+          control: DropdownButton<String>(
             value: _toneMappingModes.contains(env.toneMapping)
                 ? env.toneMapping
                 : 'pbrNeutral',
@@ -197,14 +194,9 @@ class EnvironmentControls extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('toneMapping', v),
           ),
         ),
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Reflection resolution',
-            style: TextStyle(fontSize: 13),
-          ),
-          trailing: DropdownButton<int>(
+        LabeledControlRow(
+          label: 'Reflection resolution',
+          control: DropdownButton<int>(
             value: _reflectionSizes.contains(env.radianceCubeSize)
                 ? (env.radianceCubeSize ?? 0)
                 : 0,
@@ -365,11 +357,9 @@ class SkySection extends StatelessWidget {
           padding: EdgeInsets.symmetric(vertical: 4),
           child: Text('Sky', style: TextStyle(fontSize: 13)),
         ),
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Skybox', style: TextStyle(fontSize: 13)),
-          trailing: DropdownButton<String>(
+        LabeledControlRow(
+          label: 'Skybox',
+          control: DropdownButton<String>(
             value: type,
             items: const [
               DropdownMenuItem(value: 'none', child: Text('None')),
