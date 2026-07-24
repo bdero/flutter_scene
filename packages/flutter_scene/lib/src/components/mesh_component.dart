@@ -112,16 +112,13 @@ class MeshComponent extends Component {
     final worldTransform = node.globalTransform;
     final windingFlipped = node.windingFlipped;
 
-    // A skinned node uploads its joint matrices once per frame; both
-    // render passes then sample the same joints texture.
+    // A skinned node uploads its joint matrices once per frame. The texture
+    // rides on the render items, not the geometry, so nodes sharing one
+    // skinned geometry (clones) each draw with their own skeleton; the
+    // render passes apply it to the geometry per draw.
     final skin = node.skin;
-    if (skin != null) {
-      final jointsTexture = skin.getJointsTexture();
-      final jointsTextureWidth = skin.getTextureWidth();
-      for (final item in _renderItems) {
-        item.geometry.setJointsTexture(jointsTexture, jointsTextureWidth);
-      }
-    }
+    final jointsTexture = skin?.getJointsTexture();
+    final jointsTextureWidth = skin?.getTextureWidth() ?? 0;
 
     final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
@@ -136,6 +133,8 @@ class MeshComponent extends Component {
       item.windingFlipped = windingFlipped;
       item.shadowStatic = node.shadowStatic;
       item.highlightColor = highlightColor;
+      item.jointsTexture = jointsTexture;
+      item.jointsTextureWidth = jointsTextureWidth;
 
       final wasBounded = item.worldBounds != null;
       final boundsChanged = item.refreshWorldBounds();

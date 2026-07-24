@@ -247,6 +247,9 @@ class _DepthPrepassEncoder {
     // absent from the prepass and SSAO/SSR read the farther surface behind them.
     _renderPass.setCullMode(item.material.renderCullMode);
     final geometry = item.geometry;
+    // Skinned items draw through the full bind path below; apply this item's
+    // skeleton to the (possibly shared) geometry first.
+    item.applyJointsTexture(geometry);
     // An alpha-masked material samples its mask through the full-vertex
     // varyings, so it skips the position-only path too.
     final masked = item.material.depthAlphaMasked;
