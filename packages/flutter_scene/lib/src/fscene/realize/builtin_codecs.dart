@@ -22,8 +22,7 @@ import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
@@ -33,8 +32,6 @@ import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/mesh.dart';
 

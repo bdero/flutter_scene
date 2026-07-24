@@ -2,11 +2,10 @@ import 'package:flutter_scene/src/audio/audio_attenuation.dart';
 import 'package:flutter_scene/src/audio/audio_listener.dart';
 import 'package:flutter_scene/src/audio/clip_audio_source.dart';
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 
 /// Codec for [ClipAudioSource]. The clip is carried as a Flutter asset
 /// key; playback needs an `AudioEngine` mounted by the app, and a scene

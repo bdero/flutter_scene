@@ -1,6 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/src/id.dart';
 
 /// A reference to an external asset by its source-path key.
 ///

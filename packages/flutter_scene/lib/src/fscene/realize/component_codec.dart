@@ -1,12 +1,9 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
 
 /// Context handed to a [ComponentCodec] when realizing a [ComponentSpec] into

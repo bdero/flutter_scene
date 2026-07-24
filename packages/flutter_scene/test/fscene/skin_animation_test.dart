@@ -5,8 +5,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Uint8List _floatBytes(List<double> values) =>

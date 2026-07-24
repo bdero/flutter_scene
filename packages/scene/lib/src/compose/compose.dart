@@ -17,14 +17,14 @@
 /// from the asset bundle; tests pass an in-memory map).
 library;
 
-import 'package:flutter/foundation.dart';
+import 'package:scene/src/log.dart';
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/json/fscene_json.dart';
+import 'package:scene/src/property_value.dart';
+import 'package:scene/src/scene_document.dart';
+import 'package:scene/src/specs.dart';
 
 /// Resolves a prefab [AssetRef] to its (uncomposed) [SceneDocument].
 typedef PrefabResolver = SceneDocument Function(AssetRef ref);
@@ -171,7 +171,7 @@ void _expandInstance(
   instance.instance = null; // mark expanded regardless of outcome
   final sourceKey = spec.source.key;
   if (visiting.contains(sourceKey)) {
-    debugPrint('fscene: cyclic prefab reference to "$sourceKey"; skipping');
+    sceneLog('fscene: cyclic prefab reference to "$sourceKey"; skipping');
     return;
   }
 
@@ -336,7 +336,7 @@ void _applyDelta(
   for (final override in spec.overrides) {
     final node = out.node(remapId(override.target));
     if (node == null) {
-      debugPrint('fscene: override target ${override.target} not found');
+      sceneLog('fscene: override target ${override.target} not found');
       continue;
     }
     _setProperty(node, override.path, override.value);
@@ -383,7 +383,7 @@ void _applyDelta(
 void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
   final node = document.node(override.target);
   if (node == null) {
-    debugPrint(
+    sceneLog(
       'fscene: applyPrefabOverride target "${override.target.toToken()}" not found',
     );
     return;
@@ -424,10 +424,10 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
         return;
       }
     }
-    debugPrint('fscene: override "$path" found no "${parts[1]}" component');
+    sceneLog('fscene: override "$path" found no "${parts[1]}" component');
     return;
   }
-  debugPrint('fscene: unsupported override path "$path"');
+  sceneLog('fscene: unsupported override path "$path"');
 }
 
 void _setTrs(NodeSpec node, String component, PropertyValue value) {
@@ -448,7 +448,7 @@ void _setTrs(NodeSpec node, String component, PropertyValue value) {
     case 's' when value is Vec3Value:
       scale = value.value.clone();
     default:
-      debugPrint('fscene: bad transform override "trs.$component"');
+      sceneLog('fscene: bad transform override "trs.$component"');
       return;
   }
   node.transform = TrsTransform(

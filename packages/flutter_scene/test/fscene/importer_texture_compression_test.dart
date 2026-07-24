@@ -6,9 +6,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';

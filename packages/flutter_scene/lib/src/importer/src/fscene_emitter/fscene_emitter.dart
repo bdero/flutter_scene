@@ -24,11 +24,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math.dart';
 
-import '../../../fscene/id.dart';
-import '../../../fscene/binary/fsceneb.dart';
-import '../../../fscene/property_value.dart';
-import '../../../fscene/scene_document.dart';
-import '../../../fscene/specs.dart';
+import 'package:scene/scene.dart';
 import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';

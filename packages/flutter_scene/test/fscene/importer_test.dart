@@ -12,8 +12,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';

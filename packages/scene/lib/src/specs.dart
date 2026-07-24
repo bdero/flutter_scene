@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/property_value.dart';
 
 /// A node's local transform, stored either as a 4x4 [matrix] or as a
 /// decomposed translation/rotation/scale ([TrsTransform]). The importer

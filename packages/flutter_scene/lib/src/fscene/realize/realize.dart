@@ -5,15 +5,13 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/animation.dart' as engine;
 
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/lazy_subtree.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/skin.dart';
 

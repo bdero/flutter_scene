@@ -10,7 +10,7 @@
 /// script, or an agent.
 library;
 
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 
 import 'change.dart';
 

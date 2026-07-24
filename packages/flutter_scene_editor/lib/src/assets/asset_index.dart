@@ -10,13 +10,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/scene_document.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 
 /// The kind of an on-disk project asset, picked by file extension.
 enum FileAssetKind { model, image, hdr, scene }

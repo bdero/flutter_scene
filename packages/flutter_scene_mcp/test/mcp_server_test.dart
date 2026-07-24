@@ -3,8 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_mcp/client.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
 import 'package:stream_channel/stream_channel.dart';

@@ -8,11 +8,7 @@
 
 import 'dart:io';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:test/test.dart';

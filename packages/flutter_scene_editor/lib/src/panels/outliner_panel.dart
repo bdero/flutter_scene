@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 

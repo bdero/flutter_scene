@@ -31,6 +31,7 @@ environment:
   flutter: ">=3.44.0"
 
 dependencies:
+  scene: ^0.1.0
   # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0
   collection: ^1.19.0

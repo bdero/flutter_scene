@@ -1,5 +1,5 @@
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 

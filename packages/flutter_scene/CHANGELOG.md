@@ -1,5 +1,6 @@
 ## 0.20.0
 
+* The `.fscene` document core (document model, stable ids, JSON/binary serialization, prefab composition, diffing) moved to the new pure-Dart `scene` package; `flutter_scene` re-exports it, so existing imports are unchanged.
 * Fixed the web backend dropping every uniform-block draw on drivers that pad uniform block sizes (Mesa on Linux).
 * New declarative scene API. `SceneView.declarative`, `SceneNode`, `SceneMesh`, and `SceneModel` describe scenes in `build()`, with bridges to and from the imperative API, which is unchanged.
 * Declarative animation control via `SceneModel.animations` (`SceneAnimationSpec`), plus cached model templates so equal sources load once and share GPU resources.

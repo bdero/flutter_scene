@@ -1,6 +1,4 @@
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/src/change.dart';
 import 'package:flutter_scene_editor_core/src/history.dart';
 import 'package:test/test.dart';
