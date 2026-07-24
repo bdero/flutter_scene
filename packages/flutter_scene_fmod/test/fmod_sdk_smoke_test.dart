@@ -1,22 +1,19 @@
-// Smoke tests against a real FMOD Engine SDK. Skipped unless
-// FMOD_SDK_PATH points at an extracted SDK (the directory containing
-// api/), since the SDK cannot be redistributed or fetched in CI. Run
+// Engine-level smoke test against a real FMOD Engine SDK. The raw
+// bindings have their own smoke suite in the fmod package; this covers
+// the flutter_scene contract adapter. Skipped unless FMOD_SDK_PATH
+// points at an extracted SDK (the directory containing api/). Run
 // locally with
 //
 //   FMOD_SDK_PATH="$HOME/projects/FMOD Programmers API" flutter test \
 //       test/fmod_sdk_smoke_test.dart
 //
-// The engine-level tests drive internal component lifecycle hooks
-// directly, hence the internal-member ignores.
+// The test drives internal component lifecycle hooks directly, hence
+// the internal-member ignores.
 
-import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_fmod/flutter_scene_fmod.dart';
-import 'package:flutter_scene_fmod/src/ffi/fmod_bindings.dart';
-import 'package:flutter_scene_fmod/src/ffi/fmod_library.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart' hide Colors;
 
@@ -24,149 +21,12 @@ final String? sdkPath = Platform.environment['FMOD_SDK_PATH'];
 
 String get _media => '$sdkPath/api/studio/examples/media';
 
-Future<void> _tick(
-  FmodBindings fmod,
-  Pointer<Void> system, {
-  int frames = 20,
-}) async {
-  for (var i = 0; i < frames; i++) {
-    fmod.check(fmod.Studio_System_Update(system), 'Studio_System_Update');
-    await Future<void>.delayed(const Duration(milliseconds: 16));
-  }
-}
-
 void main() {
   final skip = sdkPath == null
       ? 'FMOD_SDK_PATH is not set; SDK smoke tests need a local FMOD SDK.'
       : null;
 
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  test('raw bindings: init, banks, event, core sound', () async {
-    final fmod = FmodBindings(FmodLibrary.open());
-    final out = calloc<Pointer<Void>>();
-    addTearDown(() => calloc.free(out));
-
-    fmod.check(
-      fmod.Studio_System_Create(out, kFmodDefaultHeaderVersion),
-      'Studio_System_Create',
-    );
-    final system = out.value;
-    fmod.check(
-      fmod.Studio_System_Initialize(
-        system,
-        256,
-        fmodStudioInitNormal,
-        fmodInitNormal,
-        nullptr,
-      ),
-      'Studio_System_Initialize',
-    );
-    addTearDown(() => fmod.Studio_System_Release(system));
-
-    out.value = nullptr;
-    fmod.check(
-      fmod.Studio_System_GetCoreSystem(system, out),
-      'Studio_System_GetCoreSystem',
-    );
-    final core = out.value;
-    expect(core, isNot(nullptr));
-
-    // Banks from the SDK's example content.
-    for (final bank in ['Master.strings.bank', 'Master.bank', 'SFX.bank']) {
-      final path = '$_media/$bank'.toNativeUtf8();
-      out.value = nullptr;
-      fmod.check(
-        fmod.Studio_System_LoadBankFile(
-          system,
-          path,
-          fmodStudioLoadBankNormal,
-          out,
-        ),
-        'LoadBankFile $bank',
-      );
-      calloc.free(path);
-    }
-
-    // Fire an authored event and confirm it reaches a playing state.
-    final eventPath = 'event:/Ambience/Country'.toNativeUtf8();
-    out.value = nullptr;
-    fmod.check(
-      fmod.Studio_System_GetEvent(system, eventPath, out),
-      'Studio_System_GetEvent',
-    );
-    calloc.free(eventPath);
-    final description = out.value;
-    out.value = nullptr;
-    fmod.check(
-      fmod.Studio_EventDescription_CreateInstance(description, out),
-      'CreateInstance',
-    );
-    final instance = out.value;
-    fmod.check(fmod.Studio_EventInstance_Start(instance), 'Start');
-    await _tick(fmod, system);
-    final state = calloc<Int32>();
-    fmod.check(
-      fmod.Studio_EventInstance_GetPlaybackState(instance, state),
-      'GetPlaybackState',
-    );
-    expect(
-      state.value,
-      anyOf(
-        fmodStudioPlaybackPlaying,
-        fmodStudioPlaybackStarting,
-        fmodStudioPlaybackSustaining,
-      ),
-    );
-    calloc.free(state);
-    fmod.check(
-      fmod.Studio_EventInstance_Stop(instance, fmodStudioStopImmediate),
-      'Stop',
-    );
-    fmod.check(fmod.Studio_EventInstance_Release(instance), 'Release');
-
-    // Core layer: decode a wav and play a paused channel.
-    final wavPath = '$sdkPath/api/core/examples/media/drumloop.wav'
-        .toNativeUtf8();
-    out.value = nullptr;
-    fmod.check(
-      fmod.System_CreateSound(
-        core,
-        wavPath,
-        fmod3d | fmodCreateSample,
-        nullptr,
-        out,
-      ),
-      'System_CreateSound',
-    );
-    calloc.free(wavPath);
-    final sound = out.value;
-    final length = calloc<Uint32>();
-    fmod.check(
-      fmod.Sound_GetLength(sound, length, fmodTimeUnitMs),
-      'Sound_GetLength',
-    );
-    expect(length.value, greaterThan(0));
-    calloc.free(length);
-    out.value = nullptr;
-    fmod.check(
-      fmod.System_PlaySound(core, sound, nullptr, 1, out),
-      'System_PlaySound',
-    );
-    final channel = out.value;
-    final playing = calloc<Int32>();
-    expect(
-      fmod.checkChannel(
-        fmod.Channel_IsPlaying(channel, playing),
-        'Channel_IsPlaying',
-      ),
-      isTrue,
-    );
-    expect(playing.value, 1);
-    calloc.free(playing);
-    fmod.checkChannel(fmod.Channel_Stop(channel), 'Channel_Stop');
-    fmod.check(fmod.Sound_Release(sound), 'Sound_Release');
-  }, skip: skip);
 
   test('FmodAudioEngine end to end: banks, events, clips, buses', () async {
     final root = Node();
