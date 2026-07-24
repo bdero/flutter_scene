@@ -1,5 +1,6 @@
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
+import 'package:scene/scene.dart' show BodyType;
 import 'package:vector_math/vector_math.dart';
 
 /// Finite-differences a world position across frames into a velocity.

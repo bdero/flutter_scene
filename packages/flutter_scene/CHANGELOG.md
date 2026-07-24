@@ -9,6 +9,10 @@
 * Automatic exposure (eye adaptation) via `Scene.autoExposure`, metered entirely on the GPU.
 * Imported materials keep their source names via the new `Material.name`.
 * Fixed cloned skinned meshes all drawing with the last-updated skeleton.
+* Physics backends now implement the pure `PhysicsSimulation` contract from the `scene` package and no longer depend on Flutter, so the same simulations run under plain `dart run`.
+* One generic physics component layer for every backend. `PhysicsWorld(RapierWorld())`, plus concrete `RigidBody`, `Collider`, the joint components, and `KinematicCharacterController`; the backend-specific component classes are gone.
+* `BasicSimulation` (queries and triggers, pure Dart) replaces `BasicPhysicsWorld`/`BasicCollider`/`BasicKinematicBody`.
+* Colliders without a sibling `RigidBody` now attach as static geometry instead of throwing.
 
 ## 0.19.0
 
