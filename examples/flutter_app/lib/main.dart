@@ -1,7 +1,12 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
-    show AntiAliasingMode, Scene, PostInsertion, SpecularAmbientOcclusionMode;
+    show
+        AntiAliasingMode,
+        Scene,
+        PostInsertion,
+        ShadowCasterFaces,
+        SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
@@ -554,6 +559,15 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Intensity', settings.lightIntensity, 0, 10, (v) {
           settings.lightIntensity = v;
         }),
+        _slider('Color R', settings.lightColor.r, 0, 1, (v) {
+          settings.lightColor.r = v;
+        }),
+        _slider('Color G', settings.lightColor.g, 0, 1, (v) {
+          settings.lightColor.g = v;
+        }),
+        _slider('Color B', settings.lightColor.b, 0, 1, (v) {
+          settings.lightColor.b = v;
+        }),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Casts shadow'),
@@ -564,6 +578,66 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Softness', settings.shadowSoftness, 0, 0.3, (v) {
           settings.shadowSoftness = v;
         }),
+        _slider('Fade range', settings.shadowFadeRange, 0, 20, (v) {
+          settings.shadowFadeRange = v;
+        }),
+        _slider('Cascades', settings.shadowCascadeCount.toDouble(), 1, 4, (v) {
+          settings.shadowCascadeCount = v.round();
+        }, decimals: 0),
+        _slider('Max distance', settings.shadowMaxDistance, 10, 500, (v) {
+          settings.shadowMaxDistance = v;
+        }, decimals: 0),
+        _slider('Split lambda', settings.shadowCascadeSplitLambda, 0, 1, (v) {
+          settings.shadowCascadeSplitLambda = v;
+        }),
+        Row(
+          children: [
+            const Text('Resolution'),
+            const Spacer(),
+            DropdownButton<int>(
+              value: settings.shadowMapResolution,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.shadowMapResolution = value);
+                }
+              },
+              items: [
+                for (final resolution in const [256, 512, 1024, 2048, 4096])
+                  DropdownMenuItem(
+                    value: resolution,
+                    child: Text('$resolution'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        _slider('Depth bias', settings.shadowDepthBias, 0, 0.1, (v) {
+          settings.shadowDepthBias = v;
+        }, decimals: 3),
+        _slider('Normal bias', settings.shadowNormalBias, 0, 0.1, (v) {
+          settings.shadowNormalBias = v;
+        }, decimals: 3),
+        _slider('Ambient str.', settings.shadowAmbientStrength, 0, 1, (v) {
+          settings.shadowAmbientStrength = v;
+        }),
+        Row(
+          children: [
+            const Text('Caster faces'),
+            const Spacer(),
+            DropdownButton<ShadowCasterFaces>(
+              value: settings.shadowCasterFaces,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.shadowCasterFaces = value);
+                }
+              },
+              items: [
+                for (final faces in ShadowCasterFaces.values)
+                  DropdownMenuItem(value: faces, child: Text(faces.name)),
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }

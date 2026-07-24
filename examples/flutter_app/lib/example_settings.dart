@@ -57,11 +57,41 @@ class ExampleSettings {
   /// Directional light intensity.
   double lightIntensity = 3.0;
 
+  /// Linear RGB color of the directional light.
+  final Vector3 lightColor = Vector3(1.0, 1.0, 1.0);
+
   /// Whether the directional light casts (cascaded) shadows.
   bool lightCastsShadow = true;
 
   /// World-space radius of the shadow penumbra. `0` is a hard edge.
   double shadowSoftness = 0.08;
+
+  /// World-space width of the fade band at the far shadow edge.
+  double shadowFadeRange = 2.0;
+
+  /// Number of shadow cascades (1 through 4).
+  int shadowCascadeCount = 4;
+
+  /// View distance the cascades cover, in world units.
+  double shadowMaxDistance = 150.0;
+
+  /// Cascade split spacing, uniform (`0`) to logarithmic (`1`).
+  double shadowCascadeSplitLambda = 0.6;
+
+  /// Pixel resolution of each cascade's shadow-map tile.
+  int shadowMapResolution = 1024;
+
+  /// World-space depth bias subtracted from the receiver.
+  double shadowDepthBias = 0.02;
+
+  /// World-space offset along the receiver's normal.
+  double shadowNormalBias = 0.02;
+
+  /// How much the shadow also darkens the IBL ambient.
+  double shadowAmbientStrength = 0.0;
+
+  /// Which caster faces render into the shadow map.
+  ShadowCasterFaces shadowCasterFaces = ShadowCasterFaces.front;
 
   /// A custom, user-authored effect, built by [loadExampleEffects]. Null
   /// until the example shader bundle finishes loading.
@@ -143,8 +173,18 @@ class ExampleSettings {
       final light = component.light;
       light.direction = direction;
       light.intensity = lightIntensity;
+      light.color.setFrom(lightColor);
       light.castsShadow = lightCastsShadow;
       light.shadowSoftness = shadowSoftness;
+      light.shadowFadeRange = shadowFadeRange;
+      light.shadowCascadeCount = shadowCascadeCount;
+      light.shadowMaxDistance = shadowMaxDistance;
+      light.shadowCascadeSplitLambda = shadowCascadeSplitLambda;
+      light.shadowMapResolution = shadowMapResolution;
+      light.shadowDepthBias = shadowDepthBias;
+      light.shadowNormalBias = shadowNormalBias;
+      light.shadowAmbientStrength = shadowAmbientStrength;
+      light.shadowCasterFaces = shadowCasterFaces;
     } else {
       for (final component
           in scene.root.getComponents<DirectionalLightComponent>().toList()) {
