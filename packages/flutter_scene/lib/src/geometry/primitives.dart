@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
-import 'package:flutter_scene/src/physics/shape.dart';
+import 'package:scene/scene.dart' show BoxShape, CapsuleShape, CompoundChild, CompoundShape, ConvexHullShape, CylinderShape, Shape, SphereShape;
 
 /// Vertex attribute arrays produced by a primitive generator.
 ///

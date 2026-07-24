@@ -20,7 +20,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/physics/shape.dart';
+import 'shape.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Internal hit record. The owning world wraps this in a [RaycastHit].
@@ -457,4 +457,46 @@ Vector3 _transformDir(Matrix4 m, Vector3 v) {
     m.entry(1, 0) * v.x + m.entry(1, 1) * v.y + m.entry(1, 2) * v.z,
     m.entry(2, 0) * v.x + m.entry(2, 1) * v.y + m.entry(2, 2) * v.z,
   );
+}
+
+/// Raycast against an axis-aligned box, the conservative fallback used by
+/// sphere casts against inflated collider bounds.
+RayShapeHit? aabbRaycast(Ray ray, Aabb3 box, double maxDistance) {
+  final dir = ray.direction.normalized();
+  var tmin = -double.infinity;
+  var tmax = double.infinity;
+  var hitAxis = -1;
+  var hitSign = 1.0;
+  for (var axis = 0; axis < 3; axis++) {
+    final o = ray.origin[axis];
+    final d = dir[axis];
+    final lo = box.min[axis];
+    final hi = box.max[axis];
+    if (d.abs() < 1e-9) {
+      if (o < lo || o > hi) return null;
+      continue;
+    }
+    var t1 = (lo - o) / d;
+    var t2 = (hi - o) / d;
+    var nearSign = -1.0;
+    if (t1 > t2) {
+      final tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+      nearSign = 1.0;
+    }
+    if (t1 > tmin) {
+      tmin = t1;
+      hitAxis = axis;
+      hitSign = nearSign;
+    }
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax || tmax < 0) return null;
+  }
+  final t = tmin >= 0 ? tmin : tmax;
+  if (t < 0 || t > maxDistance) return null;
+  final hitPoint = ray.origin + dir.scaled(t);
+  final normal = Vector3.zero();
+  if (hitAxis >= 0) normal[hitAxis] = hitSign;
+  return RayShapeHit(t, hitPoint, normal);
 }

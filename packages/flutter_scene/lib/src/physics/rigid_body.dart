@@ -1,91 +1,281 @@
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/physics/physics_world.dart';
+import 'package:flutter/foundation.dart';
+import 'package:scene/scene.dart' as sim;
 import 'package:vector_math/vector_math.dart';
-
-/// Simulation mode for a [RigidBody].
-///
-/// * [BodyType.fixed]: immovable environment geometry. The backend reads
-///   the transform once on mount; mutating it at runtime is not
-///   supported.
-/// * [BodyType.kinematic]: user-driven motion. The user writes the
-///   node's transform (or a velocity); the body pushes dynamic bodies it
-///   contacts but is not itself pushed.
-/// * [BodyType.dynamic_]: fully simulated. The backend writes the node's
-///   transform each step in response to forces, contacts, and gravity.
-///   The trailing underscore avoids the Dart `dynamic` keyword.
-/// {@category Physics}
-enum BodyType { fixed, kinematic, dynamic_ }
 
 /// A simulated rigid body attached to a [Node].
 ///
-/// One rigid body per node. Colliders attached to the same node (or to
-/// descendant nodes, depending on the backend) define its collision
-/// volume.
-///
-/// Transform sync direction depends on [type]: see [BodyType]. Mutating
-/// a [BodyType.dynamic_] body's [Node.localTransform] is allowed but is
-/// treated as a teleport (the backend overrides velocity and wakes the
-/// body).
+/// One rigid body per node; [Collider]s on the same node define its
+/// collision volume. Registers with the nearest ancestor [PhysicsWorld]
+/// on mount. Transform sync direction depends on [type] (see
+/// [sim.BodyType]); mutating a dynamic body's node transform is treated
+/// as a teleport.
 /// {@category Physics}
-abstract class RigidBody extends Component {
-  BodyType get type;
+class RigidBody extends Component {
+  RigidBody({
+    sim.BodyType type = sim.BodyType.dynamic_,
+    double? mass,
+    Matrix3? inertiaTensor,
+    Vector3? linearVelocity,
+    Vector3? angularVelocity,
+    double linearDamping = 0,
+    double angularDamping = 0,
+    bool useGravity = true,
+    bool ccdEnabled = false,
+    Vector3? linearAxisLocks,
+    Vector3? angularAxisLocks,
+  }) : _type = type,
+       _mass = mass,
+       _inertiaTensor = inertiaTensor,
+       _linearVelocity = linearVelocity ?? Vector3.zero(),
+       _angularVelocity = angularVelocity ?? Vector3.zero(),
+       _linearDamping = linearDamping,
+       _angularDamping = angularDamping,
+       _useGravity = useGravity,
+       _ccdEnabled = ccdEnabled,
+       _linearAxisLocks = linearAxisLocks ?? Vector3(1, 1, 1),
+       _angularAxisLocks = angularAxisLocks ?? Vector3(1, 1, 1);
 
-  /// Mass in kilograms. When null, the backend derives mass from the
+  PhysicsWorld? _world;
+  int? _handle;
+
+  sim.BodyType _type;
+  double? _mass;
+  Matrix3? _inertiaTensor;
+  Vector3 _linearVelocity;
+  Vector3 _angularVelocity;
+  double _linearDamping;
+  double _angularDamping;
+  bool _useGravity;
+  bool _ccdEnabled;
+  Vector3 _linearAxisLocks;
+  Vector3 _angularAxisLocks;
+
+  /// The owning world while mounted.
+  PhysicsWorld? get world => _world;
+
+  /// The body's simulation handle while mounted.
+  @internal
+  int? get handle => _handle;
+
+  sim.PhysicsSimulation? get _sim => _world?.simulation;
+
+  sim.BodyType get type => _type;
+
+  /// Changes the simulation mode in place (an elevator switching between
+  /// kinematic and fixed, a prop becoming dynamic on release).
+  set type(sim.BodyType value) {
+    _type = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyKind(handle, value);
+  }
+
+  /// Mass in kilograms. When null the backend derives mass from the
   /// owning colliders' shapes and material densities.
-  double? get mass;
-  set mass(double? value);
+  double? get mass => _mass;
+  set mass(double? value) {
+    _mass = value;
+    final handle = _handle;
+    if (handle != null && value != null) {
+      _sim!.setBodyAdditionalMass(handle, value);
+    }
+  }
 
   /// Local-space inertia tensor. When null, derived from the owning
   /// colliders.
-  Matrix3? get inertiaTensor;
-  set inertiaTensor(Matrix3? value);
+  // TODO(inertia-tensor): forward to the simulation once backends grow a
+  // setter; currently stored only.
+  // ignore: unnecessary_getters_setters
+  Matrix3? get inertiaTensor => _inertiaTensor;
+  set inertiaTensor(Matrix3? value) => _inertiaTensor = value;
 
-  Vector3 get linearVelocity;
-  set linearVelocity(Vector3 value);
+  Vector3 get linearVelocity {
+    final handle = _handle;
+    return handle == null
+        ? _linearVelocity
+        : _sim!.readBodyLinearVelocity(handle);
+  }
 
-  Vector3 get angularVelocity;
-  set angularVelocity(Vector3 value);
+  set linearVelocity(Vector3 value) {
+    _linearVelocity = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyLinearVelocity(handle, value);
+  }
+
+  Vector3 get angularVelocity {
+    final handle = _handle;
+    return handle == null
+        ? _angularVelocity
+        : _sim!.readBodyAngularVelocity(handle);
+  }
+
+  set angularVelocity(Vector3 value) {
+    _angularVelocity = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyAngularVelocity(handle, value);
+  }
 
   /// Per-step linear velocity damping in `[0, 1]`. `0` is no damping.
-  double get linearDamping;
-  set linearDamping(double value);
+  double get linearDamping => _linearDamping;
+  set linearDamping(double value) {
+    _linearDamping = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyLinearDamping(handle, value);
+  }
 
   /// Per-step angular velocity damping in `[0, 1]`. `0` is no damping.
-  double get angularDamping;
-  set angularDamping(double value);
+  double get angularDamping => _angularDamping;
+  set angularDamping(double value) {
+    _angularDamping = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyAngularDamping(handle, value);
+  }
 
-  bool get useGravity;
-  set useGravity(bool value);
+  bool get useGravity => _useGravity;
+  set useGravity(bool value) {
+    _useGravity = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyGravityScale(handle, value ? 1 : 0);
+  }
 
-  /// When `true`, the backend uses continuous collision detection to
-  /// prevent fast-moving bodies from tunneling through thin colliders.
-  bool get ccdEnabled;
-  set ccdEnabled(bool value);
+  /// Continuous collision detection, prevents fast bodies from tunneling
+  /// through thin colliders.
+  bool get ccdEnabled => _ccdEnabled;
+  set ccdEnabled(bool value) {
+    _ccdEnabled = value;
+    final handle = _handle;
+    if (handle != null) _sim!.setBodyCcdEnabled(handle, value);
+  }
 
-  /// Per-axis linear motion factors. Each component is in `[0, 1]`:
-  /// `1` leaves the axis free, `0` locks it. Use to constrain motion
-  /// to a plane (for example `(1, 1, 0)` for 2D-style motion in XY).
-  Vector3 get linearAxisLocks;
-  set linearAxisLocks(Vector3 value);
+  /// Per-axis linear motion factors in `[0, 1]`, `1` free, `0` locked.
+  Vector3 get linearAxisLocks => _linearAxisLocks;
+  set linearAxisLocks(Vector3 value) {
+    _linearAxisLocks = value;
+    _pushAxisLocks();
+  }
 
   /// Per-axis angular motion factors. See [linearAxisLocks].
-  Vector3 get angularAxisLocks;
-  set angularAxisLocks(Vector3 value);
+  Vector3 get angularAxisLocks => _angularAxisLocks;
+  set angularAxisLocks(Vector3 value) {
+    _angularAxisLocks = value;
+    _pushAxisLocks();
+  }
 
-  /// Applies a continuous [force] (in world space) for the duration of
-  /// the current step. Use [applyImpulse] for an instantaneous change in
-  /// momentum. When [atWorldPoint] is provided, the force produces a
-  /// torque about the body's center of mass.
-  void applyForce(Vector3 force, {Vector3? atWorldPoint});
+  void _pushAxisLocks() {
+    final handle = _handle;
+    if (handle != null) {
+      _sim!.setBodyAxisLocks(handle, _linearAxisLocks, _angularAxisLocks);
+    }
+  }
 
-  void applyImpulse(Vector3 impulse, {Vector3? atWorldPoint});
+  /// Applies a continuous [force] (world space) for the current step;
+  /// [atWorldPoint] makes it produce torque about the center of mass.
+  void applyForce(Vector3 force, {Vector3? atWorldPoint}) {
+    final handle = _handle;
+    if (handle != null) {
+      _sim!.applyForce(handle, force, atWorldPoint: atWorldPoint);
+    }
+  }
 
-  void applyTorque(Vector3 torque);
+  void applyImpulse(Vector3 impulse, {Vector3? atWorldPoint}) {
+    final handle = _handle;
+    if (handle != null) {
+      _sim!.applyImpulse(handle, impulse, atWorldPoint: atWorldPoint);
+    }
+  }
 
-  void applyAngularImpulse(Vector3 impulse);
+  void applyTorque(Vector3 torque) {
+    final handle = _handle;
+    if (handle != null) _sim!.applyTorque(handle, torque);
+  }
 
-  bool get isSleeping;
+  void applyAngularImpulse(Vector3 impulse) {
+    final handle = _handle;
+    if (handle != null) _sim!.applyAngularImpulse(handle, impulse);
+  }
 
-  void wakeUp();
+  bool get isSleeping {
+    final handle = _handle;
+    return handle != null && _sim!.isBodySleeping(handle);
+  }
 
-  void putToSleep();
+  void wakeUp() {
+    final handle = _handle;
+    if (handle != null) _sim!.wakeBody(handle);
+  }
+
+  void putToSleep() {
+    final handle = _handle;
+    if (handle != null) _sim!.sleepBody(handle);
+  }
+
+  /// The body's pose fresh from the simulation, unlike the node transform
+  /// this is exact mid-step state (useful inside [fixedUpdate], where the
+  /// interpolated node transform lags).
+  (Vector3, Quaternion) readSimulationPose() {
+    final handle = _handle;
+    if (handle == null) {
+      return (
+        node.globalTransform.getTranslation(),
+        Quaternion.fromRotation(node.globalTransform.getRotation()),
+      );
+    }
+    return _sim!.readBodyPose(handle);
+  }
+
+  @override
+  void onMount() {
+    final world = findAncestorWorld(node);
+    if (world == null) {
+      throw StateError(
+        'RigidBody mounted with no PhysicsWorld on an ancestor node',
+      );
+    }
+    _world = world;
+    final handle = world.simulation.createBody(
+      target: NodePoseTarget(node),
+      type: _type,
+      additionalMass: _mass,
+    );
+    _handle = handle;
+    final s = world.simulation;
+    if (_linearVelocity.length2 > 0) {
+      s.setBodyLinearVelocity(handle, _linearVelocity);
+    }
+    if (_angularVelocity.length2 > 0) {
+      s.setBodyAngularVelocity(handle, _angularVelocity);
+    }
+    if (_linearDamping != 0) s.setBodyLinearDamping(handle, _linearDamping);
+    if (_angularDamping != 0) s.setBodyAngularDamping(handle, _angularDamping);
+    if (!_useGravity) s.setBodyGravityScale(handle, 0);
+    if (_ccdEnabled) s.setBodyCcdEnabled(handle, true);
+    if (_linearAxisLocks != Vector3(1, 1, 1) ||
+        _angularAxisLocks != Vector3(1, 1, 1)) {
+      _pushAxisLocks();
+    }
+  }
+
+  @override
+  void onUnmount() {
+    final handle = _handle;
+    if (handle != null) _sim?.destroyBody(handle);
+    _handle = null;
+    _world = null;
+  }
+
+  @override
+  void fixedUpdate(double fixedDt) {
+    if (_type != sim.BodyType.kinematic) return;
+    final handle = _handle;
+    if (handle == null) return;
+    // Kinematic bodies follow the node; push the pose it should reach by
+    // the next step so contacts see its velocity.
+    final transform = node.globalTransform;
+    _sim!.setBodyKinematicTargetPose(
+      handle,
+      transform.getTranslation(),
+      Quaternion.fromRotation(transform.getRotation()),
+    );
+  }
 }

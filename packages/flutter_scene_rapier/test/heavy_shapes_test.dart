@@ -13,7 +13,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot() {
   final root = Node();
-  final world = RapierWorld();
+  final world = PhysicsWorld(RapierWorld());
   root.addComponent(world);
   world.mount();
   return root;
@@ -22,7 +22,7 @@ Node _boot() {
 void main() {
   test('convex hull cooks a tetrahedron and stops a falling ball', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Tetrahedron with 4 points, large enough to act as a wedge floor.
     final hullPoints = Float32List.fromList([
@@ -43,74 +43,72 @@ void main() {
     final hullNode = Node(
       localTransform: Matrix4.translation(Vector3(0, -0.5, 0)),
     );
-    hullNode.addComponent(RapierRigidBody(type: BodyType.fixed));
-    hullNode.addComponent(
-      RapierCollider(shape: ConvexHullShape(points: hullPoints)),
-    );
+    hullNode.addComponent(RigidBody(type: BodyType.fixed));
+    hullNode.addComponent(Collider(shape: ConvexHullShape(points: hullPoints)));
     root.add(hullNode);
-    hullNode.getComponents<RapierRigidBody>().first.mount();
-    hullNode.getComponents<RapierCollider>().first.mount();
+    hullNode.getComponents<RigidBody>().first.mount();
+    hullNode.getComponents<Collider>().first.mount();
 
     final ballNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 5, 0)),
     );
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final ballBody = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     ballNode.addComponent(ballBody);
-    ballNode.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+    ballNode.addComponent(Collider(shape: SphereShape(radius: 0.5)));
     root.add(ballNode);
     ballBody.mount();
-    ballNode.getComponents<RapierCollider>().first.mount();
+    ballNode.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(ballBody.readNativeTranslation().y, greaterThan(-1.0));
+    expect(ballBody.readSimulationPose().$1.y, greaterThan(-1.0));
   });
 
   test('trimesh cooks a single-triangle floor and stops a falling ball', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final vertices = Float32List.fromList([-10, 0, -10, 10, 0, -10, 0, 0, 10]);
     final indices = Uint32List.fromList([0, 1, 2]);
 
     final floorNode = Node();
-    floorNode.addComponent(RapierRigidBody(type: BodyType.fixed));
+    floorNode.addComponent(RigidBody(type: BodyType.fixed));
     floorNode.addComponent(
-      RapierCollider(
+      Collider(
         shape: TriMeshShape(vertices: vertices, indices: indices),
       ),
     );
     root.add(floorNode);
-    floorNode.getComponents<RapierRigidBody>().first.mount();
-    floorNode.getComponents<RapierCollider>().first.mount();
+    floorNode.getComponents<RigidBody>().first.mount();
+    floorNode.getComponents<Collider>().first.mount();
 
     final ballNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 5, 0)),
     );
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final ballBody = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     ballNode.addComponent(ballBody);
-    ballNode.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+    ballNode.addComponent(Collider(shape: SphereShape(radius: 0.5)));
     root.add(ballNode);
     ballBody.mount();
-    ballNode.getComponents<RapierCollider>().first.mount();
+    ballNode.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(ballBody.readNativeTranslation().y, greaterThan(-1.0));
+    expect(ballBody.readSimulationPose().$1.y, greaterThan(-1.0));
   });
 
   test('heightfield cooks a flat plane and stops a falling ball', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final heights = Float32List(4 * 4); // all zeros: flat plane
 
     final floorNode = Node();
-    floorNode.addComponent(RapierRigidBody(type: BodyType.fixed));
+    floorNode.addComponent(RigidBody(type: BodyType.fixed));
     floorNode.addComponent(
-      RapierCollider(
+      Collider(
         shape: HeightFieldShape(
           width: 4,
           depth: 4,
@@ -120,28 +118,28 @@ void main() {
       ),
     );
     root.add(floorNode);
-    floorNode.getComponents<RapierRigidBody>().first.mount();
-    floorNode.getComponents<RapierCollider>().first.mount();
+    floorNode.getComponents<RigidBody>().first.mount();
+    floorNode.getComponents<Collider>().first.mount();
 
     final ballNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 5, 0)),
     );
-    final ballBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final ballBody = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     ballNode.addComponent(ballBody);
-    ballNode.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+    ballNode.addComponent(Collider(shape: SphereShape(radius: 0.5)));
     root.add(ballNode);
     ballBody.mount();
-    ballNode.getComponents<RapierCollider>().first.mount();
+    ballNode.getComponents<Collider>().first.mount();
 
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(ballBody.readNativeTranslation().y, greaterThan(-1.0));
+    expect(ballBody.readSimulationPose().$1.y, greaterThan(-1.0));
   });
 
   test('compound shape produces one native handle per child primitive', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // An "L" made of two boxes.
     final compound = CompoundShape(
@@ -158,34 +156,35 @@ void main() {
     );
 
     final node = Node();
-    node.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: 1.0));
-    final collider = RapierCollider(shape: compound);
+    node.addComponent(RigidBody(type: BodyType.dynamic_, mass: 1.0));
+    final collider = Collider(shape: compound);
     node.addComponent(collider);
     root.add(node);
-    node.getComponents<RapierRigidBody>().first.mount();
+    node.getComponents<RigidBody>().first.mount();
     collider.mount();
 
-    expect(collider.nativeHandles, hasLength(2));
+    expect(collider.handles, hasLength(2));
     // Each child should be a distinct native handle.
-    expect(collider.nativeHandles.toSet(), hasLength(2));
+    expect(collider.handles.toSet(), hasLength(2));
 
     world.step(1.0 / 60.0);
   });
 
-  test('a degenerate convex hull leaves nativeHandle null', () {
+  test('a degenerate convex hull fails the mount', () {
     final root = _boot();
 
     final node = Node();
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
-    // Two colinear points cannot form a hull.
-    final collider = RapierCollider(
+    node.addComponent(RigidBody(type: BodyType.fixed));
+    // Two colinear points cannot form a hull; the backend returns no
+    // handles and the component surfaces that as an error.
+    final collider = Collider(
       shape: ConvexHullShape(points: Float32List.fromList([0, 0, 0, 1, 0, 0])),
     );
     node.addComponent(collider);
     root.add(node);
-    node.getComponents<RapierRigidBody>().first.mount();
-    collider.mount();
+    node.getComponents<RigidBody>().first.mount();
 
-    expect(collider.nativeHandle, isNull);
+    expect(collider.mount, throwsUnsupportedError);
+    expect(collider.handles, isEmpty);
   });
 }

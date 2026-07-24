@@ -10,33 +10,35 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot({Vector3? gravity}) {
   final root = Node();
-  final world = RapierWorld(gravity: gravity ?? Vector3(0, -9.81, 0));
+  final world = PhysicsWorld(
+    RapierWorld(gravity: gravity ?? Vector3(0, -9.81, 0)),
+  );
   root.addComponent(world);
   world.mount();
   return root;
 }
 
-(Node, RapierRigidBody) _body(
+(Node, RigidBody) _body(
   Node root,
   Vector3 position,
   BodyType type, {
   double? mass,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  final body = RapierRigidBody(type: type, mass: mass);
+  final body = RigidBody(type: type, mass: mass);
   node.addComponent(body);
   // A collider gives the body mass/inertia for the dynamic cases.
-  node.addComponent(RapierCollider(shape: SphereShape(radius: 0.5)));
+  node.addComponent(Collider(shape: SphereShape(radius: 0.5)));
   root.add(node);
   body.mount();
-  node.getComponents<RapierCollider>().first.mount();
+  node.getComponents<Collider>().first.mount();
   return (node, body);
 }
 
 void main() {
   test('a fixed joint holds two bodies at a constant offset', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Anchor body is fixed; the second body would fall without the
     // joint. The joint welds them, so the second body stays put.
@@ -48,7 +50,7 @@ void main() {
       mass: 1,
     );
 
-    final joint = RapierFixedJoint(
+    final joint = FixedJoint(
       otherNode: anchorNode,
       localAnchorA: Vector3.zero(),
       localAnchorB: Vector3(2, 0, 0),
@@ -60,7 +62,7 @@ void main() {
       world.step(1.0 / 60.0);
     }
 
-    final p = hangBody.readNativeTranslation();
+    final p = hangBody.readSimulationPose().$1;
     // Welded to a fixed anchor: it should barely move from (2, 5, 0).
     expect(p.x, closeTo(2.0, 0.2));
     expect(p.y, closeTo(5.0, 0.2));
@@ -68,7 +70,7 @@ void main() {
 
   test('a revolute joint keeps the body at a fixed radius from the hinge', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Hinge at the origin (fixed body); the arm hangs 2 units along +X
     // and swings down about the Z axis under gravity.
@@ -80,7 +82,7 @@ void main() {
       mass: 1,
     );
 
-    final joint = RapierRevoluteJoint(
+    final joint = RevoluteJoint(
       otherNode: hingeNode,
       axis: Vector3(0, 0, 1),
       localAnchorA: Vector3(-2, 0, 0),
@@ -93,7 +95,7 @@ void main() {
       world.step(1.0 / 60.0);
     }
 
-    final p = armBody.readNativeTranslation();
+    final p = armBody.readSimulationPose().$1;
     // Distance from the hinge (at 0,5,0) should remain ~2.
     final radius = (p - Vector3(0, 5, 0)).length;
     expect(radius, closeTo(2.0, 0.2));
@@ -110,7 +112,7 @@ void main() {
     // Rapier places the zero-angle reference.
     double swingRange({double? lower, double? upper}) {
       final root = _boot();
-      final world = root.getComponent<RapierWorld>()!;
+      final world = root.getComponent<PhysicsWorld>()!;
       final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
       final (armNode, armBody) = _body(
         root,
@@ -118,7 +120,7 @@ void main() {
         BodyType.dynamic_,
         mass: 1,
       );
-      final joint = RapierRevoluteJoint(
+      final joint = RevoluteJoint(
         otherNode: hingeNode,
         axis: Vector3(0, 0, 1),
         localAnchorA: Vector3(-2, 0, 0),
@@ -133,7 +135,7 @@ void main() {
       var maxY = -double.infinity;
       for (var i = 0; i < 240; i++) {
         world.step(1.0 / 60.0);
-        final y = armBody.readNativeTranslation().y;
+        final y = armBody.readSimulationPose().$1.y;
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
       }
@@ -150,7 +152,7 @@ void main() {
 
   test('a revolute motor drives the arm against gravity', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
     final (armNode, armBody) = _body(
@@ -162,7 +164,7 @@ void main() {
 
     // A strong positive-velocity motor should rotate the arm up and
     // around rather than letting it hang straight down.
-    final joint = RapierRevoluteJoint(
+    final joint = RevoluteJoint(
       otherNode: hingeNode,
       axis: Vector3(0, 0, 1),
       localAnchorA: Vector3(-2, 0, 0),
@@ -176,7 +178,7 @@ void main() {
     var maxHeight = -double.infinity;
     for (var i = 0; i < 180; i++) {
       world.step(1.0 / 60.0);
-      final y = armBody.readNativeTranslation().y;
+      final y = armBody.readSimulationPose().$1.y;
       if (y > maxHeight) maxHeight = y;
     }
 
@@ -187,7 +189,7 @@ void main() {
 
   test('a prismatic joint confines motion to its axis', () {
     final root = _boot(gravity: Vector3(0, -9.81, 0));
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // Rail anchor (fixed) up top; the slider hangs below it on a
     // vertical axis. The slider may only translate along Y, so gravity
@@ -196,19 +198,19 @@ void main() {
     final railNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 5, 0)),
     );
-    railNode.addComponent(RapierRigidBody(type: BodyType.fixed));
+    railNode.addComponent(RigidBody(type: BodyType.fixed));
     root.add(railNode);
-    railNode.getComponents<RapierRigidBody>().first.mount();
+    railNode.getComponents<RigidBody>().first.mount();
 
     final sliderNode = Node(
       localTransform: Matrix4.translation(Vector3(0, 4, 0)),
     );
-    final sliderBody = RapierRigidBody(type: BodyType.dynamic_, mass: 1);
+    final sliderBody = RigidBody(type: BodyType.dynamic_, mass: 1);
     sliderNode.addComponent(sliderBody);
     root.add(sliderNode);
     sliderBody.mount();
 
-    final joint = RapierPrismaticJoint(
+    final joint = PrismaticJoint(
       otherNode: railNode,
       axis: Vector3(0, 1, 0),
       localAnchorA: Vector3.zero(),
@@ -217,12 +219,12 @@ void main() {
     sliderNode.addComponent(joint);
     joint.mount();
 
-    final startY = sliderBody.readNativeTranslation().y;
+    final startY = sliderBody.readSimulationPose().$1.y;
     for (var i = 0; i < 120; i++) {
       world.step(1.0 / 60.0);
     }
 
-    final p = sliderBody.readNativeTranslation();
+    final p = sliderBody.readSimulationPose().$1;
     expect(p.y, lessThan(startY - 1.0)); // slid down the axis
     expect(p.x.abs(), lessThan(1e-3)); // no lateral drift
     expect(p.z.abs(), lessThan(1e-3));
@@ -230,7 +232,7 @@ void main() {
 
   test('a world-anchored fixed joint pins a body in place', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     // A dynamic body that would fall under gravity, welded to the world
     // (null otherNode) at its starting position. The B-side anchor is in
@@ -241,7 +243,7 @@ void main() {
       BodyType.dynamic_,
       mass: 1,
     );
-    final joint = RapierFixedJoint(
+    final joint = FixedJoint(
       localAnchorA: Vector3.zero(),
       localAnchorB: Vector3(3, 5, 0),
     );
@@ -252,7 +254,7 @@ void main() {
       world.step(1.0 / 60.0);
     }
 
-    final p = body.readNativeTranslation();
+    final p = body.readSimulationPose().$1;
     // Held against gravity by the world anchor: it stays near (3, 5, 0).
     expect(p.x, closeTo(3.0, 0.2));
     expect(p.y, closeTo(5.0, 0.2));
@@ -260,7 +262,7 @@ void main() {
 
   test('setting a revolute motor after mount takes effect live', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
     final (armNode, armBody) = _body(
@@ -271,7 +273,7 @@ void main() {
     );
 
     // No motor at first: the arm just hangs and swings down.
-    final joint = RapierRevoluteJoint(
+    final joint = RevoluteJoint(
       otherNode: hingeNode,
       axis: Vector3(0, 0, 1),
       localAnchorA: Vector3(-2, 0, 0),
@@ -282,7 +284,7 @@ void main() {
     for (var i = 0; i < 60; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(armBody.readNativeTranslation().y, lessThan(5.0));
+    expect(armBody.readSimulationPose().$1.y, lessThan(5.0));
 
     // Turn the motor on after mount; the change must reach the native
     // joint and drive the arm above the hinge.
@@ -292,7 +294,7 @@ void main() {
     var maxHeight = -double.infinity;
     for (var i = 0; i < 180; i++) {
       world.step(1.0 / 60.0);
-      final y = armBody.readNativeTranslation().y;
+      final y = armBody.readSimulationPose().$1.y;
       if (y > maxHeight) maxHeight = y;
     }
     expect(maxHeight, greaterThan(5.5));
@@ -300,7 +302,7 @@ void main() {
 
   test('a generic joint spring motor holds the arm against gravity', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
     final (armNode, armBody) = _body(
@@ -314,7 +316,7 @@ void main() {
     // positional spring toward its zero (horizontal) angle. The spring
     // should hold the arm near horizontal rather than letting gravity
     // swing it down.
-    final joint = RapierGenericJoint(
+    final joint = GenericJoint(
       otherNode: hingeNode,
       localAnchorA: Vector3(-2, 0, 0),
       localAnchorB: Vector3.zero(),
@@ -341,7 +343,7 @@ void main() {
       world.step(1.0 / 60.0);
     }
 
-    final p = armBody.readNativeTranslation();
+    final p = armBody.readSimulationPose().$1;
     // Held near its horizontal start by the spring, still at radius ~2.
     expect(p.y, greaterThan(4.6));
     expect((p - Vector3(0, 5, 0)).length, closeTo(2.0, 0.2));
@@ -349,7 +351,7 @@ void main() {
 
   test('setAxisConfig frees a locked axis live', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final (hingeNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
     final (armNode, armBody) = _body(
@@ -360,7 +362,7 @@ void main() {
     );
 
     // Every axis locked: the arm is welded horizontal and stays put.
-    final joint = RapierGenericJoint(
+    final joint = GenericJoint(
       otherNode: hingeNode,
       localAnchorA: Vector3(-2, 0, 0),
       localAnchorB: Vector3.zero(),
@@ -374,14 +376,14 @@ void main() {
     for (var i = 0; i < 60; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(armBody.readNativeTranslation().y, closeTo(5.0, 0.2));
+    expect(armBody.readSimulationPose().$1.y, closeTo(5.0, 0.2));
 
     // Free the hinge axis after mount: the arm should now swing down.
     joint.setAxisConfig(JointAxis.angularZ, const JointAxisConfig.free());
     for (var i = 0; i < 150; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(armBody.readNativeTranslation().y, lessThan(4.3));
+    expect(armBody.readSimulationPose().$1.y, lessThan(4.3));
   });
 
   test('a joint without a sibling body throws', () {
@@ -389,27 +391,40 @@ void main() {
     final (otherNode, _) = _body(root, Vector3.zero(), BodyType.fixed);
 
     final node = Node();
-    final joint = RapierFixedJoint(otherNode: otherNode);
+    final joint = FixedJoint(otherNode: otherNode);
     node.addComponent(joint);
     root.add(node);
     expect(joint.mount, throwsStateError);
   });
 
-  test('onUnmount removes the joint handle', () {
+  test('onUnmount releases the constraint', () {
     final root = _boot();
+    final world = root.getComponent<PhysicsWorld>()!;
     final (anchorNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
-    final (hangNode, _) = _body(
+    final (hangNode, hangBody) = _body(
       root,
       Vector3(2, 5, 0),
       BodyType.dynamic_,
       mass: 1,
     );
-    final joint = RapierFixedJoint(otherNode: anchorNode);
+    final joint = FixedJoint(
+      otherNode: anchorNode,
+      localAnchorB: Vector3(2, 0, 0),
+    );
     hangNode.addComponent(joint);
     joint.mount();
-    expect(joint.nativeHandle, isNotNull);
 
+    // Welded to the fixed anchor, the body holds its height.
+    for (var i = 0; i < 60; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(hangBody.readSimulationPose().$1.y, closeTo(5.0, 0.2));
+
+    // Unmounting destroys the native joint, so gravity takes over.
     joint.unmount();
-    expect(joint.nativeHandle, isNull);
+    for (var i = 0; i < 60; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(hangBody.readSimulationPose().$1.y, lessThan(4.0));
   });
 }

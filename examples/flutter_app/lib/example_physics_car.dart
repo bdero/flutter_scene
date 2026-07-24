@@ -34,7 +34,7 @@ class ExamplePhysicsCar extends StatefulWidget {
 
 class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
   final Scene scene = Scene();
-  late final RapierWorld world;
+  late final PhysicsWorld world;
 
   final CharacterInput _input = CharacterInput();
   final ThirdPersonCamera _camera = ThirdPersonCamera(
@@ -69,7 +69,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       ),
     );
 
-    world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
 
     _buildGround();
@@ -122,9 +122,9 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       mesh: _boxMesh(halfExtents * 2.0, color),
       localTransform: transform,
     );
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(RigidBody(type: BodyType.fixed));
     node.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: halfExtents),
         material: PhysicsMaterial(friction: friction, restitution: 0.0),
       ),
@@ -145,9 +145,9 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       mesh: _boxMesh(halfExtents * 2.0, color, roughness: 0.85),
       localTransform: vm.Matrix4.translation(center),
     );
-    node.addComponent(RapierRigidBody(type: BodyType.dynamic_));
+    node.addComponent(RigidBody(type: BodyType.dynamic_));
     node.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: halfExtents),
         material: PhysicsMaterial(
           friction: 0.7,
@@ -287,7 +287,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
     chassis.add(carModel);
 
     chassis.addComponent(
-      RapierRigidBody(
+      RigidBody(
         type: BodyType.dynamic_,
         linearDamping: 0.08,
         angularDamping: 0.85,
@@ -299,7 +299,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
     // low: a high COM makes lateral tire forces (applied at the contacts) roll
     // the car over in turns. Its density sets the chassis mass.
     chassis.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: vm.Vector3(3.6, 0.55, 1.6)),
         material: const PhysicsMaterial(
           friction: 0.4,

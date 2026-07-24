@@ -1,4 +1,4 @@
-// Joint behaviour through the flutter_scene contract against box3d.
+// Joint behaviour through the flutter_scene components against box3d.
 //
 // ignore_for_file: invalid_use_of_internal_member
 
@@ -11,25 +11,25 @@ import 'package:vector_math/vector_math.dart';
 
 Node _bootWorld({Vector3? gravity}) {
   final root = Node();
-  final world = Box3dPhysicsWorld(gravity: gravity);
+  final world = PhysicsWorld(Box3dPhysicsWorld(gravity: gravity));
   root.addComponent(world);
   world.mount();
   return root;
 }
 
 // Mounts a node with a body and a box collider under [root].
-(Node, Box3dRigidBody) _addBox(
+(Node, RigidBody) _addBox(
   Node root, {
   required BodyType type,
   required Vector3 position,
   Vector3? halfExtents,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  final body = Box3dRigidBody(type: type);
+  final body = RigidBody(type: type);
   node.addComponent(body);
   root.add(node);
   body.mount();
-  final collider = Box3dCollider(
+  final collider = Collider(
     shape: BoxShape(halfExtents: halfExtents ?? Vector3.all(0.5)),
   );
   node.addComponent(collider);
@@ -40,7 +40,7 @@ Node _bootWorld({Vector3? gravity}) {
 void main() {
   setUpAll(Box3dPhysicsWorld.ensureInitialized);
 
-  void run(Box3dPhysicsWorld world, {int steps = 180}) {
+  void run(PhysicsWorld world, {int steps = 180}) {
     for (var i = 0; i < steps; i++) {
       world.step(1 / 60);
     }
@@ -49,14 +49,14 @@ void main() {
 
   test('a fixed joint holds a body welded to the world', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final (node, _) = _addBox(
       root,
       type: BodyType.dynamic_,
       position: Vector3(2, 3, 0),
     );
 
-    final joint = Box3dFixedJoint();
+    final joint = FixedJoint();
     node.addComponent(joint);
     joint.mount();
 
@@ -69,7 +69,7 @@ void main() {
 
   test('a spherical joint hangs a body like a pendulum', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final (node, _) = _addBox(
       root,
       type: BodyType.dynamic_,
@@ -77,7 +77,7 @@ void main() {
     );
 
     // Socket 2 units above the body (in world space via the world anchor).
-    final joint = Box3dSphericalJoint(
+    final joint = SphericalJoint(
       localAnchorA: Vector3(0, 2, 0),
       localAnchorB: Vector3(0, 0, 0),
     );
@@ -91,7 +91,7 @@ void main() {
 
   test('a revolute joint with limits stops the swing', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     // Arm offset along +X so gravity torques the hinge at the origin.
     final (node, _) = _addBox(
       root,
@@ -100,7 +100,7 @@ void main() {
       halfExtents: Vector3(1, 0.1, 0.1),
     );
 
-    final joint = Box3dRevoluteJoint(
+    final joint = RevoluteJoint(
       axis: Vector3(0, 0, 1),
       localAnchorA: Vector3(-1, 0, 0), // hinge at the arm's inner end
       localAnchorB: Vector3(0, 0, 0), // world origin
@@ -120,7 +120,7 @@ void main() {
 
   test('a prismatic joint confines motion to its axis', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final (node, _) = _addBox(
       root,
       type: BodyType.dynamic_,
@@ -128,7 +128,7 @@ void main() {
     );
 
     // Slide axis is Y, limited to [-2, 0], anchored to the world.
-    final joint = Box3dPrismaticJoint(
+    final joint = PrismaticJoint(
       axis: Vector3(0, 1, 0),
       lowerLimit: -2,
       upperLimit: 0,

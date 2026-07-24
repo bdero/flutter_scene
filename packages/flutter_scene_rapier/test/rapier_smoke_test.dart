@@ -1,6 +1,6 @@
-// Smoke tests: the Rapier-backed types satisfy the flutter_scene
-// abstract physics contract, the world can be driven through the
-// fixed-step substepping loop without error, and a query against an
+// Smoke tests: RapierWorld satisfies the scene physics contract behind
+// flutter_scene's generic components, the world can be driven through
+// the fixed-step substepping loop without error, and a query against an
 // empty world returns cleanly.
 
 import 'package:flutter_scene/scene.dart';
@@ -10,13 +10,13 @@ import 'package:vector_math/vector_math.dart';
 
 void main() {
   test('RapierWorld exposes its backend name and a collisions stream', () {
-    final world = RapierWorld();
+    final world = PhysicsWorld(RapierWorld());
     expect(world.backendName, 'rapier3d');
     expect(world.collisions, isA<Stream<CollisionEvent>>());
   });
 
   test('substepping driver advances RapierWorld without error', () {
-    final world = RapierWorld(gravity: Vector3(0, -9.81, 0));
+    final world = PhysicsWorld(RapierWorld(gravity: Vector3(0, -9.81, 0)));
     final residual = Scene.advancePhysics(
       world: world,
       fixedUpdateWalk: (_) {},
@@ -26,8 +26,8 @@ void main() {
     expect(residual, closeTo(0.0, 1e-9));
   });
 
-  test('RapierRigidBody round-trips properties through the abstract API', () {
-    final body = RapierRigidBody(
+  test('RigidBody round-trips properties through the component API', () {
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 2.5,
       linearVelocity: Vector3(1, 2, 3),
@@ -40,9 +40,9 @@ void main() {
     expect(body.linearDamping, 0.5);
   });
 
-  test('RapierCollider stores its shape, material, and pose', () {
+  test('Collider stores its shape, material, and pose', () {
     final shape = SphereShape(radius: 2);
-    final collider = RapierCollider(shape: shape, isTrigger: true);
+    final collider = Collider(shape: shape, isTrigger: true);
     expect(identical(collider.shape, shape), isTrue);
     expect(collider.isTrigger, isTrue);
     expect(collider.localPose, isA<Matrix4>());

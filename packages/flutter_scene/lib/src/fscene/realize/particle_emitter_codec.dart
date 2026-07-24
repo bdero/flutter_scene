@@ -2,7 +2,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
-import 'package:scene/scene.dart';
+import 'package:scene/scene.dart' hide BoxShape, SphereShape;
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';

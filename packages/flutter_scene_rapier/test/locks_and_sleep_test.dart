@@ -10,7 +10,7 @@ import 'package:vector_math/vector_math.dart';
 
 Node _boot({Vector3? gravity}) {
   final root = Node();
-  final world = RapierWorld(gravity: gravity);
+  final world = PhysicsWorld(RapierWorld(gravity: gravity));
   root.addComponent(world);
   world.mount();
   return root;
@@ -19,10 +19,10 @@ Node _boot({Vector3? gravity}) {
 void main() {
   test('locking the Y translation axis stops a falling body', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 1.0,
       linearAxisLocks: Vector3(1, 0, 1),
@@ -34,36 +34,36 @@ void main() {
     for (var i = 0; i < 60; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(body.readNativeTranslation().y, closeTo(5.0, 1e-3));
+    expect(body.readSimulationPose().$1.y, closeTo(5.0, 1e-3));
   });
 
   test('locking rotation axes stops a torque from spinning the body', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node();
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       angularAxisLocks: Vector3(0, 0, 0),
     );
     node.addComponent(body);
-    node.addComponent(RapierCollider(shape: SphereShape(radius: 1)));
+    node.addComponent(Collider(shape: SphereShape(radius: 1)));
     root.add(node);
     body.mount();
-    node.getComponents<RapierCollider>().first.mount();
+    node.getComponents<Collider>().first.mount();
 
     body.applyAngularImpulse(Vector3(10, 10, 10));
     world.step(1.0 / 60.0);
-    final w = body.readNativeAngularVelocity();
+    final w = body.angularVelocity;
     expect(w.length, closeTo(0.0, 1e-3));
   });
 
   test('useGravity=false suspends a dynamic body', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 1.0,
       useGravity: false,
@@ -75,15 +75,15 @@ void main() {
     for (var i = 0; i < 60; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(body.readNativeTranslation().y, closeTo(5.0, 1e-3));
+    expect(body.readSimulationPose().$1.y, closeTo(5.0, 1e-3));
   });
 
   test('useGravity setter at runtime re-enables gravity', () {
     final root = _boot();
-    final world = root.getComponent<RapierWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final node = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
-    final body = RapierRigidBody(
+    final body = RigidBody(
       type: BodyType.dynamic_,
       mass: 1.0,
       useGravity: false,
@@ -96,14 +96,14 @@ void main() {
     for (var i = 0; i < 60; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(body.readNativeTranslation().y, lessThan(5.0));
+    expect(body.readSimulationPose().$1.y, lessThan(5.0));
   });
 
   test('putToSleep / wakeUp round-trip through the native side', () {
     final root = _boot();
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final body = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     node.addComponent(body);
     root.add(node);
     body.mount();
@@ -119,7 +119,7 @@ void main() {
     final root = _boot();
 
     final node = Node();
-    final body = RapierRigidBody(type: BodyType.dynamic_, mass: 1.0);
+    final body = RigidBody(type: BodyType.dynamic_, mass: 1.0);
     node.addComponent(body);
     root.add(node);
     body.mount();
