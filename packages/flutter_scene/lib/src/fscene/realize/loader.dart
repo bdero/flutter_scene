@@ -2,8 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/node.dart';

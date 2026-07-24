@@ -1,7 +1,7 @@
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/property_value.dart';
 
 /// Resolves a referenced [LocalId] to the text token written for it (a
 /// kind-prefixed token such as `geo:7A3F...` for readability). The decoder

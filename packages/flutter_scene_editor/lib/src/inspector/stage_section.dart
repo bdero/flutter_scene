@@ -6,9 +6,8 @@ library;
 
 import 'package:flutter/material.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../controller/editor_controller.dart';

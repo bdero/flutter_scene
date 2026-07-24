@@ -6,7 +6,7 @@
 /// the node does and adds nothing to [Node]'s own surface.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/node.dart';
 
 final Expando<LocalId> _nodeIds = Expando<LocalId>('fscene.nodeId');

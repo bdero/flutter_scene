@@ -7,7 +7,7 @@
 /// subtree is loaded.
 library;
 
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/node.dart';
 
 final Expando<PrefabInstanceSpec> _lazyInstances = Expando<PrefabInstanceSpec>(

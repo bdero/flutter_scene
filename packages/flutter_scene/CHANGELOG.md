@@ -1,5 +1,7 @@
 ## 0.20.0
 
+* The `.fscene` document core (the document model, stable ids, JSON and binary serialization, prefab composition, and structural diffing) moved to the new pure-Dart `scene` package, which `flutter_scene` depends on and re-exports. Existing imports through `package:flutter_scene/fscene.dart` are unchanged; the document layer is now usable from plain Dart programs (servers, tooling) with no Flutter dependency.
+
 * New declarative scene API. Scenes can now be described in `build()`
   with widgets that own and reconcile retained scene-graph nodes:
   `SceneView.declarative` (a view-owned `Scene` configured through

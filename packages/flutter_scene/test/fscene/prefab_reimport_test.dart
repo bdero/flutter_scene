@@ -9,11 +9,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/fscene/compose/compose.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/src/fscene_emitter/fscene_emitter.dart';
 import 'package:flutter_test/flutter_test.dart';

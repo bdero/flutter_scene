@@ -4,13 +4,10 @@
 // construction reads backend capabilities).
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 bool _gpuAvailable() {

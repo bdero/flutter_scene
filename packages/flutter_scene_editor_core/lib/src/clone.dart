@@ -9,10 +9,7 @@
 /// the original, which is the expected behavior.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 
 /// A detached, self-contained copy of a node subtree.
 ///

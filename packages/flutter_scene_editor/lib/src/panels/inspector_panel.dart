@@ -1,9 +1,7 @@
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter/material.dart';

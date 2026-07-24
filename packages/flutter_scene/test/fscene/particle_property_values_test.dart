@@ -1,4 +1,4 @@
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_test/flutter_test.dart';

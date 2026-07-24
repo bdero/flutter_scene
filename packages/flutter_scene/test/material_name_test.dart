@@ -1,9 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/src/fscene_emitter/fscene_emitter.dart';
 import 'package:flutter_test/flutter_test.dart';

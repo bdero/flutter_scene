@@ -5,10 +5,7 @@
 /// mutate; edits go through commands.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 
 /// Read-only navigation and lookup over a document's scene graph.
 class SceneQuery {

@@ -4,9 +4,7 @@ import 'package:data_assets/data_assets.dart';
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:hooks/hooks.dart';
 
-import '../fscene/binary/fsceneb.dart';
-import '../fscene/json/fscene_json.dart';
-import '../fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'inline_assets.dart';
 import 'offline_import.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'gltf.dart';
 import 'src/fscene_emitter/fscene_emitter.dart';
 

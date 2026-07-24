@@ -17,7 +17,7 @@ library;
 
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 
 double _d(PropertyValue? v, [double fallback = 0.0]) => switch (v) {

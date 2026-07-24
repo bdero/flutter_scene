@@ -9,8 +9,7 @@
 /// [Expando]), so it survives for as long as the realized object does.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 
 /// The document and resource id a live object was realized from.
 class ResourceOrigin {

@@ -6,11 +6,7 @@
 /// included), not live GPU objects.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 
 /// Copies resource [resourceId] from [source] into [dest], keeping its id, and
 /// returns that id. Idempotent: a resource (or payload) already present in

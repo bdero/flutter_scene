@@ -1,5 +1,5 @@
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 
 /// The editable type of one component property, used by the inspector to pick a
 /// widget, by tooling to validate input, and by the format to know how a value

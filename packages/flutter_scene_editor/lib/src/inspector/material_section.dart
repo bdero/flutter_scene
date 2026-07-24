@@ -8,11 +8,9 @@ library;
 
 import 'package:flutter/material.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 
 import '../controller/editor_controller.dart';
 import '../io/scene_io.dart';
