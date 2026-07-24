@@ -34,6 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         package:
+          - packages/scene
           - packages/flutter_scene
     steps:
       - uses: actions/checkout@v7

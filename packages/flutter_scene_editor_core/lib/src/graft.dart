@@ -9,10 +9,7 @@
 /// change records so the whole import is one reversible transaction.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart' hide NodeChange;
 
 import 'change.dart';
 

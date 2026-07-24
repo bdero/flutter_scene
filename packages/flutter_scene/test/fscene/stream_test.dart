@@ -2,11 +2,8 @@
 // composition, realizes as a placeholder, and loads/unloads on demand. Uses
 // component-less nodes so realization is GPU-free.
 
-import 'package:flutter_scene/src/fscene/compose/compose.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/fscene/stream/stream.dart';
 import 'package:flutter_test/flutter_test.dart';
 

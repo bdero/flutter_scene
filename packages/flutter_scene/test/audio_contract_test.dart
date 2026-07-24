@@ -5,11 +5,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 

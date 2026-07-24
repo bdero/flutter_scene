@@ -32,9 +32,9 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/json/fscene_json.dart';
+import 'package:scene/src/scene_document.dart';
 
 /// The current `.fsceneb` container version this build reads and writes.
 const int kFscenebVersion = 1;

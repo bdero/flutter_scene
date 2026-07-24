@@ -1,6 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 
 /// Typed readers over a component or material property bag, with fallbacks
 /// for missing or mistyped values. Shared by component codecs and the

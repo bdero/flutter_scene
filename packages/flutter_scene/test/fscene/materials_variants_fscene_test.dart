@@ -6,11 +6,9 @@ import 'package:flutter_scene/scene.dart' hide Animation;
 import 'package:flutter_scene/src/components/materials_variants_component.dart'
     show MaterialsVariantBinding;
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 // ignore: implementation_imports
@@ -22,9 +20,7 @@ import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/scene_document.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:test/test.dart';

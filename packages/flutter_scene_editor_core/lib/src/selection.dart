@@ -6,7 +6,7 @@
 /// outliner, and the inspector.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 
 /// An observable set of selected node ids with a designated primary.
 class Selection {

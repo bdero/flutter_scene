@@ -8,16 +8,14 @@
 /// the patch layer.
 library;
 
-import 'package:flutter/foundation.dart' show listEquals;
-
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/canonical.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
+import 'package:scene/src/id.dart';
+import 'package:scene/src/json/canonical.dart';
+import 'package:scene/src/json/fscene_json.dart'
     show encodeResource, encodeStage;
-import 'package:flutter_scene/src/fscene/json/property_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/src/json/property_json.dart';
+import 'package:scene/src/property_value.dart';
+import 'package:scene/src/scene_document.dart';
+import 'package:scene/src/specs.dart';
 
 /// What changed about a node present in both documents.
 class NodeChange {
@@ -293,7 +291,7 @@ bool _skinsEqual(
   if (oldSkin == null || newSkin == null) {
     return identical(oldSkin, newSkin);
   }
-  if (!listEquals(oldSkin.joints, newSkin.joints)) return false;
+  if (!_listEquals(oldSkin.joints, newSkin.joints)) return false;
   if (oldSkin.skeleton != newSkin.skeleton) return false;
   if (newSkin.joints.any(staleNodes.contains)) return false;
   return _payloadsEqual(
@@ -403,3 +401,12 @@ String _encodeComponent(ComponentSpec component) => canonicalJson({
       e.key: encodePropertyValue(e.value, (id) => id.toToken()),
   },
 });
+
+bool _listEquals<T>(List<T>? a, List<T>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null || a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}

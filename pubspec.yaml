@@ -5,6 +5,7 @@ environment:
   sdk: ^3.10.0
 
 workspace:
+  - packages/scene
   - packages/flutter_scene
   - packages/flutter_scene_rapier
   - packages/flutter_scene_soloud

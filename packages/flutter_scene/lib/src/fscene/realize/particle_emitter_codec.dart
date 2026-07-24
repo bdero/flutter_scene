@@ -2,12 +2,10 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';

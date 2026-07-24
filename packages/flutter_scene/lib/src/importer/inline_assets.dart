@@ -16,9 +16,7 @@ import 'dart:io';
 
 import 'package:image/image.dart' as img;
 
-import '../fscene/id.dart';
-import '../fscene/scene_document.dart';
-import '../fscene/specs.dart';
+import 'package:scene/scene.dart';
 
 /// An external image file a scene references through a [TextureResource.asset],
 /// resolved to a file on disk.

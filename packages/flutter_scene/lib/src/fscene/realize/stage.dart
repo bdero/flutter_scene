@@ -15,14 +15,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 
 import 'package:flutter_scene/src/fmat/material_registry.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/canonical.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
-    show encodeSkySource;
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';

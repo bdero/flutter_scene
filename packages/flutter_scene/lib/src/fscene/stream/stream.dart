@@ -10,12 +10,10 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 
-import 'package:flutter_scene/src/fscene/compose/compose.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/lazy_subtree.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
 
 /// Whether [node] is a lazy prefab placeholder.

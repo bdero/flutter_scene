@@ -1,5 +1,5 @@
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/specs.dart';
 
 /// The in-memory `.fscene` document: a GPU-free, encoding-independent
 /// description of a scene that the encoders serialize and the realizer turns

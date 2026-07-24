@@ -1,9 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/stream/stream.dart' show unloadSubtree;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/importer/scene_registry.dart';

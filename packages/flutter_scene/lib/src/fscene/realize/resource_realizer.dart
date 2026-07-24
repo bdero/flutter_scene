@@ -6,17 +6,13 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart'
     show EnvironmentAssetLoader, realizeEnvironmentSettings;
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';

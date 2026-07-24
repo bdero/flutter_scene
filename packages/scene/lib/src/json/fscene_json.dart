@@ -2,13 +2,13 @@ import 'dart:convert';
 
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/canonical.dart';
-import 'package:flutter_scene/src/fscene/json/jsonc.dart';
-import 'package:flutter_scene/src/fscene/json/property_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/src/id.dart';
+import 'package:scene/src/json/canonical.dart';
+import 'package:scene/src/json/jsonc.dart';
+import 'package:scene/src/json/property_json.dart';
+import 'package:scene/src/property_value.dart';
+import 'package:scene/src/scene_document.dart';
+import 'package:scene/src/specs.dart';
 
 /// The current `.fscene` format version this build reads and writes.
 const int currentFsceneVersion = 1;

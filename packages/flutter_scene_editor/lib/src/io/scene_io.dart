@@ -6,18 +6,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/compose/compose.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart' show AssetRef;
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';

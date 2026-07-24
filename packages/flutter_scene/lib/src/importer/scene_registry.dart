@@ -1,13 +1,11 @@
 import 'package:flutter/services.dart';
 
-import '../fscene/binary/fsceneb.dart';
-import '../fscene/compose/compose.dart';
+import 'package:scene/scene.dart';
 import '../fscene/realize/component_codec.dart';
 import '../fscene/realize/realize.dart';
 import '../fscene/realize/resource_realizer.dart';
 import '../fscene/realize/stage.dart';
 import '../fscene/reload/reload.dart';
-import '../fscene/scene_document.dart';
 import '../fscene/stream/stream.dart' as stream;
 import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
