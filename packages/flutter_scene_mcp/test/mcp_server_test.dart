@@ -46,7 +46,7 @@ Map<String, Object?> _text(CallToolResult result) =>
 void main() {
   group('EditorMcpServer transport', () {
     test('lists the curated bootstrap tools over the protocol', () async {
-      final server = await _connect(EditorToolSurface(_session()));
+      final server = await _connect(EditorToolSurface.of(_session()));
       final tools = (await server.listTools(
         ListToolsRequest(),
       )).tools.map((t) => t.name).toSet();
@@ -56,7 +56,7 @@ void main() {
     });
 
     test('runs a command and reflects it in a perception call', () async {
-      final server = await _connect(EditorToolSurface(_session()));
+      final server = await _connect(EditorToolSurface.of(_session()));
 
       final created = await server.callTool(
         CallToolRequest(
@@ -78,7 +78,7 @@ void main() {
     });
 
     test('reports a bad command as a tool error, not a crash', () async {
-      final server = await _connect(EditorToolSurface(_session()));
+      final server = await _connect(EditorToolSurface.of(_session()));
       final result = await server.callTool(
         CallToolRequest(name: 'run_command', arguments: {'command': 'nope'}),
       );
@@ -90,7 +90,7 @@ void main() {
       'offers and serves the screenshot tool when a provider is set',
       () async {
         final pixels = Uint8List.fromList([1, 2, 3, 4]);
-        final surface = EditorToolSurface(
+        final surface = EditorToolSurface.of(
           _session(),
           screenshot: () async =>
               ScreenshotResult(pngBytes: pixels, width: 2, height: 1),
