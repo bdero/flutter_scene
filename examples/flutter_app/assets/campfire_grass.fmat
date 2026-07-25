@@ -30,6 +30,10 @@ material {
     // vs tall dry-yellow); not source_color, since they scale past 1.
     { type: vec4, name: short_color, default: [0.72, 0.92, 0.60, 1.0] },
     { type: vec4, name: tall_color, default: [1.35, 1.15, 0.48, 1.0] },
+    // Live-tunable surface response, driven from the example's panel.
+    { type: vec3, name: color_tint, default: [1.0, 1.0, 1.0] },
+    { type: float, name: roughness, hint: range(0.0, 1.0, 0.01), default: 0.9 },
+    { type: float, name: metallic, hint: range(0.0, 1.0, 0.01), default: 0.0 },
   ],
   varyings: [
     { type: float, name: blade_h },
@@ -109,10 +113,10 @@ fragment {
     vec3 palette =
         mix(material_params.short_color.rgb, material_params.tall_color.rgb,
             macro);
-    col *= palette * tint;
+    col *= palette * tint * material_params.color_tint;
     material.base_color = vec4(col, 1.0);
-    material.metallic = 0.0;
-    material.roughness = 0.9;
+    material.metallic = material_params.metallic;
+    material.roughness = material_params.roughness;
     PrepareMaterial(material);
   }
 }
