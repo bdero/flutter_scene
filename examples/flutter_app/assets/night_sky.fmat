@@ -66,17 +66,22 @@ sky {
     if (h.x > density) {
       return vec3(0.0);
     }
-    vec3 star_dir = normalize(id + 0.5 + (h - 0.5) * 0.6);
-    float dist = length(d - star_dir) * scale;
+    // Distance in cell space, not angular space: projecting the star onto
+    // the sphere would move it across cell borders, where neighboring pixels
+    // stop finding it and slice the glow off along the cell boundary. In
+    // cell space the star stays well inside its own cell (position padded to
+    // the middle 60%, radii capped far below the margin), so the falloff
+    // always completes cleanly.
+    vec3 star_pos = id + 0.5 + (h - 0.5) * 0.6;
+    float dist = length(p - star_pos);
     // Brightness rolls steeply so almost every star is faint and tiny; size
     // follows brightness, so only the rare bright ones grow at all. The
-    // squared gaussian keeps points point-like instead of soft blobs, and
-    // only bright stars carry a whisper of halo.
+    // squared gaussian keeps stars point-like; any glow beyond that is
+    // bloom's job, not a baked halo.
     float bright = pow(h.z, 12.0);
-    float radius = 0.012 + 0.05 * bright;
+    float radius = 0.012 + 0.02 * bright;
     float shape = exp(-dist * dist / (radius * radius));
     shape *= shape;
-    shape += bright * 0.2 * exp(-dist * dist / (radius * radius * 16.0));
     float magnitude = 0.05 + 6.0 * bright;
     // Atmospheric scintillation: faster and deeper for dimmer stars.
     float twinkle =
