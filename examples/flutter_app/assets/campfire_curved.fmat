@@ -1,0 +1,84 @@
+// The background world, bent down past the campsite so the forest floor and
+// the tree line roll under the horizon instead of ending at a hard disc edge.
+// Everything outside the campfire clearing shares this material: the forest
+// floor, the merged forest trunks, and the merged foliage.
+//
+// The drop is measured from the scene origin rather than the camera, so the
+// clearing stays put while the camera orbits. It starts at curve_start with a
+// zero value AND a zero slope, which is what lets the bent ground meet the
+// flat campsite disc without a crease.
+//
+// Distance also washes the surface toward the night sky, so whatever the
+// curve does not swallow fades out instead of ending abruptly.
+
+material {
+  name: "CampfireCurved",
+  shading_model: lit,
+  blending: opaque,
+  culling: none,
+  parameters: [
+    // Drop per unit distance squared past curve_start. The visible horizon
+    // lands where the camera's sight line goes tangent to the bend, so small
+    // changes here move the tree line a long way.
+    { type: float, name: curvature, hint: range(0.0, 0.12, 0.0005), default: 0.005 },
+    { type: float, name: curve_start, hint: range(0.0, 20.0, 0.1), default: 9.0 },
+    { type: float, name: fade_strength, hint: range(0.0, 2.0, 0.01), default: 0.5 },
+    { type: vec3, name: fade_color, default: [0.02, 0.03, 0.06] },
+
+    { type: vec4, name: base_color, hint: source_color, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: float, name: metallic, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+    { type: float, name: roughness, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+    { type: float, name: normal_scale, hint: range(0.0, 2.0, 0.01), default: 1.0 },
+    // Above zero puts the material on the cutout path, for foliage cards.
+    { type: float, name: alpha_cutoff, hint: range(0.0, 1.0, 0.01), default: 0.0 },
+    { type: sampler2d, name: base_color_texture, hint: default_white },
+    { type: sampler2d, name: normal_texture, hint: default_normal },
+    { type: sampler2d, name: metallic_roughness_texture, hint: default_white },
+  ],
+  varyings: [
+    { type: float, name: curve_fade },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    float r = length(vertex.world_position.xz);
+    float d = max(r - material_params.curve_start, 0.0);
+    float drop = material_params.curvature * d * d;
+    vertex.world_position.y -= drop;
+
+    // Tilt the normal onto the bent surface. Scaling by world_normal.y leaves
+    // trunk sides alone and turns only the up-facing ground.
+    vec2 radial = r > 1e-4 ? vertex.world_position.xz / r : vec2(0.0);
+    float slope = 2.0 * material_params.curvature * d;
+    vertex.world_normal = normalize(
+        vertex.world_normal +
+        vec3(radial.x, 0.0, radial.y) * slope * vertex.world_normal.y);
+
+    curve_fade = clamp(drop * material_params.fade_strength, 0.0, 1.0);
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+    vec4 albedo = texture(base_color_texture, uv);
+    if (albedo.a < material_params.alpha_cutoff) {
+      discard;
+    }
+
+    vec3 col = SRGBToLinear(albedo.rgb) * material_params.base_color.rgb;
+    material.base_color = vec4(mix(col, material_params.fade_color, curve_fade),
+                               1.0);
+
+    // PerturbNormal wants the non-normalized view vector.
+    material.normal = PerturbNormal(normal_texture, GetWorldNormal(),
+                                    v_viewvector, uv,
+                                    material_params.normal_scale);
+
+    vec4 mr = texture(metallic_roughness_texture, uv);
+    material.metallic = clamp(mr.b * material_params.metallic, 0.0, 1.0);
+    material.roughness = clamp(mr.g * material_params.roughness, 0.05, 1.0);
+    PrepareMaterial(material);
+  }
+}

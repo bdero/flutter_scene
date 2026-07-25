@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
     show
         AntiAliasingMode,
+        DepthOfFieldQuality,
         Scene,
         PostInsertion,
         ShadowCasterFaces,
@@ -63,31 +64,45 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
   // ambient occlusion grounding the logs, rocks, and grass, and a warm
   // saturated grade that leans into the firelight.
   'Particles': () => ExampleSettings()
-    ..lightAzimuthDegrees = 190.68
-    ..lightElevationDegrees = 54.69
-    ..lightIntensity = 0.55
-    ..lightColor.setValues(0.506, 0.499, 0.907)
+    ..lightAzimuthDegrees = 190.70
+    ..lightElevationDegrees = 16.79
+    ..lightIntensity = 0.97
+    ..lightColor.setValues(1.0, 0.80, 1.0)
     ..ambientOcclusion.enabled = true
     ..ambientOcclusion.halfResolution = true
-    ..ambientOcclusion.radius = 0.43
-    ..ambientOcclusion.intensity = 2.53
-    ..ambientOcclusion.bias = 0.05
-    ..ambientOcclusion.sampleCount = 16
+    ..ambientOcclusion.radius = 0.66
+    ..ambientOcclusion.intensity = 2.02
+    ..ambientOcclusion.bias = 0.053
+    ..ambientOcclusion.sampleCount = 17
     ..colorGrading.enabled = true
-    ..colorGrading.brightness = 1.4
+    ..colorGrading.brightness = 1.39
     ..colorGrading.contrast = 0.93
-    ..colorGrading.saturation = 1.42
-    ..colorGrading.temperature = 0.4
-    ..colorGrading.tint = -0.006
+    ..colorGrading.saturation = 1.36
+    ..colorGrading.temperature = 0.35
+    ..colorGrading.tint = -0.31
     ..bloom.enabled = true
-    ..bloom.threshold = 3.55
-    ..bloom.intensity = 0.07
+    ..bloom.threshold = 3.63
+    ..bloom.intensity = 0.089
     ..bloom.scatter = 1.0
+    ..godRays.enabled = true
+    ..godRays.intensity = 1.24
+    ..godRays.density = 0.63
+    ..godRays.anisotropy = 0.40
+    ..godRays.stepCount = 5
+    ..godRays.maxDistance = 141.70
+    ..godRays.jitter = 1.0
+    ..godRays.color.setValues(0.77, 0.90, 1.0)
+    ..depthOfField.enabled = true
+    ..depthOfField.focusDistance = 7.07
+    ..depthOfField.fStop = 8.98
+    ..depthOfField.focalLength = 0.178
+    ..depthOfField.blurScale = 1.0
+    ..depthOfField.quality = DepthOfFieldQuality.medium
     ..chromaticAberration.enabled = true
-    ..chromaticAberration.intensity = 0.03
+    ..chromaticAberration.intensity = 0.151
     ..vignette.enabled = true
-    ..vignette.intensity = 0.73
-    ..vignette.radius = 0.75
+    ..vignette.intensity = 0.71
+    ..vignette.radius = 0.71
     ..vignette.smoothness = 0.5,
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
@@ -566,6 +581,8 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
       children: [
         _buildColorGrading(),
         _buildBloom(),
+        _buildGodRays(),
+        _buildDepthOfField(),
         _buildChromaticAberration(),
         _buildVignette(),
         _buildFilmGrain(),
@@ -841,6 +858,106 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Scatter', settings.scatter, 0, 1, (v) {
           settings.scatter = v;
         }),
+      ],
+    );
+  }
+
+  Widget _buildGodRays() {
+    final settings = exampleSettings.godRays;
+    return ExpansionTile(
+      title: const Text('God rays'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Intensity', settings.intensity, 0, 4, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Density', settings.density, 0, 2, (v) {
+          settings.density = v;
+        }),
+        _slider('Anisotropy', settings.anisotropy, -0.95, 0.95, (v) {
+          settings.anisotropy = v;
+        }),
+        _slider('Steps', settings.stepCount.toDouble(), 1, 64, (v) {
+          settings.stepCount = v.round();
+        }),
+        _slider('Max distance', settings.maxDistance, 1, 400, (v) {
+          settings.maxDistance = v;
+        }),
+        _slider('Jitter', settings.jitter, 0, 1, (v) {
+          settings.jitter = v;
+        }),
+        _slider('Color R', settings.color.r, 0, 1, (v) {
+          settings.color.r = v;
+        }),
+        _slider('Color G', settings.color.g, 0, 1, (v) {
+          settings.color.g = v;
+        }),
+        _slider('Color B', settings.color.b, 0, 1, (v) {
+          settings.color.b = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDepthOfField() {
+    final settings = exampleSettings.depthOfField;
+    return ExpansionTile(
+      title: const Text('Depth of field'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Focus dist.', settings.focusDistance, 0.1, 40, (v) {
+          settings.focusDistance = v;
+        }),
+        _slider('f-stop', settings.fStop, 0.7, 22, (v) {
+          settings.fStop = v;
+        }),
+        _slider('Focal length', settings.focalLength, 0, 0.2, (v) {
+          settings.focalLength = v;
+        }),
+        _slider('Blur scale', settings.blurScale, 0, 3, (v) {
+          settings.blurScale = v;
+        }),
+        _slider('Max fg blur', settings.maxForegroundBlur, 0, 64, (v) {
+          settings.maxForegroundBlur = v;
+        }),
+        _slider('Max bg blur', settings.maxBackgroundBlur, 0, 64, (v) {
+          settings.maxBackgroundBlur = v;
+        }),
+        _slider('Blades', settings.bladeCount.toDouble(), 0, 8, (v) {
+          settings.bladeCount = v.round();
+        }),
+        _slider('Blade rot.', settings.bladeRotation, 0, 3.14, (v) {
+          settings.bladeRotation = v;
+        }),
+        _slider('Blade curve', settings.bladeCurvature, 0, 1, (v) {
+          settings.bladeCurvature = v;
+        }),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Quality'),
+          trailing: DropdownButton<DepthOfFieldQuality>(
+            value: settings.quality,
+            onChanged: (value) => setState(() {
+              if (value != null) settings.quality = value;
+            }),
+            items: [
+              for (final q in DepthOfFieldQuality.values)
+                DropdownMenuItem(value: q, child: Text(q.name)),
+            ],
+          ),
+        ),
       ],
     );
   }

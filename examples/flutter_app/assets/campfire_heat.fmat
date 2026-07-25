@@ -1,0 +1,86 @@
+// Heat haze above the fire. A camera-facing quad standing in the flame column
+// that refracts the scene rendered behind it, so the treeline and hills warp
+// and swim in the rising hot air.
+//
+// It samples the opaque scene color (scene_color engine input) at a screen-UV
+// offset driven by upward-scrolling simplex noise. The refracted color is
+// written to emissive, not base_color, so the lit framework does not shade it;
+// base_color is left black with its alpha carrying the plume mask, so the quad
+// cross-fades from the clean background (alpha 0) to fully refracted (alpha 1).
+// Specular is forced off so no environment reflection leaks over the glass.
+//
+// Occlusion is free: the quad is translucent and depth-tested against the
+// opaque scene, so anything standing in front of the fire correctly hides the
+// haze behind it. The mask keeps the effect in a plume above the flame tips,
+// which also keeps it off the bright flame sprites drawn later.
+
+material {
+  name: "CampfireHeat",
+  shading_model: lit,
+  blending: alpha,
+  culling: none,
+  engine_inputs: [scene_color],
+  parameters: [
+    // Overall wobble amount, scaled live by the flame's flicker.
+    { type: float, name: strength, hint: range(0.0, 2.0, 0.01), default: 1.0 },
+    // Max screen-UV displacement at full mask.
+    { type: float, name: displacement, hint: range(0.0, 0.08, 0.001), default: 0.03 },
+    // Noise cell size across the quad and how fast it scrolls upward.
+    { type: float, name: noise_scale, hint: range(1.0, 12.0, 0.1), default: 5.0 },
+    { type: float, name: rise_speed, hint: range(0.0, 4.0, 0.05), default: 1.3 },
+    // Per-channel refraction split for the hot-edge fringe.
+    { type: float, name: chroma, hint: range(0.0, 1.0, 0.01), default: 0.35 },
+    // Plume shape. mask_base is how far up the column fades in from the
+    // bottom, mask_top where it fades back out toward the top, mask_side the
+    // half-width of the active band (0.5 fills the quad, smaller narrows it).
+    { type: float, name: mask_base, hint: range(0.0, 1.0, 0.01), default: 0.28 },
+    { type: float, name: mask_top, hint: range(0.0, 1.0, 0.01), default: 0.5 },
+    { type: float, name: mask_side, hint: range(0.0, 0.5, 0.01), default: 0.34 },
+  ],
+}
+
+fragment {
+#include <noise.glsl>
+
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+
+    // Plume mask: fade in above the base, taper off toward the top, and fall
+    // off toward the side edges so it reads as a rising column, not a slab.
+    float vertical = smoothstep(0.0, max(material_params.mask_base, 1e-3), uv.y) *
+        (1.0 - smoothstep(material_params.mask_top, 1.0, uv.y));
+    float horizontal =
+        1.0 - smoothstep(material_params.mask_side, 0.5, abs(uv.x - 0.5));
+    float mask = vertical * horizontal * material_params.strength;
+    if (mask <= 0.002) {
+      discard;
+    }
+
+    // Upward-scrolling turbulence: 3D simplex with time on Z evolves smoothly.
+    float t = GetTime();
+    vec3 np = vec3(uv * material_params.noise_scale,
+                   t * material_params.rise_speed);
+    float nx = NoiseSimplex3(np, 17);
+    float ny = NoiseSimplex3(np + vec3(11.3, 7.1, 3.7), 29);
+    // Mostly lateral shimmer with a little vertical, growing with the mask.
+    vec2 offset = vec2(nx, ny * 0.5) * material_params.displacement * mask;
+
+    // Subtle chromatic split: pull R and B along the displacement direction so
+    // the refracted edges fringe warm/cool.
+    float split = material_params.chroma * material_params.displacement * mask;
+    vec2 dir = length(offset) > 1e-5 ? normalize(offset) : vec2(1.0, 0.0);
+    vec3 refracted = vec3(
+        GetSceneColor(offset + dir * split).r,
+        GetSceneColor(offset).g,
+        GetSceneColor(offset - dir * split).b);
+
+    // Emissive passthrough of the refracted background; base_color alpha is the
+    // cross-fade mask. Specular off so no reflection tints the glass.
+    material.base_color = vec4(0.0, 0.0, 0.0, mask);
+    material.emissive = refracted;
+    material.metallic = 0.0;
+    material.roughness = 1.0;
+    material.specular = 0.0;
+    PrepareMaterial(material);
+  }
+}

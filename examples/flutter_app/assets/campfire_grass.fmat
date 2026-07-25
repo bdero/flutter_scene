@@ -34,6 +34,10 @@ material {
     { type: vec3, name: color_tint, default: [1.0, 1.0, 1.0] },
     { type: float, name: roughness, hint: range(0.0, 1.0, 0.01), default: 0.9 },
     { type: float, name: metallic, hint: range(0.0, 1.0, 0.01), default: 0.0 },
+    // Matches the background material's horizon bend, so blades past the
+    // clearing ride the same curve as the ground under them.
+    { type: float, name: curvature, hint: range(0.0, 0.12, 0.0005), default: 0.005 },
+    { type: float, name: curve_start, hint: range(0.0, 20.0, 0.1), default: 9.0 },
   ],
   varyings: [
     { type: float, name: blade_h },
@@ -98,6 +102,12 @@ vertex {
 
     // Stretch the blade to the macro height, anchored at the root.
     vertex.world_position.y += (heightScale - 1.0) * vertex.uv.x;
+
+    // Ride the horizon bend, applied last so it uses the swayed position.
+    float curveDist =
+        max(length(vertex.world_position.xz) - material_params.curve_start, 0.0);
+    vertex.world_position.y -=
+        material_params.curvature * curveDist * curveDist;
 
     blade_h = vertex.uv.y;
     tint = vertex.color.rgb;
