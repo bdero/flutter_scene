@@ -78,11 +78,13 @@ sky {
     // follows brightness, so only the rare bright ones grow at all. The
     // squared gaussian keeps stars point-like; any glow beyond that is
     // bloom's job, not a baked halo.
+    // The faint floor and minimum radius keep the small-star field clearly
+    // visible (sub-pixel radii sample to nothing); size still skews small
+    // because only the steep brightness roll grows a star.
     float bright = pow(h.z, 12.0);
-    float radius = 0.012 + 0.02 * bright;
+    float radius = 0.025 + 0.025 * bright;
     float shape = exp(-dist * dist / (radius * radius));
-    shape *= shape;
-    float magnitude = 0.05 + 6.0 * bright;
+    float magnitude = 0.35 + 5.0 * bright;
     // Atmospheric scintillation: faster and deeper for dimmer stars.
     float twinkle =
         0.78 + 0.30 * sin(material_params.time * (1.5 + 3.5 * h.y) + h.z * 40.0);

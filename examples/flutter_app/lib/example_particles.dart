@@ -168,6 +168,38 @@ class _CoalGlow extends Component {
   }
 }
 
+/// Sways one tree branch around its attachment point: a two-harmonic
+/// oscillation on top of the branch's rest pose, phased per branch so a tree
+/// never rocks in unison, with the amplitude following the wind slider.
+class _TreeSway extends Component {
+  _TreeSway(this.restPose, this.phase, this.amplitude);
+
+  final vm.Matrix4 restPose;
+  final double phase;
+  final double amplitude;
+
+  /// Scales the amplitude, driven by the wind slider through _applyParams.
+  double windScale = 1.0;
+
+  double _t = 0;
+
+  @override
+  void update(double deltaSeconds) {
+    _t += deltaSeconds;
+    final a = amplitude * windScale;
+    final swayX =
+        a *
+        (0.6 * sin(_t * 0.9 + phase * 12.9) +
+            0.4 * sin(_t * 2.3 + phase * 5.1));
+    final swayZ =
+        a *
+        (0.6 * sin(_t * 1.1 + phase * 7.7) + 0.4 * sin(_t * 2.9 + phase * 3.3));
+    node.localTransform = restPose.clone()
+      ..multiply(vm.Matrix4.rotationX(swayX))
+      ..multiply(vm.Matrix4.rotationZ(swayZ));
+  }
+}
+
 /// Pulses a charred log's ember-crack emissive with slow noise, offset per
 /// log, so the burnt tips breathe with the coal bed.
 class _EmberPulse extends Component {
@@ -249,6 +281,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late TextureSource _emberCracks;
   late TextureSource _logRings;
   late TextureSource _splitWood;
+  late TextureSource _leafCard;
+  final List<_TreeSway> _treeSways = [];
   late Node _groundNode;
   late Node _grassNode;
   late _FirelightFlicker _flicker;
@@ -326,6 +360,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
     );
     _splitWood = GpuTextureSource(
       await gpuTextureFromImage(await _bakeSplitWood()),
+    );
+    _leafCard = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeLeafCard()),
     );
     _grassMaterial = await loadFmatMaterial('assets/campfire_grass.fmat');
 
@@ -479,6 +516,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
     }
     for (final (module, factor) in _winds) {
       module.acceleration.setValues(_wind * factor, 0, 0);
+    }
+    // Tree branches sway harder as the wind rises (never fully still).
+    for (final sway in _treeSways) {
+      sway.windScale = 0.35 + 0.75 * _wind.abs();
     }
     // The grass fmat shares the wind slider: a stronger breeze sways harder
     // and faster, and the signed value leans the blades downwind.
@@ -731,6 +772,312 @@ class ExampleParticlesState extends State<ExampleParticles> {
         z,
       );
     }
+  }
+
+  // Appends one tapered bark tube from [start] to [end] (radial normals,
+  // bark UVs with v accumulating along the branch so the texture flows
+  // through joints).
+  void _addTube(
+    List<double> positions,
+    List<double> normals,
+    List<double> texCoords,
+    List<int> indices,
+    vm.Vector3 start,
+    vm.Vector3 end,
+    double r0,
+    double r1,
+    double v0,
+    double v1,
+  ) {
+    const segs = 6;
+    final dir = (end - start).normalized();
+    var t1 = dir.cross(vm.Vector3(0, 1, 0));
+    if (t1.length < 1e-4) t1 = dir.cross(vm.Vector3(1, 0, 0));
+    t1.normalize();
+    final t2 = dir.cross(t1)..normalize();
+    final base = positions.length ~/ 3;
+    for (final (ring, radius, v) in [(start, r0, v0), (end, r1, v1)]) {
+      for (var s = 0; s <= segs; s++) {
+        final theta = 2 * pi * s / segs;
+        final n = t1 * cos(theta) + t2 * sin(theta);
+        final p = ring + n * radius;
+        positions.addAll([p.x, p.y, p.z]);
+        normals.addAll([n.x, n.y, n.z]);
+        texCoords.addAll([s / segs, v * 2.0]);
+      }
+    }
+    const columns = segs + 1;
+    for (var s = 0; s < segs; s++) {
+      final a = base + s;
+      final b = a + 1;
+      final c = a + columns;
+      final d = c + 1;
+      indices.addAll([a, b, c, b, d, c]);
+    }
+  }
+
+  // Appends a cluster of leaf cards around [tip]: a few quads at random
+  // orientations, each showing the whole leaf-card texture.
+  void _addLeafCluster(
+    Random rng,
+    List<double> positions,
+    List<double> normals,
+    List<double> texCoords,
+    List<int> indices,
+    vm.Vector3 tip,
+  ) {
+    final cards = 3 + rng.nextInt(2);
+    for (var i = 0; i < cards; i++) {
+      final size = 0.30 + rng.nextDouble() * 0.16;
+      final center =
+          tip +
+          vm.Vector3(
+            (rng.nextDouble() - 0.5) * 0.16,
+            (rng.nextDouble() - 0.3) * 0.14,
+            (rng.nextDouble() - 0.5) * 0.16,
+          );
+      // A random orientation biased upward, so clusters read as foliage
+      // catching sky light rather than random confetti.
+      final n = vm.Vector3(
+        (rng.nextDouble() - 0.5) * 1.4,
+        1.0,
+        (rng.nextDouble() - 0.5) * 1.4,
+      )..normalize();
+      var u = n.cross(vm.Vector3(0, 1, 0));
+      if (u.length < 1e-4) u = n.cross(vm.Vector3(1, 0, 0));
+      u.normalize();
+      final v = n.cross(u)..normalize();
+      final roll = rng.nextDouble() * 2 * pi;
+      final ax = u * cos(roll) + v * sin(roll);
+      final ay = v * cos(roll) - u * sin(roll);
+      final base = positions.length ~/ 3;
+      for (final (du, dv, tu, tv) in [
+        (-0.5, -0.5, 0.0, 1.0),
+        (0.5, -0.5, 1.0, 1.0),
+        (0.5, 0.5, 1.0, 0.0),
+        (-0.5, 0.5, 0.0, 0.0),
+      ]) {
+        final p = center + ax * (du * size) + ay * (dv * size);
+        positions.addAll([p.x, p.y, p.z]);
+        normals.addAll([n.x, n.y, n.z]);
+        texCoords.addAll([tu, tv]);
+      }
+      indices.addAll([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+  }
+
+  // Grows one branch recursively into [wood]/[leaf] arrays: a tapered tube,
+  // then children fanned around the axis, with a leaf cluster at every
+  // terminal tip.
+  void _growBranch(
+    Random rng,
+    List<List<double>> wood,
+    List<int> woodIndices,
+    List<List<double>> leaf,
+    List<int> leafIndices,
+    vm.Vector3 start,
+    vm.Vector3 dir,
+    double length,
+    double radius,
+    int depth,
+    double vAccum,
+  ) {
+    // Droop slightly under gravity so the crown rounds out.
+    final bent = (dir + vm.Vector3(0, -0.08 * (3 - depth), 0)).normalized();
+    final end = start + bent * length;
+    _addTube(
+      wood[0],
+      wood[1],
+      wood[2],
+      woodIndices,
+      start,
+      end,
+      radius,
+      radius * 0.62,
+      vAccum,
+      vAccum + length,
+    );
+    if (depth <= 0) {
+      _addLeafCluster(rng, leaf[0], leaf[1], leaf[2], leafIndices, end);
+      return;
+    }
+    var t1 = bent.cross(vm.Vector3(0, 1, 0));
+    if (t1.length < 1e-4) t1 = bent.cross(vm.Vector3(1, 0, 0));
+    t1.normalize();
+    final t2 = bent.cross(t1)..normalize();
+    final children = 2 + (rng.nextDouble() < 0.5 ? 1 : 0);
+    final baseAz = rng.nextDouble() * 2 * pi;
+    for (var i = 0; i < children; i++) {
+      final az = baseAz + i * (2 * pi / children) + rng.nextDouble() * 0.5;
+      final pitch = 0.45 + rng.nextDouble() * 0.35;
+      final childDir =
+          (bent * cos(pitch) + (t1 * cos(az) + t2 * sin(az)) * sin(pitch))
+              .normalized();
+      _growBranch(
+        rng,
+        wood,
+        woodIndices,
+        leaf,
+        leafIndices,
+        end,
+        childDir,
+        length * (0.6 + rng.nextDouble() * 0.14),
+        radius * 0.6,
+        depth - 1,
+        vAccum + length,
+      );
+    }
+  }
+
+  // Builds one tree: a kinked trunk plus primary branches, each primary
+  // branch a node of merged wood and cutout-leaf geometry swaying around its
+  // attachment point.
+  Node _buildTree(int seed) {
+    final rng = Random(seed);
+    final trunkHeight = 1.7 + rng.nextDouble() * 0.8;
+    final trunkRadius = 0.10 + rng.nextDouble() * 0.03;
+    final barkMaterial =
+        PhysicallyBasedMaterial(
+            baseColorTexture: _barkAlbedo,
+            normalTexture: _barkNormal,
+            metallicRoughnessTexture: _barkRough,
+          )
+          ..roughnessFactor = 1.0
+          ..metallicFactor = 1.0
+          ..doubleSided = true;
+    final leafMaterial = PhysicallyBasedMaterial(baseColorTexture: _leafCard)
+      ..alphaMode = AlphaMode.mask
+      ..roughnessFactor = 0.9
+      ..metallicFactor = 0.0
+      ..doubleSided = true;
+
+    final root = Node();
+    // Trunk: two stacked tubes with a kink.
+    final tp = <double>[];
+    final tn = <double>[];
+    final tuv = <double>[];
+    final ti = <int>[];
+    final kink = vm.Vector3(
+      (rng.nextDouble() - 0.5) * 0.2,
+      trunkHeight * 0.5,
+      (rng.nextDouble() - 0.5) * 0.2,
+    );
+    final top =
+        kink +
+        vm.Vector3(
+          (rng.nextDouble() - 0.5) * 0.25,
+          trunkHeight * 0.5,
+          (rng.nextDouble() - 0.5) * 0.25,
+        );
+    _addTube(
+      tp,
+      tn,
+      tuv,
+      ti,
+      vm.Vector3.zero(),
+      kink,
+      trunkRadius,
+      trunkRadius * 0.75,
+      0,
+      trunkHeight * 0.5,
+    );
+    _addTube(
+      tp,
+      tn,
+      tuv,
+      ti,
+      kink,
+      top,
+      trunkRadius * 0.75,
+      trunkRadius * 0.5,
+      trunkHeight * 0.5,
+      trunkHeight,
+    );
+    root.add(
+      Node(
+        mesh: Mesh(
+          MeshGeometry.fromArrays(
+            positions: Float32List.fromList(tp),
+            normals: Float32List.fromList(tn),
+            texCoords: Float32List.fromList(tuv),
+            indices: ti,
+          ),
+          barkMaterial,
+        ),
+      ),
+    );
+
+    // Primary branches along the upper trunk, plus a leader at the top.
+    final branchCount = 4 + rng.nextInt(2);
+    for (var i = 0; i <= branchCount; i++) {
+      final isLeader = i == branchCount;
+      final frac = isLeader ? 1.0 : 0.5 + 0.5 * (i / branchCount);
+      final attach =
+          vm.Vector3.zero() +
+          (kink - vm.Vector3.zero()) * (frac * 2).clamp(0.0, 1.0) +
+          (top - kink) * ((frac - 0.5) * 2).clamp(0.0, 1.0);
+      final az = rng.nextDouble() * 2 * pi;
+      final pitch = isLeader
+          ? 0.1 + rng.nextDouble() * 0.15
+          : 0.7 + rng.nextDouble() * 0.4;
+      final dir = vm.Vector3(
+        cos(az) * sin(pitch),
+        cos(pitch),
+        sin(az) * sin(pitch),
+      );
+      final wood = [<double>[], <double>[], <double>[]];
+      final woodIndices = <int>[];
+      final leaf = [<double>[], <double>[], <double>[]];
+      final leafIndices = <int>[];
+      _growBranch(
+        rng,
+        wood,
+        woodIndices,
+        leaf,
+        leafIndices,
+        vm.Vector3.zero(),
+        dir,
+        (isLeader ? 0.55 : 0.45) * trunkHeight * (0.7 + rng.nextDouble() * 0.4),
+        trunkRadius * (isLeader ? 0.5 : 0.4),
+        2,
+        trunkHeight * frac,
+      );
+      final rest = vm.Matrix4.translation(attach);
+      final branchNode =
+          Node(
+            mesh: Mesh(
+              MeshGeometry.fromArrays(
+                positions: Float32List.fromList(wood[0]),
+                normals: Float32List.fromList(wood[1]),
+                texCoords: Float32List.fromList(wood[2]),
+                indices: woodIndices,
+              ),
+              barkMaterial,
+            ),
+            localTransform: rest.clone(),
+          )..add(
+            Node(
+              mesh: Mesh(
+                MeshGeometry.fromArrays(
+                  positions: Float32List.fromList(leaf[0]),
+                  normals: Float32List.fromList(leaf[1]),
+                  texCoords: Float32List.fromList(leaf[2]),
+                  indices: leafIndices,
+                ),
+                leafMaterial,
+              ),
+            ),
+          );
+      final sway = _TreeSway(
+        rest,
+        seed * 0.13 + i * 0.71,
+        0.02 + rng.nextDouble() * 0.02,
+      );
+      branchNode.addComponent(sway);
+      _treeSways.add(sway);
+      root.add(branchNode);
+    }
+    return root;
   }
 
   // A piece of split firewood: a wedge of trunk with bark on the outer arc
@@ -1048,6 +1395,26 @@ class ExampleParticlesState extends State<ExampleParticles> {
       final s = 0.11 + rng.nextDouble() * 0.13;
       scene.add(rock(cos(a) * r, s * 0.45, sin(a) * r, s));
     }
+    // Trees ringing the campsite on the far hills, seated on the terrain and
+    // re-seated when the hills change, their branches swaying on the wind.
+    for (var i = 0; i < 6; i++) {
+      final a = i * 2 * pi / 6 + rng.nextDouble() * 0.6;
+      final r = 6.6 + rng.nextDouble() * 1.8;
+      final x = cos(a) * r;
+      final z = sin(a) * r;
+      final scale = 0.9 + rng.nextDouble() * 0.5;
+      final tree = _buildTree(120 + i)
+        ..localTransform = (vm.Matrix4.translation(vm.Vector3(x, 0, z))
+          ..multiply(
+            vm.Matrix4.rotationY(rng.nextDouble() * 2 * pi)
+              ..multiply(vm.Matrix4.diagonal3Values(scale, scale, scale)),
+          ));
+      // Sink slightly so the trunk base never floats on a slope.
+      _terrainRocks.add((tree, x, z, -0.06));
+      scene.add(tree);
+    }
+    _seatTerrainRocks();
+
     // Strays scattered across the terrain, small pebbles to half-buried
     // boulders, re-seated by _rebuildTerrain when the hills change.
     for (var i = 0; i < 9; i++) {
@@ -1874,13 +2241,20 @@ Future<ui.Image> _bakeGroundTexture() async {
       final dy = v - 0.5;
       final r = sqrt(dx * dx + dy * dy);
 
-      // Mottled dirt: fine grain plus large soil patches drifting between
-      // warm brown and dusty grey.
+      // Mottled dirt built from four noise scales: large soil patches, a
+      // mid-frequency warm/cool hue drift, fine grain, and a high-frequency
+      // speckle that keeps the surface gritty up close.
       final grain = dirtNoise.getNoise2(u * 60.0, v * 60.0) * 0.5 + 0.5;
       final patch = patchNoise.getNoise2(u * 7.0, v * 7.0) * 0.5 + 0.5;
-      var red = 0.30 + 0.10 * grain + 0.06 * patch;
-      var green = 0.24 + 0.08 * grain + 0.04 * patch;
-      var blue = 0.18 + 0.06 * grain + 0.05 * (1 - patch);
+      final hue = patchNoise.getNoise2(u * 22.0 + 7.0, v * 22.0 + 7.0);
+      final speckle = dirtNoise.getNoise2(u * 140.0, v * 140.0) * 0.5 + 0.5;
+      var red = 0.30 + 0.10 * grain + 0.06 * patch + 0.045 * hue;
+      var green = 0.24 + 0.08 * grain + 0.04 * patch + 0.01 * hue;
+      var blue = 0.18 + 0.06 * grain + 0.05 * (1 - patch) - 0.04 * hue;
+      final grit = 0.92 + 0.16 * speckle;
+      red *= grit;
+      green *= grit;
+      blue *= grit;
 
       // Scorched earth under the fire, with a noise-warped edge and a faint
       // ash ring just outside the char.
@@ -1933,7 +2307,8 @@ Future<ui.Image> _bakeGroundNormal() async {
   double height(double u, double v) {
     final grain = grainNoise.getNoise2(u * 60.0, v * 60.0);
     final patch = patchNoise.getNoise2(u * 7.0, v * 7.0);
-    return 0.012 * grain + 0.02 * patch;
+    final micro = grainNoise.getNoise2(u * 140.0, v * 140.0);
+    return 0.012 * grain + 0.02 * patch + 0.003 * micro;
   }
 
   const eps = 1.0 / size;
@@ -1976,15 +2351,23 @@ Future<ui.Image> _bakeGroundRoughness() async {
       final r = sqrt(dx * dx + dy * dy);
       final grain = grainNoise.getNoise2(u * 60.0, v * 60.0) * 0.5 + 0.5;
       final edgeNoise = grainNoise.getNoise2(u * 24.0, v * 24.0) * 0.012;
-      // Dirt stays fully rough (a specular sheen reads as wet plastic under
-      // the point light); only the fire-baked char tightens slightly.
+      // Dirt stays essentially fully rough (a broad sheen reads as wet
+      // plastic under the point light); a touch of high-frequency roughness
+      // grain and a sparse mineral glint (tiny metallic specks) make the
+      // surface glitter subtly in the firelight instead of reading flat.
       final char = 1.0 - _smoothstep(0.045, 0.085, r + edgeNoise);
-      var rough = 0.92 + 0.08 * grain;
+      final microGrain = grainNoise.getNoise2(u * 150.0, v * 150.0);
+      final glint = _smoothstep(
+        0.86,
+        0.97,
+        grainNoise.getNoise2(u * 190.0 + 31.0, v * 190.0 + 31.0) * 0.5 + 0.5,
+      );
+      var rough = 0.92 + 0.08 * grain + 0.05 * microGrain;
       rough += (0.78 - rough) * char;
       final o = (py * size + px) * 4;
       pixels[o] = 0;
       pixels[o + 1] = (rough.clamp(0.0, 1.0) * 255).round();
-      pixels[o + 2] = 0;
+      pixels[o + 2] = (glint * 0.3 * 255).round();
       pixels[o + 3] = 255;
     }
   }
@@ -2204,6 +2587,62 @@ Future<ui.Image> _bakeSplitWood() async {
     completer.complete,
   );
   return completer.future;
+}
+
+/// Bakes a foliage card: a scatter of rotated elliptical leaves with varied
+/// night-green shades and darker center veins, alpha-cutout background. A
+/// handful of these cards per branch tip reads as a leaf cluster.
+Future<ui.Image> _bakeLeafCard() async {
+  const size = 256;
+  final pixels = Uint8List(size * size * 4);
+  final rng = Random(11);
+  const leafCount = 14;
+  final leaves = [
+    for (var i = 0; i < leafCount; i++)
+      (
+        0.5 + (rng.nextDouble() - 0.5) * 0.7, // center x
+        0.5 + (rng.nextDouble() - 0.5) * 0.7, // center y
+        rng.nextDouble() * pi, // rotation
+        0.10 + rng.nextDouble() * 0.07, // half length
+        0.6 + rng.nextDouble() * 0.5, // shade
+      ),
+  ];
+  for (var py = 0; py < size; py++) {
+    final v = (py + 0.5) / size;
+    for (var px = 0; px < size; px++) {
+      final u = (px + 0.5) / size;
+      var bestShade = 0.0;
+      var bestVein = 0.0;
+      var hit = false;
+      for (final (cx, cy, rot, len, shade) in leaves) {
+        final dx = u - cx;
+        final dy = v - cy;
+        final lx = dx * cos(rot) + dy * sin(rot);
+        final ly = -dx * sin(rot) + dy * cos(rot);
+        final d = (lx * lx) / (len * len) + (ly * ly) / (len * len * 0.16);
+        if (d < 1.0) {
+          hit = true;
+          if (shade > bestShade) {
+            bestShade = shade * (1.0 - 0.25 * d);
+            // The center vein runs along the leaf's long axis.
+            bestVein = 1.0 - _smoothstep(0.006, 0.02, ly.abs());
+          }
+        }
+      }
+      final o = (py * size + px) * 4;
+      if (!hit) {
+        pixels[o + 3] = 0;
+        continue;
+      }
+      final vein = 1.0 - 0.35 * bestVein;
+      pixels[o] = ((0.16 * bestShade * vein).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 1] = ((0.34 * bestShade * vein).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = ((0.11 * bestShade * vein).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  return vfxImageFromPixels(pixels, size);
 }
 
 /// Bakes the cut-end growth rings: concentric bands jittered by noise over a
