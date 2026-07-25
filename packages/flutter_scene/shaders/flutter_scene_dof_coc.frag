@@ -40,7 +40,11 @@ void main() {
   float coc = 1e9;
   for (int i = 0; i < 4; i++) {
     vec2 o = vec2((i == 1 || i == 3) ? t.x : -t.x, (i < 2) ? -t.y : t.y);
-    vec3 c = texture(scene_color, v_uv + o).rgb;
+    // Clamp to a finite HDR ceiling: an infinite radiance sample makes the
+    // Karis weight 1/(1+Inf) collapse to 0 and c*w = Inf*0 = NaN, which the
+    // gather then spreads into a black bokeh disc. Half-float max is well above
+    // any legitimate bloom source, so this only bounds pathological pixels.
+    vec3 c = min(texture(scene_color, v_uv + o).rgb, vec3(65504.0));
     float w = 1.0 / (1.0 + max(c.r, max(c.g, c.b)));
     color += c * w;
     weight += w;
