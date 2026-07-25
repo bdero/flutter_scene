@@ -249,7 +249,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   bool _ready = false;
 
   // Live fire tuning (see _applyParams).
-  double _intensity = 2.0;
+  double _intensity = 1.88;
   double _flameScale = 0.94;
   double _flameWidth = 1.51;
   double _flipbookSpeed = 0.68;
@@ -262,8 +262,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _emberSpeed = 1.0;
   double _emberLife = 1.0;
   double _fogAmount = 1.28;
-  double _fireReach = 1.0;
-  double _fireFalloff = 2.0;
+  double _fireReach = 0.48;
+  double _fireFalloff = 2.17;
   final vm.Vector3 _fireColor = vm.Vector3(1.0, 0.52, 0.18);
   double _flickerDepth = 0.5;
   double _flickerRate = 1.0;
