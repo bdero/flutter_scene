@@ -73,7 +73,17 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..colorGrading.brightness = 0.65
     ..colorGrading.contrast = 1.09
     ..colorGrading.saturation = 1.35
-    ..colorGrading.temperature = 0.85,
+    ..colorGrading.temperature = 0.85
+    ..bloom.enabled = true
+    ..bloom.threshold = 3.55
+    ..bloom.intensity = 0.07
+    ..bloom.scatter = 1.0
+    ..chromaticAberration.enabled = true
+    ..chromaticAberration.intensity = 0.03
+    ..vignette.enabled = true
+    ..vignette.intensity = 0.73
+    ..vignette.radius = 0.75
+    ..vignette.smoothness = 0.5,
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
