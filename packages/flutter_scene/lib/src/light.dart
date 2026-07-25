@@ -353,8 +353,12 @@ class PointLight {
   /// [DirectionalLight]'s). [range] is the world-space distance at which the
   /// influence reaches zero; `0` (the default) means infinite range (pure
   /// inverse-square falloff).
-  PointLight({Vector3? color, this.intensity = 1.0, this.range = 0.0})
-    : color = color ?? Vector3(1.0, 1.0, 1.0);
+  PointLight({
+    Vector3? color,
+    this.intensity = 1.0,
+    this.range = 0.0,
+    this.falloffExponent = 2.0,
+  }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light.
   Vector3 color;
@@ -366,6 +370,12 @@ class PointLight {
   /// zero. `0` means infinite range (pure inverse-square falloff, clamped
   /// near the source).
   double range;
+
+  /// The distance-falloff exponent. `2` (the default) is the physical
+  /// inverse square; lower values are an artistic control that lets the
+  /// light reach further without blowing out its near field (a hero light
+  /// touching distant scenery). Values at or below zero are clamped.
+  double falloffExponent;
 }
 
 /// A light that radiates from a world-space point within a cone, combining a
@@ -393,6 +403,7 @@ class SpotLight {
     Vector3? color,
     this.intensity = 1.0,
     this.range = 0.0,
+    this.falloffExponent = 2.0,
     Vector3? direction,
     this.innerConeAngle = 0.0,
     this.outerConeAngle = math.pi / 4.0,
@@ -415,6 +426,9 @@ class SpotLight {
   /// World-space distance at which the light's influence smoothly reaches
   /// zero. `0` means infinite range (pure inverse-square falloff).
   double range;
+
+  /// The distance-falloff exponent (see [PointLight.falloffExponent]).
+  double falloffExponent;
 
   /// The cone's aim, in the owning node's local space. Need not be unit
   /// length. Rotated to world by the node's transform.
