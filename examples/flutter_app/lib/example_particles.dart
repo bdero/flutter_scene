@@ -172,11 +172,17 @@ class _CoalGlow extends Component {
 /// oscillation on top of the branch's rest pose, phased per branch so a tree
 /// never rocks in unison, with the amplitude following the wind slider.
 class _TreeSway extends Component {
-  _TreeSway(this.restPose, this.phase, this.amplitude);
+  _TreeSway(this.restPose, this.phase, this.amplitude, this.frequency);
 
   final vm.Matrix4 restPose;
   final double phase;
   final double amplitude;
+
+  /// Base oscillation rate in radians/second. Each tier of the tree runs
+  /// faster and further than its parent, the way real trees move: the trunk
+  /// barely stirs, primary branches roll slowly, sub-branches toss, and the
+  /// foliage flutters on top.
+  final double frequency;
 
   /// Scales the amplitude, driven by the wind slider through _applyParams.
   double windScale = 1.0;
@@ -189,11 +195,12 @@ class _TreeSway extends Component {
     final a = amplitude * windScale;
     final swayX =
         a *
-        (0.6 * sin(_t * 0.9 + phase * 12.9) +
-            0.4 * sin(_t * 2.3 + phase * 5.1));
+        (0.6 * sin(_t * frequency + phase * 12.9) +
+            0.4 * sin(_t * frequency * 2.6 + phase * 5.1));
     final swayZ =
         a *
-        (0.6 * sin(_t * 1.1 + phase * 7.7) + 0.4 * sin(_t * 2.9 + phase * 3.3));
+        (0.6 * sin(_t * frequency * 1.2 + phase * 7.7) +
+            0.4 * sin(_t * frequency * 3.1 + phase * 3.3));
     node.localTransform = restPose.clone()
       ..multiply(vm.Matrix4.rotationX(swayX))
       ..multiply(vm.Matrix4.rotationZ(swayZ));
@@ -824,11 +831,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
     List<double> normals,
     List<double> texCoords,
     List<int> indices,
-    vm.Vector3 tip,
-  ) {
-    final cards = 3 + rng.nextInt(2);
-    for (var i = 0; i < cards; i++) {
-      final size = 0.30 + rng.nextDouble() * 0.16;
+    vm.Vector3 tip, {
+    int? cards,
+  }) {
+    final count = cards ?? (5 + rng.nextInt(3));
+    for (var i = 0; i < count; i++) {
+      final size = 0.32 + rng.nextDouble() * 0.18;
       final center =
           tip +
           vm.Vector3(
@@ -866,10 +874,62 @@ class ExampleParticlesState extends State<ExampleParticles> {
     }
   }
 
-  // Grows one branch recursively into [wood]/[leaf] arrays: a tapered tube,
-  // then children fanned around the axis, with a leaf cluster at every
-  // terminal tip.
-  void _growBranch(
+  // Grows a curved limb as [steps] chained tapered tubes, each step's
+  // direction perturbed (gnarl) so branches meander the way real wood does.
+  // Returns the end point and end direction.
+  (vm.Vector3, vm.Vector3) _growLimb(
+    Random rng,
+    List<List<double>> wood,
+    List<int> woodIndices,
+    vm.Vector3 start,
+    vm.Vector3 dir,
+    double length,
+    double r0,
+    double r1,
+    double vAccum, {
+    int steps = 2,
+    double gnarl = 0.16,
+  }) {
+    var p = start;
+    var d = dir.normalized();
+    var v = vAccum;
+    for (var i = 0; i < steps; i++) {
+      final t0 = i / steps;
+      final t1 = (i + 1) / steps;
+      final segLen = length / steps;
+      d =
+          (d +
+                  vm.Vector3(
+                    (rng.nextDouble() - 0.5) * gnarl,
+                    (rng.nextDouble() - 0.5) * gnarl * 0.5,
+                    (rng.nextDouble() - 0.5) * gnarl,
+                  ))
+              .normalized();
+      final end = p + d * segLen;
+      _addTube(
+        wood[0],
+        wood[1],
+        wood[2],
+        woodIndices,
+        p,
+        end,
+        r0 + (r1 - r0) * t0,
+        r0 + (r1 - r0) * t1,
+        v,
+        v + segLen,
+      );
+      p = end;
+      v += segLen;
+    }
+    return (p, d);
+  }
+
+  // Grows one sub-branch recursively: a curved limb, then children fanned by
+  // the Fibonacci divergence angle with per-order down angles and radii
+  // conserving cross-section between parent and children, dense leaf
+  // clusters at every terminal tip, and small interior clusters at the
+  // joints so the crown fills in.
+  void _growSub(
     Random rng,
     List<List<double>> wood,
     List<int> woodIndices,
@@ -882,38 +942,44 @@ class ExampleParticlesState extends State<ExampleParticles> {
     int depth,
     double vAccum,
   ) {
-    // Droop slightly under gravity so the crown rounds out.
-    final bent = (dir + vm.Vector3(0, -0.08 * (3 - depth), 0)).normalized();
-    final end = start + bent * length;
-    _addTube(
-      wood[0],
-      wood[1],
-      wood[2],
+    // Droop under gravity, harder for thinner wood.
+    final bent = (dir + vm.Vector3(0, -0.05 * (3 - depth), 0)).normalized();
+    final (end, endDir) = _growLimb(
+      rng,
+      wood,
       woodIndices,
       start,
-      end,
+      bent,
+      length,
       radius,
-      radius * 0.62,
+      radius * 0.6,
       vAccum,
-      vAccum + length,
     );
     if (depth <= 0) {
       _addLeafCluster(rng, leaf[0], leaf[1], leaf[2], leafIndices, end);
       return;
     }
-    var t1 = bent.cross(vm.Vector3(0, 1, 0));
-    if (t1.length < 1e-4) t1 = bent.cross(vm.Vector3(1, 0, 0));
+    // Interior foliage at the joint keeps the crown from looking hollow.
+    _addLeafCluster(rng, leaf[0], leaf[1], leaf[2], leafIndices, end, cards: 2);
+    var t1 = endDir.cross(vm.Vector3(0, 1, 0));
+    if (t1.length < 1e-4) t1 = endDir.cross(vm.Vector3(1, 0, 0));
     t1.normalize();
-    final t2 = bent.cross(t1)..normalize();
-    final children = 2 + (rng.nextDouble() < 0.5 ? 1 : 0);
+    final t2 = endDir.cross(t1)..normalize();
+    final children = 3 + (rng.nextDouble() < 0.35 ? 1 : 0);
+    // Cross-section conservation: children split the parent's area, so limbs
+    // thin at the botanically right rate.
+    final childRadius = radius * 0.6 * pow(1.0 / children, 0.45);
+    // The Fibonacci divergence angle spirals successive children around the
+    // parent axis (phyllotaxis), rather than spacing them evenly.
+    const divergence = 2.39996; // 137.5 degrees
     final baseAz = rng.nextDouble() * 2 * pi;
     for (var i = 0; i < children; i++) {
-      final az = baseAz + i * (2 * pi / children) + rng.nextDouble() * 0.5;
-      final pitch = 0.45 + rng.nextDouble() * 0.35;
+      final az = baseAz + i * divergence + (rng.nextDouble() - 0.5) * 0.3;
+      final down = 0.55 + rng.nextDouble() * 0.35;
       final childDir =
-          (bent * cos(pitch) + (t1 * cos(az) + t2 * sin(az)) * sin(pitch))
+          (endDir * cos(down) + (t1 * cos(az) + t2 * sin(az)) * sin(down))
               .normalized();
-      _growBranch(
+      _growSub(
         rng,
         wood,
         woodIndices,
@@ -921,21 +987,22 @@ class ExampleParticlesState extends State<ExampleParticles> {
         leafIndices,
         end,
         childDir,
-        length * (0.6 + rng.nextDouble() * 0.14),
-        radius * 0.6,
+        length * (0.62 + rng.nextDouble() * 0.16),
+        childRadius,
         depth - 1,
         vAccum + length,
       );
     }
   }
 
-  // Builds one tree: a kinked trunk plus primary branches, each primary
-  // branch a node of merged wood and cutout-leaf geometry swaying around its
-  // attachment point.
+  // Builds one tree with a three-tier sway hierarchy: a static curved trunk,
+  // primary branch nodes rolling slowly around their attachments, sub-branch
+  // nodes tossing faster on top of them, and each sub-branch's foliage on
+  // its own node fluttering fastest of all.
   Node _buildTree(int seed) {
     final rng = Random(seed);
-    final trunkHeight = 1.7 + rng.nextDouble() * 0.8;
-    final trunkRadius = 0.10 + rng.nextDouble() * 0.03;
+    final trunkHeight = 1.8 + rng.nextDouble() * 0.9;
+    final trunkRadius = 0.11 + rng.nextDouble() * 0.03;
     final barkMaterial =
         PhysicallyBasedMaterial(
             baseColorTexture: _barkAlbedo,
@@ -951,131 +1018,168 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..metallicFactor = 0.0
       ..doubleSided = true;
 
-    final root = Node();
-    // Trunk: two stacked tubes with a kink.
-    final tp = <double>[];
-    final tn = <double>[];
-    final tuv = <double>[];
-    final ti = <int>[];
-    final kink = vm.Vector3(
-      (rng.nextDouble() - 0.5) * 0.2,
-      trunkHeight * 0.5,
-      (rng.nextDouble() - 0.5) * 0.2,
-    );
-    final top =
-        kink +
-        vm.Vector3(
-          (rng.nextDouble() - 0.5) * 0.25,
-          trunkHeight * 0.5,
-          (rng.nextDouble() - 0.5) * 0.25,
+    MeshGeometry buildGeometry(List<List<double>> a, List<int> indices) =>
+        MeshGeometry.fromArrays(
+          positions: Float32List.fromList(a[0]),
+          normals: Float32List.fromList(a[1]),
+          texCoords: Float32List.fromList(a[2]),
+          indices: indices,
         );
-    _addTube(
-      tp,
-      tn,
-      tuv,
-      ti,
-      vm.Vector3.zero(),
-      kink,
-      trunkRadius,
-      trunkRadius * 0.75,
-      0,
-      trunkHeight * 0.5,
-    );
-    _addTube(
-      tp,
-      tn,
-      tuv,
-      ti,
-      kink,
-      top,
-      trunkRadius * 0.75,
-      trunkRadius * 0.5,
-      trunkHeight * 0.5,
-      trunkHeight,
-    );
+
+    final root = Node();
+    // Trunk: a curved three-segment spine, sampled later for attachments.
+    final trunkWood = [<double>[], <double>[], <double>[]];
+    final trunkIndices = <int>[];
+    final spine = <vm.Vector3>[vm.Vector3.zero()];
+    var spineDir = vm.Vector3(
+      (rng.nextDouble() - 0.5) * 0.14,
+      1,
+      (rng.nextDouble() - 0.5) * 0.14,
+    ).normalized();
+    var spineRadius = trunkRadius;
+    for (var i = 0; i < 3; i++) {
+      final (end, d) = _growLimb(
+        rng,
+        trunkWood,
+        trunkIndices,
+        spine.last,
+        spineDir,
+        trunkHeight / 3,
+        spineRadius,
+        spineRadius * 0.72,
+        trunkHeight / 3 * i,
+        steps: 1,
+        gnarl: 0.12,
+      );
+      spine.add(end);
+      spineDir = d;
+      spineRadius *= 0.72;
+    }
     root.add(
-      Node(
-        mesh: Mesh(
-          MeshGeometry.fromArrays(
-            positions: Float32List.fromList(tp),
-            normals: Float32List.fromList(tn),
-            texCoords: Float32List.fromList(tuv),
-            indices: ti,
-          ),
-          barkMaterial,
-        ),
-      ),
+      Node(mesh: Mesh(buildGeometry(trunkWood, trunkIndices), barkMaterial)),
     );
 
-    // Primary branches along the upper trunk, plus a leader at the top.
-    final branchCount = 4 + rng.nextInt(2);
+    vm.Vector3 spineAt(double frac) {
+      final f = (frac * 3).clamp(0.0, 2.999);
+      final i = f.floor();
+      return spine[i] + (spine[i + 1] - spine[i]) * (f - i);
+    }
+
+    // Primary branches spiral up the trunk by the divergence angle, lower
+    // ones longer and flatter (a rounded crown), plus a leader at the top.
+    final branchCount = 5 + rng.nextInt(2);
+    const divergence = 2.39996;
+    final azStart = rng.nextDouble() * 2 * pi;
     for (var i = 0; i <= branchCount; i++) {
       final isLeader = i == branchCount;
-      final frac = isLeader ? 1.0 : 0.5 + 0.5 * (i / branchCount);
-      final attach =
-          vm.Vector3.zero() +
-          (kink - vm.Vector3.zero()) * (frac * 2).clamp(0.0, 1.0) +
-          (top - kink) * ((frac - 0.5) * 2).clamp(0.0, 1.0);
-      final az = rng.nextDouble() * 2 * pi;
+      final frac = isLeader ? 1.0 : 0.42 + 0.56 * (i / (branchCount - 1));
+      final attach = spineAt(frac);
+      final az = azStart + i * divergence;
       final pitch = isLeader
-          ? 0.1 + rng.nextDouble() * 0.15
-          : 0.7 + rng.nextDouble() * 0.4;
+          ? 0.12 + rng.nextDouble() * 0.15
+          : 0.75 + rng.nextDouble() * 0.35 - 0.25 * frac;
       final dir = vm.Vector3(
         cos(az) * sin(pitch),
         cos(pitch),
         sin(az) * sin(pitch),
       );
-      final wood = [<double>[], <double>[], <double>[]];
-      final woodIndices = <int>[];
-      final leaf = [<double>[], <double>[], <double>[]];
-      final leafIndices = <int>[];
-      _growBranch(
+      final primaryLength =
+          trunkHeight * (0.5 - 0.16 * frac) * (0.8 + rng.nextDouble() * 0.4);
+      final primaryRadius = trunkRadius * (isLeader ? 0.5 : 0.42);
+
+      // Tier 1: the primary limb, swaying slowly around its attachment.
+      final primaryWood = [<double>[], <double>[], <double>[]];
+      final primaryIndices = <int>[];
+      final (primaryEnd, primaryEndDir) = _growLimb(
         rng,
-        wood,
-        woodIndices,
-        leaf,
-        leafIndices,
+        primaryWood,
+        primaryIndices,
         vm.Vector3.zero(),
         dir,
-        (isLeader ? 0.55 : 0.45) * trunkHeight * (0.7 + rng.nextDouble() * 0.4),
-        trunkRadius * (isLeader ? 0.5 : 0.4),
-        2,
+        primaryLength,
+        primaryRadius,
+        primaryRadius * 0.62,
         trunkHeight * frac,
       );
-      final rest = vm.Matrix4.translation(attach);
-      final branchNode =
-          Node(
-            mesh: Mesh(
-              MeshGeometry.fromArrays(
-                positions: Float32List.fromList(wood[0]),
-                normals: Float32List.fromList(wood[1]),
-                texCoords: Float32List.fromList(wood[2]),
-                indices: woodIndices,
-              ),
-              barkMaterial,
-            ),
-            localTransform: rest.clone(),
-          )..add(
-            Node(
-              mesh: Mesh(
-                MeshGeometry.fromArrays(
-                  positions: Float32List.fromList(leaf[0]),
-                  normals: Float32List.fromList(leaf[1]),
-                  texCoords: Float32List.fromList(leaf[2]),
-                  indices: leafIndices,
-                ),
-                leafMaterial,
-              ),
-            ),
-          );
-      final sway = _TreeSway(
-        rest,
-        seed * 0.13 + i * 0.71,
-        0.02 + rng.nextDouble() * 0.02,
+      final primaryRest = vm.Matrix4.translation(attach);
+      final primaryNode = Node(
+        mesh: Mesh(buildGeometry(primaryWood, primaryIndices), barkMaterial),
+        localTransform: primaryRest.clone(),
       );
-      branchNode.addComponent(sway);
-      _treeSways.add(sway);
-      root.add(branchNode);
+      final primarySway = _TreeSway(
+        primaryRest,
+        seed * 0.13 + i * 0.71,
+        0.012 + rng.nextDouble() * 0.01,
+        0.7 + rng.nextDouble() * 0.3,
+      );
+      primaryNode.addComponent(primarySway);
+      _treeSways.add(primarySway);
+
+      // Tier 2: sub-branches fanned from the primary's end, tossing faster,
+      // each with its own fluttering foliage node (tier 3).
+      var st1 = primaryEndDir.cross(vm.Vector3(0, 1, 0));
+      if (st1.length < 1e-4) st1 = primaryEndDir.cross(vm.Vector3(1, 0, 0));
+      st1.normalize();
+      final st2 = primaryEndDir.cross(st1)..normalize();
+      final subCount = 3 + (rng.nextDouble() < 0.4 ? 1 : 0);
+      final subRadius =
+          primaryRadius * 0.62 * pow(1.0 / subCount, 0.45).toDouble();
+      final subAzStart = rng.nextDouble() * 2 * pi;
+      for (var j = 0; j < subCount; j++) {
+        final subAz = subAzStart + j * divergence;
+        final down = j == 0 ? 0.15 : 0.5 + rng.nextDouble() * 0.3;
+        final subDir =
+            (primaryEndDir * cos(down) +
+                    (st1 * cos(subAz) + st2 * sin(subAz)) * sin(down))
+                .normalized();
+        final subWood = [<double>[], <double>[], <double>[]];
+        final subIndices = <int>[];
+        final subLeaf = [<double>[], <double>[], <double>[]];
+        final subLeafIndices = <int>[];
+        _growSub(
+          rng,
+          subWood,
+          subIndices,
+          subLeaf,
+          subLeafIndices,
+          vm.Vector3.zero(),
+          subDir,
+          primaryLength * (0.6 + rng.nextDouble() * 0.2),
+          subRadius,
+          2,
+          trunkHeight * frac + primaryLength,
+        );
+        final subRest = vm.Matrix4.translation(primaryEnd);
+        final subNode = Node(
+          mesh: Mesh(buildGeometry(subWood, subIndices), barkMaterial),
+          localTransform: subRest.clone(),
+        );
+        final subSway = _TreeSway(
+          subRest,
+          seed * 0.29 + i * 1.31 + j * 0.53,
+          0.03 + rng.nextDouble() * 0.02,
+          1.5 + rng.nextDouble() * 0.7,
+        );
+        subNode.addComponent(subSway);
+        _treeSways.add(subSway);
+
+        final leafRest = vm.Matrix4.identity();
+        final leafNode = Node(
+          mesh: Mesh(buildGeometry(subLeaf, subLeafIndices), leafMaterial),
+          localTransform: leafRest.clone(),
+        );
+        final leafSway = _TreeSway(
+          leafRest,
+          seed * 0.41 + i * 0.97 + j * 1.7,
+          0.02 + rng.nextDouble() * 0.015,
+          3.5 + rng.nextDouble() * 2.0,
+        );
+        leafNode.addComponent(leafSway);
+        _treeSways.add(leafSway);
+        subNode.add(leafNode);
+        primaryNode.add(subNode);
+      }
+      root.add(primaryNode);
     }
     return root;
   }
