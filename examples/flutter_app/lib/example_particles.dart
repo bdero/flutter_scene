@@ -258,6 +258,14 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _fireflyTrailLife = 0.74;
   double _fireflyTrailGlow = 2.65;
 
+  // Foliage surface tuning (see _applyParams).
+  final vm.Vector3 _grassColor = vm.Vector3(1, 1, 1);
+  double _grassRough = 0.9;
+  double _grassMetal = 0.0;
+  final vm.Vector3 _leafColor = vm.Vector3(1, 1, 1);
+  double _leafRough = 0.9;
+  double _leafMetal = 0.0;
+
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
   double _hillFrequency = 0.11;
@@ -290,6 +298,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late TextureSource _splitWood;
   late TextureSource _leafCard;
   final List<_TreeSway> _treeSways = [];
+  final List<PhysicallyBasedMaterial> _leafMaterials = [];
   late Node _groundNode;
   late Node _grassNode;
   late _FirelightFlicker _flicker;
@@ -533,7 +542,21 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _grassMaterial.parameters
       ..setFloat('wind_strength', 0.3 + 0.45 * _wind.abs())
       ..setFloat('wind_speed', 1.3 + 1.6 * _wind.abs())
-      ..setFloat('wind_lean', _wind * 0.4);
+      ..setFloat('wind_lean', _wind * 0.4)
+      ..setVec3('color_tint', _grassColor)
+      ..setFloat('roughness', _grassRough)
+      ..setFloat('metallic', _grassMetal);
+    for (final material in _leafMaterials) {
+      material
+        ..baseColorFactor = vm.Vector4(
+          _leafColor.x,
+          _leafColor.y,
+          _leafColor.z,
+          1,
+        )
+        ..roughnessFactor = _leafRough
+        ..metallicFactor = _leafMetal;
+    }
     _flicker.baseIntensity = 7.0 * _intensity;
   }
 
@@ -1017,6 +1040,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..roughnessFactor = 0.9
       ..metallicFactor = 0.0
       ..doubleSided = true;
+    _leafMaterials.add(leafMaterial);
 
     MeshGeometry buildGeometry(List<List<double>> a, List<int> indices) =>
         MeshGeometry.fromArrays(
@@ -1387,10 +1411,11 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..addComponent(_EmberPulse(barkMaterial, phase));
   }
 
-  // A jagged rock: an icosphere displaced by fbm noise, exploded into
-  // per-face vertices so the auto-generated normals stay flat and faceted.
+  // A rock: an icosphere displaced by fbm noise. Vertices stay shared so
+  // the auto-generated normals accumulate smoothly across faces; the lumpy
+  // silhouette carries the rocky look without faceted shading seams.
   MeshGeometry _rockGeometry(int seed) {
-    final arrays = buildIcosphereArrays(radius: 1.0, subdivisions: 1);
+    final arrays = buildIcosphereArrays(radius: 1.0, subdivisions: 2);
     final noise = FastNoiseLite()
       ..seed = seed
       ..frequency = 1.0
@@ -1413,24 +1438,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
       displaced[i + 1] = ny * bump;
       displaced[i + 2] = nz * bump;
     }
-    final srcIndices = arrays.indices;
-    final srcUv = arrays.texCoords;
-    final positions = Float32List(srcIndices.length * 3);
-    final texCoords = Float32List(srcIndices.length * 2);
-    for (var i = 0; i < srcIndices.length; i++) {
-      final v = srcIndices[i];
-      positions[i * 3] = displaced[v * 3];
-      positions[i * 3 + 1] = displaced[v * 3 + 1];
-      positions[i * 3 + 2] = displaced[v * 3 + 2];
-      if (srcUv != null) {
-        texCoords[i * 2] = srcUv[v * 2];
-        texCoords[i * 2 + 1] = srcUv[v * 2 + 1];
-      }
-    }
     return MeshGeometry.fromArrays(
-      positions: positions,
-      texCoords: texCoords,
-      indices: List<int>.generate(srcIndices.length, (i) => i),
+      positions: displaced,
+      texCoords: arrays.texCoords,
+      indices: arrays.indices,
     );
   }
 
@@ -1987,6 +1998,12 @@ Campfire settings dump:
   fireflyTrailGlow: $_fireflyTrailGlow
   hillFrequency: $_hillFrequency
   hillHeight: $_hillHeight
+  grassColor: ${_grassColor.x}, ${_grassColor.y}, ${_grassColor.z}
+  grassRough: $_grassRough
+  grassMetal: $_grassMetal
+  leafColor: ${_leafColor.x}, ${_leafColor.y}, ${_leafColor.z}
+  leafRough: $_leafRough
+  leafMetal: $_leafMetal
 Shared settings:
 ${s.describe()}''');
   }
@@ -2206,6 +2223,106 @@ ${s.describe()}''');
             }),
           ),
           _SliderRow(
+            label: 'Grass X',
+            value: _grassColor.x,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _grassColor.x = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Grass Y',
+            value: _grassColor.y,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _grassColor.y = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Grass Z',
+            value: _grassColor.z,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _grassColor.z = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Grass rough',
+            value: _grassRough,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _grassRough = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Grass metal',
+            value: _grassMetal,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _grassMetal = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Leaf X',
+            value: _leafColor.x,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _leafColor.x = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Leaf Y',
+            value: _leafColor.y,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _leafColor.y = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Leaf Z',
+            value: _leafColor.z,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _leafColor.z = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Leaf rough',
+            value: _leafRough,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _leafRough = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Leaf metal',
+            value: _leafMetal,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _leafMetal = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
             label: 'Hill freq',
             value: _hillFrequency,
             min: 0.05,
@@ -2323,7 +2440,7 @@ double _smoothstep(double a, double b, double x) {
 /// under the fire and a faint ash ring around it. The disc's planar UVs put
 /// the fire at (0.5, 0.5); world radius 9 spans UV radius 0.5.
 Future<ui.Image> _bakeGroundTexture() async {
-  const size = 512;
+  const size = 1024;
   final pixels = Uint8List(size * size * 4);
 
   final dirtNoise = FastNoiseLite()
@@ -2352,10 +2469,12 @@ Future<ui.Image> _bakeGroundTexture() async {
       final patch = patchNoise.getNoise2(u * 7.0, v * 7.0) * 0.5 + 0.5;
       final hue = patchNoise.getNoise2(u * 22.0 + 7.0, v * 22.0 + 7.0);
       final speckle = dirtNoise.getNoise2(u * 140.0, v * 140.0) * 0.5 + 0.5;
+      final fleck =
+          dirtNoise.getNoise2(u * 420.0 + 53.0, v * 420.0) * 0.5 + 0.5;
       var red = 0.30 + 0.10 * grain + 0.06 * patch + 0.045 * hue;
       var green = 0.24 + 0.08 * grain + 0.04 * patch + 0.01 * hue;
       var blue = 0.18 + 0.06 * grain + 0.05 * (1 - patch) - 0.04 * hue;
-      final grit = 0.92 + 0.16 * speckle;
+      final grit = (0.84 + 0.28 * speckle) * (0.9 + 0.2 * fleck);
       red *= grit;
       green *= grit;
       blue *= grit;
@@ -2395,7 +2514,7 @@ Future<ui.Image> _bakeGroundTexture() async {
 /// noise as the albedo, so pebbly micro-relief catches the grazing
 /// firelight.
 Future<ui.Image> _bakeGroundNormal() async {
-  const size = 512;
+  const size = 1024;
   final pixels = Uint8List(size * size * 4);
   final grainNoise = FastNoiseLite()
     ..seed = 27
@@ -2412,7 +2531,8 @@ Future<ui.Image> _bakeGroundNormal() async {
     final grain = grainNoise.getNoise2(u * 60.0, v * 60.0);
     final patch = patchNoise.getNoise2(u * 7.0, v * 7.0);
     final micro = grainNoise.getNoise2(u * 140.0, v * 140.0);
-    return 0.012 * grain + 0.02 * patch + 0.003 * micro;
+    final fleck = grainNoise.getNoise2(u * 420.0 + 53.0, v * 420.0);
+    return 0.012 * grain + 0.02 * patch + 0.006 * micro + 0.002 * fleck;
   }
 
   const eps = 1.0 / size;
@@ -2466,7 +2586,7 @@ Future<ui.Image> _bakeGroundRoughness() async {
         0.97,
         grainNoise.getNoise2(u * 190.0 + 31.0, v * 190.0 + 31.0) * 0.5 + 0.5,
       );
-      var rough = 0.92 + 0.08 * grain + 0.05 * microGrain;
+      var rough = 0.9 + 0.1 * grain + 0.08 * microGrain;
       rough += (0.78 - rough) * char;
       final o = (py * size + px) * 4;
       pixels[o] = 0;
