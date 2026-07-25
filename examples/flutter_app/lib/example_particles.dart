@@ -248,6 +248,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late TextureSource _barkRough;
   late TextureSource _emberCracks;
   late TextureSource _logRings;
+  late TextureSource _splitWood;
   late Node _groundNode;
   late Node _grassNode;
   late _FirelightFlicker _flicker;
@@ -322,6 +323,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
     );
     _logRings = GpuTextureSource(
       await gpuTextureFromImage(await _bakeLogRings()),
+    );
+    _splitWood = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeSplitWood()),
     );
     _grassMaterial = await loadFmatMaterial('assets/campfire_grass.fmat');
 
@@ -729,13 +733,14 @@ class ExampleParticlesState extends State<ExampleParticles> {
     }
   }
 
-  // A log: a lumpy, gently bowed, tapered cylinder with bark UVs (u wraps
-  // the circumference twice, v runs root to tip) and a char gradient baked
-  // into the vertex colors toward the tip (row 0, the end that sits in the
-  // fire). Returns the bark side surface and the growth-ring end caps as
-  // separate geometries, since they carry different materials.
-  (MeshGeometry, MeshGeometry) _logGeometry(int seed) {
-    const rs = 16;
+  // A piece of split firewood: a wedge of trunk with bark on the outer arc
+  // (lumpy, bark UVs), pale split-wood faces where the round was cleaved,
+  // and wedge-slice end caps whose growth rings center on the tree's axis.
+  // A char gradient bakes into the vertex colors toward the tip (row 0, the
+  // end in the fire). Returns (bark arc, split faces, end caps), which carry
+  // different materials.
+  (MeshGeometry, MeshGeometry, MeshGeometry) _logGeometry(int seed) {
+    const arcSegs = 10;
     const hs = 9;
     const length = 0.95;
     final noise = FastNoiseLite()
@@ -744,49 +749,53 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..fractalType = FractalType.fbm
       ..octaves = 3;
     final rng = Random(seed);
-    final bendAmp = 0.012 + rng.nextDouble() * 0.02;
-    final bendPhase = rng.nextDouble() * 2 * pi;
+    final wedge = 1.9 + rng.nextDouble() * 1.2;
+    final theta0 = rng.nextDouble() * 2 * pi;
     const charcoal = (0.05, 0.045, 0.04);
 
+    double radiusAt(double t) => 0.082 + 0.012 * t;
+    double lumpAt(double theta, double t) =>
+        1.0 +
+        0.08 * noise.getNoise3(cos(theta) * 2.2, sin(theta) * 2.2, t * 3.5);
+    double charAt(double t, double jitterA, double jitterB) =>
+        (_smoothstep(
+                  0.55,
+                  0.92,
+                  1 - t + 0.08 * noise.getNoise2(t * 3.0, 41.0),
+                ) +
+                0.15 * noise.getNoise2(jitterA * 3.0, jitterB * 5.0 + 9.0))
+            .clamp(0.0, 1.0);
+    List<double> charColor(double char) => [
+      1.0 + (charcoal.$1 - 1.0) * char,
+      1.0 + (charcoal.$2 - 1.0) * char,
+      1.0 + (charcoal.$3 - 1.0) * char,
+      1.0,
+    ];
+
+    // Bark: the outer arc only.
     final positions = <double>[];
     final normals = <double>[];
     final texCoords = <double>[];
     final colors = <double>[];
     final indices = <int>[];
-    const columns = rs + 1;
+    const columns = arcSegs + 1;
     for (var r = 0; r <= hs; r++) {
       final t = r / hs; // 0 at the tip (in the fire), 1 at the ground end.
       final y = length / 2 - length * t;
-      final radius = 0.052 + 0.023 * t;
-      final cx = cos(bendPhase) * bendAmp * sin(t * pi);
-      final cz = sin(bendPhase) * bendAmp * sin(t * pi);
-      final char = _smoothstep(
-        0.55,
-        0.92,
-        1 - t + 0.08 * noise.getNoise2(t * 3.0, 41.0),
-      );
-      for (var s = 0; s <= rs; s++) {
-        final theta = 2 * pi * s / rs;
+      for (var s = 0; s <= arcSegs; s++) {
+        final theta = theta0 + wedge * s / arcSegs;
         final ct = cos(theta);
         final st = sin(theta);
-        final lump = 1.0 + 0.10 * noise.getNoise3(ct * 2.2, st * 2.2, t * 3.5);
-        positions.addAll([cx + ct * radius * lump, y, cz + st * radius * lump]);
-        final n = vm.Vector3(ct, 0.08, st)..normalize();
+        final radius = radiusAt(t) * lumpAt(theta, t);
+        positions.addAll([ct * radius, y, st * radius]);
+        final n = vm.Vector3(ct, 0.06, st)..normalize();
         normals.addAll([n.x, n.y, n.z]);
-        texCoords.addAll([s / rs * 2.0, t]);
-        final charJ =
-            (char + 0.15 * noise.getNoise3(ct * 3.0, st * 3.0, t * 5.0 + 9.0))
-                .clamp(0.0, 1.0);
-        colors.addAll([
-          1.0 + (charcoal.$1 - 1.0) * charJ,
-          1.0 + (charcoal.$2 - 1.0) * charJ,
-          1.0 + (charcoal.$3 - 1.0) * charJ,
-          1.0,
-        ]);
+        texCoords.addAll([s / arcSegs * (wedge / pi), t]);
+        colors.addAll(charColor(charAt(t, ct, st)));
       }
     }
     for (var r = 0; r < hs; r++) {
-      for (var s = 0; s < rs; s++) {
+      for (var s = 0; s < arcSegs; s++) {
         final a = r * columns + s;
         final b = a + 1;
         final c = a + columns;
@@ -802,51 +811,100 @@ class ExampleParticlesState extends State<ExampleParticles> {
       indices: indices,
     );
 
-    // Growth-ring caps, wound to face outward along each end.
-    final capPositions = <double>[];
-    final capNormals = <double>[];
-    final capUv = <double>[];
-    final capColors = <double>[];
-    final capIndices = <int>[];
-    void addCap(double y, double radius, double ny, double char) {
-      final center = capPositions.length ~/ 3;
-      capPositions.addAll([0, y, 0]);
-      capNormals.addAll([0, ny, 0]);
-      capUv.addAll([0.5, 0.5]);
-      final tint = 1.0 - 0.9 * char;
-      capColors.addAll([tint, tint, tint, 1]);
-      final rim = capPositions.length ~/ 3;
-      for (var s = 0; s <= rs; s++) {
-        final theta = 2 * pi * s / rs;
-        capPositions.addAll([cos(theta) * radius, y, sin(theta) * radius]);
-        capNormals.addAll([0, ny, 0]);
-        capUv.addAll([0.5 + 0.5 * cos(theta), 0.5 + 0.5 * sin(theta)]);
-        capColors.addAll([tint, tint, tint, 1]);
+    // Split faces: two flat planes from the axis out to the bark rim, grain
+    // running along the length.
+    final fp = <double>[];
+    final fn = <double>[];
+    final fuv = <double>[];
+    final fc = <double>[];
+    final fi = <int>[];
+    void addFace(double theta, bool flip) {
+      final ct = cos(theta);
+      final st = sin(theta);
+      // The face's outward normal is perpendicular to the split plane.
+      final n = flip ? vm.Vector3(st, 0, -ct) : vm.Vector3(-st, 0, ct);
+      final base = fp.length ~/ 3;
+      for (var r = 0; r <= hs; r++) {
+        final t = r / hs;
+        final y = length / 2 - length * t;
+        final rim = radiusAt(t) * lumpAt(theta, t);
+        fp.addAll([0, y, 0, ct * rim, y, st * rim]);
+        fn.addAll([n.x, n.y, n.z, n.x, n.y, n.z]);
+        fuv.addAll([0.0, t, 1.0, t]);
+        final char = charAt(t, ct, st);
+        fc.addAll([...charColor(char), ...charColor(char)]);
       }
-      for (var s = 0; s < rs; s++) {
+      for (var r = 0; r < hs; r++) {
+        final a = base + r * 2;
+        final b = a + 1;
+        final c = a + 2;
+        final d = a + 3;
+        fi.addAll(flip ? [a, b, c, c, b, d] : [a, c, b, b, c, d]);
+      }
+    }
+
+    addFace(theta0, true);
+    addFace(theta0 + wedge, false);
+    final flats = MeshGeometry.fromArrays(
+      positions: Float32List.fromList(fp),
+      normals: Float32List.fromList(fn),
+      texCoords: Float32List.fromList(fuv),
+      colors: Float32List.fromList(fc),
+      indices: fi,
+    );
+
+    // End caps: wedge slices fanned from the axis, with the ring texture's
+    // center at the apex so the growth rings read as the tree's core.
+    final cp = <double>[];
+    final cn = <double>[];
+    final cuv = <double>[];
+    final cc = <double>[];
+    final ci = <int>[];
+    void addCap(double t, double ny, double char) {
+      final y = length / 2 - length * t;
+      final apex = cp.length ~/ 3;
+      cp.addAll([0, y, 0]);
+      cn.addAll([0, ny, 0]);
+      cuv.addAll([0.5, 0.5]);
+      cc.addAll(charColor(char));
+      final rim = cp.length ~/ 3;
+      const uvScale = 0.5 / 0.094;
+      for (var s = 0; s <= arcSegs; s++) {
+        final theta = theta0 + wedge * s / arcSegs;
+        final radius = radiusAt(t) * lumpAt(theta, t);
+        cp.addAll([cos(theta) * radius, y, sin(theta) * radius]);
+        cn.addAll([0, ny, 0]);
+        cuv.addAll([
+          0.5 + cos(theta) * radius * uvScale,
+          0.5 + sin(theta) * radius * uvScale,
+        ]);
+        cc.addAll(charColor(char));
+      }
+      for (var s = 0; s < arcSegs; s++) {
         final r0 = rim + s;
         final r1 = rim + s + 1;
-        capIndices.addAll(ny > 0 ? [center, r0, r1] : [center, r1, r0]);
+        ci.addAll(ny > 0 ? [apex, r0, r1] : [apex, r1, r0]);
       }
     }
 
     // The tip cap sits in the fire, so it bakes almost fully charred.
-    addCap(length / 2, 0.052, 1, 0.9);
-    addCap(-length / 2, 0.075, -1, 0.0);
+    addCap(0.0, 1, 0.9);
+    addCap(1.0, -1, 0.0);
     final caps = MeshGeometry.fromArrays(
-      positions: Float32List.fromList(capPositions),
-      normals: Float32List.fromList(capNormals),
-      texCoords: Float32List.fromList(capUv),
-      colors: Float32List.fromList(capColors),
-      indices: capIndices,
+      positions: Float32List.fromList(cp),
+      normals: Float32List.fromList(cn),
+      texCoords: Float32List.fromList(cuv),
+      colors: Float32List.fromList(cc),
+      indices: ci,
     );
-    return (bark, caps);
+    return (bark, flats, caps);
   }
 
-  // Assembles one log: bark mesh with a per-log ember-crack material (so
-  // each charred tip pulses on its own rhythm) and a growth-ring cap child.
+  // Assembles one split log: bark arc with a per-log ember-crack material
+  // (so each charred tip pulses on its own rhythm), split-wood faces, and
+  // growth-ring cap children.
   Node _logNode(
-    (MeshGeometry, MeshGeometry) shape,
+    (MeshGeometry, MeshGeometry, MeshGeometry) shape,
     vm.Matrix4 transform,
     double phase,
   ) {
@@ -860,11 +918,15 @@ class ExampleParticlesState extends State<ExampleParticles> {
           ..roughnessFactor = 1.0
           ..metallicFactor = 1.0
           ..normalScale = 1.0;
+    final woodMaterial = PhysicallyBasedMaterial(baseColorTexture: _splitWood)
+      ..roughnessFactor = 0.8
+      ..metallicFactor = 0.0;
     final capMaterial = PhysicallyBasedMaterial(baseColorTexture: _logRings)
       ..roughnessFactor = 0.85
       ..metallicFactor = 0.0;
     return Node(mesh: Mesh(shape.$1, barkMaterial), localTransform: transform)
-      ..add(Node(mesh: Mesh(shape.$2, capMaterial)))
+      ..add(Node(mesh: Mesh(shape.$2, woodMaterial)))
+      ..add(Node(mesh: Mesh(shape.$3, capMaterial)))
       ..addComponent(_EmberPulse(barkMaterial, phase));
   }
 
@@ -2100,6 +2162,53 @@ Future<ui.Image> _bakeEmberCracks() async {
       pixels[o] = (glow * 255).round();
       pixels[o + 1] = (glow * 0.45 * 255).round();
       pixels[o + 2] = (glow * 0.10 * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Bakes the split-wood face: pale cleaved wood with long fibrous grain
+/// streaks running the length of the log (v), torn and uneven the way an
+/// axe leaves it.
+Future<ui.Image> _bakeSplitWood() async {
+  const w = 128;
+  const h = 512;
+  final pixels = Uint8List(w * h * 4);
+  final grainNoise = FastNoiseLite()
+    ..seed = 74
+    ..frequency = 1.0
+    ..fractalType = FractalType.ridged
+    ..octaves = 3;
+  final tearNoise = FastNoiseLite()
+    ..seed = 75
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 2;
+  for (var py = 0; py < h; py++) {
+    final v = (py + 0.5) / h;
+    for (var px = 0; px < w; px++) {
+      final u = (px + 0.5) / w;
+      // Long streaks: high frequency across the face, low along the length,
+      // wavering slightly so the grain is not ruler-straight.
+      final waver = 0.06 * tearNoise.getNoise2(u * 3.0, v * 1.5);
+      final grain =
+          grainNoise.getNoise2((u + waver) * 14.0, v * 2.0) * 0.5 + 0.5;
+      final tear = tearNoise.getNoise2(u * 6.0, v * 9.0) * 0.5 + 0.5;
+      final shade = (0.62 + 0.30 * grain) * (0.82 + 0.18 * tear);
+      final o = (py * w + px) * 4;
+      pixels[o] = ((0.72 * shade).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 1] = ((0.57 * shade).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = ((0.38 * shade).clamp(0.0, 1.0) * 255).round();
       pixels[o + 3] = 255;
     }
     if (py % 128 == 127) await Future<void>.delayed(Duration.zero);

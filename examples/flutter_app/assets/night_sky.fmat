@@ -68,9 +68,16 @@ sky {
     }
     vec3 star_dir = normalize(id + 0.5 + (h - 0.5) * 0.6);
     float dist = length(d - star_dir) * scale;
-    float radius = 0.03 + 0.05 * h.y * h.y;
+    // Brightness rolls steeply so almost every star is faint and tiny; size
+    // follows brightness, so only the rare bright ones grow at all. The
+    // squared gaussian keeps points point-like instead of soft blobs, and
+    // only bright stars carry a whisper of halo.
+    float bright = pow(h.z, 12.0);
+    float radius = 0.012 + 0.05 * bright;
     float shape = exp(-dist * dist / (radius * radius));
-    float magnitude = 0.08 + 5.0 * pow(h.z, 7.0);
+    shape *= shape;
+    shape += bright * 0.2 * exp(-dist * dist / (radius * radius * 16.0));
+    float magnitude = 0.05 + 6.0 * bright;
     // Atmospheric scintillation: faster and deeper for dimmer stars.
     float twinkle =
         0.78 + 0.30 * sin(material_params.time * (1.5 + 3.5 * h.y) + h.z * 40.0);
@@ -84,26 +91,29 @@ sky {
     float up = d.y;
 
     // Base gradient with large-scale variation so the zenith never reads as
-    // a flat fill or bands.
+    // a flat fill or bands. Above and below horizon blend across several
+    // degrees, so no hard line floats over the terrain silhouette.
     vec3 zenith = vec3(0.0035, 0.006, 0.016);
     vec3 ground = vec3(0.006, 0.005, 0.004);
-    vec3 color;
-    if (up >= 0.0) {
-      color = mix(material_params.horizon_color, zenith, pow(up, 0.6));
-      color *= 0.88 + 0.24 * Fbm(d * 1.3 + 5.0);
-    } else {
-      color = mix(material_params.horizon_color, ground, sqrt(-up));
-      return color;
-    }
+    vec3 above = mix(material_params.horizon_color, zenith,
+                     pow(clamp(up, 0.0, 1.0), 0.6));
+    above *= 0.88 + 0.24 * Fbm(d * 1.3 + 5.0);
+    vec3 below = mix(material_params.horizon_color, ground,
+                     clamp(-up * 2.5, 0.0, 1.0));
+    vec3 color = mix(below, above, smoothstep(-0.03, 0.04, up));
 
-    // Horizon haze: a low band, cool overall with a warm side (distant light
-    // pollution), fading fast with altitude.
-    float band = exp(-up * 9.0);
+    // Horizon haze: a low band hugging the horizon, cool overall with a warm
+    // side (distant light pollution), fading fast with altitude so the glow
+    // sits behind the terrain instead of riding up the sky.
+    float band = exp(-abs(up) * 16.0);
     float warm_side = smoothstep(-0.4, 0.9, dot(normalize(vec2(d.x, d.z)),
                                                 vec2(0.8, -0.6)));
-    color += mix(vec3(0.012, 0.016, 0.026), vec3(0.030, 0.020, 0.010),
+    color += mix(vec3(0.010, 0.014, 0.022), vec3(0.026, 0.017, 0.008),
                  warm_side) *
              band;
+    if (up <= 0.0) {
+      return color;
+    }
 
     // Stars sink into the atmosphere near the horizon.
     float extinction = smoothstep(0.0, 0.16, up);
