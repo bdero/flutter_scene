@@ -435,6 +435,14 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                           ),
                           const Spacer(),
                           IconButton(
+                            icon: const Icon(Icons.receipt_long),
+                            tooltip: 'Print all settings to the log',
+                            onPressed: () => debugPrint(
+                              'Shared settings dump:\n'
+                              '${exampleSettings.describe()}',
+                            ),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.close),
                             tooltip: 'Close settings',
                             onPressed: () => setState(() => _expanded = false),

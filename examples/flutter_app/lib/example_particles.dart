@@ -908,6 +908,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
     vm.Matrix4 transform,
     double phase,
   ) {
+    // Double-sided: the wedge is an open shell of hand-wound strips, so a
+    // face whose winding disagrees with the engine's model-space convention
+    // would otherwise cull away; the explicit normals keep lighting correct.
     final barkMaterial =
         PhysicallyBasedMaterial(
             baseColorTexture: _barkAlbedo,
@@ -917,13 +920,16 @@ class ExampleParticlesState extends State<ExampleParticles> {
           )
           ..roughnessFactor = 1.0
           ..metallicFactor = 1.0
-          ..normalScale = 1.0;
+          ..normalScale = 1.0
+          ..doubleSided = true;
     final woodMaterial = PhysicallyBasedMaterial(baseColorTexture: _splitWood)
       ..roughnessFactor = 0.8
-      ..metallicFactor = 0.0;
+      ..metallicFactor = 0.0
+      ..doubleSided = true;
     final capMaterial = PhysicallyBasedMaterial(baseColorTexture: _logRings)
       ..roughnessFactor = 0.85
-      ..metallicFactor = 0.0;
+      ..metallicFactor = 0.0
+      ..doubleSided = true;
     return Node(mesh: Mesh(shape.$1, barkMaterial), localTransform: transform)
       ..add(Node(mesh: Mesh(shape.$2, woodMaterial)))
       ..add(Node(mesh: Mesh(shape.$3, capMaterial)))
@@ -1486,8 +1492,6 @@ class ExampleParticlesState extends State<ExampleParticles> {
   // straight into code as new defaults.
   void _printSettings() {
     final s = exampleSettings;
-    final ao = s.ambientOcclusion;
-    final grading = s.colorGrading;
     debugPrint('''
 Campfire settings dump:
   intensity: $_intensity
@@ -1513,29 +1517,7 @@ Campfire settings dump:
   hillFrequency: $_hillFrequency
   hillHeight: $_hillHeight
 Shared settings:
-  directionalLightEnabled: ${s.directionalLightEnabled}
-  lightAzimuthDegrees: ${s.lightAzimuthDegrees}
-  lightElevationDegrees: ${s.lightElevationDegrees}
-  lightIntensity: ${s.lightIntensity}
-  lightColor: ${s.lightColor.x}, ${s.lightColor.y}, ${s.lightColor.z}
-  lightCastsShadow: ${s.lightCastsShadow}
-  shadowSoftness: ${s.shadowSoftness}
-  shadowFadeRange: ${s.shadowFadeRange}
-  shadowCascadeCount: ${s.shadowCascadeCount}
-  shadowMaxDistance: ${s.shadowMaxDistance}
-  shadowCascadeSplitLambda: ${s.shadowCascadeSplitLambda}
-  shadowMapResolution: ${s.shadowMapResolution}
-  shadowDepthBias: ${s.shadowDepthBias}
-  shadowNormalBias: ${s.shadowNormalBias}
-  shadowAmbientStrength: ${s.shadowAmbientStrength}
-  ambientOcclusion: enabled ${ao.enabled}, radius ${ao.radius}, intensity ${ao.intensity}, bias ${ao.bias}, sampleCount ${ao.sampleCount}, halfResolution ${ao.halfResolution}, specularMode ${ao.specularMode}
-  colorGrading: enabled ${grading.enabled}, brightness ${grading.brightness}, contrast ${grading.contrast}, saturation ${grading.saturation}, temperature ${grading.temperature}, tint ${grading.tint}
-  bloom: enabled ${s.bloom.enabled}, threshold ${s.bloom.threshold}, intensity ${s.bloom.intensity}, scatter ${s.bloom.scatter}
-  chromaticAberration: enabled ${s.chromaticAberration.enabled}, intensity ${s.chromaticAberration.intensity}
-  vignette: enabled ${s.vignette.enabled}, intensity ${s.vignette.intensity}, radius ${s.vignette.radius}, smoothness ${s.vignette.smoothness}
-  filmGrain: enabled ${s.filmGrain.enabled}, intensity ${s.filmGrain.intensity}
-  antiAliasingMode: ${s.antiAliasingMode}
-  renderScale: ${s.renderScale}''');
+${s.describe()}''');
   }
 
   Widget _buildPanel() {

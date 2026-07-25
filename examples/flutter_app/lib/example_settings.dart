@@ -100,6 +100,34 @@ class ExampleSettings {
   /// Amplitude of the custom wave effect.
   double waveAmplitude = 0.008;
 
+  /// Every shared setting as a labeled multi-line block, for dumping a
+  /// hand-tuned look to the log so it can be copied into code.
+  String describe() =>
+      '''
+  directionalLightEnabled: $directionalLightEnabled
+  lightAzimuthDegrees: $lightAzimuthDegrees
+  lightElevationDegrees: $lightElevationDegrees
+  lightIntensity: $lightIntensity
+  lightColor: ${lightColor.x}, ${lightColor.y}, ${lightColor.z}
+  lightCastsShadow: $lightCastsShadow
+  shadowSoftness: $shadowSoftness
+  shadowFadeRange: $shadowFadeRange
+  shadowCascadeCount: $shadowCascadeCount
+  shadowMaxDistance: $shadowMaxDistance
+  shadowCascadeSplitLambda: $shadowCascadeSplitLambda
+  shadowMapResolution: $shadowMapResolution
+  shadowDepthBias: $shadowDepthBias
+  shadowNormalBias: $shadowNormalBias
+  shadowAmbientStrength: $shadowAmbientStrength
+  ambientOcclusion: enabled ${ambientOcclusion.enabled}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
+  colorGrading: enabled ${colorGrading.enabled}, brightness ${colorGrading.brightness}, contrast ${colorGrading.contrast}, saturation ${colorGrading.saturation}, temperature ${colorGrading.temperature}, tint ${colorGrading.tint}
+  bloom: enabled ${bloom.enabled}, threshold ${bloom.threshold}, intensity ${bloom.intensity}, scatter ${bloom.scatter}
+  chromaticAberration: enabled ${chromaticAberration.enabled}, intensity ${chromaticAberration.intensity}
+  vignette: enabled ${vignette.enabled}, intensity ${vignette.intensity}, radius ${vignette.radius}, smoothness ${vignette.smoothness}
+  filmGrain: enabled ${filmGrain.enabled}, intensity ${filmGrain.intensity}
+  antiAliasingMode: $antiAliasingMode
+  renderScale: $renderScale''';
+
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
     if (scene.antiAliasingMode != antiAliasingMode) {
