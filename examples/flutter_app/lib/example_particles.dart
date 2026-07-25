@@ -46,6 +46,13 @@ class _FirelightFlicker extends Component {
   final PointLight light;
   double baseIntensity;
   double height = 0.9;
+
+  /// How deep the flicker modulates the intensity (0 steady, 1 guttering).
+  double flickerDepth = 0.5;
+
+  /// Multiplier on the flicker's noise rate.
+  double flickerRate = 1.0;
+
   final FastNoiseLite _noise = FastNoiseLite()
     ..frequency = 1.0
     ..fractalType = FractalType.fbm
@@ -55,10 +62,11 @@ class _FirelightFlicker extends Component {
   @override
   void update(double deltaSeconds) {
     _t += deltaSeconds;
-    final n = _noise.getNoise2(_t * 3.2, 3.7) * 0.5 + 0.5;
-    light.intensity = baseIntensity * (0.7 + 0.5 * n);
-    final jx = _noise.getNoise2(_t * 2.2, 11.3) * 0.05;
-    final jz = _noise.getNoise2(_t * 2.2, 17.9) * 0.05;
+    final n = _noise.getNoise2(_t * 3.2 * flickerRate, 3.7) * 0.5 + 0.5;
+    light.intensity =
+        baseIntensity * ((1.0 - 0.6 * flickerDepth) + flickerDepth * n);
+    final jx = _noise.getNoise2(_t * 2.2 * flickerRate, 11.3) * 0.05;
+    final jz = _noise.getNoise2(_t * 2.2 * flickerRate, 17.9) * 0.05;
     node.localTransform = vm.Matrix4.translation(vm.Vector3(jx, height, jz));
   }
 }
@@ -154,11 +162,14 @@ class _CoalGlow extends Component {
     ..octaves = 2;
   double _t = 0;
 
+  /// Scales the whole bed's brightness, driven by the coal-glow slider.
+  double intensityScale = 1.0;
+
   @override
   void update(double deltaSeconds) {
     _t += deltaSeconds;
     final n = _noise.getNoise2(_t * 1.6 + phase * 13.7, phase) * 0.5 + 0.5;
-    final s = 0.45 + 0.75 * n;
+    final s = (0.45 + 0.75 * n) * intensityScale;
     material.emissiveFactor = vm.Vector4(
       _base.x * s,
       _base.y * s,
@@ -220,12 +231,15 @@ class _EmberPulse extends Component {
     ..octaves = 2;
   double _t = 0;
 
+  /// Scales the crack glow, driven by the coal-glow slider.
+  double intensityScale = 1.0;
+
   @override
   void update(double deltaSeconds) {
     _t += deltaSeconds;
     final n =
         _noise.getNoise2(_t * 1.3 + phase * 17.1, phase * 5.3) * 0.5 + 0.5;
-    final s = 0.4 + 0.8 * n;
+    final s = (0.4 + 0.8 * n) * intensityScale;
     material.emissiveFactor = vm.Vector4(2.2 * s, 0.55 * s, 0.07 * s, 1.0);
   }
 }
@@ -250,6 +264,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _fogAmount = 1.28;
   double _fireReach = 1.0;
   double _fireFalloff = 2.0;
+  final vm.Vector3 _fireColor = vm.Vector3(1.0, 0.52, 0.18);
+  double _flickerDepth = 0.5;
+  double _flickerRate = 1.0;
+  double _fillHeight = 2.3;
+  double _fillFalloff = 2.0;
+  double _coalGlowAmount = 1.0;
 
   // Firefly tuning (see _applyParams).
   double _fireflySpeed = 1.4;
@@ -306,6 +326,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late _FirelightFlicker _flicker;
   late _FirelightFlicker _fillFlicker;
   late PointLight _firelight;
+  late PointLight _fillLight;
+  final List<_CoalGlow> _coalGlows = [];
+  final List<_EmberPulse> _emberPulses = [];
   final List<(TurbulenceModule, double)> _flameTurbs = [];
   final List<(TurbulenceModule, double)> _emberTurbs = [];
   final List<(AccelerationModule, double)> _winds = [];
@@ -408,12 +431,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
     // The fill: a dimmer, higher warm light whose near field lands on
     // nothing but smoke, lifting the tree line and far grass independently
     // of the key (the Fire reach slider).
-    final fillLight = PointLight(color: vm.Vector3(1.0, 0.52, 0.18));
-    _fillFlicker = _FirelightFlicker(fillLight, 0.0)..height = 2.3;
+    _fillLight = PointLight(color: vm.Vector3(1.0, 0.52, 0.18));
+    _fillFlicker = _FirelightFlicker(_fillLight, 0.0)..height = 2.3;
     scene.add(
       Node()
         ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 2.3, 0))
-        ..addComponent(PointLightComponent(fillLight))
+        ..addComponent(PointLightComponent(_fillLight))
         ..addComponent(_fillFlicker),
     );
 
@@ -571,8 +594,26 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ..metallicFactor = _leafMetal;
     }
     _flicker.baseIntensity = 7.0 * _intensity;
-    _firelight.falloffExponent = _fireFalloff;
-    _fillFlicker.baseIntensity = 40.0 * _fireReach * _intensity;
+    _flicker
+      ..flickerDepth = _flickerDepth
+      ..flickerRate = _flickerRate;
+    _firelight
+      ..falloffExponent = _fireFalloff
+      ..color.setFrom(_fireColor);
+    _fillFlicker
+      ..baseIntensity = 40.0 * _fireReach * _intensity
+      ..height = _fillHeight
+      ..flickerDepth = _flickerDepth * 0.5
+      ..flickerRate = _flickerRate;
+    _fillLight
+      ..falloffExponent = _fillFalloff
+      ..color.setFrom(_fireColor);
+    for (final glow in _coalGlows) {
+      glow.intensityScale = _coalGlowAmount;
+    }
+    for (final pulse in _emberPulses) {
+      pulse.intensityScale = _coalGlowAmount;
+    }
   }
 
   // Registers a turbulence module into [group] (whose slider scales its
@@ -1420,10 +1461,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..roughnessFactor = 0.85
       ..metallicFactor = 0.0
       ..doubleSided = true;
+    final pulse = _EmberPulse(barkMaterial, phase);
+    _emberPulses.add(pulse);
     return Node(mesh: Mesh(shape.$1, barkMaterial), localTransform: transform)
       ..add(Node(mesh: Mesh(shape.$2, woodMaterial)))
       ..add(Node(mesh: Mesh(shape.$3, capMaterial)))
-      ..addComponent(_EmberPulse(barkMaterial, phase));
+      ..addComponent(pulse);
   }
 
   // A rock: an icosphere displaced by fbm noise. Vertices stay shared so
@@ -1617,7 +1660,11 @@ class ExampleParticlesState extends State<ExampleParticles> {
                     ),
                   ),
               ),
-        )..addComponent(_CoalGlow(material, i / coalCount)),
+        )..addComponent(() {
+          final glow = _CoalGlow(material, i / coalCount);
+          _coalGlows.add(glow);
+          return glow;
+        }()),
       );
     }
   }
@@ -2006,6 +2053,12 @@ Campfire settings dump:
   fogAmount: $_fogAmount
   fireReach: $_fireReach
   fireFalloff: $_fireFalloff
+  fireColor: ${_fireColor.x}, ${_fireColor.y}, ${_fireColor.z}
+  flickerDepth: $_flickerDepth
+  flickerRate: $_flickerRate
+  fillHeight: $_fillHeight
+  fillFalloff: $_fillFalloff
+  coalGlow: $_coalGlowAmount
   fireflySpeed: $_fireflySpeed
   fireflyWander: $_fireflyWander
   fireflyBlink: $_fireflyBlink
@@ -2176,6 +2229,86 @@ ${s.describe()}''');
             max: 2.4,
             onChanged: (v) => setState(() {
               _fireFalloff = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fire R',
+            value: _fireColor.x,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _fireColor.x = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fire G',
+            value: _fireColor.y,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _fireColor.y = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fire B',
+            value: _fireColor.z,
+            min: 0.0,
+            max: 1.5,
+            onChanged: (v) => setState(() {
+              _fireColor.z = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Flicker depth',
+            value: _flickerDepth,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() {
+              _flickerDepth = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Flicker rate',
+            value: _flickerRate,
+            min: 0.2,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _flickerRate = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fill height',
+            value: _fillHeight,
+            min: 1.0,
+            max: 4.0,
+            onChanged: (v) => setState(() {
+              _fillHeight = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fill falloff',
+            value: _fillFalloff,
+            min: 1.0,
+            max: 2.4,
+            onChanged: (v) => setState(() {
+              _fillFalloff = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Coal glow',
+            value: _coalGlowAmount,
+            min: 0.0,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _coalGlowAmount = v;
               _applyParams();
             }),
           ),
