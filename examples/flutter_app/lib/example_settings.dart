@@ -33,6 +33,12 @@ class ExampleSettings {
   /// Screen-space ambient occlusion shared across the examples.
   final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
 
+  /// Volumetric god rays shared across the examples. Disabled by default.
+  final GodRaysSettings godRays = GodRaysSettings();
+
+  /// Depth of field shared across the examples. Disabled by default.
+  final DepthOfField depthOfField = DepthOfField();
+
   /// Anti-aliasing mode shared across the examples.
   AntiAliasingMode antiAliasingMode = AntiAliasingMode.auto;
 
@@ -122,6 +128,8 @@ class ExampleSettings {
   ambientOcclusion: enabled ${ambientOcclusion.enabled}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
   colorGrading: enabled ${colorGrading.enabled}, brightness ${colorGrading.brightness}, contrast ${colorGrading.contrast}, saturation ${colorGrading.saturation}, temperature ${colorGrading.temperature}, tint ${colorGrading.tint}
   bloom: enabled ${bloom.enabled}, threshold ${bloom.threshold}, intensity ${bloom.intensity}, scatter ${bloom.scatter}
+  godRays: enabled ${godRays.enabled}, intensity ${godRays.intensity}, density ${godRays.density}, anisotropy ${godRays.anisotropy}, stepCount ${godRays.stepCount}, maxDistance ${godRays.maxDistance}, jitter ${godRays.jitter}, color ${godRays.color.x}, ${godRays.color.y}, ${godRays.color.z}
+  depthOfField: enabled ${depthOfField.enabled}, focusDistance ${depthOfField.focusDistance}, fStop ${depthOfField.fStop}, focalLength ${depthOfField.focalLength}, sensorHeight ${depthOfField.sensorHeight}, blurScale ${depthOfField.blurScale}, maxForegroundBlur ${depthOfField.maxForegroundBlur}, maxBackgroundBlur ${depthOfField.maxBackgroundBlur}, bladeCount ${depthOfField.bladeCount}, bladeRotation ${depthOfField.bladeRotation}, bladeCurvature ${depthOfField.bladeCurvature}, quality ${depthOfField.quality}
   chromaticAberration: enabled ${chromaticAberration.enabled}, intensity ${chromaticAberration.intensity}
   vignette: enabled ${vignette.enabled}, intensity ${vignette.intensity}, radius ${vignette.radius}, smoothness ${vignette.smoothness}
   filmGrain: enabled ${filmGrain.enabled}, intensity ${filmGrain.intensity}
@@ -175,6 +183,30 @@ class ExampleSettings {
     ao.sampleCount = ambientOcclusion.sampleCount;
     ao.halfResolution = ambientOcclusion.halfResolution;
     ao.specularMode = ambientOcclusion.specularMode;
+
+    final rays = scene.godRays;
+    rays.enabled = godRays.enabled;
+    rays.intensity = godRays.intensity;
+    rays.density = godRays.density;
+    rays.anisotropy = godRays.anisotropy;
+    rays.stepCount = godRays.stepCount;
+    rays.maxDistance = godRays.maxDistance;
+    rays.jitter = godRays.jitter;
+    rays.color.setFrom(godRays.color);
+
+    final dof = scene.depthOfField;
+    dof.enabled = depthOfField.enabled;
+    dof.focusDistance = depthOfField.focusDistance;
+    dof.fStop = depthOfField.fStop;
+    dof.focalLength = depthOfField.focalLength;
+    dof.sensorHeight = depthOfField.sensorHeight;
+    dof.blurScale = depthOfField.blurScale;
+    dof.maxForegroundBlur = depthOfField.maxForegroundBlur;
+    dof.maxBackgroundBlur = depthOfField.maxBackgroundBlur;
+    dof.bladeCount = depthOfField.bladeCount;
+    dof.bladeRotation = depthOfField.bladeRotation;
+    dof.bladeCurvature = depthOfField.bladeCurvature;
+    dof.quality = depthOfField.quality;
 
     if (directionalLightEnabled) {
       // Derive the travel direction from azimuth/elevation: elevation lifts

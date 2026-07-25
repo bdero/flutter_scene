@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/src/components/mesh_particle_emitter_component.dart';
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
 import 'package:flutter_scene/src/components/trail_component.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart'
@@ -249,7 +250,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   bool _ready = false;
 
   // Live fire tuning (see _applyParams).
-  double _intensity = 1.88;
+  double _intensity = 2.0;
   double _flameScale = 0.94;
   double _flameWidth = 1.51;
   double _flipbookSpeed = 0.68;
@@ -267,13 +268,30 @@ class ExampleParticlesState extends State<ExampleParticles> {
   final vm.Vector3 _fireColor = vm.Vector3(1.0, 0.52, 0.18);
   double _flickerDepth = 0.5;
   double _flickerRate = 1.0;
-  double _fillHeight = 2.3;
-  double _fillFalloff = 2.0;
+  double _fillHeight = 1.32;
+  double _fillFalloff = 1.66;
   double _coalGlowAmount = 1.0;
+
+  // Ambient drift tuning (see _applyParams).
+  double _leafFall = 1.05;
+  double _moteAmount = 2.09;
+  // Heat haze (see _updateHeatHaze). Master strength plus the material's look
+  // and the quad's placement, all pushed live each tick.
+  double _heatHaze = 1.09;
+  double _hazeDisplacement = 0.0127;
+  double _hazeNoise = 6.97;
+  double _hazeSplit = 0.062;
+  double _hazeBase = 0.47;
+  double _hazeTop = 0.63;
+  double _hazeSpread = 0.23;
+  double _hazeX = 0.0;
+  double _hazeY = 2.45;
+  double _hazeWidth = 1.0;
+  double _hazeHeight = 1.0;
 
   // Firefly tuning (see _applyParams).
   double _fireflySpeed = 1.4;
-  double _fireflyWander = 1.0;
+  double _fireflyWander = 2.9;
   double _fireflyBlink = 0.54;
   double _fireflyLight = 0.53;
   double _fireflyTrailWidth = 0.02;
@@ -281,17 +299,27 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _fireflyTrailGlow = 2.65;
 
   // Foliage surface tuning (see _applyParams).
-  final vm.Vector3 _grassColor = vm.Vector3(1, 1, 1);
+  final vm.Vector3 _grassColor = vm.Vector3(1.13, 1.13, 1.5);
   double _grassRough = 0.9;
   double _grassMetal = 0.0;
-  final vm.Vector3 _leafColor = vm.Vector3(1, 1, 1);
-  double _leafRough = 0.74;
-  double _leafMetal = 0.08;
+  final vm.Vector3 _leafColor = vm.Vector3(1.5, 0.64, 1.5);
+  double _leafRough = 0.66;
+  double _leafMetal = 0.084;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
   double _hillFrequency = 0.11;
   double _hillHeight = 0.18;
+  // Horizon bend. Raising the curvature pulls the visible tree line in, since
+  // the ground goes out of sight where the camera's line of sight runs
+  // tangent to the bend.
+  double _curvature = 0.0151;
+  double _curveStart = 11.08;
+  double _curveFade = 0.754;
+  // Forest scatter. Both rebuild the merged geometry, so they only take
+  // effect when their slider is released.
+  double _forestSpacing = 0.688;
+  double _forestLeafDensity = 2.0;
 
   // Base spawn rates the intensity/density sliders scale.
   static const double _coreRate = 18.0;
@@ -300,6 +328,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   static const double _smokeRate = 10.0;
   static const double _emberRate = 14.0;
   static const double _fogRate = 2.2;
+  static const double _leafFallRate = 5.0;
+  static const double _moteRate = 24.0;
 
   late ParticleSystem _coreSystem;
   late ParticleSystem _tongueSystem;
@@ -307,6 +337,11 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late ParticleSystem _smokeSystem;
   late ParticleSystem _emberSystem;
   late ParticleSystem _fogSystem;
+  late ParticleSystem _leafFallSystem;
+  late ParticleSystem _moteSystem;
+  late PhysicallyBasedMaterial _leafFallMaterial;
+  late PreprocessedMaterial _heatMaterial;
+  late Node _heatNode;
   late ParticleEmitterComponent _coreEmitter;
   late ParticleEmitterComponent _tongueEmitter;
   late PreprocessedMaterial _grassMaterial;
@@ -319,10 +354,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late TextureSource _logRings;
   late TextureSource _splitWood;
   late TextureSource _leafCard;
+  late TextureSource _singleLeaf;
   final List<_TreeSway> _treeSways = [];
   final List<PhysicallyBasedMaterial> _leafMaterials = [];
   late Node _groundNode;
   late Node _grassNode;
+  late Node _forestFloorNode;
+  late Node _forestWoodNode;
+  late Node _forestLeafNode;
+  // The background trio, all sharing the horizon-bend material.
+  late PreprocessedMaterial _forestFloorMaterial;
+  late PreprocessedMaterial _forestBark;
+  late PreprocessedMaterial _forestLeaf;
   late _FirelightFlicker _flicker;
   late _FirelightFlicker _fillFlicker;
   late PointLight _firelight;
@@ -407,7 +450,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _leafCard = GpuTextureSource(
       await gpuTextureFromImage(await _bakeLeafCard()),
     );
+    _singleLeaf = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeSingleLeaf()),
+    );
     _grassMaterial = await loadFmatMaterial('assets/campfire_grass.fmat');
+    // One material per background mesh, each a separate instance so they can
+    // carry their own textures while sharing the bend.
+    _forestFloorMaterial = await loadFmatMaterial(
+      'assets/campfire_curved.fmat',
+    );
+    _forestBark = await loadFmatMaterial('assets/campfire_curved.fmat');
+    _forestLeaf = await loadFmatMaterial('assets/campfire_curved.fmat');
+    _heatMaterial = await loadFmatMaterial('assets/campfire_heat.fmat');
 
     _buildCampsite(groundTexture, groundNormal, groundRough, stoneTexture);
 
@@ -417,6 +471,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
     scene.add(_smoke(smokeAtlas));
     scene.add(_embers(dot));
     scene.add(_groundFog(smokeAtlas));
+    scene.add(_fallingLeaves());
+    scene.add(_dustMotes(dot));
+    scene.add(_heatHazeNode());
 
     // The key firelight: hot, close, fast falloff (its exponent rides the
     // Fire falloff slider so the same light can reach further artistically).
@@ -486,6 +543,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _prewarm(_smokeSystem, 5.0);
     _prewarm(_emberSystem, 2.0);
     _prewarm(_fogSystem, 12.0);
+    // Leaves need long enough to have fallen from the canopy to the ground;
+    // motes long enough to fill the air.
+    _prewarm(_leafFallSystem, 8.0);
+    _prewarm(_moteSystem, 6.0);
     if (mounted) setState(() => _ready = true);
   }
 
@@ -509,6 +570,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _smokeSystem.spawner.rate = _smokeRate * _smokeAmount;
     _emberSystem.spawner.rate = _emberRate * _emberAmount;
     _fogSystem.spawner.rate = _fogRate * _fogAmount;
+    _leafFallSystem.spawner.rate = _leafFallRate * _leafFall;
+    _moteSystem.spawner.rate = _moteRate * _moteAmount;
     _emberSystem.startSpeed = UniformFloat(
       1.2 * _emberSpeed,
       2.6 * _emberSpeed,
@@ -581,7 +644,25 @@ class ExampleParticlesState extends State<ExampleParticles> {
       ..setFloat('wind_lean', _wind * 0.4)
       ..setVec3('color_tint', _grassColor)
       ..setFloat('roughness', _grassRough)
-      ..setFloat('metallic', _grassMetal);
+      ..setFloat('metallic', _grassMetal)
+      ..setFloat('curvature', _curvature)
+      ..setFloat('curve_start', _curveStart);
+    // Every background mesh has to bend by exactly the same amount, or the
+    // trees pull out of the ground they stand on.
+    for (final material in [_forestFloorMaterial, _forestBark, _forestLeaf]) {
+      material.parameters
+        ..setFloat('curvature', _curvature)
+        ..setFloat('curve_start', _curveStart)
+        ..setFloat('fade_strength', _curveFade);
+    }
+    // The merged foliage answers to the same leaf sliders as the hero trees.
+    _forestLeaf.parameters
+      ..setVec4(
+        'base_color',
+        vm.Vector4(_leafColor.x, _leafColor.y, _leafColor.z, 1),
+      )
+      ..setFloat('roughness', _leafRough)
+      ..setFloat('metallic', _leafMetal);
     for (final material in _leafMaterials) {
       material
         ..baseColorFactor = vm.Vector4(
@@ -644,6 +725,11 @@ class ExampleParticlesState extends State<ExampleParticles> {
   }
 
   static const double _groundRadius = 9.0;
+  // How far the forest floor and its trees run out past the campsite disc.
+  static const double _forestRadius = 26.0;
+  // How far the undergrowth follows them. Past this the horizon bend has
+  // taken the ground out of sight, so blades there would never be seen.
+  static const double _grassOuterRadius = 16.0;
   final FastNoiseLite _hillNoise = FastNoiseLite()
     ..seed = 51
     ..frequency = 1.0
@@ -703,6 +789,75 @@ class ExampleParticlesState extends State<ExampleParticles> {
     );
   }
 
+  // Binds one background mesh's textures onto its horizon-bend material.
+  void _bindCurved(
+    PreprocessedMaterial material,
+    TextureSource albedo,
+    TextureSource? normal,
+    TextureSource? metallicRoughness,
+  ) {
+    void bind(String name, TextureSource? source) {
+      final texture = source?.sampledTexture;
+      if (texture == null) return;
+      material.parameters.setTexture(
+        name,
+        texture,
+        sampler: source!.sampledSampler,
+      );
+    }
+
+    bind('base_color_texture', albedo);
+    bind('normal_texture', normal);
+    bind('metallic_roughness_texture', metallicRoughness);
+  }
+
+  // The forest floor, an annulus carrying the campsite terrain out to the
+  // tree line. It shares the ground material but spreads its planar UVs over
+  // the full forest radius, which keeps every texel outside the baked scorch
+  // ring instead of tiling the fire pit across the hills.
+  MeshGeometry _buildForestFloorGeometry() {
+    const rings = 26;
+    const segments = 72;
+    const eps = 0.15;
+    final positions = <double>[];
+    final normals = <double>[];
+    final texCoords = <double>[];
+    final indices = <int>[];
+    for (var i = 0; i <= rings; i++) {
+      // Rings bunch up near the campsite, where the slope still reads.
+      final t = pow(i / rings, 1.6).toDouble();
+      final r = _groundRadius + (_forestRadius - _groundRadius) * t;
+      for (var s = 0; s <= segments; s++) {
+        final theta = 2 * pi * s / segments;
+        final x = r * cos(theta);
+        final z = r * sin(theta);
+        final y = _groundHeight(x, z);
+        final hx = _groundHeight(x + eps, z) - _groundHeight(x - eps, z);
+        final hz = _groundHeight(x, z + eps) - _groundHeight(x, z - eps);
+        final n = vm.Vector3(-hx / (2 * eps), 1, -hz / (2 * eps))..normalize();
+        positions.addAll([x, y, z]);
+        normals.addAll([n.x, n.y, n.z]);
+        texCoords.addAll([
+          0.5 + x / (2 * _forestRadius),
+          0.5 + z / (2 * _forestRadius),
+        ]);
+      }
+    }
+    for (var i = 0; i < rings; i++) {
+      for (var s = 0; s < segments; s++) {
+        final a = i * (segments + 1) + s;
+        final b = (i + 1) * (segments + 1) + s;
+        indices.addAll([a, b, a + 1, a + 1, b, b + 1]);
+      }
+    }
+    return MeshGeometry.fromArrays(
+      positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      texCoords: Float32List.fromList(texCoords),
+      indices: Uint32List.fromList(indices),
+    );
+  }
+
   // Appends one tapered, forward-arced blade standing on the terrain at
   // (x, y, z), a vertical strip of a few segments so the shader's
   // root-anchored sway curves it smoothly (the grass material culls nothing,
@@ -722,6 +877,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
     required double y,
     required double z,
     double parched = 0.0,
+    double scale = 1.0,
   }) {
     const segments = 4;
     // Maturity: most blades roll young (shorter, greener), a minority mature
@@ -731,8 +887,9 @@ class ExampleParticlesState extends State<ExampleParticles> {
     final height =
         (0.16 + rng.nextDouble() * 0.16) *
         (0.85 + 0.45 * maturity) *
-        (1.0 - 0.5 * parched);
-    final width = 0.02 + rng.nextDouble() * 0.014;
+        (1.0 - 0.5 * parched) *
+        scale;
+    final width = (0.02 + rng.nextDouble() * 0.014) * scale;
     final bendAmount = 0.05 + rng.nextDouble() * 0.07;
     final yaw = rng.nextDouble() * 2 * pi;
     final side = vm.Vector3(cos(yaw), 0, sin(yaw));
@@ -831,6 +988,44 @@ class ExampleParticlesState extends State<ExampleParticles> {
       );
       placed++;
     }
+
+    // Undergrowth carrying the carpet out through the tree line, so the
+    // forest floor is not bare where the horizon bend still shows it.
+    // Density falls with distance while the blades grow, which holds the
+    // screen-space coverage roughly flat for a fraction of the geometry.
+    var outer = 0;
+    attempts = 0;
+    while (outer < 26000 && attempts < 400000) {
+      attempts++;
+      final a = rng.nextDouble() * 2 * pi;
+      final r = 8.0 + sqrt(rng.nextDouble()) * (_grassOuterRadius - 8.0);
+      final x = cos(a) * r;
+      final z = sin(a) * r;
+      if (rng.nextDouble() >
+          1.0 - 0.55 * _smoothstep(8.0, _grassOuterRadius, r)) {
+        continue;
+      }
+      // The same bald and clump masks as the clearing, so the two bands read
+      // as one field rather than two rings.
+      if (_hillNoise.getNoise2(x * 0.28 + 120, z * 0.28 + 120) < -0.35 &&
+          rng.nextDouble() > 0.12) {
+        continue;
+      }
+      if (_hillNoise.getNoise2(x * 0.9 + 50, z * 0.9 + 50) < -0.5) continue;
+      _appendBlade(
+        rng,
+        positions,
+        normals,
+        texCoords,
+        colors,
+        indices,
+        x: x,
+        y: _groundHeight(x, z),
+        z: z,
+        scale: 1.0 + 1.6 * _smoothstep(8.0, _grassOuterRadius, r),
+      );
+      outer++;
+    }
     return MeshGeometry.fromArrays(
       positions: Float32List.fromList(positions),
       normals: Float32List.fromList(normals),
@@ -844,8 +1039,21 @@ class ExampleParticlesState extends State<ExampleParticles> {
   // seats) after the hill sliders change.
   void _rebuildTerrain() {
     _groundNode.mesh = Mesh(_buildGroundGeometry(), _groundMaterial);
+    _forestFloorNode.mesh = Mesh(
+      _buildForestFloorGeometry(),
+      _forestFloorMaterial,
+    );
     _grassNode.mesh = Mesh(_buildGrassGeometry(), _grassMaterial);
+    _rebuildForest();
     _seatTerrainRocks();
+  }
+
+  // Re-scatters and re-merges the background forest, after the terrain moved
+  // under it or its scatter sliders changed.
+  void _rebuildForest() {
+    final (forestWood, forestFoliage) = _buildForestGeometry();
+    _forestWoodNode.mesh = Mesh(forestWood, _forestBark);
+    _forestLeafNode.mesh = Mesh(forestFoliage, _forestLeaf);
   }
 
   // Drops each stray rock onto the terrain surface, keeping its baked
@@ -912,16 +1120,21 @@ class ExampleParticlesState extends State<ExampleParticles> {
     List<int> indices,
     vm.Vector3 tip, {
     int? cards,
+    double scale = 1.0,
+    double density = 1.0,
   }) {
-    final count = cards ?? (5 + rng.nextInt(3));
+    final count = ((cards ?? (5 + rng.nextInt(3))) * density).round();
     for (var i = 0; i < count; i++) {
-      final size = 0.32 + rng.nextDouble() * 0.18;
+      final size = (0.32 + rng.nextDouble() * 0.18) * scale;
+      // Bigger cards spread proportionally, so a denser cluster reads as a
+      // full canopy instead of a stack of quads on one spot.
+      final spread = 0.16 * scale;
       final center =
           tip +
           vm.Vector3(
-            (rng.nextDouble() - 0.5) * 0.16,
-            (rng.nextDouble() - 0.3) * 0.14,
-            (rng.nextDouble() - 0.5) * 0.16,
+            (rng.nextDouble() - 0.5) * spread,
+            (rng.nextDouble() - 0.3) * spread * 0.875,
+            (rng.nextDouble() - 0.5) * spread,
           );
       // A random orientation biased upward, so clusters read as foliage
       // catching sky light rather than random confetti.
@@ -1019,8 +1232,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
     double length,
     double radius,
     int depth,
-    double vAccum,
-  ) {
+    double vAccum, {
+    double leafScale = 1.0,
+    double leafDensity = 1.0,
+  }) {
     // Droop under gravity, harder for thinner wood.
     final bent = (dir + vm.Vector3(0, -0.05 * (3 - depth), 0)).normalized();
     final (end, endDir) = _growLimb(
@@ -1035,11 +1250,30 @@ class ExampleParticlesState extends State<ExampleParticles> {
       vAccum,
     );
     if (depth <= 0) {
-      _addLeafCluster(rng, leaf[0], leaf[1], leaf[2], leafIndices, end);
+      _addLeafCluster(
+        rng,
+        leaf[0],
+        leaf[1],
+        leaf[2],
+        leafIndices,
+        end,
+        scale: leafScale,
+        density: leafDensity,
+      );
       return;
     }
     // Interior foliage at the joint keeps the crown from looking hollow.
-    _addLeafCluster(rng, leaf[0], leaf[1], leaf[2], leafIndices, end, cards: 2);
+    _addLeafCluster(
+      rng,
+      leaf[0],
+      leaf[1],
+      leaf[2],
+      leafIndices,
+      end,
+      cards: 2,
+      scale: leafScale,
+      density: leafDensity,
+    );
     var t1 = endDir.cross(vm.Vector3(0, 1, 0));
     if (t1.length < 1e-4) t1 = endDir.cross(vm.Vector3(1, 0, 0));
     t1.normalize();
@@ -1070,6 +1304,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
         childRadius,
         depth - 1,
         vAccum + length,
+        leafScale: leafScale,
+        leafDensity: leafDensity,
       );
     }
   }
@@ -1262,6 +1498,222 @@ class ExampleParticlesState extends State<ExampleParticles> {
       root.add(primaryNode);
     }
     return root;
+  }
+
+  // Grows one background tree straight into shared arrays at its world
+  // position, so the whole forest merges into a single wood mesh and a
+  // single foliage mesh. Nothing here is a node, which is the point: the
+  // ring of hero trees costs about fifty draws each, and at this range the
+  // per-branch sway hierarchy they pay for is invisible.
+  void _appendForestTree(
+    Random rng,
+    List<List<double>> wood,
+    List<int> woodIndices,
+    List<List<double>> leaf,
+    List<int> leafIndices,
+    vm.Vector3 base,
+    double scale,
+    int depth,
+    double leafScale,
+    double leafDensity,
+  ) {
+    final trunkHeight = (2.0 + rng.nextDouble() * 1.2) * scale;
+    final trunkRadius = (0.11 + rng.nextDouble() * 0.04) * scale;
+
+    // A curved three-segment trunk, sampled for branch attachments.
+    final spine = <vm.Vector3>[base];
+    var dir = vm.Vector3(
+      (rng.nextDouble() - 0.5) * 0.18,
+      1,
+      (rng.nextDouble() - 0.5) * 0.18,
+    ).normalized();
+    var radius = trunkRadius;
+    for (var i = 0; i < 3; i++) {
+      final (end, d) = _growLimb(
+        rng,
+        wood,
+        woodIndices,
+        spine.last,
+        dir,
+        trunkHeight / 3,
+        radius,
+        radius * 0.72,
+        trunkHeight / 3 * i,
+        steps: 1,
+        gnarl: 0.12,
+      );
+      spine.add(end);
+      dir = d;
+      radius *= 0.72;
+    }
+
+    final branchCount = 4 + rng.nextInt(2);
+    const divergence = 2.39996;
+    final azStart = rng.nextDouble() * 2 * pi;
+    for (var i = 0; i <= branchCount; i++) {
+      final isLeader = i == branchCount;
+      final frac = isLeader ? 1.0 : 0.45 + 0.53 * (i / (branchCount - 1));
+      final f = (frac * 3).clamp(0.0, 2.999);
+      final si = f.floor();
+      final attach = spine[si] + (spine[si + 1] - spine[si]) * (f - si);
+      final az = azStart + i * divergence;
+      final pitch = isLeader
+          ? 0.14 + rng.nextDouble() * 0.14
+          : 0.80 + rng.nextDouble() * 0.32 - 0.25 * frac;
+      _growSub(
+        rng,
+        wood,
+        woodIndices,
+        leaf,
+        leafIndices,
+        attach,
+        vm.Vector3(cos(az) * sin(pitch), cos(pitch), sin(az) * sin(pitch)),
+        trunkHeight * (0.46 - 0.14 * frac) * (0.85 + rng.nextDouble() * 0.3),
+        trunkRadius * (isLeader ? 0.5 : 0.42),
+        depth,
+        trunkHeight * frac,
+        leafScale: leafScale,
+        leafDensity: leafDensity,
+      );
+    }
+  }
+
+  // Scatters the background forest over the annulus past the campsite,
+  // returning the merged (wood, foliage) geometry.
+  //
+  // Placement is a Poisson-disk (blue noise) fill rather than dart throwing.
+  // Rejection sampling leaves the spacing lumpy, some trunks nearly touching
+  // while whole patches sit empty; growing the set outward from a frontier
+  // gives every tree a similar amount of room, which is what a stand of trees
+  // actually looks like. The exclusion radius shrinks with distance so the
+  // far rows close into a solid mass, and the test uses the larger of the two
+  // radii involved, or a small far tree could still crowd a big near one.
+  (MeshGeometry, MeshGeometry) _buildForestGeometry() {
+    final rng = Random(77);
+    final wood = [<double>[], <double>[], <double>[]];
+    final woodIndices = <int>[];
+    final leaf = [<double>[], <double>[], <double>[]];
+    final leafIndices = <int>[];
+    const inner = 9.4;
+    final outer = _forestRadius - 1.0;
+
+    double gapAt(double x, double z) =>
+        (2.8 - 1.0 * _smoothstep(inner, outer, sqrt(x * x + z * z))) *
+        _forestSpacing;
+    final minGap = gapAt(outer, 0);
+    final maxGap = gapAt(inner, 0);
+
+    // A uniform grid indexing placed points, so the neighbour test stays
+    // local instead of scanning every tree placed so far.
+    final cell = minGap / sqrt2;
+    final span = (2 * outer / cell).ceil() + 1;
+    final grid = List<List<int>>.generate(span * span, (_) => <int>[]);
+    final px = <double>[];
+    final pz = <double>[];
+    int cellOf(double v) => ((v + outer) / cell).floor().clamp(0, span - 1);
+
+    bool fits(double x, double z, double gap) {
+      final reach = (max(gap, maxGap) / cell).ceil();
+      final cx = cellOf(x);
+      final cz = cellOf(z);
+      for (var i = max(0, cx - reach); i <= min(span - 1, cx + reach); i++) {
+        for (var j = max(0, cz - reach); j <= min(span - 1, cz + reach); j++) {
+          for (final k in grid[i * span + j]) {
+            final dx = px[k] - x;
+            final dz = pz[k] - z;
+            final need = max(gap, gapAt(px[k], pz[k]));
+            if (dx * dx + dz * dz < need * need) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    void place(double x, double z) {
+      grid[cellOf(x) * span + cellOf(z)].add(px.length);
+      px.add(x);
+      pz.add(z);
+    }
+
+    bool inBand(double x, double z) {
+      final r2 = x * x + z * z;
+      return r2 >= inner * inner && r2 <= outer * outer;
+    }
+
+    // Seed the frontier with a ring of trees at the inner edge, so the fill
+    // grows outward from the clearing rather than from one arbitrary point.
+    final active = <int>[];
+    for (var i = 0; i < 12; i++) {
+      final a = i * 2 * pi / 12 + rng.nextDouble() * 0.4;
+      final x = cos(a) * (inner + 0.3);
+      final z = sin(a) * (inner + 0.3);
+      if (!fits(x, z, gapAt(x, z))) continue;
+      active.add(px.length);
+      place(x, z);
+    }
+    while (active.isNotEmpty) {
+      final slot = rng.nextInt(active.length);
+      final seed = active[slot];
+      final seedGap = gapAt(px[seed], pz[seed]);
+      var found = false;
+      for (var attempt = 0; attempt < 24; attempt++) {
+        final a = rng.nextDouble() * 2 * pi;
+        final d = seedGap * (1.0 + rng.nextDouble());
+        final x = px[seed] + cos(a) * d;
+        final z = pz[seed] + sin(a) * d;
+        if (!inBand(x, z)) continue;
+        if (!fits(x, z, gapAt(x, z))) continue;
+        active.add(px.length);
+        place(x, z);
+        found = true;
+        break;
+      }
+      // Exhausted: this tree has no room left around it, retire it.
+      if (!found) active.removeAt(slot);
+    }
+
+    // A maximal fill at the tightest spacing would run to thousands of trees
+    // and stall the rebuild, so thin uniformly at random past a ceiling. This
+    // opens gaps but never brings two trunks closer, so the blue-noise
+    // spacing survives.
+    const treeCeiling = 900;
+    var order = List<int>.generate(px.length, (i) => i);
+    if (order.length > treeCeiling) {
+      order.shuffle(rng);
+      order = order.sublist(0, treeCeiling);
+    }
+
+    for (final i in order) {
+      final x = px[i];
+      final z = pz[i];
+      final r = sqrt(x * x + z * z);
+      final far = _smoothstep(inner, outer, r);
+      final scale = 0.85 + rng.nextDouble() * 0.65;
+      _appendForestTree(
+        rng,
+        wood,
+        woodIndices,
+        leaf,
+        leafIndices,
+        // Sunk a little so no trunk floats on a slope.
+        vm.Vector3(x, _groundHeight(x, z) - 0.09 * scale, z),
+        scale,
+        // Far crowns read as silhouette, so they trade branch orders (which
+        // nothing can resolve at that range) for leaf mass: fewer, bigger
+        // limbs carrying far more and far larger cards.
+        r < 14.0 ? 2 : 1,
+        1.0 + 1.2 * far,
+        _forestLeafDensity * (1.0 + 2.4 * far),
+      );
+    }
+    MeshGeometry merge(List<List<double>> a, List<int> indices) =>
+        MeshGeometry.fromArrays(
+          positions: Float32List.fromList(a[0]),
+          normals: Float32List.fromList(a[1]),
+          texCoords: Float32List.fromList(a[2]),
+          indices: Uint32List.fromList(indices),
+        );
+    return (merge(wood, woodIndices), merge(leaf, leafIndices));
   }
 
   // A piece of split firewood: a wedge of trunk with bark on the outer arc
@@ -1522,6 +1974,12 @@ class ExampleParticlesState extends State<ExampleParticles> {
           ..metallicFactor = 1.0;
     _groundNode = Node(mesh: Mesh(_buildGroundGeometry(), _groundMaterial));
     scene.add(_groundNode);
+    _bindCurved(_forestFloorMaterial, ground, groundNormal, groundRough);
+    _forestFloorMaterial.parameters.setFloat('normal_scale', 1.2);
+    _forestFloorNode = Node(
+      mesh: Mesh(_buildForestFloorGeometry(), _forestFloorMaterial),
+    );
+    scene.add(_forestFloorNode);
     _grassNode = Node(mesh: Mesh(_buildGrassGeometry(), _grassMaterial));
     scene.add(_grassNode);
 
@@ -1587,6 +2045,18 @@ class ExampleParticlesState extends State<ExampleParticles> {
       scene.add(tree);
     }
     _seatTerrainRocks();
+
+    // The forest behind them, out to the horizon. Two meshes, however many
+    // trunks the scatter fits.
+    _bindCurved(_forestBark, _barkAlbedo, _barkNormal, _barkRough);
+    _bindCurved(_forestLeaf, _leafCard, null, null);
+    _forestLeaf.parameters.setFloat('alpha_cutoff', 0.5);
+    final (forestWood, forestFoliage) = _buildForestGeometry();
+    _forestWoodNode = Node(mesh: Mesh(forestWood, _forestBark));
+    _forestLeafNode = Node(mesh: Mesh(forestFoliage, _forestLeaf));
+    scene
+      ..add(_forestWoodNode)
+      ..add(_forestLeafNode);
 
     // Strays scattered across the terrain, small pebbles to half-buried
     // boulders, re-seated by _rebuildTerrain when the hills change.
@@ -2005,6 +2475,239 @@ class ExampleParticlesState extends State<ExampleParticles> {
     ).$1;
   }
 
+  // Two or three flat leaf cards of slightly different length, so the falling
+  // leaves are not all one silhouette. A single quad in the XY plane, front
+  // face +Z; the particle material is double-sided so the back shows as the
+  // card tumbles.
+  MeshGeometry _leafCardGeometry(double halfWidth, double halfHeight) {
+    return MeshGeometry.fromArrays(
+      positions: Float32List.fromList([
+        -halfWidth,
+        -halfHeight,
+        0,
+        halfWidth,
+        -halfHeight,
+        0,
+        halfWidth,
+        halfHeight,
+        0,
+        -halfWidth,
+        halfHeight,
+        0,
+      ]),
+      normals: Float32List.fromList([
+        0, 0, 1, //
+        0, 0, 1,
+        0, 0, 1,
+        0, 0, 1,
+      ]),
+      texCoords: Float32List.fromList([0, 1, 1, 1, 1, 0, 0, 0]),
+      indices: [0, 1, 2, 0, 2, 3],
+    );
+  }
+
+  // Leaves shed from the canopy: instanced 3D cards tumbling on random axes as
+  // they fall across the whole clearing, drifting on the same wind and curl
+  // noise as the fire. Mesh particles carry no per-particle color, so all
+  // leaves share one lit material (tinted by the leaf sliders) and fade in and
+  // out through size rather than alpha.
+  Node _fallingLeaves() {
+    _leafFallSystem = ParticleSystem(
+      maxParticles: 90,
+      // A wide, shallow slab up in the canopy; leaves start heading down.
+      shape: shape.BoxShape(
+        halfExtents: vm.Vector3(8.0, 0.6, 8.0),
+        direction: vm.Vector3(0, -1, 0),
+      ),
+      spawner: Spawner(rate: _leafFallRate),
+      lifetime: const UniformFloat(6.0, 9.5),
+      startSpeed: const UniformFloat(0.1, 0.35),
+      startSize: const UniformFloat(0.10, 0.18),
+      startRotation: const UniformFloat(0.0, 6.283),
+      startAngularVelocity: const UniformFloat(-2.2, 2.2),
+      // Slow terminal fall; drag below keeps it from accelerating forever.
+      gravity: vm.Vector3(0, -0.55, 0),
+      modules: [
+        _windFor(1.6),
+        LinearDragModule(0.35),
+        // Broad, slow curl so leaves seesaw and swirl on the way down. Its
+        // own module (not the fire's turbulence group), so the fire sliders
+        // leave it alone.
+        TurbulenceModule(
+          strength: 0.6,
+          frequency: 0.5,
+          scroll: vm.Vector3(0.2, 0.1, 0.0),
+          seed: 61,
+        ),
+        // Integrates the tumble spin from startAngularVelocity.
+        const RotationModule(),
+        // No alpha channel on mesh particles, so grow from nothing and shrink
+        // away to hide the spawn and death pops.
+        SizeOverLifeModule(
+          CurveFloat(
+            ParticleCurve([
+              const ParticleKeyframe(0.0, 0.0),
+              const ParticleKeyframe(0.08, 1.0),
+              const ParticleKeyframe(0.9, 1.0),
+              const ParticleKeyframe(1.0, 0.0),
+            ]),
+          ),
+        ),
+      ],
+      seed: 15,
+    );
+    _leafFallMaterial = PhysicallyBasedMaterial(baseColorTexture: _singleLeaf)
+      ..alphaMode = AlphaMode.mask
+      ..roughnessFactor = _leafRough
+      ..metallicFactor = _leafMetal
+      ..doubleSided = true;
+    // Rides the leaf-color sliders alongside the tree foliage.
+    _leafMaterials.add(_leafFallMaterial);
+    final emitter = MeshParticleEmitterComponent(
+      system: _leafFallSystem,
+      geometries: [
+        _leafCardGeometry(0.09, 0.13),
+        _leafCardGeometry(0.11, 0.10),
+        _leafCardGeometry(0.07, 0.15),
+      ],
+      material: _leafFallMaterial,
+    );
+    // Seated up in the canopy so the slab sheds from tree height.
+    return Node()
+      ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 6.0, 0))
+      ..addComponent(emitter);
+  }
+
+  // Firelit dust: tiny motes suspended in the air around the fire. Sprite
+  // particles are never lit, so the firelight is faked, the motes cluster in a
+  // sphere over the coals and glow additively in a warm HDR tint, so they read
+  // as catching the flame. Soft depth fade melts them into the smoke and logs.
+  Node _dustMotes(TextureSource dot) {
+    _moteSystem = ParticleSystem(
+      maxParticles: 160,
+      shape: const shape.SphereShape(radius: 2.6),
+      spawner: Spawner(rate: _moteRate),
+      lifetime: const UniformFloat(3.5, 6.5),
+      startSpeed: const UniformFloat(0.01, 0.05),
+      startSize: const UniformFloat(0.012, 0.03),
+      // Buoyant: heated air lifts them gently past the flame.
+      gravity: vm.Vector3(0, 0.05, 0),
+      modules: [
+        _windFor(0.5),
+        TurbulenceModule(
+          strength: 0.35,
+          frequency: 0.9,
+          scroll: vm.Vector3(0, 0.4, 0),
+          seed: 71,
+        ),
+        SizeOverLifeModule(
+          CurveFloat(
+            ParticleCurve([
+              const ParticleKeyframe(0.0, 0.7),
+              const ParticleKeyframe(0.5, 1.0),
+              const ParticleKeyframe(1.0, 0.6),
+            ]),
+          ),
+        ),
+        // Warm HDR so they bloom, fading in and out at the ends of life.
+        ColorOverLifeModule(
+          GradientColor(
+            ColorGradient([
+              ColorStop(0.0, vm.Vector4(1.6, 0.9, 0.4, 0.0)),
+              ColorStop(0.3, vm.Vector4(1.6, 0.9, 0.4, 0.6)),
+              ColorStop(0.7, vm.Vector4(1.3, 0.7, 0.35, 0.5)),
+              ColorStop(1.0, vm.Vector4(1.0, 0.55, 0.3, 0.0)),
+            ]),
+          ),
+        ),
+      ],
+      seed: 16,
+    );
+    final material = SpriteMaterial(colorTexture: dot)
+      ..blendMode = SpriteBlendMode.additive
+      ..softDepthFade = 0.4;
+    // Centered a little above the coals, where the firelight is strongest.
+    return _emitterNode(_moteSystem, material, y: 1.1).$1;
+  }
+
+  // Sinks the haze quad's node origin far below the scene. Translucent draws
+  // sort back-to-front by node-origin distance, and the origin is the only
+  // ordering lever the engine exposes, so pushing it far away makes the haze
+  // the first translucent draw. That matters because the refraction samples
+  // the opaque-only scene snapshot (which excludes the additive fireflies and
+  // motes); if the haze drew over them it would replace those bright pixels
+  // with the dark background behind them, punching black holes. Drawing first
+  // lets every sprite composite on top of the haze instead. The geometry is
+  // built pre-offset by the same amount so the quad still renders in place.
+  static const double _hazeSortBias = 100.0;
+
+  // An upright quad, uv.y running 0 (bottom) to 1 (top), for the heat-haze
+  // column. Sizes bake in here (not a transform scale) and the whole quad is
+  // lifted by [_hazeSortBias] to cancel the node's sunk origin. Normal +Z;
+  // the material is cull-none so the back shows when the camera swings around.
+  MeshGeometry _heatQuadGeometry(double halfWidth, double halfHeight) {
+    const b = _hazeSortBias;
+    return MeshGeometry.fromArrays(
+      positions: Float32List.fromList([
+        -halfWidth,
+        b - halfHeight,
+        0,
+        halfWidth,
+        b - halfHeight,
+        0,
+        halfWidth,
+        b + halfHeight,
+        0,
+        -halfWidth,
+        b + halfHeight,
+        0,
+      ]),
+      normals: Float32List.fromList([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+      texCoords: Float32List.fromList([0, 0, 1, 0, 1, 1, 0, 1]),
+      indices: [0, 1, 2, 0, 2, 3],
+    );
+  }
+
+  // The heat-haze quad standing in the flame column. Its yaw tracks the
+  // orbiting camera each tick (_updateHeatHaze) so the flat card always faces
+  // the viewer; the refraction and animation live entirely in the material.
+  Node _heatHazeNode() {
+    _heatNode = Node(mesh: Mesh(_buildHazeQuad(), _heatMaterial));
+    return _heatNode;
+  }
+
+  MeshGeometry _buildHazeQuad() =>
+      _heatQuadGeometry(0.95 * _hazeWidth, 1.15 * _hazeHeight);
+
+  // Rebuilds the quad when its size sliders change (size is baked into the
+  // geometry, not the transform, so the sort-bias offset survives scaling).
+  void _rebuildHazeQuad() {
+    _heatNode.mesh = Mesh(_buildHazeQuad(), _heatMaterial);
+  }
+
+  // Yaws the haze quad to face the orbiting camera and pulses its strength with
+  // the flame's flicker. The camera circles the origin at t * 0.12 radians, so
+  // facing it is a matching yaw; the material animates itself off GetTime().
+  void _updateHeatHaze(double t) {
+    // Sink the origin (sort bias), then place the column at its height, yaw to
+    // face the camera, and slide it laterally. No scale here: size lives in the
+    // geometry so the bias offset is not scaled with it.
+    _heatNode.localTransform =
+        vm.Matrix4.translation(vm.Vector3(0, _hazeY - _hazeSortBias, 0))
+          ..multiply(vm.Matrix4.rotationY(t * 0.12))
+          ..multiply(vm.Matrix4.translation(vm.Vector3(_hazeX, 0, 0)));
+    final base = _flicker.baseIntensity;
+    final flick = base > 0 ? _firelight.intensity / base : 1.0;
+    _heatMaterial.parameters
+      ..setFloat('strength', _heatHaze * flick)
+      ..setFloat('displacement', _hazeDisplacement)
+      ..setFloat('noise_scale', _hazeNoise)
+      ..setFloat('chroma', _hazeSplit)
+      ..setFloat('mask_base', _hazeBase)
+      ..setFloat('mask_top', _hazeTop)
+      ..setFloat('mask_side', _hazeSpread);
+  }
+
   (Node, ParticleEmitterComponent) _emitterNode(
     ParticleSystem system,
     SpriteMaterial material, {
@@ -2051,6 +2754,19 @@ Campfire settings dump:
   emberSpeed: $_emberSpeed
   emberLife: $_emberLife
   fogAmount: $_fogAmount
+  leafFall: $_leafFall
+  moteAmount: $_moteAmount
+  heatHaze: $_heatHaze
+  hazeDisplacement: $_hazeDisplacement
+  hazeNoise: $_hazeNoise
+  hazeSplit: $_hazeSplit
+  hazeBase: $_hazeBase
+  hazeTop: $_hazeTop
+  hazeSpread: $_hazeSpread
+  hazeX: $_hazeX
+  hazeY: $_hazeY
+  hazeWidth: $_hazeWidth
+  hazeHeight: $_hazeHeight
   fireReach: $_fireReach
   fireFalloff: $_fireFalloff
   fireColor: ${_fireColor.x}, ${_fireColor.y}, ${_fireColor.z}
@@ -2068,6 +2784,11 @@ Campfire settings dump:
   fireflyTrailGlow: $_fireflyTrailGlow
   hillFrequency: $_hillFrequency
   hillHeight: $_hillHeight
+  curvature: $_curvature
+  curveStart: $_curveStart
+  curveFade: $_curveFade
+  forestSpacing: $_forestSpacing
+  forestLeafDensity: $_forestLeafDensity
   grassColor: ${_grassColor.x}, ${_grassColor.y}, ${_grassColor.z}
   grassRough: $_grassRough
   grassMetal: $_grassMetal
@@ -2323,6 +3044,105 @@ ${s.describe()}''');
             }),
           ),
           _SliderRow(
+            label: 'Falling leaves',
+            value: _leafFall,
+            min: 0.0,
+            max: 4.0,
+            onChanged: (v) => setState(() {
+              _leafFall = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Dust motes',
+            value: _moteAmount,
+            min: 0.0,
+            max: 4.0,
+            onChanged: (v) => setState(() {
+              _moteAmount = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Heat haze',
+            value: _heatHaze,
+            min: 0.0,
+            max: 2.0,
+            onChanged: (v) => setState(() => _heatHaze = v),
+          ),
+          _SliderRow(
+            label: 'Haze intensity',
+            value: _hazeDisplacement,
+            min: 0.0,
+            max: 0.08,
+            onChanged: (v) => setState(() => _hazeDisplacement = v),
+          ),
+          _SliderRow(
+            label: 'Haze noise',
+            value: _hazeNoise,
+            min: 1.0,
+            max: 12.0,
+            onChanged: (v) => setState(() => _hazeNoise = v),
+          ),
+          _SliderRow(
+            label: 'Haze split',
+            value: _hazeSplit,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() => _hazeSplit = v),
+          ),
+          _SliderRow(
+            label: 'Haze spread',
+            value: _hazeSpread,
+            min: 0.0,
+            max: 0.5,
+            onChanged: (v) => setState(() => _hazeSpread = v),
+          ),
+          _SliderRow(
+            label: 'Haze base',
+            value: _hazeBase,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() => _hazeBase = v),
+          ),
+          _SliderRow(
+            label: 'Haze top',
+            value: _hazeTop,
+            min: 0.0,
+            max: 1.0,
+            onChanged: (v) => setState(() => _hazeTop = v),
+          ),
+          _SliderRow(
+            label: 'Haze X',
+            value: _hazeX,
+            min: -3.0,
+            max: 3.0,
+            onChanged: (v) => setState(() => _hazeX = v),
+          ),
+          _SliderRow(
+            label: 'Haze Y',
+            value: _hazeY,
+            min: 0.0,
+            max: 5.0,
+            onChanged: (v) => setState(() => _hazeY = v),
+          ),
+          _SliderRow(
+            label: 'Haze width',
+            value: _hazeWidth,
+            min: 0.2,
+            max: 4.0,
+            onChanged: (v) => setState(() => _hazeWidth = v),
+            onChangeEnd: (v) => _rebuildHazeQuad(),
+          ),
+          _SliderRow(
+            label: 'Haze height',
+            value: _hazeHeight,
+            min: 0.2,
+            max: 3.0,
+            onChanged: (v) => setState(() => _hazeHeight = v),
+            onChangeEnd: (v) => _rebuildHazeQuad(),
+          ),
+          _SliderRow(
             label: 'Fly speed',
             value: _fireflySpeed,
             min: 0.2,
@@ -2508,6 +3328,52 @@ ${s.describe()}''');
             onChanged: (v) => setState(() => _hillHeight = v),
             onChangeEnd: (v) => _rebuildTerrain(),
           ),
+          _SliderRow(
+            label: 'Curvature',
+            value: _curvature,
+            min: 0.0,
+            max: 0.12,
+            onChanged: (v) => setState(() {
+              _curvature = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Curve start',
+            value: _curveStart,
+            min: 2.0,
+            max: 18.0,
+            onChanged: (v) => setState(() {
+              _curveStart = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Curve fade',
+            value: _curveFade,
+            min: 0.0,
+            max: 2.0,
+            onChanged: (v) => setState(() {
+              _curveFade = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Tree spacing',
+            value: _forestSpacing,
+            min: 0.5,
+            max: 2.0,
+            onChanged: (v) => setState(() => _forestSpacing = v),
+            onChangeEnd: (v) => _rebuildForest(),
+          ),
+          _SliderRow(
+            label: 'Tree leaves',
+            value: _forestLeafDensity,
+            min: 0.3,
+            max: 4.0,
+            onChanged: (v) => setState(() => _forestLeafDensity = v),
+            onChangeEnd: (v) => _rebuildForest(),
+          ),
         ],
       ),
     );
@@ -2542,6 +3408,7 @@ ${s.describe()}''');
               _grassMaterial.parameters.setFloat('time', t);
               // Drives the sky's star twinkle and cloud drift.
               _skySource.parameters.setFloat('time', t);
+              _updateHeatHaze(t);
               exampleSettings.applyTo(scene);
             },
           ),
@@ -2981,6 +3848,44 @@ Future<ui.Image> _bakeSplitWood() async {
     completer.complete,
   );
   return completer.future;
+}
+
+/// Bakes a single leaf standing upright in the card, a pointed lens shape
+/// with a center vein and a few angled side veins, alpha-cutout background.
+/// The interior is near-white so the leaf-color slider tints it, matching the
+/// canopy the falling leaves shed from.
+Future<ui.Image> _bakeSingleLeaf() async {
+  const size = 128;
+  final pixels = Uint8List(size * size * 4);
+  for (var py = 0; py < size; py++) {
+    final v = (py + 0.5) / size;
+    for (var px = 0; px < size; px++) {
+      final u = (px + 0.5) / size;
+      // Leaf-local coords: x across the blade, y base (0) to tip (1).
+      final x = (u - 0.5) * 2.0;
+      final t = 1.0 - v;
+      // Half-width profile: swells past the base, tapers to a point at the
+      // tip and pinches to a short stem at the base.
+      final width = sin(pi * t.clamp(0.0, 1.0)) * (0.62 - 0.32 * t);
+      final o = (py * size + px) * 4;
+      if (t <= 0.02 || t >= 0.99 || x.abs() > width || width <= 0.0) {
+        pixels[o + 3] = 0;
+        continue;
+      }
+      final edge = 1.0 - (x.abs() / width);
+      // Center vein plus side veins angled toward the tip.
+      final midrib = 1.0 - _smoothstep(0.0, 0.06, x.abs());
+      final ribs = _smoothstep(0.82, 0.98, sin((t * 9.0 - x.abs() * 6.0) * pi));
+      final vein = (midrib + ribs * 0.5).clamp(0.0, 1.0);
+      final shade = (0.7 + 0.3 * edge) * (1.0 - 0.4 * vein);
+      pixels[o] = (shade.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 1] = (shade.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = (shade.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  return vfxImageFromPixels(pixels, size);
 }
 
 /// Bakes a foliage card: a scatter of rotated elliptical leaves with varied
