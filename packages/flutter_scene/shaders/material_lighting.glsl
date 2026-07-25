@@ -524,18 +524,22 @@ vec4 EvaluateLighting(MaterialInputs material) {
       vec3 to_light = l0.xyz - v_position;
       float dist_sq = dot(to_light, to_light);
       punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
-      // Windowed inverse-square distance falloff: with an inverse range of 0
-      // (infinite range) the window is 1 and this is a pure inverse square,
-      // clamped near the source.
+      // Windowed distance falloff: with an inverse range of 0 (infinite
+      // range) the window is 1. The falloff exponent (texel 3.z) is 2 for
+      // the physical inverse square; lower exponents reach further without
+      // brightening the near field (an artistic control), and pow(dist_sq,
+      // e/2) = dist^e.
       float inv_range = l1.w;
       float factor = dist_sq * inv_range * inv_range;
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
-      radiance *= (window * window) / max(dist_sq, 1e-4);
+      // spot offset, shadow slot, falloff exponent
+      vec4 l3 = FetchPunctualTexel(light_row, 3);
+      radiance *=
+          (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
       if (type > 1.5) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
         vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
-        vec4 l3 = FetchPunctualTexel(light_row, 3); // spot offset, shadow slot
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
         float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
         radiance *= cone * cone;

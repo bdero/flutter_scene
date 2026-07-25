@@ -235,7 +235,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   bool _ready = false;
 
   // Live fire tuning (see _applyParams).
-  double _intensity = 1.8;
+  double _intensity = 2.0;
   double _flameScale = 0.94;
   double _flameWidth = 1.51;
   double _flipbookSpeed = 0.68;
@@ -248,6 +248,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _emberSpeed = 1.0;
   double _emberLife = 1.0;
   double _fogAmount = 1.28;
+  double _fireReach = 1.0;
+  double _fireFalloff = 2.0;
 
   // Firefly tuning (see _applyParams).
   double _fireflySpeed = 1.4;
@@ -263,8 +265,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _grassRough = 0.9;
   double _grassMetal = 0.0;
   final vm.Vector3 _leafColor = vm.Vector3(1, 1, 1);
-  double _leafRough = 0.9;
-  double _leafMetal = 0.0;
+  double _leafRough = 0.74;
+  double _leafMetal = 0.08;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
@@ -302,6 +304,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late Node _groundNode;
   late Node _grassNode;
   late _FirelightFlicker _flicker;
+  late _FirelightFlicker _fillFlicker;
+  late PointLight _firelight;
   final List<(TurbulenceModule, double)> _flameTurbs = [];
   final List<(TurbulenceModule, double)> _emberTurbs = [];
   final List<(AccelerationModule, double)> _winds = [];
@@ -391,17 +395,26 @@ class ExampleParticlesState extends State<ExampleParticles> {
     scene.add(_embers(dot));
     scene.add(_groundFog(smokeAtlas));
 
-    final firelight = PointLight(
-      color: vm.Vector3(1.0, 0.52, 0.18),
-      intensity: 7.0,
-      range: 16.0,
-    );
-    _flicker = _FirelightFlicker(firelight, 7.0);
+    // The key firelight: hot, close, fast falloff (its exponent rides the
+    // Fire falloff slider so the same light can reach further artistically).
+    _firelight = PointLight(color: vm.Vector3(1.0, 0.52, 0.18), intensity: 7.0);
+    _flicker = _FirelightFlicker(_firelight, 7.0);
     scene.add(
       Node()
         ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.9, 0))
-        ..addComponent(PointLightComponent(firelight))
+        ..addComponent(PointLightComponent(_firelight))
         ..addComponent(_flicker),
+    );
+    // The fill: a dimmer, higher warm light whose near field lands on
+    // nothing but smoke, lifting the tree line and far grass independently
+    // of the key (the Fire reach slider).
+    final fillLight = PointLight(color: vm.Vector3(1.0, 0.52, 0.18));
+    _fillFlicker = _FirelightFlicker(fillLight, 0.0)..height = 2.3;
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 2.3, 0))
+        ..addComponent(PointLightComponent(fillLight))
+        ..addComponent(_fillFlicker),
     );
 
     // Fireflies drifting over the grass, each pairing a green point light
@@ -558,6 +571,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
         ..metallicFactor = _leafMetal;
     }
     _flicker.baseIntensity = 7.0 * _intensity;
+    _firelight.falloffExponent = _fireFalloff;
+    _fillFlicker.baseIntensity = 40.0 * _fireReach * _intensity;
   }
 
   // Registers a turbulence module into [group] (whose slider scales its
@@ -1989,6 +2004,8 @@ Campfire settings dump:
   emberSpeed: $_emberSpeed
   emberLife: $_emberLife
   fogAmount: $_fogAmount
+  fireReach: $_fireReach
+  fireFalloff: $_fireFalloff
   fireflySpeed: $_fireflySpeed
   fireflyWander: $_fireflyWander
   fireflyBlink: $_fireflyBlink
@@ -2139,6 +2156,26 @@ ${s.describe()}''');
             max: 2.5,
             onChanged: (v) => setState(() {
               _emberLife = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fire reach',
+            value: _fireReach,
+            min: 0.0,
+            max: 3.0,
+            onChanged: (v) => setState(() {
+              _fireReach = v;
+              _applyParams();
+            }),
+          ),
+          _SliderRow(
+            label: 'Fire falloff',
+            value: _fireFalloff,
+            min: 1.0,
+            max: 2.4,
+            onChanged: (v) => setState(() {
+              _fireFalloff = v;
               _applyParams();
             }),
           ),

@@ -65,8 +65,8 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
   'Particles': () => ExampleSettings()
     ..lightAzimuthDegrees = 0.0
     ..lightElevationDegrees = 55.71
-    ..lightIntensity = 10.0
-    ..lightColor.setValues(0.197, 0.342, 0.907)
+    ..lightIntensity = 0.72
+    ..lightColor.setValues(0.506, 0.499, 0.907)
     ..ambientOcclusion.enabled = true
     ..ambientOcclusion.halfResolution = true
     ..ambientOcclusion.radius = 0.43

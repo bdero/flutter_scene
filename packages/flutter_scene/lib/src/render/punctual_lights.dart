@@ -31,7 +31,8 @@ const int kMaxPunctualLights = 16;
 //   col 0: position.xyz, type   (0 directional, 1 point, 2 spot)
 //   col 1: color.rgb * intensity, inverse range (0 = infinite)
 //   col 2: direction.xyz, spot angular scale
-//   col 3: spot angular offset, shadow slot (-1 = none), unused, unused
+//   col 3: spot angular offset, shadow slot (-1 = none), falloff exponent,
+//          unused
 //   col 4-7: world -> spot-clip matrix for a shadow-casting spot (else unused)
 // The shader reads these by computed UV, sidestepping the GLSL ES 1.00 ban on
 // dynamically indexing a uniform array in a fragment shader. The spot shadow
@@ -307,6 +308,7 @@ class PunctualLightBuffer {
       floats[base + 5] = light.color.y * light.intensity;
       floats[base + 6] = light.color.z * light.intensity;
       floats[base + 7] = light.range > 0.0 ? 1.0 / light.range : 0.0;
+      floats[base + 14] = math.max(light.falloffExponent, 0.1);
       cullables.add(
         CullableLight(row, lightInfluenceBounds(position, light.range)),
       );
@@ -338,6 +340,7 @@ class PunctualLightBuffer {
       // Shadow slot (texel 3.y); -1 = no shadow. build() stamps the slot and
       // matrix for shadow-casting spots.
       floats[base + 13] = -1.0;
+      floats[base + 14] = math.max(light.falloffExponent, 0.1);
       cullables.add(
         CullableLight(row, lightInfluenceBounds(position, light.range)),
       );
