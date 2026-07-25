@@ -59,6 +59,21 @@ void main() {
 /// (see [resetExampleSettings]), so tuning one scene never leaks into
 /// another.
 final Map<String, ExampleSettings Function()> settingsDefaults = {
+  // The campfire's night look: the shared light dimmed to moonlight levels,
+  // ambient occlusion grounding the logs, rocks, and grass, and a warm
+  // saturated grade that leans into the firelight.
+  'Particles': () => ExampleSettings()
+    ..lightIntensity = 0.57
+    ..ambientOcclusion.enabled = true
+    ..ambientOcclusion.radius = 0.43
+    ..ambientOcclusion.intensity = 2.53
+    ..ambientOcclusion.bias = 0.05
+    ..ambientOcclusion.sampleCount = 16
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 0.65
+    ..colorGrading.contrast = 1.09
+    ..colorGrading.saturation = 1.35
+    ..colorGrading.temperature = 0.85,
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,

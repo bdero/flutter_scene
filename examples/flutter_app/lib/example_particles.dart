@@ -216,8 +216,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   double _fireflyBlink = 0.54;
   double _fireflyLight = 0.53;
   double _fireflyTrailWidth = 0.02;
-  double _fireflyTrailLife = 0.2;
-  double _fireflyTrailGlow = 0.85;
+  double _fireflyTrailLife = 0.74;
+  double _fireflyTrailGlow = 2.65;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
@@ -264,9 +264,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
   @override
   void initState() {
     super.initState();
-    // Ambient occlusion grounds the rocks, logs, and grass clumps under the
-    // firelight (the shared settings panel can still turn it off).
-    exampleSettings.ambientOcclusion.enabled = true;
+    // The shared-settings side of this example's look (dim moonlight, ambient
+    // occlusion, the warm grade) lives in main.dart's settingsDefaults entry.
     _load();
   }
 
@@ -1420,12 +1419,74 @@ class ExampleParticlesState extends State<ExampleParticles> {
     return (node, emitter);
   }
 
+  // Dumps every tunable (this panel's sliders plus the shared settings
+  // panel) to the log in one block, so a hand-tuned look can be copied
+  // straight into code as new defaults.
+  void _printSettings() {
+    final s = exampleSettings;
+    final ao = s.ambientOcclusion;
+    final grading = s.colorGrading;
+    debugPrint('''
+Campfire settings dump:
+  intensity: $_intensity
+  flameScale: $_flameScale
+  flameWidth: $_flameWidth
+  flipbookSpeed: $_flipbookSpeed
+  fireHeight: $_fireHeight
+  flameTurbulence: $_flameTurbulence
+  emberTurbulence: $_emberTurbulence
+  wind: $_wind
+  smokeAmount: $_smokeAmount
+  emberAmount: $_emberAmount
+  emberSpeed: $_emberSpeed
+  emberLife: $_emberLife
+  fogAmount: $_fogAmount
+  fireflySpeed: $_fireflySpeed
+  fireflyWander: $_fireflyWander
+  fireflyBlink: $_fireflyBlink
+  fireflyLight: $_fireflyLight
+  fireflyTrailWidth: $_fireflyTrailWidth
+  fireflyTrailLife: $_fireflyTrailLife
+  fireflyTrailGlow: $_fireflyTrailGlow
+  hillFrequency: $_hillFrequency
+  hillHeight: $_hillHeight
+Shared settings:
+  directionalLightEnabled: ${s.directionalLightEnabled}
+  lightAzimuthDegrees: ${s.lightAzimuthDegrees}
+  lightElevationDegrees: ${s.lightElevationDegrees}
+  lightIntensity: ${s.lightIntensity}
+  lightColor: ${s.lightColor.x}, ${s.lightColor.y}, ${s.lightColor.z}
+  lightCastsShadow: ${s.lightCastsShadow}
+  shadowSoftness: ${s.shadowSoftness}
+  shadowFadeRange: ${s.shadowFadeRange}
+  shadowCascadeCount: ${s.shadowCascadeCount}
+  shadowMaxDistance: ${s.shadowMaxDistance}
+  shadowCascadeSplitLambda: ${s.shadowCascadeSplitLambda}
+  shadowMapResolution: ${s.shadowMapResolution}
+  shadowDepthBias: ${s.shadowDepthBias}
+  shadowNormalBias: ${s.shadowNormalBias}
+  shadowAmbientStrength: ${s.shadowAmbientStrength}
+  ambientOcclusion: enabled ${ao.enabled}, radius ${ao.radius}, intensity ${ao.intensity}, bias ${ao.bias}, sampleCount ${ao.sampleCount}, halfResolution ${ao.halfResolution}, specularMode ${ao.specularMode}
+  colorGrading: enabled ${grading.enabled}, brightness ${grading.brightness}, contrast ${grading.contrast}, saturation ${grading.saturation}, temperature ${grading.temperature}, tint ${grading.tint}
+  bloom: enabled ${s.bloom.enabled}, threshold ${s.bloom.threshold}, intensity ${s.bloom.intensity}, scatter ${s.bloom.scatter}
+  chromaticAberration: enabled ${s.chromaticAberration.enabled}, intensity ${s.chromaticAberration.intensity}
+  vignette: enabled ${s.vignette.enabled}, intensity ${s.vignette.intensity}, radius ${s.vignette.radius}, smoothness ${s.vignette.smoothness}
+  filmGrain: enabled ${s.filmGrain.enabled}, intensity ${s.filmGrain.intensity}
+  antiAliasingMode: ${s.antiAliasingMode}
+  renderScale: ${s.renderScale}''');
+  }
+
   Widget _buildPanel() {
     return ExamplePanelCard(
       icon: Icons.local_fire_department,
       title: 'Campfire',
       width: 330,
       maxBodyHeight: 420,
+      trailing: IconButton(
+        icon: const Icon(Icons.receipt_long, size: 18, color: Colors.white70),
+        tooltip: 'Print all settings to the log',
+        onPressed: _printSettings,
+      ),
       body: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
