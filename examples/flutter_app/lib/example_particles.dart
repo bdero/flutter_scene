@@ -190,11 +190,11 @@ class ExampleParticlesState extends State<ExampleParticles> {
   // Firefly tuning (see _applyParams).
   double _fireflySpeed = 1.4;
   double _fireflyWander = 1.0;
-  double _fireflyBlink = 0.55;
-  double _fireflyLight = 1.2;
-  double _fireflyTrailWidth = 0.07;
-  double _fireflyTrailLife = 1.4;
-  double _fireflyTrailGlow = 1.0;
+  double _fireflyBlink = 0.54;
+  double _fireflyLight = 0.53;
+  double _fireflyTrailWidth = 0.02;
+  double _fireflyTrailLife = 0.2;
+  double _fireflyTrailGlow = 0.85;
 
   // Terrain shaping. These rebuild the ground and grass geometry, so their
   // sliders apply on release rather than per drag tick.
