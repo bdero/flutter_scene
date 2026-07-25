@@ -1046,13 +1046,15 @@ class _SceneModelState extends State<SceneModel>
       _registerHotReload(source, modelRoot);
       widget.onLoaded?.call(modelRoot);
     } catch (e) {
-      // A failed load never reaches the success path above, so nothing else
-      // will ever release this lease (_heldTemplateLease is only set there).
-      // Release unconditionally rather than relying on _import's own evict:
-      // that only removes the entry when it is still the one installed for
-      // the key, and this lease's refcount would otherwise stay incremented
-      // forever, keyed off nothing.
-      _ModelTemplateCache.release(lease);
+      // A throw before the handoff to _heldTemplateLease means nothing else
+      // will ever release this lease (_import's evict only removes the
+      // entry, never this refcount). A throw after the handoff (post-mount
+      // work like an onLoaded callback) lands here too, and there dispose
+      // releases the held lease, so releasing again would double-count a
+      // shared entry.
+      if (!identical(_heldTemplateLease, lease)) {
+        _ModelTemplateCache.release(lease);
+      }
       if (!mounted || generation != _loadGeneration) {
         return;
       }
