@@ -59,13 +59,13 @@ void main() {
 /// (see [resetExampleSettings]), so tuning one scene never leaks into
 /// another.
 final Map<String, ExampleSettings Function()> settingsDefaults = {
-  // The campfire's night look: a deep-blue moonlight key from due east,
+  // The campfire's night look: a soft blue moonlight key from the south,
   // ambient occlusion grounding the logs, rocks, and grass, and a warm
   // saturated grade that leans into the firelight.
   'Particles': () => ExampleSettings()
-    ..lightAzimuthDegrees = 0.0
-    ..lightElevationDegrees = 55.71
-    ..lightIntensity = 0.72
+    ..lightAzimuthDegrees = 190.68
+    ..lightElevationDegrees = 54.69
+    ..lightIntensity = 0.55
     ..lightColor.setValues(0.506, 0.499, 0.907)
     ..ambientOcclusion.enabled = true
     ..ambientOcclusion.halfResolution = true
@@ -74,10 +74,11 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..ambientOcclusion.bias = 0.05
     ..ambientOcclusion.sampleCount = 16
     ..colorGrading.enabled = true
-    ..colorGrading.brightness = 0.65
-    ..colorGrading.contrast = 1.09
-    ..colorGrading.saturation = 1.35
-    ..colorGrading.temperature = 0.85
+    ..colorGrading.brightness = 1.4
+    ..colorGrading.contrast = 0.93
+    ..colorGrading.saturation = 1.42
+    ..colorGrading.temperature = 0.4
+    ..colorGrading.tint = -0.006
     ..bloom.enabled = true
     ..bloom.threshold = 3.55
     ..bloom.intensity = 0.07
