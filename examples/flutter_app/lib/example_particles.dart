@@ -168,6 +168,29 @@ class _CoalGlow extends Component {
   }
 }
 
+/// Pulses a charred log's ember-crack emissive with slow noise, offset per
+/// log, so the burnt tips breathe with the coal bed.
+class _EmberPulse extends Component {
+  _EmberPulse(this.material, this.phase);
+
+  final PhysicallyBasedMaterial material;
+  final double phase;
+  final FastNoiseLite _noise = FastNoiseLite()
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 2;
+  double _t = 0;
+
+  @override
+  void update(double deltaSeconds) {
+    _t += deltaSeconds;
+    final n =
+        _noise.getNoise2(_t * 1.3 + phase * 17.1, phase * 5.3) * 0.5 + 0.5;
+    final s = 0.4 + 0.8 * n;
+    material.emissiveFactor = vm.Vector4(2.2 * s, 0.55 * s, 0.07 * s, 1.0);
+  }
+}
+
 class ExampleParticlesState extends State<ExampleParticles> {
   Scene scene = Scene();
   bool _ready = false;
@@ -218,7 +241,13 @@ class ExampleParticlesState extends State<ExampleParticles> {
   late ParticleEmitterComponent _coreEmitter;
   late ParticleEmitterComponent _tongueEmitter;
   late PreprocessedMaterial _grassMaterial;
+  late PreprocessedSky _skySource;
   late PhysicallyBasedMaterial _groundMaterial;
+  late TextureSource _barkAlbedo;
+  late TextureSource _barkNormal;
+  late TextureSource _barkRough;
+  late TextureSource _emberCracks;
+  late TextureSource _logRings;
   late Node _groundNode;
   late Node _grassNode;
   late _FirelightFlicker _flicker;
@@ -246,7 +275,8 @@ class ExampleParticlesState extends State<ExampleParticles> {
     // an fbm milky way). The fire's own point light carries the scene, so
     // the image-based ambient stays near black and a faint blue directional
     // stands in for skylight.
-    scene.skybox = Skybox(await loadFmatSky('assets/night_sky.fmat'));
+    _skySource = await loadFmatSky('assets/night_sky.fmat');
+    scene.skybox = Skybox(_skySource);
     scene.environmentIntensity = 0.06;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(0.35, -0.75, 0.25),
@@ -278,6 +308,21 @@ class ExampleParticlesState extends State<ExampleParticles> {
     );
     final stoneTexture = GpuTextureSource(
       await gpuTextureFromImage(await _bakeStoneTexture()),
+    );
+    _barkAlbedo = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeBarkAlbedo()),
+    );
+    _barkNormal = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeBarkNormal()),
+    );
+    _barkRough = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeBarkRoughness()),
+    );
+    _emberCracks = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeEmberCracks()),
+    );
+    _logRings = GpuTextureSource(
+      await gpuTextureFromImage(await _bakeLogRings()),
     );
     _grassMaterial = await loadFmatMaterial('assets/campfire_grass.fmat');
 
@@ -685,6 +730,145 @@ class ExampleParticlesState extends State<ExampleParticles> {
     }
   }
 
+  // A log: a lumpy, gently bowed, tapered cylinder with bark UVs (u wraps
+  // the circumference twice, v runs root to tip) and a char gradient baked
+  // into the vertex colors toward the tip (row 0, the end that sits in the
+  // fire). Returns the bark side surface and the growth-ring end caps as
+  // separate geometries, since they carry different materials.
+  (MeshGeometry, MeshGeometry) _logGeometry(int seed) {
+    const rs = 16;
+    const hs = 9;
+    const length = 0.95;
+    final noise = FastNoiseLite()
+      ..seed = seed
+      ..frequency = 1.0
+      ..fractalType = FractalType.fbm
+      ..octaves = 3;
+    final rng = Random(seed);
+    final bendAmp = 0.012 + rng.nextDouble() * 0.02;
+    final bendPhase = rng.nextDouble() * 2 * pi;
+    const charcoal = (0.05, 0.045, 0.04);
+
+    final positions = <double>[];
+    final normals = <double>[];
+    final texCoords = <double>[];
+    final colors = <double>[];
+    final indices = <int>[];
+    const columns = rs + 1;
+    for (var r = 0; r <= hs; r++) {
+      final t = r / hs; // 0 at the tip (in the fire), 1 at the ground end.
+      final y = length / 2 - length * t;
+      final radius = 0.052 + 0.023 * t;
+      final cx = cos(bendPhase) * bendAmp * sin(t * pi);
+      final cz = sin(bendPhase) * bendAmp * sin(t * pi);
+      final char = _smoothstep(
+        0.55,
+        0.92,
+        1 - t + 0.08 * noise.getNoise2(t * 3.0, 41.0),
+      );
+      for (var s = 0; s <= rs; s++) {
+        final theta = 2 * pi * s / rs;
+        final ct = cos(theta);
+        final st = sin(theta);
+        final lump = 1.0 + 0.10 * noise.getNoise3(ct * 2.2, st * 2.2, t * 3.5);
+        positions.addAll([cx + ct * radius * lump, y, cz + st * radius * lump]);
+        final n = vm.Vector3(ct, 0.08, st)..normalize();
+        normals.addAll([n.x, n.y, n.z]);
+        texCoords.addAll([s / rs * 2.0, t]);
+        final charJ =
+            (char + 0.15 * noise.getNoise3(ct * 3.0, st * 3.0, t * 5.0 + 9.0))
+                .clamp(0.0, 1.0);
+        colors.addAll([
+          1.0 + (charcoal.$1 - 1.0) * charJ,
+          1.0 + (charcoal.$2 - 1.0) * charJ,
+          1.0 + (charcoal.$3 - 1.0) * charJ,
+          1.0,
+        ]);
+      }
+    }
+    for (var r = 0; r < hs; r++) {
+      for (var s = 0; s < rs; s++) {
+        final a = r * columns + s;
+        final b = a + 1;
+        final c = a + columns;
+        final d = c + 1;
+        indices.addAll([a, c, b, b, c, d]);
+      }
+    }
+    final bark = MeshGeometry.fromArrays(
+      positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      texCoords: Float32List.fromList(texCoords),
+      colors: Float32List.fromList(colors),
+      indices: indices,
+    );
+
+    // Growth-ring caps, wound to face outward along each end.
+    final capPositions = <double>[];
+    final capNormals = <double>[];
+    final capUv = <double>[];
+    final capColors = <double>[];
+    final capIndices = <int>[];
+    void addCap(double y, double radius, double ny, double char) {
+      final center = capPositions.length ~/ 3;
+      capPositions.addAll([0, y, 0]);
+      capNormals.addAll([0, ny, 0]);
+      capUv.addAll([0.5, 0.5]);
+      final tint = 1.0 - 0.9 * char;
+      capColors.addAll([tint, tint, tint, 1]);
+      final rim = capPositions.length ~/ 3;
+      for (var s = 0; s <= rs; s++) {
+        final theta = 2 * pi * s / rs;
+        capPositions.addAll([cos(theta) * radius, y, sin(theta) * radius]);
+        capNormals.addAll([0, ny, 0]);
+        capUv.addAll([0.5 + 0.5 * cos(theta), 0.5 + 0.5 * sin(theta)]);
+        capColors.addAll([tint, tint, tint, 1]);
+      }
+      for (var s = 0; s < rs; s++) {
+        final r0 = rim + s;
+        final r1 = rim + s + 1;
+        capIndices.addAll(ny > 0 ? [center, r0, r1] : [center, r1, r0]);
+      }
+    }
+
+    // The tip cap sits in the fire, so it bakes almost fully charred.
+    addCap(length / 2, 0.052, 1, 0.9);
+    addCap(-length / 2, 0.075, -1, 0.0);
+    final caps = MeshGeometry.fromArrays(
+      positions: Float32List.fromList(capPositions),
+      normals: Float32List.fromList(capNormals),
+      texCoords: Float32List.fromList(capUv),
+      colors: Float32List.fromList(capColors),
+      indices: capIndices,
+    );
+    return (bark, caps);
+  }
+
+  // Assembles one log: bark mesh with a per-log ember-crack material (so
+  // each charred tip pulses on its own rhythm) and a growth-ring cap child.
+  Node _logNode(
+    (MeshGeometry, MeshGeometry) shape,
+    vm.Matrix4 transform,
+    double phase,
+  ) {
+    final barkMaterial =
+        PhysicallyBasedMaterial(
+            baseColorTexture: _barkAlbedo,
+            normalTexture: _barkNormal,
+            metallicRoughnessTexture: _barkRough,
+            emissiveTexture: _emberCracks,
+          )
+          ..roughnessFactor = 1.0
+          ..metallicFactor = 1.0
+          ..normalScale = 1.0;
+    final capMaterial = PhysicallyBasedMaterial(baseColorTexture: _logRings)
+      ..roughnessFactor = 0.85
+      ..metallicFactor = 0.0;
+    return Node(mesh: Mesh(shape.$1, barkMaterial), localTransform: transform)
+      ..add(Node(mesh: Mesh(shape.$2, capMaterial)))
+      ..addComponent(_EmberPulse(barkMaterial, phase));
+  }
+
   // A jagged rock: an icosphere displaced by fbm noise, exploded into
   // per-face vertices so the auto-generated normals stay flat and faceted.
   MeshGeometry _rockGeometry(int seed) {
@@ -811,32 +995,32 @@ class ExampleParticlesState extends State<ExampleParticles> {
     }
     _seatTerrainRocks();
 
+    // The teepee: bark-textured lumpy logs, charred where they meet the
+    // fire, with pulsing ember cracks in the charred tips.
+    final logShapes = [for (var i = 0; i < 3; i++) _logGeometry(80 + i)];
     const logCount = 5;
     for (var i = 0; i < logCount; i++) {
       final yaw = i * 2 * pi / logCount + rng.nextDouble() * 0.25;
       final lean = 0.66 + rng.nextDouble() * 0.10;
-      final brown = 0.05 + rng.nextDouble() * 0.02;
       final transform = vm.Matrix4.rotationY(yaw)
         ..multiply(vm.Matrix4.translation(vm.Vector3(0.20, 0.44, 0)))
         ..multiply(vm.Matrix4.rotationZ(lean));
       scene.add(
-        Node(
-          mesh: Mesh(
-            CylinderGeometry(
-              bottomRadius: 0.065,
-              topRadius: 0.05,
-              height: 0.95,
-              radialSegments: 10,
-            ),
-            PhysicallyBasedMaterial()
-              ..baseColorFactor = vm.Vector4(brown * 1.6, brown, brown * 0.6, 1)
-              ..roughnessFactor = 0.92
-              ..metallicFactor = 0.0,
-          ),
-          localTransform: transform,
-        ),
+        _logNode(logShapes[i % logShapes.length], transform, i / logCount),
       );
     }
+    // A collapsed log lying half-buried in the coals, charred end toward the
+    // heart of the fire.
+    scene.add(
+      _logNode(
+        logShapes[1],
+        vm.Matrix4.translation(vm.Vector3(0.58, 0.09, -0.12))
+          ..multiply(vm.Matrix4.rotationY(0.35))
+          ..multiply(vm.Matrix4.rotationZ(1.45))
+          ..multiply(vm.Matrix4.diagonal3Values(0.85, 0.85, 0.85)),
+        0.5,
+      ),
+    );
 
     // Coal bed: jagged near-black shards (the same faceted rock shapes as
     // the stones, smaller and more broken) whose pulsing emissive makes the
@@ -1491,10 +1675,10 @@ class ExampleParticlesState extends State<ExampleParticles> {
               );
             },
             onTick: (elapsed, deltaSeconds) {
-              _grassMaterial.parameters.setFloat(
-                'time',
-                elapsed.inMicroseconds / 1e6,
-              );
+              final t = elapsed.inMicroseconds / 1e6;
+              _grassMaterial.parameters.setFloat('time', t);
+              // Drives the sky's star twinkle and cloud drift.
+              _skySource.parameters.setFloat('time', t);
               exampleSettings.applyTo(scene);
             },
           ),
@@ -1604,6 +1788,11 @@ Future<ui.Image> _bakeGroundTexture() async {
       red = red + (charShade * 1.2 - red) * char;
       green = green + (charShade - green) * char;
       blue = blue + (charShade * 0.8 - blue) * char;
+      // Pale ash lumps scattered through the char.
+      final ashLump = _smoothstep(0.62, 0.85, grain) * char;
+      red += (0.24 - red) * ashLump;
+      green += (0.23 - green) * ashLump;
+      blue += (0.22 - blue) * ashLump;
       red += (0.34 - red) * ash * 0.55;
       green += (0.32 - green) * ash * 0.55;
       blue += (0.30 - blue) * ash * 0.55;
@@ -1691,6 +1880,202 @@ Future<ui.Image> _bakeGroundRoughness() async {
       pixels[o] = 0;
       pixels[o + 1] = (rough.clamp(0.0, 1.0) * 255).round();
       pixels[o + 2] = 0;
+      pixels[o + 3] = 255;
+    }
+  }
+  return vfxImageFromPixels(pixels, size);
+}
+
+/// Samples bark ridge noise seamlessly around the log: u maps to a circle in
+/// noise space (so the u = 0/1 seam vanishes) and v runs along the length.
+/// [noise] should be ridged fbm; the result is remapped to 0..1 where 1 is a
+/// ridge crest and 0 a fissure.
+double _barkRidge(FastNoiseLite noise, double u, double v) {
+  final a = u * 2 * pi;
+  return (noise.getNoise3(cos(a) * 4.5, sin(a) * 4.5, v * 2.2) * 0.5 + 0.5)
+      .clamp(0.0, 1.0);
+}
+
+FastNoiseLite _barkNoise(int seed) => FastNoiseLite()
+  ..seed = seed
+  ..frequency = 1.0
+  ..fractalType = FractalType.ridged
+  ..octaves = 3;
+
+/// Bakes the bark albedo (256x512, u wraps the trunk twice, v runs along the
+/// log): vertical striations from ridged noise, deep fissures dark, ridge
+/// crests warm brown, with large-scale patchiness.
+Future<ui.Image> _bakeBarkAlbedo() async {
+  const w = 256;
+  const h = 512;
+  final pixels = Uint8List(w * h * 4);
+  final ridgeNoise = _barkNoise(71);
+  final patchNoise = FastNoiseLite()
+    ..seed = 72
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 3;
+  for (var py = 0; py < h; py++) {
+    final v = (py + 0.5) / h;
+    for (var px = 0; px < w; px++) {
+      final u = (px + 0.5) / w;
+      final ridge = _barkRidge(ridgeNoise, u, v);
+      final patch =
+          patchNoise.getNoise3(cos(u * 2 * pi), sin(u * 2 * pi), v * 5.0) *
+              0.5 +
+          0.5;
+      final shade = 0.75 + 0.25 * patch;
+      final red = (0.13 + 0.25 * ridge) * shade;
+      final green = (0.09 + 0.19 * ridge) * shade;
+      final blue = (0.06 + 0.13 * ridge) * shade;
+      final o = (py * w + px) * 4;
+      pixels[o] = (red.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 1] = (green.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = (blue.clamp(0.0, 1.0) * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Bakes the bark tangent-space normal map from the same ridge field, strong
+/// across the striations so the fissures catch the raking firelight.
+Future<ui.Image> _bakeBarkNormal() async {
+  const w = 256;
+  const h = 512;
+  final pixels = Uint8List(w * h * 4);
+  final ridgeNoise = _barkNoise(71);
+  const eps = 1.0 / w;
+  const strength = 6.0;
+  for (var py = 0; py < h; py++) {
+    final v = (py + 0.5) / h;
+    for (var px = 0; px < w; px++) {
+      final u = (px + 0.5) / w;
+      final du =
+          _barkRidge(ridgeNoise, u + eps, v) -
+          _barkRidge(ridgeNoise, u - eps, v);
+      final dv =
+          _barkRidge(ridgeNoise, u, v + eps) -
+          _barkRidge(ridgeNoise, u, v - eps);
+      final n = vm.Vector3(-du * strength, -dv * strength, 1.0)..normalize();
+      final o = (py * w + px) * 4;
+      pixels[o] = ((n.x * 0.5 + 0.5) * 255).round();
+      pixels[o + 1] = ((n.y * 0.5 + 0.5) * 255).round();
+      pixels[o + 2] = ((n.z * 0.5 + 0.5) * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Bakes the bark metallic-roughness map: fissures fully rough, ridge crests
+/// slightly smoother.
+Future<ui.Image> _bakeBarkRoughness() async {
+  const w = 128;
+  const h = 256;
+  final pixels = Uint8List(w * h * 4);
+  final ridgeNoise = _barkNoise(71);
+  for (var py = 0; py < h; py++) {
+    final v = (py + 0.5) / h;
+    for (var px = 0; px < w; px++) {
+      final u = (px + 0.5) / w;
+      final ridge = _barkRidge(ridgeNoise, u, v);
+      final o = (py * w + px) * 4;
+      pixels[o] = 0;
+      pixels[o + 1] = ((0.98 - 0.18 * ridge).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = 0;
+      pixels[o + 3] = 255;
+    }
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Bakes the ember-crack emissive map: thin bright fissure lines masked to
+/// the charred tip end (low v), plus a faint all-over glow at the very tip.
+/// Cracks follow the bark fissures, so the glow reads as the wood splitting.
+Future<ui.Image> _bakeEmberCracks() async {
+  const w = 256;
+  const h = 512;
+  final pixels = Uint8List(w * h * 4);
+  final ridgeNoise = _barkNoise(71);
+  for (var py = 0; py < h; py++) {
+    final v = (py + 0.5) / h;
+    // v = 0 is the tip in the fire.
+    final tipMask = 1.0 - _smoothstep(0.10, 0.30, v);
+    for (var px = 0; px < w; px++) {
+      final u = (px + 0.5) / w;
+      final ridge = _barkRidge(ridgeNoise, u, v);
+      // Fissures (low ridge value) crack open and glow.
+      final crack = _smoothstep(0.22, 0.05, ridge);
+      final glow = (crack * tipMask + 0.25 * (1.0 - _smoothstep(0.0, 0.08, v)))
+          .clamp(0.0, 1.0);
+      final o = (py * w + px) * 4;
+      pixels[o] = (glow * 255).round();
+      pixels[o + 1] = (glow * 0.45 * 255).round();
+      pixels[o + 2] = (glow * 0.10 * 255).round();
+      pixels[o + 3] = 255;
+    }
+    if (py % 128 == 127) await Future<void>.delayed(Duration.zero);
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
+
+/// Bakes the cut-end growth rings: concentric bands jittered by noise over a
+/// pale sapwood base.
+Future<ui.Image> _bakeLogRings() async {
+  const size = 128;
+  final pixels = Uint8List(size * size * 4);
+  final jitter = FastNoiseLite()
+    ..seed = 73
+    ..frequency = 1.0
+    ..fractalType = FractalType.fbm
+    ..octaves = 2;
+  for (var py = 0; py < size; py++) {
+    final v = (py + 0.5) / size - 0.5;
+    for (var px = 0; px < size; px++) {
+      final u = (px + 0.5) / size - 0.5;
+      final r = sqrt(u * u + v * v) * 2.0;
+      final wobble = 0.06 * jitter.getNoise2(u * 6.0, v * 6.0);
+      final ring = 0.5 + 0.5 * sin((r + wobble) * 44.0);
+      final shade = 0.72 + 0.24 * pow(ring, 2.0) - 0.18 * r;
+      final o = (py * size + px) * 4;
+      pixels[o] = ((0.62 * shade).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 1] = ((0.48 * shade).clamp(0.0, 1.0) * 255).round();
+      pixels[o + 2] = ((0.32 * shade).clamp(0.0, 1.0) * 255).round();
       pixels[o + 3] = 255;
     }
   }
