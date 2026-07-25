@@ -336,6 +336,53 @@ void main() {
         expect(importCalls, 2);
       },
     );
+
+    testWidgets(
+      'a throw after the lease handoff (an onLoaded callback) does not '
+      'double-release the shared template entry',
+      (tester) async {
+        const keyA = ValueKey('a');
+        const keyB = ValueKey('b');
+        const keyC = ValueKey('c');
+
+        // A's onLoaded throws after the lease was handed to the widget; B
+        // shares the entry. A's load lands in the catch branch holding a
+        // lease that dispose will also release.
+        await tester.pumpWidget(
+          host([
+            SceneModel.from(
+              _FakeSource('shared'),
+              key: keyA,
+              onLoaded: (_) => throw StateError('onLoaded'),
+            ),
+            SceneModel.from(_FakeSource('shared'), key: keyB),
+          ]),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(importCalls, 1);
+
+        // A unmounts and releases its held lease. A second release from the
+        // catch branch would have already decremented the shared refcount,
+        // so this one would hit zero and evict the entry B still uses.
+        await tester.pumpWidget(
+          host([SceneModel.from(_FakeSource('shared'), key: keyB)]),
+        );
+        await tester.pump();
+
+        // C mounts under the same key while B is live. If the entry was
+        // wrongly evicted, C re-imports; otherwise it reuses B's entry.
+        await tester.pumpWidget(
+          host([
+            SceneModel.from(_FakeSource('shared'), key: keyB),
+            SceneModel.from(_FakeSource('shared'), key: keyC),
+          ]),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(importCalls, 1);
+      },
+    );
   });
 
   group('variants on clones', () {
