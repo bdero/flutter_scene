@@ -1,8 +1,8 @@
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
-import 'package:scene/scene.dart' show ContactPoint;
+import 'package:scene/physics.dart' show ContactPoint;
 
-export 'package:scene/scene.dart' show ContactPoint;
+export 'package:scene/physics.dart' show ContactPoint;
 
 /// Collision lifecycle events for a [PhysicsWorld]'s bodies, resolved to
 /// scene nodes and collider components.

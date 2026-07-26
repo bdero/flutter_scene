@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/physics.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'character_input.dart';

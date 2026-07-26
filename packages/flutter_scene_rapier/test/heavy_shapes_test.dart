@@ -7,6 +7,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';

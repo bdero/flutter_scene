@@ -9,6 +9,7 @@
 // not part of a live RenderScene (which would need a Flutter GPU context).
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';

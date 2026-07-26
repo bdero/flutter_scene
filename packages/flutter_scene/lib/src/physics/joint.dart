@@ -2,7 +2,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
-import 'package:scene/scene.dart' as sim;
+import 'package:scene/physics.dart' as sim;
 import 'package:vector_math/vector_math.dart';
 
 /// A constraint between this node's [RigidBody] and [otherNode]'s (or the

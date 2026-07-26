@@ -5,6 +5,7 @@ import 'dart:math' as math;
 // each conflicting name is hidden from the other import.
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
