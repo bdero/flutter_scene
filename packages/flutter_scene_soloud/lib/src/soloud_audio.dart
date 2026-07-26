@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/audio.dart';
 import 'package:flutter_soloud/flutter_soloud.dart' as sl;
 import 'package:vector_math/vector_math.dart';
 

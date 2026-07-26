@@ -15,6 +15,7 @@
 * Physics is now an optional sub-barrel. Import `package:flutter_scene/physics.dart` (or `package:scene/physics.dart` for the pure contract); the core `package:flutter_scene/scene.dart` no longer carries physics types.
 * `BasicSimulation` (queries and triggers, pure Dart) replaces `BasicPhysicsWorld`/`BasicCollider`/`BasicKinematicBody`.
 * Colliders without a sibling `RigidBody` now attach as static geometry instead of throwing.
+* Spatial audio through an optional pluggable-backend contract. `AudioEngine` (implemented by `flutter_scene_soloud` and `flutter_scene_fmod`), with `AudioListener`, `AudioSource`/`ClipAudioSource`, `AudioBus`, and distance attenuation. Import `package:flutter_scene/audio.dart`; it is not in the core barrel.
 
 ## 0.19.0
 

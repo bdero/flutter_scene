@@ -149,14 +149,8 @@ export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
 export 'src/texture/texture_registry.dart' show loadTexture;
 export 'src/texture/mipmap.dart' show TextureContent;
-export 'src/audio/audio_attenuation.dart' show AudioAttenuation, AudioRolloff;
-export 'src/audio/audio_bus.dart' show AudioBus;
-export 'src/audio/audio_clip.dart' show AudioClip;
-export 'src/audio/audio_engine.dart' show AudioEngine;
-export 'src/audio/audio_listener.dart' show AudioListener;
-export 'src/audio/audio_source.dart' show AudioSource;
-export 'src/audio/audio_voice.dart' show AudioVoice;
-export 'src/audio/clip_audio_source.dart' show ClipAudioSource;
+// Audio is an optional contract, exported from
+// `package:flutter_scene/audio.dart`.
 // Physics is an optional contract, exported from
 // `package:flutter_scene/physics.dart`.
 export 'src/post_process/post_effect.dart' show PostEffect, PostInsertion;

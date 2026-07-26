@@ -5,6 +5,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/audio.dart';
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
