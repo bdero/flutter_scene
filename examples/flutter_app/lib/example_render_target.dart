@@ -4,10 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
 
-import 'example_cuboid.dart' show SpinComponent;
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
 import 'example_settings.dart';
+
+/// Spins the owning node about its Y axis. A minimal user-defined
+/// [Component]: behavior attached to a node through the [update] hook.
+class SpinComponent extends Component {
+  SpinComponent(this.radiansPerSecond);
+
+  final double radiansPerSecond;
+
+  @override
+  void update(double deltaSeconds) {
+    node.localTransform =
+        node.localTransform *
+        vm.Matrix4.rotationY(radiansPerSecond * deltaSeconds);
+  }
+}
 
 /// Offscreen render targets displayed as HUD widgets.
 ///

@@ -18,7 +18,6 @@ import 'example_accessibility.dart';
 import 'example_audio.dart';
 import 'example_auto_exposure.dart';
 import 'example_configurator.dart';
-import 'example_cuboid.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
@@ -27,7 +26,6 @@ import 'example_fscene_animated.dart';
 import 'example_fscene_import.dart';
 import 'example_fscene_prefab.dart';
 import 'example_fscene_stream.dart';
-import 'example_instancing.dart';
 import 'example_lod.dart';
 import 'example_logo.dart';
 import 'example_materialize.dart';
@@ -167,14 +165,12 @@ class _MyAppState extends State<MyApp> {
       'Car': (context) => const ExampleCar(),
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
-      'Cuboid': (context) => const ExampleCuboid(),
       'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Particles': (context) => const ExampleParticles(),
       'Explosions': (context) => const ExampleExplosion(),
       'Gaussian Splats': (context) => const ExampleSplats(),
-      'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
       'Screen-space Reflections': (context) => const ExampleSsr(),
       'Auto Exposure': (context) => const ExampleAutoExposure(),
