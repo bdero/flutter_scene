@@ -116,6 +116,46 @@ export 'src/components/splat_component.dart' show SplatComponent;
 export 'src/components/spot_light_component.dart' show SpotLightComponent;
 export 'src/render/lod.dart' show LodLevel;
 export 'src/components/widget_component.dart' show WidgetComponent, WidgetInput;
+export 'src/components/particle_emitter_component.dart'
+    show ParticleEmitterComponent;
+export 'src/components/mesh_particle_emitter_component.dart'
+    show MeshParticleEmitterComponent, MeshParticleFacing;
+export 'src/components/trail_component.dart' show TrailComponent;
+export 'src/particles/particle_system.dart' show ParticleSystem;
+export 'src/particles/particle_storage.dart' show ParticleStorage;
+export 'src/particles/particle_module.dart'
+    show
+        AccelerationModule,
+        ColorOverLifeModule,
+        FlipbookModule,
+        LinearDragModule,
+        ParticleModule,
+        RotationModule,
+        SizeOverLifeModule,
+        TurbulenceModule;
+export 'src/particles/emitter_shape.dart'
+    show
+        BoxEmitterShape,
+        ConeEmitterShape,
+        EmitterShape,
+        PointEmitterShape,
+        SphereEmitterShape;
+export 'src/particles/distribution.dart'
+    show
+        ColorDistribution,
+        ColorGradient,
+        ColorStop,
+        ConstantColor,
+        ConstantFloat,
+        CurveFloat,
+        FloatDistribution,
+        GradientColor,
+        ParticleCurve,
+        ParticleKeyframe,
+        UniformColor,
+        UniformCurveFloat,
+        UniformFloat;
+export 'src/particles/spawner.dart' show ParticleBurst, Spawner;
 export 'src/geometry/splat_geometry.dart' show SplatCropMode;
 export 'src/splats/gaussian_splats.dart' show GaussianSplats;
 export 'src/splats/splat_codec.dart' show SplatFormat;

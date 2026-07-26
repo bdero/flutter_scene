@@ -40,7 +40,7 @@ void main() {
   group('stepping', () {
     test('drains the accumulator in whole fixed steps', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(),
         fixedStep: _fixed,
       );
@@ -50,7 +50,7 @@ void main() {
 
     test('clamps an over-long frame to maxFrameTime', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(),
         fixedStep: _fixed,
         maxFrameTime: 0.25,
@@ -61,7 +61,7 @@ void main() {
 
     test('leftover time carries into the next step', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(),
         fixedStep: _fixed,
       );
@@ -75,7 +75,7 @@ void main() {
   group('emission and motion', () {
     test('spawns a unit 3D rotation axis per particle', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(rate: 300.0),
         seed: 4,
       );
@@ -94,7 +94,7 @@ void main() {
 
     test('emits and integrates velocity over a step', () {
       final system = ParticleSystem(
-        shape: PointShape(direction: Vector3(0, 1, 0)),
+        shape: PointEmitterShape(direction: Vector3(0, 1, 0)),
         spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 1)]),
         startSpeed: const ConstantFloat(2.0),
         fixedStep: _fixed,
@@ -109,7 +109,7 @@ void main() {
 
     test('gravity accelerates velocity downward', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 1)]),
         startSpeed: const ConstantFloat(0.0),
         gravity: Vector3(0, -10, 0),
@@ -122,7 +122,7 @@ void main() {
 
     test('particles die once they outlive their lifetime', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 5)]),
         lifetime: const ConstantFloat(0.05), // ~3 steps
         fixedStep: _fixed,
@@ -137,7 +137,7 @@ void main() {
   group('looping', () {
     test('a non-looping system stops emitting past its duration', () {
       final system = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(rate: 60.0),
         lifetime: const ConstantFloat(100.0),
         looping: false,
@@ -154,7 +154,7 @@ void main() {
   group('prewarm', () {
     test('populates the system at construction', () {
       final cold = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(rate: 60.0),
         lifetime: const ConstantFloat(100.0),
         fixedStep: _fixed,
@@ -162,7 +162,7 @@ void main() {
       expect(cold.storage.aliveCount, 0);
 
       final warm = ParticleSystem(
-        shape: PointShape(),
+        shape: PointEmitterShape(),
         spawner: Spawner(rate: 60.0),
         lifetime: const ConstantFloat(100.0),
         fixedStep: _fixed,
@@ -175,7 +175,7 @@ void main() {
   group('determinism', () {
     ParticleSystem build() => ParticleSystem(
       maxParticles: 512,
-      shape: const SphereShape(radius: 1.0),
+      shape: const SphereEmitterShape(radius: 1.0),
       spawner: Spawner(
         rate: 200.0,
         bursts: const [ParticleBurst(time: 0.1, count: 50)],
@@ -219,7 +219,7 @@ void main() {
       final a = build();
       final b = ParticleSystem(
         maxParticles: 512,
-        shape: const SphereShape(radius: 1.0),
+        shape: const SphereEmitterShape(radius: 1.0),
         spawner: Spawner(rate: 200.0),
         startSpeed: const UniformFloat(1.0, 3.0),
         seed: 9999,

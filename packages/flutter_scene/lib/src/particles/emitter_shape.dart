@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/particles/vec3_distribution.dart';
 /// Shapes draw their randomness from [ParticleStorage.randomFor] with salts in
 /// the `20+` range, kept disjoint from the salts the system uses for its other
 /// spawn properties so values do not correlate.
+/// {@category Particles}
 abstract class EmitterShape {
   /// Creates an emitter shape.
   const EmitterShape();
@@ -31,9 +32,10 @@ const int _saltC = 22;
 const int _saltD = 23;
 
 /// Emits every particle from the local origin along a single [direction].
-class PointShape extends EmitterShape {
+/// {@category Particles}
+class PointEmitterShape extends EmitterShape {
   /// Creates a point emitter heading along [direction] (default +Y).
-  PointShape({Vector3? direction})
+  PointEmitterShape({Vector3? direction})
     : direction = (direction?.clone() ?? Vector3(0, 1, 0))..normalize();
 
   /// The unit emission direction shared by every particle.
@@ -58,9 +60,10 @@ class PointShape extends EmitterShape {
 /// the shell. [hemisphere] restricts both position and direction to the +Y
 /// half. A zero [radius] degenerates to a point emitting in uniformly random
 /// directions.
-class SphereShape extends EmitterShape {
+/// {@category Particles}
+class SphereEmitterShape extends EmitterShape {
   /// Creates a sphere emitter of the given [radius].
-  const SphereShape({
+  const SphereEmitterShape({
     this.radius = 1.0,
     this.surfaceOnly = false,
     this.hemisphere = false,
@@ -108,9 +111,10 @@ class SphereShape extends EmitterShape {
 ///
 /// The disc is sampled area-uniform and the directions are sampled uniform over
 /// the cone's solid angle, so neither the centre nor the axis is over-weighted.
-class ConeShape extends EmitterShape {
+/// {@category Particles}
+class ConeEmitterShape extends EmitterShape {
   /// Creates a cone emitter with base [radius] and cone half-[angle] (radians).
-  const ConeShape({this.angle = 0.5, this.radius = 0.0})
+  const ConeEmitterShape({this.angle = 0.5, this.radius = 0.0})
     : assert(angle >= 0),
       assert(radius >= 0);
 
@@ -142,10 +146,11 @@ class ConeShape extends EmitterShape {
 
 /// Emits particles uniformly inside an axis-aligned box, each headed along a
 /// shared [direction].
-class BoxShape extends EmitterShape {
+/// {@category Particles}
+class BoxEmitterShape extends EmitterShape {
   /// Creates a box emitter spanning `[-halfExtents, halfExtents]`, heading
   /// along [direction] (default +Y).
-  BoxShape({Vector3? halfExtents, Vector3? direction})
+  BoxEmitterShape({Vector3? halfExtents, Vector3? direction})
     : direction = (direction?.clone() ?? Vector3(0, 1, 0))..normalize(),
       _box = UniformBoxVec3(
         (halfExtents?.clone() ?? Vector3.all(0.5))..scale(-1.0),

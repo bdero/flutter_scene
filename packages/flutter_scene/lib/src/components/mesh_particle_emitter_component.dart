@@ -11,10 +11,8 @@ import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/particles/particle_storage.dart';
 import 'package:flutter_scene/src/particles/particle_system.dart';
 
-// TODO(particles): export alongside the sprite emitter once the particle
-// authoring API is promoted to the public barrel.
-
 /// How a mesh particle orients itself.
+/// {@category Particles}
 enum MeshParticleFacing {
   /// Tumbles around the particle's random unit axis by its rotation (which
   /// `RotationModule` integrates from the angular velocity). The default,
@@ -44,6 +42,7 @@ enum MeshParticleFacing {
 /// Per-particle color is not applied to mesh instances.
 /// TODO(particles): per-instance color needs an instanced color attribute on
 /// the mesh instancing path; route ColorOverLife through it once that lands.
+/// {@category Particles}
 class MeshParticleEmitterComponent extends Component {
   /// Creates an emitter that draws [system]'s particles as instances of
   /// [geometries] (each particle picks one), all sharing [material].

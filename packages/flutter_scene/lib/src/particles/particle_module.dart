@@ -16,6 +16,7 @@ const int _saltFlipbookStart = 10;
 /// particles (to apply forces or evaluate over-life properties). Both default
 /// to no-ops so a module implements only the phase it needs. A module touches
 /// only the storage columns it documents.
+/// {@category Particles}
 abstract class ParticleModule {
   /// Creates a particle module.
   const ParticleModule();
@@ -30,6 +31,7 @@ abstract class ParticleModule {
 /// Adds a constant [acceleration] (world units per second squared) to every
 /// particle's velocity each step. Use it for wind or as an extra gravity on top
 /// of the system's own gravity.
+/// {@category Particles}
 class AccelerationModule extends ParticleModule {
   /// Creates a constant-acceleration force.
   AccelerationModule(Vector3 acceleration)
@@ -54,6 +56,7 @@ class AccelerationModule extends ParticleModule {
 
 /// Damps velocity toward zero with a linear drag [coefficient] (per second):
 /// each step scales velocity by `max(0, 1 - coefficient * dt)`.
+/// {@category Particles}
 class LinearDragModule extends ParticleModule {
   /// Creates a linear drag force with the given [coefficient].
   LinearDragModule(this.coefficient) : assert(coefficient >= 0);
@@ -77,6 +80,7 @@ class LinearDragModule extends ParticleModule {
 /// Scales each particle's rendered size by a [FloatDistribution] sampled over
 /// its normalized age, relative to the size set at spawn (`size = baseSize *
 /// scale(age / lifetime)`).
+/// {@category Particles}
 class SizeOverLifeModule extends ParticleModule {
   /// Creates a size-over-life force driven by [scale].
   const SizeOverLifeModule(this.scale);
@@ -98,6 +102,7 @@ class SizeOverLifeModule extends ParticleModule {
 
 /// Sets each particle's color from a [ColorDistribution] sampled over its
 /// normalized age (color over life).
+/// {@category Particles}
 class ColorOverLifeModule extends ParticleModule {
   /// Creates a color-over-life force driven by [color].
   ColorOverLifeModule(this.color);
@@ -132,6 +137,7 @@ class ColorOverLifeModule extends ParticleModule {
 /// particle by a stable random frame so simultaneous spawns do not animate in
 /// lockstep; leave it off for once-over-life erosion sequences, which must
 /// start at frame zero.
+/// {@category Particles}
 class FlipbookModule extends ParticleModule {
   /// Creates a flipbook animator over [frameCount] cells.
   const FlipbookModule({
@@ -183,6 +189,7 @@ class FlipbookModule extends ParticleModule {
 /// `curl * strength * dt` to its velocity. Larger [frequency] gives smaller,
 /// busier eddies; [scroll] drifts the whole field (an upward scroll makes
 /// rising flames lick).
+/// {@category Particles}
 class TurbulenceModule extends ParticleModule {
   /// Creates a curl-noise force.
   TurbulenceModule({
@@ -230,6 +237,7 @@ class TurbulenceModule extends ParticleModule {
 
 /// Integrates each particle's in-plane rotation from its angular velocity
 /// (`rotation += angularVelocity * dt`).
+/// {@category Particles}
 class RotationModule extends ParticleModule {
   /// Creates a rotation integrator.
   const RotationModule();

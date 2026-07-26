@@ -1,20 +1,7 @@
-// Stylized explosion demo. The particle configuration types live under
-// lib/src/particles (not yet part of the public barrel); a dev app may
-// import them directly.
-// ignore_for_file: implementation_imports
-
 import 'dart:math';
 
 import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/components/mesh_particle_emitter_component.dart';
-import 'package:flutter_scene/src/components/particle_emitter_component.dart';
-import 'package:flutter_scene/src/components/trail_component.dart';
-import 'package:flutter_scene/src/particles/distribution.dart';
-import 'package:flutter_scene/src/particles/emitter_shape.dart' as shape;
-import 'package:flutter_scene/src/particles/particle_module.dart';
-import 'package:flutter_scene/src/particles/particle_system.dart';
-import 'package:flutter_scene/src/particles/spawner.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
@@ -294,7 +281,7 @@ class ExampleExplosionState extends State<ExampleExplosion> {
   ParticleSystem _fireball(TextureSource atlas) {
     final system = ParticleSystem(
       maxParticles: 24,
-      shape: const shape.SphereShape(radius: 0.12),
+      shape: const SphereEmitterShape(radius: 0.12),
       spawner: Spawner(bursts: const [ParticleBurst(time: 0.02, count: 13)]),
       looping: false,
       duration: 2.0,
@@ -346,7 +333,7 @@ class ExampleExplosionState extends State<ExampleExplosion> {
   ParticleSystem _sparks(TextureSource dot) {
     final system = ParticleSystem(
       maxParticles: 96,
-      shape: const shape.SphereShape(radius: 0.05),
+      shape: const SphereEmitterShape(radius: 0.05),
       spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 70)]),
       looping: false,
       duration: 2.0,
@@ -389,7 +376,7 @@ class ExampleExplosionState extends State<ExampleExplosion> {
   ParticleSystem _smoke(TextureSource atlas) {
     final system = ParticleSystem(
       maxParticles: 24,
-      shape: const shape.ConeShape(angle: 0.5, radius: 0.4),
+      shape: const ConeEmitterShape(angle: 0.5, radius: 0.4),
       spawner: Spawner(bursts: const [ParticleBurst(time: 0.22, count: 10)]),
       looping: false,
       duration: 2.0,
@@ -445,7 +432,7 @@ class ExampleExplosionState extends State<ExampleExplosion> {
   ParticleSystem _debris() {
     final system = ParticleSystem(
       maxParticles: 40,
-      shape: const shape.ConeShape(angle: 0.55, radius: 0.15),
+      shape: const ConeEmitterShape(angle: 0.55, radius: 0.15),
       spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 26)]),
       looping: false,
       duration: 2.0,

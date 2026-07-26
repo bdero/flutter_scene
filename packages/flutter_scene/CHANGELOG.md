@@ -16,6 +16,8 @@
 * `BasicSimulation` (queries and triggers, pure Dart) replaces `BasicPhysicsWorld`/`BasicCollider`/`BasicKinematicBody`.
 * Colliders without a sibling `RigidBody` now attach as static geometry instead of throwing.
 * Spatial audio through an optional pluggable-backend contract. `AudioEngine` (implemented by `flutter_scene_soloud` and `flutter_scene_fmod`), with `AudioListener`, `AudioSource`/`ClipAudioSource`, `AudioBus`, and distance attenuation. Import `package:flutter_scene/audio.dart`; it is not in the core barrel.
+* CPU particle systems are now public. `ParticleEmitterComponent` (camera-facing billboards), `MeshParticleEmitterComponent` (instanced 3D debris), and `TrailComponent` (ribbon trails), all driven by a `ParticleSystem` built from emitter shapes, spawners, over-life distributions, and a module stack (acceleration, drag, size/color-over-life, rotation, flipbook, curl-noise turbulence), with new Particles and Explosion examples.
+* Sprites and billboard particles depth-test against opaque geometry again, so closer objects occlude them.
 
 ## 0.19.0
 
