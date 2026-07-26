@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/audio.dart';
 import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
 import 'package:http/http.dart' as http;
 import 'package:vector_math/vector_math.dart' as vm;

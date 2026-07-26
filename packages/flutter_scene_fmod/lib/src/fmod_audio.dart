@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/audio.dart';
 import 'package:fmod/fmod.dart' as fmod;
 import 'package:vector_math/vector_math.dart';
 
