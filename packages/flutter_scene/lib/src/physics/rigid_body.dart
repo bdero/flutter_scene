@@ -1,6 +1,5 @@
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
-import 'package:flutter/foundation.dart';
 import 'package:scene/scene.dart' as sim;
 import 'package:vector_math/vector_math.dart';
 
@@ -55,8 +54,11 @@ class RigidBody extends Component {
   /// The owning world while mounted.
   PhysicsWorld? get world => _world;
 
-  /// The body's simulation handle while mounted.
-  @internal
+  /// The body's simulation handle, or null while unmounted.
+  ///
+  /// Pass it to [world]'s [PhysicsWorld.simulation] (downcast to the
+  /// concrete backend) to reach backend-specific body features the generic
+  /// surface does not expose.
   int? get handle => _handle;
 
   sim.PhysicsSimulation? get _sim => _world?.simulation;

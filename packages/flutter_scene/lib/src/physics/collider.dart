@@ -1,7 +1,6 @@
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
-import 'package:flutter/foundation.dart';
 import 'package:scene/scene.dart' as sim;
 import 'package:vector_math/vector_math.dart';
 
@@ -42,9 +41,12 @@ class Collider extends Component {
   /// The owning world while mounted.
   PhysicsWorld? get world => _world;
 
-  /// The simulation collider handles while mounted (compound shapes may
-  /// produce several).
-  @internal
+  /// The simulation collider handles, empty while unmounted (a compound
+  /// shape may produce several).
+  ///
+  /// Pass them to [world]'s [PhysicsWorld.simulation] (downcast to the
+  /// concrete backend) to reach backend-specific collider features the
+  /// generic surface does not expose.
   List<int> get handles => List.unmodifiable(_handles);
 
   sim.Shape get shape => _shape;

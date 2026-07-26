@@ -24,6 +24,18 @@ abstract class Joint extends Component {
   int _bodyB = 0;
   bool _collisionsEnabled;
 
+  /// The owning world while mounted.
+  PhysicsWorld? get world => _world;
+
+  /// The joint's simulation handle, or null while unmounted.
+  ///
+  /// Pass it to [world]'s [PhysicsWorld.simulation] (downcast to the
+  /// concrete backend) to reach backend-specific joint features the generic
+  /// surface does not expose. Backends with joint types beyond the sealed
+  /// [sim.JointDesc] set create them on their own world and subclass [Joint]
+  /// to drive that handle.
+  int? get handle => _handle;
+
   /// Whether the joined bodies still collide with each other.
   bool get collisionsEnabled => _collisionsEnabled;
   set collisionsEnabled(bool value) {
