@@ -17,10 +17,8 @@ import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
-// TODO(particles): export alongside the particle emitters once the
-// authoring API is promoted to the public barrel. Per-particle trails (a
-// ribbon per particle of a ParticleSystem) are the natural follow-up and
-// need per-ribbon particle ids.
+// TODO(particles): per-particle trails (a ribbon per particle of a
+// ParticleSystem) are a natural follow-up and need per-ribbon particle ids.
 
 /// An engine component that trails a camera-facing ribbon behind its owning
 /// node as the node moves, for missiles, sword slashes, tracers, and debris.
@@ -42,6 +40,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// culling. A custom [Material] must also disable culling, since a
 /// camera-facing strip's winding flips wherever the path doubles back on
 /// itself.
+/// {@category Particles}
 class TrailComponent extends MeshComponent {
   /// Creates a trail. [maxPoints] bounds the recorded path (oldest points
   /// expire first); [material] defaults to a translucent unlit material

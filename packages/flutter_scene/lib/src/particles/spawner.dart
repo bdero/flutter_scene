@@ -6,6 +6,7 @@
 /// [time]) for [cycles] occurrences, or forever when [cycles] is null; a
 /// non-positive [interval] is a single shot. Burst times are absolute on the
 /// system clock.
+/// {@category Particles}
 class ParticleBurst {
   /// Creates a burst of [count] particles at [time], optionally repeating.
   const ParticleBurst({
@@ -38,6 +39,7 @@ class ParticleBurst {
 /// than one particle per step still emits on the right cadence rather than
 /// truncating to zero), and bursts fire when their scheduled time falls in the
 /// step's half-open time window.
+/// {@category Particles}
 class Spawner {
   /// Creates a spawner emitting [rate] particles per second plus [bursts].
   Spawner({this.rate = 0.0, List<ParticleBurst> bursts = const []})

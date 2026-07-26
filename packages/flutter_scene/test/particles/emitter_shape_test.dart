@@ -24,9 +24,9 @@ Vector3 _vel(ParticleStorage s, int i) =>
 final List<double> _seeds = [for (var i = 0; i < 64; i++) (i + 0.5) / 64.0];
 
 void main() {
-  group('PointShape', () {
+  group('PointEmitterShape', () {
     test('spawns at the origin heading along the normalized direction', () {
-      final shape = PointShape(direction: Vector3(0, 2, 0));
+      final shape = PointEmitterShape(direction: Vector3(0, 2, 0));
       final s = _spawn([0.1]);
       shape.sample(s, 0);
       expect(_pos(s, 0).length, 0.0);
@@ -36,9 +36,9 @@ void main() {
     });
   });
 
-  group('SphereShape', () {
+  group('SphereEmitterShape', () {
     test('surface points sit on the shell, radially directed', () {
-      const shape = SphereShape(radius: 2.0, surfaceOnly: true);
+      const shape = SphereEmitterShape(radius: 2.0, surfaceOnly: true);
       final s = _spawn(_seeds);
       for (var i = 0; i < s.aliveCount; i++) {
         shape.sample(s, i);
@@ -51,7 +51,7 @@ void main() {
     });
 
     test('volume points stay inside the sphere', () {
-      const shape = SphereShape(radius: 3.0);
+      const shape = SphereEmitterShape(radius: 3.0);
       final s = _spawn(_seeds);
       for (var i = 0; i < s.aliveCount; i++) {
         shape.sample(s, i);
@@ -61,7 +61,7 @@ void main() {
     });
 
     test('hemisphere keeps positions and directions in the +Y half', () {
-      const shape = SphereShape(radius: 1.0, hemisphere: true);
+      const shape = SphereEmitterShape(radius: 1.0, hemisphere: true);
       final s = _spawn(_seeds);
       for (var i = 0; i < s.aliveCount; i++) {
         shape.sample(s, i);
@@ -71,9 +71,9 @@ void main() {
     });
   });
 
-  group('ConeShape', () {
+  group('ConeEmitterShape', () {
     test('base sits in the XZ plane within the radius', () {
-      const shape = ConeShape(angle: 0.4, radius: 1.5);
+      const shape = ConeEmitterShape(angle: 0.4, radius: 1.5);
       final s = _spawn(_seeds);
       for (var i = 0; i < s.aliveCount; i++) {
         shape.sample(s, i);
@@ -87,7 +87,7 @@ void main() {
 
     test('directions are unit length within the cone half-angle', () {
       const angle = 0.4;
-      const shape = ConeShape(angle: angle, radius: 0.0);
+      const shape = ConeEmitterShape(angle: angle, radius: 0.0);
       final s = _spawn(_seeds);
       for (var i = 0; i < s.aliveCount; i++) {
         shape.sample(s, i);
@@ -98,9 +98,9 @@ void main() {
     });
   });
 
-  group('BoxShape', () {
+  group('BoxEmitterShape', () {
     test('positions fill the box and share the direction', () {
-      final shape = BoxShape(
+      final shape = BoxEmitterShape(
         halfExtents: Vector3(1, 2, 3),
         direction: Vector3(0, 0, 4),
       );

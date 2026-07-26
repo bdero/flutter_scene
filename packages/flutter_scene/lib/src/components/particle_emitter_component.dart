@@ -6,10 +6,6 @@ import 'package:flutter_scene/src/particles/particle_system.dart';
 
 import 'package:vector_math/vector_math.dart';
 
-// TODO(particles): export this (and the configuration types under
-// lib/src/particles/) from lib/scene.dart with a `{@category Particles}` doc
-// category once the authoring API settles across the later rendering phases.
-
 /// An engine component that simulates a [ParticleSystem] on the CPU and draws
 /// its live particles as one instanced batch of camera-facing billboards.
 ///
@@ -22,6 +18,7 @@ import 'package:vector_math/vector_math.dart';
 /// Configure the effect through the [system] (shape, spawner, modules, start
 /// distributions, gravity) and the [material] (texture, tint, blend mode). Set
 /// [facing]/[velocityStretch] for spark-like streaks.
+/// {@category Particles}
 class ParticleEmitterComponent extends MeshComponent {
   /// Creates an emitter that drives [system]. When [material] is omitted a
   /// default [SpriteMaterial] (untextured, alpha-blended) is used; configure

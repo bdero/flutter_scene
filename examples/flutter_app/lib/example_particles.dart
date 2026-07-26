@@ -1,5 +1,5 @@
-// Particle emitter demo. The configuration types live under lib/src/particles
-// (not yet part of the public barrel); a dev app may import them directly.
+// Particle emitter demo. Reaches two internal helpers (the icosphere builder
+// and the noise field) directly.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -9,17 +9,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/components/mesh_particle_emitter_component.dart';
-import 'package:flutter_scene/src/components/particle_emitter_component.dart';
-import 'package:flutter_scene/src/components/trail_component.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart'
     show buildIcosphereArrays;
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
-import 'package:flutter_scene/src/particles/distribution.dart';
-import 'package:flutter_scene/src/particles/emitter_shape.dart' as shape;
-import 'package:flutter_scene/src/particles/particle_module.dart';
-import 'package:flutter_scene/src/particles/particle_system.dart';
-import 'package:flutter_scene/src/particles/spawner.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
@@ -2145,7 +2137,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _flameCore(TextureSource atlas) {
     _coreSystem = ParticleSystem(
       maxParticles: 64,
-      shape: const shape.ConeShape(angle: 0.10, radius: 0.14),
+      shape: const ConeEmitterShape(angle: 0.10, radius: 0.14),
       spawner: Spawner(rate: _coreRate),
       // Lifetime sets the flipbook pace (64 frames once over life), so keep
       // it above a second or the flames strobe.
@@ -2219,7 +2211,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _flameTongues(TextureSource atlas) {
     _tongueSystem = ParticleSystem(
       maxParticles: 64,
-      shape: const shape.ConeShape(angle: 0.25, radius: 0.22),
+      shape: const ConeEmitterShape(angle: 0.25, radius: 0.22),
       spawner: Spawner(rate: _tongueRate),
       lifetime: const UniformFloat(0.55, 0.85),
       startSpeed: const UniformFloat(0.3, 0.55),
@@ -2278,7 +2270,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _glow(TextureSource dot) {
     _glowSystem = ParticleSystem(
       maxParticles: 16,
-      shape: const shape.SphereShape(radius: 0.15),
+      shape: const SphereEmitterShape(radius: 0.15),
       spawner: Spawner(rate: _glowRate),
       lifetime: const UniformFloat(0.6, 1.0),
       startSpeed: const UniformFloat(0.05, 0.15),
@@ -2310,7 +2302,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _smoke(TextureSource atlas) {
     _smokeSystem = ParticleSystem(
       maxParticles: 64,
-      shape: const shape.ConeShape(angle: 0.18, radius: 0.16),
+      shape: const ConeEmitterShape(angle: 0.18, radius: 0.16),
       spawner: Spawner(rate: _smokeRate),
       lifetime: const UniformFloat(3.0, 4.5),
       startSpeed: const UniformFloat(0.3, 0.55),
@@ -2375,7 +2367,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _groundFog(TextureSource atlas) {
     _fogSystem = ParticleSystem(
       maxParticles: 32,
-      shape: const shape.ConeShape(angle: 0.02, radius: 6.5),
+      shape: const ConeEmitterShape(angle: 0.02, radius: 6.5),
       spawner: Spawner(rate: _fogRate),
       lifetime: const UniformFloat(7.0, 11.0),
       startSpeed: const UniformFloat(0.02, 0.06),
@@ -2428,7 +2420,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _embers(TextureSource dot) {
     _emberSystem = ParticleSystem(
       maxParticles: 96,
-      shape: const shape.ConeShape(angle: 0.5, radius: 0.28),
+      shape: const ConeEmitterShape(angle: 0.5, radius: 0.28),
       spawner: Spawner(
         rate: _emberRate,
         bursts: const [ParticleBurst(time: 0.8, count: 9, interval: 2.3)],
@@ -2515,7 +2507,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
     _leafFallSystem = ParticleSystem(
       maxParticles: 90,
       // A wide, shallow slab up in the canopy; leaves start heading down.
-      shape: shape.BoxShape(
+      shape: BoxEmitterShape(
         halfExtents: vm.Vector3(8.0, 0.6, 8.0),
         direction: vm.Vector3(0, -1, 0),
       ),
@@ -2585,7 +2577,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
   Node _dustMotes(TextureSource dot) {
     _moteSystem = ParticleSystem(
       maxParticles: 160,
-      shape: const shape.SphereShape(radius: 2.6),
+      shape: const SphereEmitterShape(radius: 2.6),
       spawner: Spawner(rate: _moteRate),
       lifetime: const UniformFloat(3.5, 6.5),
       startSpeed: const UniformFloat(0.01, 0.05),

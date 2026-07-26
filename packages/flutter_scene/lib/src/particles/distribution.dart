@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math.dart';
 
 /// One control point of a [ParticleCurve]: a [value] at normalized time [t]
 /// (in `[0, 1]`).
+/// {@category Particles}
 class ParticleKeyframe {
   /// Creates a keyframe placing [value] at normalized time [t].
   const ParticleKeyframe(this.t, this.value);
@@ -24,6 +25,7 @@ class ParticleKeyframe {
 /// vary over the emitter's run (emit rate) read one keyed on system age. The
 /// curve is piecewise-linear between keyframes and clamped to the first/last
 /// value outside their range.
+/// {@category Particles}
 class ParticleCurve {
   /// Builds a curve from [keyframes], baked into a [resolution]-entry table.
   ///
@@ -106,6 +108,7 @@ class ParticleCurve {
 
 /// One color stop of a [ColorGradient]: a linear RGBA [color] at normalized
 /// time [t].
+/// {@category Particles}
 class ColorStop {
   /// Creates a stop placing [color] (linear RGBA) at normalized time [t].
   const ColorStop(this.t, this.color);
@@ -122,6 +125,7 @@ class ColorStop {
 /// Like [ParticleCurve] but for linear RGBA colors. Used for color-over-life
 /// gradients. Linearly interpolates between stops and clamps to the first/last
 /// color outside their range.
+/// {@category Particles}
 class ColorGradient {
   /// Builds a gradient from [stops], baked into a [resolution]-entry table.
   ///
@@ -215,6 +219,7 @@ class ColorGradient {
 /// deterministic and repeatable). The variants cover the four common authoring
 /// modes: a constant, a random range, a curve over life, and a per-particle
 /// random blend between two curves.
+/// {@category Particles}
 sealed class FloatDistribution {
   const FloatDistribution();
 
@@ -224,6 +229,7 @@ sealed class FloatDistribution {
 }
 
 /// A [FloatDistribution] that is [value] for every particle.
+/// {@category Particles}
 class ConstantFloat extends FloatDistribution {
   /// Creates a constant distribution.
   const ConstantFloat(this.value);
@@ -237,6 +243,7 @@ class ConstantFloat extends FloatDistribution {
 
 /// A [FloatDistribution] that picks a value in `[min, max]` per particle from
 /// its stored random (constant over the particle's life).
+/// {@category Particles}
 class UniformFloat extends FloatDistribution {
   /// Creates a uniform-range distribution over `[min, max]`.
   const UniformFloat(this.min, this.max);
@@ -251,6 +258,7 @@ class UniformFloat extends FloatDistribution {
 
 /// A [FloatDistribution] that samples [curve] over the particle's normalized
 /// age and scales it by [scale].
+/// {@category Particles}
 class CurveFloat extends FloatDistribution {
   /// Creates a curve-over-life distribution.
   const CurveFloat(this.curve, {this.scale = 1.0});
@@ -269,6 +277,7 @@ class CurveFloat extends FloatDistribution {
 /// A [FloatDistribution] whose value follows, per particle, a blend between a
 /// [min] and [max] curve chosen by the particle's stored random. Each particle
 /// keeps its own curve inside the envelope for the whole life.
+/// {@category Particles}
 class UniformCurveFloat extends FloatDistribution {
   /// Creates a distribution that blends between [min] and [max] curves by the
   /// per-particle random.
@@ -287,6 +296,7 @@ class UniformCurveFloat extends FloatDistribution {
 
 /// A color value generator sampled per particle, the color analog of
 /// [FloatDistribution].
+/// {@category Particles}
 sealed class ColorDistribution {
   const ColorDistribution();
 
@@ -296,6 +306,7 @@ sealed class ColorDistribution {
 }
 
 /// A [ColorDistribution] that is [color] for every particle.
+/// {@category Particles}
 class ConstantColor extends ColorDistribution {
   /// Creates a constant color distribution.
   const ConstantColor(this.color);
@@ -312,6 +323,7 @@ class ConstantColor extends ColorDistribution {
 
 /// A [ColorDistribution] that samples [gradient] over the particle's normalized
 /// age (color over life).
+/// {@category Particles}
 class GradientColor extends ColorDistribution {
   /// Creates a color-over-life distribution.
   const GradientColor(this.gradient);
@@ -326,6 +338,7 @@ class GradientColor extends ColorDistribution {
 
 /// A [ColorDistribution] that picks a color between [a] and [b] per particle
 /// from its stored random (constant over the particle's life).
+/// {@category Particles}
 class UniformColor extends ColorDistribution {
   /// Creates a distribution that blends between [a] and [b] by the per-particle
   /// random.

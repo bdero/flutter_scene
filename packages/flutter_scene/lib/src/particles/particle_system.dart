@@ -37,6 +37,7 @@ const double _minLifetime = 1e-4;
 /// (already-live particles still finish their lives). All randomness derives
 /// from [seed], so a given seed and step sequence reproduce exactly (the basis
 /// for byte-for-byte tests and editor scrubbing).
+/// {@category Particles}
 class ParticleSystem {
   /// Creates a particle system. The distributions, shape, spawner, gravity,
   /// looping behaviour, fixed-step size, and seed are all configurable; only

@@ -16,6 +16,7 @@ import 'dart:typed_data';
 /// Color is stored as four floats per particle (matching the billboard
 /// instance buffer's `float32x4` color attribute and the over-life color
 /// math). A packed RGBA8 column is a later memory optimization.
+/// {@category Particles}
 class ParticleStorage {
   /// Allocates storage for up to [capacity] simultaneous particles.
   ParticleStorage(this.capacity)
