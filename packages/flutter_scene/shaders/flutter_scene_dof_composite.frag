@@ -13,7 +13,12 @@ in vec2 v_uv;
 out vec4 frag_color;
 
 void main() {
-  vec4 sharp = texture(scene_color, v_uv);
+  // Clamp the sharp read to a finite HDR ceiling. A rare non-finite source
+  // pixel (a single NaN too small to notice without DoF) flows through
+  // (1 - dof.a) * sharp here (NaN even against a zero weight) and spreads into
+  // a bokeh-sized black disc; the CoC and bloom prefilters already clamp, this
+  // is the remaining unclamped scene-color read on the DoF path.
+  vec4 sharp = min(texture(scene_color, v_uv), vec4(65504.0));
   vec4 dof = texture(dof_texture, v_uv);
   frag_color = vec4(dof.rgb + (1.0 - dof.a) * sharp.rgb, sharp.a);
 }
