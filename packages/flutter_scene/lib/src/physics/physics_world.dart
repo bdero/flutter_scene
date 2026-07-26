@@ -45,6 +45,16 @@ final class NodePoseTarget implements sim.PoseTarget {
 /// A scene may contain more than one world; they are independent
 /// simulations. The scene's per-frame driver steps the world on a fixed
 /// timestep and interpolates dynamic-body transforms for rendering.
+///
+/// The generic components cover the shared contract, not every backend's
+/// full surface. For a feature only one backend exposes, downcast
+/// [simulation] to that backend and drive it by handle, `(world.simulation
+/// as RapierWorld).someRapierFeature(body.handle!)`, using [RigidBody.handle],
+/// [Collider.handles], or [Joint.handle]. The components are not `final`, so
+/// a backend companion library (or your own code) can subclass them to wrap
+/// backend-specific features in typed components, keeping the pure backend
+/// package headless. This is how backends with capabilities beyond the
+/// contract stay first-class without widening it.
 /// {@category Physics}
 class PhysicsWorld extends Component {
   PhysicsWorld(this.simulation);

@@ -11,6 +11,7 @@
 * Fixed cloned skinned meshes all drawing with the last-updated skeleton.
 * Physics backends now implement the pure `PhysicsSimulation` contract from the `scene` package and no longer depend on Flutter, so the same simulations run under plain `dart run`.
 * One generic physics component layer for every backend. `PhysicsWorld(RapierWorld())`, plus concrete `RigidBody`, `Collider`, the joint components, and `KinematicCharacterController`; the backend-specific component classes are gone.
+* Backend-specific physics features stay first-class. `RigidBody.handle`, `Collider.handles`, and `Joint.handle` are public, so downcasting `PhysicsWorld.simulation` to a backend reaches capabilities beyond the shared contract, and the components subclass for typed backend components.
 * `BasicSimulation` (queries and triggers, pure Dart) replaces `BasicPhysicsWorld`/`BasicCollider`/`BasicKinematicBody`.
 * Colliders without a sibling `RigidBody` now attach as static geometry instead of throwing.
 
