@@ -653,7 +653,12 @@ class _StressSceneState extends State<_StressScene> {
           ),
         if (_ready)
           ExampleOverlay.bottomLeftPanel(
-            child: LightingPanel(scene: _scene, selector: _environmentSelector),
+            child: LightingPanel(
+              scene: _scene,
+              selector: _environmentSelector,
+              initialSkyBlur: 0.40,
+              initialEnvironmentId: 'helipad',
+            ),
           ),
       ],
     );

@@ -62,6 +62,7 @@ class ExampleCarState extends State<ExampleCar> {
   @override
   void initState() {
     super.initState();
+    _skySource.blurriness = 0.60;
     _load();
   }
 
