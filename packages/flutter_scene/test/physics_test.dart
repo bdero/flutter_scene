@@ -6,7 +6,8 @@
 import 'dart:async';
 
 import 'package:flutter_scene/scene.dart';
-import 'package:scene/scene.dart'
+import 'package:flutter_scene/physics.dart';
+import 'package:scene/physics.dart'
     show
         JointDesc,
         SimCollisionEvent,

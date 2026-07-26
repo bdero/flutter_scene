@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:box3d/box3d.dart' as b3;
-import 'package:scene/scene.dart';
+import 'package:scene/physics.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// [PhysicsSimulation] backed by the box3d engine.

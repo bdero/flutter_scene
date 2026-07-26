@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings_factory.dart';
-import 'package:scene/scene.dart';
+import 'package:scene/physics.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// [PhysicsSimulation] backed by Rapier 3D.

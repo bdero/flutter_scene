@@ -1,7 +1,7 @@
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
-import 'package:scene/scene.dart' as sim;
+import 'package:scene/physics.dart' as sim;
 import 'package:vector_math/vector_math.dart';
 
 /// A collision volume attached to a [Node].

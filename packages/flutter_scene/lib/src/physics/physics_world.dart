@@ -6,7 +6,7 @@ import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/collider.dart';
 import 'package:flutter_scene/src/physics/events.dart';
 import 'package:flutter_scene/src/physics/queries.dart';
-import 'package:scene/scene.dart' as sim;
+import 'package:scene/physics.dart' as sim;
 import 'package:vector_math/vector_math.dart';
 
 /// Adapts a [Node]'s world transform to the simulation's pose seam.

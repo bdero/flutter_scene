@@ -12,6 +12,7 @@ import 'dart:math' as math;
 // example).
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart' as prim;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';

@@ -15,7 +15,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-import 'package:scene/scene.dart';
+import 'package:scene/physics.dart';
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:flutter_scene_rapier/src/ffi/wasm_runtime_web.dart';
 import 'package:vector_math/vector_math.dart';

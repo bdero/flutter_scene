@@ -7,7 +7,7 @@
 
 import 'dart:typed_data';
 
-import 'package:scene/scene.dart';
+import 'package:scene/physics.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Body-kind bytes shared with the shim's C ABI.

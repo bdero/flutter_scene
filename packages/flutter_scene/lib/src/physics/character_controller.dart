@@ -3,10 +3,10 @@ import 'dart:math';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/collider.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
-import 'package:scene/scene.dart' show CharacterMovement;
+import 'package:scene/physics.dart' show CharacterMovement;
 import 'package:vector_math/vector_math.dart';
 
-export 'package:scene/scene.dart' show CharacterMovement;
+export 'package:scene/physics.dart' show CharacterMovement;
 
 /// Kinematic move-and-slide against the world's colliders.
 ///

@@ -4,7 +4,7 @@
 // native binary arrives through the build hook and the simulation drives
 // SimplePoseTargets. Run with `dart run tool/headless_smoke.dart`.
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
-import 'package:scene/scene.dart';
+import 'package:scene/physics.dart';
 import 'package:vector_math/vector_math.dart';
 
 Future<void> main() async {

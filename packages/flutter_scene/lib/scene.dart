@@ -157,54 +157,8 @@ export 'src/audio/audio_listener.dart' show AudioListener;
 export 'src/audio/audio_source.dart' show AudioSource;
 export 'src/audio/audio_voice.dart' show AudioVoice;
 export 'src/audio/clip_audio_source.dart' show ClipAudioSource;
-export 'package:scene/scene.dart'
-    show
-        BasicSimulation,
-        BodyType,
-        BoxShape,
-        CapsuleShape,
-        CharacterMovement,
-        CombineRule,
-        CompoundChild,
-        CompoundShape,
-        ConvexHullShape,
-        CylinderShape,
-        HeightFieldShape,
-        JointAxis,
-        JointAxisConfig,
-        JointAxisMotion,
-        JointMotor,
-        JointMotorModel,
-        PhysicsMaterial,
-        PhysicsSimulation,
-        PoseTarget,
-        Shape,
-        SimplePoseTarget,
-        SphereShape,
-        TriMeshShape;
-export 'src/physics/character_controller.dart'
-    show KinematicCharacterController;
-export 'src/physics/collider.dart' show Collider;
-export 'src/physics/events.dart'
-    show
-        CollisionBegan,
-        CollisionEnded,
-        CollisionEvent,
-        ContactPoint,
-        TriggerEntered,
-        TriggerExited;
-export 'src/physics/joint.dart'
-    show
-        FixedJoint,
-        GenericJoint,
-        Joint,
-        PrismaticJoint,
-        RevoluteJoint,
-        SphericalJoint;
-export 'src/physics/physics_world.dart'
-    show NodePoseTarget, PhysicsWorld, findAncestorWorld;
-export 'src/physics/queries.dart' show OverlapHit, RaycastHit, ShapeCastHit;
-export 'src/physics/rigid_body.dart' show RigidBody;
+// Physics is an optional contract, exported from
+// `package:flutter_scene/physics.dart`.
 export 'src/post_process/post_effect.dart' show PostEffect, PostInsertion;
 export 'src/post_process/post_process.dart'
     show

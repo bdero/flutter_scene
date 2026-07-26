@@ -3,7 +3,8 @@
 // trigger event diffing.
 
 import 'package:flutter_scene/scene.dart';
-import 'package:scene/scene.dart' show rayHitsShape;
+import 'package:flutter_scene/physics.dart';
+import 'package:scene/physics.dart' show rayHitsShape;
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
