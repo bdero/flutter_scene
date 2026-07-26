@@ -38,9 +38,18 @@ vec3 FresnelSchlickRoughness(float cos_theta, vec3 reflectance,
 // via `1 - NoH^2 == dot(cross(n, h), cross(n, h))` keeps it stable on
 // mobile GPUs. `roughness` is perceptual roughness; `alpha = roughness^2`.
 float DistributionGGX(vec3 normal, vec3 half_vector, float roughness) {
+  float n_dot_h = dot(normal, half_vector);
+  // Microfacets only exist in the normal's hemisphere. For a half vector in the
+  // lower hemisphere (n_dot_h <= 0, e.g. a back-lit double-sided card viewed
+  // from behind, where the light and view are on opposite sides of the shading
+  // normal) the fp16-safe denominator below collapses to zero near the antipode
+  // (|n x h|^2 -> 0 while the a^2 guard is also 0 because a uses a clamped
+  // n_dot_h), so k = alpha / 0 = Inf. There is no distribution there; return 0.
+  if (n_dot_h <= 0.0) {
+    return 0.0;
+  }
   float alpha = roughness * roughness;
   vec3 n_cross_h = cross(normal, half_vector);
-  float n_dot_h = max(dot(normal, half_vector), 0.0);
   float a = n_dot_h * alpha;
   float k = alpha / (dot(n_cross_h, n_cross_h) + a * a);
   return k * k * (1.0 / kPi);

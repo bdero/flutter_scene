@@ -246,16 +246,28 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   if (n_dot_l <= 0.0) {
     return vec3(0.0);
   }
-  vec3 half_vector = normalize(light_vector + camera_normal);
   float n_dot_v_safe = max(n_dot_v, 1e-4);
-  float distribution = DistributionGGX(normal, half_vector, roughness);
-  float visibility =
-      VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
-  vec3 specular_fresnel =
-      FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
-  // `visibility` already folds in 1 / (4 * NoL * NoV).
-  vec3 specular =
-      distribution * visibility * specular_fresnel * specular_scale;
+  // Facing the light through a double-sided surface (a back-lit leaf whose
+  // normal faces the sun), light_vector nears -camera_normal, so the unnormalized
+  // half vector nears zero and normalize() returns a NaN that becomes a black
+  // specular hole a later gather pass spreads. There is no specular highlight at
+  // that light-opposite-view geometry (it is retroreflection), so drop the
+  // specular when the half vector degenerates. Fresnel then falls back to the
+  // base reflectance for the diffuse energy split.
+  vec3 h = light_vector + camera_normal;
+  float h_len_sq = dot(h, h);
+  vec3 specular = vec3(0.0);
+  vec3 specular_fresnel = reflectance;
+  if (h_len_sq > 1e-8) {
+    vec3 half_vector = h * inversesqrt(h_len_sq);
+    float distribution = DistributionGGX(normal, half_vector, roughness);
+    float visibility =
+        VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+    specular_fresnel =
+        FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+    // `visibility` already folds in 1 / (4 * NoL * NoV).
+    specular = distribution * visibility * specular_fresnel * specular_scale;
+  }
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
   return (diffuse + specular) * radiance * n_dot_l;
