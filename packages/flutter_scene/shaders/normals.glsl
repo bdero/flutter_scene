@@ -25,8 +25,15 @@ mat3 CotangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
   vec3 T = view_y_perp * d_uv_x.x + view_x_perp * d_uv_y.x;
   vec3 B = view_y_perp * d_uv_x.y + view_x_perp * d_uv_y.y;
 
-  // Construct a scale-invariant frame.
-  float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+  // Construct a scale-invariant frame. An edge-on card drives T and B toward
+  // zero; if the squared length underflows to zero (or a denormal the GPU
+  // flushes to zero inside inversesqrt) the reciprocal is +Inf and 0 * Inf is a
+  // NaN normal, which becomes a black specular hole a later gather pass spreads.
+  // Floor the length so inversesqrt is always fed a normal, finite value. Any
+  // real frame is far above this floor, so this is a no-op for normal shading
+  // and only tames the degenerate case, where the tangents stay ~zero and the
+  // normal falls back to the geometric normal.
+  float invmax = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
   return mat3(T * invmax, B * invmax, normal);
 }
 
