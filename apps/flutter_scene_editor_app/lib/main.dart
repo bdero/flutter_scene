@@ -26,7 +26,7 @@ void main() {
     exit(1);
   }
   WidgetsFlutterBinding.ensureInitialized();
-  final controller = WindowController(
+  final controller = RegularWindowController(
     size: const Size(1280, 800),
     // The runner styles the window with a hidden title bar by this title
     // (see AppDelegate.swift); keep the two in sync.
@@ -34,20 +34,20 @@ void main() {
     delegate: _MainWindowDelegate(),
   );
   runWidget(
-    Window(controller: controller, child: const FlutterSceneEditorApp()),
+    RegularWindow(controller: controller, child: const FlutterSceneEditorApp()),
   );
 }
 
 /// Quits the app when the main editor window closes, taking any floating
 /// panel windows with it.
-class _MainWindowDelegate with WindowControllerDelegate {
+class _MainWindowDelegate with RegularWindowControllerDelegate {
   @override
   void onWindowDestroyed() {
     exit(0);
   }
 }
 
-/// Window services the runner exposes for the hidden-title-bar chrome.
+/// RegularWindow services the runner exposes for the hidden-title-bar chrome.
 const _windowChannel = MethodChannel('scene_editor/window');
 
 /// Asks the runner to move the window with the in-progress drag (the menu
