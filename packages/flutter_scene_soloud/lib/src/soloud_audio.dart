@@ -325,7 +325,7 @@ class SoloudAudioVoice implements AudioVoice {
     final soloud = _engine._soloud;
     final sl.SoundHandle handle;
     if (_positional) {
-      handle = await soloud.play3d(
+      handle = soloud.play3d(
         _clip.source,
         _position.x,
         _position.y,
@@ -337,7 +337,7 @@ class SoloudAudioVoice implements AudioVoice {
         looping: _looping,
       );
     } else {
-      handle = await soloud.play(
+      handle = soloud.play(
         _clip.source,
         volume: _effectiveVolume,
         looping: _looping,

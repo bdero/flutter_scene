@@ -3,7 +3,6 @@ description: FMOD Studio audio backend for flutter_scene. Implements the abstrac
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
 version: 0.1.0
-publish_to: none
 
 resolution: workspace
 

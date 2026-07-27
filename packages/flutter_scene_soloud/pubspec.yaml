@@ -3,7 +3,6 @@ description: SoLoud audio backend for flutter_scene. Implements the abstract aud
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
 version: 0.1.0
-publish_to: none
 
 resolution: workspace
 
@@ -15,7 +14,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_scene: ^0.20.0
-  flutter_soloud: ^3.3.0
+  flutter_soloud: ^4.0.0
   vector_math: ^2.1.4
 
 dev_dependencies:
