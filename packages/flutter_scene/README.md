@@ -8,7 +8,7 @@
 
 <p align="center"><b>A realtime 3D engine for Flutter</b></p>
 
-<p align="center">Scene is a complete 3D engine, not a renderer wrapper. Physics, audio, tooling, and a full asset pipeline, in Dart packages, on every platform Flutter supports. It was built by the same engineer who built Flutter GPU, and building it is how Flutter GPU came to exist.</p>
+<p align="center">Scene extends Flutter into a complete toolkit for building incredible 3D multiplatform apps. Rendering, physics, audio, tooling, and a full asset pipeline.</p>
 
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
@@ -64,9 +64,9 @@
 
 ## Why Scene exists
 
-Scene began its life inside the Flutter Engine, as a C++ module for Impeller with a declarative widget interface exposed through a 3D API in the Flutter SDK. Flutter GPU was built largely to set this project free, providing the low-level GPU access needed to develop Scene outside the engine, as an ordinary ecosystem of Dart packages that anyone can depend on, fork, or learn from.
+Scene began its life inside the Flutter Engine, as a C++ module for Impeller with a declarative widget interface exposed through a 3D API in the Flutter SDK. Flutter GPU was built initially to set this project free, providing the low-level GPU access needed to develop Scene outside the engine, as an ordinary ecosystem of Dart packages.
 
-That origin shapes the project's philosophy. Scene is not just a renderer, it is a full 3D engine and toolkit that makes Flutter GPU practical to build on, spanning rendering, physics, audio, editor tooling, and asset support across every target Flutter runs on. And the relationship flows both ways by design. The work of building Scene continually exercises and improves Flutter's internal graphics stack, so Impeller and Flutter GPU get better because Scene exists.
+That origin shapes the project's philosophy. Scene is a full 3D engine and toolkit that makes Flutter GPU practical to build on, spanning rendering, physics, audio, editor tooling, and asset support across every target Flutter runs on. And the relationship flows both ways by design. The work of building Scene continually exercises and improves Flutter's internal graphics stack, so Impeller and Flutter GPU get better because Scene exists.
 
 The goal has always been to pave the way for advanced graphics in Flutter. In line with the goals set out in Flutter GPU's original design doc, Scene aims to de-fracture, unite, and elevate Flutter's graphics ecosystem, so that building incredible 3D experiences with Flutter and Dart no longer requires engine forks, complicated external renderer integrations, or giving up platforms to get advanced features.
 
