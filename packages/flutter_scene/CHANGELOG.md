@@ -6,6 +6,7 @@
 * Declarative animation control via `SceneModel.animations` (`SceneAnimationSpec`), plus cached model templates so equal sources load once and share GPU resources.
 * `KHR_materials_variants` support in both import paths via `MaterialsVariantsComponent`, declaratively via `SceneModel.variant`, with a new Configurator example.
 * Fixed animation blending collapsing rigs with mirrored bones.
+* Fixed slerp taking the long arc when interpolating between quaternions in opposite hemispheres.
 * Automatic exposure (eye adaptation) via `Scene.autoExposure`, metered entirely on the GPU.
 * Imported materials keep their source names via the new `Material.name`.
 * Fixed cloned skinned meshes all drawing with the last-updated skeleton.
