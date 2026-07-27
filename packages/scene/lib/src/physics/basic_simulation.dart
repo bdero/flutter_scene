@@ -58,6 +58,7 @@ class _Pair {
 /// (no solver, no contact response, no joints). Dynamic bodies and joints
 /// throw [UnsupportedError]; for full rigid-body simulation use a backend
 /// package with a solver.
+/// {@category Physics}
 class BasicSimulation extends PhysicsSimulation {
   BasicSimulation({Vector3? gravity}) {
     if (gravity != null) this.gravity = gravity;

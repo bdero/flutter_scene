@@ -18,6 +18,7 @@ import 'package:scene/src/scene_document.dart';
 import 'package:scene/src/specs.dart';
 
 /// What changed about a node present in both documents.
+/// {@category Composition}
 class NodeChange {
   /// Records the changed aspects of node [id].
   NodeChange(
@@ -61,6 +62,7 @@ class NodeChange {
 }
 
 /// The set of changes between two documents.
+/// {@category Composition}
 class SceneDiff {
   /// Creates a diff from its parts.
   SceneDiff({
@@ -106,6 +108,7 @@ class SceneDiff {
 ///
 /// Both documents must be fully composed (no prefab instances); ids are assumed
 /// stable across the two (the same node keeps its id when its file is edited).
+/// {@category Composition}
 SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
   final oldIds = oldDocument.nodes.keys.toSet();
   final newIds = newDocument.nodes.keys.toSet();

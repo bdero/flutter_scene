@@ -9,6 +9,7 @@ import 'package:scene/src/id.dart';
 /// resolved at load time. Wrapping it gives the format a single seam to
 /// later swap filesystem paths for content-addressed or uid-backed
 /// resolution.
+/// {@category Property values}
 class AssetRef {
   /// References the asset at the given source-path [key].
   const AssetRef(this.key);
@@ -33,65 +34,76 @@ class AssetRef {
 /// codec registry, and the prefab composer can exhaustively switch over it.
 /// References to other document entities are first-class:
 /// [ResourceRefValue] points at a resource, [NodeRefValue] at a node.
+/// {@category Property values}
 sealed class PropertyValue {
   const PropertyValue();
 }
 
 /// A boolean value.
+/// {@category Property values}
 class BoolValue extends PropertyValue {
   const BoolValue(this.value);
   final bool value;
 }
 
 /// An integer value.
+/// {@category Property values}
 class IntValue extends PropertyValue {
   const IntValue(this.value);
   final int value;
 }
 
 /// A floating-point scalar value.
+/// {@category Property values}
 class DoubleValue extends PropertyValue {
   const DoubleValue(this.value);
   final double value;
 }
 
 /// A string value.
+/// {@category Property values}
 class StringValue extends PropertyValue {
   const StringValue(this.value);
   final String value;
 }
 
 /// A 2-component vector.
+/// {@category Property values}
 class Vec2Value extends PropertyValue {
   Vec2Value(this.value);
   final Vector2 value;
 }
 
 /// A 3-component vector.
+/// {@category Property values}
 class Vec3Value extends PropertyValue {
   Vec3Value(this.value);
   final Vector3 value;
 }
 
 /// A 4-component vector.
+/// {@category Property values}
 class Vec4Value extends PropertyValue {
   Vec4Value(this.value);
   final Vector4 value;
 }
 
 /// A rotation quaternion (`x, y, z, w`).
+/// {@category Property values}
 class QuaternionValue extends PropertyValue {
   QuaternionValue(this.value);
   final Quaternion value;
 }
 
 /// A 4x4 matrix.
+/// {@category Property values}
 class Matrix4Value extends PropertyValue {
   Matrix4Value(this.value);
   final Matrix4 value;
 }
 
 /// A linear RGBA color.
+/// {@category Property values}
 class ColorValue extends PropertyValue {
   const ColorValue(this.r, this.g, this.b, this.a);
   final double r;
@@ -102,24 +114,28 @@ class ColorValue extends PropertyValue {
 
 /// A reference to a resource (geometry, material, texture, ...) in the same
 /// document, by its [LocalId].
+/// {@category Property values}
 class ResourceRefValue extends PropertyValue {
   const ResourceRefValue(this.id);
   final LocalId id;
 }
 
 /// A reference to another node in the same document, by its [LocalId].
+/// {@category Property values}
 class NodeRefValue extends PropertyValue {
   const NodeRefValue(this.id);
   final LocalId id;
 }
 
 /// An ordered list of values.
+/// {@category Property values}
 class ListValue extends PropertyValue {
   ListValue(this.values);
   final List<PropertyValue> values;
 }
 
 /// A string-keyed map of values (a nested property bag).
+/// {@category Property values}
 class MapValue extends PropertyValue {
   MapValue(this.values);
   final Map<String, PropertyValue> values;

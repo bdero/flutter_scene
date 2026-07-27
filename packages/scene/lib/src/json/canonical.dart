@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 /// Thrown when a value cannot be encoded to canonical `.fscene` JSON.
+/// {@category Serialization}
 class FsceneEncodeException implements Exception {
   /// Creates an encode exception with the given [message].
   FsceneEncodeException(this.message);
@@ -21,6 +22,7 @@ class FsceneEncodeException implements Exception {
 /// on one line so diffs stay tight. Doubles are written with a decimal or
 /// exponent so they round-trip back to doubles; non-finite numbers are
 /// rejected and `-0.0` is normalized to `0.0`.
+/// {@category Serialization}
 String canonicalJson(Object? value, {String indent = '  '}) {
   final sb = StringBuffer();
   _write(sb, value, indent, 0);

@@ -14,6 +14,7 @@ sealed class Shape {
 }
 
 /// A sphere centered at the collider's local origin.
+/// {@category Physics}
 class SphereShape extends Shape {
   final double radius;
 

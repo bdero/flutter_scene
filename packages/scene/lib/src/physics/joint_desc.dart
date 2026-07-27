@@ -1,12 +1,15 @@
 import 'package:vector_math/vector_math.dart';
 
 /// One of the six relative degrees of freedom a generic joint constrains.
+/// {@category Physics}
 enum JointAxis { linearX, linearY, linearZ, angularX, angularY, angularZ }
 
 /// How a joint motor's strength is interpreted.
+/// {@category Physics}
 enum JointMotorModel { acceleration, force }
 
 /// Drives a joint axis toward a target position and/or velocity.
+/// {@category Physics}
 class JointMotor {
   const JointMotor({
     this.targetPosition = 0,
@@ -25,9 +28,12 @@ class JointMotor {
   final JointMotorModel model;
 }
 
+/// How a single axis of a [GenericJointDesc] is constrained.
+/// {@category Physics}
 enum JointAxisMotion { locked, free, limited }
 
 /// Motion allowance for one axis of a generic joint.
+/// {@category Physics}
 class JointAxisConfig {
   const JointAxisConfig.locked() : this._(JointAxisMotion.locked, 0, 0, null);
 
@@ -55,6 +61,7 @@ class JointAxisConfig {
 /// [PhysicsSimulation.createJoint] consumes one; the same description is
 /// passed to `updateJoint` on reconfiguration, so backends without
 /// in-place updates can recreate internally.
+/// {@category Physics}
 sealed class JointDesc {
   const JointDesc({
     required this.bodyA,
@@ -69,6 +76,8 @@ sealed class JointDesc {
   final bool collisionsEnabled;
 }
 
+/// Welds the two bodies at their current relative pose.
+/// {@category Physics}
 class FixedJointDesc extends JointDesc {
   FixedJointDesc({
     required super.bodyA,
@@ -83,6 +92,8 @@ class FixedJointDesc extends JointDesc {
   final Vector3 localAnchorB;
 }
 
+/// A ball-and-socket constraint at the local anchors.
+/// {@category Physics}
 class SphericalJointDesc extends JointDesc {
   SphericalJointDesc({
     required super.bodyA,
@@ -97,6 +108,8 @@ class SphericalJointDesc extends JointDesc {
   final Vector3 localAnchorB;
 }
 
+/// A hinge about [localAxisA]/[localAxisB], optionally limited and motorized.
+/// {@category Physics}
 class RevoluteJointDesc extends JointDesc {
   RevoluteJointDesc({
     required super.bodyA,
@@ -123,6 +136,8 @@ class RevoluteJointDesc extends JointDesc {
   final double? motorMaxForce;
 }
 
+/// A slider along [localAxisA]/[localAxisB], optionally limited and motorized.
+/// {@category Physics}
 class PrismaticJointDesc extends JointDesc {
   PrismaticJointDesc({
     required super.bodyA,
@@ -149,6 +164,8 @@ class PrismaticJointDesc extends JointDesc {
   final double? motorMaxForce;
 }
 
+/// A six-degree-of-freedom constraint with per-axis motion configs.
+/// {@category Physics}
 class GenericJointDesc extends JointDesc {
   GenericJointDesc({
     required super.bodyA,

@@ -37,6 +37,7 @@ import 'package:scene/src/json/fscene_json.dart';
 import 'package:scene/src/scene_document.dart';
 
 /// The current `.fsceneb` container version this build reads and writes.
+/// {@category Serialization}
 const int kFscenebVersion = 1;
 
 const List<int> _magic = [0x46, 0x53, 0x43, 0x42]; // "FSCB"
@@ -46,6 +47,7 @@ const int _headerByteLength = 16;
 const int _alignment = 8;
 
 /// Thrown when a `.fsceneb` container is malformed.
+/// {@category Serialization}
 class FscenebFormatException implements Exception {
   /// Creates a container-format exception with the given [message].
   const FscenebFormatException(this.message);
@@ -64,6 +66,7 @@ class FscenebFormatException implements Exception {
 /// manifest-only payload (no bytes) cannot be embedded and throws a
 /// [FscenebFormatException]. Payloads referenced by external `ref` rather than
 /// an embedded chunk are not payloads, so they are unaffected.
+/// {@category Serialization}
 Uint8List writeFsceneb(SceneDocument document) {
   final body = BytesBuilder();
 
@@ -115,6 +118,7 @@ Uint8List writeFsceneb(SceneDocument document) {
 /// Tolerates the same JSONC superset and runs the same version migration as
 /// [readFscene] for the manifest. Throws a [FscenebFormatException] on a bad
 /// magic, an unsupported container version, or a missing manifest.
+/// {@category Serialization}
 SceneDocument readFsceneb(Uint8List bytes) {
   if (bytes.length < _headerByteLength) {
     throw const FscenebFormatException('Truncated container (no header)');

@@ -27,9 +27,11 @@ import 'package:scene/src/scene_document.dart';
 import 'package:scene/src/specs.dart';
 
 /// Resolves a prefab [AssetRef] to its (uncomposed) [SceneDocument].
+/// {@category Composition}
 typedef PrefabResolver = SceneDocument Function(AssetRef ref);
 
 /// Asynchronously loads a prefab [AssetRef]'s (uncomposed) [SceneDocument].
+/// {@category Composition}
 typedef AsyncPrefabLoader = Future<SceneDocument> Function(AssetRef ref);
 
 /// Where a composed node came from: the instance it was expanded under, the
@@ -39,6 +41,7 @@ typedef AsyncPrefabLoader = Future<SceneDocument> Function(AssetRef ref);
 /// prefab-local id an override targets, so prefab content can be edited in
 /// place. For the single-root merge the instance node itself appears here with
 /// [prefabLocalId] set to the prefab root.
+/// {@category Composition}
 class PrefabMemberOrigin {
   /// Creates an origin record.
   PrefabMemberOrigin({
@@ -67,6 +70,7 @@ class PrefabMemberOrigin {
 /// When [memberOrigins] is given, it is filled with one entry per composed node
 /// that came from an instance (keyed by composed id), so a caller can map
 /// composed content back to the instance and prefab-local id it edits.
+/// {@category Composition}
 SceneDocument composeScene(
   SceneDocument document, {
   required PrefabResolver resolve,
@@ -79,6 +83,7 @@ SceneDocument composeScene(
 /// The async counterpart of [composeScene]: the asset loaders call this so a
 /// scene that references prefab files by source path is expanded before
 /// realizing. A reference that fails to load throws.
+/// {@category Composition}
 Future<SceneDocument> composeSceneAsync(
   SceneDocument document, {
   required AsyncPrefabLoader load,
@@ -380,6 +385,7 @@ void _applyDelta(
 /// used during composition: `name`, `layers`, `visible`, `transform.matrix`,
 /// `transform.trs.t`, `transform.trs.r`, `transform.trs.s`, and
 /// `components.<type>.<prop>`.
+/// {@category Composition}
 void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
   final node = document.node(override.target);
   if (node == null) {

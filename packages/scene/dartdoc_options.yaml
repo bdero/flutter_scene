@@ -1,0 +1,7 @@
+dartdoc:
+  categoryOrder:
+    - "Documents"
+    - "Property values"
+    - "Composition"
+    - "Serialization"
+    - "Physics"

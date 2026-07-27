@@ -10,9 +10,11 @@ import 'package:vector_math/vector_math.dart';
 /// * [BodyType.dynamic_]: fully simulated. The backend writes the pose
 ///   target each step in response to forces, contacts, and gravity. The
 ///   trailing underscore avoids the Dart `dynamic` keyword.
+/// {@category Physics}
 enum BodyType { fixed, kinematic, dynamic_ }
 
 /// One contact within a collision manifold.
+/// {@category Physics}
 class ContactPoint {
   ContactPoint({
     required this.worldPosition,
@@ -28,6 +30,7 @@ class ContactPoint {
 }
 
 /// A raycast result at the simulation level, keyed by collider handle.
+/// {@category Physics}
 class SimRaycastHit {
   SimRaycastHit({
     required this.colliderHandle,
@@ -43,6 +46,7 @@ class SimRaycastHit {
 }
 
 /// An overlap result at the simulation level.
+/// {@category Physics}
 class SimOverlapHit {
   SimOverlapHit({required this.colliderHandle});
 
@@ -50,6 +54,7 @@ class SimOverlapHit {
 }
 
 /// A shape-cast result at the simulation level.
+/// {@category Physics}
 class SimShapeCastHit extends SimRaycastHit {
   SimShapeCastHit({
     required super.colliderHandle,
@@ -61,6 +66,7 @@ class SimShapeCastHit extends SimRaycastHit {
 
 /// Collision lifecycle events at the simulation level, keyed by collider
 /// handles. Engine layers resolve handles to their own collider objects.
+/// {@category Physics}
 sealed class SimCollisionEvent {
   SimCollisionEvent({
     required this.colliderHandleA,
@@ -71,6 +77,8 @@ sealed class SimCollisionEvent {
   final int colliderHandleB;
 }
 
+/// Contact between two colliders began this step, carrying its [contacts].
+/// {@category Physics}
 class SimCollisionBegan extends SimCollisionEvent {
   SimCollisionBegan({
     required super.colliderHandleA,
@@ -81,6 +89,8 @@ class SimCollisionBegan extends SimCollisionEvent {
   final List<ContactPoint> contacts;
 }
 
+/// Contact between two colliders ended this step.
+/// {@category Physics}
 class SimCollisionEnded extends SimCollisionEvent {
   SimCollisionEnded({
     required super.colliderHandleA,
@@ -88,6 +98,8 @@ class SimCollisionEnded extends SimCollisionEvent {
   });
 }
 
+/// A collider entered a trigger volume this step.
+/// {@category Physics}
 class SimTriggerEntered extends SimCollisionEvent {
   SimTriggerEntered({
     required super.colliderHandleA,
@@ -95,6 +107,8 @@ class SimTriggerEntered extends SimCollisionEvent {
   });
 }
 
+/// A collider left a trigger volume this step.
+/// {@category Physics}
 class SimTriggerExited extends SimCollisionEvent {
   SimTriggerExited({
     required super.colliderHandleA,
@@ -103,6 +117,7 @@ class SimTriggerExited extends SimCollisionEvent {
 }
 
 /// Result of one kinematic character move-and-slide.
+/// {@category Physics}
 class CharacterMovement {
   CharacterMovement({
     required this.translation,

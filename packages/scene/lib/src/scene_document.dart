@@ -11,6 +11,7 @@ import 'package:scene/src/specs.dart';
 /// entities are by [LocalId]. This type holds the data only; encoding (JSON
 /// and packed binary), composition (prefab overrides), and realization live
 /// in separate layers.
+/// {@category Documents}
 class SceneDocument {
   /// Creates an empty document. A new [documentId] and [allocator] (with a
   /// fresh session salt) are generated unless supplied.

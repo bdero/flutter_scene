@@ -11,10 +11,12 @@ import 'package:scene/src/scene_document.dart';
 import 'package:scene/src/specs.dart';
 
 /// The current `.fscene` format version this build reads and writes.
+/// {@category Serialization}
 const int currentFsceneVersion = 1;
 
 /// The format feature flags this build understands. A document that lists a
 /// feature outside this set in its `featuresRequired` is refused.
+/// {@category Serialization}
 const Set<String> supportedFeatures = {
   'skinning',
   'prefabInstances',
@@ -24,6 +26,7 @@ const Set<String> supportedFeatures = {
 
 /// Upgrades a raw decoded document one version forward (version `N` to
 /// `N + 1`). Indexed by source version in the migration list.
+/// {@category Serialization}
 typedef FsceneMigration =
     Map<String, dynamic> Function(Map<String, dynamic> json);
 
@@ -32,6 +35,7 @@ typedef FsceneMigration =
 const List<FsceneMigration> _builtInMigrations = [];
 
 /// Thrown when a `.fscene` document is malformed.
+/// {@category Serialization}
 class FsceneFormatException implements Exception {
   /// Creates a format exception with the given [message].
   const FsceneFormatException(this.message);
@@ -45,6 +49,7 @@ class FsceneFormatException implements Exception {
 
 /// Thrown when a document's version cannot be loaded (newer than supported,
 /// or missing a migration step).
+/// {@category Serialization}
 class FsceneVersionException implements Exception {
   /// Creates a version exception with the given [message].
   const FsceneVersionException(this.message);
@@ -58,6 +63,7 @@ class FsceneVersionException implements Exception {
 
 /// Thrown when a document requires a format feature this build does not
 /// support.
+/// {@category Serialization}
 class FsceneUnsupportedFeatureException implements Exception {
   /// Creates an exception naming the unsupported [feature].
   const FsceneUnsupportedFeatureException(this.feature);
@@ -72,6 +78,7 @@ class FsceneUnsupportedFeatureException implements Exception {
 }
 
 /// Serializes [doc] to canonical `.fscene` JSON text.
+/// {@category Serialization}
 String writeFscene(SceneDocument doc) => canonicalJson(encodeDocument(doc));
 
 /// Parses a `.fscene` document from [source].
@@ -79,6 +86,7 @@ String writeFscene(SceneDocument doc) => canonicalJson(encodeDocument(doc));
 /// Accepts a JSONC superset on read (`//` and `/* */` comments, trailing
 /// commas), runs the version migration chain, then decodes. Pass [migrations]
 /// to override the built-in chain (for tests). Unknown fields are ignored.
+/// {@category Serialization}
 SceneDocument readFscene(String source, {List<FsceneMigration>? migrations}) {
   final decoded = jsonDecode(stripJsonc(source));
   if (decoded is! Map) {
@@ -94,6 +102,7 @@ SceneDocument readFscene(String source, {List<FsceneMigration>? migrations}) {
 /// Runs the version migration chain over a raw decoded [json] document,
 /// upgrading it to [currentFsceneVersion]. Throws [FsceneVersionException]
 /// for a newer-than-supported version or a missing migration step.
+/// {@category Serialization}
 Map<String, dynamic> migrateFscene(
   Map<String, dynamic> json, {
   List<FsceneMigration>? migrations,
@@ -121,6 +130,7 @@ Map<String, dynamic> migrateFscene(
 //-----------------------------------------------------------------------------
 
 /// Encodes [doc] as a JSON tree (maps, lists, and primitives).
+/// {@category Serialization}
 Map<String, dynamic> encodeDocument(SceneDocument doc) {
   final prefixes = _buildPrefixMap(doc);
   String idKey(LocalId id) => '${prefixes[id] ?? 'id'}:${id.toToken()}';
@@ -223,6 +233,7 @@ String _tokenIdKey(LocalId id) => id.toToken();
 /// Encodes [s] to its canonical JSON map (also used to compare stages for
 /// equality in the scene diff). [idKey] keys the environment-resource
 /// reference; the diff uses the default raw-token form.
+/// {@category Serialization}
 Map<String, dynamic> encodeStage(
   StageMetadata s, [
   String Function(LocalId) idKey = _tokenIdKey,
@@ -281,6 +292,7 @@ Map<String, dynamic> _encodeLook({
 
 /// Encodes a sky source spec to its canonical JSON form (also used to key
 /// realized sky sources for sharing).
+/// {@category Serialization}
 Object encodeSkySource(SkySourceSpec source) => switch (source) {
   EnvironmentSkySpec(:final blurriness) => {
     'type': 'environment',
@@ -324,6 +336,7 @@ List<double> _vec3Json(Vector3 v) => [v.x, v.y, v.z];
 /// Encodes a single resource spec the same way [encodeScene] does, for
 /// canonical-form comparison (the reload diff uses this to detect resource
 /// content changes).
+/// {@category Serialization}
 Object encodeResource(ResourceSpec r, String Function(LocalId) idKey) =>
     _encodeResource(r, idKey);
 
@@ -517,6 +530,7 @@ Map<String, dynamic> _encodePayload(PayloadSpec p) => {
 
 /// Decodes a [SceneDocument] from a raw JSON tree (already migrated to the
 /// current version). Throws on an unsupported required feature.
+/// {@category Serialization}
 SceneDocument decodeDocument(Map<String, dynamic> json) {
   final version = json['fscene'] as int? ?? currentFsceneVersion;
   if (version != currentFsceneVersion) {

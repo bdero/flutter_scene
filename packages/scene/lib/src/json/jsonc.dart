@@ -5,6 +5,7 @@
 /// trailing commas before `}` and `]`. Comment characters and commas inside
 /// string literals are preserved. The canonical written form is strict JSON;
 /// this only loosens the read path.
+/// {@category Serialization}
 String stripJsonc(String source) =>
     _stripTrailingCommas(_stripComments(source));
 

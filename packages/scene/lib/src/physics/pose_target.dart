@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 /// The seam between a [PhysicsSimulation] and whatever owns spatial state,
 /// a renderer adapts its scene-graph nodes, a headless server uses
 /// [SimplePoseTarget] or adapts its own state.
+/// {@category Physics}
 abstract interface class PoseTarget {
   Vector3 get worldTranslation;
   Quaternion get worldRotation;
@@ -15,6 +16,7 @@ abstract interface class PoseTarget {
 }
 
 /// A plain mutable pose.
+/// {@category Physics}
 final class SimplePoseTarget implements PoseTarget {
   SimplePoseTarget({Vector3? translation, Quaternion? rotation})
     : translation = translation ?? Vector3.zero(),

@@ -24,6 +24,7 @@ import 'shape.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Internal hit record. The owning world wraps this in a [RaycastHit].
+/// {@category Physics}
 class RayShapeHit {
   final double distance;
   final Vector3 worldPoint;
@@ -36,6 +37,7 @@ class RayShapeHit {
 ///
 /// Assumes [worldXform] is a rigid transform (rotation plus
 /// translation, no scale). Scale is not supported by the basic backend.
+/// {@category Physics}
 Aabb3 shapeWorldAabb(Shape shape, Matrix4 worldXform) {
   final local = _shapeLocalAabb(shape);
   return _transformAabb(local, worldXform);
@@ -43,6 +45,7 @@ Aabb3 shapeWorldAabb(Shape shape, Matrix4 worldXform) {
 
 /// Whether the closed ball at [center] of [radius] overlaps the AABB
 /// [box].
+/// {@category Physics}
 bool sphereOverlapsAabb(Vector3 center, double radius, Aabb3 box) {
   final cx = _clamp(center.x, box.min.x, box.max.x);
   final cy = _clamp(center.y, box.min.y, box.max.y);
@@ -55,6 +58,7 @@ bool sphereOverlapsAabb(Vector3 center, double radius, Aabb3 box) {
 
 /// Whether the closed ball at [center] of [radius] overlaps a sphere of
 /// [otherRadius] centered at [otherCenter].
+/// {@category Physics}
 bool sphereOverlapsSphere(
   Vector3 center,
   double radius,
@@ -70,6 +74,7 @@ bool sphereOverlapsSphere(
 /// conservative AABB-vs-AABB test (no false negatives, occasional
 /// false positives at corners). Suitable for the trigger pair
 /// detector in [BasicPhysicsWorld].
+/// {@category Physics}
 bool shapesOverlap(Shape a, Matrix4 ax, Shape b, Matrix4 bx) {
   // Sphere vs Sphere.
   if (a is SphereShape && b is SphereShape) {
@@ -115,6 +120,7 @@ bool _sphereOverlapsObb(
 /// Closest hit of [ray] against [shape] under [worldXform], or null.
 ///
 /// [maxDistance] is in world units along the normalized ray direction.
+/// {@category Physics}
 RayShapeHit? rayHitsShape(
   Ray ray,
   Shape shape,
@@ -461,6 +467,7 @@ Vector3 _transformDir(Matrix4 m, Vector3 v) {
 
 /// Raycast against an axis-aligned box, the conservative fallback used by
 /// sphere casts against inflated collider bounds.
+/// {@category Physics}
 RayShapeHit? aabbRaycast(Ray ray, Aabb3 box, double maxDistance) {
   final dir = ray.direction.normalized();
   var tmin = -double.infinity;

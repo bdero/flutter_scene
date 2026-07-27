@@ -6,6 +6,7 @@ import 'package:scene/src/property_value.dart';
 /// Resolves a referenced [LocalId] to the text token written for it (a
 /// kind-prefixed token such as `geo:7A3F...` for readability). The decoder
 /// strips the prefix, so any resolver that produces a parseable token works.
+/// {@category Serialization}
 typedef IdTokenResolver = String Function(LocalId id);
 
 /// Encodes [value] as a self-describing JSON tree (a single-key tagged
@@ -14,6 +15,7 @@ typedef IdTokenResolver = String Function(LocalId id);
 /// The tag form round-trips the generic typed model without a per-component
 /// schema. Component codecs may later emit a cleaner schema-driven form for
 /// known types; this is the general fallback.
+/// {@category Serialization}
 Object encodePropertyValue(PropertyValue value, IdTokenResolver idToken) {
   switch (value) {
     case BoolValue(:final value):
@@ -67,6 +69,7 @@ Object encodePropertyValue(PropertyValue value, IdTokenResolver idToken) {
 /// Decodes a [PropertyValue] from a tagged JSON tree produced by
 /// [encodePropertyValue]. Referenced ids are parsed with [LocalId.parse],
 /// which ignores any readability prefix.
+/// {@category Serialization}
 PropertyValue decodePropertyValue(Object? json) {
   if (json is! Map || json.length != 1) {
     throw FormatException('Expected a single-key tagged value, got $json');

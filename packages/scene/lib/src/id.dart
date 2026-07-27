@@ -21,6 +21,7 @@ const String _base32Alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 /// Encodes [bytes] as an unpadded Crockford base32 string, most significant
 /// bit first. Stays web-safe by never accumulating more than ~13 bits.
+/// {@category Documents}
 String encodeBase32(Uint8List bytes) {
   final out = StringBuffer();
   var buffer = 0;
@@ -61,6 +62,7 @@ int _base32Value(int code) {
 /// the inverse of [encodeBase32]. Case-insensitive; trailing bits that do not
 /// fill a byte are dropped. Throws a [FormatException] on an invalid
 /// character.
+/// {@category Documents}
 Uint8List decodeBase32(String token) {
   final out = <int>[];
   var buffer = 0;
@@ -94,6 +96,7 @@ int _random32(Random random) =>
 /// Stored as 16 bytes; the text form is Crockford base32. The high bits are
 /// stamped UUIDv4 (random) so the id is a well-formed UUID, but the bytes are
 /// the identity, not the UUID fields.
+/// {@category Documents}
 class DocumentId {
   /// Wraps the given 16 [bytes].
   DocumentId(this.bytes)
@@ -154,6 +157,7 @@ class DocumentId {
 /// branches collision-free without a coordinator (a merge is a set union, no
 /// renumbering); the counter is never reused. Both halves are 32-bit, so the
 /// pair is web-safe and a fast map key.
+/// {@category Documents}
 class LocalId {
   /// Wraps an explicit [session] salt and [index] counter. Prefer
   /// [IdAllocator.mint] to allocate fresh ids.
@@ -209,6 +213,7 @@ class LocalId {
 /// with a new session salt (pass [excludedSessions] to guarantee it differs
 /// from sessions already present in the document), so newly minted ids never
 /// collide with existing ones.
+/// {@category Documents}
 class IdAllocator {
   /// Creates an allocator. Pass an explicit [session] to resume a known
   /// session, or [excludedSessions] (the salts already used in a loaded

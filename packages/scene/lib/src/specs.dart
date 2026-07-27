@@ -8,6 +8,7 @@ import 'package:scene/src/property_value.dart';
 /// A node's local transform, stored either as a 4x4 [matrix] or as a
 /// decomposed translation/rotation/scale ([TrsTransform]). The importer
 /// emits TRS for clean diffs; the runtime composes a [Matrix4].
+/// {@category Documents}
 sealed class TransformSpec {
   const TransformSpec();
 
@@ -16,6 +17,7 @@ sealed class TransformSpec {
 }
 
 /// A transform stored as an explicit 4x4 matrix.
+/// {@category Documents}
 class MatrixTransform extends TransformSpec {
   MatrixTransform(this.matrix);
 
@@ -27,6 +29,7 @@ class MatrixTransform extends TransformSpec {
 }
 
 /// A transform stored as decomposed translation, rotation, and scale.
+/// {@category Documents}
 class TrsTransform extends TransformSpec {
   TrsTransform({Vector3? translation, Quaternion? rotation, Vector3? scale})
     : translation = translation ?? Vector3.zero(),
@@ -50,6 +53,7 @@ class TrsTransform extends TransformSpec {
 ///
 /// The [type] is resolved through the component codec registry at
 /// realization; the [properties] hold the component's typed fields.
+/// {@category Documents}
 class ComponentSpec {
   /// Creates a component of the given [type] with optional [properties].
   ComponentSpec(this.type, {Map<String, PropertyValue>? properties})
@@ -65,6 +69,7 @@ class ComponentSpec {
 
 /// Whether a prefab instance's content loads eagerly with the scene or is
 /// streamed in on demand.
+/// {@category Documents}
 enum LoadPolicy {
   /// Loaded with the containing scene.
   eager,
@@ -75,6 +80,7 @@ enum LoadPolicy {
 
 /// One per-instance override of a prefab: set the property at [path] on the
 /// node [target] (in the prefab's local id space) to [value].
+/// {@category Documents}
 class PropertyOverride {
   /// Creates an override of [path] on [target] to [value].
   PropertyOverride({
@@ -102,6 +108,7 @@ class PropertyOverride {
 /// This is how content added to an instance (a prop on a rig's hand bone)
 /// stays fully editable: the node lives in the host scene, and composition
 /// moves it under the prefab node at realize time.
+/// {@category Documents}
 class Attachment {
   /// Attaches host node [node] under prefab-local [parent].
   Attachment(this.node, {this.parent});
@@ -117,6 +124,7 @@ class Attachment {
 /// `.fscene` plus the per-instance delta (overrides and added/removed
 /// content). The prefab composer applies these against the referenced
 /// document; a plain node leaves [NodeSpec.instance] null.
+/// {@category Documents}
 class PrefabInstanceSpec {
   /// Creates a prefab instance of [source] with an optional delta.
   PrefabInstanceSpec({
@@ -162,6 +170,7 @@ class PrefabInstanceSpec {
 /// animation binding and name lookup. Hierarchy is by [children] id list.
 /// A node is either a plain node or, when [instance] is non-null, a prefab
 /// instance.
+/// {@category Documents}
 class NodeSpec {
   /// Creates a node with the given stable [id].
   NodeSpec({
@@ -215,6 +224,7 @@ class NodeSpec {
 }
 
 /// An axis-aligned bounding box in a resource's local space.
+/// {@category Documents}
 class BoundsSpec {
   /// Creates bounds spanning [min] to [max].
   BoundsSpec({required this.min, required this.max});
@@ -227,6 +237,7 @@ class BoundsSpec {
 }
 
 /// A shared, id-keyed resource referenced by nodes (and other resources).
+/// {@category Documents}
 sealed class ResourceSpec {
   ResourceSpec(this.id);
 
@@ -236,11 +247,13 @@ sealed class ResourceSpec {
 
 /// A procedural geometry the runtime builds from parameters (rather than from
 /// baked vertex buffers). Compact and editable; no payload needed.
+/// {@category Documents}
 sealed class ProceduralGeometry {
   const ProceduralGeometry();
 }
 
 /// A box of the given [extents], optionally with per-corner debug colors.
+/// {@category Documents}
 class CuboidGeometrySpec extends ProceduralGeometry {
   /// Creates a cuboid spec.
   CuboidGeometrySpec({required this.extents, this.debugColors = false});
@@ -253,6 +266,7 @@ class CuboidGeometrySpec extends ProceduralGeometry {
 }
 
 /// A flat plane in the XZ plane.
+/// {@category Documents}
 class PlaneGeometrySpec extends ProceduralGeometry {
   /// Creates a plane spec.
   PlaneGeometrySpec({
@@ -276,6 +290,7 @@ class PlaneGeometrySpec extends ProceduralGeometry {
 }
 
 /// A UV sphere.
+/// {@category Documents}
 class SphereGeometrySpec extends ProceduralGeometry {
   /// Creates a sphere spec.
   SphereGeometrySpec({this.radius = 0.5, this.segments = 32, this.rings = 16});
@@ -293,6 +308,7 @@ class SphereGeometrySpec extends ProceduralGeometry {
 /// Mesh geometry, sourced either from a binary [payload] chunk (imported
 /// content) or a [procedural] descriptor (a runtime primitive). Exactly one
 /// source is set. Carries optional local [bounds].
+/// {@category Documents}
 class GeometryResource extends ResourceSpec {
   /// Creates a geometry resource from payload chunks (a [vertices] buffer and
   /// optional [indices] buffer) or a [procedural] descriptor.
@@ -334,6 +350,7 @@ class GeometryResource extends ResourceSpec {
 
 /// A texture sourced either from an embedded [payload] chunk or an external
 /// image [asset].
+/// {@category Documents}
 class TextureResource extends ResourceSpec {
   /// Creates a texture from an embedded [payload] or an external [asset].
   TextureResource(super.id, {this.payload, this.asset})
@@ -351,6 +368,7 @@ class TextureResource extends ResourceSpec {
 
 /// An offscreen render target a serialized render view draws into and
 /// materials sample by id (the runtime `RenderTexture`).
+/// {@category Documents}
 class RenderTextureResource extends ResourceSpec {
   /// Creates a render-texture resource.
   RenderTextureResource(
@@ -386,6 +404,7 @@ class RenderTextureResource extends ResourceSpec {
 /// A material: a [type] (for example `physicallyBased`, `unlit`, `fmat`)
 /// plus typed [properties]. An `fmat` material references its `.fmat` source
 /// via [asset].
+/// {@category Documents}
 class MaterialResource extends ResourceSpec {
   /// Creates a material of the given [type].
   MaterialResource(
@@ -416,6 +435,7 @@ class MaterialResource extends ResourceSpec {
 /// image-based-lighting environment, its intensity and reflection-cube size,
 /// exposure, tone mapping, the skybox, and sky-driven lighting. Realizes to a
 /// runtime `EnvironmentSettings`.
+/// {@category Documents}
 class EnvironmentResource extends ResourceSpec {
   /// Creates an environment resource with the documented defaults.
   EnvironmentResource(
@@ -457,6 +477,7 @@ class EnvironmentResource extends ResourceSpec {
 
 /// A skin: the joint nodes it drives, its inverse-bind matrices (a binary
 /// chunk), and the optional skeleton root.
+/// {@category Documents}
 class SkinSpec {
   /// Creates a skin with the given stable [id].
   SkinSpec(
@@ -480,6 +501,7 @@ class SkinSpec {
 }
 
 /// The transform channel an animation drives on its target node.
+/// {@category Documents}
 enum AnimationProperty {
   /// Drives the target's translation.
   translation,
@@ -496,6 +518,7 @@ enum AnimationProperty {
 ///
 /// Binds to its target by stable id ([target]); [targetName] is retained as
 /// a clone-friendly fallback and for readable merges.
+/// {@category Documents}
 class AnimationChannelSpec {
   /// Creates a channel driving [property] of [target].
   AnimationChannelSpec({
@@ -523,6 +546,7 @@ class AnimationChannelSpec {
 }
 
 /// A named animation: a set of channels driving target nodes.
+/// {@category Documents}
 class AnimationSpec {
   /// Creates an animation with the given stable [id].
   AnimationSpec(this.id, {this.name = '', List<AnimationChannelSpec>? channels})
@@ -539,6 +563,7 @@ class AnimationSpec {
 }
 
 /// How a binary payload chunk's bytes are interpreted.
+/// {@category Documents}
 enum PayloadEncoding {
   /// An interleaved vertex buffer (see [PayloadSpec.layout]).
   vertexBuffer,
@@ -564,6 +589,7 @@ enum PayloadEncoding {
 ///
 /// The descriptor is what the text form carries; the bytes live in the
 /// package and are attached when the document's payloads are loaded.
+/// {@category Documents}
 class PayloadSpec {
   /// Creates a payload descriptor with the given stable [id].
   PayloadSpec(
@@ -606,6 +632,7 @@ class PayloadSpec {
 }
 
 /// The up axis convention a document was authored in.
+/// {@category Documents}
 enum UpAxis {
   /// X is up.
   x,
@@ -620,6 +647,7 @@ enum UpAxis {
 /// The chirality of the coordinate system a document's positions and geometry
 /// are expressed in. Drives the scene-root mirror the realizer applies, kept
 /// as metadata rather than a literal node transform.
+/// {@category Documents}
 enum Handedness {
   /// The engine's native, left-handed space (`+Z` into the screen). Content
   /// authored in code or an editor against the runtime is already in this
@@ -633,17 +661,20 @@ enum Handedness {
 }
 
 /// The image-based-lighting environment for a scene.
+/// {@category Documents}
 sealed class EnvironmentSpec {
   const EnvironmentSpec();
 }
 
 /// The built-in procedural studio environment.
+/// {@category Documents}
 class StudioEnvironment extends EnvironmentSpec {
   /// The studio environment.
   const StudioEnvironment();
 }
 
 /// An environment built from an external image [asset].
+/// {@category Documents}
 class AssetEnvironment extends EnvironmentSpec {
   /// An environment sourced from [asset].
   const AssetEnvironment(this.asset);
@@ -653,6 +684,7 @@ class AssetEnvironment extends EnvironmentSpec {
 }
 
 /// An empty (black) environment.
+/// {@category Documents}
 class EmptyEnvironment extends EnvironmentSpec {
   /// The empty environment.
   const EmptyEnvironment();
@@ -664,6 +696,7 @@ class EmptyEnvironment extends EnvironmentSpec {
 /// decoder from the payload bytes; the payload's `format` tag (the source file
 /// extension) is informational. Not part of the public surface; produced by
 /// the build hook and consumed by the realizer.
+/// {@category Documents}
 class PayloadEnvironment extends EnvironmentSpec {
   /// An environment sourced from the embedded image [payload].
   const PayloadEnvironment(this.payload);
@@ -677,12 +710,14 @@ class PayloadEnvironment extends EnvironmentSpec {
 /// Realized to a runtime `SkySource` by the stage realizer: the environment
 /// sky and the built-in gradient/physical skies realize from their fields;
 /// an fmat sky loads its `.fmat` by source path.
+/// {@category Documents}
 sealed class SkySourceSpec {
   /// Const base.
   const SkySourceSpec();
 }
 
 /// Shows the scene's image-based-lighting environment, optionally blurred.
+/// {@category Documents}
 class EnvironmentSkySpec extends SkySourceSpec {
   /// Creates the spec.
   EnvironmentSkySpec({this.blurriness = 0.0});
@@ -693,6 +728,7 @@ class EnvironmentSkySpec extends SkySourceSpec {
 
 /// A sky `.fmat` loaded by source path, with optional parameter overrides
 /// applied to the loaded sky's parameters by name.
+/// {@category Documents}
 class FmatSkySpec extends SkySourceSpec {
   /// Creates the spec.
   FmatSkySpec(this.asset, {Map<String, PropertyValue>? properties})
@@ -706,6 +742,7 @@ class FmatSkySpec extends SkySourceSpec {
 }
 
 /// The built-in stylized gradient sky.
+/// {@category Documents}
 class GradientSkySpec extends SkySourceSpec {
   /// Creates the spec with the runtime defaults.
   GradientSkySpec({
@@ -741,6 +778,7 @@ class GradientSkySpec extends SkySourceSpec {
 }
 
 /// The built-in physically based daylight sky.
+/// {@category Documents}
 class PhysicalSkySpec extends SkySourceSpec {
   /// Creates the spec with the runtime defaults.
   PhysicalSkySpec({
@@ -791,6 +829,7 @@ class PhysicalSkySpec extends SkySourceSpec {
 }
 
 /// The stage skybox: the visible background drawn behind all geometry.
+/// {@category Documents}
 class SkyboxSpec {
   /// Creates the spec.
   SkyboxSpec(this.source, {this.intensity = 1.0});
@@ -804,6 +843,7 @@ class SkyboxSpec {
 
 /// Sky-driven lighting: bakes a shader sky into the scene's image-based
 /// lighting on a refresh policy.
+/// {@category Documents}
 class SkyEnvironmentSpec {
   /// Creates the spec with the runtime defaults.
   SkyEnvironmentSpec(
@@ -842,6 +882,7 @@ class SkyEnvironmentSpec {
 
 /// One serialized view of the scene: a camera node bound to a target and
 /// the view's render settings (the runtime `RenderView`).
+/// {@category Documents}
 class RenderViewSpec {
   /// Creates a render-view spec.
   RenderViewSpec({
@@ -882,6 +923,7 @@ class RenderViewSpec {
 
 /// Scene-wide, non-spatial render settings (lights and cameras are per-node
 /// components, not stage data).
+/// {@category Documents}
 class StageMetadata {
   /// Creates stage metadata with the documented defaults.
   StageMetadata({

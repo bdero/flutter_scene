@@ -14,6 +14,7 @@ import 'sim_types.dart';
 /// queries, and events; unsupported capabilities throw [UnsupportedError]
 /// and are advertised through the `supports*` getters where callers need
 /// to branch.
+/// {@category Physics}
 abstract class PhysicsSimulation {
   /// Identifier of the concrete backend, suitable for logging (for
   /// example `"rapier3d"`).
