@@ -48,8 +48,8 @@ class DockPanel {
 /// packages did not give reliably draggable dividers in this nesting).
 ///
 /// When the `windowing` feature flag is enabled, a tab's context menu offers
-/// "Move to New RegularWindow", which floats the panel into its own OS window
-/// (rendered as a [RegularWindow] sibling view via [ViewAnchor]). Closing the
+/// "Move to New Window", which floats the panel into its own OS window
+/// (rendered as a [Window] sibling view via [ViewAnchor]). Closing the
 /// window re-docks the panel. Without the flag the menu item is absent and
 /// floating panels persisted in the layout are re-docked.
 class DockingShell extends StatefulWidget {
@@ -81,7 +81,7 @@ class _DockingShellState extends State<DockingShell> {
 
   // One native window per floating panel, keyed by panel id and kept in sync
   // with the layout's floating list.
-  final Map<String, RegularWindowController> _floatControllers = {};
+  final Map<String, WindowController> _floatControllers = {};
 
   @override
   void initState() {
@@ -120,13 +120,13 @@ class _DockingShellState extends State<DockingShell> {
 
   /// Creates windows for newly floating panels and tears down windows whose
   /// panels re-docked. Stale windows are destroyed a frame later so their
-  /// [RegularWindow] view unmounts first.
+  /// [Window] view unmounts first.
   void _syncFloatWindows() {
     if (!isWindowingEnabled) return;
     for (final id in _layout.floating) {
       _floatControllers.putIfAbsent(
         id,
-        () => RegularWindowController(
+        () => WindowController(
           size: const Size(480, 640),
           title: _panelById(id)?.title ?? id,
           delegate: _FloatWindowDelegate(() => _redock(id)),
@@ -155,7 +155,7 @@ class _DockingShellState extends State<DockingShell> {
         views: [
           for (final id in _layout.floating)
             if (_floatControllers[id] != null)
-              RegularWindow(
+              Window(
                 controller: _floatControllers[id]!,
                 child: _FloatWindowScaffold(
                   theme: theme,
@@ -213,13 +213,13 @@ class _DockingShellState extends State<DockingShell> {
 
 /// Re-docks the panel instead of destroying the window outright when the user
 /// clicks the native close button; the shell then tears the window down.
-class _FloatWindowDelegate with RegularWindowControllerDelegate {
+class _FloatWindowDelegate with WindowControllerDelegate {
   _FloatWindowDelegate(this.onCloseRequested);
 
   final VoidCallback onCloseRequested;
 
   @override
-  void onWindowCloseRequested(RegularWindowController controller) {
+  void onWindowCloseRequested(WindowController controller) {
     onCloseRequested();
   }
 }
@@ -440,7 +440,7 @@ class _DockTab extends StatelessWidget {
             value: onFloat,
             height: 28,
             child: const Text(
-              'Move to New RegularWindow',
+              'Move to New Window',
               style: TextStyle(fontSize: 12),
             ),
           ),
