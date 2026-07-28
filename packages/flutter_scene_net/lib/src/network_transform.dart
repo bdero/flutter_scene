@@ -19,7 +19,8 @@ final class NetworkTransformComponent extends Component {
   NetworkTransformComponent(
     this.replica, {
     this.delay = const Duration(milliseconds: 100),
-  }) {
+    NowMicros now = defaultNowMicros,
+  }) : _now = now {
     _push();
     // TODO(replication-unsubscribe): dashwire_replication 0.2.0 has no
     // listener removal, so these subscriptions (and through them this
@@ -34,22 +35,29 @@ final class NetworkTransformComponent extends Component {
   /// How far in the past remote poses render.
   final Duration delay;
 
+  final NowMicros _now;
+
   final List<(int, Vector3, Quaternion)> _samples = [];
 
   void _push() {
-    _samples.add((
-      defaultNowMicros(),
-      replica.positionVector,
-      replica.rotationQuaternion,
-    ));
+    final now = _now();
+    // Samples are only pushed on pose change, so after an idle stretch the
+    // newest one is stale. Re-anchor the held pose at now - delay before
+    // appending the fresh one, so resuming motion eases in over `delay`
+    // instead of interpolating across the whole gap (which snaps forward).
+    if (_samples.isNotEmpty && now - _samples.last.$1 > delay.inMicroseconds) {
+      final (_, p, q) = _samples.last;
+      _samples
+        ..clear()
+        ..add((now - delay.inMicroseconds, p, q));
+    }
+    _samples.add((now, replica.positionVector, replica.rotationQuaternion));
     if (_samples.length > 64) _samples.removeAt(0);
   }
 
   @override
   void update(double deltaSeconds) {
-    final (position, rotation) = sampleAt(
-      defaultNowMicros() - delay.inMicroseconds,
-    );
+    final (position, rotation) = sampleAt(_now() - delay.inMicroseconds);
     node.localTransform = Matrix4.compose(position, rotation, _unitScale);
   }
 
