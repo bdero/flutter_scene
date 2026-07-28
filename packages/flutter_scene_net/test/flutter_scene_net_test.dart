@@ -3,6 +3,7 @@ import 'package:dashwire_replication/dashwire_replication.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 final class _Pawn extends TransformReplica {
   _Pawn();
@@ -123,5 +124,71 @@ void main() {
     expect(mid.x, lessThan(9.5));
     final (late_, _) = component.sampleAt(end + 1000);
     expect(late_.x, 10);
+  });
+
+  test('resuming after an idle gap eases in instead of snapping', () {
+    var nowMicros = 1000000;
+    final pawn = _Pawn()..position.value = (0.0, 0.0, 0.0);
+    final component = NetworkTransformComponent(
+      pawn,
+      delay: const Duration(milliseconds: 100),
+      now: () => nowMicros,
+    );
+
+    // Sit idle well past the delay, then start moving.
+    nowMicros += 2000000;
+    pawn.position.value = (10.0, 0.0, 0.0);
+
+    // Without re-anchoring this would snap toward 10; the held pose is
+    // anchored at now - delay, so the resume still renders near the origin.
+    final (atResume, _) = component.sampleAt(nowMicros - 100000);
+    expect(atResume.x, closeTo(0, 0.01));
+    // Halfway through the delay it has eased about halfway in.
+    final (mid, _) = component.sampleAt(nowMicros - 50000);
+    expect(mid.x, greaterThan(2));
+    expect(mid.x, lessThan(8));
+  });
+
+  test('prediction renders local input instantly and eases in corrections', () {
+    final pawn = _Pawn()..position.value = (0.0, 0.0, 0.0);
+    var input = 0.0;
+    final node = Node()
+      ..addComponent(
+        PredictedTransformComponent(
+          pawn,
+          smoothing: const Duration(milliseconds: 100),
+          step: (position, rotation, dt) =>
+              (position + vm.Vector3(input * 5 * dt, 0, 0), rotation),
+        ),
+      );
+    final component = node.getComponent<PredictedTransformComponent>()!;
+
+    // No input holds position.
+    component.update(1 / 60);
+    expect(node.localTransform.getTranslation().x, closeTo(0, 1e-6));
+
+    // Input moves the very next frame, no round trip.
+    input = 1.0;
+    component.update(1 / 60);
+    expect(node.localTransform.getTranslation().x, greaterThan(0));
+    for (var i = 0; i < 20; i++) {
+      component.update(1 / 60);
+    }
+    final predicted = node.localTransform.getTranslation().x;
+    expect(predicted, greaterThan(0.5));
+    expect(predicted, lessThan(3));
+
+    // An authoritative snapshot that disagrees does not pop the render; the
+    // first frame after it stays near where prediction had it.
+    input = 0.0;
+    pawn.position.value = (3.0, 0.0, 0.0);
+    component.update(1 / 60);
+    expect(node.localTransform.getTranslation().x, lessThan(predicted + 0.5));
+
+    // Then it eases onto the authoritative pose.
+    for (var i = 0; i < 200; i++) {
+      component.update(1 / 60);
+    }
+    expect(node.localTransform.getTranslation().x, closeTo(3, 0.05));
   });
 }
