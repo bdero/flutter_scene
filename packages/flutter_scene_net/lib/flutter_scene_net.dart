@@ -10,6 +10,7 @@ library;
 export 'src/hosting/hosting.dart' show SceneHost;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 export 'src/predicted_transform.dart'
-    show PredictStep, PredictedTransformComponent;
-export 'src/scene_replication.dart' show ReplicaNodeBuilder, SceneReplication;
+    show PredictedController, PredictedTransformComponent;
+export 'src/scene_replication.dart'
+    show LocalPredictionBuilder, ReplicaNodeBuilder, SceneReplication;
 export 'src/transform_replica.dart' show TransformReplicaVectors;
