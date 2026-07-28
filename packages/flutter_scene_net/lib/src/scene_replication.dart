@@ -12,9 +12,9 @@ import 'transform_replica.dart';
 /// Builds the scene subtree representing [replica] at spawn time.
 typedef ReplicaNodeBuilder = Node Function(Replica replica);
 
-/// Supplies the client-side prediction step for an owned [replica], or null to
-/// interpolate it like any other entity.
-typedef LocalPredictionBuilder = PredictStep? Function(Replica replica);
+/// Supplies the client-side prediction controller for an owned [replica], or
+/// null to interpolate it like any other entity.
+typedef LocalPredictionBuilder = PredictedController? Function(Replica replica);
 
 /// Binds a replication client to a scene graph.
 ///
@@ -82,12 +82,17 @@ final class SceneReplication {
       );
       // Predict the entity this client owns so its input renders instantly;
       // interpolate everything else in the past for smoothness.
-      final predict = replica.owner == localPeerId
+      final controller = replica.owner == localPeerId
           ? _localPrediction?.call(replica)
           : null;
       node.addComponent(
-        predict != null
-            ? PredictedTransformComponent(replica, step: predict)
+        controller != null
+            ? PredictedTransformComponent(
+                replica,
+                controller: controller,
+                client: client,
+                tickRate: session.tickRate,
+              )
             : NetworkTransformComponent(replica, delay: interpolationDelay),
       );
     }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dashwire/dashwire.dart';
 import 'package:dashwire_replication/dashwire_replication.dart';
 import 'package:flutter_scene/scene.dart';
@@ -13,6 +15,29 @@ final class _Pawn extends TransformReplica {
 }
 
 ReplicaRegistry _registry() => ReplicaRegistry()..register(_Pawn.new);
+
+// A trivial 1D controller, hold a constant +X velocity, integrated the same
+// way on the server so prediction converges.
+const double _testSpeed = 5;
+
+Uint8List _encodeVel(double v) => (ByteWriter(4)..writeF32(v)).toBytes();
+double _decodeVel(Uint8List b) => ByteReader(b).readF32();
+
+class _ConstantController implements PredictedController {
+  @override
+  Uint8List sampleInput() => _encodeVel(1);
+
+  @override
+  (vm.Vector3, vm.Quaternion) step(
+    vm.Vector3 position,
+    vm.Quaternion rotation,
+    Uint8List input,
+    double dt,
+  ) => (
+    vm.Vector3(position.x + _decodeVel(input) * _testSpeed * dt, 0, 0),
+    rotation,
+  );
+}
 
 Future<void> _pump([int rounds = 4]) async {
   for (var i = 0; i < rounds; i++) {
@@ -149,46 +174,77 @@ void main() {
     expect(mid.x, lessThan(8));
   });
 
-  test('prediction renders local input instantly and eases in corrections', () {
-    final pawn = _Pawn()..position.value = (0.0, 0.0, 0.0);
-    var input = 0.0;
-    final node = Node()
-      ..addComponent(
-        PredictedTransformComponent(
-          pawn,
-          smoothing: const Duration(milliseconds: 100),
-          step: (position, rotation, dt) =>
-              (position + vm.Vector3(input * 5 * dt, 0, 0), rotation),
-        ),
-      );
-    final component = node.getComponent<PredictedTransformComponent>()!;
+  test('an owned player is predicted from local input and converges', () async {
+    const tickRate = 30;
+    const dt = 1 / tickRate;
 
-    // No input holds position.
-    component.update(1 / 60);
-    expect(node.localTransform.getTranslation().x, closeTo(0, 1e-6));
+    late final Room room;
+    final players = <int, _Pawn>{};
+    room = Room(
+      registry: _registry(),
+      tickRate: tickRate,
+      onJoin: (session) {
+        final pawn = _Pawn();
+        room.host.spawn(pawn, owner: session.peerId);
+        players[session.peerId] = pawn;
+      },
+      onTick: (tick) {
+        for (final entry in players.entries) {
+          final command = room.input(entry.key, tick);
+          final vx = command == null ? 0.0 : _decodeVel(command);
+          final (x, _, _) = entry.value.position.value;
+          entry.value.position.value = (x + vx * _testSpeed * dt, 0, 0);
+        }
+      },
+    );
 
-    // Input moves the very next frame, no round trip.
-    input = 1.0;
-    component.update(1 / 60);
-    expect(node.localTransform.getTranslation().x, greaterThan(0));
-    for (var i = 0; i < 20; i++) {
-      component.update(1 / 60);
+    final (clientEnd, serverEnd) = LoopbackConnection.pair();
+    final admitted = room.admit(serverEnd);
+    final session = await connectSession(
+      clientEnd,
+      schemaHash: _registry().schemaHash,
+      pingInterval: const Duration(milliseconds: 20),
+    );
+    await admitted;
+
+    final replication = SceneReplication(
+      registry: _registry(),
+      session: session,
+      root: Node(),
+      builders: {'pawn': (replica) => Node()},
+      localPrediction: (replica) => _ConstantController(),
+    );
+
+    final sw = Stopwatch()..start();
+    while (replication.replicas.isEmpty && sw.elapsedMilliseconds < 2000) {
+      room.advance(dt);
+      await _pump(1);
     }
-    final predicted = node.localTransform.getTranslation().x;
-    expect(predicted, greaterThan(0.5));
-    expect(predicted, lessThan(3));
+    final pawn = replication.replicas.whereType<_Pawn>().first;
+    final component = replication
+        .nodeFor(pawn.id!)!
+        .getComponent<PredictedTransformComponent>()!;
 
-    // An authoritative snapshot that disagrees does not pop the render; the
-    // first frame after it stays near where prediction had it.
-    input = 0.0;
-    pawn.position.value = (3.0, 0.0, 0.0);
-    component.update(1 / 60);
-    expect(node.localTransform.getTranslation().x, lessThan(predicted + 0.5));
-
-    // Then it eases onto the authoritative pose.
-    for (var i = 0; i < 200; i++) {
+    // Drive the client render loop and the server tick over real time.
+    final run = Stopwatch()..start();
+    while (run.elapsedMilliseconds < 800) {
       component.update(1 / 60);
+      room.advance(dt);
+      await Future<void>.delayed(const Duration(milliseconds: 16));
     }
-    expect(node.localTransform.getTranslation().x, closeTo(3, 0.05));
+
+    final predictedX = replication
+        .nodeFor(pawn.id!)!
+        .localTransform
+        .getTranslation()
+        .x;
+    // Local input moved the predicted node right immediately, not stuck at 0.
+    expect(predictedX, greaterThan(1));
+    // And it stays near the server's authoritative position (reconciled), the
+    // prediction leads by roughly the send-ahead, never diverging.
+    expect((predictedX - pawn.position.value.$1).abs(), lessThan(3));
+
+    await replication.close();
+    await room.stop();
   });
 }
