@@ -8,6 +8,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'net/multiplayer_game.dart';
 
 /// Multiplayer arena. Host a game in-app (desktop/mobile) and join it from
@@ -108,6 +110,24 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         session: session,
         root: arena,
         builders: {'net.player': _playerNode, 'net.pellet': _pelletNode},
+        // Predict the local player from its own input so movement is instant,
+        // running the same integration the server does; remote players stay
+        // interpolated. Corrections from the server ease in.
+        localPrediction: (replica) {
+          final player = replica as NetPlayer;
+          return (position, rotation, dt) {
+            final (p, r) = advancePlayer(
+              (position.x, position.y, position.z),
+              (rotation.x, rotation.y, rotation.z, rotation.w),
+              player.input.value,
+              dt,
+            );
+            return (
+              vm.Vector3(p.$1, p.$2, p.$3),
+              vm.Quaternion(r.$1, r.$2, r.$3, r.$4),
+            );
+          };
+        },
       );
       session.done.whenComplete(() {
         if (mounted && _replication != null) _leave();
@@ -167,7 +187,9 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     }
 
     replication.owned<NetPlayer>()?.input.value = (
-      axis(
+      // Screen-right is world -X under the fixed overhead camera, so negate
+      // the strafe axis to keep A left and D right.
+      -axis(
         LogicalKeyboardKey.keyA,
         LogicalKeyboardKey.keyD,
         LogicalKeyboardKey.arrowLeft,
@@ -206,52 +228,86 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
           ),
         ),
         if (!connected)
-          Center(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('Multiplayer arena'),
-                    const SizedBox(height: 12),
-                    if (SceneHost.isSupported)
-                      FilledButton(
-                        onPressed: _hostGame,
-                        child: const Text('Host on this device'),
+          ExampleStatusCard(
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.white),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Multiplayer arena',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'To test with two clients, open a second copy of this app '
+                    '(another window, device, or browser tab). Tap "Host on '
+                    'this device" in one, then tap Join in the other. On one '
+                    'machine the default localhost address works; across '
+                    'devices, use the join address the host shows.',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (SceneHost.isSupported)
+                    FilledButton(
+                      onPressed: _hostGame,
+                      child: const Text('Host on this device'),
+                    ),
+                  if (!SceneHost.isSupported)
+                    const Text(
+                      'Hosting needs a desktop or mobile build.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _address,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: Colors.white,
+                    decoration: const InputDecoration(
+                      labelText: 'host address',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white38),
                       ),
-                    if (!SceneHost.isSupported)
-                      const Text('Hosting needs a desktop or mobile build.'),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: 260,
-                      child: TextField(
-                        controller: _address,
-                        decoration: const InputDecoration(
-                          labelText: 'host address',
-                          border: OutlineInputBorder(),
-                        ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: _joinGame,
-                      child: const Text('Join'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: _joinGame,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
                     ),
-                    if (_status != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_status!, style: const TextStyle(fontSize: 12)),
-                    ],
+                    child: const Text('Join'),
+                  ),
+                  if (_status != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _status!,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           )
         else
-          Positioned(
-            left: 12,
-            top: 12,
+          ExampleOverlay.topCenter(
             child: DefaultTextStyle(
               style: const TextStyle(color: Colors.white, fontSize: 13),
               child: Container(
