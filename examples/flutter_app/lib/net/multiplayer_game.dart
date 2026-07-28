@@ -5,7 +5,9 @@
 library;
 
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:dashwire/dashwire.dart';
 import 'package:dashwire_replication/dashwire_replication.dart';
 
 /// Half-extent of the square play field on the XZ plane.
@@ -22,13 +24,6 @@ final class NetPlayer extends TransformReplica {
     hue = rep('hue', 0.0, codec: Codecs.quantized(1), mode: SendMode.spawnOnly);
     name = rep('name', '', codec: Codecs.string, mode: SendMode.onChange);
     score = rep('score', 0, codec: Codecs.varUint, mode: SendMode.onChange);
-    input = rep(
-      'input',
-      (0.0, 0.0, 0.0),
-      codec: Codecs.vec3(0.05),
-      write: Authority.owner,
-      validate: (peer, v) => v.$1.abs() <= 1.05 && v.$3.abs() <= 1.05,
-    );
   }
 
   @override
@@ -37,9 +32,21 @@ final class NetPlayer extends TransformReplica {
   late final Rep<double> hue;
   late final Rep<String> name;
   late final Rep<int> score;
+}
 
-  /// Owner-written movement intent on the XZ plane, clamped server-side.
-  late final Rep<Vec3> input;
+/// Encodes a player's movement intent for an input command. The client sends
+/// these tick-stamped; the server and the client prediction both decode and
+/// feed them to [advancePlayer].
+Uint8List encodePlayerInput(double strafe, double forward) =>
+    (ByteWriter(8)
+          ..writeF32(strafe)
+          ..writeF32(forward))
+        .toBytes();
+
+/// Decodes an input command payload to a clamped XZ movement vector.
+(double, double) decodePlayerInput(Uint8List bytes) {
+  final r = ByteReader(bytes);
+  return (r.readF32().clamp(-1.0, 1.0), r.readF32().clamp(-1.0, 1.0));
 }
 
 final class NetPellet extends TransformReplica {
@@ -112,11 +119,18 @@ Room buildMultiplayerRoom({Random? random}) {
     },
     onTick: (tick) {
       const dt = 1.0 / gameTickRate;
-      for (final player in players.values) {
+      for (final entry in players.entries) {
+        final player = entry.value;
+        // Consume this peer's authoritative input for the tick, hold-last on
+        // a gap. The same advancePlayer the client predicts with runs here.
+        final command = room.input(entry.key, tick);
+        final (dx, dz) = command == null
+            ? (0.0, 0.0)
+            : decodePlayerInput(command);
         final (position, rotation) = advancePlayer(
           player.position.value,
           player.rotation.value,
-          player.input.value,
+          (dx, 0.0, dz),
           dt,
         );
         player.position.value = position;
