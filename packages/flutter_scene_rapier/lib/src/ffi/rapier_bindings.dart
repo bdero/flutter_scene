@@ -89,6 +89,17 @@ abstract class RapierBindings {
   void step(double dt);
   void dispose();
 
+  /// Serializes the world's persistent simulation state (bodies, colliders,
+  /// joints, islands, broad and narrow phase, integration params, gravity)
+  /// for a later [restore]. Handles stay valid across a snapshot/restore, so
+  /// higher layers keep their handle mapping. Used for rollback prediction and
+  /// server-side lag-compensation rewind.
+  Uint8List snapshot();
+
+  /// Restores the world from a [snapshot], returning false if the bytes could
+  /// not be decoded.
+  bool restore(Uint8List snapshot);
+
   // Bodies.
   int createBody(
     int kind,

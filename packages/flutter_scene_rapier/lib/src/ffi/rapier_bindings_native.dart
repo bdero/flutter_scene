@@ -49,6 +49,34 @@ class NativeRapierBindings extends RapierBindings {
   void step(double dt) => native.worldStep(_handle, dt);
 
   @override
+  Uint8List snapshot() {
+    final lenPtr = calloc<Size>();
+    try {
+      final ptr = native.worldSnapshot(_handle, lenPtr);
+      final len = lenPtr.value;
+      if (ptr == nullptr || len == 0) return Uint8List(0);
+      // Copy out of native memory before freeing the buffer.
+      final bytes = Uint8List.fromList(ptr.asTypedList(len));
+      native.worldSnapshotFree(ptr, len);
+      return bytes;
+    } finally {
+      calloc.free(lenPtr);
+    }
+  }
+
+  @override
+  bool restore(Uint8List snapshot) {
+    if (snapshot.isEmpty) return false;
+    final ptr = calloc<Uint8>(snapshot.length);
+    try {
+      ptr.asTypedList(snapshot.length).setAll(0, snapshot);
+      return native.worldRestore(_handle, ptr, snapshot.length) != 0;
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  @override
   void dispose() {
     _finalizer.detach(this);
     native.worldDestroy(_handle);
