@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:vector_math/vector_math.dart';
 
 import 'joint_desc.dart';
@@ -28,6 +30,23 @@ abstract class PhysicsSimulation {
 
   /// Maximum number of fixed steps consumed per frame by the driver.
   int maxSubsteps = 8;
+
+  /// Whether [snapshot]/[restore] round-trip the world state. Backends with
+  /// serialization (rapier) return true; others false.
+  bool get supportsSnapshot => false;
+
+  /// Serializes the world's simulation state for a later [restore], for
+  /// rollback prediction and lag-compensation rewind. Handles stay valid
+  /// across a snapshot/restore. Throws [UnsupportedError] unless
+  /// [supportsSnapshot].
+  Uint8List snapshot() =>
+      throw UnsupportedError('$backendName has no world snapshot');
+
+  /// Restores state from a [snapshot] produced by this backend, returning
+  /// false if the bytes could not be decoded. Throws [UnsupportedError] unless
+  /// [supportsSnapshot].
+  bool restore(Uint8List snapshot) =>
+      throw UnsupportedError('$backendName has no world restore');
 
   /// Collision lifecycle events, keyed by collider handle.
   Stream<SimCollisionEvent> get collisions;

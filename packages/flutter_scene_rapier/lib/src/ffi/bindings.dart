@@ -159,6 +159,26 @@ external void worldSetGravity(
 @Native<Void Function(Pointer<NativeWorld>, Float)>(symbol: 'fsr_world_step')
 external void worldStep(Pointer<NativeWorld> world, double dt);
 
+@Native<Pointer<Uint8> Function(Pointer<NativeWorld>, Pointer<Size>)>(
+  symbol: 'fsr_world_snapshot',
+)
+external Pointer<Uint8> worldSnapshot(
+  Pointer<NativeWorld> world,
+  Pointer<Size> outLen,
+);
+
+@Native<Void Function(Pointer<Uint8>, Size)>(symbol: 'fsr_world_snapshot_free')
+external void worldSnapshotFree(Pointer<Uint8> ptr, int len);
+
+@Native<Int Function(Pointer<NativeWorld>, Pointer<Uint8>, Size)>(
+  symbol: 'fsr_world_restore',
+)
+external int worldRestore(
+  Pointer<NativeWorld> world,
+  Pointer<Uint8> ptr,
+  int len,
+);
+
 @Native<
   Uint8 Function(
     Pointer<NativeWorld>,
