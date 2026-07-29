@@ -439,6 +439,7 @@ base class SceneEncoder {
     double fade,
   ) {
     _renderPass.clearBindings();
+    EngineLightingUniforms.invalidateBindMemo();
     _bindPipeline(pipeline);
     material.lodFade = fade;
     final materialVertex = material.materialVertexShader(
