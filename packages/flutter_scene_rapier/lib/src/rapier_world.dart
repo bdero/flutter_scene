@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings.dart';
 import 'package:flutter_scene_rapier/src/ffi/rapier_bindings_factory.dart';
@@ -55,6 +56,15 @@ class RapierWorld extends PhysicsSimulation {
 
   @override
   String get backendName => 'rapier3d';
+
+  @override
+  bool get supportsSnapshot => true;
+
+  @override
+  Uint8List snapshot() => _bindings.snapshot();
+
+  @override
+  bool restore(Uint8List snapshot) => _bindings.restore(snapshot);
 
   final StreamController<SimCollisionEvent> _events =
       StreamController<SimCollisionEvent>.broadcast();

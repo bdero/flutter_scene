@@ -10,7 +10,42 @@ use rapier3d::control::{
 };
 use rapier3d::parry;
 use rapier3d::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::os::raw::c_int;
+
+/// The persistent simulation state captured by [`fsr_world_snapshot`], by
+/// reference so serialization does not clone. The stateless pipelines and the
+/// transient per-step result buffers are excluded; they rebuild on the next
+/// step.
+#[derive(Serialize)]
+struct WorldSnapshotRef<'a> {
+    rigid_body_set: &'a RigidBodySet,
+    collider_set: &'a ColliderSet,
+    island_manager: &'a IslandManager,
+    broad_phase: &'a BroadPhaseBvh,
+    narrow_phase: &'a NarrowPhase,
+    impulse_joints: &'a ImpulseJointSet,
+    multibody_joints: &'a MultibodyJointSet,
+    ccd_solver: &'a CCDSolver,
+    integration_parameters: &'a IntegrationParameters,
+    gravity: &'a Vector,
+}
+
+/// The owned counterpart of [`WorldSnapshotRef`], produced by
+/// [`fsr_world_restore`] when deserializing.
+#[derive(Deserialize)]
+struct WorldSnapshotOwned {
+    rigid_body_set: RigidBodySet,
+    collider_set: ColliderSet,
+    island_manager: IslandManager,
+    broad_phase: BroadPhaseBvh,
+    narrow_phase: NarrowPhase,
+    impulse_joints: ImpulseJointSet,
+    multibody_joints: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    integration_parameters: IntegrationParameters,
+    gravity: Vector,
+}
 
 /// Owns the full set of Rapier pipeline state for one simulation.
 /// Allocated by [`fsr_world_new`], freed by [`fsr_world_destroy`].
@@ -654,6 +689,96 @@ pub unsafe extern "C" fn fsr_world_destroy(world: *mut World) {
         return;
     }
     drop(Box::from_raw(world));
+}
+
+/// Serializes the world's persistent simulation state into a freshly
+/// allocated byte buffer, writing its length to `out_len` and returning the
+/// pointer (null on failure). Release the buffer with
+/// [`fsr_world_snapshot_free`]. The stateless pipelines and transient result
+/// buffers are not captured; they rebuild on the next step.
+///
+/// # Safety
+/// `world` must be live; `out_len` must be a valid pointer.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_snapshot(world: *mut World, out_len: *mut usize) -> *mut u8 {
+    let w = &*world;
+    let snapshot = WorldSnapshotRef {
+        rigid_body_set: &w.rigid_body_set,
+        collider_set: &w.collider_set,
+        island_manager: &w.island_manager,
+        broad_phase: &w.broad_phase,
+        narrow_phase: &w.narrow_phase,
+        impulse_joints: &w.impulse_joints,
+        multibody_joints: &w.multibody_joints,
+        ccd_solver: &w.ccd_solver,
+        integration_parameters: &w.integration_parameters,
+        gravity: &w.gravity,
+    };
+    match bincode::serialize(&snapshot) {
+        Ok(bytes) => {
+            *out_len = bytes.len();
+            let mut boxed = bytes.into_boxed_slice();
+            let ptr = boxed.as_mut_ptr();
+            std::mem::forget(boxed);
+            ptr
+        }
+        Err(_) => {
+            *out_len = 0;
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Frees a buffer returned by [`fsr_world_snapshot`]. Null is a no-op.
+///
+/// # Safety
+/// `ptr`/`len` must come from one [`fsr_world_snapshot`] call and not be
+/// reused after this call.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_snapshot_free(ptr: *mut u8, len: usize) {
+    if ptr.is_null() {
+        return;
+    }
+    drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)));
+}
+
+/// Restores the world's persistent state from a buffer produced by
+/// [`fsr_world_snapshot`], returning 1 on success and 0 if the bytes could
+/// not be deserialized. Body, collider, and joint handles from the snapshotted
+/// world stay valid, so the Dart side keeps its handle mapping.
+///
+/// # Safety
+/// `world` must be live; `ptr`/`len` must describe a readable buffer.
+#[no_mangle]
+pub unsafe extern "C" fn fsr_world_restore(world: *mut World, ptr: *const u8, len: usize) -> c_int {
+    if ptr.is_null() {
+        return 0;
+    }
+    let bytes = std::slice::from_raw_parts(ptr, len);
+    match bincode::deserialize::<WorldSnapshotOwned>(bytes) {
+        Ok(s) => {
+            let w = &mut *world;
+            w.rigid_body_set = s.rigid_body_set;
+            w.collider_set = s.collider_set;
+            w.island_manager = s.island_manager;
+            w.broad_phase = s.broad_phase;
+            w.narrow_phase = s.narrow_phase;
+            w.impulse_joints = s.impulse_joints;
+            w.multibody_joints = s.multibody_joints;
+            w.ccd_solver = s.ccd_solver;
+            w.integration_parameters = s.integration_parameters;
+            w.gravity = s.gravity;
+            // Transient per-step results are meaningless after a restore.
+            w.query_hits.clear();
+            w.collision_events.clear();
+            w.contact_points.clear();
+            if let Ok(mut events) = w.collision_collector.events.lock() {
+                events.clear();
+            }
+            1
+        }
+        Err(_) => 0,
+    }
 }
 
 /// Overwrites the world's gravity vector (in world space, units per
