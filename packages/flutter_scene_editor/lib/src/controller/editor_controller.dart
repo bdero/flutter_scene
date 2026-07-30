@@ -25,6 +25,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/fmat/material_registry.dart'
+    show fmatSourcePathOf;
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
@@ -37,6 +39,7 @@ import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
+import '../materials/fmat_library.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
@@ -67,6 +70,12 @@ class EditorController extends ChangeNotifier {
     baseDirectory = directory;
     notifyListeners();
   }
+
+  /// Compiles and hot swaps `.fmat` materials referenced by the document.
+  /// Sources on disk (resolved through [baseDirectory]) are compiled with the
+  /// SDK's impellerc, loaded from bytes, watched, and refreshed in place on
+  /// edit. The inspector reads its per-source error and parameter schema.
+  late final EditorFmatLibrary fmatLibrary;
 
   final Map<LocalId, Node> _liveById = {};
   // Maps every live node (including those realized from inside a prefab) to the
@@ -164,6 +173,12 @@ class EditorController extends ChangeNotifier {
       baseDirectory,
       componentRegistry ?? defaultComponentRegistry(),
     );
+    controller.fmatLibrary = EditorFmatLibrary(
+      resolvePath: controller._resolveAssetPath,
+      onReload: controller._onFmatReload,
+      onError: (message) => controller.lastError.value = message,
+      onStructuralChange: controller.recompose,
+    );
     // Keep prefab-internal nodes (which live only in the composed document)
     // selectable across edits, not just source nodes; but not synthetic compose
     // machinery (the handedness adapter), which is not editable.
@@ -185,6 +200,29 @@ class EditorController extends ChangeNotifier {
 
   void _onSelectionChanged() {
     _syncHighlights();
+    notifyListeners();
+  }
+
+  // A hot-swapped `.fmat` shader repaints on its own (the shaders refreshed
+  // in place), but a sky shader also drives baked sky lighting, so any bound
+  // sky environment backed by an fmat re-bakes.
+  void _onFmatReload() {
+    void invalidate(SkyEnvironment? skyEnvironment) {
+      if (skyEnvironment?.source is PreprocessedSky) {
+        skyEnvironment!.invalidate();
+      }
+    }
+
+    invalidate(scene.skyEnvironment);
+    invalidate(scene.baseEnvironment?.skyEnvironment);
+    for (final node in _liveById.values) {
+      invalidate(
+        node
+            .getComponent<EnvironmentVolumeComponent>()
+            ?.settings
+            .skyEnvironment,
+      );
+    }
     notifyListeners();
   }
 
@@ -753,6 +791,12 @@ class EditorController extends ChangeNotifier {
     final color = _colorVec(raw);
     for (final primitive in mesh.primitives) {
       final material = primitive.material;
+      // An fmat material previews through its typed parameters, keyed by the
+      // sidecar-declared parameter name.
+      if (material is PreprocessedMaterial) {
+        _previewFmatParameter(material, key, raw, color);
+        continue;
+      }
       switch (key) {
         case 'baseColor' when color != null:
           if (material is PhysicallyBasedMaterial) {
@@ -963,6 +1007,32 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  static void _previewFmatParameter(
+    PreprocessedMaterial material,
+    String key,
+    Object raw,
+    Vector4? color,
+  ) {
+    try {
+      if (color != null) {
+        material.parameters.setColor(
+          key,
+          ui.Color.from(
+            alpha: color.a,
+            red: color.r,
+            green: color.g,
+            blue: color.b,
+          ),
+        );
+      } else if (raw is num) {
+        material.parameters[key] = raw;
+      }
+    } catch (_) {
+      // An unknown or mistyped parameter is a benign preview no-op; the
+      // commit path reports real failures.
+    }
+  }
+
   static Vector4? _colorVec(Object raw) {
     if (raw is Map) {
       final r = raw['r'], g = raw['g'], b = raw['b'], a = raw['a'];
@@ -990,6 +1060,7 @@ class EditorController extends ChangeNotifier {
         document,
         scene,
         environmentLoader: _loadAssetEnvironment,
+        fmatSkyLoader: fmatLibrary.loadSky,
       );
       return;
     }
@@ -1041,9 +1112,18 @@ class EditorController extends ChangeNotifier {
   // would leave the render item pointing at the old object until the next full
   // re-realize. Mutating in place keeps the render item's material live.
   Future<void> _reflectMaterials(Set<LocalId> ids) async {
+    // An fmat resource whose live material was built from a different `.fmat`
+    // (or never loaded and fell back to unlit) needs new shaders, which only
+    // a full realize swaps in.
+    if (_fmatMaterialsNeedRealize(ids)) {
+      await _realizeAll();
+      notifyListeners();
+      return;
+    }
     final realizer = ResourceRealizer(
       document,
       textureLoader: _loadAssetTexture,
+      fmatLoader: fmatLibrary.loadMaterial,
     );
     // TODO(material-reflect-textures): preload re-decodes every texture in the
     // document, not just the changed materials' own textures. Cheap for the
@@ -1074,6 +1154,37 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Whether any changed fmat material resource cannot be reconciled onto its
+  // live material in place: the live side is not a PreprocessedMaterial (an
+  // earlier load failed and degraded to unlit) or was built from a different
+  // `.fmat` source.
+  bool _fmatMaterialsNeedRealize(Set<LocalId> ids) {
+    final fmatIds = <LocalId, String?>{};
+    for (final id in ids) {
+      final res = document.resource(id);
+      if (res is MaterialResource && res.type == 'fmat') {
+        fmatIds[id] = res.asset?.key;
+      }
+    }
+    if (fmatIds.isEmpty) return false;
+    for (final node in _liveById.values) {
+      for (final mesh in node.getComponents<MeshComponent>()) {
+        for (final primitive in mesh.mesh.primitives) {
+          final origin = resourceOrigin(primitive.material);
+          if (origin == null || !fmatIds.containsKey(origin.resourceId)) {
+            continue;
+          }
+          final material = primitive.material;
+          if (material is! PreprocessedMaterial ||
+              fmatSourcePathOf(material) != fmatIds[origin.resourceId]) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   // Copies the renderable fields of the freshly realized [from] onto the live
   // [into], in place. Only same-type materials are reconciled (a material's
   // type does not change through setMaterialProperties).
@@ -1099,6 +1210,12 @@ class EditorController extends ChangeNotifier {
         ..baseColorFactor = from.baseColorFactor
         ..doubleSided = from.doubleSided
         ..baseColorTexture = from.baseColorTexture;
+    } else if (from is PreprocessedMaterial && into is PreprocessedMaterial) {
+      // Both instances were built from the same compiled `.fmat` entry (the
+      // asset-change case re-realizes instead), so the layouts agree and the
+      // fresh instance's parameter state (document overrides over sidecar
+      // defaults) copies over wholesale.
+      into.parameters.copyStateFrom(from.parameters);
     }
   }
 
@@ -1126,6 +1243,7 @@ class EditorController extends ChangeNotifier {
           document,
           scene,
           environmentLoader: _loadAssetEnvironment,
+          fmatSkyLoader: fmatLibrary.loadSky,
         );
       }
       if (resource is EnvironmentResource) {
@@ -1153,6 +1271,7 @@ class EditorController extends ChangeNotifier {
             skybox: resource.skybox,
             skyEnvironment: resource.skyEnvironment,
             environmentLoader: _loadAssetEnvironment,
+            fmatSkyLoader: fmatLibrary.loadSky,
           );
         }
         _builtRadianceSize[ref.id] = resource.radianceCubeSize;
@@ -1261,6 +1380,7 @@ class EditorController extends ChangeNotifier {
       toRealize,
       environmentLoader: _loadAssetEnvironment,
       textureLoader: _loadAssetTexture,
+      fmatLoader: fmatLibrary.loadMaterial,
     );
     await realizer.preload();
     final root = await realizeSceneAsync(
@@ -1276,6 +1396,7 @@ class EditorController extends ChangeNotifier {
       document,
       scene,
       environmentLoader: _loadAssetEnvironment,
+      fmatSkyLoader: fmatLibrary.loadSky,
     );
     _recordBuiltRadianceSizes();
     _liveById.clear();
@@ -1390,6 +1511,7 @@ class EditorController extends ChangeNotifier {
   @override
   void dispose() {
     session.selection.removeListener(_onSelectionChanged);
+    fmatLibrary.dispose();
     lastError.dispose();
     previewEpoch.dispose();
     scene.removeAll();

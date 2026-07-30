@@ -11,3 +11,11 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>
     Future.value(ShaderLibrary.fromAsset(assetName));
 
 Future<void> reinitializeShaderLibraryAsync(String assetKey) => _stub();
+
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) =>
+    _stub();
+
+Future<String?> reinitializeShaderLibraryFromBytesAsync(
+  ShaderLibrary library,
+  ByteData bytes,
+) => _stub();

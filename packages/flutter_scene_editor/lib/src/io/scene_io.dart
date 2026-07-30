@@ -126,6 +126,64 @@ Future<LocalId?> importMaterialTexture(
   return textureId;
 }
 
+const _fmatTypeGroup = XTypeGroup(
+  label: 'Material shader',
+  extensions: <String>['fmat'],
+);
+
+/// Shows the native open dialog filtered to `.fmat` material shaders, and
+/// returns the chosen path, or null on cancel.
+Future<String?> pickFmatPath() async {
+  final file = await openFile(acceptedTypeGroups: const [_fmatTypeGroup]);
+  return file?.path;
+}
+
+/// The asset key for a picked `.fmat`: relative when [path] is under the scene
+/// directory, absolute otherwise. The source is referenced in place, never
+/// copied, since editing the original (and hot swapping the compiled shaders)
+/// is the point of an fmat material.
+String referenceFmatAsset(String? sceneDir, String path) {
+  if (sceneDir != null) {
+    final prefix = '$sceneDir${Platform.pathSeparator}';
+    if (path.startsWith(prefix)) {
+      return path
+          .substring(prefix.length)
+          .replaceAll(Platform.pathSeparator, '/');
+    }
+  }
+  return path;
+}
+
+/// Creates an fmat material resource referencing the `.fmat` at [path] and
+/// assigns it to [nodeId]'s mesh component. Returns the new material id, or
+/// null when nothing was created.
+Future<LocalId?> assignFmatMaterial(
+  EditorController controller,
+  LocalId nodeId,
+  String path,
+) async {
+  final assetRef = referenceFmatAsset(controller.baseDirectory, path);
+  final before = Set.of(controller.document.resources.keys);
+  await controller.run('createMaterial', {
+    'type': 'fmat',
+    'asset': assetRef,
+    'name': _modelBaseName(path),
+  });
+  final added = controller.document.resources.keys.where(
+    (id) => !before.contains(id),
+  );
+  if (added.isEmpty) return null;
+  final materialId = added.first;
+  await controller.run('setComponentProperties', {
+    'nodeId': nodeId.toToken(),
+    'componentType': 'mesh',
+    'properties': {
+      'material': {'\$resource': materialId.toToken()},
+    },
+  });
+  return materialId;
+}
+
 String _fileExtension(String path) {
   final name = path.split(Platform.pathSeparator).last;
   final dot = name.lastIndexOf('.');

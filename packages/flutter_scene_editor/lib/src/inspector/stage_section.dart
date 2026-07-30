@@ -249,6 +249,7 @@ class SkySection extends StatelessWidget {
       GradientSkySpec() => 'gradient',
       PhysicalSkySpec() => 'physical',
       EnvironmentSkySpec() => 'environment',
+      FmatSkySpec() => 'fmat',
       _ => 'none',
     };
     final sun = switch (source) {
@@ -270,11 +271,22 @@ class SkySection extends StatelessWidget {
     // keeps the tuned parameters across them); the per-parameter fields below
     // patch the current sky. Picking a procedural sky lights the scene and
     // casts sun shadows by default (the user can then turn them off).
-    void setType(String newType) {
+    Future<void> setType(String newType) async {
       final procedural = newType == 'gradient' || newType == 'physical';
-      controller.run(skyboxCommand, {
+      // A shader sky needs its .fmat source; picking cancel keeps the current
+      // sky. Selecting it lights the scene by default like a procedural sky
+      // (the compiled sky drives the image-based lighting), but without sun
+      // shadows (an arbitrary shader sky has no sun).
+      String? asset;
+      if (newType == 'fmat') {
+        final path = await pickFmatPath();
+        if (path == null) return;
+        asset = referenceFmatAsset(controller.baseDirectory, path);
+      }
+      await controller.run(skyboxCommand, {
         'sky': newType,
-        if (procedural) 'lightScene': true,
+        if (asset != null) 'asset': asset,
+        if (procedural || newType == 'fmat') 'lightScene': true,
         if (procedural) 'castShadows': true,
         ...target(),
       });
@@ -368,10 +380,46 @@ class SkySection extends StatelessWidget {
               ),
               DropdownMenuItem(value: 'gradient', child: Text('Gradient')),
               DropdownMenuItem(value: 'physical', child: Text('Physical')),
+              DropdownMenuItem(value: 'fmat', child: Text('Shader (.fmat)')),
             ],
             onChanged: (v) => v == null ? null : setType(v),
           ),
         ),
+        if (source is FmatSkySpec) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              source.asset.key,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (controller.fmatLibrary.errorForKey(source.asset.key)
+              case final String skyError)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                skyError,
+                style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+              ),
+            ),
+          scalar(
+            'Intensity',
+            'intensity',
+            skyboxSpec?.intensity ?? 1.0,
+            max: 4,
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Light scene with sky',
+              style: TextStyle(fontSize: 13),
+            ),
+            value: lightScene,
+            onChanged: setLight,
+          ),
+        ],
         if (proceduralSky) ...[
           const Padding(
             padding: EdgeInsets.only(top: 4),

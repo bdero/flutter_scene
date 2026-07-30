@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
+import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 
@@ -29,6 +30,13 @@ import 'package:flutter_scene/src/texture/compressed_texture.dart';
 /// asset bundle (the editor loads a user-imported image from disk). Returns
 /// null to fall back to the asset bundle (the in-bundle example assets).
 typedef TextureAssetLoader = Future<ui.Image?> Function(AssetRef asset);
+
+/// Builds the live material for an `fmat` [MaterialResource] from outside the
+/// asset bundle (the editor compiles the referenced `.fmat` source from disk
+/// and loads the bytes). Returns null to fall back to the DataAssets-backed
+/// registry.
+typedef FmatMaterialLoader =
+    Future<PreprocessedMaterial?> Function(AssetRef asset);
 
 /// Turns a document's resources into live, GPU-backed [Geometry] and
 /// [Material] objects, memoizing each so a resource shared by many nodes is
@@ -50,6 +58,7 @@ class ResourceRealizer {
     AssetBundle? bundle,
     this.environmentLoader,
     this.textureLoader,
+    this.fmatLoader,
   }) : bundle = bundle ?? rootBundle;
 
   /// The document whose resources are realized.
@@ -65,6 +74,10 @@ class ResourceRealizer {
   /// Decodes a [TextureResource.asset] from outside the asset bundle, or null
   /// to use the bundle. See [TextureAssetLoader].
   final TextureAssetLoader? textureLoader;
+
+  /// Builds an `fmat` material from outside the asset bundle, or null to use
+  /// the DataAssets registry. See [FmatMaterialLoader].
+  final FmatMaterialLoader? fmatLoader;
 
   final Map<LocalId, Geometry> _geometries = {};
   final Map<LocalId, Material> _materials = {};
@@ -232,7 +245,11 @@ class ResourceRealizer {
       return;
     }
     try {
-      final material = await loadFmatMaterial(asset.key, bundle: bundle);
+      // Prefer the disk loader (the editor compiles the source on demand);
+      // fall back to the DataAssets registry for in-bundle materials.
+      final material =
+          await fmatLoader?.call(asset) ??
+          await loadFmatMaterial(asset.key, bundle: bundle);
       material.name = res.name;
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.

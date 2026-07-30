@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
@@ -297,6 +298,14 @@ final Expando<String> _fmatSourcePaths = Expando('fmat source path');
 /// instances.
 String? fmatSourcePathOf(Object materialOrSky) =>
     _fmatSourcePaths[materialOrSky];
+
+/// Stamps [materialOrSky] with the `.fmat` source path it was built from, so
+/// a runtime-compiled instance (`FmatBytesLibrary`) serializes the same way a
+/// registry load does.
+@internal
+void setFmatSourcePath(Object materialOrSky, String sourcePath) {
+  _fmatSourcePaths[materialOrSky] = sourcePath;
+}
 
 /// {@category Materials}
 Future<PreprocessedMaterial> loadFmatMaterial(

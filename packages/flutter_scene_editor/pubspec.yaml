@@ -27,6 +27,7 @@ dependencies:
   vector_math: ^2.1.4
 
 dev_dependencies:
+  flutter_gpu_shaders: ^0.5.1
   flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter

@@ -17,7 +17,7 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 
 /// The kind of an on-disk project asset, picked by file extension.
-enum FileAssetKind { model, image, hdr, scene }
+enum FileAssetKind { model, image, hdr, scene, material }
 
 /// A file under the project directory the browser can act on.
 @immutable
@@ -76,6 +76,7 @@ const _modelExt = {'.glb', '.gltf', '.fsceneb'};
 const _imageExt = {'.png', '.jpg', '.jpeg', '.webp'};
 const _hdrExt = {'.hdr', '.exr'};
 const _sceneExt = {'.fscene'};
+const _materialExt = {'.fmat'};
 
 FileAssetKind? _classify(String name) {
   final dot = name.lastIndexOf('.');
@@ -85,6 +86,7 @@ FileAssetKind? _classify(String name) {
   if (_imageExt.contains(ext)) return FileAssetKind.image;
   if (_hdrExt.contains(ext)) return FileAssetKind.hdr;
   if (_sceneExt.contains(ext)) return FileAssetKind.scene;
+  if (_materialExt.contains(ext)) return FileAssetKind.material;
   return null;
 }
 

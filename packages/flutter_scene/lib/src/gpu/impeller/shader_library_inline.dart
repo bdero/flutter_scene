@@ -35,3 +35,25 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) {
   ShaderLibrary.reinitialize(assetKey);
   return Future.value();
 }
+
+/// Loads a shader library from raw `.shaderbundle` bytes (an
+/// `impellerc --shader-bundle` output). Unlike [loadShaderLibraryAsync] the
+/// result has no asset key, so asset-path hot reload does not apply; refresh
+/// it in place with [reinitializeShaderLibraryFromBytesAsync].
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) {
+  // TODO(shader-reload): drop the ignore once ShaderLibrary.fromBytes reaches
+  // a released Flutter channel; same situation as reinitialize above.
+  // ignore: undefined_method
+  return ShaderLibrary.fromBytes(bytes);
+}
+
+/// Refreshes a bytes-loaded [library] in place from regenerated bundle
+/// [bytes], preserving Shader identity (reflection offsets and pipeline-cache
+/// keys stay valid). Returns an error description, or null on success.
+Future<String?> reinitializeShaderLibraryFromBytesAsync(
+  ShaderLibrary library,
+  ByteData bytes,
+) {
+  // ignore: undefined_method
+  return Future.value(library.reinitializeFromBytes(bytes));
+}

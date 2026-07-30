@@ -73,10 +73,18 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   /// variant the geometry selects (`'unskinned'`, `'skinned'`, `'depth'`), or
   /// null when the material does not customize the vertex stage. Resolved by
   /// the loader from the sidecar's `vertex` map and the shader bundle.
-  final Map<String, gpu.Shader>? _vertexShaders;
+  Map<String, gpu.Shader>? _vertexShaders;
 
   @override
   gpu.Shader? materialVertexShader(String variant) => _vertexShaders?[variant];
+
+  /// Replaces the generated vertex variants after a shader-library refresh (a
+  /// hot-reloaded `.fmat` gaining, losing, or recompiling its `vertex { }`
+  /// block). Pair with [updateFromMetadata].
+  @internal
+  void updateVertexShaders(Map<String, gpu.Shader>? shaders) {
+    _vertexShaders = shaders;
+  }
 
   // 16 zero bytes (a std140 vec4) for the VertexKeepAlive block below.
   static final ByteData _zeroKeepAlive = ByteData(16);

@@ -305,6 +305,30 @@ class MaterialParameters {
     );
   }
 
+  /// Copies the full parameter state (block bytes, explicit-set tracking, and
+  /// sampler bindings) from [other], which must have been built from the same
+  /// compiled shader entry so the layouts agree. The editor uses this to apply
+  /// a re-realized material onto the live instance in place.
+  void copyStateFrom(MaterialParameters other) {
+    if (other._block.lengthInBytes == _block.lengthInBytes) {
+      Uint8List.sublistView(
+        _block,
+      ).setAll(0, Uint8List.sublistView(other._block));
+    }
+    _overridden
+      ..clear()
+      ..addAll(other._overridden);
+    _assigned
+      ..clear()
+      ..addAll(other._assigned);
+    for (final entry in _samplers.entries) {
+      final source = other._samplers[entry.key];
+      entry.value
+        ..texture = source?.texture
+        ..sampler = source?.sampler;
+    }
+  }
+
   void setFloat(String name, double value) {
     _overridden.add(name);
     _assigned[name] = value;

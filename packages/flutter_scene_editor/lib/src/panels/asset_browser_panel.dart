@@ -110,6 +110,9 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     final images = _files
         .where((f) => f.kind == FileAssetKind.image && matches(f.name))
         .toList();
+    final materials = _files
+        .where((f) => f.kind == FileAssetKind.material && matches(f.name))
+        .toList();
     final embedded = embeddedResources(
       _ctrl.document,
     ).where((r) => matches(r.label)).toList();
@@ -140,6 +143,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
                 _fileSection(context, 'Scenes', scenes),
                 _fileSection(context, 'Environments (HDR)', hdrs),
                 _fileSection(context, 'Images', images),
+                _fileSection(context, 'Materials (.fmat)', materials),
                 _embeddedSection(context, embedded),
               ],
             ),
@@ -309,6 +313,25 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             ),
           );
         }
+      case FileAssetKind.material:
+        final selected = _ctrl.selection.primary;
+        if (selected != null &&
+            _ctrl
+                    .displayNode(selected)
+                    ?.components
+                    .any((c) => c.type == 'mesh') ==
+                true) {
+          await assignFmatMaterial(_ctrl, selected, asset.path);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Select a mesh node to assign this .fmat material to.',
+              ),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
     }
   }
 
@@ -363,6 +386,7 @@ IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.scene => Icons.account_tree_outlined,
   FileAssetKind.hdr => Icons.light_mode_outlined,
   FileAssetKind.image => Icons.image_outlined,
+  FileAssetKind.material => Icons.brush_outlined,
 };
 
 /// A single project-file tile: a thumbnail (a real preview for images, an icon

@@ -47,6 +47,21 @@ base class ShaderLibrary {
     unawaited(reinitializeShaderLibraryAsync(assetKey));
   }
 
+  /// Builds a library straight from `.shaderbundle` bytes, with no asset-key
+  /// tracking (a runtime-compiled bundle refreshes through
+  /// [reinitializeShaderLibraryFromBytesAsync] instead).
+  static ShaderLibrary _fromBundleBytes(Uint8List bytes) {
+    final bundle = fb.ShaderBundle(bytes);
+    final shaders = <String, Shader>{};
+    for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
+      final name = entry.name;
+      final backend = entry.openglEs;
+      if (name == null || backend == null) continue;
+      shaders[name] = _buildFromBackend(backend);
+    }
+    return ShaderLibrary._(shaders);
+  }
+
   /// Load and compile a `.shaderbundle` asset.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
     final data = await rootBundle.load(assetName);
@@ -235,6 +250,44 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
   debugPrint(
     'flutter_scene (web): recompiled $recompiled shader(s) from "$assetKey"',
   );
+}
+
+/// Loads a shader library from raw `.shaderbundle` bytes, the web counterpart
+/// of flutter_gpu's `ShaderLibrary.fromBytes`. The result has no asset key;
+/// refresh it with [reinitializeShaderLibraryFromBytesAsync].
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async {
+  return ShaderLibrary._fromBundleBytes(
+    bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+  );
+}
+
+/// Recompiles [library]'s shaders in place from regenerated bundle [bytes]
+/// (shader identities are preserved so material references and pipeline-cache
+/// keys stay valid; entries new to the bundle are added). Returns an error
+/// description, or null on success.
+Future<String?> reinitializeShaderLibraryFromBytesAsync(
+  ShaderLibrary library,
+  ByteData bytes,
+) async {
+  try {
+    final bundle = fb.ShaderBundle(
+      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+    );
+    for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
+      final name = entry.name;
+      final backend = entry.openglEs;
+      if (name == null || backend == null) continue;
+      final existing = library._shaders[name];
+      if (existing != null) {
+        ShaderLibrary._populateFromBackend(existing, backend);
+      } else {
+        library._shaders[name] = ShaderLibrary._buildFromBackend(backend);
+      }
+    }
+    return null;
+  } catch (e) {
+    return '$e';
+  }
 }
 
 /// Compile a map of inline GLSL ES 1.00 sources into a ShaderLibrary.
