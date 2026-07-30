@@ -34,7 +34,7 @@ Future<void> main(List<String> args) async {
 
   final server = serveOverChannel(
     stdioChannel(input: stdin, output: stdout),
-    EditorToolSurface(session),
+    EditorToolSurface.of(session),
   );
 
   await server.done;

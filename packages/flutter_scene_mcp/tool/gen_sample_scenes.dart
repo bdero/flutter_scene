@@ -7,8 +7,7 @@
 // they realize without any external assets.
 import 'dart:io';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 
 Map<String, Object?> _vec3(double x, double y, double z) => {

@@ -7,6 +7,9 @@ import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/tone_mapping.dart';
+import 'package:flutter_scene/src/widgets/declarative.dart';
 import 'package:flutter_scene/src/render_view.dart';
 import 'package:flutter_scene/src/components/widget_component.dart';
 import 'package:flutter/gestures.dart';
@@ -72,12 +75,13 @@ typedef SceneLoadingBuilder =
 ///
 /// The active [scene] is exposed to descendants through [SceneScope], so widgets
 /// below can resolve the scene from their [BuildContext].
+///
+/// For a fully declarative scene, use [SceneView.declarative]: the view owns
+/// an internal [Scene] and declarative scene widgets ([SceneNode],
+/// [SceneMesh], [SceneModel]) describe its contents in [children]. Both
+/// constructors accept [children], so declarative subtrees also compose over
+/// an app-owned scene.
 /// {@category Widgets}
-//
-// TODO(declarative): a future declarative API will add a `SceneView.builder`
-// (or `child:`) form where SceneView owns an internal Scene that declarative
-// node widgets populate via SceneScope. The Scene stays the substrate either
-// way; reserve that constructor shape rather than reworking this one.
 class SceneView extends StatefulWidget {
   /// Renders [scene], driving a repaint each frame.
   ///
@@ -86,7 +90,7 @@ class SceneView extends StatefulWidget {
   /// camera (`Scene.camera`), falling back to a default camera when the scene
   /// has none, so `SceneView(scene)` always renders something.
   const SceneView(
-    this.scene, {
+    Scene this.scene, {
     super.key,
     this.camera,
     this.cameraBuilder,
@@ -99,7 +103,12 @@ class SceneView extends StatefulWidget {
     this.revealMinDuration = Duration.zero,
     this.warmUp = false,
     this.debugWidgetInput = false,
-  }) : assert(
+    this.children = const [],
+  }) : environment = null,
+       environmentIntensity = 1.0,
+       exposure = 1.0,
+       toneMapping = null,
+       assert(
          (camera != null ? 1 : 0) +
                  (cameraBuilder != null ? 1 : 0) +
                  (viewsBuilder != null ? 1 : 0) <=
@@ -107,8 +116,72 @@ class SceneView extends StatefulWidget {
          'Provide at most one of camera, cameraBuilder, or viewsBuilder.',
        );
 
-  /// The scene to render. Owned and mutated by the application.
-  final Scene scene;
+  /// Renders a view-owned [Scene] described declaratively by [children].
+  ///
+  /// The view constructs and owns an internal [Scene]; scene widgets in
+  /// [children] populate it, and the scene-level props ([environment],
+  /// [exposure], [toneMapping], ...) configure it. Omitted props mean the
+  /// scene defaults; removing a prop on a later build restores its default.
+  ///
+  /// ```dart
+  /// SceneView.declarative(
+  ///   children: [
+  ///     SceneMesh(geometry: geometry, material: material),
+  ///   ],
+  /// )
+  /// ```
+  const SceneView.declarative({
+    super.key,
+    this.environment,
+    this.environmentIntensity = 1.0,
+    this.exposure = 1.0,
+    ToneMappingMode this.toneMapping = ToneMappingMode.pbrNeutral,
+    this.camera,
+    this.cameraBuilder,
+    this.viewsBuilder,
+    this.autoTick = true,
+    this.pixelRatio,
+    this.onTick,
+    this.loading,
+    this.loadingBuilder,
+    this.revealMinDuration = Duration.zero,
+    this.warmUp = false,
+    this.debugWidgetInput = false,
+    this.children = const [],
+  }) : scene = null,
+       assert(
+         (camera != null ? 1 : 0) +
+                 (cameraBuilder != null ? 1 : 0) +
+                 (viewsBuilder != null ? 1 : 0) <=
+             1,
+         'Provide at most one of camera, cameraBuilder, or viewsBuilder.',
+       );
+
+  /// The scene to render, owned and mutated by the application. Null when
+  /// the view owns its scene ([SceneView.declarative]).
+  final Scene? scene;
+
+  /// Declarative scene widgets mounted at the scene root (via [SceneScope]).
+  ///
+  /// With [SceneView.declarative] this is the whole scene description; with
+  /// an app-owned [scene] it composes declarative subtrees over the
+  /// imperative graph. The widgets stay mounted (and keep loading) while the
+  /// view is gated behind [loading] or [warmUp].
+  final List<Widget> children;
+
+  /// The owned scene's environment map ([SceneView.declarative] only).
+  /// Identity-diffed; null means the scene's default studio environment.
+  final EnvironmentMap? environment;
+
+  /// The owned scene's environment intensity ([SceneView.declarative] only).
+  final double environmentIntensity;
+
+  /// The owned scene's exposure ([SceneView.declarative] only).
+  final double exposure;
+
+  /// The owned scene's tone mapping ([SceneView.declarative] only). Null on
+  /// the app-owned-scene constructor, which never writes scene properties.
+  final ToneMappingMode? toneMapping;
 
   /// A fixed camera. Mutually exclusive with [cameraBuilder] and
   /// [viewsBuilder].
@@ -208,6 +281,18 @@ class _Repaint extends ChangeNotifier {
 
 class _SceneViewState extends State<SceneView>
     with SingleTickerProviderStateMixin {
+  // The internal scene for SceneView.declarative, created once per state.
+  // The default environment is captured so clearing the environment prop
+  // restores it (the declarative contract: omitted prop means default).
+  Scene? _ownedScene;
+  EnvironmentMap? _ownedDefaultEnvironment;
+
+  Scene get _scene => widget.scene ?? _ownedScene!;
+
+  // Loads declared by declarative children (SceneModel), so a gated view's
+  // reveal waits for them. Handed to descendants through SceneScope.
+  final ResourceGroup _childLoads = ResourceGroup();
+
   final _Repaint _repaint = _Repaint();
   final ValueNotifier<Duration> _elapsed = ValueNotifier<Duration>(
     Duration.zero,
@@ -242,9 +327,12 @@ class _SceneViewState extends State<SceneView>
   @override
   void initState() {
     super.initState();
-    _sceneSemantics = SceneSemanticsCoordinator(widget.scene);
+    if (widget.scene == null) {
+      _ensureOwnedScene();
+    }
+    _sceneSemantics = SceneSemanticsCoordinator(_scene);
     SemanticsBinding.instance.addSemanticsEnabledListener(_onSemanticsChanged);
-    widget.scene.renderScene.semanticsComponentsChanged.addListener(
+    _scene.renderScene.semanticsComponentsChanged.addListener(
       _onSemanticsChanged,
     );
     if (widget.autoTick) {
@@ -253,6 +341,38 @@ class _SceneViewState extends State<SceneView>
     _revealed = !_gated;
     if (_gated) {
       _startRevealWatch();
+    }
+  }
+
+  // Creates the owned scene for the declarative form and applies every scene
+  // prop, the single creation path for initState and constructor-form
+  // switches.
+  void _ensureOwnedScene() {
+    _ownedScene = Scene();
+    _ownedDefaultEnvironment = _ownedScene!.environment;
+    _applySceneProps(null);
+  }
+
+  // Applies the declarative constructor's scene-level props to the owned
+  // scene, writing only what changed. Pass null to apply everything (initial
+  // apply, or right after the owned scene is created).
+  void _applySceneProps(SceneView? oldWidget) {
+    final scene = _ownedScene!;
+    if (oldWidget == null ||
+        !identical(widget.environment, oldWidget.environment)) {
+      scene.environment = widget.environment ?? _ownedDefaultEnvironment;
+    }
+    if (oldWidget == null ||
+        widget.environmentIntensity != oldWidget.environmentIntensity) {
+      scene.environmentIntensity = widget.environmentIntensity;
+    }
+    if (oldWidget == null || widget.exposure != oldWidget.exposure) {
+      scene.exposure = widget.exposure;
+    }
+    final toneMapping = widget.toneMapping;
+    if (toneMapping != null &&
+        (oldWidget == null || toneMapping != oldWidget.toneMapping)) {
+      scene.toneMapping = toneMapping;
     }
   }
 
@@ -268,22 +388,41 @@ class _SceneViewState extends State<SceneView>
       _ticker?.dispose();
       _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
     }
-    if (!identical(widget.scene, oldWidget.scene)) {
-      oldWidget.scene.renderScene.semanticsComponentsChanged.removeListener(
-        _onSemanticsChanged,
-      );
-      widget.scene.renderScene.semanticsComponentsChanged.addListener(
-        _onSemanticsChanged,
-      );
-      _sceneSemantics = SceneSemanticsCoordinator(widget.scene);
+    final oldScene = oldWidget.scene ?? _ownedScene;
+    if (widget.scene == null) {
+      if (oldWidget.scene != null || _ownedScene == null) {
+        // Switched from an app-owned scene to the declarative form. A stale
+        // owned scene from an earlier declarative phase is discarded so
+        // leftover imperative state cannot resurface.
+        _ensureOwnedScene();
+      } else {
+        _applySceneProps(oldWidget);
+      }
+    } else if (_ownedScene != null) {
+      // Switched from the declarative form to an app-owned scene; drop the
+      // owned scene so a later switch back starts fresh.
+      _ownedScene = null;
+      _ownedDefaultEnvironment = null;
     }
-    // A new set of resources to wait for (or newly gated): hold the scene again
-    // until they load.
+    if (!identical(_scene, oldScene)) {
+      oldScene?.renderScene.semanticsComponentsChanged.removeListener(
+        _onSemanticsChanged,
+      );
+      _scene.renderScene.semanticsComponentsChanged.addListener(
+        _onSemanticsChanged,
+      );
+      _sceneSemantics = SceneSemanticsCoordinator(_scene);
+      _autoPointer = null;
+    }
+    // A new set of resources to wait for, a newly gated view, or a different
+    // scene: hold the scene again until its loads and warm-up complete.
     final gatedBefore =
         oldWidget.loading != null ||
         oldWidget.loadingBuilder != null ||
         oldWidget.warmUp;
-    if (widget.loading != oldWidget.loading || _gated != gatedBefore) {
+    if (widget.loading != oldWidget.loading ||
+        _gated != gatedBefore ||
+        !identical(_scene, oldScene)) {
       _revealed = !_gated;
       if (_gated) {
         _startRevealWatch();
@@ -304,10 +443,17 @@ class _SceneViewState extends State<SceneView>
     if (!mounted || generation != _revealGeneration) return;
     await widget.loading?.ready;
     if (!mounted || generation != _revealGeneration) return;
+    // Wait a frame so declarative children have built and registered their
+    // loads, then wait for those loads, so gated views (and warm-up) cover
+    // SceneModel content too.
+    await SchedulerBinding.instance.endOfFrame;
+    if (!mounted || generation != _revealGeneration) return;
+    await _childLoads.ready;
+    if (!mounted || generation != _revealGeneration) return;
     // Compile the pipelines the first frame needs while the loading widget is
     // still up, so the reveal frame does not stall.
     if (widget.warmUp) {
-      await widget.scene.warmUp(_warmUpViews());
+      await _scene.warmUp(_warmUpViews());
       if (!mounted || generation != _revealGeneration) return;
     }
     final remaining =
@@ -346,7 +492,7 @@ class _SceneViewState extends State<SceneView>
     _elapsed.value,
     camera: widget.camera,
     cameraBuilder: widget.cameraBuilder,
-    sceneCamera: widget.scene.camera,
+    sceneCamera: _scene.camera,
   );
 
   List<RenderView> _viewsForFrame() => widget.viewsBuilder!(_elapsed.value);
@@ -358,11 +504,11 @@ class _SceneViewState extends State<SceneView>
   Size _viewSize = Size.zero;
   Offset? _debugPosition;
 
-  ScenePointer get _pointer => _autoPointer ??= ScenePointer(widget.scene);
+  ScenePointer get _pointer => _autoPointer ??= ScenePointer(_scene);
 
   bool get _autoInputAvailable =>
       widget.viewsBuilder == null &&
-      widget.scene.renderScene.widgetComponents.isNotEmpty;
+      _scene.renderScene.widgetComponents.isNotEmpty;
 
   void _autoPoint(Offset position) {
     final camera = _lastBuiltCamera;
@@ -446,7 +592,7 @@ class _SceneViewState extends State<SceneView>
     SemanticsBinding.instance.removeSemanticsEnabledListener(
       _onSemanticsChanged,
     );
-    widget.scene.renderScene.semanticsComponentsChanged.removeListener(
+    _scene.renderScene.semanticsComponentsChanged.removeListener(
       _onSemanticsChanged,
     );
     _ticker?.dispose();
@@ -458,94 +604,114 @@ class _SceneViewState extends State<SceneView>
   @override
   Widget build(BuildContext context) {
     _sceneSemantics.ambientTextDirection = Directionality.maybeOf(context);
+    Widget view = LayoutBuilder(
+      builder: (context, constraints) {
+        _viewSize = constraints.biggest;
+        return _buildView(context);
+      },
+    );
+    if (widget.children.isNotEmpty) {
+      // The declarative children mount outside the reveal gate so their
+      // content populates (and loads) while a loading widget is up. The host
+      // occupies no space and paints nothing.
+      view = Stack(
+        alignment: Alignment.topLeft,
+        fit: StackFit.passthrough,
+        children: [
+          view,
+          // The explicit parent pins children to THIS view's scene; resolving
+          // through context could find an outer declarative tree's parent
+          // scope when views nest.
+          SceneSubtree(parent: _scene.root, children: widget.children),
+        ],
+      );
+    }
     return SceneScope(
-      scene: widget.scene,
+      scene: _scene,
       elapsed: _elapsed,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _viewSize = constraints.biggest;
-          if (!_revealed) {
-            return _buildLoading(context);
-          }
-          return Listener(
-            // Translucent: forwarded events still reach the app's own
-            // gesture handlers; the scene never wins a gesture arena.
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            onPointerUp: _onPointerUp,
-            onPointerCancel: _onPointerCancel,
-            onPointerSignal: _onPointerSignal,
-            onPointerPanZoomStart: _onPointerPanZoomStart,
-            onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
-            child: Stack(
-              fit: StackFit.passthrough,
-              children: [
-                _SceneCustomPaint(
-                  semantics: _sceneSemantics,
-                  painter: _ScenePainter(
-                    scene: widget.scene,
-                    cameraForFrame: widget.viewsBuilder == null
-                        ? _cameraForFrame
-                        : null,
-                    viewsForFrame: widget.viewsBuilder == null
-                        ? null
-                        : _viewsForFrame,
-                    pixelRatio: widget.pixelRatio,
-                    semantics: _sceneSemantics,
-                    repaint: _repaint,
-                  ),
-                  // Invisible hosts for the scene's WidgetComponents: each hosted
-                  // subtree stays fully live (state, tickers, animations) while
-                  // occupying no layout space and never painting to the screen; its
-                  // visual output streams into the component's texture. The Overlay
-                  // keeps dialogs, dropdowns, and tooltips inside the capture.
-                  // Riding as the paint widget's child puts each subtree's
-                  // semantics under the scene's semantics boundary, beside the
-                  // nodes synthesized for SemanticsComponents.
-                  child: SizedBox.expand(
-                    child: ValueListenableBuilder<int>(
-                      valueListenable:
-                          widget.scene.renderScene.widgetComponentsChanged,
-                      builder: (context, _, _) => Stack(
-                        children: [
-                          for (final component
-                              in widget.scene.renderScene.widgetComponents
-                                  .whereType<WidgetComponent>())
-                            WidgetTexture(
-                              key: ObjectKey(component),
-                              controller: component.controller,
-                              width: component.size.width,
-                              height: component.size.height,
-                              pixelRatio: component.pixelRatio,
-                              update: component.updatePolicy,
-                              // ExcludeSemantics gates the subtree's semantics
-                              // by the coordinator's per-frame decision (see
-                              // WidgetTextureController.semanticsHidden); the
-                              // subtree stays structurally present either way.
-                              child: ValueListenableBuilder<bool>(
-                                valueListenable:
-                                    component.controller.semanticsHidden,
-                                builder: (context, hidden, child) =>
-                                    ExcludeSemantics(
-                                      excluding: hidden,
-                                      child: child,
-                                    ),
-                                child: _WidgetComponentHost(
-                                  component: component,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (widget.debugWidgetInput) _buildDebugOverlay(),
-              ],
+      internalChildLoads: _childLoads,
+      child: view,
+    );
+  }
+
+  Widget _buildView(BuildContext context) {
+    if (!_revealed) {
+      return _buildLoading(context);
+    }
+    return Listener(
+      // Translucent: forwarded events still reach the app's own
+      // gesture handlers; the scene never wins a gesture arena.
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      onPointerSignal: _onPointerSignal,
+      onPointerPanZoomStart: _onPointerPanZoomStart,
+      onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          _SceneCustomPaint(
+            semantics: _sceneSemantics,
+            painter: _ScenePainter(
+              scene: _scene,
+              cameraForFrame: widget.viewsBuilder == null
+                  ? _cameraForFrame
+                  : null,
+              viewsForFrame: widget.viewsBuilder == null
+                  ? null
+                  : _viewsForFrame,
+              // Resolve against the hosting view, not the implicit
+              // view (Scene.render's fallback), which does not exist
+              // in multi-window apps whose windows are all created
+              // through the windowing API.
+              pixelRatio:
+                  widget.pixelRatio ?? View.of(context).devicePixelRatio,
+              semantics: _sceneSemantics,
+              repaint: _repaint,
             ),
-          );
-        },
+            // Invisible hosts for the scene's WidgetComponents: each hosted
+            // subtree stays fully live (state, tickers, animations) while
+            // occupying no layout space and never painting to the screen; its
+            // visual output streams into the component's texture. The Overlay
+            // keeps dialogs, dropdowns, and tooltips inside the capture.
+            // Riding as the paint widget's child puts each subtree's
+            // semantics under the scene's semantics boundary, beside the
+            // nodes synthesized for SemanticsComponents.
+            child: SizedBox.expand(
+              child: ValueListenableBuilder<int>(
+                valueListenable: _scene.renderScene.widgetComponentsChanged,
+                builder: (context, _, _) => Stack(
+                  children: [
+                    for (final component
+                        in _scene.renderScene.widgetComponents
+                            .whereType<WidgetComponent>())
+                      WidgetTexture(
+                        key: ObjectKey(component),
+                        controller: component.controller,
+                        width: component.size.width,
+                        height: component.size.height,
+                        pixelRatio: component.pixelRatio,
+                        update: component.updatePolicy,
+                        // ExcludeSemantics gates the subtree's semantics
+                        // by the coordinator's per-frame decision (see
+                        // WidgetTextureController.semanticsHidden); the
+                        // subtree stays structurally present either way.
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: component.controller.semanticsHidden,
+                          builder: (context, hidden, child) =>
+                              ExcludeSemantics(excluding: hidden, child: child),
+                          child: _WidgetComponentHost(component: component),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (widget.debugWidgetInput) _buildDebugOverlay(),
+        ],
       ),
     );
   }
@@ -787,15 +953,15 @@ class _RenderSceneCustomPaint extends RenderCustomPaint {
 /// of a [SceneView].
 ///
 /// Resolve the scene from a descendant's [BuildContext] with [SceneScope.of].
-/// Today [SceneView] is the only producer and there are no built-in consumers;
-/// this plumbing exists so a future declarative node API can attach widgets to
-/// the right scene subtree without restructuring the view.
+/// Declarative scene widgets resolve their default attachment point through
+/// it, and other descendants may read the scene for queries.
 /// {@category Widgets}
 class SceneScope extends InheritedWidget {
   const SceneScope({
     super.key,
     required this.scene,
     required this.elapsed,
+    this.internalChildLoads,
     required super.child,
   });
 
@@ -808,6 +974,11 @@ class SceneScope extends InheritedWidget {
   /// about per-frame time can listen without forcing every dependent to rebuild
   /// each frame.
   final ValueListenable<Duration> elapsed;
+
+  /// The enclosing view's tracker for declarative child loads, so a gated
+  /// view's reveal waits for them. Engine plumbing, not application surface.
+  @internal
+  final ResourceGroup? internalChildLoads;
 
   /// The nearest [SceneScope], or null if there is none.
   static SceneScope? maybeOf(BuildContext context) =>

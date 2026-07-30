@@ -246,16 +246,28 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   if (n_dot_l <= 0.0) {
     return vec3(0.0);
   }
-  vec3 half_vector = normalize(light_vector + camera_normal);
   float n_dot_v_safe = max(n_dot_v, 1e-4);
-  float distribution = DistributionGGX(normal, half_vector, roughness);
-  float visibility =
-      VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
-  vec3 specular_fresnel =
-      FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
-  // `visibility` already folds in 1 / (4 * NoL * NoV).
-  vec3 specular =
-      distribution * visibility * specular_fresnel * specular_scale;
+  // Facing the light through a double-sided surface (a back-lit leaf whose
+  // normal faces the sun), light_vector nears -camera_normal, so the unnormalized
+  // half vector nears zero and normalize() returns a NaN that becomes a black
+  // specular hole a later gather pass spreads. There is no specular highlight at
+  // that light-opposite-view geometry (it is retroreflection), so drop the
+  // specular when the half vector degenerates. Fresnel then falls back to the
+  // base reflectance for the diffuse energy split.
+  vec3 h = light_vector + camera_normal;
+  float h_len_sq = dot(h, h);
+  vec3 specular = vec3(0.0);
+  vec3 specular_fresnel = reflectance;
+  if (h_len_sq > 1e-8) {
+    vec3 half_vector = h * inversesqrt(h_len_sq);
+    float distribution = DistributionGGX(normal, half_vector, roughness);
+    float visibility =
+        VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+    specular_fresnel =
+        FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
+    // `visibility` already folds in 1 / (4 * NoL * NoV).
+    specular = distribution * visibility * specular_fresnel * specular_scale;
+  }
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
   return (diffuse + specular) * radiance * n_dot_l;
@@ -524,18 +536,22 @@ vec4 EvaluateLighting(MaterialInputs material) {
       vec3 to_light = l0.xyz - v_position;
       float dist_sq = dot(to_light, to_light);
       punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
-      // Windowed inverse-square distance falloff: with an inverse range of 0
-      // (infinite range) the window is 1 and this is a pure inverse square,
-      // clamped near the source.
+      // Windowed distance falloff: with an inverse range of 0 (infinite
+      // range) the window is 1. The falloff exponent (texel 3.z) is 2 for
+      // the physical inverse square; lower exponents reach further without
+      // brightening the near field (an artistic control), and pow(dist_sq,
+      // e/2) = dist^e.
       float inv_range = l1.w;
       float factor = dist_sq * inv_range * inv_range;
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
-      radiance *= (window * window) / max(dist_sq, 1e-4);
+      // spot offset, shadow slot, falloff exponent
+      vec4 l3 = FetchPunctualTexel(light_row, 3);
+      radiance *=
+          (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
       if (type > 1.5) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
         vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
-        vec4 l3 = FetchPunctualTexel(light_row, 3); // spot offset, shadow slot
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
         float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
         radiance *= cone * cone;

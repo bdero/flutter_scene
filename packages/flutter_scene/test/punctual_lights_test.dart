@@ -64,6 +64,19 @@ void main() {
       expect(floats[5], closeTo(1.2, 1e-6));
       expect(floats[6], closeTo(1.4, 1e-6));
       expect(floats[7], closeTo(0.1, 1e-6));
+      // Texel 3.z: the physical inverse-square exponent by default.
+      expect(floats[14], closeTo(2.0, 1e-6));
+    });
+
+    test('packs the falloff exponent into texel 3.z, clamped positive', () {
+      final (floats, _) = PunctualLightBuffer.packLights(
+        directionals: const [],
+        points: [_pointAt(Vector3.zero(), PointLight(falloffExponent: 1.3))],
+        spots: [_spotAt(Vector3.zero(), SpotLight(falloffExponent: -1.0))],
+      );
+      expect(floats[14], closeTo(1.3, 1e-6));
+      // The spot occupies row 1; a non-positive exponent clamps to 0.1.
+      expect(floats[32 + 14], closeTo(0.1, 1e-6));
     });
 
     test('an infinite-range point light encodes inverse range 0', () {

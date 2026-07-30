@@ -8,18 +8,18 @@
 /// with a [FsceneComponentRegistry].
 library;
 
-export 'src/fscene/binary/fsceneb.dart'
+export 'package:scene/scene.dart'
     show writeFsceneb, readFsceneb, kFscenebVersion, FscenebFormatException;
-export 'src/fscene/compose/compose.dart'
+export 'package:scene/scene.dart'
     show
         applyPrefabOverride,
         composeScene,
         composeSceneAsync,
         PrefabResolver,
         AsyncPrefabLoader;
-export 'src/fscene/id.dart'
+export 'package:scene/scene.dart'
     show DocumentId, LocalId, IdAllocator, encodeBase32, decodeBase32;
-export 'src/fscene/json/fscene_json.dart'
+export 'package:scene/scene.dart'
     show
         writeFscene,
         readFscene,
@@ -28,7 +28,7 @@ export 'src/fscene/json/fscene_json.dart'
         FsceneFormatException,
         FsceneVersionException,
         FsceneUnsupportedFeatureException;
-export 'src/fscene/property_value.dart'
+export 'package:scene/scene.dart'
     show
         AssetRef,
         BoolValue,
@@ -48,7 +48,7 @@ export 'src/fscene/property_value.dart'
         Vec4Value;
 export 'src/fscene/realize/builtin_codecs.dart'
     show registerBuiltinComponentCodecs;
-export 'src/fscene/reload/diff.dart' show diffScene, SceneDiff, NodeChange;
+export 'package:scene/scene.dart' show diffScene, SceneDiff, NodeChange;
 export 'src/fscene/reload/reload.dart' show reloadScene;
 export 'src/fscene/realize/component_codec.dart'
     show
@@ -76,8 +76,8 @@ export 'src/fscene/realize/realize.dart'
 export 'src/fscene/realize/resource_realizer.dart' show ResourceRealizer;
 export 'src/fscene/realize/stage.dart' show realizeStage, serializeStage;
 export 'src/fscene/realize/views.dart' show realizeViews, serializeViews;
-export 'src/fscene/scene_document.dart' show SceneDocument;
-export 'src/fscene/specs.dart'
+export 'package:scene/scene.dart' show SceneDocument;
+export 'package:scene/scene.dart'
     show
         Attachment,
         AnimationChannelSpec,

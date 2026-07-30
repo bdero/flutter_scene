@@ -5,8 +5,12 @@ environment:
   sdk: ^3.10.0
 
 workspace:
+  - packages/scene
   - packages/flutter_scene
   - packages/flutter_scene_rapier
+  - packages/flutter_scene_soloud
+  - packages/flutter_scene_fmod
+  - packages/flutter_scene_net
   - packages/flutter_scene_box3d
   - packages/flutter_scene_editor_core
   - packages/flutter_scene_editor
@@ -14,5 +18,6 @@ workspace:
   - examples/flutter_app
   - examples/flutter_gpu_shim_smoke
   - examples/smoke_render
+  - examples/stress_bench
   - examples/editor_example
   - apps/flutter_scene_editor_app

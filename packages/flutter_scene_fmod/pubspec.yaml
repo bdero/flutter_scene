@@ -1,0 +1,25 @@
+name: flutter_scene_fmod
+description: FMOD Studio audio backend for flutter_scene. Implements the abstract audio contract from flutter_scene over the fmod package, against a user-supplied FMOD Engine SDK.
+repository: https://github.com/bdero/flutter_scene
+homepage: https://github.com/bdero/flutter_scene
+version: 0.1.0
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.29.0-1.0.pre.242"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_scene: ^0.20.0
+  # The standalone FMOD bindings; this package adapts them to the
+  # flutter_scene audio contract.
+  fmod: ^0.1.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter

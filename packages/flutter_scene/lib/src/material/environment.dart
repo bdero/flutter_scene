@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/material/equirect_image.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/env_prefilter.dart';
 import 'package:flutter_scene/src/render/sky_bake.dart';
@@ -25,8 +27,9 @@ const int kDiffuseShCoefficientCount = 9;
 /// computed up front, so constructing an environment from images does GPU
 /// work and is best done once.
 ///
-/// Construct one with [EnvironmentMap.fromAssets] / [EnvironmentMap.fromUIImages]
-/// (which compute the SH and prefilter the radiance for you),
+/// Construct one with [EnvironmentMap.fromEquirectImageAsset] /
+/// [EnvironmentMap.fromEquirectImageBytes] (which detect HDR, EXR, or sRGB
+/// sources and compute the SH and prefilter the radiance for you),
 /// [EnvironmentMap.studio] (the built-in procedural default),
 /// [EnvironmentMap.fromGpuTextures] when you already hold a prefiltered
 /// atlas, or [EnvironmentMap.empty] for a no-op black environment.
@@ -177,6 +180,10 @@ base class EnvironmentMap {
 
   /// Loads an [EnvironmentMap] from an equirectangular sRGB radiance image
   /// in the asset bundle (see [fromUIImages]).
+  ///
+  /// [fromEquirectImageAsset] does everything this does and also detects
+  /// Radiance HDR and OpenEXR sources; prefer it.
+  @Deprecated('Use fromEquirectImageAsset instead')
   static Future<EnvironmentMap> fromAssets({
     required String radianceImagePath,
     List<Vector3>? diffuseSphericalHarmonics,
@@ -230,6 +237,78 @@ base class EnvironmentMap {
       rebakeSource: radianceTexture,
       rebakeSourceIsLinear: true,
     );
+  }
+
+  /// Loads an [EnvironmentMap] from an equirectangular image in the asset
+  /// bundle, detecting Radiance HDR (`.hdr`), OpenEXR (`.exr`), or a standard
+  /// sRGB image (`.png`/`.jpg`) from its contents. HDR and EXR are read as
+  /// linear radiance, so bright skies and the sun keep their true intensity;
+  /// LDR images are interpreted as sRGB.
+  ///
+  /// The decode runs on a background isolate. [maxWidth] caps the working
+  /// equirect so a very large panorama is box-downsampled (HDR/EXR) or decoded
+  /// scaled down (LDR) instead of materializing at full resolution. Pass
+  /// [diffuseSphericalHarmonics] to supply your own diffuse term instead of
+  /// projecting it.
+  ///
+  /// In debug builds, a `Scene.loadEnvironment` built on this re-runs on hot
+  /// reload when the asset's content changes.
+  static Future<EnvironmentMap> fromEquirectImageAsset({
+    required String assetPath,
+    int maxWidth = 4096,
+    List<Vector3>? diffuseSphericalHarmonics,
+    AssetBundle? bundle,
+  }) async {
+    final environment = await fromEquirectImageBytes(
+      bytes: await bytesFromAsset(assetPath, bundle: bundle),
+      maxWidth: maxWidth,
+      diffuseSphericalHarmonics: diffuseSphericalHarmonics,
+    );
+    _environmentAssetPaths[environment] = assetPath;
+    return environment;
+  }
+
+  /// Builds an [EnvironmentMap] from the raw bytes of an equirectangular image,
+  /// detecting Radiance HDR, OpenEXR, or a standard sRGB image (see
+  /// [fromEquirectImageAsset]). Useful for an image fetched over the network or
+  /// picked by the user.
+  ///
+  /// On the web there are no isolates, so an HDR/EXR decode runs on the main
+  /// thread and a large panorama can jank; prefer a modest [maxWidth] there.
+  static Future<EnvironmentMap> fromEquirectImageBytes({
+    required Uint8List bytes,
+    int maxWidth = 4096,
+    List<Vector3>? diffuseSphericalHarmonics,
+  }) async {
+    // LDR decodes through the platform image codec on the main isolate; only
+    // the CPU-heavy HDR/EXR decode (and its SH projection) is worth an isolate.
+    if (detectEquirectImageFormat(bytes) == EquirectImageFormat.ldr) {
+      return fromUIImages(
+        radianceImage: await imageFromBytes(bytes, maxWidth: maxWidth),
+        diffuseSphericalHarmonics: diffuseSphericalHarmonics,
+      );
+    }
+    final (pixels, width, height, shFlat) = await compute(
+      _decodeEquirectHdrOnIsolate,
+      (bytes, maxWidth, diffuseSphericalHarmonics == null),
+    );
+    return fromEquirectHdr(
+      linearPixels: pixels,
+      width: width,
+      height: height,
+      diffuseSphericalHarmonics:
+          diffuseSphericalHarmonics ?? _shFromFlat(shFlat),
+    );
+  }
+
+  // Rebuilds diffuse SH coefficients from the flat float triples the decode
+  // isolate returns (Vector3 per coefficient), or null when none were computed.
+  static List<Vector3>? _shFromFlat(Float32List? flat) {
+    if (flat == null) return null;
+    return [
+      for (var i = 0; i < flat.length ~/ 3; i++)
+        Vector3(flat[i * 3], flat[i * 3 + 1], flat[i * 3 + 2]),
+    ];
   }
 
   /// Bakes a sky into an environment for image-based lighting.
@@ -833,15 +912,44 @@ base class EnvironmentMap {
   }
 }
 
-/// Radiance asset paths recorded for [EnvironmentMap.fromAssets] results, so
-/// provenance-aware tooling (the scene serializer) can recover where a live
-/// environment came from.
+// Isolate entry point for EnvironmentMap.fromEquirectImageBytes. Decodes an
+// HDR/EXR equirect off the platform thread and, when projectSh is set, also
+// projects its diffuse SH there (so the main isolate does not re-scan the
+// pixels). Returns the linear pixels, dimensions, and the flattened SH (or
+// null). The caller only reaches here after detecting a non-LDR source.
+(Float32List, int, int, Float32List?) _decodeEquirectHdrOnIsolate(
+  (Uint8List, int, bool) message,
+) {
+  final (bytes, maxWidth, projectSh) = message;
+  final decoded = decodeEquirectHdrImage(bytes, maxWidth: maxWidth)!;
+  Float32List? sh;
+  if (projectSh) {
+    final coefficients =
+        EnvironmentMap._projectLinearEquirectToSphericalHarmonics(
+          decoded.pixels,
+          decoded.width,
+          decoded.height,
+        );
+    sh = Float32List(coefficients.length * 3);
+    for (var i = 0; i < coefficients.length; i++) {
+      sh[i * 3] = coefficients[i].x;
+      sh[i * 3 + 1] = coefficients[i].y;
+      sh[i * 3 + 2] = coefficients[i].z;
+    }
+  }
+  return (decoded.pixels, decoded.width, decoded.height, sh);
+}
+
+/// Radiance asset paths recorded for [EnvironmentMap.fromEquirectImageAsset]
+/// (and the deprecated `fromAssets`) results, so provenance-aware tooling (the
+/// scene serializer) can recover where a live environment came from.
 final Expando<String> _environmentAssetPaths = Expando(
   'environment asset path',
 );
 
 /// The radiance asset path [environment] was loaded from through
-/// [EnvironmentMap.fromAssets], or null for environments built another way.
+/// [EnvironmentMap.fromEquirectImageAsset] (or the deprecated `fromAssets`),
+/// or null for environments built another way.
 /// {@category Lighting and environment}
 String? environmentAssetPathOf(EnvironmentMap environment) =>
     _environmentAssetPaths[environment];

@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
+import '../animation.dart';
 import '../components/component.dart';
 import '../components/directional_light_component.dart';
+import '../components/materials_variants_component.dart';
 import '../components/point_light_component.dart';
 import '../components/spot_light_component.dart';
 import '../light.dart';
@@ -122,6 +124,10 @@ Future<Node> _buildScene(
   // can refer to them by index regardless of the order we visit them in.
   final List<Node> engineNodes = List.generate(doc.nodes.length, (_) => Node());
 
+  // Collects each primitive's per-variant materials (KHR_materials_variants)
+  // so the component attached to the root can swap them later.
+  final List<MaterialsVariantBinding> variantBindings = [];
+
   for (int i = 0; i < doc.nodes.length; i++) {
     _populateNode(
       index: i,
@@ -131,6 +137,7 @@ Future<Node> _buildScene(
       packed: packed,
       engineNodes: engineNodes,
       textures: textures,
+      variantBindings: variantBindings,
     );
   }
 
@@ -162,6 +169,14 @@ Future<Node> _buildScene(
     name: 'root',
     localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
   )..excludeFromWindingParity = true;
+  if (doc.materialsVariants.isNotEmpty) {
+    root.addComponent(
+      MaterialsVariantsComponent.internal(
+        doc.materialsVariants,
+        variantBindings,
+      ),
+    );
+  }
   if (sceneIndex != null && sceneIndex < doc.scenes.length) {
     for (final rootNodeIdx in doc.scenes[sceneIndex].nodes) {
       if (rootNodeIdx >= 0 && rootNodeIdx < engineNodes.length) {
@@ -203,9 +218,24 @@ void _populateNode({
   required List<List<PackedPrimitive?>> packed,
   required List<Node> engineNodes,
   required List<Texture2D> textures,
+  required List<MaterialsVariantBinding> variantBindings,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
-  engineNode.localTransform = _localTransformFor(gltfNode);
+  final matrix = gltfNode.matrix;
+  if (matrix != null) {
+    engineNode.localTransform = matrix.clone();
+  } else {
+    // Keep the authored TRS. Recovering it from the composed matrix puts
+    // a mirrored bone's negative scale on the wrong axis, which breaks
+    // animation blending.
+    engineNode.setLocalTransformTrs(
+      DecomposedTransform(
+        translation: gltfNode.translation?.clone() ?? Vector3.zero(),
+        rotation: gltfNode.rotation?.clone() ?? Quaternion.identity(),
+        scale: gltfNode.scale?.clone() ?? Vector3(1.0, 1.0, 1.0),
+      ),
+    );
+  }
 
   if (gltfNode.mesh != null) {
     final gltfMesh = doc.meshes[gltfNode.mesh!];
@@ -227,7 +257,27 @@ void _populateNode({
       final material = p.material != null
           ? buildMaterial(doc.materials[p.material!], textures)
           : UnlitMaterial();
-      primitives.add(MeshPrimitive(geometry, material));
+      final primitive = MeshPrimitive(geometry, material);
+      if (p.variantMappings.isNotEmpty) {
+        // Build each variant's material now (textures are already decoded)
+        // so selection is a plain reassignment. A mapping that names the
+        // default material index reuses the default instance.
+        variantBindings.add(
+          MaterialsVariantBinding(
+            node: engineNode,
+            primitiveIndex: primitives.length,
+            defaultMaterial: material,
+            materialsByVariant: {
+              for (final entry in p.variantMappings.entries)
+                if (entry.value >= 0 && entry.value < doc.materials.length)
+                  entry.key: entry.value == p.material
+                      ? material
+                      : buildMaterial(doc.materials[entry.value], textures),
+            },
+          ),
+        );
+      }
+      primitives.add(primitive);
     }
     if (primitives.isNotEmpty) {
       engineNode.mesh = Mesh.primitives(primitives: primitives);
@@ -292,16 +342,6 @@ Component? _buildLightComponent(GltfPunctualLight light) {
       debugPrint('Skipping unsupported KHR_lights_punctual type ${light.type}');
       return null;
   }
-}
-
-Matrix4 _localTransformFor(GltfNode n) {
-  if (n.matrix != null) return n.matrix!.clone();
-  final t = n.translation ?? Vector3.zero();
-  final r = n.rotation ?? Quaternion.identity();
-  final s = n.scale ?? Vector3(1.0, 1.0, 1.0);
-  // T * R * S
-  final m = Matrix4.compose(t, r, s);
-  return m;
 }
 
 /// Returns the binary buffer that backs the document's bufferViews.

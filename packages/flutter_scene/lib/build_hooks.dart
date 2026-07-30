@@ -2,11 +2,12 @@
 ///
 /// Call these from your app's `hook/build.dart` at build time: [buildScenes]
 /// converts glTF (`.glb`) source assets into flutter_scene's `.fsceneb`
-/// package format (loaded by source path with `loadScene`), and
-/// [buildMaterials] compiles `.fmat` custom-material files into a Flutter
-/// GPU shader bundle plus a parameter sidecar. In DataAssets mode, the
+/// package format (loaded by source path with `loadScene`), [buildMaterials]
+/// compiles `.fmat` custom-material files into a Flutter GPU shader bundle
+/// plus a parameter sidecar, and [buildTextures] cooks loose images into the
+/// engine's compressed `.fstex` texture container. In DataAssets mode, the
 /// outputs are registered with the Flutter asset bundle and can be loaded by
-/// source path through `loadScene` / `loadFmatMaterial`.
+/// source path through `loadScene` / `loadFmatMaterial` / `loadTexture`.
 ///
 /// ```dart
 /// import 'package:hooks/hooks.dart';
@@ -38,3 +39,10 @@ export 'src/importer/build_hooks.dart'
 export 'src/fmat/build_materials.dart'
     if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
     show MaterialAssetMode, buildMaterials;
+export 'src/texture/build_textures.dart'
+    if (dart.library.js_interop) 'src/texture/build_textures_unsupported.dart'
+    show TextureAssetMode, buildTextures;
+// The per-texture downsample rule accepted by [buildTextures]. Also exported
+// by `package:flutter_scene/scene.dart`; re-exported here because hook code
+// runs on the plain Dart VM and cannot import the Flutter library.
+export 'src/texture/mipmap.dart' show TextureContent;

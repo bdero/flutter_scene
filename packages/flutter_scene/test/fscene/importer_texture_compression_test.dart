@@ -6,9 +6,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
@@ -58,6 +56,28 @@ void main() {
       final plain = importGlbToFscenebBytes(glb);
       final compressed = importGlbToFscenebBytes(glb, compressTextures: true);
       expect(compressed.length, lessThan(plain.length));
+    });
+
+    test('ktx2 payloads carry the engine mip chain', () {
+      final glb = load();
+      if (glb == null) return;
+
+      final document = readFsceneb(
+        importGlbToFscenebBytes(glb, compressTextures: true),
+      );
+      for (final payload in _imagePayloads(document)) {
+        final texture = readKtx2(payload.bytes!);
+        expect(
+          texture.levels,
+          hasLength(engineMipLevelCount(payload.width!, payload.height!)),
+        );
+        for (var level = 0; level < texture.levels.length; level++) {
+          final size = mipSize(payload.width!, payload.height!, level);
+          final decoded = decodeKtx2Level(texture, level: level);
+          expect(decoded.width, size.width);
+          expect(decoded.height, size.height);
+        }
+      }
     });
 
     test('ktx2 payloads decode back to the source image dimensions', () {

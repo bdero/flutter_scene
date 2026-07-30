@@ -28,8 +28,8 @@ class _ExampleFsceneImportState extends State<ExampleFsceneImport> {
 
   Future<void> _load() async {
     final car = (await loadScene('assets_src/fcar.glb'))..name = 'Car';
-    final environment = await EnvironmentMap.fromAssets(
-      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+    final environment = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: 'assets/little_paris_eiffel_tower.png',
     );
     if (!mounted) return;
     scene.add(car);

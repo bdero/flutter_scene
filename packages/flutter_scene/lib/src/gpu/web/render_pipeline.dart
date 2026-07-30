@@ -71,8 +71,14 @@ base class RenderPipeline {
   /// instead of per-member glUniform calls.
   final Map<String, int> _structBlockBindings = {};
 
-  /// The largest std140 size among the active uniform blocks, used to size the
-  /// zero fallback buffer bound to every block binding point.
+  /// Minimum bind size per block, the larger of the reflected std140 size and
+  /// the linker-reported UNIFORM_BLOCK_DATA_SIZE. Drivers may pad the block
+  /// beyond the reflected size (Mesa rounds up to a vec4 multiple); binding a
+  /// smaller range than the driver reports makes WebGL2 reject the draw.
+  final Map<String, int> _structBlockBindSizes = {};
+
+  /// The largest block bind size, used to size the zero fallback buffer bound
+  /// to every block binding point.
   int _maxBlockSizeBytes = 0;
 
   /// A zero-filled uniform buffer bound to every active block binding point
@@ -112,8 +118,21 @@ base class RenderPipeline {
           final binding = nextBlockBinding++;
           gl.uniformBlockBinding(_program, blockIndex, binding);
           _structBlockBindings[struct.name] = binding;
-          if (struct.sizeInBytes > _maxBlockSizeBytes) {
-            _maxBlockSizeBytes = struct.sizeInBytes;
+          final dataSize =
+              (gl.getActiveUniformBlockParameter(
+                        _program,
+                        blockIndex,
+                        web.WebGL2RenderingContext.UNIFORM_BLOCK_DATA_SIZE,
+                      )
+                      as JSNumber?)
+                  ?.toDartInt ??
+              struct.sizeInBytes;
+          final bindSize = dataSize > struct.sizeInBytes
+              ? dataSize
+              : struct.sizeInBytes;
+          _structBlockBindSizes[struct.name] = bindSize;
+          if (bindSize > _maxBlockSizeBytes) {
+            _maxBlockSizeBytes = bindSize;
           }
           continue;
         }

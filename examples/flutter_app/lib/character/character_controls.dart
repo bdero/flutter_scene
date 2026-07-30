@@ -132,8 +132,17 @@ class _CharacterControlsState extends State<CharacterControls> {
               child: widget.child,
             ),
           ),
-          Positioned(left: 24, bottom: 24, child: _joystick()),
-          Positioned(right: 24, bottom: 24, child: _jumpButton()),
+          SafeArea(
+            minimum: const EdgeInsets.all(24),
+            child: Align(alignment: Alignment.bottomLeft, child: _joystick()),
+          ),
+          SafeArea(
+            minimum: const EdgeInsets.all(24),
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: _jumpButton(),
+            ),
+          ),
         ],
       ),
     );

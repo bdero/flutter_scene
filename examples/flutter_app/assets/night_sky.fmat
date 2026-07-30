@@ -1,0 +1,179 @@
+// A procedural moonless-turned-moonlit night sky authored as a `.fmat` sky:
+// a deep-blue gradient with large-scale zenith variation and a horizon haze
+// band, two hash-grid star layers (per-star size/brightness/temperature and
+// time-driven twinkle), an fbm milky way with dust lanes, a moon disc with
+// noise maria and a two-scale halo, and thin drifting clouds that occlude
+// everything behind them. `time` is fed every frame by the example.
+
+material {
+  name: "NightSky",
+  parameters: [
+    { type: float, name: time, default: 0.0 },
+    { type: float, name: star_brightness, hint: range(0, 3, 0.01), default: 1.0 },
+    { type: float, name: milky_way, hint: range(0, 2, 0.01), default: 1.0 },
+    { type: float, name: cloud_cover, hint: range(0, 1, 0.01), default: 0.35 },
+    { type: float, name: moon_intensity, hint: range(0, 8, 0.05), default: 3.2 },
+    { type: vec3, name: moon_direction, default: [-0.405, 0.867, -0.289] },
+    { type: vec3, name: horizon_color, default: [0.018, 0.028, 0.055] },
+  ],
+}
+
+sky {
+  float Hash1(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  vec3 Hash3(vec3 p) {
+    return vec3(Hash1(p), Hash1(p + 19.19), Hash1(p + 42.42));
+  }
+
+  float ValueNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = Hash1(i);
+    float n100 = Hash1(i + vec3(1.0, 0.0, 0.0));
+    float n010 = Hash1(i + vec3(0.0, 1.0, 0.0));
+    float n110 = Hash1(i + vec3(1.0, 1.0, 0.0));
+    float n001 = Hash1(i + vec3(0.0, 0.0, 1.0));
+    float n101 = Hash1(i + vec3(1.0, 0.0, 1.0));
+    float n011 = Hash1(i + vec3(0.0, 1.0, 1.0));
+    float n111 = Hash1(i + vec3(1.0, 1.0, 1.0));
+    return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+               mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
+  }
+
+  float Fbm(vec3 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      v += a * ValueNoise(p);
+      p = p * 2.03 + 11.5;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  // One 3D-hash-grid star layer: each occupied cell projects a star onto the
+  // unit sphere with its own size, brightness, color temperature, and
+  // twinkle rhythm.
+  vec3 Stars(vec3 d, float scale, float density) {
+    vec3 p = d * scale;
+    vec3 id = floor(p);
+    vec3 h = Hash3(id);
+    if (h.x > density) {
+      return vec3(0.0);
+    }
+    // Distance in cell space, not angular space: projecting the star onto
+    // the sphere would move it across cell borders, where neighboring pixels
+    // stop finding it and slice the glow off along the cell boundary. In
+    // cell space the star stays well inside its own cell (position padded to
+    // the middle 60%, radii capped far below the margin), so the falloff
+    // always completes cleanly.
+    vec3 star_pos = id + 0.5 + (h - 0.5) * 0.6;
+    float dist = length(p - star_pos);
+    // Brightness rolls steeply so almost every star is faint and tiny; size
+    // follows brightness, so only the rare bright ones grow at all. The
+    // squared gaussian keeps stars point-like; any glow beyond that is
+    // bloom's job, not a baked halo.
+    // The faint floor and minimum radius keep the small-star field clearly
+    // visible (sub-pixel radii sample to nothing); size still skews small
+    // because only the steep brightness roll grows a star.
+    float bright = pow(h.z, 12.0);
+    float radius = 0.025 + 0.025 * bright;
+    float shape = exp(-dist * dist / (radius * radius));
+    float magnitude = 0.35 + 5.0 * bright;
+    // Atmospheric scintillation: faster and deeper for dimmer stars.
+    float twinkle =
+        0.78 + 0.30 * sin(material_params.time * (1.5 + 3.5 * h.y) + h.z * 40.0);
+    vec3 tint = mix(vec3(1.0, 0.82, 0.62), vec3(0.72, 0.82, 1.0),
+                    Hash1(id + 7.7));
+    return tint * shape * magnitude * twinkle;
+  }
+
+  vec3 Sky(vec3 direction) {
+    vec3 d = normalize(direction);
+    float up = d.y;
+
+    // Base gradient with large-scale variation so the zenith never reads as
+    // a flat fill or bands. Above and below horizon blend across several
+    // degrees, so no hard line floats over the terrain silhouette.
+    vec3 zenith = vec3(0.0035, 0.006, 0.016);
+    vec3 ground = vec3(0.006, 0.005, 0.004);
+    vec3 above = mix(material_params.horizon_color, zenith,
+                     pow(clamp(up, 0.0, 1.0), 0.6));
+    above *= 0.88 + 0.24 * Fbm(d * 1.3 + 5.0);
+    vec3 below = mix(material_params.horizon_color, ground,
+                     clamp(-up * 2.5, 0.0, 1.0));
+    vec3 color = mix(below, above, smoothstep(-0.03, 0.04, up));
+
+    // Horizon haze: a low band hugging the horizon, cool overall with a warm
+    // side (distant light pollution), fading fast with altitude so the glow
+    // sits behind the terrain instead of riding up the sky.
+    float band = exp(-abs(up) * 16.0);
+    float warm_side = smoothstep(-0.4, 0.9, dot(normalize(vec2(d.x, d.z)),
+                                                vec2(0.8, -0.6)));
+    color += mix(vec3(0.010, 0.014, 0.022), vec3(0.026, 0.017, 0.008),
+                 warm_side) *
+             band;
+    if (up <= 0.0) {
+      return color;
+    }
+
+    // Stars sink into the atmosphere near the horizon.
+    float extinction = smoothstep(0.0, 0.16, up);
+
+    // Milky way: a tilted band whose brightness is carved by two fbm scales,
+    // billowing star clouds crossed by dark dust lanes, warming toward the
+    // dense core.
+    vec3 band_normal = normalize(vec3(0.35, 0.28, 0.9));
+    float w = dot(d, band_normal);
+    float mw_band = exp(-w * w * 38.0);
+    if (mw_band > 0.004) {
+      float clouds = Fbm(d * 5.0);
+      float lanes = Fbm(d * 11.0 + 31.7);
+      float mw = mw_band * pow(clouds, 1.6) *
+                 (0.3 + 0.7 * smoothstep(0.25, 0.75, lanes));
+      color += vec3(0.05, 0.055, 0.07) * mw * material_params.milky_way *
+               extinction;
+      color += vec3(0.04, 0.028, 0.016) * mw_band * mw_band *
+               pow(clouds, 3.0) * material_params.milky_way * extinction;
+    }
+
+    // Two star layers; the faint layer thickens inside the milky way band.
+    vec3 stars = Stars(d, 24.0, 0.10) +
+                 Stars(d, 60.0, 0.30) * (0.30 + 0.5 * mw_band);
+    color += stars * material_params.star_brightness * extinction;
+
+    // The moon: an HDR disc with noise maria, a tight halo, and a broad soft
+    // glow, aligned with the scene's moonlight direction.
+    vec3 moon_dir = normalize(material_params.moon_direction);
+    float m = dot(d, moon_dir);
+    float disc = smoothstep(0.99955, 0.99975, m);
+    if (disc > 0.0) {
+      float maria = 0.68 + 0.42 * Fbm(d * 60.0 + 3.0);
+      color += vec3(0.92, 0.96, 1.05) * material_params.moon_intensity *
+               disc * maria;
+    }
+    color += vec3(0.35, 0.42, 0.55) * pow(max(m, 0.0), 900.0) * 0.5;
+    color += vec3(0.05, 0.065, 0.10) * pow(max(m, 0.0), 40.0);
+
+    // Thin clouds drifting on the wind, projected onto a plane overhead so
+    // they flatten toward the horizon like a real cloud deck. They darken
+    // the sky and occlude the stars, moon, and milky way behind them, and
+    // catch a trace of warm light from below near the horizon.
+    vec2 cp = d.xz / (up + 0.15);
+    vec2 wind = vec2(0.8, 0.35) * material_params.time * 0.006;
+    float cover = Fbm(vec3((cp + wind) * 0.55, material_params.time * 0.004));
+    float clouds = smoothstep(0.62 - 0.28 * material_params.cloud_cover, 0.86,
+                              cover) *
+                   smoothstep(0.015, 0.10, up);
+    vec3 cloud_color = vec3(0.010, 0.012, 0.018) +
+                       vec3(0.022, 0.014, 0.007) * pow(1.0 - up, 3.0);
+    color = mix(color, cloud_color, clamp(clouds, 0.0, 0.85));
+
+    return color;
+  }
+}

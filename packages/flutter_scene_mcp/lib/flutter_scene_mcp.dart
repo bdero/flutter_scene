@@ -15,4 +15,8 @@ export 'src/tool_surface.dart'
         ScreenshotResult,
         ToolDefinition,
         ToolError,
+        ViewportCameraPose,
+        ViewportCameraRead,
+        ViewportCameraWrite,
+        ViewportFrameNode,
         ViewportScreenshot;

@@ -1,7 +1,13 @@
 import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
-    show AntiAliasingMode, Scene, PostInsertion, SpecularAmbientOcclusionMode;
+    show
+        AntiAliasingMode,
+        DepthOfFieldQuality,
+        Scene,
+        PostInsertion,
+        ShadowCasterFaces,
+        SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
@@ -9,7 +15,9 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
 import 'package:example_app/example_animation.dart';
 
 import 'example_accessibility.dart';
-import 'example_cuboid.dart';
+import 'example_audio.dart';
+import 'example_auto_exposure.dart';
+import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
@@ -18,10 +26,10 @@ import 'example_fscene_animated.dart';
 import 'example_fscene_import.dart';
 import 'example_fscene_prefab.dart';
 import 'example_fscene_stream.dart';
-import 'example_instancing.dart';
 import 'example_lod.dart';
 import 'example_logo.dart';
 import 'example_materialize.dart';
+import 'example_multiplayer.dart';
 import 'example_nav_route.dart';
 import 'example_physics.dart';
 import 'example_physics_box3d.dart';
@@ -29,10 +37,10 @@ import 'example_physics_car.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
+import 'example_explosion.dart';
 import 'example_particles.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
-import 'example_sprites.dart';
 import 'example_ssr.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
@@ -51,6 +59,53 @@ void main() {
 /// (see [resetExampleSettings]), so tuning one scene never leaks into
 /// another.
 final Map<String, ExampleSettings Function()> settingsDefaults = {
+  // The campfire's night look: a soft blue moonlight key from the south,
+  // ambient occlusion grounding the logs, rocks, and grass, and a warm
+  // saturated grade that leans into the firelight.
+  'Particles': () => ExampleSettings()
+    ..lightAzimuthDegrees = 190.70
+    ..lightElevationDegrees = 16.79
+    ..lightIntensity = 0.97
+    ..lightColor.setValues(1.0, 0.80, 1.0)
+    ..ambientOcclusion.enabled = true
+    ..ambientOcclusion.halfResolution = true
+    ..ambientOcclusion.radius = 0.66
+    ..ambientOcclusion.intensity = 2.02
+    ..ambientOcclusion.bias = 0.053
+    ..ambientOcclusion.sampleCount = 17
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 1.39
+    ..colorGrading.contrast = 0.93
+    ..colorGrading.saturation = 1.36
+    ..colorGrading.temperature = 0.35
+    ..colorGrading.tint = -0.31
+    ..bloom.enabled = true
+    ..bloom.threshold = 3.63
+    ..bloom.intensity = 0.089
+    ..bloom.scatter = 1.0
+    ..godRays.enabled = true
+    ..godRays.intensity = 1.24
+    ..godRays.density = 0.63
+    ..godRays.anisotropy = 0.40
+    ..godRays.stepCount = 5
+    ..godRays.maxDistance = 141.70
+    ..godRays.jitter = 1.0
+    ..godRays.color.setValues(0.77, 0.90, 1.0)
+    ..depthOfField.enabled = true
+    ..depthOfField.focusDistance = 7.07
+    ..depthOfField.fStop = 8.98
+    ..depthOfField.focalLength = 0.178
+    ..depthOfField.blurScale = 1.0
+    ..depthOfField.quality = DepthOfFieldQuality.medium
+    ..chromaticAberration.enabled = true
+    ..chromaticAberration.intensity = 0.151
+    ..vignette.enabled = true
+    ..vignette.intensity = 0.71
+    ..vignette.radius = 0.71
+    ..vignette.smoothness = 0.5,
+  // A strong sun for the adaptation walk: the outdoor half of the path
+  // should overexpose while the meter is adapted to the room.
+  'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
   // A cinematic grade for the dark materialize stage: no key light (the
   // effect's own emissives and the environment carry it), bloom for the hot
   // seam and shard glows, and a subtle lens treatment.
@@ -111,15 +166,16 @@ class _MyAppState extends State<MyApp> {
       'Car': (context) => const ExampleCar(),
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
-      'Cuboid': (context) => const ExampleCuboid(),
+      'Multiplayer': (context) => const ExampleMultiplayer(),
+      'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
-      'Sprites': (context) => const ExampleSprites(),
       'Particles': (context) => const ExampleParticles(),
+      'Explosions': (context) => const ExampleExplosion(),
       'Gaussian Splats': (context) => const ExampleSplats(),
-      'Instancing': (context) => const ExampleInstancing(),
       'Geometry LOD': (context) => const ExampleLod(),
       'Screen-space Reflections': (context) => const ExampleSsr(),
+      'Auto Exposure': (context) => const ExampleAutoExposure(),
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
@@ -127,6 +183,7 @@ class _MyAppState extends State<MyApp> {
       'Materialize (.fmat)': (context) => const ExampleMaterialize(),
       'DICOM Volume': (context) => const ExampleDicom(),
       'Custom Skybox': (context) => const ExampleSkybox(),
+      'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
@@ -201,6 +258,16 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
+        cardTheme: const CardThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
+        ),
+        popupMenuTheme: const PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
+        ),
       ),
       home: Scaffold(
         body: FutureBuilder<void>(
@@ -217,26 +284,34 @@ class _MyAppState extends State<MyApp> {
               children: [
                 SizedBox.expand(child: examples[selectedExample]!(context)),
                 // Example picker (top-left, overlaid on the scene).
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: _ExamplePicker(
-                    examples: examples.keys.toList(growable: false),
-                    selected: selectedExample,
-                    onSelected: (next) {
-                      setState(() {
-                        selectedExample = next;
-                        // Every example runs on its own settings instance;
-                        // examples listed in settingsDefaults start from
-                        // their own defaults instead of the stock ones.
-                        resetExampleSettings(settingsDefaults[next]);
-                      });
-                    },
+                SafeArea(
+                  minimum: const EdgeInsets.all(8),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: _ExamplePicker(
+                      examples: examples.keys.toList(growable: false),
+                      selected: selectedExample,
+                      onSelected: (next) {
+                        setState(() {
+                          selectedExample = next;
+                          // Every example runs on its own settings instance;
+                          // examples listed in settingsDefaults start from
+                          // their own defaults instead of the stock ones.
+                          resetExampleSettings(settingsDefaults[next]);
+                        });
+                      },
+                    ),
                   ),
                 ),
                 // Settings sidebar (top-right): global post-processing
                 // controls applied to whichever example is on screen.
-                const Positioned(top: 8, right: 8, child: _SettingsSidebar()),
+                const SafeArea(
+                  minimum: EdgeInsets.all(8),
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: _SettingsSidebar(),
+                  ),
+                ),
               ],
             );
           },
@@ -275,15 +350,18 @@ class _ExamplePicker extends StatelessWidget {
           for (final name in examples)
             PopupMenuItem<String>(value: name, child: Text(name)),
         ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(selected, style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(width: 4),
-              const Icon(Icons.arrow_drop_down, size: 20),
-            ],
+        child: SizedBox(
+          height: 48,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(selected, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_drop_down, size: 20),
+              ],
+            ),
           ),
         ),
       ),
@@ -374,6 +452,14 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.receipt_long),
+                            tooltip: 'Print all settings to the log',
+                            onPressed: () => debugPrint(
+                              'Shared settings dump:\n'
+                              '${exampleSettings.describe()}',
+                            ),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.close),
                             tooltip: 'Close settings',
@@ -493,6 +579,8 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
       children: [
         _buildColorGrading(),
         _buildBloom(),
+        _buildGodRays(),
+        _buildDepthOfField(),
         _buildChromaticAberration(),
         _buildVignette(),
         _buildFilmGrain(),
@@ -524,6 +612,15 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Intensity', settings.lightIntensity, 0, 10, (v) {
           settings.lightIntensity = v;
         }),
+        _slider('Color R', settings.lightColor.r, 0, 1, (v) {
+          settings.lightColor.r = v;
+        }),
+        _slider('Color G', settings.lightColor.g, 0, 1, (v) {
+          settings.lightColor.g = v;
+        }),
+        _slider('Color B', settings.lightColor.b, 0, 1, (v) {
+          settings.lightColor.b = v;
+        }),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Casts shadow'),
@@ -534,6 +631,66 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Softness', settings.shadowSoftness, 0, 0.3, (v) {
           settings.shadowSoftness = v;
         }),
+        _slider('Fade range', settings.shadowFadeRange, 0, 20, (v) {
+          settings.shadowFadeRange = v;
+        }),
+        _slider('Cascades', settings.shadowCascadeCount.toDouble(), 1, 4, (v) {
+          settings.shadowCascadeCount = v.round();
+        }, decimals: 0),
+        _slider('Max distance', settings.shadowMaxDistance, 10, 500, (v) {
+          settings.shadowMaxDistance = v;
+        }, decimals: 0),
+        _slider('Split lambda', settings.shadowCascadeSplitLambda, 0, 1, (v) {
+          settings.shadowCascadeSplitLambda = v;
+        }),
+        Row(
+          children: [
+            const Text('Resolution'),
+            const Spacer(),
+            DropdownButton<int>(
+              value: settings.shadowMapResolution,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.shadowMapResolution = value);
+                }
+              },
+              items: [
+                for (final resolution in const [256, 512, 1024, 2048, 4096])
+                  DropdownMenuItem(
+                    value: resolution,
+                    child: Text('$resolution'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        _slider('Depth bias', settings.shadowDepthBias, 0, 0.1, (v) {
+          settings.shadowDepthBias = v;
+        }, decimals: 3),
+        _slider('Normal bias', settings.shadowNormalBias, 0, 0.1, (v) {
+          settings.shadowNormalBias = v;
+        }, decimals: 3),
+        _slider('Ambient str.', settings.shadowAmbientStrength, 0, 1, (v) {
+          settings.shadowAmbientStrength = v;
+        }),
+        Row(
+          children: [
+            const Text('Caster faces'),
+            const Spacer(),
+            DropdownButton<ShadowCasterFaces>(
+              value: settings.shadowCasterFaces,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.shadowCasterFaces = value);
+                }
+              },
+              items: [
+                for (final faces in ShadowCasterFaces.values)
+                  DropdownMenuItem(value: faces, child: Text(faces.name)),
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -699,6 +856,106 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Scatter', settings.scatter, 0, 1, (v) {
           settings.scatter = v;
         }),
+      ],
+    );
+  }
+
+  Widget _buildGodRays() {
+    final settings = exampleSettings.godRays;
+    return ExpansionTile(
+      title: const Text('God rays'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Intensity', settings.intensity, 0, 4, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Density', settings.density, 0, 2, (v) {
+          settings.density = v;
+        }),
+        _slider('Anisotropy', settings.anisotropy, -0.95, 0.95, (v) {
+          settings.anisotropy = v;
+        }),
+        _slider('Steps', settings.stepCount.toDouble(), 1, 64, (v) {
+          settings.stepCount = v.round();
+        }),
+        _slider('Max distance', settings.maxDistance, 1, 400, (v) {
+          settings.maxDistance = v;
+        }),
+        _slider('Jitter', settings.jitter, 0, 1, (v) {
+          settings.jitter = v;
+        }),
+        _slider('Color R', settings.color.r, 0, 1, (v) {
+          settings.color.r = v;
+        }),
+        _slider('Color G', settings.color.g, 0, 1, (v) {
+          settings.color.g = v;
+        }),
+        _slider('Color B', settings.color.b, 0, 1, (v) {
+          settings.color.b = v;
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDepthOfField() {
+    final settings = exampleSettings.depthOfField;
+    return ExpansionTile(
+      title: const Text('Depth of field'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        _slider('Focus dist.', settings.focusDistance, 0.1, 40, (v) {
+          settings.focusDistance = v;
+        }),
+        _slider('f-stop', settings.fStop, 0.7, 22, (v) {
+          settings.fStop = v;
+        }),
+        _slider('Focal length', settings.focalLength, 0, 0.2, (v) {
+          settings.focalLength = v;
+        }),
+        _slider('Blur scale', settings.blurScale, 0, 3, (v) {
+          settings.blurScale = v;
+        }),
+        _slider('Max fg blur', settings.maxForegroundBlur, 0, 64, (v) {
+          settings.maxForegroundBlur = v;
+        }),
+        _slider('Max bg blur', settings.maxBackgroundBlur, 0, 64, (v) {
+          settings.maxBackgroundBlur = v;
+        }),
+        _slider('Blades', settings.bladeCount.toDouble(), 0, 8, (v) {
+          settings.bladeCount = v.round();
+        }),
+        _slider('Blade rot.', settings.bladeRotation, 0, 3.14, (v) {
+          settings.bladeRotation = v;
+        }),
+        _slider('Blade curve', settings.bladeCurvature, 0, 1, (v) {
+          settings.bladeCurvature = v;
+        }),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Quality'),
+          trailing: DropdownButton<DepthOfFieldQuality>(
+            value: settings.quality,
+            onChanged: (value) => setState(() {
+              if (value != null) settings.quality = value;
+            }),
+            items: [
+              for (final q in DepthOfFieldQuality.values)
+                DropdownMenuItem(value: q, child: Text(q.name)),
+            ],
+          ),
+        ),
       ],
     );
   }

@@ -12,12 +12,16 @@ import 'dart:math' as math;
 // example).
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart' as prim;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -72,7 +76,7 @@ class _ShapeParams {
 
 class _ExampleShapesState extends State<ExampleShapes> {
   final Scene scene = Scene();
-  late final RapierWorld world;
+  late final PhysicsWorld world;
 
   final QuakeCamera _quakeCamera = QuakeCamera(
     position: vm.Vector3(0, 4, 11),
@@ -109,7 +113,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
   double _density = 1.0;
   double _linearDamping = 0.0;
   double _angularDamping = 0.0;
-  RapierCollider? _groundCollider;
+  Collider? _groundCollider;
 
   PhysicsMaterial get _physicsMaterial => PhysicsMaterial(
     friction: _friction,
@@ -129,7 +133,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
   @override
   void initState() {
     super.initState();
-    world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
     _buildGround();
     _rebuildPreview();
@@ -154,11 +158,11 @@ class _ExampleShapesState extends State<ExampleShapes> {
       mesh: Mesh(CuboidGeometry(half * 2.0), material),
       localTransform: vm.Matrix4.translation(vm.Vector3(0, -0.5, 0)),
     );
-    final collider = RapierCollider(
+    final collider = Collider(
       shape: BoxShape(halfExtents: half),
       material: _physicsMaterial,
     );
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(RigidBody(type: BodyType.fixed));
     node.addComponent(collider);
     scene.add(node);
     _groundCollider = collider;
@@ -419,14 +423,14 @@ class _ExampleShapesState extends State<ExampleShapes> {
     );
     // No explicit mass, so the material density derives it from the shape.
     node.addComponent(
-      RapierRigidBody(
+      RigidBody(
         type: BodyType.dynamic_,
         linearDamping: _linearDamping,
         angularDamping: _angularDamping,
       ),
     );
     node.addComponent(
-      RapierCollider(shape: solid.collisionShape, material: _physicsMaterial),
+      Collider(shape: solid.collisionShape, material: _physicsMaterial),
     );
     scene.add(node);
     _spawned.add(node);
@@ -458,6 +462,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
 
   @override
   Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 720;
     return Stack(
       children: [
         Positioned.fill(
@@ -492,78 +497,92 @@ class _ExampleShapesState extends State<ExampleShapes> {
             ),
           ),
         ),
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Align(alignment: Alignment.topCenter, child: _controlPanel()),
-        ),
-        Positioned(
-          left: 16,
-          bottom: 16,
+        // On wide screens the preview gets the free bottom-center slot. On
+        // narrow ones that slot is covered by the paired side panels, so the
+        // preview stacks under the hint row in the top slot instead.
+        ExampleOverlay.topCenterAction(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _physicsPanel(),
-              const SizedBox(height: 8),
-              _environmentPanel(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ExampleActionHint(
+                    message: 'Tap: drop  ·  Drag: look  ·  WASD/QE: move',
+                  ),
+                  const SizedBox(width: 8),
+                  ExampleActionButton(
+                    tooltip: 'Clear dropped shapes',
+                    onPressed: _spawned.isEmpty ? null : _clear,
+                    icon: Icons.delete_outline,
+                  ),
+                ],
+              ),
+              if (!wide) ...[const SizedBox(height: 8), _previewPanel()],
             ],
           ),
         ),
-        Positioned(right: 16, bottom: 16, child: _previewPanel()),
+        if (wide) ExampleOverlay.bottomCenter(child: _previewPanel()),
+        ExampleOverlay.bottomRightPanel(
+          paired: true,
+          child: SizedBox(width: double.infinity, child: _controlPanel()),
+        ),
+        ExampleOverlay.bottomLeftPanel(
+          paired: true,
+          child: SizedBox(
+            width: double.infinity,
+            child: _physicsEnvironmentControls(),
+          ),
+        ),
       ],
     );
   }
 
+  Widget _physicsEnvironmentControls() {
+    return ExamplePanelCard(
+      icon: Icons.tune,
+      title: 'Physics & environment',
+      width: double.infinity,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _physicsPanel(),
+          const Divider(height: 20, color: Colors.white24),
+          _environmentPanel(),
+        ],
+      ),
+    );
+  }
+
   Widget _controlPanel() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 360),
-      child: Card(
-        color: Colors.black54,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Text('Shape:', style: TextStyle(color: Colors.white)),
-                  const SizedBox(width: 8),
-                  DropdownButton<_ShapeKind>(
-                    value: _kind,
-                    dropdownColor: Colors.black87,
-                    style: const TextStyle(color: Colors.white),
-                    onChanged: (kind) {
-                      if (kind != null) {
-                        setState(() {
-                          _kind = kind;
-                          _rebuildPreview();
-                        });
-                      }
-                    },
-                    items: [
-                      for (final kind in _ShapeKind.values)
-                        DropdownMenuItem(value: kind, child: Text(kind.label)),
-                    ],
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: _spawned.isEmpty ? null : _clear,
-                    child: const Text('Clear'),
-                  ),
-                ],
-              ),
-              ..._buildSliders(),
-              const SizedBox(height: 4),
-              const Text(
-                'Tap to drop  •  drag to look  •  WASD/QE to move',
-                style: TextStyle(color: Colors.white54, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
+    return ExamplePanelCard(
+      icon: Icons.category_outlined,
+      title: 'Shape',
+      width: double.infinity,
+      maxBodyHeight: 280,
+      trailing: ExampleDropdown<_ShapeKind>(
+        value: _kind,
+        triggerColor: Colors.white12,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        isDense: true,
+        onChanged: (kind) {
+          if (kind != null) {
+            setState(() {
+              _kind = kind;
+              _rebuildPreview();
+            });
+          }
+        },
+        items: [
+          for (final kind in _ShapeKind.values)
+            DropdownMenuItem(value: kind, child: Text(kind.label)),
+        ],
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [..._buildSliders()],
       ),
     );
   }
@@ -729,74 +748,54 @@ class _ExampleShapesState extends State<ExampleShapes> {
         _groundCollider?.material = _physicsMaterial;
       });
     };
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 280),
-      child: Card(
-        color: Colors.black54,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Physics',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              _slider('Friction', _friction, 0, 1, set((v) => _friction = v)),
-              _slider(
-                'Bounce',
-                _restitution,
-                0,
-                1,
-                set((v) => _restitution = v),
-              ),
-              _slider('Density', _density, 0.1, 5, set((v) => _density = v)),
-              _slider(
-                'Lin damp',
-                _linearDamping,
-                0,
-                2,
-                set((v) => _linearDamping = v),
-              ),
-              _slider(
-                'Ang damp',
-                _angularDamping,
-                0,
-                2,
-                set((v) => _angularDamping = v),
-              ),
-            ],
-          ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Physics',
+          style: TextStyle(color: Colors.white70, fontSize: 12),
         ),
-      ),
+        const SizedBox(height: 4),
+        _slider('Friction', _friction, 0, 1, set((v) => _friction = v)),
+        _slider('Bounce', _restitution, 0, 1, set((v) => _restitution = v)),
+        _slider('Density', _density, 0.1, 5, set((v) => _density = v)),
+        _slider(
+          'Lin damp',
+          _linearDamping,
+          0,
+          2,
+          set((v) => _linearDamping = v),
+        ),
+        _slider(
+          'Ang damp',
+          _angularDamping,
+          0,
+          2,
+          set((v) => _angularDamping = v),
+        ),
+      ],
     );
   }
 
   Widget _environmentPanel() {
     return AnimatedBuilder(
       animation: _environment,
-      builder: (context, _) => Card(
-        color: Colors.black54,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Environment',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              EnvironmentMenu(
-                active: _environment.active,
-                loading: _environment.loading,
-                onSelected: (env) => unawaited(_selectEnvironment(env)),
-              ),
-            ],
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Environment',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
           ),
-        ),
+          const SizedBox(height: 4),
+          EnvironmentMenu(
+            active: _environment.active,
+            loading: _environment.loading,
+            onSelected: (env) => unawaited(_selectEnvironment(env)),
+          ),
+        ],
       ),
     );
   }
@@ -805,7 +804,7 @@ class _ExampleShapesState extends State<ExampleShapes> {
     return Card(
       color: Colors.black54,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -813,10 +812,10 @@ class _ExampleShapesState extends State<ExampleShapes> {
               'Preview',
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             SizedBox(
-              width: 150,
-              height: 150,
+              width: 118,
+              height: 118,
               child: SceneView(
                 _previewScene,
                 cameraBuilder: (elapsed) {

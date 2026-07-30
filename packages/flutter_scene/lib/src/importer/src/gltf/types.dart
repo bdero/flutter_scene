@@ -20,6 +20,7 @@ class GltfDocument {
     this.skins = const [],
     this.animations = const [],
     this.lights = const [],
+    this.materialsVariants = const [],
   });
 
   final int? scene;
@@ -39,6 +40,11 @@ class GltfDocument {
   /// Punctual lights declared by the `KHR_lights_punctual` extension, indexed
   /// by [GltfNode.light]. Empty when the extension is absent.
   final List<GltfPunctualLight> lights;
+
+  /// Variant names declared by the `KHR_materials_variants` extension, in
+  /// declaration order. Empty when the extension is absent. Primitive
+  /// mappings ([GltfMeshPrimitive.variantMappings]) index into this list.
+  final List<String> materialsVariants;
 }
 
 /// A `KHR_lights_punctual` light definition. Fields match the extension spec.
@@ -131,6 +137,7 @@ class GltfMeshPrimitive {
     this.indices,
     this.material,
     this.mode = 4,
+    this.variantMappings = const {},
   });
 
   /// Maps glTF attribute names ('POSITION', 'NORMAL', 'TEXCOORD_0',
@@ -141,6 +148,11 @@ class GltfMeshPrimitive {
 
   /// Primitive topology. 4 = TRIANGLES (the only mode flutter_scene supports).
   final int mode;
+
+  /// `KHR_materials_variants` mappings, variant index (into
+  /// [GltfDocument.materialsVariants]) to material index. Empty when the
+  /// primitive declares no mappings; [material] stays the default.
+  final Map<int, int> variantMappings;
 }
 
 /// Component types from glTF spec section 5.1.1.

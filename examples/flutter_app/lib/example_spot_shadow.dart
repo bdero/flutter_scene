@@ -1,8 +1,12 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:vector_math/vector_math.dart' as vm;
+
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
+import 'example_panel.dart';
 
 /// A single shadow-casting spot light orbiting above a few occluders on a
 /// floor, with a live settings panel (bottom-left) for the shadow parameters
@@ -135,9 +139,7 @@ class ExampleSpotShadowState extends State<ExampleSpotShadow> {
             );
           },
         ),
-        Positioned(
-          left: 8,
-          bottom: 8,
+        ExampleOverlay.bottomLeftPanel(
           child: _SettingsPanel(spot: spot, onChanged: () => setState(() {})),
         ),
       ],
@@ -156,82 +158,75 @@ class _SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 300,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: DefaultTextStyle(
+    return ExamplePanelCard(
+      icon: Icons.highlight,
+      title: 'Spot shadow controls',
+      width: 340,
+      maxBodyHeight: 420,
+      body: DefaultTextStyle(
         style: const TextStyle(color: Colors.white, fontSize: 12),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _header('Shadow'),
-                _dropdown<ShadowCasterFaces>(
-                  'Caster faces',
-                  spot.shadowCasterFaces,
-                  ShadowCasterFaces.values,
-                  (v) => v.name,
-                  (v) {
-                    spot.shadowCasterFaces = v;
-                    onChanged();
-                  },
-                ),
-                _dropdown<int>(
-                  'Resolution',
-                  spot.shadowMapResolution,
-                  const [256, 512, 1024, 2048],
-                  (v) => '$v',
-                  (v) {
-                    spot.shadowMapResolution = v;
-                    onChanged();
-                  },
-                ),
-                _slider('Depth bias', spot.shadowDepthBias, 0.0, 0.02, 4, (v) {
-                  spot.shadowDepthBias = v;
-                  onChanged();
-                }),
-                _slider('Normal bias', spot.shadowNormalBias, 0.0, 0.2, 3, (v) {
-                  spot.shadowNormalBias = v;
-                  onChanged();
-                }),
-                _slider('Near', spot.shadowNear, 0.02, 3.0, 2, (v) {
-                  spot.shadowNear = v;
-                  onChanged();
-                }),
-                _slider('Softness', spot.shadowSoftness, 0.0, 4.0, 2, (v) {
-                  spot.shadowSoftness = v;
-                  onChanged();
-                }),
-                const SizedBox(height: 8),
-                _header('Spot light'),
-                _slider('Intensity', spot.intensity, 0.0, 300.0, 0, (v) {
-                  spot.intensity = v;
-                  onChanged();
-                }),
-                _slider('Range', spot.range, 5.0, 60.0, 1, (v) {
-                  spot.range = v;
-                  onChanged();
-                }),
-                _slider('Inner cone', spot.innerConeAngle, 0.0, 1.4, 2, (v) {
-                  spot.innerConeAngle = min(v, spot.outerConeAngle - 0.01);
-                  onChanged();
-                }),
-                _slider('Outer cone', spot.outerConeAngle, 0.1, 1.5, 2, (v) {
-                  spot.outerConeAngle = max(v, spot.innerConeAngle + 0.01);
-                  onChanged();
-                }),
-              ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _header('Shadow'),
+            _dropdown<ShadowCasterFaces>(
+              context,
+              'Caster faces',
+              spot.shadowCasterFaces,
+              ShadowCasterFaces.values,
+              (v) => v.name,
+              (v) {
+                spot.shadowCasterFaces = v;
+                onChanged();
+              },
             ),
-          ),
+            _dropdown<int>(
+              context,
+              'Resolution',
+              spot.shadowMapResolution,
+              const [256, 512, 1024, 2048],
+              (v) => '$v',
+              (v) {
+                spot.shadowMapResolution = v;
+                onChanged();
+              },
+            ),
+            _slider('Depth bias', spot.shadowDepthBias, 0.0, 0.02, 4, (v) {
+              spot.shadowDepthBias = v;
+              onChanged();
+            }),
+            _slider('Normal bias', spot.shadowNormalBias, 0.0, 0.2, 3, (v) {
+              spot.shadowNormalBias = v;
+              onChanged();
+            }),
+            _slider('Near', spot.shadowNear, 0.02, 3.0, 2, (v) {
+              spot.shadowNear = v;
+              onChanged();
+            }),
+            _slider('Softness', spot.shadowSoftness, 0.0, 4.0, 2, (v) {
+              spot.shadowSoftness = v;
+              onChanged();
+            }),
+            const SizedBox(height: 8),
+            _header('Spot light'),
+            _slider('Intensity', spot.intensity, 0.0, 300.0, 0, (v) {
+              spot.intensity = v;
+              onChanged();
+            }),
+            _slider('Range', spot.range, 5.0, 60.0, 1, (v) {
+              spot.range = v;
+              onChanged();
+            }),
+            _slider('Inner cone', spot.innerConeAngle, 0.0, 1.4, 2, (v) {
+              spot.innerConeAngle = min(v, spot.outerConeAngle - 0.01);
+              onChanged();
+            }),
+            _slider('Outer cone', spot.outerConeAngle, 0.1, 1.5, 2, (v) {
+              spot.outerConeAngle = max(v, spot.innerConeAngle + 0.01);
+              onChanged();
+            }),
+          ],
         ),
       ),
     );
@@ -255,25 +250,26 @@ class _SettingsPanel extends StatelessWidget {
   ) {
     return Row(
       children: [
-        SizedBox(width: 92, child: Text(label)),
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
         Expanded(
-          child: SliderTheme(
-            data: const SliderThemeData(
-              trackHeight: 2,
-              overlayShape: RoundSliderOverlayShape(overlayRadius: 10),
-            ),
-            child: Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              onChanged: onChanged,
-            ),
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
           ),
         ),
         SizedBox(
-          width: 46,
+          width: 40,
           child: Text(
             value.toStringAsFixed(digits),
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
             textAlign: TextAlign.right,
           ),
         ),
@@ -282,6 +278,7 @@ class _SettingsPanel extends StatelessWidget {
   }
 
   Widget _dropdown<T>(
+    BuildContext context,
     String label,
     T value,
     List<T> options,
@@ -294,11 +291,11 @@ class _SettingsPanel extends StatelessWidget {
         children: [
           SizedBox(width: 92, child: Text(label)),
           Expanded(
-            child: DropdownButton<T>(
+            child: ExampleDropdown<T>(
               value: value,
+              triggerColor: Colors.white12,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               isDense: true,
-              isExpanded: true,
-              dropdownColor: const Color(0xFF303030),
               style: const TextStyle(color: Colors.white, fontSize: 12),
               items: [
                 for (final option in options)

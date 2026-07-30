@@ -10,9 +10,56 @@ import '../panels/asset_browser_panel.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
+import '../viewport/viewport_camera_handle.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
+import 'dock_layout.dart';
 import 'docking_shell.dart';
+
+/// The panels [EditorShell] registers with its [DockingShell], id to the
+/// title shown on tabs and in the View menu.
+const Map<String, String> _panelTitles = {
+  'viewport': 'Viewport',
+  'outliner': 'Outliner',
+  'inspector': 'Inspector',
+  'assets': 'Assets',
+  'history': 'History',
+};
+
+List<String> get _panelIds => _panelTitles.keys.toList();
+
+/// Extra viewports are created at runtime with ids like `viewport2` and are
+/// admitted through layout persistence as dynamic panels.
+final RegExp _extraViewportPattern = RegExp(r'^viewport\d+$');
+
+/// The out-of-box arrangement, viewport left, outliner over inspector right,
+/// tabbed assets/history strip along the bottom.
+DockLayout _defaultDockLayout() {
+  return DockLayout(
+    DockSplit(
+      Axis.vertical,
+      [
+        DockSplit(
+          Axis.horizontal,
+          [
+            DockTabs(['viewport']),
+            DockSplit(
+              Axis.vertical,
+              [
+                DockTabs(['outliner']),
+                DockTabs(['inspector']),
+              ],
+              [0.5, 0.5],
+            ),
+          ],
+          [0.72, 0.28],
+        ),
+        DockTabs(['assets', 'history']),
+      ],
+      [0.74, 0.26],
+    ),
+  );
+}
 
 /// Intent for undo (Cmd+Z).
 class UndoIntent extends Intent {
@@ -85,6 +132,13 @@ class EditorShell extends StatefulWidget {
     required this.controller,
     required this.onControllerReplaced,
     this.viewportRepaintBoundaryKey,
+    this.viewportCameraHandle,
+    this.dockLayoutJson,
+    this.onDockLayoutChanged,
+    this.menuBarLeadingInset = 8,
+    this.onMenuBarDragStart,
+    this.currentPath,
+    this.onDocumentPathChanged,
   });
 
   final EditorController controller;
@@ -97,18 +151,97 @@ class EditorShell extends StatefulWidget {
   /// the rendered viewport (the MCP `screenshot_viewport` perception tool).
   final GlobalKey? viewportRepaintBoundaryKey;
 
+  /// Optional remote control attached to the primary viewport's camera (the
+  /// MCP camera tools).
+  final ViewportCameraHandle? viewportCameraHandle;
+
+  /// A dock layout previously emitted through [onDockLayoutChanged]. Invalid
+  /// or missing layouts fall back to the default arrangement.
+  final String? dockLayoutJson;
+
+  /// Reports the serialized dock layout whenever panels are rearranged, so
+  /// the host can persist it.
+  final ValueChanged<String>? onDockLayoutChanged;
+
+  /// Space before the menu bar's first item. Hosts that hide the native
+  /// title bar set this to clear the window controls drawn over the content.
+  final double menuBarLeadingInset;
+
+  /// Called when a drag starts on the menu bar's empty area. Hosts that hide
+  /// the native title bar use it to move the window.
+  final VoidCallback? onMenuBarDragStart;
+
+  /// The document's file path (shown in the menu bar, reused by Save), kept
+  /// by the host. Null for an unsaved scene.
+  final String? currentPath;
+
+  /// Reports the document path changing from inside the shell (File menu
+  /// New/Open/Save As), so the host's record stays true.
+  final ValueChanged<String?>? onDocumentPathChanged;
+
   @override
   State<EditorShell> createState() => _EditorShellState();
 }
 
 class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   bool _paletteOpen = false;
-  String? _currentPath;
+  late String? _currentPath = widget.currentPath;
   // Whether a "source changed on disk" banner is currently shown, so a window
   // refocus does not stack duplicate banners.
   bool _changeBannerShown = false;
 
+  late final DockLayout _dockLayout =
+      DockLayout.tryParse(
+        widget.dockLayoutJson,
+        knownPanels: _panelIds,
+        isDynamic: _extraViewportPattern.hasMatch,
+      ) ??
+      _defaultDockLayout();
+
   EditorController get _ctrl => widget.controller;
+
+  /// Runtime-created viewports present anywhere in the layout, in stable
+  /// (numeric) order.
+  List<String> get _extraViewportIds => {
+    ..._dockLayout.panelIds(),
+    ..._dockLayout.floating,
+    ..._dockLayout.hidden,
+  }.where(_extraViewportPattern.hasMatch).toList()..sort();
+
+  void _newViewport() {
+    final existing = _extraViewportIds.toSet();
+    var n = 2;
+    while (existing.contains('viewport$n')) {
+      n++;
+    }
+    final id = 'viewport$n';
+    setState(() {
+      // Split the group holding a docked viewport; when every viewport is
+      // floating or hidden, fall back to the last group.
+      DockTabs? anchor;
+      for (final candidate in ['viewport', ...existing]) {
+        anchor = _dockLayout.groupOf(candidate);
+        if (anchor != null) break;
+      }
+      if (anchor != null) {
+        _dockLayout.dock(id, anchor, DockZone.right);
+      } else {
+        _dockLayout.showPanel(id);
+      }
+    });
+    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
+  }
+
+  void _togglePanel(String id) {
+    setState(() {
+      if (_dockLayout.isVisible(id)) {
+        _dockLayout.hidePanel(id);
+      } else {
+        _dockLayout.showPanel(id);
+      }
+    });
+    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
+  }
 
   @override
   void initState() {
@@ -130,6 +263,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     if (old.controller != widget.controller) {
       old.controller.lastError.removeListener(_showError);
       _ctrl.lastError.addListener(_showError);
+    }
+    // The host is the path's source of truth (it can save/open externally,
+    // over MCP for example).
+    if (old.currentPath != widget.currentPath) {
+      _currentPath = widget.currentPath;
     }
   }
 
@@ -314,23 +452,68 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onAddSphere: _addSphere,
                   onAddPrefab: _addPrefabInstance,
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
+                  isPanelVisible: _dockLayout.isVisible,
+                  onTogglePanel: _togglePanel,
+                  onNewViewport: _newViewport,
+                  leadingInset: widget.menuBarLeadingInset,
+                  onDragStart: widget.onMenuBarDragStart,
                 ),
                 Expanded(
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       DockingShell(
-                        viewportPane: ViewportPanel(
-                          controller: _ctrl,
-                          repaintBoundaryKey: widget.viewportRepaintBoundaryKey,
-                        ),
-                        outlinerPane: OutlinerPanel(controller: _ctrl),
-                        inspectorPane: InspectorPanel(controller: _ctrl),
-                        historyPane: HistoryPanel(controller: _ctrl),
-                        assetBrowserPane: AssetBrowserPanel(
-                          controller: _ctrl,
-                          onImportModel: _importModelFromBrowser,
-                        ),
+                        layout: _dockLayout,
+                        onLayoutChanged: (layout) => widget.onDockLayoutChanged
+                            ?.call(layout.toJsonString()),
+                        panels: [
+                          DockPanel(
+                            id: 'viewport',
+                            title: 'Viewport',
+                            child: ViewportPanel(
+                              controller: _ctrl,
+                              repaintBoundaryKey:
+                                  widget.viewportRepaintBoundaryKey,
+                              cameraHandle: widget.viewportCameraHandle,
+                            ),
+                          ),
+                          DockPanel(
+                            id: 'outliner',
+                            title: 'Outliner',
+                            child: OutlinerPanel(controller: _ctrl),
+                            actions: IconButton(
+                              icon: const Icon(Icons.add, size: 16),
+                              tooltip: 'Create node',
+                              onPressed: () =>
+                                  _ctrl.run('createNode', {'name': 'Node'}),
+                            ),
+                          ),
+                          DockPanel(
+                            id: 'inspector',
+                            title: 'Inspector',
+                            child: InspectorPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
+                            id: 'assets',
+                            title: 'Assets',
+                            child: AssetBrowserPanel(
+                              controller: _ctrl,
+                              onImportModel: _importModelFromBrowser,
+                            ),
+                          ),
+                          DockPanel(
+                            id: 'history',
+                            title: 'History',
+                            child: HistoryPanel(controller: _ctrl),
+                          ),
+                          for (final id in _extraViewportIds)
+                            DockPanel(
+                              id: id,
+                              title: 'Viewport ${id.substring(8)}',
+                              closable: true,
+                              child: ViewportPanel(controller: _ctrl),
+                            ),
+                        ],
                       ),
                       if (_paletteOpen)
                         CommandPaletteOverlay(
@@ -352,11 +535,16 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   // Actions.
   // -------------------------------------------------------------------------
 
+  void _setPath(String? path) {
+    _currentPath = path;
+    widget.onDocumentPathChanged?.call(path);
+  }
+
   Future<void> _newScene() async {
     final ctrl = await EditorController.empty();
     widget.onControllerReplaced(ctrl);
     setState(() {
-      _currentPath = null;
+      _setPath(null);
       _paletteOpen = false;
     });
   }
@@ -368,7 +556,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       final ctrl = await openFscene(path);
       widget.onControllerReplaced(ctrl);
       setState(() {
-        _currentPath = path;
+        _setPath(path);
         _paletteOpen = false;
       });
     } on IOException catch (e) {
@@ -458,7 +646,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     final path = await pickSavePath(suggestedName: suggested);
     if (path == null) return;
     await _writeTo(path);
-    if (mounted) setState(() => _currentPath = path);
+    if (mounted) setState(() => _setPath(path));
   }
 
   Future<void> _writeTo(String path) async {
@@ -597,6 +785,11 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onAddSphere,
     required this.onAddPrefab,
     required this.onPaletteOpen,
+    required this.isPanelVisible,
+    required this.onTogglePanel,
+    required this.onNewViewport,
+    required this.leadingInset,
+    this.onDragStart,
   });
 
   final EditorController controller;
@@ -617,6 +810,11 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onAddSphere;
   final VoidCallback onAddPrefab;
   final VoidCallback onPaletteOpen;
+  final bool Function(String panelId) isPanelVisible;
+  final ValueChanged<String> onTogglePanel;
+  final VoidCallback onNewViewport;
+  final double leadingInset;
+  final VoidCallback? onDragStart;
 
   @override
   Widget build(BuildContext context) {
@@ -626,87 +824,116 @@ class _EditorMenuBar extends StatelessWidget {
     final canReimport =
         selected.length == 1 &&
         controller.document.nodes[selected.first]?.instance != null;
-    return Container(
-      height: 28,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          Text(
-            currentPath != null
-                ? 'Scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
-                : 'Scene Editor',
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-          const SizedBox(width: 16),
-          _Menu(
-            label: 'File',
-            items: [
-              _MenuItem(label: 'New', onTap: onNew),
-              _MenuItem(label: 'Open…', onTap: onOpen),
-              _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
-              _MenuItem(
-                label: 'Re-import glTF…',
-                onTap: canReimport ? onReimportGlb : null,
-              ),
-              _MenuItem(label: 'Save', onTap: onSave),
-              _MenuItem(label: 'Save As…', onTap: onSaveAs),
-            ],
-          ),
-          _Menu(
-            label: 'Edit',
-            items: [
-              _MenuItem(
-                label: 'Undo',
-                onTap: controller.history.canUndo ? onUndo : null,
-              ),
-              _MenuItem(
-                label: 'Redo',
-                onTap: controller.history.canRedo ? onRedo : null,
-              ),
-              _MenuItem(
-                label: 'Duplicate',
-                onTap: controller.selection.isNotEmpty ? onDuplicate : null,
-              ),
-              _MenuItem(
-                label: 'Copy',
-                onTap: controller.selection.isNotEmpty ? onCopy : null,
-              ),
-              _MenuItem(
-                label: 'Paste',
-                onTap: controller.canPaste ? onPaste : null,
-              ),
-              _MenuItem(
-                label: 'Delete',
-                onTap: controller.selection.isNotEmpty ? onDelete : null,
-              ),
-            ],
-          ),
-          _Menu(
-            label: 'Add',
-            items: [
-              _MenuItem(label: 'Cube', onTap: onAddCube),
-              _MenuItem(label: 'Sphere', onTap: onAddSphere),
-              _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
-            ],
-          ),
-          _MenuButton(label: 'Commands', onTap: onPaletteOpen),
-        ],
+    // The pan handler makes the bar's empty space a window-drag region when
+    // the host hides the native title bar; the buttons keep their own taps.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
+      child: Container(
+        height: 28,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Row(
+          children: [
+            SizedBox(width: leadingInset),
+            Text(
+              currentPath != null
+                  ? 'Scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
+                  : 'Scene Editor',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+            const SizedBox(width: 16),
+            _Menu(
+              label: 'File',
+              items: [
+                _MenuItem(label: 'New', onTap: onNew),
+                _MenuItem(label: 'Open…', onTap: onOpen),
+                _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
+                _MenuItem(
+                  label: 'Re-import glTF…',
+                  onTap: canReimport ? onReimportGlb : null,
+                ),
+                _MenuItem(label: 'Save', onTap: onSave),
+                _MenuItem(label: 'Save As…', onTap: onSaveAs),
+              ],
+            ),
+            _Menu(
+              label: 'Edit',
+              items: [
+                _MenuItem(
+                  label: 'Undo',
+                  onTap: controller.history.canUndo ? onUndo : null,
+                ),
+                _MenuItem(
+                  label: 'Redo',
+                  onTap: controller.history.canRedo ? onRedo : null,
+                ),
+                _MenuItem(
+                  label: 'Duplicate',
+                  onTap: controller.selection.isNotEmpty ? onDuplicate : null,
+                ),
+                _MenuItem(
+                  label: 'Copy',
+                  onTap: controller.selection.isNotEmpty ? onCopy : null,
+                ),
+                _MenuItem(
+                  label: 'Paste',
+                  onTap: controller.canPaste ? onPaste : null,
+                ),
+                _MenuItem(
+                  label: 'Delete',
+                  onTap: controller.selection.isNotEmpty ? onDelete : null,
+                ),
+              ],
+            ),
+            _Menu(
+              label: 'Add',
+              items: [
+                _MenuItem(label: 'Cube', onTap: onAddCube),
+                _MenuItem(label: 'Sphere', onTap: onAddSphere),
+                _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
+              ],
+            ),
+            // Built when the menu opens so the checkmarks reflect hides made
+            // from tab context menus (which don't rebuild this bar).
+            _Menu(
+              label: 'View',
+              itemsBuilder: () => [
+                _MenuItem(label: 'New Viewport', onTap: onNewViewport),
+                for (final entry in _panelTitles.entries)
+                  _MenuItem(
+                    label: entry.value,
+                    checked: isPanelVisible(entry.key),
+                    onTap: () => onTogglePanel(entry.key),
+                  ),
+              ],
+            ),
+            _MenuButton(label: 'Commands', onTap: onPaletteOpen),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _MenuItem {
-  const _MenuItem({required this.label, this.onTap});
+  const _MenuItem({required this.label, this.onTap, this.checked});
   final String label;
   final VoidCallback? onTap;
+
+  /// Non-null renders a leading checkmark slot (checked or empty).
+  final bool? checked;
 }
 
 class _Menu extends StatelessWidget {
-  const _Menu({required this.label, required this.items});
+  const _Menu({required this.label, this.items, this.itemsBuilder})
+    : assert((items == null) != (itemsBuilder == null));
+
   final String label;
-  final List<_MenuItem> items;
+  final List<_MenuItem>? items;
+
+  /// Deferred alternative to [items], invoked when the menu opens, for
+  /// entries whose state can change without this bar rebuilding.
+  final List<_MenuItem> Function()? itemsBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -718,12 +945,23 @@ class _Menu extends StatelessWidget {
         child: Text(label, style: const TextStyle(fontSize: 11)),
       ),
       itemBuilder: (_) => [
-        for (final item in items)
+        for (final item in items ?? itemsBuilder!())
           PopupMenuItem<VoidCallback?>(
             value: item.onTap,
             enabled: item.onTap != null,
             height: 28,
-            child: Text(item.label, style: const TextStyle(fontSize: 12)),
+            child: Row(
+              children: [
+                if (item.checked != null)
+                  SizedBox(
+                    width: 20,
+                    child: item.checked!
+                        ? const Icon(Icons.check, size: 14)
+                        : null,
+                  ),
+                Text(item.label, style: const TextStyle(fontSize: 12)),
+              ],
+            ),
           ),
       ],
       onSelected: (cb) => cb?.call(),

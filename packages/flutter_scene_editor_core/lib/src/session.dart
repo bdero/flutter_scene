@@ -9,9 +9,7 @@
 /// bake landing one atomic result on completion).
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 
 import 'builtin_commands.dart';
 import 'change.dart';

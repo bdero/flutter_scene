@@ -24,13 +24,10 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math.dart';
 
-import '../../../fscene/id.dart';
-import '../../../fscene/binary/fsceneb.dart';
-import '../../../fscene/property_value.dart';
-import '../../../fscene/scene_document.dart';
-import '../../../fscene/specs.dart';
+import 'package:scene/scene.dart';
 import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/ktx2_image.dart';
+import '../../../texture/mipmap.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
 import '../gltf/primitive_packer.dart';
@@ -80,14 +77,16 @@ SceneDocument buildSceneDocument(
 
   // Textures, then materials (which reference textures), then mesh geometry
   // (which references materials).
+  final textureContents = gltfTextureContents(doc);
   final textureIds = [
-    for (final texture in doc.textures)
+    for (var i = 0; i < doc.textures.length; i++)
       _buildTexture(
         document,
-        texture,
+        doc.textures[i],
         doc,
         bufferData,
         compressTextures: compressTextures,
+        content: textureContents[i],
       ),
   ];
   final materialIds = [
@@ -191,6 +190,23 @@ SceneDocument buildSceneDocument(
     for (final root in doc.scenes[sceneIndex].nodes) {
       if (root >= 0 && root < nodeIds.length) document.roots.add(nodeIds[root]);
     }
+  }
+
+  // KHR_materials_variants: attach a materialsVariants component to each
+  // document root whose subtree has variant-mapped primitives. Bindings
+  // reference nodes and their mesh primitive index (triangle primitives
+  // only, matching the emitted mesh); the mapped materials are already in
+  // the resource pool ([materialIds] covers every source material).
+  if (doc.materialsVariants.isNotEmpty &&
+      sceneIndex >= 0 &&
+      sceneIndex < doc.scenes.length) {
+    _emitMaterialsVariants(
+      document,
+      doc,
+      sceneRoots: doc.scenes[sceneIndex].nodes,
+      nodeIds: nodeIds,
+      materialIds: materialIds,
+    );
   }
 
   // Animations (one keyframe timeline/value payload per channel).
@@ -545,6 +561,7 @@ LocalId _buildMaterial(
           MaterialResource(
             document.newId(),
             type: 'unlit',
+            name: material.name ?? '',
             properties: properties,
           ),
         )
@@ -590,6 +607,7 @@ LocalId _buildMaterial(
         MaterialResource(
           document.newId(),
           type: 'physicallyBased',
+          name: material.name ?? '',
           properties: properties,
         ),
       )
@@ -608,12 +626,49 @@ void _addTexture(
   if (id != null) properties[key] = ResourceRefValue(id);
 }
 
+/// The downsample rule for each glTF texture, derived from the material slots
+/// referencing it. A texture shared across slot kinds takes the highest
+/// priority interpretation (normal > color > data); unreferenced textures
+/// default to color. Library-visible for tests; not exported.
+List<TextureContent> gltfTextureContents(GltfDocument doc) {
+  const priority = {
+    TextureContent.data: 0,
+    TextureContent.color: 1,
+    TextureContent.normal: 2,
+  };
+  final contents = List<TextureContent>.filled(
+    doc.textures.length,
+    TextureContent.color,
+  );
+  final marked = List<bool>.filled(doc.textures.length, false);
+  void mark(GltfTextureInfo? info, TextureContent content) {
+    final index = info?.index;
+    if (index == null || index < 0 || index >= contents.length) return;
+    if (marked[index] && priority[contents[index]]! >= priority[content]!) {
+      return;
+    }
+    marked[index] = true;
+    contents[index] = content;
+  }
+
+  for (final material in doc.materials) {
+    final pbr = material.pbrMetallicRoughness;
+    mark(pbr?.baseColorTexture, TextureContent.color);
+    mark(material.emissiveTexture, TextureContent.color);
+    mark(material.normalTexture, TextureContent.normal);
+    mark(pbr?.metallicRoughnessTexture, TextureContent.data);
+    mark(material.occlusionTexture, TextureContent.data);
+  }
+  return contents;
+}
+
 LocalId? _buildTexture(
   SceneDocument document,
   GltfTexture texture,
   GltfDocument doc,
   Uint8List bufferData, {
   bool compressTextures = false,
+  TextureContent content = TextureContent.color,
 }) {
   if (texture.source == null || texture.source! >= doc.images.length) {
     return null;
@@ -632,13 +687,9 @@ LocalId? _buildTexture(
       final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
       // sRGB needs no per-role handling here: the engine linearizes sRGB in
       // the fragment shaders (SRGBToLinear on the sampled base color), so
-      // every texture uploads as a non-sRGB format regardless of role and
-      // the compressed path matches the uncompressed one.
-      // TODO(texture-compression): set generateMips once the GPU upload uploads
-      // the full chain (see compressed_texture.dart); today the upload uses the
-      // base level only, so storing mips would just bloat the container. Mip
-      // downsampling should then be gamma-correct for base-color (sRGB) roles,
-      // which is where knowing the texture's material slot becomes relevant.
+      // every texture uploads as a non-sRGB format regardless of role. The
+      // role ([content]) only steers mip downsampling, which must average
+      // sRGB color in linear light and renormalize normals.
       // ASTC 4x4 (the compressed format) requires both dimensions to be a
       // multiple of the 4x4 block size; a non-aligned compressed texture is
       // rejected at GPU load and shows a placeholder. Fall back to uncompressed
@@ -652,6 +703,8 @@ LocalId? _buildTexture(
               raw,
               rgba.width,
               rgba.height,
+              generateMips: true,
+              content: content,
               supercompress: true,
             )
           : raw;
@@ -702,4 +755,82 @@ int _seedFrom(Uint8List data) {
     hash = (hash * 0x01000193) & 0xffffffff;
   }
   return hash == 0 ? 1 : hash;
+}
+
+/// Emits `KHR_materials_variants` as `materialsVariants` components, one per
+/// scene root whose subtree contains variant-mapped primitives, with each
+/// component's bindings scoped to that subtree.
+void _emitMaterialsVariants(
+  SceneDocument document,
+  GltfDocument doc, {
+  required List<int> sceneRoots,
+  required List<LocalId> nodeIds,
+  required List<LocalId> materialIds,
+}) {
+  // Per glTF node, the binding specs for its variant-mapped primitives. The
+  // primitive index counts emitted (triangle) primitives so it matches the
+  // realized mesh's primitive order.
+  final bindingsByNode = <int, List<PropertyValue>>{};
+  for (var i = 0; i < doc.nodes.length; i++) {
+    final meshIndex = doc.nodes[i].mesh;
+    if (meshIndex == null || meshIndex < 0 || meshIndex >= doc.meshes.length) {
+      continue;
+    }
+    var primIndex = 0;
+    for (final primitive in doc.meshes[meshIndex].primitives) {
+      if (primitive.mode != 4) continue;
+      if (primitive.variantMappings.isNotEmpty) {
+        final materials = <String, PropertyValue>{
+          for (final entry in primitive.variantMappings.entries)
+            if (entry.value >= 0 && entry.value < materialIds.length)
+              '${entry.key}': ResourceRefValue(materialIds[entry.value]),
+        };
+        if (materials.isNotEmpty) {
+          final defaultIndex = primitive.material;
+          bindingsByNode
+              .putIfAbsent(i, () => [])
+              .add(
+                MapValue({
+                  'node': NodeRefValue(nodeIds[i]),
+                  'primitive': IntValue(primIndex),
+                  // The authored default, kept explicit so an editor save
+                  // made while a variant is selected does not bake the
+                  // selection in as the default.
+                  if (defaultIndex != null &&
+                      defaultIndex >= 0 &&
+                      defaultIndex < materialIds.length)
+                    'default': ResourceRefValue(materialIds[defaultIndex]),
+                  'materials': MapValue(materials),
+                }),
+              );
+        }
+      }
+      primIndex++;
+    }
+  }
+  if (bindingsByNode.isEmpty) return;
+
+  document.featuresUsed.add('materialsVariants');
+  final variantNames = ListValue([
+    for (final name in doc.materialsVariants) StringValue(name),
+  ]);
+  for (final root in sceneRoots) {
+    if (root < 0 || root >= nodeIds.length) continue;
+    // Collect the root's subtree (including itself) in the glTF index space.
+    final subtree = <int>[root];
+    final bindings = <PropertyValue>[];
+    for (var i = 0; i < subtree.length; i++) {
+      bindings.addAll(bindingsByNode[subtree[i]] ?? const []);
+      for (final child in doc.nodes[subtree[i]].children) {
+        if (child >= 0 && child < doc.nodes.length) subtree.add(child);
+      }
+    }
+    if (bindings.isEmpty) continue;
+    document.nodes[nodeIds[root]]!.components.add(
+      ComponentSpec(
+        'materialsVariants',
+        properties: {'variants': variantNames, 'bindings': ListValue(bindings)},
+      ),
+    );
+  }
 }

@@ -8,12 +8,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'character/character_controls.dart';
 import 'character/character_input.dart';
 import 'character/third_person_camera.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'raycast_vehicle.dart';
 
@@ -32,7 +35,7 @@ class ExamplePhysicsCar extends StatefulWidget {
 
 class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
   final Scene scene = Scene();
-  late final RapierWorld world;
+  late final PhysicsWorld world;
 
   final CharacterInput _input = CharacterInput();
   final ThirdPersonCamera _camera = ThirdPersonCamera(
@@ -67,7 +70,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       ),
     );
 
-    world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
 
     _buildGround();
@@ -78,8 +81,8 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
 
   Future<void> _load() async {
     final car = await loadScene('assets_src/fcar.glb');
-    final environment = await EnvironmentMap.fromAssets(
-      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+    final environment = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: 'assets/little_paris_eiffel_tower.png',
     );
     if (!mounted) return;
 
@@ -120,9 +123,9 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       mesh: _boxMesh(halfExtents * 2.0, color),
       localTransform: transform,
     );
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(RigidBody(type: BodyType.fixed));
     node.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: halfExtents),
         material: PhysicsMaterial(friction: friction, restitution: 0.0),
       ),
@@ -143,9 +146,9 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
       mesh: _boxMesh(halfExtents * 2.0, color, roughness: 0.85),
       localTransform: vm.Matrix4.translation(center),
     );
-    node.addComponent(RapierRigidBody(type: BodyType.dynamic_));
+    node.addComponent(RigidBody(type: BodyType.dynamic_));
     node.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: halfExtents),
         material: PhysicsMaterial(
           friction: 0.7,
@@ -285,7 +288,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
     chassis.add(carModel);
 
     chassis.addComponent(
-      RapierRigidBody(
+      RigidBody(
         type: BodyType.dynamic_,
         linearDamping: 0.08,
         angularDamping: 0.85,
@@ -297,7 +300,7 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
     // low: a high COM makes lateral tire forces (applied at the contacts) roll
     // the car over in turns. Its density sets the chassis mass.
     chassis.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: vm.Vector3(3.6, 0.55, 1.6)),
         material: const PhysicsMaterial(
           friction: 0.4,
@@ -409,14 +412,18 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
             onTick: _onTick,
           ),
         ),
-        Positioned(top: 16, right: 16, child: _Speedometer(_speed)),
-        Positioned(
-          top: 16,
-          right: 140,
-          child: FloatingActionButton.small(
-            heroTag: 'car-reset',
-            onPressed: _reset,
-            child: const Icon(Icons.refresh),
+        ExampleOverlay.topCenterAction(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ExampleActionButton(
+                tooltip: 'Reset car',
+                onPressed: _reset,
+                icon: Icons.refresh,
+              ),
+              const SizedBox(width: 12),
+              _Speedometer(_speed),
+            ],
           ),
         ),
       ],

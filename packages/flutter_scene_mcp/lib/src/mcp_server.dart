@@ -68,7 +68,7 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
           ],
         );
       }
-      final result = surface.dispatch(name, args);
+      final result = await surface.dispatch(name, args);
       return CallToolResult(content: [TextContent(text: jsonEncode(result))]);
     } on ToolError catch (e) {
       return CallToolResult(

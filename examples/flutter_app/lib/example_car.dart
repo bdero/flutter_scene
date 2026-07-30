@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 
 class ExampleCar extends StatefulWidget {
   const ExampleCar({super.key});
@@ -59,6 +62,7 @@ class ExampleCarState extends State<ExampleCar> {
   @override
   void initState() {
     super.initState();
+    _skySource.blurriness = 0.60;
     _load();
   }
 
@@ -70,8 +74,8 @@ class ExampleCarState extends State<ExampleCar> {
       'assets_src/fcar.glb',
       onReload: _onCarReloaded,
     );
-    final environment = await EnvironmentMap.fromAssets(
-      radianceImagePath: 'assets/little_paris_eiffel_tower.png',
+    final environment = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: 'assets/little_paris_eiffel_tower.png',
     );
     if (!mounted) {
       return;
@@ -162,88 +166,61 @@ class ExampleCarState extends State<ExampleCar> {
             },
           ),
         ),
-        // Door open slider
-        Column(
-          children: [
-            const Spacer(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('Sky blur'),
-                SizedBox(
-                  width: 220,
-                  child: Slider(
-                    value: _skySource.blurriness,
-                    onChanged: (value) {
-                      setState(() => _skySource.blurriness = value);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (final doorName in [
-                  'DoorFront.L',
-                  'DoorFront.R',
-                  'DoorBack.L',
-                  'DoorBack.R',
-                ])
-                  Expanded(
-                    child: Slider(
-                      value: nodes[doorName]!.amount,
-                      onChanged: (value) {
-                        setState(() => _applyDoorPose(doorName, value));
-                      },
-                    ),
-                  ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: nodes['Frunk']!.amount,
-                    onChanged: (value) {
-                      setState(() => _applyDoorPose('Frunk', value));
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: nodes['Trunk']!.amount,
-                    onChanged: (value) {
-                      setState(() => _applyDoorPose('Trunk', value));
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: nodes['WheelBack.L']!.amount,
-                    onChanged: (value) {
-                      setState(() => nodes['WheelBack.L']!.amount = value);
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Slider(
-                    min: -1,
-                    max: 1,
-                    value: nodes['WheelFront.L']!.amount,
-                    onChanged: (value) {
-                      setState(() => nodes['WheelFront.L']!.amount = value);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        ExampleOverlay.bottomLeftPanel(child: _buildControls()),
       ],
     );
   }
+
+  Widget _buildControls() => ExamplePanelCard(
+    icon: Icons.directions_car,
+    title: 'Car controls',
+    width: 280,
+    maxBodyHeight: 360,
+    body: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LabeledSlider(
+          label: 'Sky blur',
+          value: _skySource.blurriness,
+          min: 0,
+          max: 1,
+          onChanged: (value) => setState(() => _skySource.blurriness = value),
+        ),
+        for (final (label, name) in const [
+          ('Front door L', 'DoorFront.L'),
+          ('Front door R', 'DoorFront.R'),
+          ('Back door L', 'DoorBack.L'),
+          ('Back door R', 'DoorBack.R'),
+          ('Frunk', 'Frunk'),
+          ('Trunk', 'Trunk'),
+        ])
+          LabeledSlider(
+            label: label,
+            value: nodes[name]!.amount,
+            min: 0,
+            max: 1,
+            onChanged: (value) => setState(() => _applyDoorPose(name, value)),
+          ),
+        LabeledSlider(
+          label: 'Rear wheel speed',
+          value: nodes['WheelBack.L']!.amount,
+          min: 0,
+          max: 1,
+          onChanged: (value) =>
+              setState(() => nodes['WheelBack.L']!.amount = value),
+        ),
+        LabeledSlider(
+          label: 'Front wheel steer',
+          value: nodes['WheelFront.L']!.amount,
+          min: -1,
+          max: 1,
+          onChanged: (value) =>
+              setState(() => nodes['WheelFront.L']!.amount = value),
+        ),
+      ],
+    ),
+  );
 
   // Advances the wheel spin/steer each frame from the slider-driven amounts.
   void _updateWheels() {

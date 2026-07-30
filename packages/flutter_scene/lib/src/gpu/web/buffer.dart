@@ -59,6 +59,11 @@ base class DeviceBuffer {
       ? web.WebGL2RenderingContext.STATIC_DRAW
       : web.WebGL2RenderingContext.DYNAMIC_DRAW;
 
+  /// Tail padding on the non-element GL data store. A uniform bind may extend
+  /// past the staged bytes to reach the driver-reported block data size (see
+  /// RenderPass.bindUniform); the padding keeps that range inside the buffer.
+  static const int _kUniformTailPaddingBytes = 256;
+
   /// Internal: bind the GL buffer appropriate for [target], creating and
   /// uploading it from the staging bytes on first use. Index buffers get a
   /// dedicated element-typed buffer; all other targets share a non-element
@@ -72,13 +77,19 @@ base class DeviceBuffer {
       if (buffer == null) {
         throw StateError('Failed to create WebGL buffer');
       }
+      gl.bindBuffer(target, buffer);
       if (isElement) {
         _glElementBuffer = buffer;
+        gl.bufferData(target, _staging.toJS, _usage);
       } else {
         _glOtherBuffer = buffer;
+        gl.bufferData(
+          target,
+          (sizeInBytes + _kUniformTailPaddingBytes).toJS,
+          _usage,
+        );
+        gl.bufferSubData(target, 0, _staging.toJS);
       }
-      gl.bindBuffer(target, buffer);
-      gl.bufferData(target, _staging.toJS, _usage);
     } else {
       gl.bindBuffer(target, buffer);
     }

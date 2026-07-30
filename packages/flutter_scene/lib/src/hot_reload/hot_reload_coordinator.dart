@@ -16,7 +16,9 @@ import 'package:flutter_scene/src/scene_encoder.dart';
 ///  * reinitializes any changed `.shaderbundle` in place (so an edit to a
 ///    `.fmat`'s GLSL body reloads the shader), and
 ///  * re-reads any changed `.fmat` sidecar and refreshes the affected materials'
-///    render state and parameters,
+///    render state and parameters, and
+///  * re-runs any registered scene, texture, or environment load whose asset
+///    content changed,
 ///
 /// so a `.fmat` edit shows up without a restart and without app-side wiring.
 ///
@@ -36,12 +38,17 @@ class HotReloadCoordinator {
 
   final List<_MaterialRegistration> _materials = <_MaterialRegistration>[];
   final List<_SceneRegistration> _scenes = <_SceneRegistration>[];
+  final List<_TextureRegistration> _textures = <_TextureRegistration>[];
+  final List<_EnvironmentRegistration> _environments =
+      <_EnvironmentRegistration>[];
 
-  /// Content hash of each sidecar / shader bundle / scene asset last
-  /// seen, to skip unchanged assets.
+  /// Content hash of each sidecar / shader bundle / scene / texture /
+  /// environment asset last seen, to skip unchanged assets.
   final Map<String, int> _sidecarHashes = <String, int>{};
   final Map<String, int> _shaderBundleHashes = <String, int>{};
   final Map<String, int> _sceneHashes = <String, int>{};
+  final Map<String, int> _textureHashes = <String, int>{};
+  final Map<String, int> _environmentHashes = <String, int>{};
 
   bool _refreshing = false;
 
@@ -103,6 +110,57 @@ class HotReloadCoordinator {
     }
   }
 
+  /// Registers a texture [source] loaded from the cooked `.fstex` asset
+  /// [assetKey]. On hot reload, when the asset's content changes, [onReload]
+  /// is invoked to re-read and re-upload it in place (see `loadTexture`); the
+  /// registration is dropped once [source] is collected. No-op outside debug.
+  void registerTexture(
+    Object source, {
+    required String assetKey,
+    AssetBundle? bundle,
+    required Future<void> Function() onReload,
+  }) {
+    if (!kDebugMode) return;
+    _textures.add(
+      _TextureRegistration(
+        WeakReference<Object>(source),
+        assetKey,
+        bundle ?? rootBundle,
+        onReload,
+      ),
+    );
+    _seedBytesHash(assetKey, bundle ?? rootBundle, _textureHashes);
+  }
+
+  /// Registers an environment loaded from the equirect image asset [assetKey]
+  /// on behalf of [anchor] (the object whose environment it is, typically a
+  /// `Scene`). On hot reload, when the asset's content changes, [onReload] is
+  /// invoked to re-run the load. The [anchor] is held weakly and one
+  /// registration exists per anchor (a later call replaces the earlier one),
+  /// so re-loading a scene's environment never stacks registrations. The
+  /// closure must not capture [anchor] strongly. No-op outside debug.
+  void registerEnvironment(
+    Object anchor, {
+    required String assetKey,
+    AssetBundle? bundle,
+    required Future<void> Function() onReload,
+  }) {
+    if (!kDebugMode) return;
+    _environments.removeWhere((r) {
+      final target = r.anchor.target;
+      return target == null || identical(target, anchor);
+    });
+    _environments.add(
+      _EnvironmentRegistration(
+        WeakReference<Object>(anchor),
+        assetKey,
+        bundle ?? rootBundle,
+        onReload,
+      ),
+    );
+    _seedBytesHash(assetKey, bundle ?? rootBundle, _environmentHashes);
+  }
+
   /// Seeds [store] with the hash of [key]'s content as of registration, so
   /// the first reassemble only reloads assets that actually changed since
   /// they were loaded (instead of treating every never-hashed asset as
@@ -149,11 +207,20 @@ class HotReloadCoordinator {
   Future<void> _refresh() async {
     _materials.removeWhere((r) => r.material.target == null);
     _scenes.removeWhere((r) => r.root.target == null);
-    if (_materials.isEmpty && _scenes.isEmpty) return;
+    _textures.removeWhere((r) => r.source.target == null);
+    _environments.removeWhere((r) => r.anchor.target == null);
+    if (_materials.isEmpty &&
+        _scenes.isEmpty &&
+        _textures.isEmpty &&
+        _environments.isEmpty) {
+      return;
+    }
 
     await _reinitializeChangedShaderBundles();
     await _refreshChangedSidecars();
     await _refreshChangedScenes();
+    await _refreshChangedTextures();
+    await _refreshChangedEnvironments();
   }
 
   /// Re-reads any changed `.fsceneb` scene asset and patches the live graph in
@@ -194,6 +261,87 @@ class HotReloadCoordinator {
       } catch (e) {
         debugPrint(
           'flutter_scene: scene reload failed for "${r.assetKey}": $e',
+        );
+      }
+    }
+  }
+
+  /// Re-reads any changed cooked `.fstex` texture asset and re-uploads it in
+  /// place via each registration's reload closure, so materials bound to the
+  /// live source pick up the new texture on their next frame.
+  Future<void> _refreshChangedTextures() async {
+    if (_textures.isEmpty) return;
+    final bundles = <String, AssetBundle>{
+      for (final r in _textures) r.assetKey: r.bundle,
+    };
+    final changedKeys = <String>{};
+    for (final entry in bundles.entries) {
+      final key = entry.key;
+      entry.value.evict(key);
+      List<int> bytes;
+      try {
+        final data = await entry.value.load(key);
+        bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } catch (_) {
+        continue; // not available this reload; try again next time
+      }
+      final hash = _fnv1aBytes(bytes);
+      if (_textureHashes[key] == hash) continue; // unchanged
+      _textureHashes[key] = hash;
+      changedKeys.add(key);
+    }
+    if (changedKeys.isEmpty) return;
+
+    for (final r in _textures) {
+      if (r.source.target == null) continue;
+      if (!changedKeys.contains(r.assetKey)) continue;
+      try {
+        await r.onReload();
+        debugPrint('flutter_scene: hot-reloaded texture "${r.assetKey}"');
+      } catch (e) {
+        debugPrint(
+          'flutter_scene: texture reload failed for "${r.assetKey}": $e',
+        );
+      }
+    }
+  }
+
+  /// Re-reads any changed environment image asset and re-runs the load via
+  /// each registration's reload closure.
+  Future<void> _refreshChangedEnvironments() async {
+    if (_environments.isEmpty) return;
+    final bundles = <String, AssetBundle>{
+      for (final r in _environments) r.assetKey: r.bundle,
+    };
+    final changedKeys = <String>{};
+    for (final entry in bundles.entries) {
+      final key = entry.key;
+      entry.value.evict(key);
+      List<int> bytes;
+      try {
+        final data = await entry.value.load(key);
+        bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      } catch (_) {
+        continue; // not available this reload; try again next time
+      }
+      final hash = _fnv1aBytes(bytes);
+      if (_environmentHashes[key] == hash) continue; // unchanged
+      _environmentHashes[key] = hash;
+      changedKeys.add(key);
+    }
+    if (changedKeys.isEmpty) return;
+
+    // Snapshot: a reload closure that re-runs `Scene.loadEnvironment`
+    // re-registers, mutating the live list.
+    for (final r in _environments.toList()) {
+      if (r.anchor.target == null) continue;
+      if (!changedKeys.contains(r.assetKey)) continue;
+      try {
+        await r.onReload();
+        debugPrint('flutter_scene: hot-reloaded environment "${r.assetKey}"');
+      } catch (e) {
+        debugPrint(
+          'flutter_scene: environment reload failed for "${r.assetKey}": $e',
         );
       }
     }
@@ -327,6 +475,15 @@ class _MaterialRegistration {
   final String entryName;
 }
 
+class _TextureRegistration {
+  _TextureRegistration(this.source, this.assetKey, this.bundle, this.onReload);
+
+  final WeakReference<Object> source;
+  final String assetKey;
+  final AssetBundle bundle;
+  final Future<void> Function() onReload;
+}
+
 class _SceneRegistration {
   _SceneRegistration(
     this.root,
@@ -343,6 +500,20 @@ class _SceneRegistration {
   /// prefabs). Shared with the registering loader, which updates it in place
   /// when a reload changes the reference set.
   final Set<String> dependencies;
+  final AssetBundle bundle;
+  final Future<void> Function() onReload;
+}
+
+class _EnvironmentRegistration {
+  _EnvironmentRegistration(
+    this.anchor,
+    this.assetKey,
+    this.bundle,
+    this.onReload,
+  );
+
+  final WeakReference<Object> anchor;
+  final String assetKey;
   final AssetBundle bundle;
   final Future<void> Function() onReload;
 }

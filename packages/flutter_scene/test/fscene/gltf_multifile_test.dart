@@ -11,7 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_test/flutter_test.dart';

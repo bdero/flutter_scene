@@ -97,7 +97,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -168,20 +171,29 @@ jobs:
             adb logcat -c &&
             (adb logcat -v time > examples/smoke_render/build/android-diagnostics/logcat_${{ matrix.backend }}.txt 2>&1 & echo $! > /tmp/smoke-logcat.pid) &&
             cd examples/smoke_render &&
-            (flutter drive
+            (drive() { timeout 1200 flutter drive
             --flavor ${{ matrix.backend }}
             --driver=test_driver/integration_test.dart
             --target=integration_test/smoke_test.dart
             -d emulator-5554
             --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
             --enable-impeller
-            --enable-flutter-gpu;
+            --enable-flutter-gpu; };
+            drive;
             status=$?;
+            if [ "$status" -ne 0 ] && ! ls build/smoke/*.png >/dev/null 2>&1; then
+            echo "flutter drive failed (status $status) before rendering any frames; restarting adb and retrying once.";
+            adb kill-server || true;
+            adb start-server || true;
+            adb wait-for-device;
+            drive;
+            status=$?;
+            fi;
             (adb devices -l > build/android-diagnostics/adb_devices_after_${{ matrix.backend }}.txt 2>&1 || true);
             kill "$(cat /tmp/smoke-logcat.pid)" || true;
             exit "$status")
       - name: Upload Android diagnostics
-        if: ${{ failure() }}
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: android-diagnostics-${{ inputs.argos_prefix }}android_${{ matrix.backend }}
@@ -211,7 +223,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -277,7 +292,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
@@ -346,7 +364,10 @@ jobs:
           fi
           out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || true
           echo "$out"
-          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1)
+          # The grep misses when the upload failed and printed no URL (fork
+          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
+          # runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'

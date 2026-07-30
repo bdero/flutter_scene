@@ -14,19 +14,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 
-import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/canonical.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart'
-    show encodeSkySource;
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/material/environment.dart';
-import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
@@ -396,7 +388,7 @@ void serializeStage(Scene scene, SceneDocument document) {
     var spec = environment == null ? null : _environmentSpec[environment];
     if (spec == null && environment != null) {
       // An environment the app loaded itself still recovers when it carries
-      // its asset-path stamp (EnvironmentMap.fromAssets).
+      // its asset-path stamp (EnvironmentMap.fromEquirectImageAsset).
       final assetPath = environmentAssetPathOf(environment);
       if (assetPath != null) spec = AssetEnvironment(AssetRef(assetPath));
     }
@@ -406,8 +398,8 @@ void serializeStage(Scene scene, SceneDocument document) {
       if (environment != null) {
         debugPrint(
           'fscene: the scene environment was not produced by realizeStage '
-          'or EnvironmentMap.fromAssets and cannot be recovered; serializing '
-          'the studio default',
+          'or EnvironmentMap.fromEquirectImageAsset and cannot be recovered; '
+          'serializing the studio default',
         );
       }
       resource.environment = const StudioEnvironment();
@@ -489,7 +481,13 @@ Future<EnvironmentMap?> _buildEnvironment(
         return null;
       }
       try {
-        environment = await _environmentFromImageBytes(bytes, chunk!.format);
+        // The bytes are self-describing (magic-number detection), so the
+        // payload's format tag is informational only. Decodes HDR and EXR off
+        // the platform thread.
+        environment = await EnvironmentMap.fromEquirectImageBytes(
+          bytes: bytes,
+          maxWidth: _maxEnvironmentWidth,
+        );
       } catch (e) {
         debugPrint('fscene: failed to decode environment payload $payload: $e');
         return null;
@@ -502,8 +500,13 @@ Future<EnvironmentMap?> _buildEnvironment(
         environment = loaded;
       } else {
         try {
-          environment = await EnvironmentMap.fromUIImages(
-            radianceImage: await imageFromAsset(asset.key, bundle: bundle),
+          // Detects Radiance HDR, OpenEXR, or a standard sRGB image from the
+          // asset bytes, so a document referencing a `.hdr`/`.exr` asset keeps
+          // its dynamic range without build-hook inlining.
+          environment = await EnvironmentMap.fromEquirectImageAsset(
+            assetPath: asset.key,
+            maxWidth: _maxEnvironmentWidth,
+            bundle: bundle,
           );
         } catch (e) {
           debugPrint(
@@ -515,26 +518,6 @@ Future<EnvironmentMap?> _buildEnvironment(
   }
   _environmentSpec[environment] = spec;
   return environment;
-}
-
-// Builds an environment map from an inlined equirect image chunk, choosing the
-// decoder by the payload's format (`hdr` for Radiance HDR, an image codec
-// otherwise). Mirrors the editor's disk loader, sourced from embedded bytes.
-Future<EnvironmentMap> _environmentFromImageBytes(
-  Uint8List bytes,
-  String? format,
-) async {
-  if (format == 'hdr') {
-    final hdr = decodeRadianceHdr(bytes, maxWidth: _maxEnvironmentWidth);
-    return EnvironmentMap.fromEquirectHdr(
-      linearPixels: hdr.pixels,
-      width: hdr.width,
-      height: hdr.height,
-    );
-  }
-  return EnvironmentMap.fromUIImages(
-    radianceImage: await imageFromBytes(bytes),
-  );
 }
 
 // EnvironmentSpec has no public encoder; mirror the stage codec's shape just

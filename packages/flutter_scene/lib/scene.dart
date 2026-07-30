@@ -63,6 +63,11 @@ export 'src/environment_volume.dart'
         blendEnvironmentVolumes;
 export 'src/material/environment.dart'
     show EnvironmentMap, environmentAssetPathOf, kDiffuseShCoefficientCount;
+export 'src/material/equirect_image.dart'
+    show EquirectImageFormat, decodeEquirectHdrImage, detectEquirectImageFormat;
+export 'src/material/exr_decoder.dart' show ExrFormatException, decodeOpenExr;
+export 'src/material/hdr_decoder.dart'
+    show DecodedHdr, HdrFormatException, decodeRadianceHdr;
 export 'src/material/material.dart' show Material;
 export 'src/material/material_parameters.dart' show MaterialParameters;
 export 'src/material/physically_based_material.dart'
@@ -79,6 +84,7 @@ export 'src/importer/scene_registry.dart'
 
 export 'src/ambient_occlusion.dart'
     show AmbientOcclusionSettings, SpecularAmbientOcclusionMode;
+export 'src/auto_exposure.dart' show AutoExposureSettings;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
 export 'src/fog.dart' show Fog, FogMode;
 export 'src/god_rays.dart' show GodRaysSettings;
@@ -102,12 +108,54 @@ export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
 export 'src/components/lod_component.dart' show LodComponent;
 export 'src/components/mesh_component.dart' show MeshComponent;
+export 'src/components/materials_variants_component.dart'
+    show MaterialsVariantsComponent;
 export 'src/components/point_light_component.dart' show PointLightComponent;
 export 'src/components/semantics_component.dart' show SemanticsComponent;
 export 'src/components/splat_component.dart' show SplatComponent;
 export 'src/components/spot_light_component.dart' show SpotLightComponent;
 export 'src/render/lod.dart' show LodLevel;
 export 'src/components/widget_component.dart' show WidgetComponent, WidgetInput;
+export 'src/components/particle_emitter_component.dart'
+    show ParticleEmitterComponent;
+export 'src/components/mesh_particle_emitter_component.dart'
+    show MeshParticleEmitterComponent, MeshParticleFacing;
+export 'src/components/trail_component.dart' show TrailComponent;
+export 'src/particles/particle_system.dart' show ParticleSystem;
+export 'src/particles/particle_storage.dart' show ParticleStorage;
+export 'src/particles/particle_module.dart'
+    show
+        AccelerationModule,
+        ColorOverLifeModule,
+        FlipbookModule,
+        LinearDragModule,
+        ParticleModule,
+        RotationModule,
+        SizeOverLifeModule,
+        TurbulenceModule;
+export 'src/particles/emitter_shape.dart'
+    show
+        BoxEmitterShape,
+        ConeEmitterShape,
+        EmitterShape,
+        PointEmitterShape,
+        SphereEmitterShape;
+export 'src/particles/distribution.dart'
+    show
+        ColorDistribution,
+        ColorGradient,
+        ColorStop,
+        ConstantColor,
+        ConstantFloat,
+        CurveFloat,
+        FloatDistribution,
+        GradientColor,
+        ParticleCurve,
+        ParticleKeyframe,
+        UniformColor,
+        UniformCurveFloat,
+        UniformFloat;
+export 'src/particles/spawner.dart' show ParticleBurst, Spawner;
 export 'src/geometry/splat_geometry.dart' show SplatCropMode;
 export 'src/splats/gaussian_splats.dart' show GaussianSplats;
 export 'src/splats/splat_codec.dart' show SplatFormat;
@@ -139,48 +187,12 @@ export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
+export 'src/texture/texture_registry.dart' show loadTexture;
 export 'src/texture/mipmap.dart' show TextureContent;
-export 'src/physics/basic/basic_collider.dart' show BasicCollider;
-export 'src/physics/basic/basic_kinematic_body.dart' show BasicKinematicBody;
-export 'src/physics/basic/basic_world.dart' show BasicPhysicsWorld;
-export 'src/physics/collider.dart' show Collider;
-export 'src/physics/events.dart'
-    show
-        CollisionBegan,
-        CollisionEnded,
-        CollisionEvent,
-        ContactPoint,
-        TriggerEntered,
-        TriggerExited;
-export 'src/physics/joint.dart'
-    show
-        FixedJoint,
-        GenericJoint,
-        Joint,
-        JointAxis,
-        JointAxisConfig,
-        JointAxisMotion,
-        JointMotor,
-        JointMotorModel,
-        PrismaticJoint,
-        RevoluteJoint,
-        SphericalJoint;
-export 'src/physics/material.dart' show CombineRule, PhysicsMaterial;
-export 'src/physics/physics_world.dart' show PhysicsWorld;
-export 'src/physics/queries.dart' show OverlapHit, RaycastHit, ShapeCastHit;
-export 'src/physics/rigid_body.dart' show BodyType, RigidBody;
-export 'src/physics/shape.dart'
-    show
-        BoxShape,
-        CapsuleShape,
-        CompoundChild,
-        CompoundShape,
-        ConvexHullShape,
-        CylinderShape,
-        HeightFieldShape,
-        Shape,
-        SphereShape,
-        TriMeshShape;
+// Audio is an optional contract, exported from
+// `package:flutter_scene/audio.dart`.
+// Physics is an optional contract, exported from
+// `package:flutter_scene/physics.dart`.
 export 'src/post_process/post_effect.dart' show PostEffect, PostInsertion;
 export 'src/post_process/post_process.dart'
     show
@@ -208,6 +220,18 @@ export 'src/skybox.dart'
     show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox, SunSky;
 export 'src/sun_light.dart' show SunLight;
 export 'src/surface.dart' show Surface;
+export 'src/widgets/declarative.dart'
+    show
+        AssetModelSource,
+        MemoryModelSource,
+        SceneAnimationSpec,
+        SceneMesh,
+        SceneModel,
+        SceneModelSource,
+        SceneNode,
+        SceneNodeController,
+        SceneNodeHost,
+        SceneSubtree;
 export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
     show

@@ -1,4 +1,4 @@
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
@@ -45,8 +45,8 @@ void main() {
       final s = particleSystemFromProperties(_authoredProperties());
       expect(s.storage.capacity, 256);
       expect(s.spawner.rate, 80.0);
-      expect(s.shape, isA<ConeShape>());
-      expect((s.shape as ConeShape).radius, closeTo(0.4, 1e-9));
+      expect(s.shape, isA<ConeEmitterShape>());
+      expect((s.shape as ConeEmitterShape).radius, closeTo(0.4, 1e-9));
       expect(s.lifetime, isA<UniformFloat>());
       expect(s.gravity.y, closeTo(-9.8, 1e-5)); // gravity stored as float32
       expect(s.looping, isFalse);
@@ -66,7 +66,7 @@ void main() {
 
     test('falls back to defaults for an empty spec', () {
       final s = particleSystemFromProperties({});
-      expect(s.shape, isA<ConeShape>());
+      expect(s.shape, isA<ConeEmitterShape>());
       expect(s.looping, isTrue);
       expect(s.storage.capacity, greaterThan(0));
     });
@@ -107,7 +107,7 @@ void main() {
       expect(rebuilt.looping, original.looping);
       expect(rebuilt.duration, original.duration);
       expect(rebuilt.gravity.y, closeTo(original.gravity.y, 1e-9));
-      expect((rebuilt.shape as ConeShape).radius, closeTo(0.4, 1e-9));
+      expect((rebuilt.shape as ConeEmitterShape).radius, closeTo(0.4, 1e-9));
 
       // Distributions survive (compare a sampled value).
       expect(

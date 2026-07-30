@@ -17,6 +17,8 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 
 class ExampleToon extends StatefulWidget {
@@ -194,65 +196,63 @@ class _ExampleToonState extends State<ExampleToon> {
             },
           ),
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SliderRow(
-                    label: 'Band count',
-                    value: bandCount,
-                    min: 1,
-                    max: 8,
-                    onChanged: (v) => setState(() {
-                      bandCount = v.roundToDouble();
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim strength',
-                    value: rimStrength,
-                    min: 0,
-                    max: 2,
-                    onChanged: (v) => setState(() {
-                      rimStrength = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim width',
-                    value: rimWidth,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      rimWidth = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Ambient',
-                    value: ambient,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      ambient = v;
-                      _refreshUniforms(_toonMaterial!);
-                    }),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+        ExampleOverlay.bottomLeftPanel(child: _buildControls()),
       ],
     );
   }
+
+  Widget _buildControls() => ExamplePanelCard(
+    icon: Icons.palette_outlined,
+    title: 'Toon controls',
+    width: 340,
+    maxBodyHeight: 300,
+    bodyPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    body: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SliderRow(
+          label: 'Band count',
+          value: bandCount,
+          min: 1,
+          max: 8,
+          onChanged: (v) => setState(() {
+            bandCount = v.roundToDouble();
+            _refreshUniforms(_toonMaterial!);
+          }),
+        ),
+        _SliderRow(
+          label: 'Rim strength',
+          value: rimStrength,
+          min: 0,
+          max: 2,
+          onChanged: (v) => setState(() {
+            rimStrength = v;
+            _refreshUniforms(_toonMaterial!);
+          }),
+        ),
+        _SliderRow(
+          label: 'Rim width',
+          value: rimWidth,
+          min: 0,
+          max: 1,
+          onChanged: (v) => setState(() {
+            rimWidth = v;
+            _refreshUniforms(_toonMaterial!);
+          }),
+        ),
+        _SliderRow(
+          label: 'Ambient',
+          value: ambient,
+          min: 0,
+          max: 1,
+          onChanged: (v) => setState(() {
+            ambient = v;
+            _refreshUniforms(_toonMaterial!);
+          }),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SliderRow extends StatelessWidget {

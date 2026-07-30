@@ -3,7 +3,7 @@
 // emit plain Map/List values (which the command layer coerces back into the
 // structured property value).
 // ignore: implementation_imports
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 // ignore: implementation_imports

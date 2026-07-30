@@ -3,10 +3,14 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show AssetBundle;
+import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
+import 'audio/audio_engine.dart';
+import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
@@ -23,6 +27,7 @@ import 'environment_settings.dart';
 import 'environment_volume.dart';
 import 'post_process/post_effect.dart';
 import 'post_process/post_process.dart';
+import 'render/auto_exposure_pass.dart';
 import 'render/bloom_pass.dart';
 import 'render/custom_render_pass.dart';
 import 'render/depth_prepass.dart';
@@ -411,6 +416,83 @@ base class Scene implements SceneGraph {
   /// draws the skybox behind all geometry; you do not place any geometry.
   Skybox? skybox;
 
+  /// Loads an equirectangular image ([EnvironmentMap.fromEquirectImageAsset],
+  /// so Radiance `.hdr`, OpenEXR `.exr`, or a standard sRGB image), lights the
+  /// scene with it, and (when [showSkybox]) shows it as the [skybox]. A
+  /// one-call setup so [environment] and [skybox] cannot drift apart.
+  ///
+  /// [skyBlur] blurs the visible sky (0 sharp, 1 fully blurred) without
+  /// touching the lighting. [intensity], [exposure], and [rotationY] set
+  /// [environmentIntensity], [exposure], and [environmentTransform]; each
+  /// defaults to null, which leaves the scene's current value untouched.
+  /// [maxWidth] caps the working equirect for high-dynamic-range sources
+  /// (see [EnvironmentMap.fromEquirectImageBytes]).
+  ///
+  /// Clears [skyEnvironment], which would otherwise own [environment] and
+  /// re-bake over the loaded image on its next refresh. In debug builds the
+  /// load re-runs automatically when the asset's content changes on hot
+  /// reload, as long as the loaded environment is still active.
+  ///
+  /// Overlapping calls resolve to the most recent one; an earlier call that
+  /// finishes late does not clobber a later call's environment.
+  Future<void> loadEnvironment(
+    String assetPath, {
+    bool showSkybox = true,
+    double skyBlur = 0.0,
+    double? intensity,
+    double? exposure,
+    double? rotationY,
+    int maxWidth = 4096,
+    AssetBundle? bundle,
+  }) async {
+    final epoch = ++_environmentLoadEpoch;
+    final map = await EnvironmentMap.fromEquirectImageAsset(
+      assetPath: assetPath,
+      maxWidth: maxWidth,
+      bundle: bundle,
+    );
+    if (epoch != _environmentLoadEpoch) return;
+    skyEnvironment = null;
+    environment = map;
+    if (intensity != null) environmentIntensity = intensity;
+    if (exposure != null) this.exposure = exposure;
+    if (rotationY != null) environmentTransform = Matrix3.rotationY(rotationY);
+    skybox = showSkybox
+        ? Skybox(EnvironmentSkySource(blurriness: skyBlur))
+        : null;
+    if (!kDebugMode) return;
+    // Weak captures so the registration never keeps the scene (or a replaced
+    // environment) alive; the coordinator prunes it once the scene is gone.
+    final weakScene = WeakReference(this);
+    final weakMap = WeakReference(map);
+    HotReloadCoordinator.instance.registerEnvironment(
+      this,
+      assetKey: assetPath,
+      bundle: bundle,
+      onReload: () async {
+        final scene = weakScene.target;
+        // Reload only while the loaded environment is still active; an
+        // environment the caller swapped in manually is left alone.
+        if (scene == null || !identical(scene.environment, weakMap.target)) {
+          return;
+        }
+        await scene.loadEnvironment(
+          assetPath,
+          showSkybox: showSkybox,
+          skyBlur: skyBlur,
+          intensity: intensity,
+          exposure: exposure,
+          rotationY: rotationY,
+          maxWidth: maxWidth,
+          bundle: bundle,
+        );
+      },
+    );
+  }
+
+  // Orders overlapping loadEnvironment calls; only the newest applies.
+  int _environmentLoadEpoch = 0;
+
   /// Drives [environment] from a sky on a refresh policy, or null (the
   /// default) to leave [environment] caller-managed.
   ///
@@ -617,6 +699,17 @@ base class Scene implements SceneGraph {
   /// otherwise.
   final DepthOfField depthOfField = DepthOfField();
 
+  /// Automatic exposure (eye adaptation). Off by default; set
+  /// [AutoExposureSettings.enabled] to turn it on. Meters the rendered HDR
+  /// image on the GPU each frame and eases a correction factor the resolve
+  /// multiplies with [exposure], so [exposure] stays the artistic base.
+  final AutoExposureSettings autoExposure = AutoExposureSettings();
+
+  // Cross-frame auto exposure adaptation state (the persistent 1x1 factor
+  // ping-pong), created the first enabled frame and dropped when disabled,
+  // so re-enabling starts fresh and snaps to the metered target.
+  AutoExposureState? _autoExposureState;
+
   // Cross-frame cache for the directional light's shadow tiles, created the
   // first frame any visible caster is `shadowStatic` and dropped when none
   // are (or the light stops casting). See DirectionalShadowCache.
@@ -663,6 +756,17 @@ base class Scene implements SceneGraph {
     _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
     _stepPhysics(deltaSeconds);
     root.scenePrePass(deltaSeconds);
+    _syncAudio(deltaSeconds);
+  }
+
+  // Syncs the active [AudioEngine] (if any) after component ticks, so
+  // source transforms pushed during the tick land in the same frame's
+  // backend flush.
+  void _syncAudio(double frameDt) {
+    root.getComponent<AudioEngine>()?.frameSync(
+      frameDt,
+      fallbackCamera: camera,
+    );
   }
 
   // Advances the active [PhysicsWorld] (if any) on a fixed timestep.
@@ -1146,6 +1250,10 @@ base class Scene implements SceneGraph {
             (staticShadowSignature * 31 +
                 identityHashCode(item.geometry) +
                 identityHashCode(item.instanceTransforms) +
+                // Material identity matters to the depth pass (alpha-masked
+                // casters render through the masked depth shader), so a
+                // swapped material must invalidate cached static tiles.
+                identityHashCode(item.material) +
                 t[12].hashCode * 3 +
                 t[13].hashCode * 7 +
                 t[14].hashCode * 13);
@@ -1407,6 +1515,21 @@ base class Scene implements SceneGraph {
           time: postTime,
         ),
       );
+    }
+
+    // Auto exposure meters the HDR image the resolve will consume, after
+    // depth of field and the custom effects republish the scene color and
+    // before bloom (bloom feeds off the exposure-independent HDR color and
+    // its own contribution should not drive the metering).
+    if (autoExposure.enabled) {
+      graph.addPass(
+        AutoExposurePass(
+          settings: autoExposure,
+          state: _autoExposureState ??= AutoExposureState(),
+        ),
+      );
+    } else {
+      _autoExposureState = null;
     }
 
     // Bloom runs in HDR before the resolve, which composites it back in.

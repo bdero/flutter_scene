@@ -2,12 +2,10 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/particle_emitter_component.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';
@@ -319,10 +317,10 @@ EmitterShape _shapeFromProperties(Map<String, PropertyValue> p) {
   final radius = _num(p, 'shapeRadius', _kShapeRadius);
   final angle = _num(p, 'shapeAngle', _kShapeAngle);
   return switch (_str(p, 'shapeType', _kShapeType)) {
-    'point' => PointShape(),
-    'sphere' => SphereShape(radius: radius),
-    'box' => BoxShape(halfExtents: Vector3.all(radius)),
-    _ => ConeShape(angle: angle, radius: radius),
+    'point' => PointEmitterShape(),
+    'sphere' => SphereEmitterShape(radius: radius),
+    'box' => BoxEmitterShape(halfExtents: Vector3.all(radius)),
+    _ => ConeEmitterShape(angle: angle, radius: radius),
   };
 }
 
@@ -355,21 +353,21 @@ List<ParticleModule> _modulesFromProperties(Map<String, PropertyValue> p) {
 }
 
 String _shapeTypeName(EmitterShape shape) => switch (shape) {
-  PointShape() => 'point',
-  SphereShape() => 'sphere',
-  BoxShape() => 'box',
-  ConeShape() => 'cone',
+  PointEmitterShape() => 'point',
+  SphereEmitterShape() => 'sphere',
+  BoxEmitterShape() => 'box',
+  ConeEmitterShape() => 'cone',
   _ => 'cone',
 };
 
 double _shapeRadius(EmitterShape shape) => switch (shape) {
-  SphereShape(:final radius) => radius,
-  ConeShape(:final radius) => radius,
+  SphereEmitterShape(:final radius) => radius,
+  ConeEmitterShape(:final radius) => radius,
   _ => _kShapeRadius,
 };
 
 double _shapeAngle(EmitterShape shape) =>
-    shape is ConeShape ? shape.angle : _kShapeAngle;
+    shape is ConeEmitterShape ? shape.angle : _kShapeAngle;
 
 T? _moduleOf<T extends ParticleModule>(List<ParticleModule> modules) {
   for (final module in modules) {

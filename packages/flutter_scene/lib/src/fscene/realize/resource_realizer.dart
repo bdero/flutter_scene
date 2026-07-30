@@ -6,17 +6,13 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart'
     show EnvironmentAssetLoader, realizeEnvironmentSettings;
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
@@ -229,7 +225,7 @@ class ResourceRealizer {
     if (asset == null) {
       debugPrint('fscene: fmat material ${res.id} has no asset; using unlit');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties),
+        _unlit(res.properties)..name = res.name,
         document,
         res.id,
       );
@@ -237,6 +233,7 @@ class ResourceRealizer {
     }
     try {
       final material = await loadFmatMaterial(asset.key, bundle: bundle);
+      material.name = res.name;
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.
       applyFmatParameterOverrides(
@@ -248,7 +245,7 @@ class ResourceRealizer {
     } catch (e) {
       debugPrint('fscene: failed to load fmat ${res.id} ("${asset.key}"): $e');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties),
+        _unlit(res.properties)..name = res.name,
         document,
         res.id,
       );
@@ -403,6 +400,10 @@ class ResourceRealizer {
     if (res is! MaterialResource) {
       throw FsceneFormatException('Resource $id is not a material');
     }
+    return _materialForType(res)..name = res.name;
+  }
+
+  Material _materialForType(MaterialResource res) {
     switch (res.type) {
       case 'unlit':
         return _unlit(res.properties);
@@ -483,8 +484,9 @@ class ResourceRealizer {
   // Resolves a texture property to either a gpu.Texture or, when the ref
   // points at a render-texture resource, the live RenderTexture handle
   // (material slots accept both).
-  // TODO(mipmaps): route offline (.fscene) textures through Texture2D so they
-  // get mipmaps too, like the runtime importer.
+  // TODO(mipmaps): route offline rgba8 payload textures through Texture2D so
+  // they get mipmaps too; ktx2 payloads already carry their chain
+  // in-container.
   TextureSource? _textureRef(Map<String, PropertyValue> p, String key) {
     final v = p[key];
     if (v is! ResourceRefValue) return null;

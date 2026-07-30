@@ -463,7 +463,13 @@ TextureResource _ktx2Texture(SceneDocument doc) {
       pixels[i + 3] = 255;
     }
   }
-  final ktx2 = encodeImageToKtx2Bytes(pixels, size, size, supercompress: true);
+  final ktx2 = encodeImageToKtx2Bytes(
+    pixels,
+    size,
+    size,
+    generateMips: true,
+    supercompress: true,
+  );
   final payload = doc.addPayload(
     PayloadSpec(
       doc.newId(),
@@ -493,7 +499,13 @@ TextureResource _alphaKtx2Texture(SceneDocument doc) {
       pixels[i + 3] = checker ? 255 : (y * 255 ~/ (size - 1));
     }
   }
-  final ktx2 = encodeImageToKtx2Bytes(pixels, size, size, supercompress: true);
+  final ktx2 = encodeImageToKtx2Bytes(
+    pixels,
+    size,
+    size,
+    generateMips: true,
+    supercompress: true,
+  );
   final payload = doc.addPayload(
     PayloadSpec(
       doc.newId(),

@@ -6,7 +6,12 @@
 const vec2 kInvAtan = vec2(0.1591, 0.3183);
 
 vec2 SphericalToEquirectangular(vec3 direction) {
-  vec2 uv = vec2(atan(direction.z, direction.x), asin(direction.y));
+  // asin is only defined on [-1, 1]; a reflection/normal vector that is a hair
+  // over unit length from accumulated float error (or a slightly non-orthonormal
+  // environment transform) makes direction.y exceed 1 and asin() return a NaN,
+  // which poisons the sampled radiance. Clamp to the domain.
+  vec2 uv = vec2(atan(direction.z, direction.x),
+                 asin(clamp(direction.y, -1.0, 1.0)));
   uv *= kInvAtan;
   uv += 0.5;
   return uv;

@@ -7,8 +7,7 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material_parameters.dart';
 

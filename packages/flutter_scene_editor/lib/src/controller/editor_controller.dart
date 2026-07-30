@@ -24,22 +24,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene/src/fscene/compose/compose.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
-import 'package:flutter_scene/src/material/hdr_decoder.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -47,7 +40,12 @@ import '../io/glb_import_options.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier {
-  EditorController._(this.session, this.scene, this.baseDirectory);
+  EditorController._(
+    this.session,
+    this.scene,
+    this.baseDirectory,
+    this._componentRegistry,
+  );
 
   /// The headless editing session (document, commands, history, selection).
   final EditorSession session;
@@ -154,12 +152,18 @@ class EditorController extends ChangeNotifier {
   static Future<EditorController> open(
     EditorSession session, {
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) async {
     // The global look lives in an environment resource the stage references.
     // Guarantee one exists (a studio default for an imported or legacy scene
     // that has none), so the look is always editable through the resource path.
     _ensureStageEnvironment(session.document);
-    final controller = EditorController._(session, Scene(), baseDirectory);
+    final controller = EditorController._(
+      session,
+      Scene(),
+      baseDirectory,
+      componentRegistry ?? defaultComponentRegistry(),
+    );
     // Keep prefab-internal nodes (which live only in the composed document)
     // selectable across edits, not just source nodes; but not synthetic compose
     // machinery (the handedness adapter), which is not editable.
@@ -218,7 +222,9 @@ class EditorController extends ChangeNotifier {
   /// image-based lighting and casting sun shadows, a usable look-dev default
   /// rather than a black void. The skybox and the sky-lighting binding take
   /// their own sky-source instances (as the `setSkybox` command does).
-  static Future<EditorController> empty() {
+  static Future<EditorController> empty({
+    FsceneComponentRegistry? componentRegistry,
+  }) {
     final document = SceneDocument();
     // The global look lives in an environment resource the stage references, so
     // it dedupes and shares the authoring path with volume environments.
@@ -234,7 +240,7 @@ class EditorController extends ChangeNotifier {
       ),
     );
     document.stage.environmentRef = environment.id;
-    return open(EditorSession(document));
+    return open(EditorSession(document), componentRegistry: componentRegistry);
   }
 
   /// Opens a controller over a document loaded from `.fscene` [source].
@@ -242,7 +248,12 @@ class EditorController extends ChangeNotifier {
   static Future<EditorController> fromFscene(
     String source, {
     String? baseDirectory,
-  }) => open(EditorSession.fromFscene(source), baseDirectory: baseDirectory);
+    FsceneComponentRegistry? componentRegistry,
+  }) => open(
+    EditorSession.fromFscene(source),
+    baseDirectory: baseDirectory,
+    componentRegistry: componentRegistry,
+  );
 
   /// Opens a controller over an already-imported [document] (from a `.glb` or
   /// multi-file `.gltf`), ready to edit and save as `.fscene`. [scale] and
@@ -253,12 +264,17 @@ class EditorController extends ChangeNotifier {
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) {
     final transform = _importTransform(scale, upAxis);
     if (transform != null) {
       wrapRootsUnderGroup(document, name: 'Imported', transform: transform);
     }
-    return open(EditorSession(document), baseDirectory: baseDirectory);
+    return open(
+      EditorSession(document),
+      baseDirectory: baseDirectory,
+      componentRegistry: componentRegistry,
+    );
   }
 
   /// Opens a controller over a glTF binary ([glbBytes]) imported in memory.
@@ -269,11 +285,13 @@ class EditorController extends ChangeNotifier {
     double scale = 1.0,
     ImportUpAxis upAxis = ImportUpAxis.yUp,
     String? baseDirectory,
+    FsceneComponentRegistry? componentRegistry,
   }) => fromImportedScene(
     importGlbToSceneDocument(glbBytes, compressTextures: compressTextures),
     scale: scale,
     upAxis: upAxis,
     baseDirectory: baseDirectory,
+    componentRegistry: componentRegistry,
   );
 
   /// The current selection.
@@ -289,8 +307,10 @@ class EditorController extends ChangeNotifier {
   SceneDocument get document => session.document;
 
   // The component registry, for reading component-type schemas (the editable
-  // properties each type declares). Matches the registry realize uses.
-  final FsceneComponentRegistry _componentRegistry = defaultComponentRegistry();
+  // properties each type declares) and for realization, so codecs from
+  // backend packages injected through [open] show up in the inspector and
+  // realize in the viewport.
+  final FsceneComponentRegistry _componentRegistry;
 
   /// The component type names that can be added to a node.
   List<String> componentTypes() => _componentRegistry.types.toList();
@@ -707,11 +727,18 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bumped on every live transform preview, so every open viewport repaints
+  /// its overlays (gizmos, guides) while a drag in one of them is still in
+  /// progress. Cheaper than [notifyListeners], which would rebuild the whole
+  /// panel set per mouse move.
+  final ValueNotifier<int> previewEpoch = ValueNotifier<int>(0);
+
   /// Previews a transform on the live node for [id] without touching the
   /// document or the history. Used during a gizmo drag; the final value is
   /// committed once with `setNodeTransform` on release.
   void previewLocalTransform(LocalId id, Matrix4 localTransform) {
     _liveById[id]?.localTransform = localTransform;
+    previewEpoch.value++;
   }
 
   /// Live-previews a material factor on node [id]'s realized mesh without
@@ -1236,7 +1263,11 @@ class EditorController extends ChangeNotifier {
       textureLoader: _loadAssetTexture,
     );
     await realizer.preload();
-    final root = await realizeSceneAsync(toRealize, resources: realizer);
+    final root = await realizeSceneAsync(
+      toRealize,
+      resources: realizer,
+      registry: _componentRegistry,
+    );
     scene.removeAll();
     scene.add(root);
     // Apply the document's scene-wide settings (environment/lighting, exposure,
@@ -1259,8 +1290,9 @@ class EditorController extends ChangeNotifier {
   final Map<String, EnvironmentMap> _diskEnvCache = {};
 
   // The environment-asset loader handed to the realizer and to realizeStage, so
-  // an AssetEnvironment that resolves to a file on disk (an imported `.hdr` or
-  // LDR equirect) is decoded and prefiltered as part of the environment's own
+  // an AssetEnvironment that resolves to a file on disk (an imported `.hdr`,
+  // `.exr`, or LDR equirect) is decoded and prefiltered as part of the
+  // environment's own
   // realization. Returns null for an asset not on disk, so the realizer falls
   // back to the asset bundle (the in-bundle example assets). The realizer sets
   // EnvironmentMap.radianceCubeSize around this call, so the built cube honors
@@ -1273,22 +1305,13 @@ class EditorController extends ChangeNotifier {
     if (cached != null) return cached;
     try {
       final bytes = await File(path).readAsBytes();
-      final EnvironmentMap env;
-      if (path.toLowerCase().endsWith('.hdr')) {
-        // Cap the working equirect width; a realtime environment does not need
-        // more, and a 16K source would otherwise upload ~1 GB.
-        const maxEnvironmentWidth = 4096;
-        final hdr = decodeRadianceHdr(bytes, maxWidth: maxEnvironmentWidth);
-        env = await EnvironmentMap.fromEquirectHdr(
-          linearPixels: hdr.pixels,
-          width: hdr.width,
-          height: hdr.height,
-        );
-      } else {
-        final codec = await ui.instantiateImageCodec(bytes);
-        final frame = await codec.getNextFrame();
-        env = await EnvironmentMap.fromUIImages(radianceImage: frame.image);
-      }
+      // Detects Radiance HDR, OpenEXR, or an LDR image from the bytes and
+      // decodes off the UI isolate. The width cap keeps a 16K source from
+      // uploading ~1 GB; a realtime environment does not need more.
+      final env = await EnvironmentMap.fromEquirectImageBytes(
+        bytes: bytes,
+        maxWidth: 4096,
+      );
       _diskEnvCache[cacheKey] = env;
       return env;
     } catch (e) {
@@ -1368,6 +1391,7 @@ class EditorController extends ChangeNotifier {
   void dispose() {
     session.selection.removeListener(_onSelectionChanged);
     lastError.dispose();
+    previewEpoch.dispose();
     scene.removeAll();
     super.dispose();
   }

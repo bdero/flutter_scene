@@ -591,7 +591,9 @@ abstract class Geometry {
   /// by [Skin.getJointsTexture].
   ///
   /// The default implementation does nothing; [SkinnedGeometry] overrides
-  /// it to bind the texture in [bind].
+  /// it to bind the texture in [bind]. The render passes call this right
+  /// before each draw's bind, so a geometry shared between several skinned
+  /// nodes carries the correct skeleton for every draw.
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
   /// Binds vertex/index buffers and per-frame uniforms onto [pass] in

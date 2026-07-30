@@ -1,4 +1,4 @@
-// Drives the flutter_scene physics contract against box3d end to end:
+// Drives the flutter_scene physics components against box3d end to end:
 // bodies and colliders are mounted, stepped, and the interpolated node
 // transform is read back.
 //
@@ -9,20 +9,21 @@
 // not part of a live RenderScene (which would need a Flutter GPU context).
 
 import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 Node _bootWorld({Vector3? gravity}) {
   final root = Node();
-  final world = Box3dPhysicsWorld(gravity: gravity);
+  final world = PhysicsWorld(Box3dPhysicsWorld(gravity: gravity));
   root.addComponent(world);
   world.mount();
   return root;
 }
 
 // Mounts a node carrying a body and collider under [root].
-(Node, Box3dRigidBody) _addBody(
+(Node, RigidBody) _addBody(
   Node root, {
   required BodyType type,
   required Shape shape,
@@ -30,11 +31,11 @@ Node _bootWorld({Vector3? gravity}) {
   bool isTrigger = false,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
-  final body = Box3dRigidBody(type: type);
+  final body = RigidBody(type: type);
   node.addComponent(body);
   root.add(node);
   body.mount();
-  final collider = Box3dCollider(shape: shape, isTrigger: isTrigger);
+  final collider = Collider(shape: shape, isTrigger: isTrigger);
   node.addComponent(collider);
   collider.mount();
   return (node, body);
@@ -43,7 +44,7 @@ Node _bootWorld({Vector3? gravity}) {
 void main() {
   setUpAll(Box3dPhysicsWorld.ensureInitialized);
 
-  void run(Box3dPhysicsWorld world, {int steps = 240}) {
+  void run(PhysicsWorld world, {int steps = 240}) {
     for (var i = 0; i < steps; i++) {
       world.step(1 / 60);
     }
@@ -52,7 +53,7 @@ void main() {
 
   test('a dynamic box falls and rests on a fixed floor', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     _addBody(
       root,
@@ -78,7 +79,7 @@ void main() {
 
   test('a fixed body holds its position under gravity', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final (node, _) = _addBody(
       root,
       type: BodyType.fixed,
@@ -96,7 +97,7 @@ void main() {
 
   test('a trigger reports enter and exit as a body falls through', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
 
     final entered = <TriggerEntered>[];
     final exited = <TriggerExited>[];
@@ -131,7 +132,7 @@ void main() {
 
   test('raycast resolves to the hit collider and node', () {
     final root = _bootWorld(gravity: Vector3(0, 0, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     final (target, _) = _addBody(
       root,
       type: BodyType.fixed,
@@ -153,16 +154,14 @@ void main() {
     // unmount in an order that can destroy the body before the collider.
     // Repeat enough to mirror the example app's body-cap churn.
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     for (var i = 0; i < 30; i++) {
       final node = Node(localTransform: Matrix4.translation(Vector3(0, 5, 0)));
-      final body = Box3dRigidBody(type: BodyType.dynamic_);
+      final body = RigidBody(type: BodyType.dynamic_);
       node.addComponent(body);
       root.add(node);
       body.mount();
-      final collider = Box3dCollider(
-        shape: BoxShape(halfExtents: Vector3.all(0.5)),
-      );
+      final collider = Collider(shape: BoxShape(halfExtents: Vector3.all(0.5)));
       node.addComponent(collider);
       collider.mount();
       world.step(1 / 60);
@@ -173,7 +172,7 @@ void main() {
 
   test('a compound collider rests on its lower box', () {
     final root = _bootWorld(gravity: Vector3(0, -10, 0));
-    final world = root.getComponent<Box3dPhysicsWorld>()!;
+    final world = root.getComponent<PhysicsWorld>()!;
     _addBody(
       root,
       type: BodyType.fixed,

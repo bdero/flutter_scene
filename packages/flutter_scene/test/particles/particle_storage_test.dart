@@ -79,12 +79,16 @@ void main() {
       s.velY[1] = 8;
       s.lifetime[1] = 7;
       s.colorA[1] = 0.5;
+      s.frame[1] = 6;
+      s.axisY[1] = 1;
       s.random01[1] = 0.25;
       s.kill(0); // slot 1 moves into slot 0
       expect(s.posX[0], 9);
       expect(s.velY[0], 8);
       expect(s.lifetime[0], 7);
       expect(s.colorA[0], 0.5);
+      expect(s.frame[0], 6);
+      expect(s.axisY[0], 1);
       expect(s.random01[0], 0.25);
     });
   });

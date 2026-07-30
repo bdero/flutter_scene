@@ -566,12 +566,21 @@ base class RenderPass {
       final glBuffer = bufferView.buffer._bindForTarget(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
       );
+      // Bind at least the driver-reported block data size; the emplaced
+      // length alone can be smaller than the driver's padded size, and a
+      // too-small range makes the draw a no-op. DeviceBuffer pads its GL
+      // data store so the extended range stays inside the buffer.
+      var lengthInBytes = bufferView.lengthInBytes;
+      final minBindSize = pipeline._structBlockBindSizes[struct.name];
+      if (minBindSize != null && minBindSize > lengthInBytes) {
+        lengthInBytes = minBindSize;
+      }
       gl.bindBufferRange(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
         blockBinding,
         glBuffer,
         bufferView.offsetInBytes,
-        bufferView.lengthInBytes,
+        lengthInBytes,
       );
       return;
     }

@@ -1,5 +1,4 @@
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
 import 'package:test/test.dart';
@@ -19,14 +18,14 @@ String _normalize(String fscene) =>
     fscene.replaceAll(_documentId, '"documentId": "_"');
 
 void main() {
-  test('MCP edits match UI edits step for step and are undoable', () {
+  test('MCP edits match UI edits step for step and are undoable', () async {
     // The UI path drives the session directly (what EditorController.run
     // does); the MCP path goes through the tool surface's run_command. Both
     // start from an identical document with the same id allocator seed, so a
     // deterministic edit sequence must produce byte-identical output.
     final ui = _freshSession();
     final mcp = _freshSession();
-    final surface = EditorToolSurface(mcp);
+    final surface = EditorToolSurface.of(mcp);
 
     final baseline = _normalize(ui.toFscene());
     expect(
@@ -63,7 +62,7 @@ void main() {
       final params = buildParams(ui.query);
 
       final uiTx = ui.run(command, params);
-      final mcpResult = surface.dispatch('run_command', {
+      final mcpResult = await surface.dispatch('run_command', {
         'command': command,
         'params': params,
       });
@@ -93,7 +92,7 @@ void main() {
     // baseline they started from.
     for (var i = 0; i < committedSteps; i++) {
       expect(ui.undo(), isTrue);
-      expect(surface.dispatch('undo', const {})['undone'], isTrue);
+      expect((await surface.dispatch('undo', const {}))['undone'], isTrue);
       expect(
         _normalize(mcp.toFscene()),
         _normalize(ui.toFscene()),

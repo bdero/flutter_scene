@@ -9,6 +9,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -16,6 +17,8 @@ import 'character/character_controller.dart';
 import 'character/character_controls.dart';
 import 'character/character_input.dart';
 import 'character/third_person_camera.dart';
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 
 /// A third-person physics playground. Drive Dash with WASD / arrow keys
@@ -32,7 +35,7 @@ class ExamplePhysics extends StatefulWidget {
 
 class ExamplePhysicsState extends State<ExamplePhysics> {
   final Scene scene = Scene();
-  late final RapierWorld world;
+  late final PhysicsWorld world;
 
   final CharacterInput _input = CharacterInput();
   final ThirdPersonCamera _camera = ThirdPersonCamera(
@@ -56,7 +59,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   // deck (a sensor) and descends when he steps off. Driven each frame from
   // [_elevatorOccupied] in the painter.
   Node? _elevatorNode;
-  RapierRigidBody? _elevatorBody;
+  RigidBody? _elevatorBody;
   bool _elevatorOccupied = false;
   double _elevatorY = _elevatorBottomY;
   // Keeps the lift parked at the top briefly after Dash steps off, so it
@@ -103,7 +106,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     );
     scene.environmentIntensity = 0.6;
 
-    world = RapierWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
 
     _buildGround();
@@ -178,8 +181,8 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         ? vm.Matrix4.translation(position)
         : vm.Matrix4.compose(position, rotation, vm.Vector3.all(1.0));
     final node = Node(mesh: mesh, localTransform: transform);
-    node.addComponent(RapierRigidBody(type: type, mass: mass));
-    node.addComponent(RapierCollider(shape: shape, material: material));
+    node.addComponent(RigidBody(type: type, mass: mass));
+    node.addComponent(Collider(shape: shape, material: material));
     scene.add(node);
     return node;
   }
@@ -262,9 +265,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         mesh: Mesh(WedgeGeometry(size), material),
         localTransform: vm.Matrix4.translation(vm.Vector3(x, 0, z)),
       );
-      node.addComponent(RapierRigidBody(type: BodyType.fixed));
+      node.addComponent(RigidBody(type: BodyType.fixed));
       node.addComponent(
-        RapierCollider(
+        Collider(
           shape: ConvexHullShape(points: _wedgePoints(width, height, run)),
           material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
         ),
@@ -358,9 +361,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       mesh: Mesh(CuboidGeometry(half * 2.0), material),
       localTransform: vm.Matrix4.translation(center),
     );
-    node.addComponent(RapierRigidBody(type: BodyType.fixed));
+    node.addComponent(RigidBody(type: BodyType.fixed));
     node.addComponent(
-      RapierCollider(shape: BoxShape(halfExtents: half), isTrigger: true),
+      Collider(shape: BoxShape(halfExtents: half), isTrigger: true),
     );
     _triggerNode = node;
     scene.add(node);
@@ -388,9 +391,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       ),
       localTransform: vm.Matrix4.translation(_spinnerCenter),
     );
-    arm.addComponent(RapierRigidBody(type: BodyType.kinematic));
+    arm.addComponent(RigidBody(type: BodyType.kinematic));
     arm.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: vm.Vector3(3.0, 0.225, 0.225)),
         material: const PhysicsMaterial(friction: 0.4, restitution: 0.0),
       ),
@@ -499,7 +502,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         localTransform: vm.Matrix4.compose(center, rot, vm.Vector3.all(1.0)),
       );
       node.addComponent(
-        RapierRigidBody(
+        RigidBody(
           type: BodyType.dynamic_,
           mass: 0.9,
           // A little damping so the bridge settles instead of jiggling
@@ -509,7 +512,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         ),
       );
       node.addComponent(
-        RapierCollider(
+        Collider(
           shape: BoxShape(
             halfExtents: vm.Vector3(halfW, plankHalfY, plankHalfZ),
           ),
@@ -524,7 +527,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     // A plank's local -Z end is its tower-A side, +Z end its tower-B side.
     final axis = vm.Vector3(1, 0, 0);
     planks.first.addComponent(
-      RapierRevoluteJoint(
+      RevoluteJoint(
         otherNode: towerA,
         axis: axis,
         localAnchorA: vm.Vector3(0, 0, -plankHalfZ),
@@ -533,7 +536,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     );
     for (var i = 1; i < nPlanks; i++) {
       planks[i].addComponent(
-        RapierRevoluteJoint(
+        RevoluteJoint(
           otherNode: planks[i - 1],
           axis: axis,
           localAnchorA: vm.Vector3(0, 0, -plankHalfZ),
@@ -542,7 +545,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       );
     }
     planks.last.addComponent(
-      RapierRevoluteJoint(
+      RevoluteJoint(
         otherNode: towerB,
         axis: axis,
         localAnchorA: vm.Vector3(0, 0, plankHalfZ),
@@ -563,11 +566,11 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         vm.Vector3(_elevatorX, _elevatorBottomY, _elevatorZ),
       ),
     );
-    final body = RapierRigidBody(type: BodyType.kinematic);
+    final body = RigidBody(type: BodyType.kinematic);
     deck.addComponent(body);
     _elevatorBody = body;
     deck.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(halfExtents: deckHalf),
         material: const PhysicsMaterial(friction: 0.9, restitution: 0.0),
       ),
@@ -575,7 +578,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     // The pressure plate: a sensor sitting just above the deck. Dash
     // standing here counts as occupying the lift.
     deck.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(
           halfExtents: vm.Vector3(deckHalf.x * 0.9, 0.5, deckHalf.z * 0.9),
         ),
@@ -613,9 +616,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       ),
       localTransform: vm.Matrix4.translation(vm.Vector3(sx, pivotY, sz)),
     );
-    plank.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: 2.0));
+    plank.addComponent(RigidBody(type: BodyType.dynamic_, mass: 2.0));
     plank.addComponent(
-      RapierCollider(
+      Collider(
         shape: BoxShape(
           halfExtents: vm.Vector3(plankHalfX, plankHalfY, plankHalfZ),
         ),
@@ -626,7 +629,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     // World-anchored hinge across the plank (X axis), with limits so it
     // tips but never flips over.
     plank.addComponent(
-      RapierRevoluteJoint(
+      RevoluteJoint(
         axis: vm.Vector3(1, 0, 0),
         localAnchorA: vm.Vector3.zero(),
         localAnchorB: vm.Vector3(sx, pivotY, sz),
@@ -648,9 +651,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         vm.Vector3(sx, pivotY + 0.7, sz - 2.0),
       ),
     );
-    ball.addComponent(RapierRigidBody(type: BodyType.dynamic_, mass: 3.0));
+    ball.addComponent(RigidBody(type: BodyType.dynamic_, mass: 3.0));
     ball.addComponent(
-      RapierCollider(
+      Collider(
         shape: const SphereShape(radius: 0.5),
         material: const PhysicsMaterial(friction: 0.6, restitution: 0.1),
       ),
@@ -706,7 +709,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
           localTransform: vm.Matrix4.translation(vm.Vector3(x, y, cz)),
         );
         node.addComponent(
-          RapierRigidBody(
+          RigidBody(
             type: BodyType.dynamic_,
             // Light and fairly damped so the banners flutter and settle
             // quickly rather than swinging like heavy slabs.
@@ -716,7 +719,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
           ),
         );
         node.addComponent(
-          RapierCollider(
+          Collider(
             shape: BoxShape(
               halfExtents: vm.Vector3(stripW / 2, slatHalfY, slatHalfZ),
             ),
@@ -726,12 +729,12 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         scene.add(node);
         node.addComponent(
           i == 0
-              ? RapierRevoluteJoint(
+              ? RevoluteJoint(
                   axis: axis,
                   localAnchorA: vm.Vector3(0, slatHalfY, 0),
                   localAnchorB: vm.Vector3(x, topY, cz),
                 )
-              : RapierRevoluteJoint(
+              : RevoluteJoint(
                   otherNode: prev,
                   axis: axis,
                   localAnchorA: vm.Vector3(0, slatHalfY, 0),
@@ -772,7 +775,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
           ),
         );
         node.addComponent(
-          RapierRigidBody(
+          RigidBody(
             type: BodyType.dynamic_,
             // Light and fairly damped: reacts readily to Dash but settles
             // quickly with small swings, like a lightweight dangling cord
@@ -783,7 +786,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
           ),
         );
         node.addComponent(
-          RapierCollider(
+          Collider(
             shape: const SphereShape(radius: beadR),
             material: const PhysicsMaterial(friction: 0.5, restitution: 0.05),
           ),
@@ -791,11 +794,11 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         scene.add(node);
         node.addComponent(
           i == 0
-              ? RapierSphericalJoint(
+              ? SphericalJoint(
                   localAnchorA: vm.Vector3(0, halfSpacing, 0),
                   localAnchorB: anchor.clone(),
                 )
-              : RapierSphericalJoint(
+              : SphericalJoint(
                   otherNode: prev,
                   localAnchorA: vm.Vector3(0, halfSpacing, 0),
                   localAnchorB: vm.Vector3(0, -halfSpacing, 0),
@@ -808,15 +811,15 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   void _spawnCharacter() {
     final node = Node(localTransform: vm.Matrix4.translation(_spawn));
-    node.addComponent(RapierRigidBody(type: BodyType.kinematic));
+    node.addComponent(RigidBody(type: BodyType.kinematic));
     node.addComponent(
-      RapierCollider(
+      Collider(
         shape: const CapsuleShape(radius: 0.45, halfHeight: 0.45),
         material: const PhysicsMaterial(friction: 0.0),
       ),
     );
     node.addComponent(
-      RapierKinematicCharacterController(
+      KinematicCharacterController(
         // A larger skin gap than the default keeps the capsule from
         // catching on box edges and depenetrates a hard landing instead
         // of leaving the feet sunk in the floor.
@@ -964,16 +967,10 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
             child: CustomPaint(painter: _VignettePainter(_vignetteListenable)),
           ),
         ),
-        // Top-centre, clear of the example picker (top-left) and the
-        // settings sidebar (top-right).
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: _HintCard(onReset: () => setState(_reset)),
-          ),
+        // Below the picker so the character remains visible in the scene
+        // center, with no overlap with system chrome.
+        ExampleOverlay.topCenterAction(
+          child: _PhysicsHeaderActions(onReset: () => setState(_reset)),
         ),
       ],
     );
@@ -1012,37 +1009,24 @@ class _VignettePainter extends CustomPainter {
   bool shouldRepaint(covariant _VignettePainter oldDelegate) => true;
 }
 
-class _HintCard extends StatelessWidget {
-  const _HintCard({required this.onReset});
+class _PhysicsHeaderActions extends StatelessWidget {
+  const _PhysicsHeaderActions({required this.onReset});
 
   final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(
-      context,
-    ).colorScheme.surface.withValues(alpha: 0.85);
-    final textStyle = Theme.of(context).textTheme.bodyMedium;
-    return Material(
-      color: surface,
-      borderRadius: BorderRadius.circular(8),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Move: WASD / arrows or joystick', style: textStyle),
-            Text('Jump: space or the button', style: textStyle),
-            const SizedBox(height: 6),
-            FilledButton.tonal(
-              onPressed: onReset,
-              child: const Text('Respawn'),
-            ),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const ExampleActionHint(message: 'Move: WASD/arrows  ·  Jump: Space'),
+        const SizedBox(width: 8),
+        ExampleActionButton(
+          tooltip: 'Respawn character',
+          onPressed: onReset,
+          icon: Icons.restart_alt,
         ),
-      ),
+      ],
     );
   }
 }

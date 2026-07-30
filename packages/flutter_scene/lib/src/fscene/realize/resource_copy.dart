@@ -6,11 +6,7 @@
 /// included), not live GPU objects.
 library;
 
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/json/fscene_json.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
+import 'package:scene/scene.dart';
 
 /// Copies resource [resourceId] from [source] into [dest], keeping its id, and
 /// returns that id. Idempotent: a resource (or payload) already present in
@@ -72,7 +68,12 @@ LocalId copyResourceInto(
           wrap: wrap,
         ),
       );
-    case MaterialResource(:final type, :final properties, :final asset):
+    case MaterialResource(
+      :final type,
+      :final name,
+      :final properties,
+      :final asset,
+    ):
       for (final value in properties.values) {
         if (value is! ResourceRefValue) continue;
         final referenced = source.resource(value.id);
@@ -85,6 +86,7 @@ LocalId copyResourceInto(
         MaterialResource(
           resourceId,
           type: type,
+          name: name,
           properties: Map<String, PropertyValue>.of(properties),
           asset: asset,
         ),

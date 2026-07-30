@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/compressed_texture.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/ktx2_image.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Side length of the captured render, in logical pixels. Fixed for
@@ -245,6 +249,51 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
   }),
+  // A cuboid textured from an in-memory compressed KTX2 payload (mipped and
+  // supercompressed), the shape an imported compressed texture takes. Covers
+  // the whole compressed-texture path per backend: block encode, the device's
+  // per-family transcode (or the rgba8 decode fallback), and the per-level
+  // mip-chain upload. Run with --dart-define=SMOKE_FORCE_RGBA8_TEXTURES=true
+  // to skip the compressed families and exercise the rgba8 decode fallback
+  // (and its mip upload) on a device that supports compression.
+  SmokeScene('compressed_texture', () {
+    const size = 256;
+    if (const bool.fromEnvironment('SMOKE_FORCE_RGBA8_TEXTURES')) {
+      compressionFamilyPreference = [];
+    }
+    final pixels = Uint8List(size * size * 4);
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        final i = (y * size + x) * 4;
+        final checker = ((x >> 3) + (y >> 3)).isEven;
+        pixels[i] = checker ? 235 : 30;
+        pixels[i + 1] = checker ? 120 : 160;
+        pixels[i + 2] = checker ? 40 : 220;
+        pixels[i + 3] = 255;
+      }
+    }
+    final texture = gpuTextureFromKtx2Texture(
+      encodeImageToKtx2(
+        pixels,
+        size,
+        size,
+        generateMips: true,
+        supercompress: true,
+      ),
+    );
+    final material = PhysicallyBasedMaterial()
+      ..baseColorTexture = GpuTextureSource(texture)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.7
+      ..vertexColorWeight = 0.0;
+    final scene = Scene();
+    scene.add(
+      Node(
+        mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material),
+      )..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3),
+    );
+    return (scene: scene, camera: _camera());
+  }),
   // The single custom-material scene: one .fmat that customizes BOTH the
   // vertex stage (a world-space ripple, which also displaces the shadow) and
   // the fragment color (blended from a per-vertex attribute forwarded through a
@@ -342,6 +391,20 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             vm.Matrix4.rotationY(0.6) *
             vm.Matrix4.rotationX(0.3),
     );
+    return (scene: scene, camera: _camera());
+  }),
+  // Auto exposure pinned at its upper clamp: the mostly-empty background
+  // meters far below the reference luminance, so the adapted factor lands on
+  // exp2(maxEv) during the startup snap frames and holds there on every
+  // later frame, deterministically brightening the dimly-lit cuboid. Covers
+  // the whole chain (seed, downsample, adaptation, resolve composite) with a
+  // clamp-pinned value that is robust to small cross-backend metering
+  // differences.
+  SmokeScene('auto_exposure', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.4;
+    scene.autoExposure.enabled = true;
+    scene.add(_cuboid(vm.Vector4(0.30, 0.60, 0.85, 1.0), 0.0, 0.5));
     return (scene: scene, camera: _camera());
   }),
   // A procedural anisotropic splat cloud (degree-1 SH) composited around an

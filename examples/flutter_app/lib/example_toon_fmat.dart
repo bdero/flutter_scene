@@ -18,6 +18,8 @@ import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 
 class ExampleToonFmat extends StatefulWidget {
@@ -30,6 +32,7 @@ class ExampleToonFmat extends StatefulWidget {
 class _ExampleToonFmatState extends State<ExampleToonFmat> {
   Scene scene = Scene();
   bool loaded = false;
+  Object? _loadError;
 
   // Wrapper around the loaded Dash node. Spinning this instead of the
   // camera keeps the world-space light direction (which we use for
@@ -56,45 +59,50 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
   }
 
   Future<void> _load() async {
-    // Load the .fmat material through the registry: it resolves the generated
-    // shader bundle and parameter sidecar by source path and registers the
-    // material for in-place hot reload, so editing assets/toon.fmat (culling,
-    // GLSL body, defaults, etc.) updates it live without a restart.
-    final material = await loadFmatMaterial('assets/toon.fmat');
+    try {
+      // Load the .fmat material through the registry: it resolves the generated
+      // shader bundle and parameter sidecar by source path and registers the
+      // material for in-place hot reload, so editing assets/toon.fmat (culling,
+      // GLSL body, defaults, etc.) updates it live without a restart.
+      final material = await loadFmatMaterial('assets/toon.fmat');
 
-    // The scene hot reloads in place; onReload re-applies the material to the
-    // freshly patched-in primitives.
-    final dash = await loadScene(
-      'assets_src/dash.glb',
-      onReload: _reapplyMaterial,
-    );
-    if (!mounted) {
-      return;
+      // The scene hot reloads in place; onReload re-applies the material to the
+      // freshly patched-in primitives.
+      final dash = await loadScene(
+        'assets_src/dash.glb',
+        onReload: _reapplyMaterial,
+      );
+      if (!mounted) {
+        return;
+      }
+      dash.name = 'Dash';
+
+      // Every skinned primitive on the model shares one material, so parameter
+      // tweaks are reflected everywhere. The base_color_texture sampler is
+      // declared with a `default_white` hint, so it falls back to a white
+      // placeholder when unset (no manual bind needed).
+      _toonMaterial = material;
+      _refreshParameters(material);
+      _applyMaterialToAllPrimitives(dash, material);
+
+      // Start the Walk animation looping. Dash walks in place, so the root
+      // transform doesn't drift; the visible rotation is driven via
+      // `_dashGroup.localTransform` in build(). The clip re-binds across a model
+      // reload, so it keeps playing.
+      dash.createAnimationClip(dash.findAnimationByName('Walk')!)
+        ..loop = true
+        ..play();
+
+      _dashGroup.add(dash);
+      scene.add(_dashGroup);
+      scene.exposure = 1.5;
+      setState(() {
+        loaded = true;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Toon (.fmat) could not load: $error\n$stackTrace');
+      if (mounted) setState(() => _loadError = error);
     }
-    dash.name = 'Dash';
-
-    // Every skinned primitive on the model shares one material, so parameter
-    // tweaks are reflected everywhere. The base_color_texture sampler is
-    // declared with a `default_white` hint, so it falls back to a white
-    // placeholder when unset (no manual bind needed).
-    _toonMaterial = material;
-    _refreshParameters(material);
-    _applyMaterialToAllPrimitives(dash, material);
-
-    // Start the Walk animation looping. Dash walks in place, so the root
-    // transform doesn't drift; the visible rotation is driven via
-    // `_dashGroup.localTransform` in build(). The clip re-binds across a model
-    // reload, so it keeps playing.
-    dash.createAnimationClip(dash.findAnimationByName('Walk')!)
-      ..loop = true
-      ..play();
-
-    _dashGroup.add(dash);
-    scene.add(_dashGroup);
-    scene.exposure = 1.5;
-    setState(() {
-      loaded = true;
-    });
   }
 
   /// Re-applies the toon material to [dash]'s primitives after a hot reload
@@ -142,6 +150,13 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
 
   @override
   Widget build(BuildContext context) {
+    final loadError = _loadError;
+    if (loadError != null) {
+      return ExampleLoadFailureCard(
+        title: 'Toon (.fmat) could not load',
+        detail: '$loadError',
+      );
+    }
     if (!loaded) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -173,59 +188,59 @@ class _ExampleToonFmatState extends State<ExampleToonFmat> {
             },
           ),
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Card(
-            color: Colors.black54,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SliderRow(
-                    label: 'Band count',
-                    value: bandCount,
-                    min: 1,
-                    max: 8,
-                    onChanged: (v) => setState(() {
-                      bandCount = v.roundToDouble();
-                      _refreshParameters(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim strength',
-                    value: rimStrength,
-                    min: 0,
-                    max: 2,
-                    onChanged: (v) => setState(() {
-                      rimStrength = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Rim width',
-                    value: rimWidth,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      rimWidth = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
-                  ),
-                  _SliderRow(
-                    label: 'Ambient',
-                    value: ambient,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) => setState(() {
-                      ambient = v;
-                      _refreshParameters(_toonMaterial!);
-                    }),
-                  ),
-                ],
-              ),
+        ExampleOverlay.bottomLeftPanel(
+          child: ExamplePanelCard(
+            icon: Icons.palette_outlined,
+            title: 'Toon controls',
+            maxBodyHeight: 260,
+            bodyPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SliderRow(
+                  label: 'Band count',
+                  value: bandCount,
+                  min: 1,
+                  max: 8,
+                  onChanged: (v) => setState(() {
+                    bandCount = v.roundToDouble();
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+                _SliderRow(
+                  label: 'Rim strength',
+                  value: rimStrength,
+                  min: 0,
+                  max: 2,
+                  onChanged: (v) => setState(() {
+                    rimStrength = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+                _SliderRow(
+                  label: 'Rim width',
+                  value: rimWidth,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) => setState(() {
+                    rimWidth = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+                _SliderRow(
+                  label: 'Ambient',
+                  value: ambient,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) => setState(() {
+                    ambient = v;
+                    _refreshParameters(_toonMaterial!);
+                  }),
+                ),
+              ],
             ),
           ),
         ),

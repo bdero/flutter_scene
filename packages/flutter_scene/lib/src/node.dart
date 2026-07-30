@@ -92,6 +92,7 @@ base class Node implements SceneGraph {
   bool raycastable = true;
 
   Matrix4 _localTransform;
+  DecomposedTransform? _localTransformTrs;
 
   /// The transform of this node relative to its parent: position,
   /// rotation, and scale.
@@ -103,6 +104,25 @@ base class Node implements SceneGraph {
   Matrix4 get localTransform => _localTransform;
   set localTransform(Matrix4 value) {
     _localTransform = value;
+    _localTransformTrs = null;
+    markTransformDirty();
+  }
+
+  /// The authored decomposition of [localTransform], when known.
+  ///
+  /// A matrix decompose puts a mirror's negative sign on the X scale no
+  /// matter which axis the source mirrored, so animation blends anchored
+  /// to a re-decomposed bind pose fade mirrored bones through zero scale.
+  /// Importers record the authored decomposition here and blending
+  /// anchors to it. Cleared when [localTransform] is assigned a matrix.
+  @internal
+  DecomposedTransform? get localTransformTrs => _localTransformTrs;
+
+  /// Sets [localTransform] from [trs], keeping the decomposition.
+  @internal
+  void setLocalTransformTrs(DecomposedTransform trs) {
+    _localTransform = trs.toMatrix4();
+    _localTransformTrs = trs;
     markTransformDirty();
   }
 
@@ -516,6 +536,11 @@ base class Node implements SceneGraph {
     return _animationPlayer!.createAnimationClip(animation, this);
   }
 
+  /// Unregisters [clip] from this node's animation player so it no longer
+  /// contributes to the blend. No-op when [clip] is not registered here.
+  void removeAnimationClip(AnimationClip clip) =>
+      _animationPlayer?.removeClip(clip);
+
   /// Load a glTF binary (GLB) model directly from raw bytes.
   ///
   /// No offline conversion is required, useful for runtime use cases such
@@ -804,11 +829,20 @@ base class Node implements SceneGraph {
       mesh: mesh?.clone(),
     );
     result.isJoint = isJoint;
+    result._localTransformTrs = _localTransformTrs?.clone();
     // Preserve the coordinate-convention flag so a cloned scene root's
     // handedness flip is still excluded from winding parity (otherwise the
     // clone renders with reversed cull winding: see-through, inverted geometry).
     result.excludeFromWindingParity = excludeFromWindingParity;
     result._animations.addAll(_animations);
+    // Components opt into cloning through [Component.cloneFor]; mesh
+    // components are excluded because the mesh is already cloned through the
+    // constructor above.
+    for (final component in _components) {
+      if (component is MeshComponent) continue;
+      final copy = component.cloneFor(result);
+      if (copy != null) result.addComponent(copy);
+    }
     if (recursive) {
       for (var child in children) {
         result.add(child._cloneAndCollectSkins(recursive, clonedSkins));

@@ -5,9 +5,12 @@ import 'dart:math' as math;
 // each conflicting name is hidden from the other import.
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
 import 'example_settings.dart';
 import 'quake_camera.dart';
 
@@ -24,7 +27,7 @@ class ExamplePhysicsBox3d extends StatefulWidget {
 
 class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
   final Scene scene = Scene();
-  late final Box3dPhysicsWorld world;
+  late final PhysicsWorld world;
 
   final QuakeCamera _camera = QuakeCamera(
     position: vm.Vector3(0, 5, 14),
@@ -68,7 +71,7 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
     );
     scene.environmentIntensity = 0.6;
 
-    world = Box3dPhysicsWorld(gravity: vm.Vector3(0, -9.81, 0));
+    world = PhysicsWorld(Box3dPhysicsWorld(gravity: vm.Vector3(0, -9.81, 0)));
     scene.root.addComponent(world);
 
     _buildGround();
@@ -108,13 +111,13 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
         : vm.Matrix4.compose(position, rotation, vm.Vector3.all(1.0));
     final node = Node(mesh: mesh, localTransform: transform);
     node.addComponent(
-      Box3dRigidBody(
+      RigidBody(
         type: type,
         linearDamping: linearDamping,
         angularDamping: angularDamping,
       ),
     );
-    node.addComponent(Box3dCollider(shape: shape, material: material));
+    node.addComponent(Collider(shape: shape, material: material));
     scene.add(node);
     return node;
   }
@@ -174,21 +177,21 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
         ),
       );
       node.addComponent(
-        Box3dRigidBody(
+        RigidBody(
           type: BodyType.dynamic_,
           linearDamping: 0.2,
           angularDamping: 0.4,
         ),
       );
-      node.addComponent(Box3dCollider(shape: const SphereShape(radius: beadR)));
+      node.addComponent(Collider(shape: const SphereShape(radius: beadR)));
       scene.add(node);
       node.addComponent(
         i == 0
-            ? Box3dSphericalJoint(
+            ? SphericalJoint(
                 localAnchorA: vm.Vector3(0, half, 0),
                 localAnchorB: anchor.clone(),
               )
-            : Box3dSphericalJoint(
+            : SphericalJoint(
                 otherNode: prev,
                 localAnchorA: vm.Vector3(0, half, 0),
                 localAnchorB: vm.Vector3(0, -half, 0),
@@ -197,7 +200,7 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       prev = node;
     }
     // Give the bottom bead a shove so the pendulum starts swinging.
-    prev?.getComponent<Box3dRigidBody>()?.linearVelocity = vm.Vector3(0, 0, 4);
+    prev?.getComponent<RigidBody>()?.linearVelocity = vm.Vector3(0, 0, 4);
   }
 
   // A kinematic bar sweeping a horizontal circle, driven by code each frame.
@@ -291,10 +294,12 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       position,
       rotation,
     );
-    _dropped.add(node);
-    if (_dropped.length > _maxDropped) {
-      scene.remove(_dropped.removeAt(0));
-    }
+    setState(() {
+      _dropped.add(node);
+      if (_dropped.length > _maxDropped) {
+        scene.remove(_dropped.removeAt(0));
+      }
+    });
   }
 
   Node _addBodyMesh(
@@ -307,9 +312,9 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
       mesh: mesh,
       localTransform: vm.Matrix4.compose(position, rotation, vm.Vector3.all(1)),
     );
-    node.addComponent(Box3dRigidBody(type: BodyType.dynamic_));
+    node.addComponent(RigidBody(type: BodyType.dynamic_));
     node.addComponent(
-      Box3dCollider(
+      Collider(
         shape: shape,
         material: const PhysicsMaterial(friction: 0.6, restitution: 0.1),
       ),
@@ -361,35 +366,20 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
             ),
           ),
         ),
-        Positioned(
-          top: 8,
-          left: 0,
-          right: 0,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Card(
-              color: Colors.black54,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Tap to drop a shape  •  drag to look  •  WASD/QE to move',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    const SizedBox(height: 6),
-                    FilledButton.tonal(
-                      onPressed: _dropped.isEmpty ? null : _clear,
-                      child: const Text('Clear dropped'),
-                    ),
-                  ],
-                ),
+        ExampleOverlay.topCenterAction(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ExampleActionHint(
+                message: 'Tap: drop  ·  Drag: look  ·  WASD/QE: move',
               ),
-            ),
+              const SizedBox(width: 8),
+              ExampleActionButton(
+                tooltip: 'Clear dropped bodies',
+                onPressed: _dropped.isEmpty ? null : _clear,
+                icon: Icons.delete_outline,
+              ),
+            ],
           ),
         ),
       ],

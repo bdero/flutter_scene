@@ -4,8 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
+import 'lighting_panel.dart';
 
+/// Skeletal animation blending, driven through the declarative API.
+///
+/// The model and its animation state are declared in `build()`: a
+/// [SceneModel] mounts dash.glb as a child of the app-owned [Scene] (the
+/// mixed mode, so the shared lighting panel keeps mutating the scene
+/// imperatively), and each blend slider just rebuilds with new
+/// [SceneAnimationSpec] weights. The widget diffs the specs onto the
+/// underlying clips as plain property writes, so dragging a slider costs a
+/// field write per frame and the blending itself runs engine-side.
 class ExampleAnimation extends StatefulWidget {
   const ExampleAnimation({super.key});
 
@@ -14,71 +26,21 @@ class ExampleAnimation extends StatefulWidget {
 }
 
 class ExampleAnimationState extends State<ExampleAnimation> {
-  Scene scene = Scene();
-  bool loaded = false;
-  AnimationClip? idleClip;
-  AnimationClip? runClip;
-  AnimationClip? walkClip;
+  final Scene scene = Scene();
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    // The scene hot reloads in place. The clips below are held by reference and
-    // re-bound automatically across a reload (their playback state and the
-    // slider bindings survive), so no reload callback is needed.
-    final modelNode = await loadScene('assets_src/dash.glb');
-    if (!mounted) {
-      return;
-    }
-
-    for (final animation in modelNode.parsedAnimations) {
-      debugPrint('Animation: ${animation.name}');
-    }
-
-    scene.add(modelNode);
-
-    idleClip =
-        modelNode.createAnimationClip(modelNode.findAnimationByName('Idle')!)
-          ..loop = true
-          ..play();
-    walkClip =
-        modelNode.createAnimationClip(modelNode.findAnimationByName('Walk')!)
-          ..loop = true
-          ..weight = 0
-          ..play();
-    runClip =
-        modelNode.createAnimationClip(modelNode.findAnimationByName('Run')!)
-          ..loop = true
-          ..weight = 0
-          ..play();
-
-    debugPrint('Scene loaded.');
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      loaded = true;
-    });
-  }
+  double _idleWeight = 1.0;
+  double _walkWeight = 0.0;
+  double _runWeight = 0.0;
+  double _speed = 1.0;
 
   @override
   void dispose() {
-    // Optional: the scene is dropped with this State. `Node.fromAsset` caches
-    // the imported model template (shared across clones), so its GPU resources
-    // persist for the session regardless.
     scene.removeAll();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!loaded) {
-      return const Center(child: CircularProgressIndicator());
-    }
     return Stack(
       children: [
         Positioned.fill(
@@ -97,45 +59,69 @@ class ExampleAnimationState extends State<ExampleAnimation> {
               );
             },
             onTick: (elapsed, deltaSeconds) => exampleSettings.applyTo(scene),
-          ),
-        ),
-        // Door open slider
-        if (idleClip != null)
-          Column(
+            // Gating on a loadingBuilder holds the reveal until the
+            // declarative model below has loaded.
+            loadingBuilder: (context, progress) =>
+                const Center(child: CircularProgressIndicator()),
             children: [
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  for (final clip in [idleClip, walkClip, runClip])
-                    Slider(
-                      value: clip!.weight,
-                      onChanged: (value) {
-                        setState(() => clip.weight = value);
-                      },
-                    ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Slider(
-                    min: -2,
-                    max: 2,
-                    value: walkClip!.playbackTimeScale,
-                    onChanged: (value) {
-                      setState(() {
-                        idleClip!.playbackTimeScale = value;
-                        walkClip!.playbackTimeScale = value;
-                        runClip!.playbackTimeScale = value;
-                      });
-                    },
+              SceneModel(
+                'assets_src/dash.glb',
+                animations: [
+                  SceneAnimationSpec(
+                    'Idle',
+                    weight: _idleWeight,
+                    speed: _speed,
                   ),
+                  SceneAnimationSpec(
+                    'Walk',
+                    weight: _walkWeight,
+                    speed: _speed,
+                  ),
+                  SceneAnimationSpec('Run', weight: _runWeight, speed: _speed),
                 ],
               ),
             ],
           ),
+        ),
+        // Animation weights are grouped in a side panel instead of occupying
+        // the entire scene width as unlabeled sliders.
+        ExampleOverlay.bottomLeftPanel(child: _buildControls()),
       ],
+    );
+  }
+
+  Widget _buildControls() {
+    final weights = <(String, double, void Function(double))>[
+      ('Idle weight', _idleWeight, (v) => _idleWeight = v),
+      ('Walk weight', _walkWeight, (v) => _walkWeight = v),
+      ('Run weight', _runWeight, (v) => _runWeight = v),
+    ];
+    return ExamplePanelCard(
+      icon: Icons.animation,
+      title: 'Animation controls',
+      width: 280,
+      maxBodyHeight: 300,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (label, value, apply) in weights)
+            LabeledSlider(
+              label: label,
+              value: value,
+              min: 0,
+              max: 1,
+              onChanged: (v) => setState(() => apply(v)),
+            ),
+          LabeledSlider(
+            label: 'Playback speed',
+            value: _speed,
+            min: -2,
+            max: 2,
+            onChanged: (v) => setState(() => _speed = v),
+          ),
+        ],
+      ),
     );
   }
 }

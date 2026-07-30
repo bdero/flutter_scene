@@ -12,6 +12,9 @@ import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_action_hint.dart';
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'example_settings.dart';
 
 enum _Demo {
@@ -44,32 +47,18 @@ class _ExampleVertexCurveState extends State<ExampleVertexCurve> {
             _Demo.runner => const _RunnerDemo(key: ValueKey('runner')),
           },
         ),
-        Positioned(
-          top: 16,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Card(
-              color: Colors.black54,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                child: DropdownButton<_Demo>(
-                  value: _demo,
-                  dropdownColor: Colors.black87,
-                  underline: const SizedBox.shrink(),
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                  items: [
-                    for (final d in _Demo.values)
-                      DropdownMenuItem(value: d, child: Text(d.label)),
-                  ],
-                  onChanged: (d) {
-                    if (d != null) setState(() => _demo = d);
-                  },
-                ),
-              ),
+        ExampleOverlay.topLeft(
+          child: SizedBox(
+            width: 150,
+            child: ExampleDropdown<_Demo>(
+              value: _demo,
+              items: [
+                for (final d in _Demo.values)
+                  DropdownMenuItem(value: d, child: Text(d.label)),
+              ],
+              onChanged: (d) {
+                if (d != null) setState(() => _demo = d);
+              },
             ),
           ),
         ),
@@ -321,16 +310,13 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16,
-      child: Card(
-        color: Colors.black54,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: rows),
-        ),
+    return ExampleOverlay.bottomLeftPanel(
+      child: ExamplePanelCard(
+        icon: Icons.waves_outlined,
+        title: 'Vertex controls',
+        maxBodyHeight: 240,
+        bodyPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        body: Column(mainAxisSize: MainAxisSize.min, children: rows),
       ),
     );
   }

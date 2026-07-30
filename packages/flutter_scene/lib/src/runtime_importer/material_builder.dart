@@ -15,6 +15,7 @@ Material buildMaterial(GltfMaterial? gm, List<Texture2D> textures) {
   }
   if (gm.unlit) {
     final m = UnlitMaterial();
+    m.name = gm.name ?? '';
     final pbr = gm.pbrMetallicRoughness;
     if (pbr != null) {
       m.baseColorFactor = _vec4(pbr.baseColorFactor);
@@ -25,6 +26,7 @@ Material buildMaterial(GltfMaterial? gm, List<Texture2D> textures) {
     return m;
   }
   final m = PhysicallyBasedMaterial();
+  m.name = gm.name ?? '';
   final pbr = gm.pbrMetallicRoughness;
   if (pbr != null) {
     m.baseColorFactor = _vec4(pbr.baseColorFactor);

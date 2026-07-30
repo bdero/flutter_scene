@@ -1,3 +1,14 @@
+## 0.3.0
+
+* Requires flutter_scene 0.20.0.
+* BREAKING: implements the `scene` package's `PhysicsSimulation` contract and no longer depends on Flutter, so the simulation runs headless. Drive it with the generic `PhysicsWorld(RapierWorld())`, `RigidBody`, and `Collider` from flutter_scene; the backend-specific `Rapier*` component classes are removed.
+* No native changes; reuses the 0.1.0 prebuilt binaries and wasm.
+
+## 0.2.2
+
+* Requires flutter_scene 0.19.0.
+* No native changes; this release reuses the 0.1.0 prebuilt binaries and wasm.
+
 ## 0.2.1
 
 * Requires flutter_scene 0.18.0.

@@ -60,6 +60,30 @@ class MeshComponent extends Component {
       _renderItems.add(item);
       renderScene.add(item);
     }
+    onRenderItemsRegistered();
+  }
+
+  /// Called after this component registers its render items, on mount and on
+  /// every re-registration ([mesh] assignment, [refreshMaterials]).
+  ///
+  /// Subclasses that decorate the registered items (the LOD component tags
+  /// them with its selection) must do so here rather than in [onMount], or
+  /// the decoration is lost when the items are rebuilt.
+  @protected
+  void onRenderItemsRegistered() {}
+
+  /// Re-registers the render items so a changed [MeshPrimitive.material]
+  /// takes effect.
+  ///
+  /// Render items capture the primitive's material when registered, so
+  /// mutating `primitive.material` on a mounted mesh is invisible until the
+  /// items are rebuilt. Re-registering also re-buckets items whose new
+  /// material changes translucency. No-op while unmounted (mounting
+  /// registers fresh items).
+  @internal
+  void refreshMaterials() {
+    _unregisterRenderItems();
+    _registerRenderItems();
   }
 
   void _unregisterRenderItems() {
@@ -88,16 +112,13 @@ class MeshComponent extends Component {
     final worldTransform = node.globalTransform;
     final windingFlipped = node.windingFlipped;
 
-    // A skinned node uploads its joint matrices once per frame; both
-    // render passes then sample the same joints texture.
+    // A skinned node uploads its joint matrices once per frame. The texture
+    // rides on the render items, not the geometry, so nodes sharing one
+    // skinned geometry (clones) each draw with their own skeleton; the
+    // render passes apply it to the geometry per draw.
     final skin = node.skin;
-    if (skin != null) {
-      final jointsTexture = skin.getJointsTexture();
-      final jointsTextureWidth = skin.getTextureWidth();
-      for (final item in _renderItems) {
-        item.geometry.setJointsTexture(jointsTexture, jointsTextureWidth);
-      }
-    }
+    final jointsTexture = skin?.getJointsTexture();
+    final jointsTextureWidth = skin?.getTextureWidth() ?? 0;
 
     final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
@@ -112,6 +133,8 @@ class MeshComponent extends Component {
       item.windingFlipped = windingFlipped;
       item.shadowStatic = node.shadowStatic;
       item.highlightColor = highlightColor;
+      item.jointsTexture = jointsTexture;
+      item.jointsTextureWidth = jointsTextureWidth;
 
       final wasBounded = item.worldBounds != null;
       final boundsChanged = item.refreshWorldBounds();

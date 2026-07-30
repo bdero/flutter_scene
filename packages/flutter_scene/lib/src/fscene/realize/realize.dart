@@ -5,17 +5,34 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/animation.dart' as engine;
 
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/lazy_subtree.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/skin_animation.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/skin.dart';
+
+/// Applies [spec] to [node]'s local transform. A TRS spec keeps its
+/// authored decomposition; recovering it from the composed matrix puts a
+/// mirrored axis's negative scale on X, which breaks animation blending
+/// on mirrored bones. Also used by scene hot reload.
+void applyTransformSpec(Node node, TransformSpec spec) {
+  switch (spec) {
+    case TrsTransform(:final translation, :final rotation, :final scale):
+      node.setLocalTransformTrs(
+        engine.DecomposedTransform(
+          translation: translation.clone(),
+          rotation: rotation.clone(),
+          scale: scale.clone(),
+        ),
+      );
+    case MatrixTransform(:final matrix):
+      node.localTransform = matrix.clone();
+  }
+}
 
 /// Returns a registry preloaded with the built-in component codecs.
 FsceneComponentRegistry defaultComponentRegistry() {
@@ -88,14 +105,16 @@ Node _realizeWith(
 
   // First pass: a bare node per spec (no children, no components yet).
   final nodes = <LocalId, Node>{};
+  context.resolveNode = (id) => nodes[id];
   for (final spec in document.nodes.values) {
     final node = tagNodeId(
-      Node(name: spec.name, localTransform: spec.transform.toMatrix4())
+      Node(name: spec.name)
         ..layers = spec.layers
         ..excludeFromWindingParity = spec.excludeFromWindingParity
         ..visible = spec.visible,
       spec.id,
     );
+    applyTransformSpec(node, spec.transform);
     final instance = spec.instance;
     if (instance != null) {
       if (instance.load == LoadPolicy.lazy) {
@@ -135,6 +154,10 @@ Node _realizeWith(
       node.addComponent(component);
     }
   }
+
+  // Cross-node component resolution (for example material-variant bindings
+  // into mesh primitives) runs once every component exists.
+  context.runAfterRealize();
 
   final root = Node(
     name: 'root',
@@ -233,10 +256,17 @@ NodeSpec _serializeNode(
   }
 
   final lazyInstance = lazyInstanceOf(node);
+  final trs = node.localTransformTrs;
   final spec = NodeSpec(
     id: ids[node]!,
     name: node.name,
-    transform: MatrixTransform(node.localTransform.clone()),
+    transform: trs != null
+        ? TrsTransform(
+            translation: trs.translation.clone(),
+            rotation: trs.rotation.clone(),
+            scale: trs.scale.clone(),
+          )
+        : MatrixTransform(node.localTransform.clone()),
     components: components,
     layers: node.layers,
     skin: _serializeSkin(node.skin, document, context, ids),

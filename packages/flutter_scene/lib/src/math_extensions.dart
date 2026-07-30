@@ -45,17 +45,23 @@ extension QuaternionSlerp on Quaternion {
   /// numerically more stable.
   Quaternion slerp(Quaternion to, double weight) {
     double cosine = dot(to);
-    if (cosine.abs() < 1.0 - 1e-3 /* epsilon */ ) {
+    Quaternion target = to;
+    // q and -q are the same rotation; pick the nearer one to take the short arc.
+    if (cosine < 0.0) {
+      target = to.scaled(-1.0);
+      cosine = -cosine;
+    }
+    if (cosine < 1.0 - 1e-3 /* epsilon */ ) {
       // Spherical interpolation.
       double sine = sqrt(1.0 - cosine * cosine);
       double angle = atan2(sine, cosine);
       double sineInverse = 1.0 / sine;
       double c0 = sin((1.0 - weight) * angle) * sineInverse;
       double c1 = sin(weight * angle) * sineInverse;
-      return scaled(c0) + to.scaled(c1);
+      return scaled(c0) + target.scaled(c1);
     } else {
       // Linear interpolation.
-      return (scaled(1.0 - weight) + to.scaled(weight)).normalized();
+      return (scaled(1.0 - weight) + target.scaled(weight)).normalized();
     }
   }
 }

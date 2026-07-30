@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
@@ -15,22 +16,22 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
+import 'package:flutter_scene/src/components/materials_variants_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
+import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
-import 'package:flutter_scene/src/fscene/id.dart';
-import 'package:flutter_scene/src/fscene/property_value.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
+import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
-import 'package:flutter_scene/src/fscene/scene_document.dart';
-import 'package:flutter_scene/src/fscene/specs.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/mesh.dart';
 
@@ -42,11 +43,14 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     // (which subclasses the mesh component) before the mesh codec sees it.
     ..register(ParticleEmitterCodec())
     ..register(MeshCodec())
+    ..register(MaterialsVariantsCodec())
     ..register(DirectionalLightCodec())
     ..register(PointLightCodec())
     ..register(SpotLightCodec())
     ..register(CameraCodec())
-    ..register(EnvironmentVolumeCodec());
+    ..register(EnvironmentVolumeCodec())
+    ..register(AudioSourceCodec())
+    ..register(AudioListenerCodec());
 }
 
 // The environment resource each realized volume came from, so serialize can
@@ -887,4 +891,180 @@ class CameraCodec extends ComponentCodec {
       ),
     );
   }
+}
+
+/// Codec for [MaterialsVariantsComponent] (`KHR_materials_variants`).
+///
+/// Spec shape:
+///
+/// ```text
+/// variants: [String, ...]                    variant names, in order
+/// selected: String                           active variant, absent = default
+/// bindings: [{node: NodeRef,                 the node whose mesh is bound
+///             primitive: int,                index into the mesh's primitives
+///             default: ResourceRef,          the default material
+///             materials: {"<variantIndex>": ResourceRef, ...}}, ...]
+/// ```
+///
+/// The default material is serialized explicitly so a document saved while a
+/// variant is selected keeps its authored defaults (the mesh's serialized
+/// material is the selected one in that case); documents without a `default`
+/// entry fall back to the mesh primitive's realized material. The selection
+/// itself round-trips through `selected`. Bindings resolve after the whole
+/// tree realizes (they reference other nodes' mesh components), through
+/// [RealizeContext.afterRealize].
+class MaterialsVariantsCodec extends ComponentCodec {
+  @override
+  String get type => 'materialsVariants';
+
+  // TODO(materials-variants-schema): the nested bindings list is not
+  // schema-described (like the mesh codec's multi-primitive form), so the
+  // editor inspector cannot edit it; describe it once the schema system
+  // grows nested-list support.
+  @override
+  List<ComponentPropertyDef> get propertySchema => const [];
+
+  // Shares the mesh codec's resource-recovery path (origin tags, hand-built
+  // re-packing) for the variant materials.
+  static final MeshCodec _resourceSerializer = MeshCodec();
+
+  @override
+  bool claims(Component component) => component is MaterialsVariantsComponent;
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final realizer = context.resources;
+    if (realizer == null) {
+      debugPrint(
+        'fscene: materialsVariants component skipped (no resource realizer)',
+      );
+      return null;
+    }
+    final variants = <String>[
+      for (final value in _stringList(spec.properties['variants'])) value,
+    ];
+    final rawBindings = spec.properties['bindings'];
+    final selectedProp = spec.properties['selected'];
+    final selected = selectedProp is StringValue ? selectedProp.value : null;
+    final bindings = <MaterialsVariantBinding>[];
+    final component = MaterialsVariantsComponent.internal(variants, bindings);
+    context.afterRealize.add(() {
+      final resolveNode = context.resolveNode;
+      if (resolveNode == null) {
+        debugPrint(
+          'fscene: materialsVariants bindings unresolved (no node resolver)',
+        );
+        return;
+      }
+      if (rawBindings is ListValue) {
+        for (final entry in rawBindings.values) {
+          if (entry is! MapValue) continue;
+          final nodeRef = entry.values['node'];
+          final primitiveIndex = entry.values['primitive'];
+          final materials = entry.values['materials'];
+          final defaultRef = entry.values['default'];
+          if (nodeRef is! NodeRefValue ||
+              primitiveIndex is! IntValue ||
+              materials is! MapValue) {
+            continue;
+          }
+          final node = resolveNode(nodeRef.id);
+          final mesh = node?.mesh;
+          if (node == null ||
+              mesh == null ||
+              primitiveIndex.value < 0 ||
+              primitiveIndex.value >= mesh.primitives.length) {
+            debugPrint(
+              'fscene: materialsVariants binding dropped (missing node or '
+              'primitive ${primitiveIndex.value})',
+            );
+            continue;
+          }
+          // The serialized default keeps authored defaults stable across
+          // saves and reloads made while a variant was selected; older
+          // documents without one fall back to the realized mesh material.
+          final defaultMaterial = defaultRef is ResourceRefValue
+              ? realizer.material(defaultRef.id)
+              : mesh.primitives[primitiveIndex.value].material;
+          final materialsByVariant = <int, Material>{};
+          for (final mapping in materials.values.entries) {
+            final variantIndex = int.tryParse(mapping.key);
+            final ref = mapping.value;
+            if (variantIndex == null || ref is! ResourceRefValue) continue;
+            materialsByVariant[variantIndex] = realizer.material(ref.id);
+          }
+          bindings.add(
+            MaterialsVariantBinding(
+              node: node,
+              primitiveIndex: primitiveIndex.value,
+              defaultMaterial: defaultMaterial,
+              materialsByVariant: materialsByVariant,
+            ),
+          );
+        }
+      }
+      if (selected != null && variants.contains(selected)) {
+        component.select(selected);
+      } else {
+        // Bindings may target primitives that currently carry a stale
+        // material (a reload while selected); re-apply the defaults.
+        component.reapply();
+      }
+    });
+    return component;
+  }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (component is! MaterialsVariantsComponent) return null;
+    final bindings = <PropertyValue>[];
+    for (final binding in component.internalBindings) {
+      final nodeId = nodeFsceneId(binding.node);
+      if (nodeId == null || binding.resolvePrimitive() == null) {
+        debugPrint(
+          'fscene: materialsVariants binding not serialized; its node was '
+          'not realized from this document',
+        );
+        continue;
+      }
+      final materials = <String, PropertyValue>{};
+      for (final entry in binding.materialsByVariant.entries) {
+        final materialId = _resourceSerializer._serializeResource(
+          entry.value,
+          context,
+        );
+        if (materialId == null) continue;
+        materials['${entry.key}'] = ResourceRefValue(materialId);
+      }
+      final defaultId = _resourceSerializer._serializeResource(
+        binding.defaultMaterial,
+        context,
+      );
+      bindings.add(
+        MapValue({
+          'node': NodeRefValue(nodeId),
+          'primitive': IntValue(binding.primitiveIndex),
+          if (defaultId != null) 'default': ResourceRefValue(defaultId),
+          'materials': MapValue(materials),
+        }),
+      );
+    }
+    final selected = component.selected;
+    return ComponentSpec(
+      type,
+      properties: {
+        'variants': ListValue([
+          for (final name in component.variants) StringValue(name),
+        ]),
+        if (selected != null) 'selected': StringValue(selected),
+        'bindings': ListValue(bindings),
+      },
+    );
+  }
+
+  static List<String> _stringList(PropertyValue? value) => [
+    if (value is ListValue)
+      for (final entry in value.values)
+        if (entry is StringValue) entry.value,
+  ];
 }

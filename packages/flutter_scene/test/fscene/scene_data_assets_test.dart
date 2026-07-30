@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:data_assets/data_assets.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart';
-import 'package:flutter_scene/src/fscene/binary/fsceneb.dart';
+import 'package:scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks/hooks.dart';
 

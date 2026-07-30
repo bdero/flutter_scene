@@ -53,6 +53,8 @@ base class _TranslucentRecord {
     this.windingFlipped,
     this.lightListOffset,
     this.lightListCount,
+    this.jointsTexture,
+    this.jointsTextureWidth,
   );
   final Matrix4 worldTransform;
   final Geometry geometry;
@@ -64,6 +66,10 @@ base class _TranslucentRecord {
   // The owning item's punctual-light slice, captured at submit time.
   final int lightListOffset;
   final int lightListCount;
+  // The owning item's joints texture, applied to the geometry right before
+  // this draw so skinned items sharing one geometry keep their own skeleton.
+  final gpu.Texture? jointsTexture;
+  final int jointsTextureWidth;
 }
 
 /// The viewport size of the scene color pass currently being encoded.
@@ -292,6 +298,8 @@ base class SceneEncoder {
             item.windingFlipped != (instanceTransform.determinant() < 0),
             item.lightListOffset,
             item.lightListCount,
+            item.jointsTexture,
+            item.jointsTextureWidth,
           ),
         );
       }
@@ -307,6 +315,8 @@ base class SceneEncoder {
           item.windingFlipped,
           item.lightListOffset,
           item.lightListCount,
+          item.jointsTexture,
+          item.jointsTextureWidth,
         ),
       );
     }
@@ -512,6 +522,7 @@ base class SceneEncoder {
       final item = record.item;
       record.material.lightListOffset = item.lightListOffset;
       record.material.lightListCount = item.lightListCount;
+      item.applyJointsTexture(record.geometry);
       final instances = item.instanceTransforms;
       if (instances != null) {
         _encodeInstanced(
@@ -567,6 +578,10 @@ base class SceneEncoder {
     for (final record in _translucentRecords) {
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
+      final joints = record.jointsTexture;
+      if (joints != null) {
+        record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
+      }
       _encode(
         record.pipeline,
         record.worldTransform,

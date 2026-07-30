@@ -16,6 +16,7 @@ import 'dart:typed_data';
 /// Color is stored as four floats per particle (matching the billboard
 /// instance buffer's `float32x4` color attribute and the over-life color
 /// math). A packed RGBA8 column is a later memory optimization.
+/// {@category Particles}
 class ParticleStorage {
   /// Allocates storage for up to [capacity] simultaneous particles.
   ParticleStorage(this.capacity)
@@ -36,6 +37,10 @@ class ParticleStorage {
       colorG = Float32List(capacity),
       colorB = Float32List(capacity),
       colorA = Float32List(capacity),
+      frame = Float32List(capacity),
+      axisX = Float32List(capacity),
+      axisY = Float32List(capacity),
+      axisZ = Float32List(capacity),
       random01 = Float32List(capacity);
 
   /// The maximum number of simultaneous particles.
@@ -62,6 +67,15 @@ class ParticleStorage {
 
   /// Current linear RGBA color (premultiplication happens in the shader).
   final Float32List colorR, colorG, colorB, colorA;
+
+  /// Flipbook frame index (fractional values round to the nearest cell). Left
+  /// at zero unless a module (or spawn code) writes it.
+  final Float32List frame;
+
+  /// Unit 3D rotation axis, set to a uniformly random direction at spawn.
+  /// Billboards ignore it (their [rotation] is in-plane); mesh particles
+  /// tumble around it by [rotation].
+  final Float32List axisX, axisY, axisZ;
 
   /// Per-particle random in `[0, 1)`, written at spawn. Distributions sample
   /// against it (directly, or via [randomFor] for an independent stream) so a
@@ -131,6 +145,10 @@ class ParticleStorage {
     colorG[to] = colorG[from];
     colorB[to] = colorB[from];
     colorA[to] = colorA[from];
+    frame[to] = frame[from];
+    axisX[to] = axisX[from];
+    axisY[to] = axisY[from];
+    axisZ[to] = axisZ[from];
     random01[to] = random01[from];
   }
 }

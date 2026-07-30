@@ -1,0 +1,20 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # This dev-only benchmark reaches engine internals (BVH, instance
+    # packing, RenderScene) to time them in isolation.
+    implementation_imports: ignore
+  exclude:
+    - build/**
+    - macos/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - linux/**
+
+linter:
+  rules:
+    # The benchmark reports through stdout.
+    avoid_print: false

@@ -131,6 +131,14 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_prefilter_radiance_cube.frag"
   },
+  "AutoExposureSeedFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_auto_exposure_seed.frag"
+  },
+  "AutoExposureAdaptFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_auto_exposure_adapt.frag"
+  },
   "BloomThresholdFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_bloom_threshold.frag"

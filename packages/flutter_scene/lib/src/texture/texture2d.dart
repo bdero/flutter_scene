@@ -32,6 +32,10 @@ class GpuTextureSource implements TextureSource {
           gpu.SamplerOptions(
             minFilter: gpu.MinMagFilter.linear,
             magFilter: gpu.MinMagFilter.linear,
+            // Trilinear when the texture actually carries a mip chain.
+            mipFilter: texture.mipLevelCount > 1
+                ? gpu.MipFilter.linear
+                : gpu.MipFilter.nearest,
             widthAddressMode: gpu.SamplerAddressMode.repeat,
             heightAddressMode: gpu.SamplerAddressMode.repeat,
           );

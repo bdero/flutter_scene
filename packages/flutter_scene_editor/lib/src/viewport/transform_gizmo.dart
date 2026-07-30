@@ -53,7 +53,7 @@ const double _armWorldUnits = 1.2;
 
 double _gizmoScale(vm.Vector3 origin, Camera camera, Size size) {
   final dist = (camera.position - origin).length;
-  return dist * 80 / (size.height * 0.7);
+  return dist * 40 / (size.height * 0.7);
 }
 
 /// Points around the ring of [axis] (a circle of [radius] in the plane
