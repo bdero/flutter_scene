@@ -202,6 +202,18 @@ class NativeRapierBindings extends RapierBindings {
   );
 
   @override
+  void setBodyPose(
+    int handle,
+    double px,
+    double py,
+    double pz,
+    double qx,
+    double qy,
+    double qz,
+    double qw,
+  ) => native.bodySetPose(_handle, handle, px, py, pz, qx, qy, qz, qw);
+
+  @override
   void setBodyLockedAxes(int handle, int bits) =>
       native.bodySetLockedAxes(_handle, handle, bits);
 

@@ -228,6 +228,20 @@ class RapierWorld extends PhysicsSimulation {
   }
 
   @override
+  void setBodyPose(int bodyHandle, Vector3 translation, Quaternion rotation) {
+    _bindings.setBodyPose(
+      bodyHandle,
+      translation.x,
+      translation.y,
+      translation.z,
+      rotation.x,
+      rotation.y,
+      rotation.z,
+      rotation.w,
+    );
+  }
+
+  @override
   void applyForce(int bodyHandle, Vector3 force, {Vector3? atWorldPoint}) {
     final p = atWorldPoint;
     _bindings.applyBodyForce(
