@@ -1,7 +1,18 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart'
+    show AssetBundle, AssetManifest, rootBundle;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
+/// The hook-generated bundle declared as a pubspec asset.
 const String _kBaseShaderBundlePath =
     'packages/flutter_scene/build/shaderbundles/base.shaderbundle';
+
+/// The key the build hook registers instead when the consuming project has
+/// Dart data assets enabled (`flutter config --enable-dart-data-assets`).
+/// Follows `flutter_gpu_shaders`' data-asset naming; a test guards the two
+/// against drifting apart.
+const String _kBaseShaderBundleDataAssetPath =
+    'packages/flutter_scene/flutter_gpu_shaders/shaderbundles/base.shaderbundle';
 
 gpu.ShaderLibrary? _baseShaderLibrary;
 
@@ -29,6 +40,25 @@ gpu.ShaderLibrary get baseShaderLibrary {
   return cached;
 }
 
+/// Resolves the asset key the base shader bundle shipped under, preferring
+/// the data-asset registration over the legacy pubspec asset. Any problem
+/// reading the manifest falls back to the legacy key, preserving the
+/// pre-data-assets behavior in environments without a manifest.
+@visibleForTesting
+Future<String> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
+  try {
+    final manifest = await AssetManifest.loadFromAssetBundle(
+      bundle ?? rootBundle,
+    );
+    if (manifest.listAssets().contains(_kBaseShaderBundleDataAssetPath)) {
+      return _kBaseShaderBundleDataAssetPath;
+    }
+  } catch (_) {
+    // Fall through to the legacy key.
+  }
+  return _kBaseShaderBundlePath;
+}
+
 /// Asynchronously loads and caches the base shader bundle. Idempotent.
 /// Called by [Scene.initializeStaticResources] so the synchronous
 /// [baseShaderLibrary] getter has a cached library to return (shader assets
@@ -38,11 +68,10 @@ Future<void> loadBaseShaderLibrary() async {
   if (_baseShaderLibrary != null) {
     return;
   }
-  final lib = await gpu.loadShaderLibraryAsync(_kBaseShaderBundlePath);
+  final key = await resolveBaseShaderBundleKey();
+  final lib = await gpu.loadShaderLibraryAsync(key);
   if (lib == null) {
-    throw Exception(
-      "Failed to load base shader bundle! ($_kBaseShaderBundlePath)",
-    );
+    throw Exception("Failed to load base shader bundle! ($key)");
   }
   _baseShaderLibrary = lib;
 }
