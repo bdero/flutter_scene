@@ -120,6 +120,9 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     final images = visibleFiles
         .where((f) => f.kind == FileAssetKind.image)
         .toList();
+    final materials = visibleFiles
+        .where((f) => f.kind == FileAssetKind.material)
+        .toList();
     final embedded = embeddedResources(
       _ctrl.document,
     ).where((r) => q.isEmpty || r.label.toLowerCase().contains(q)).toList();
@@ -157,6 +160,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
                     environmentImages,
                   ),
                   _fileSection(context, 'Images', images),
+                  _fileSection(context, 'Materials (.fmat)', materials),
                 ],
                 _embeddedSection(context, embedded),
               ],
@@ -434,6 +438,25 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             ),
           );
         }
+      case FileAssetKind.material:
+        final selected = _ctrl.selection.primary;
+        if (selected != null &&
+            _ctrl
+                    .displayNode(selected)
+                    ?.components
+                    .any((c) => c.type == 'mesh') ==
+                true) {
+          await assignFmatMaterial(_ctrl, selected, asset.path);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Select a mesh node to assign this .fmat material to.',
+              ),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
     }
   }
 
@@ -542,6 +565,7 @@ IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.scene => Icons.account_tree_outlined,
   FileAssetKind.environmentImage => Icons.light_mode_outlined,
   FileAssetKind.image => Icons.image_outlined,
+  FileAssetKind.material => Icons.brush_outlined,
 };
 
 /// A collapsible project directory row.

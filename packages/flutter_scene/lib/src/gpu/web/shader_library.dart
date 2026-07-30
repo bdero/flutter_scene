@@ -248,6 +248,35 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
   );
 }
 
+/// Recompiles [library]'s shaders in place from regenerated bundle [bytes]
+/// (shader identities are preserved so material references and pipeline-cache
+/// keys stay valid; entries new to the bundle are added). Returns an error
+/// description, or null on success.
+Future<String?> reinitializeShaderLibraryFromBytesAsync(
+  ShaderLibrary library,
+  ByteData bytes,
+) async {
+  try {
+    final bundle = fb.ShaderBundle(
+      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+    );
+    for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
+      final name = entry.name;
+      final backend = entry.openglEs;
+      if (name == null || backend == null) continue;
+      final existing = library._shaders[name];
+      if (existing != null) {
+        ShaderLibrary._populateFromBackend(existing, backend);
+      } else {
+        library._shaders[name] = ShaderLibrary._buildFromBackend(backend);
+      }
+    }
+    return null;
+  } catch (e) {
+    return '$e';
+  }
+}
+
 /// Compile a map of inline GLSL ES 1.00 sources into a ShaderLibrary.
 /// Web-specific; on native targets this throws.
 ShaderLibrary compileShaderLibraryInline(

@@ -41,6 +41,11 @@ import 'package:flutter_scene/src/tone_mapping.dart';
 typedef EnvironmentAssetLoader =
     Future<EnvironmentMap?> Function(AssetRef asset);
 
+/// Builds the live sky for an `fmat` [FmatSkySpec] from outside the asset
+/// bundle (the editor compiles the referenced `.fmat` source from disk and
+/// loads the bytes). Returns null to fall back to the DataAssets registry.
+typedef FmatSkyLoader = Future<PreprocessedSky?> Function(AssetRef asset);
+
 /// Resolves a [PayloadEnvironment]'s embedded image chunk to its descriptor (the
 /// bytes plus `format`), so a self-contained build (which inlines an environment
 /// image into a payload) realizes without an asset-bundle lookup. The realizer
@@ -80,6 +85,7 @@ Future<void> realizeStage(
   Scene scene, {
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
+  FmatSkyLoader? fmatSkyLoader,
 }) async {
   final stage = document.stage;
   // A self-contained build inlines environment images into payload chunks; the
@@ -117,6 +123,7 @@ Future<void> realizeStage(
     bundle: bundle,
     environmentLoader: environmentLoader,
     payloadLookup: payloadLookup,
+    fmatSkyLoader: fmatSkyLoader,
   );
   if (look?.overridesEffects == true) {
     settings.applyTo(scene);
@@ -158,6 +165,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
   EnvironmentPayloadLookup? payloadLookup,
+  FmatSkyLoader? fmatSkyLoader,
 }) async {
   final settings = EnvironmentSettings(
     environmentIntensity: environmentIntensity,
@@ -174,6 +182,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
       realized[canonicalJson(encodeSkySource(s))] ??= await _realizeSkySource(
         s,
         bundle,
+        fmatSkyLoader,
       );
 
   Future<void> applyEnvironment() async {
@@ -798,6 +807,7 @@ Map<String, Object> _encodeEnvironment(EnvironmentSpec spec) => switch (spec) {
 Future<SkySource?> _realizeSkySource(
   SkySourceSpec spec,
   AssetBundle? bundle,
+  FmatSkyLoader? fmatSkyLoader,
 ) async {
   switch (spec) {
     case EnvironmentSkySpec(:final blurriness):
@@ -826,7 +836,11 @@ Future<SkySource?> _realizeSkySource(
       );
     case FmatSkySpec s:
       try {
-        final sky = await loadFmatSky(s.asset.key, bundle: bundle);
+        // Prefer the disk loader (the editor compiles the source on demand);
+        // fall back to the DataAssets registry for in-bundle skies.
+        final sky =
+            await fmatSkyLoader?.call(s.asset) ??
+            await loadFmatSky(s.asset.key, bundle: bundle);
         applyFmatParameterOverrides(sky.parameters, s.properties);
         return sky;
       } catch (e) {
