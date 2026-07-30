@@ -195,6 +195,12 @@ base class RenderPass {
   /// through the VAO cache when the draw is issued: (view, slot, whether the
   /// stream is instance-rate).
   final List<(BufferView, int, bool)> _pendingVertexBindings = [];
+
+  /// Uniform-block binding points, and texture units mapped to the GL target
+  /// bound there, occupied since the last [clearBindings]. Recorded so the
+  /// clear can release exactly what it handed out.
+  final Set<int> _boundUniformBlocks = {};
+  final Map<int, int> _boundTextureUnits = {};
   PrimitiveType _primitiveType = PrimitiveType.triangle;
   BufferView? _inlineVertexBufferView;
 
@@ -582,6 +588,7 @@ base class RenderPass {
         bufferView.offsetInBytes,
         lengthInBytes,
       );
+      _boundUniformBlocks.add(blockBinding);
       return;
     }
 
@@ -679,6 +686,7 @@ base class RenderPass {
     final target = texture.glTarget;
     gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
     gl.bindTexture(target, texture.glTexture);
+    _boundTextureUnits[unit] = target;
     if (sampler != null) {
       // Sampler parameters are per-texture-object GL state; skip the ones
       // already applied to this texture. Per-draw texParameteri calls are
@@ -767,19 +775,33 @@ base class RenderPass {
   }
 
   void clearBindings() {
-    // Drops the pending vertex and index bindings, leaving the bound pipeline
-    // in place (matching flutter_gpu, where the pipeline persists until the
-    // next bindPipeline; the encoder skips rebinding a pipeline it already
-    // bound, so nulling it here would leave later draws without one).
-    // TODO(web-clear-bindings): uniforms and textures go straight to GL
-    // program and texture-unit state, so they survive this call while
-    // flutter_gpu drops them. A draw that relies on the clear renders from
-    // stale bindings instead of breaking, hiding bind-lifetime bugs on web.
-    // Track the bound uniform and sampler slots and reset them here.
+    // Drops every per-draw resource binding, leaving the bound pipeline in
+    // place (matching flutter_gpu, where the pipeline persists until the next
+    // bindPipeline; the encoder skips rebinding a pipeline it already bound,
+    // so nulling it here would leave later draws without one).
+    //
+    // Releasing the uniform blocks and texture units matters beyond tidiness.
+    // They are GL context state rather than per-draw descriptors, so leaving
+    // them attached lets a draw that should have rebound a slot read the
+    // previous draw's resource and render correctly, which hides bind
+    // lifetime bugs here that break on the native backends.
     final gl = _gpuContext._gl;
     if (_vao != null) {
       gl.bindVertexArray(null);
     }
+    for (final binding in _boundUniformBlocks) {
+      gl.bindBufferBase(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+        binding,
+        null,
+      );
+    }
+    _boundUniformBlocks.clear();
+    for (final entry in _boundTextureUnits.entries) {
+      gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + entry.key);
+      gl.bindTexture(entry.value, null);
+    }
+    _boundTextureUnits.clear();
     _inlineVertexBufferView = null;
     _indexBufferView = null;
     _pendingVertexBindings.clear();
