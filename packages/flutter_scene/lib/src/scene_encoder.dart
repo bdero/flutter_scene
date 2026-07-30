@@ -358,6 +358,15 @@ base class SceneEncoder {
     _boundPipeline = pipeline;
   }
 
+  // Drops the pass's bindings. The engine-lighting memo tracks what is
+  // already bound on the pass, so it has to be forgotten here or the next
+  // draw skips rebinding slots that were just wiped; never call
+  // `clearBindings` directly.
+  void _clearBindings() {
+    _renderPass.clearBindings();
+    EngineLightingUniforms.invalidateBindMemo();
+  }
+
   void _encode(
     gpu.RenderPipeline pipeline,
     Matrix4 worldTransform,
@@ -376,8 +385,7 @@ base class SceneEncoder {
     // FFI, and re-issuing the full set per item dominated main-thread frame
     // time in draw-heavy scenes.
     if (!identical(_boundPipeline, pipeline)) {
-      _renderPass.clearBindings();
-      EngineLightingUniforms.invalidateBindMemo();
+      _clearBindings();
     }
     _bindPipeline(pipeline);
     // The material reads its cross-fade coverage from this transient field as
@@ -438,8 +446,7 @@ base class SceneEncoder {
     bool windingFlipped,
     double fade,
   ) {
-    _renderPass.clearBindings();
-    EngineLightingUniforms.invalidateBindMemo();
+    _clearBindings();
     _bindPipeline(pipeline);
     material.lodFade = fade;
     final materialVertex = material.materialVertexShader(

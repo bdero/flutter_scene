@@ -211,6 +211,57 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(node);
     return (scene: scene, camera: _camera());
   }),
+  // Two instanced meshes plus a plain mesh, all sharing a lit pipeline.
+  // Covers hardware instancing and, because the draws share a pipeline, the
+  // engine-lighting bind bookkeeping between instanced and non-instanced
+  // draws; a lost bind reads as black or missing geometry here.
+  SmokeScene('instanced_lighting', () {
+    final scene = Scene();
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
+        ),
+      ),
+    );
+    // Non-instanced receiver, drawn from the same pipeline as the instances.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 4.0, depth: 4.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.80, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, -0.6, 0)),
+    );
+    // Two separate instanced meshes, so the second one draws after a
+    // same-pipeline run has already started.
+    for (var mesh = 0; mesh < 2; mesh++) {
+      final instanced = InstancedMesh(
+        geometry: CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)),
+        material: PhysicallyBasedMaterial()
+          ..baseColorFactor = mesh == 0
+              ? vm.Vector4(0.85, 0.35, 0.20, 1.0)
+              : vm.Vector4(0.20, 0.55, 0.90, 1.0)
+          ..metallicFactor = 0.1
+          ..roughnessFactor = 0.45
+          ..vertexColorWeight = 0.0,
+      );
+      for (var i = 0; i < 3; i++) {
+        instanced.addInstance(
+          vm.Matrix4.translation(
+                vm.Vector3((i - 1) * 0.85, mesh * 0.75, mesh * 0.6 - 0.3),
+              ) *
+              vm.Matrix4.rotationY(0.5 + i * 0.3),
+        );
+      }
+      scene.add(Node()..addComponent(InstancedMeshComponent(instanced)));
+    }
+    return (scene: scene, camera: _camera());
+  }),
   // A directional light casting a shadow from a floating cuboid onto a
   // ground plane. Exercises the ShadowPass (a depth-only shadow-map pass)
   // and the lit material's shadow sampling, which the other scenes don't.
