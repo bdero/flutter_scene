@@ -767,12 +767,15 @@ base class RenderPass {
   }
 
   void clearBindings() {
-    // Clears per-draw resource bindings (vertex/index buffers, uniforms,
-    // textures) but NOT the bound pipeline - matching flutter_gpu, where the
-    // pipeline persists until the next bindPipeline. flutter_scene's encoder
-    // relies on this: it caches the last pipeline and skips re-binding it
-    // across consecutive draws with the same material, so nulling it here
-    // would leave later draws with no pipeline.
+    // Drops the pending vertex and index bindings, leaving the bound pipeline
+    // in place (matching flutter_gpu, where the pipeline persists until the
+    // next bindPipeline; the encoder skips rebinding a pipeline it already
+    // bound, so nulling it here would leave later draws without one).
+    // TODO(web-clear-bindings): uniforms and textures go straight to GL
+    // program and texture-unit state, so they survive this call while
+    // flutter_gpu drops them. A draw that relies on the clear renders from
+    // stale bindings instead of breaking, hiding bind-lifetime bugs on web.
+    // Track the bound uniform and sampler slots and reset them here.
     final gl = _gpuContext._gl;
     if (_vao != null) {
       gl.bindVertexArray(null);
