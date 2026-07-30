@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:dashwire/dashwire.dart';
 import 'package:dashwire_replication/dashwire_replication.dart' hide Authority;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:vector_math/vector_math.dart' as vm;
@@ -13,8 +15,9 @@ import 'example_panel.dart';
 import 'net/multiplayer_game.dart';
 
 /// Multiplayer arena. Host a game in-app (desktop/mobile) and join it from
-/// other instances by address, including web builds; movement is
-/// server-authoritative with interpolated remote poses.
+/// other instances by address, including web builds; players are balls in a
+/// server-authoritative rapier world, remote poses interpolate and the local
+/// ball is rollback-predicted in a matching client-side world.
 class ExampleMultiplayer extends StatefulWidget {
   const ExampleMultiplayer({super.key});
 
@@ -33,6 +36,8 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
 
   SceneHost? _host;
   SceneReplication? _replication;
+  PhysicsSimulation? _serverWorld;
+  final List<PhysicsSimulation> _clientWorlds = [];
   String? _status;
   Timer? _hud;
 
@@ -50,13 +55,27 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     final ground = Node(
       mesh: Mesh(
         CuboidGeometry(
-          vm.Vector3(fieldHalfSize * 2 + 2, 0.4, fieldHalfSize * 2 + 2),
+          vm.Vector3(fieldHalfSize * 2 + 5, 0.4, fieldHalfSize * 2 + 5),
         ),
         PhysicallyBasedMaterial()
           ..baseColorFactor = vm.Vector4(0.16, 0.19, 0.23, 1),
       ),
     )..localTransform = vm.Matrix4.translation(vm.Vector3(0, -0.2, 0));
     scene.add(ground);
+    // Visuals matching the arena's wall colliders (see buildArenaWorld).
+    final wallMaterial = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.22, 0.26, 0.31, 1);
+    for (final (x, z, size) in [
+      (fieldHalfSize + 1, 0.0, vm.Vector3(1, 1.5, fieldHalfSize * 2 + 3)),
+      (-fieldHalfSize - 1, 0.0, vm.Vector3(1, 1.5, fieldHalfSize * 2 + 3)),
+      (0.0, fieldHalfSize + 1, vm.Vector3(fieldHalfSize * 2 + 3, 1.5, 1)),
+      (0.0, -fieldHalfSize - 1, vm.Vector3(fieldHalfSize * 2 + 3, 1.5, 1)),
+    ]) {
+      scene.add(
+        Node(mesh: Mesh(CuboidGeometry(size), wallMaterial))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0.75, z)),
+      );
+    }
     scene.add(arena);
     // A 2 Hz HUD refresh; scene state itself never triggers rebuilds.
     _hud = Timer.periodic(
@@ -118,13 +137,19 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         session: session,
         root: arena,
         builders: {'net.player': _playerNode, 'net.pellet': _pelletNode},
-        // Predict the local player from its own input so movement is instant,
-        // running the same integration the server does and reconciling by
-        // replaying unacked inputs; remote players stay interpolated. When
-        // prediction is off the local player interpolates too, so it visibly
-        // lags input under latency.
-        localPrediction: (replica) =>
-            _predict ? _PlayerController(_pressed) : null,
+        // Predict the local ball in a client-side copy of the arena world so
+        // movement is instant; mispredictions (a bump from another ball) roll
+        // the world back to the acked tick and replay unacked inputs. Remote
+        // players stay interpolated. When prediction is off the local player
+        // interpolates too, so it visibly lags input under latency.
+        // TODO(wasm): enable on web once the rapier wasm carries the
+        // snapshot/restore exports and the Dart-side marshalling lands.
+        localPrediction: (replica) {
+          if (!_predict || kIsWeb) return null;
+          final controller = _PlayerController(_pressed, replica as NetPlayer);
+          _clientWorlds.add(controller.simulation);
+          return controller;
+        },
       );
       session.done.whenComplete(() {
         if (mounted && _replication != null) _leave();
@@ -136,10 +161,9 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
   }
 
   Future<void> _hostGame() async {
-    final host = await SceneHost.start(
-      room: buildMultiplayerRoom(),
-      port: gamePort,
-    );
+    final (room, world) = buildMultiplayerRoom();
+    _serverWorld = world;
+    final host = await SceneHost.start(room: room, port: gamePort);
     _host = host;
     await _start(() async {
       final connection = await host.connectLocal();
@@ -167,6 +191,12 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     _host = null;
     await replication?.close();
     await host?.stop();
+    for (final world in _clientWorlds) {
+      world.dispose();
+    }
+    _clientWorlds.clear();
+    _serverWorld?.dispose();
+    _serverWorld = null;
     if (mounted) setState(() => _status = null);
   }
 
@@ -217,12 +247,14 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Host on this device, then move with WASD or arrows. Add '
-                    'simulated latency and toggle prediction to feel the '
-                    'difference, predicted input stays instant and reconciles, '
-                    'while an interpolated local player lags by the round trip. '
-                    'For two clients, open a second copy and Join the address '
-                    'the host shows.',
+                    'Host on this device, then push your ball with WASD or '
+                    'arrows; players are physics bodies that shove each other. '
+                    'Add simulated latency and toggle prediction to feel the '
+                    'difference, the predicted ball stays instant and rolls '
+                    'back to replay on a mispredicted bump, while an '
+                    'interpolated local player lags by the round trip. For two '
+                    'clients, open a second copy and Join the address the host '
+                    'shows.',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -375,12 +407,39 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
   }
 }
 
-/// Samples keyboard movement and integrates it, the same integration the
-/// server runs, so the local player is predicted and reconciled.
-class _PlayerController implements PredictedController {
-  _PlayerController(this._pressed);
+/// Samples keyboard movement and drives a client-side copy of the arena
+/// world, the same physics the server runs, so the local ball is
+/// rollback-predicted and reconciled.
+class _PlayerController implements PredictedPhysicsController {
+  _PlayerController(this._pressed, this.player)
+    : simulation = buildArenaWorld() {
+    bodyHandle = createPlayerBody(simulation, player.positionVector);
+  }
 
   final Set<LogicalKeyboardKey> _pressed;
+  final NetPlayer player;
+
+  @override
+  final PhysicsSimulation simulation;
+
+  @override
+  late final int bodyHandle;
+
+  @override
+  void applyInput(Uint8List input, double dt) =>
+      applyPlayerInput(simulation, bodyHandle, input);
+
+  @override
+  vm.Vector3? get authoritativeLinearVelocity {
+    final (x, y, z) = player.velocity.value;
+    return vm.Vector3(x, y, z);
+  }
+
+  @override
+  vm.Vector3? get authoritativeAngularVelocity {
+    final (x, y, z) = player.angularVelocity.value;
+    return vm.Vector3(x, y, z);
+  }
 
   double _axis(
     LogicalKeyboardKey minus,
@@ -411,25 +470,5 @@ class _PlayerController implements PredictedController {
       LogicalKeyboardKey.arrowDown,
     );
     return encodePlayerInput(strafe, forward);
-  }
-
-  @override
-  (vm.Vector3, vm.Quaternion) step(
-    vm.Vector3 position,
-    vm.Quaternion rotation,
-    Uint8List input,
-    double dt,
-  ) {
-    final (dx, dz) = decodePlayerInput(input);
-    final (p, r) = advancePlayer(
-      (position.x, position.y, position.z),
-      (rotation.x, rotation.y, rotation.z, rotation.w),
-      (dx, 0.0, dz),
-      dt,
-    );
-    return (
-      vm.Vector3(p.$1, p.$2, p.$3),
-      vm.Quaternion(r.$1, r.$2, r.$3, r.$4),
-    );
   }
 }
