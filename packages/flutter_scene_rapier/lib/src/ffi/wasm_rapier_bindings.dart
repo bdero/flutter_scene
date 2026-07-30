@@ -252,6 +252,28 @@ class WasmRapierBindings extends RapierBindings {
   ]);
 
   @override
+  void setBodyPose(
+    int handle,
+    double px,
+    double py,
+    double pz,
+    double qx,
+    double qy,
+    double qz,
+    double qw,
+  ) => _invoke('fsr_body_set_pose', [
+    _w,
+    _h(handle),
+    _f(px),
+    _f(py),
+    _f(pz),
+    _f(qx),
+    _f(qy),
+    _f(qz),
+    _f(qw),
+  ]);
+
+  @override
   void setBodyLockedAxes(int handle, int bits) =>
       _invoke('fsr_body_set_locked_axes', [_w, _h(handle), _i(bits)]);
 
