@@ -145,6 +145,16 @@ abstract class RapierBindings {
     double qz,
     double qw,
   );
+  void setBodyPose(
+    int handle,
+    double px,
+    double py,
+    double pz,
+    double qx,
+    double qy,
+    double qz,
+    double qw,
+  );
   void setBodyLockedAxes(int handle, int bits);
   void setBodyGravityScale(int handle, double scale);
   void setBodyCcdEnabled(int handle, bool enabled);

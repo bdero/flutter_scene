@@ -93,6 +93,12 @@ abstract class PhysicsSimulation {
     Quaternion rotation,
   );
 
+  /// Teleports a body to a pose immediately, waking it. No velocity is
+  /// integrated from the displacement; meant for rollback correction on top
+  /// of a [restore]. Throws [UnsupportedError] on backends without it.
+  void setBodyPose(int bodyHandle, Vector3 translation, Quaternion rotation) =>
+      throw UnsupportedError('$backendName has no body teleport');
+
   void applyForce(int bodyHandle, Vector3 force, {Vector3? atWorldPoint});
   void applyImpulse(int bodyHandle, Vector3 impulse, {Vector3? atWorldPoint});
   void applyTorque(int bodyHandle, Vector3 torque);
