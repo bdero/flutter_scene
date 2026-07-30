@@ -6,15 +6,18 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' hide Colors;
 
 import 'network_transform.dart';
+import 'predicted_physics.dart';
 import 'predicted_transform.dart';
 import 'transform_replica.dart';
 
 /// Builds the scene subtree representing [replica] at spawn time.
 typedef ReplicaNodeBuilder = Node Function(Replica replica);
 
-/// Supplies the client-side prediction controller for an owned [replica], or
-/// null to interpolate it like any other entity.
-typedef LocalPredictionBuilder = PredictedController? Function(Replica replica);
+/// Supplies the client-side prediction controller for an owned [replica]
+/// (a [PredictedController] or a [PredictedPhysicsController]), or null to
+/// interpolate it like any other entity.
+typedef LocalPredictionBuilder =
+    PredictionController? Function(Replica replica);
 
 /// Binds a replication client to a scene graph.
 ///
@@ -85,16 +88,21 @@ final class SceneReplication {
       final controller = replica.owner == localPeerId
           ? _localPrediction?.call(replica)
           : null;
-      node.addComponent(
-        controller != null
-            ? PredictedTransformComponent(
-                replica,
-                controller: controller,
-                client: client,
-                tickRate: session.tickRate,
-              )
-            : NetworkTransformComponent(replica, delay: interpolationDelay),
-      );
+      node.addComponent(switch (controller) {
+        PredictedPhysicsController physics => PredictedPhysicsComponent(
+          replica,
+          controller: physics,
+          client: client,
+          tickRate: session.tickRate,
+        ),
+        PredictedController analytic => PredictedTransformComponent(
+          replica,
+          controller: analytic,
+          client: client,
+          tickRate: session.tickRate,
+        ),
+        _ => NetworkTransformComponent(replica, delay: interpolationDelay),
+      });
     }
     root.add(node);
     _nodes[replica.id!] = node;

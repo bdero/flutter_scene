@@ -8,6 +8,10 @@ import 'package:vector_math/vector_math.dart' hide Colors;
 
 import 'transform_replica.dart';
 
+/// A client-side prediction driver for an owned entity, either the analytic
+/// [PredictedController] or the physics-rollback `PredictedPhysicsController`.
+abstract interface class PredictionController {}
+
 /// Client-side driver for an owned, predicted entity.
 ///
 /// [sampleInput] captures and encodes this tick's local input for the wire.
@@ -15,7 +19,7 @@ import 'transform_replica.dart';
 /// match the server's integration exactly (share one function) so replay
 /// reconciliation converges. Encode one-frame events (a jump, a shot) as
 /// counters, not booleans, so a resent command reproduces them.
-abstract interface class PredictedController {
+abstract interface class PredictedController implements PredictionController {
   Uint8List sampleInput();
 
   (Vector3 position, Quaternion rotation) step(
