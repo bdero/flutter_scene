@@ -9,8 +9,11 @@ library;
 
 export 'src/hosting/hosting.dart' show SceneHost;
 export 'src/network_transform.dart' show NetworkTransformComponent;
+export 'src/physics_world_history.dart' show PhysicsWorldHistory;
+export 'src/predicted_physics.dart'
+    show PredictedPhysicsComponent, PredictedPhysicsController;
 export 'src/predicted_transform.dart'
-    show PredictedController, PredictedTransformComponent;
+    show PredictedController, PredictedTransformComponent, PredictionController;
 export 'src/scene_replication.dart'
     show LocalPredictionBuilder, ReplicaNodeBuilder, SceneReplication;
 export 'src/transform_replica.dart' show TransformReplicaVectors;
