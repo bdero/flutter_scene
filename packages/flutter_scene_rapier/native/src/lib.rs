@@ -1348,6 +1348,31 @@ pub unsafe extern "C" fn fsr_body_set_next_kinematic_pose(
     }
 }
 
+/// Teleports a body to a pose immediately, waking it. Unlike the kinematic
+/// target above this does not integrate a velocity; it is meant for rollback
+/// correction (restore a snapshot, then adopt the authoritative pose).
+///
+/// # Safety
+/// `world` must be live; `raw` must come from [`fsr_body_create`].
+#[no_mangle]
+pub unsafe extern "C" fn fsr_body_set_pose(
+    world: *mut World,
+    raw: u64,
+    px: Real,
+    py: Real,
+    pz: Real,
+    qx: Real,
+    qy: Real,
+    qz: Real,
+    qw: Real,
+) {
+    let w = &mut *world;
+    if let Some(body) = w.rigid_body_set.get_mut(handle_from_raw(raw)) {
+        let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
+        body.set_position(pose, true);
+    }
+}
+
 /// Changes a body's kind (fixed / kinematic / dynamic) at runtime. Used to
 /// park a moving kinematic platform as fixed when it stops, so a kinematic
 /// character standing on it is not stuck by the controller's
