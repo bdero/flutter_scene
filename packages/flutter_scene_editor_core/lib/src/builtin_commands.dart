@@ -1585,6 +1585,7 @@ void _applyLookSkybox(
   _LookView next,
   _LookView old, {
   required String sky,
+  String? asset,
   Vector3? sun,
   required bool lightScene,
   required bool castShadows,
@@ -1593,8 +1594,23 @@ void _applyLookSkybox(
   final sameType =
       (sky == 'gradient' && current is GradientSkySpec) ||
       (sky == 'physical' && current is PhysicalSkySpec) ||
-      (sky == 'environment' && current is EnvironmentSkySpec);
-  final base = sameType ? current! : _defaultSkySource(sky);
+      (sky == 'environment' && current is EnvironmentSkySpec) ||
+      (sky == 'fmat' &&
+          current is FmatSkySpec &&
+          (asset == null || current.asset.key == asset));
+  final SkySourceSpec? base;
+  if (sameType) {
+    base = current!;
+  } else if (sky == 'fmat') {
+    if (asset == null) {
+      throw const CommandException(
+        'A shader sky needs an asset (the .fmat source path).',
+      );
+    }
+    base = FmatSkySpec(AssetRef(asset));
+  } else {
+    base = _defaultSkySource(sky);
+  }
   final seedSun = sun ?? (sameType ? null : _specSunDirection(current));
   final overrides = <String, PropertyValue>{
     if (seedSun != null) 'sunDirection': Vec3Value(seedSun.clone()),
@@ -1606,7 +1622,9 @@ void _applyLookSkybox(
   next.skybox = skySource == null
       ? null
       : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
-  final canLight = sky == 'gradient' || sky == 'physical';
+  // Procedural and shader skies can drive image-based lighting (a shader sky
+  // realizes as a ShaderSkySource).
+  final canLight = sky == 'gradient' || sky == 'physical' || sky == 'fmat';
   final priorEnv = old.skyEnvironment;
   next.skyEnvironment = (lightScene && canLight)
       ? SkyEnvironmentSpec(
@@ -1792,6 +1810,12 @@ final setSkybox = CommandEntry(
   paramSchema: const [
     ParamSpec(name: 'sky', type: ParamType.string, label: 'Sky'),
     ParamSpec(
+      name: 'asset',
+      type: ParamType.string,
+      label: 'Asset (.fmat)',
+      required: false,
+    ),
+    ParamSpec(
       name: 'sunDirection',
       type: ParamType.vec3,
       label: 'Sun direction',
@@ -1824,6 +1848,7 @@ final setSkybox = CommandEntry(
         next,
         old,
         sky: sky,
+        asset: optionalString(params, 'asset'),
         sun: sun,
         lightScene: lightScene,
         castShadows: castShadows,
@@ -2080,6 +2105,12 @@ final setEnvironmentSkybox = CommandEntry(
     ),
     ParamSpec(name: 'sky', type: ParamType.string, label: 'Sky'),
     ParamSpec(
+      name: 'asset',
+      type: ParamType.string,
+      label: 'Asset (.fmat)',
+      required: false,
+    ),
+    ParamSpec(
       name: 'sunDirection',
       type: ParamType.vec3,
       label: 'Sun direction',
@@ -2113,6 +2144,7 @@ final setEnvironmentSkybox = CommandEntry(
       _EnvResourceLook(next),
       oldLook,
       sky: requireString(params, 'sky'),
+      asset: optionalString(params, 'asset'),
       sun: optionalVec3(params, 'sunDirection'),
       lightScene: lightScene,
       castShadows: castShadows,

@@ -103,6 +103,7 @@ class MaterialSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final resource = controller.document.resources[materialId];
     if (resource is! MaterialResource) return const SizedBox.shrink();
+    if (resource.type == 'fmat') return _buildFmat(context, resource);
     final fields = _fieldsFor(resource.type);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,8 +127,174 @@ class MaterialSection extends StatelessWidget {
           for (final field in fields)
             _fieldEditor(context, field, resource.properties[field.key]),
         ..._textureSlots(context, resource),
+        _useShaderRow(),
       ],
     );
+  }
+
+  // Offers replacing this node's material with a custom `.fmat` shader
+  // material (a new resource referencing the picked source in place).
+  Widget _useShaderRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          onPressed: () async {
+            final path = await pickFmatPath();
+            if (path != null) {
+              await assignFmatMaterial(controller, nodeId, path);
+            }
+          },
+          child: const Text(
+            'Use shader (.fmat)...',
+            style: TextStyle(fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // The fmat editor: the source path, any compile error (the last good
+  // shaders stay live), and fields generated from the compiled sidecar's
+  // parameter schema (range hints become sliders, source_color hints become
+  // color fields, samplers become texture slots).
+  Widget _buildFmat(BuildContext context, MaterialResource resource) {
+    final key = resource.asset?.key;
+    final metadata = key == null
+        ? null
+        : controller.fmatLibrary.metadataForKey(key);
+    final error = key == null
+        ? 'This fmat material has no source asset.'
+        : controller.fmatLibrary.errorForKey(key);
+    final parameters = (metadata?['parameters'] as List?) ?? const [];
+    final samplers = (metadata?['samplers'] as List?) ?? const [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          child: Text(
+            'Material: fmat',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ),
+        if (key != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
+            child: Text(
+              key,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            child: Text(
+              error,
+              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+            ),
+          ),
+        if (metadata == null && error == null)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Text(
+              'Compiling...',
+              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+            ),
+          ),
+        for (final raw in parameters)
+          _fmatFieldEditor(
+            (raw as Map).cast<String, Object?>(),
+            resource.properties,
+          ),
+        if (samplers.isNotEmpty) ...[
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(8, 0, 8, 4),
+            child: Text('Textures', style: TextStyle(fontSize: 12)),
+          ),
+          for (final raw in samplers)
+            if ((raw as Map)['name'] case final String samplerName)
+              _textureSlotRow(
+                samplerName,
+                samplerName,
+                resource.properties[samplerName],
+              ),
+        ],
+        _useShaderRow(),
+      ],
+    );
+  }
+
+  // One sidecar-declared parameter as an inspector field. Values shown are
+  // the document override when present, else the sidecar default.
+  Widget _fmatFieldEditor(
+    Map<String, Object?> param,
+    Map<String, PropertyValue> properties,
+  ) {
+    final name = param['name'] as String;
+    final type = param['type'] as String?;
+    final hint = (param['hint'] as Map?)?.cast<String, Object?>();
+    final defaultValue = param['default'];
+    final value = properties[name];
+    switch (type) {
+      case 'float' || 'int':
+        final isInt = type == 'int';
+        final ranged = hint?['kind'] == 'range';
+        final min = ranged ? (hint!['min'] as num).toDouble() : 0.0;
+        final max = ranged ? (hint!['max'] as num).toDouble() : 1.0;
+        final current = switch (value) {
+          DoubleValue(:final value) => value,
+          IntValue(:final value) => value.toDouble(),
+          _ => defaultValue is num ? defaultValue.toDouble() : 0.0,
+        };
+        // TODO(fmat-inspector-number): an unranged float clamps to a 0-1
+        // slider; offer a free numeric field instead.
+        return LiveSlider(
+          label: name,
+          value: current.clamp(min, max),
+          min: min,
+          max: max,
+          onPreview: (v) => _preview(name, isInt ? v.round() : v),
+          onCommit: (v) => _set(name, isInt ? v.round() : v),
+        );
+      case 'vec4' when hint?['kind'] == 'source_color':
+        final fallback = defaultValue is List && defaultValue.length == 4
+            ? [for (final c in defaultValue) (c as num).toDouble()]
+            : const [1.0, 1.0, 1.0, 1.0];
+        final c = value is ColorValue
+            ? value
+            : ColorValue(fallback[0], fallback[1], fallback[2], fallback[3]);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: ColorEditor(
+            label: name,
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            a: c.a,
+            onPreview: (r, g, b, a) =>
+                _preview(name, {'r': r, 'g': g, 'b': b, 'a': a}),
+            onCommit: (r, g, b, a) =>
+                _set(name, {'r': r, 'g': g, 'b': b, 'a': a}),
+          ),
+        );
+      default:
+        // TODO(fmat-inspector-vectors): field editors for vec2/vec3/plain
+        // vec4/mat4 parameters; until then they are set in the .fmat default.
+        return ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          title: Text('$name ($type)', style: const TextStyle(fontSize: 13)),
+          subtitle: const Text(
+            'Not editable here yet.',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        );
+    }
   }
 
   List<Widget> _textureSlots(BuildContext context, MaterialResource resource) {

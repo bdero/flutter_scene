@@ -40,3 +40,14 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) {
   ShaderLibrary.reinitialize(assetKey);
   return Future.value();
 }
+
+/// Refreshes a bytes-loaded [library] in place from regenerated bundle
+/// [bytes], preserving Shader identity (reflection offsets and pipeline-cache
+/// keys stay valid). Returns an error description, or null on success.
+Future<String?> reinitializeShaderLibraryFromBytesAsync(
+  ShaderLibrary library,
+  ByteData bytes,
+) {
+  // ignore: undefined_method
+  return Future.value(library.reinitializeFromBytes(bytes));
+}
