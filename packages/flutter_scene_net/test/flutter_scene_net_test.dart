@@ -106,6 +106,10 @@ void main() {
   });
 
   test('SceneHost serves loopback and WebSocket joiners', () async {
+    if (!SceneHost.isSupported) {
+      markTestSkipped('in-app hosting requires dart:io');
+      return;
+    }
     final room = Room(registry: _registry());
     final host = await SceneHost.start(room: room);
     room.host.spawn(_Pawn()..position.value = (7.0, 0.0, 0.0));
