@@ -128,6 +128,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _blending = _parseBlending(metadata['blending']);
     _culling = _parseCulling(metadata['culling']);
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
+    markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);
     parameters.updateFromMetadata(fragmentShader, metadata);
   }

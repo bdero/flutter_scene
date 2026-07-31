@@ -209,6 +209,11 @@ base class SceneEncoder {
   // that reuses it can skip the rebind. Opaque draws are pipeline-sorted,
   // so reuse runs are common.
   gpu.RenderPipeline? _boundPipeline;
+  Material? _boundMaterial;
+  gpu.Shader? _boundMaterialVertex;
+  double _boundMaterialFade = double.nan;
+  int _boundMaterialLightOffset = -1;
+  int _boundMaterialLightCount = -1;
 
   /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
@@ -355,6 +360,37 @@ base class SceneEncoder {
   void _clearBindings() {
     _renderPass.clearBindings();
     EngineLightingUniforms.invalidateBindMemo();
+    _boundMaterial = null;
+    _boundMaterialVertex = null;
+    _boundMaterialFade = double.nan;
+    _boundMaterialLightOffset = -1;
+    _boundMaterialLightCount = -1;
+  }
+
+  void _bindMaterial(
+    Material material,
+    gpu.Shader? materialVertex,
+    double fade,
+  ) {
+    final lightOffset = material.lightListOffset;
+    final lightCount = material.lightListCount;
+    if (identical(_boundMaterial, material) &&
+        identical(_boundMaterialVertex, materialVertex) &&
+        _boundMaterialFade == fade &&
+        _boundMaterialLightOffset == lightOffset &&
+        _boundMaterialLightCount == lightCount) {
+      return;
+    }
+    material.lodFade = fade;
+    material.bind(_renderPass, _transientsBuffer, _lighting);
+    if (materialVertex != null) {
+      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
+    }
+    _boundMaterial = material;
+    _boundMaterialVertex = materialVertex;
+    _boundMaterialFade = fade;
+    _boundMaterialLightOffset = lightOffset;
+    _boundMaterialLightCount = lightCount;
   }
 
   void _encode(
@@ -378,10 +414,6 @@ base class SceneEncoder {
       _clearBindings();
     }
     _bindPipeline(pipeline);
-    // The material reads its cross-fade coverage from this transient field as
-    // it binds; reset for every draw so a shared material does not leak a
-    // previous draw's fade.
-    material.lodFade = fade;
     // A `vertex { }` material supplies its own vertex shader for this mesh
     // type; the geometry must bind FrameInfo (and skinned's joints texture)
     // against it, since its uniform slots can differ from the engine default.
@@ -405,16 +437,14 @@ base class SceneEncoder {
         slot: geometry.vertexStreamCount,
       );
     }
-    material.bind(_renderPass, _transientsBuffer, _lighting);
-    if (materialVertex != null) {
-      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
-    }
-    if (windingFlipped) {
-      // A mirrored (negative-determinant) transform reverses triangle
-      // winding; flip the cull order so front faces aren't culled. Material
-      // .bind set the default counter-clockwise winding.
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-    }
+    _bindMaterial(material, materialVertex, fade);
+    // A mirrored transform reverses triangle winding. Set both cases because
+    // a cached material bind no longer resets it between compatible draws.
+    _renderPass.setWindingOrder(
+      windingFlipped
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
+    );
     _renderPass.setPrimitiveType(geometry.primitiveType);
     geometry.draw(_renderPass);
   }
@@ -438,16 +468,14 @@ base class SceneEncoder {
     double fade, {
     Vector3? sortBackToFrontFrom,
   }) {
-    _clearBindings();
+    if (!identical(_boundPipeline, pipeline)) {
+      _clearBindings();
+    }
     _bindPipeline(pipeline);
-    material.lodFade = fade;
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    material.bind(_renderPass, _transientsBuffer, _lighting);
-    if (materialVertex != null) {
-      material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
-    }
+    _bindMaterial(material, materialVertex, fade);
     _renderPass.setPrimitiveType(geometry.primitiveType);
 
     if (geometry.instancedVertexLayout == null) {
@@ -633,6 +661,8 @@ base class SceneEncoder {
     if (translucentPass != null) {
       _renderPass = translucentPass;
       _boundPipeline = null;
+      _boundMaterial = null;
+      _boundMaterialVertex = null;
       _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
     }
 

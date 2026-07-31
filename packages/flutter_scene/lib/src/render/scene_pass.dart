@@ -62,10 +62,12 @@ class ScenePass extends RenderGraphPass {
     Fog? fog,
     bool captureOpaqueColor = false,
     bool bindSceneDepth = false,
+    bool publishDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
   }) : _captureOpaqueColor = captureOpaqueColor,
        _bindSceneDepth = bindSceneDepth,
+       _publishDepth = publishDepth,
        _time = time,
        _camera = camera,
        _layerMask = layerMask,
@@ -109,6 +111,7 @@ class ScenePass extends RenderGraphPass {
   // prepass linear depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
   final bool _bindSceneDepth;
+  final bool _publishDepth;
   final double _time;
   late final List<Plane> _cullingPlanes;
 
@@ -139,7 +142,7 @@ class ScenePass extends RenderGraphPass {
         height: height,
         format: gpu.gpuContext.defaultDepthStencilFormat,
         sampleCount: _enableMsaa ? 4 : 1,
-        shaderReadable: capture,
+        shaderReadable: capture || _publishDepth,
         debugName: 'scene_depth',
       ),
     );
@@ -195,7 +198,7 @@ class ScenePass extends RenderGraphPass {
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
         depthClearValue: 1.0,
-        depthStoreAction: capture
+        depthStoreAction: capture || _publishDepth
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
       ),
@@ -312,6 +315,9 @@ class ScenePass extends RenderGraphPass {
       encoder.flush();
       rendererSubmissions.submit(commandBuffer);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
+      if (_publishDepth) {
+        context.blackboard.set(kSceneDepthStencilBlackboardKey, depth);
+      }
       return;
     }
 
@@ -351,6 +357,9 @@ class ScenePass extends RenderGraphPass {
 
     context.blackboard.set(kOpaqueSceneColorBlackboardKey, opaqueColor!);
     context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
+    if (_publishDepth) {
+      context.blackboard.set(kSceneDepthStencilBlackboardKey, depth);
+    }
   }
 
   static final gpu.Shader _copyVertexShader =

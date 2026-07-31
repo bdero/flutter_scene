@@ -178,7 +178,6 @@ class ShadowEncoder {
   }
 
   void _encode(RenderItem item) {
-    _renderPass.clearBindings();
     final geometry = item.geometry;
     // Skinned casters bind their joints texture through the full-vertex
     // path below; apply this item's skeleton to the (possibly shared)
@@ -212,6 +211,7 @@ class ShadowEncoder {
       vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
     );
     if (!identical(_boundPipeline, pipeline)) {
+      _renderPass.clearBindings();
       _renderPass.bindPipeline(pipeline);
       _boundPipeline = pipeline;
     }

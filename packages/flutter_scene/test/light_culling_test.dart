@@ -73,19 +73,24 @@ void main() {
     );
   });
 
-  test('an infinite-influence light reaches every item', () {
+  test('infinite-influence lights share one index slice', () {
     final a = _itemAt(0);
     final b = _itemAt(100);
     final items = [a, b];
     final result = assignLightsToItems(
       items: items,
       bvh: Bvh.build(items),
-      lights: [const CullableLight(7, null)], // null bounds = infinite
+      lights: const [
+        CullableLight(7, null),
+        CullableLight(9, null),
+      ], // null bounds = infinite
       maxPerItem: 16,
     );
-    expect(a.lightListCount, 1);
-    expect(b.lightListCount, 1);
-    expect(result.indices, [7, 7]);
+    expect(a.lightListOffset, 0);
+    expect(b.lightListOffset, 0);
+    expect(a.lightListCount, 2);
+    expect(b.lightListCount, 2);
+    expect(result.indices, [7, 9]);
   });
 
   test('lightInfluenceBounds is null for a non-positive range', () {

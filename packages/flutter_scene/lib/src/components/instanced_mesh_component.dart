@@ -62,6 +62,13 @@ class InstancedMeshComponent extends Component {
     final boundsChangedByInput =
         worldTransformVersion != _worldTransformVersion ||
         instanceRevision != _instanceRevision;
+    final staticShadowChanged =
+        (item.visible != true ||
+            item.shadowStatic != node.shadowStatic ||
+            item.castsShadows != node.castsShadows ||
+            boundsChangedByInput) &&
+        (item.shadowStatic || node.shadowStatic) &&
+        (item.castsShadows || node.castsShadows);
     if (worldTransformVersion != _worldTransformVersion) {
       item.worldTransform.setFrom(worldTransform);
     }
@@ -70,6 +77,9 @@ class InstancedMeshComponent extends Component {
     item.castsShadows = node.castsShadows;
     item.instanceTransforms = instancedMesh.instances;
     item.instanceColors = instancedMesh.colors;
+    if (staticShadowChanged) {
+      node.internalRenderScene?.markStaticShadowDirty();
+    }
     if (instanceRevision != _instanceRevision) {
       item.instanceBounds = instancedMesh.aggregateBounds;
     }
@@ -97,6 +107,11 @@ class InstancedMeshComponent extends Component {
   /// by the scene pre-pass while the owning node is hidden.
   @internal
   void hideRenderItem() {
-    _renderItem?.visible = false;
+    final item = _renderItem;
+    if (item == null) return;
+    if (item.visible && item.shadowStatic && item.castsShadows) {
+      node.internalRenderScene?.markStaticShadowDirty();
+    }
+    item.visible = false;
   }
 }

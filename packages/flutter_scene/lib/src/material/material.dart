@@ -14,6 +14,18 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
+int _sceneInputsRevision = 0;
+
+/// Changes whenever live material metadata changes its scene inputs.
+@internal
+int get materialSceneInputsRevision => _sceneInputsRevision;
+
+/// Invalidates cached scene-input summaries after material hot reload.
+@internal
+void markMaterialSceneInputsChanged() {
+  _sceneInputsRevision++;
+}
+
 /// Resolves a texture-slot value to the texture to sample this frame.
 ///
 /// A [RenderTexture] resolves to its latest completed frame (null before
