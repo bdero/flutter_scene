@@ -89,19 +89,39 @@ class WasmRapierBindings extends RapierBindings {
   @override
   void step(double dt) => _invoke('fsr_world_step', [_w, _f(dt)]);
 
-  // TODO(prediction): marshal the snapshot buffer through wasm linear memory
-  // once the wasm module is rebuilt with the fsr_world_snapshot/restore/free
-  // exports. Until then the web backend has no world rollback.
   @override
-  Uint8List snapshot() => throw UnsupportedError(
-    'World snapshot is not available on the web backend yet; it needs the '
-    'wasm module rebuilt with the fsr_world_snapshot exports.',
-  );
+  Uint8List snapshot() {
+    // usize is 4 bytes on wasm32; the shim allocates the buffer and
+    // fsr_world_snapshot_free releases it after the copy out.
+    final lengthPtr = _runtime.alloc(4);
+    try {
+      final ptr = _invokeInt('fsr_world_snapshot', [_w, _i(lengthPtr)]);
+      final length = _runtime.readU32(lengthPtr);
+      if (ptr == 0 || length == 0) return Uint8List(0);
+      final bytes = _runtime.readBytes(ptr, length);
+      _invoke('fsr_world_snapshot_free', [_i(ptr), _i(length)]);
+      return bytes;
+    } finally {
+      _runtime.free(lengthPtr, 4);
+    }
+  }
 
   @override
-  bool restore(Uint8List snapshot) => throw UnsupportedError(
-    'World restore is not available on the web backend yet; see snapshot().',
-  );
+  bool restore(Uint8List snapshot) {
+    if (snapshot.isEmpty) return false;
+    final ptr = _runtime.alloc(snapshot.length);
+    try {
+      _runtime.writeBytes(ptr, snapshot);
+      final ok = _invokeInt('fsr_world_restore', [
+        _w,
+        _i(ptr),
+        _i(snapshot.length),
+      ]);
+      return ok != 0;
+    } finally {
+      _runtime.free(ptr, snapshot.length);
+    }
+  }
 
   @override
   void dispose() {

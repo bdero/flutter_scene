@@ -1,10 +1,14 @@
+## Unreleased
+
+* `RapierWorld.snapshot`/`restore`, full world serialization for rollback prediction and lag-compensation rewind, on native and web.
+* `RapierWorld.setBodyPose`, immediate body teleport for rollback correction.
+* Ships new native binaries and wasm (new `fsr_world_snapshot`/`fsr_world_restore`/`fsr_body_set_pose` exports).
+
 ## 0.3.0
 
 * Requires flutter_scene 0.20.0.
 * BREAKING: implements the `scene` package's `PhysicsSimulation` contract and no longer depends on Flutter, so the simulation runs headless. Drive it with the generic `PhysicsWorld(RapierWorld())`, `RigidBody`, and `Collider` from flutter_scene; the backend-specific `Rapier*` component classes are removed.
-* `RapierWorld.snapshot`/`restore`, full world serialization for rollback prediction and lag-compensation rewind (native only until the wasm marshalling lands).
-* `RapierWorld.setBodyPose`, immediate body teleport for rollback correction.
-* Ships new native binaries and wasm (new `fsr_world_snapshot`/`fsr_world_restore`/`fsr_body_set_pose` exports).
+* No native changes; reuses the 0.1.0 prebuilt binaries and wasm.
 
 ## 0.2.2
 
