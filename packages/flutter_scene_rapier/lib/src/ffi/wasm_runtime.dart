@@ -80,6 +80,24 @@ abstract class WasmRuntime {
     );
   }
 
+  /// Copies [length] bytes starting at [pointer] out of the module.
+  Uint8List readBytes(int pointer, int length) {
+    final view = memory;
+    return Uint8List.fromList(
+      Uint8List.view(view.buffer, view.offsetInBytes + pointer, length),
+    );
+  }
+
+  /// Copies [bytes] into the module starting at [pointer].
+  void writeBytes(int pointer, Uint8List bytes) {
+    final view = memory;
+    Uint8List.view(
+      view.buffer,
+      view.offsetInBytes + pointer,
+      bytes.length,
+    ).setAll(0, bytes);
+  }
+
   /// Reads [count] consecutive 32-bit floats starting at [pointer].
   Float32List readF32List(int pointer, int count) {
     final view = memory;
