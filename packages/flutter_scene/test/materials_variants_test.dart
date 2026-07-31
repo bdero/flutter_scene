@@ -16,6 +16,9 @@ class _FakeMaterial implements Material {
   final String label;
 
   @override
+  Set<RenderInput> get sceneInputs => const {};
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
@@ -243,7 +246,7 @@ void main() {
   });
 
   group('LOD tags survive material refreshes', () {
-    test('refreshMaterials re-tags re-registered items', () {
+    test('refreshMaterials preserves LOD tags', () {
       final material = _FakeMaterial('m');
       final lod = LodComponent([
         LodLevel(geometry: _FakeGeometry(), material: material, screenSize: 0),

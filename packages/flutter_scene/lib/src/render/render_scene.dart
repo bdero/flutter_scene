@@ -31,7 +31,7 @@ class RenderItem {
   final Geometry geometry;
 
   /// Shader and per-material parameters.
-  final Material material;
+  Material material;
 
   /// Level-of-detail state, set by an [LodComponent] when the item is
   /// registered. When non-null the encoder picks one of its levels per view

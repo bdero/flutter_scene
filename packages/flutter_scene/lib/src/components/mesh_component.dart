@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -21,15 +22,51 @@ class MeshComponent extends Component {
 
   /// The mesh this component draws.
   ///
-  /// Assigning a different mesh re-registers the render items when the
-  /// owning node is part of a live scene.
+  /// Assigning a different mesh re-registers render items when its primitive
+  /// geometry changes. Material-only changes retain the existing items.
   Mesh get mesh => _mesh;
   set mesh(Mesh value) {
     if (identical(_mesh, value)) return;
+    if (_canRetainRenderItems(value)) {
+      _mesh = value;
+      _refreshRetainedMaterials();
+      return;
+    }
     _unregisterRenderItems();
     _mesh = value;
     _registerRenderItems();
     if (isAttached) node.markBoundsDirty();
+  }
+
+  bool _canRetainRenderItems(Mesh value) {
+    if (_mesh.primitives.length != value.primitives.length) return false;
+    for (var i = 0; i < value.primitives.length; i++) {
+      if (!identical(
+        _mesh.primitives[i].geometry,
+        value.primitives[i].geometry,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _refreshRetainedMaterials() {
+    if (_renderItems.length != _mesh.primitives.length) return;
+    var staticShadowChanged = false;
+    for (var i = 0; i < _renderItems.length; i++) {
+      final item = _renderItems[i];
+      final material = _mesh.primitives[i].material;
+      if (identical(item.material, material)) continue;
+      if (!setEquals(item.material.sceneInputs, material.sceneInputs)) {
+        markMaterialSceneInputsChanged();
+      }
+      item.material = material;
+      staticShadowChanged |= item.shadowStatic && item.castsShadows;
+    }
+    if (staticShadowChanged) {
+      node.internalRenderScene?.markStaticShadowDirty();
+    }
   }
 
   // One render item per mesh primitive. Empty while the component is not
@@ -67,7 +104,7 @@ class MeshComponent extends Component {
   }
 
   /// Called after this component registers its render items, on mount and on
-  /// every re-registration ([mesh] assignment, [refreshMaterials]).
+  /// geometry-changing [mesh] assignments.
   ///
   /// Subclasses that decorate the registered items (the LOD component tags
   /// them with its selection) must do so here rather than in [onMount], or
@@ -75,18 +112,12 @@ class MeshComponent extends Component {
   @protected
   void onRenderItemsRegistered() {}
 
-  /// Re-registers the render items so a changed [MeshPrimitive.material]
-  /// takes effect.
+  /// Updates render items after a [MeshPrimitive.material] change.
   ///
-  /// Render items capture the primitive's material when registered, so
-  /// mutating `primitive.material` on a mounted mesh is invisible until the
-  /// items are rebuilt. Re-registering also re-buckets items whose new
-  /// material changes translucency. No-op while unmounted (mounting
-  /// registers fresh items).
+  /// No-op while unmounted since mounting registers fresh items.
   @internal
   void refreshMaterials() {
-    _unregisterRenderItems();
-    _registerRenderItems();
+    _refreshRetainedMaterials();
   }
 
   void _unregisterRenderItems() {
