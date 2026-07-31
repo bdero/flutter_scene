@@ -287,11 +287,13 @@ class ShadowEncoder {
               instances,
               item.instanceColors!,
               nodeWindingFlipped: item.windingFlipped,
+              instanceWindingFlipped: item.instanceWindingFlipped,
             )
           : packInstanceTransforms(
               item.worldTransform,
               instances,
               nodeWindingFlipped: item.windingFlipped,
+              instanceWindingFlipped: item.instanceWindingFlipped,
             );
       if (packed.ccwCount > 0) {
         if (depthVertex == null) {

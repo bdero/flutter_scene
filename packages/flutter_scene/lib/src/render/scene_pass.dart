@@ -65,6 +65,7 @@ class ScenePass extends RenderGraphPass {
     bool publishDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
+    bool includeOffscreen = false,
   }) : _captureOpaqueColor = captureOpaqueColor,
        _bindSceneDepth = bindSceneDepth,
        _publishDepth = publishDepth,
@@ -86,7 +87,8 @@ class ScenePass extends RenderGraphPass {
        _cascades = cascades,
        _specularOcclusionMode = specularOcclusionMode,
        _fog = fog,
-       _cullingPlanes = cullingPlanes;
+       _cullingPlanes = cullingPlanes,
+       _includeOffscreen = includeOffscreen;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -114,6 +116,7 @@ class ScenePass extends RenderGraphPass {
   final bool _publishDepth;
   final double _time;
   late final List<Plane> _cullingPlanes;
+  final bool _includeOffscreen;
 
   static const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
@@ -304,12 +307,20 @@ class ScenePass extends RenderGraphPass {
       _dimensions,
       lighting,
       _layerMask,
+      _cullingPlanes,
+      !_includeOffscreen,
     );
-    _renderScene.cull(
-      encoder.frustum,
-      encoder.submit,
-      additionalPlanes: _cullingPlanes,
-    );
+    if (_includeOffscreen) {
+      for (final item in _renderScene.items) {
+        encoder.submit(item);
+      }
+    } else {
+      _renderScene.cull(
+        encoder.frustum,
+        encoder.submit,
+        additionalPlanes: _cullingPlanes,
+      );
+    }
 
     if (!capture) {
       encoder.flush();

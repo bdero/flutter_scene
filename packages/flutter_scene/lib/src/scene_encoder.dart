@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -27,24 +28,42 @@ base class _OpaqueRecord {
     this.pipelineKey,
     this.depth,
   );
-  final RenderItem item;
+  late RenderItem item;
   // The geometry and material to draw, which differ from the item's own when
   // a level of detail was selected.
-  final Geometry geometry;
-  final Material material;
+  late Geometry geometry;
+  late Material material;
   // LOD cross-fade coverage for this draw (1 when not fading); see
   // [Material.lodFade].
-  final double fade;
-  final gpu.RenderPipeline pipeline;
-  final int pipelineKey;
-  final double depth;
+  late double fade;
+  late gpu.RenderPipeline pipeline;
+  late int pipelineKey;
+  late double depth;
+
+  void reset(
+    RenderItem item,
+    Geometry geometry,
+    Material material,
+    double fade,
+    gpu.RenderPipeline pipeline,
+    int pipelineKey,
+    double depth,
+  ) {
+    this.item = item;
+    this.geometry = geometry;
+    this.material = material;
+    this.fade = fade;
+    this.pipeline = pipeline;
+    this.pipelineKey = pipelineKey;
+    this.depth = depth;
+  }
 
   int get geometryKey => identityHashCode(geometry);
   int get materialKey => identityHashCode(material);
 }
 
-/// A deferred translucent draw. An instanced translucent item produces
-/// one record per instance, so each carries its own world transform.
+/// A deferred translucent draw. Instanced draws retain their item so their
+/// transforms can be sorted while the instance buffer is packed.
 base class _TranslucentRecord {
   _TranslucentRecord(
     this.item,
@@ -60,21 +79,49 @@ base class _TranslucentRecord {
     this.jointsTexture,
     this.jointsTextureWidth,
   );
-  final RenderItem item;
-  final Matrix4 worldTransform;
-  final Geometry geometry;
-  final Material material;
-  final double fade;
-  final gpu.RenderPipeline pipeline;
-  final double depth;
-  final bool windingFlipped;
+  late RenderItem item;
+  late Matrix4 worldTransform;
+  late Geometry geometry;
+  late Material material;
+  late double fade;
+  late gpu.RenderPipeline pipeline;
+  late double depth;
+  late bool windingFlipped;
   // The owning item's punctual-light slice, captured at submit time.
-  final int lightListOffset;
-  final int lightListCount;
+  late int lightListOffset;
+  late int lightListCount;
   // The owning item's joints texture, applied to the geometry right before
   // this draw so skinned items sharing one geometry keep their own skeleton.
-  final gpu.Texture? jointsTexture;
-  final int jointsTextureWidth;
+  late gpu.Texture? jointsTexture;
+  late int jointsTextureWidth;
+
+  void reset(
+    RenderItem item,
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+    double fade,
+    gpu.RenderPipeline pipeline,
+    double depth,
+    bool windingFlipped,
+    int lightListOffset,
+    int lightListCount,
+    gpu.Texture? jointsTexture,
+    int jointsTextureWidth,
+  ) {
+    this.item = item;
+    this.worldTransform = worldTransform;
+    this.geometry = geometry;
+    this.material = material;
+    this.fade = fade;
+    this.pipeline = pipeline;
+    this.depth = depth;
+    this.windingFlipped = windingFlipped;
+    this.lightListOffset = lightListOffset;
+    this.lightListCount = lightListCount;
+    this.jointsTexture = jointsTexture;
+    this.jointsTextureWidth = jointsTextureWidth;
+  }
 }
 
 /// The viewport size of the scene color pass currently being encoded.
@@ -169,6 +216,8 @@ base class SceneEncoder {
     ui.Size dimensions,
     this._lighting,
     this._layerMask,
+    this._cullingPlanes,
+    this._cullInstances,
   ) : _renderPass = renderPass,
       _transientsBuffer = transientsBuffer {
     currentSceneEncoderViewport = dimensions;
@@ -188,6 +237,8 @@ base class SceneEncoder {
   final Camera _camera;
   final Lighting _lighting;
   final int _layerMask;
+  final List<Plane> _cullingPlanes;
+  final bool _cullInstances;
   // Not final: when the scene pass splits into two GPU passes to snapshot
   // the opaque color, [flushTranslucent] switches recording to the second
   // pass.
@@ -199,6 +250,9 @@ base class SceneEncoder {
   late final double? _lodFovRadiansY;
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
+  static final List<_OpaqueRecord> _opaqueRecordPool = [];
+  static final List<_TranslucentRecord> _translucentRecordPool = [];
+  static const int _recordPoolLimit = 8192;
 
   /// View frustum derived from the camera's view-projection matrix at
   /// the start of this frame. Used by [submit] for per-item culling.
@@ -211,9 +265,12 @@ base class SceneEncoder {
   gpu.RenderPipeline? _boundPipeline;
   Material? _boundMaterial;
   gpu.Shader? _boundMaterialVertex;
+  gpu.Shader? _boundFrameInfoShader;
   double _boundMaterialFade = double.nan;
   int _boundMaterialLightOffset = -1;
   int _boundMaterialLightCount = -1;
+  gpu.WindingOrder? _boundWindingOrder;
+  gpu.PrimitiveType? _boundPrimitiveType;
 
   /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
@@ -224,6 +281,11 @@ base class SceneEncoder {
   void submit(RenderItem item) {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
+    if (_cullInstances) {
+      if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
+    } else {
+      item.visibleInstanceIndices = null;
+    }
 
     // The render scene already rejected this item through its BVH. Reuse its
     // retained world bounds for the LOD metric instead of transforming again.
@@ -261,7 +323,7 @@ base class SceneEncoder {
 
     if (material.isOpaque()) {
       _opaqueRecords.add(
-        _OpaqueRecord(
+        _obtainOpaqueRecord(
           item,
           geometry,
           material,
@@ -280,7 +342,7 @@ base class SceneEncoder {
     if (instances != null) {
       final center = item.worldBounds?.center;
       _translucentRecords.add(
-        _TranslucentRecord(
+        _obtainTranslucentRecord(
           item,
           item.worldTransform,
           geometry,
@@ -299,7 +361,7 @@ base class SceneEncoder {
       );
     } else {
       _translucentRecords.add(
-        _TranslucentRecord(
+        _obtainTranslucentRecord(
           item,
           item.worldTransform,
           geometry,
@@ -315,6 +377,76 @@ base class SceneEncoder {
         ),
       );
     }
+  }
+
+  _OpaqueRecord _obtainOpaqueRecord(
+    RenderItem item,
+    Geometry geometry,
+    Material material,
+    double fade,
+    gpu.RenderPipeline pipeline,
+    int pipelineKey,
+    double depth,
+  ) {
+    if (_opaqueRecordPool.isEmpty) {
+      return _OpaqueRecord(
+        item,
+        geometry,
+        material,
+        fade,
+        pipeline,
+        pipelineKey,
+        depth,
+      );
+    }
+    return _opaqueRecordPool.removeLast()
+      ..reset(item, geometry, material, fade, pipeline, pipelineKey, depth);
+  }
+
+  _TranslucentRecord _obtainTranslucentRecord(
+    RenderItem item,
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+    double fade,
+    gpu.RenderPipeline pipeline,
+    double depth,
+    bool windingFlipped,
+    int lightListOffset,
+    int lightListCount,
+    gpu.Texture? jointsTexture,
+    int jointsTextureWidth,
+  ) {
+    if (_translucentRecordPool.isEmpty) {
+      return _TranslucentRecord(
+        item,
+        worldTransform,
+        geometry,
+        material,
+        fade,
+        pipeline,
+        depth,
+        windingFlipped,
+        lightListOffset,
+        lightListCount,
+        jointsTexture,
+        jointsTextureWidth,
+      );
+    }
+    return _translucentRecordPool.removeLast()..reset(
+      item,
+      worldTransform,
+      geometry,
+      material,
+      fade,
+      pipeline,
+      depth,
+      windingFlipped,
+      lightListOffset,
+      lightListCount,
+      jointsTexture,
+      jointsTextureWidth,
+    );
   }
 
   // The level(s) of detail to draw for [lod] from the item's [worldBounds],
@@ -362,9 +494,12 @@ base class SceneEncoder {
     EngineLightingUniforms.invalidateBindMemo();
     _boundMaterial = null;
     _boundMaterialVertex = null;
+    _boundFrameInfoShader = null;
     _boundMaterialFade = double.nan;
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
+    _boundWindingOrder = null;
+    _boundPrimitiveType = null;
   }
 
   void _bindMaterial(
@@ -383,6 +518,7 @@ base class SceneEncoder {
     }
     material.lodFade = fade;
     material.bind(_renderPass, _transientsBuffer, _lighting);
+    _boundWindingOrder = null;
     if (materialVertex != null) {
       material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
     }
@@ -391,6 +527,56 @@ base class SceneEncoder {
     _boundMaterialFade = fade;
     _boundMaterialLightOffset = lightOffset;
     _boundMaterialLightCount = lightCount;
+  }
+
+  void _setWindingOrder(gpu.WindingOrder windingOrder) {
+    if (_boundWindingOrder == windingOrder) return;
+    _renderPass.setWindingOrder(windingOrder);
+    _boundWindingOrder = windingOrder;
+  }
+
+  void _setPrimitiveType(gpu.PrimitiveType primitiveType) {
+    if (_boundPrimitiveType == primitiveType) return;
+    _renderPass.setPrimitiveType(primitiveType);
+    _boundPrimitiveType = primitiveType;
+  }
+
+  void _bindGeometry(
+    Geometry geometry,
+    Matrix4 worldTransform,
+    gpu.Shader? materialVertex,
+  ) {
+    if (geometry is UnskinnedGeometry) {
+      geometry.bindGeometryBuffers(_renderPass);
+      final shader = materialVertex ?? geometry.vertexShader;
+      if (!identical(_boundFrameInfoShader, shader)) {
+        bindUnskinnedFrameInfo(
+          _renderPass,
+          _transientsBuffer,
+          shader,
+          _cameraTransform,
+          _camera.position,
+        );
+        _boundFrameInfoShader = shader;
+      }
+    } else {
+      geometry.bind(
+        _renderPass,
+        _transientsBuffer,
+        worldTransform,
+        _cameraTransform,
+        _camera.position,
+        shaderOverride: materialVertex,
+      );
+    }
+  }
+
+  void _bindPackedInstances(Float32List packed, int slot) {
+    bindInstanceData(_renderPass, packed, slot: slot);
+  }
+
+  void _drawGeometry(Geometry geometry, {int instanceCount = 1}) {
+    geometry.draw(_renderPass, instanceCount: instanceCount);
   }
 
   void _encode(
@@ -420,14 +606,7 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    geometry.bind(
-      _renderPass,
-      _transientsBuffer,
-      worldTransform,
-      _cameraTransform,
-      _camera.position,
-      shaderOverride: materialVertex,
-    );
+    _bindGeometry(geometry, worldTransform, materialVertex);
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
       // bound to the slot after the geometry's vertex streams.
@@ -440,13 +619,13 @@ base class SceneEncoder {
     _bindMaterial(material, materialVertex, fade);
     // A mirrored transform reverses triangle winding. Set both cases because
     // a cached material bind no longer resets it between compatible draws.
-    _renderPass.setWindingOrder(
+    _setWindingOrder(
       windingFlipped
           ? gpu.WindingOrder.clockwise
           : gpu.WindingOrder.counterClockwise,
     );
-    _renderPass.setPrimitiveType(geometry.primitiveType);
-    geometry.draw(_renderPass);
+    _setPrimitiveType(geometry.primitiveType);
+    _drawGeometry(geometry);
   }
 
   /// Draws an opaque instanced item with hardware instancing: the instance
@@ -466,6 +645,8 @@ base class SceneEncoder {
     List<Vector4> colors,
     bool windingFlipped,
     double fade, {
+    List<bool>? instanceWindingFlipped,
+    List<int>? instanceIndices,
     Vector3? sortBackToFrontFrom,
   }) {
     if (!identical(_boundPipeline, pipeline)) {
@@ -476,55 +657,83 @@ base class SceneEncoder {
       geometry.materialVertexVariant,
     );
     _bindMaterial(material, materialVertex, fade);
-    _renderPass.setPrimitiveType(geometry.primitiveType);
+    _setPrimitiveType(geometry.primitiveType);
 
     if (geometry.instancedVertexLayout == null) {
-      for (final instanceTransform in instances) {
-        geometry.bind(
-          _renderPass,
-          _transientsBuffer,
+      final count = instanceIndices?.length ?? instances.length;
+      for (var slot = 0; slot < count; slot++) {
+        final instanceIndex = instanceIndices?[slot] ?? slot;
+        final instanceTransform = instances[instanceIndex];
+        _bindGeometry(
+          geometry,
           nodeTransform * instanceTransform,
-          _cameraTransform,
-          _camera.position,
-          shaderOverride: materialVertex,
+          materialVertex,
         );
         // Each instance can itself mirror; combine with the node's parity.
         final flip = windingFlipped != (instanceTransform.determinant() < 0);
-        _renderPass.setWindingOrder(
+        _setWindingOrder(
           flip ? gpu.WindingOrder.clockwise : gpu.WindingOrder.counterClockwise,
         );
-        geometry.draw(_renderPass);
+        _drawGeometry(geometry);
       }
       return;
     }
 
-    geometry.bind(
-      _renderPass,
-      _transientsBuffer,
-      nodeTransform,
-      _cameraTransform,
-      _camera.position,
-      shaderOverride: materialVertex,
-    );
+    _bindGeometry(geometry, nodeTransform, materialVertex);
     final packed = packInstanceData(
       nodeTransform,
       instances,
       colors,
       nodeWindingFlipped: windingFlipped,
+      instanceWindingFlipped: instanceWindingFlipped,
+      indices: instanceIndices,
       sortBackToFrontFrom: sortBackToFrontFrom,
     );
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
-      bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
-      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+      _bindPackedInstances(packed.ccw, instanceSlot);
+      _setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _drawGeometry(geometry, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
-      bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-      geometry.draw(_renderPass, instanceCount: packed.cwCount);
+      _bindPackedInstances(packed.cw, instanceSlot);
+      _setWindingOrder(gpu.WindingOrder.clockwise);
+      _drawGeometry(geometry, instanceCount: packed.cwCount);
     }
   }
+
+  void _encodeInstancedBatches(
+    gpu.RenderPipeline pipeline,
+    Geometry geometry,
+    Material material,
+    List<InstanceDataBatch> batches,
+    double fade,
+  ) {
+    if (!identical(_boundPipeline, pipeline)) {
+      _clearBindings();
+    }
+    _bindPipeline(pipeline);
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
+    _bindMaterial(material, materialVertex, fade);
+    _setPrimitiveType(geometry.primitiveType);
+    _bindGeometry(geometry, _identityTransform, materialVertex);
+    final packed = packInstanceDataBatches(batches);
+    final instanceSlot = geometry.vertexStreamCount;
+    if (packed.ccwCount > 0) {
+      _bindPackedInstances(packed.ccw, instanceSlot);
+      _setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _drawGeometry(geometry, instanceCount: packed.ccwCount);
+    }
+    if (packed.cwCount > 0) {
+      _bindPackedInstances(packed.cw, instanceSlot);
+      _setWindingOrder(gpu.WindingOrder.clockwise);
+      _drawGeometry(geometry, instanceCount: packed.cwCount);
+    }
+  }
+
+  static final Matrix4 _identityTransform = Matrix4.identity();
 
   /// Sorts and emits every deferred draw, then finishes recording.
   ///
@@ -579,34 +788,35 @@ base class SceneEncoder {
         }
       }
       if (end > index + 1) {
-        final transforms = <Matrix4>[];
-        final colors = <Vector4>[];
+        final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final batchItem = _opaqueRecords[batchIndex].item;
           final instances = batchItem.instanceTransforms;
           if (instances == null) {
-            transforms.add(Matrix4.copy(batchItem.worldTransform));
-            colors.add(Vector4.all(1));
+            batches.add(
+              InstanceDataBatch.single(
+                nodeTransform: batchItem.worldTransform,
+                nodeWindingFlipped: batchItem.windingFlipped,
+              ),
+            );
             continue;
           }
-          final instanceColors = batchItem.instanceColors!;
-          for (
-            var instanceIndex = 0;
-            instanceIndex < instances.length;
-            instanceIndex++
-          ) {
-            transforms.add(batchItem.worldTransform * instances[instanceIndex]);
-            colors.add(instanceColors[instanceIndex]);
-          }
+          batches.add(
+            InstanceDataBatch(
+              nodeTransform: batchItem.worldTransform,
+              instances: instances,
+              colors: batchItem.instanceColors!,
+              nodeWindingFlipped: batchItem.windingFlipped,
+              instanceWindingFlipped: batchItem.instanceWindingFlipped,
+              indices: batchItem.visibleInstanceIndices,
+            ),
+          );
         }
-        _encodeInstanced(
+        _encodeInstancedBatches(
           record.pipeline,
-          Matrix4.identity(),
           record.geometry,
           record.material,
-          transforms,
-          colors,
-          false,
+          batches,
           record.fade,
         );
         index = end;
@@ -624,6 +834,8 @@ base class SceneEncoder {
           item.instanceColors!,
           item.windingFlipped,
           record.fade,
+          instanceWindingFlipped: item.instanceWindingFlipped,
+          instanceIndices: item.visibleInstanceIndices,
         );
       } else {
         _encode(
@@ -636,6 +848,10 @@ base class SceneEncoder {
         );
       }
       index++;
+    }
+    for (final record in _opaqueRecords) {
+      if (_opaqueRecordPool.length == _recordPoolLimit) break;
+      _opaqueRecordPool.add(record);
     }
     _opaqueRecords.clear();
   }
@@ -663,6 +879,9 @@ base class SceneEncoder {
       _boundPipeline = null;
       _boundMaterial = null;
       _boundMaterialVertex = null;
+      _boundFrameInfoShader = null;
+      _boundWindingOrder = null;
+      _boundPrimitiveType = null;
       _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
     }
 
@@ -699,6 +918,8 @@ base class SceneEncoder {
           record.item.instanceColors!,
           record.windingFlipped,
           record.fade,
+          instanceWindingFlipped: record.item.instanceWindingFlipped,
+          instanceIndices: record.item.visibleInstanceIndices,
           sortBackToFrontFrom: _camera.position,
         );
       } else {
@@ -711,6 +932,10 @@ base class SceneEncoder {
           record.fade,
         );
       }
+    }
+    for (final record in _translucentRecords) {
+      if (_translucentRecordPool.length == _recordPoolLimit) break;
+      _translucentRecordPool.add(record);
     }
     _translucentRecords.clear();
   }

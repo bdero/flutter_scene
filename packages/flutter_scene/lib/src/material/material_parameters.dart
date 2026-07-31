@@ -52,6 +52,8 @@ class MaterialParameters {
     this._samplers,
   );
 
+  static final gpu.SamplerOptions _defaultSampler = gpu.SamplerOptions();
+
   /// Builds parameters from a shader's reflection plus a `.fmat` sidecar entry.
   ///
   /// Offsets and the block size come from [shader]; types, defaults, and hints
@@ -436,7 +438,7 @@ class MaterialParameters {
       pass.bindTexture(
         shader.getUniformSlot(entry.key),
         slot.texture ?? _placeholder(slot.defaultPlaceholder),
-        sampler: slot.sampler ?? gpu.SamplerOptions(),
+        sampler: slot.sampler ?? _defaultSampler,
       );
     }
   }

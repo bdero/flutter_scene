@@ -50,78 +50,157 @@ class PackedInstanceData implements PackedInstances {
   int get cwCount => cw.length ~/ 20;
 }
 
+/// One retained instance group consumed by [packInstanceDataBatches].
+class InstanceDataBatch {
+  InstanceDataBatch({
+    required this.nodeTransform,
+    required List<Matrix4> instances,
+    required List<Vector4> colors,
+    required this.nodeWindingFlipped,
+    List<bool>? instanceWindingFlipped,
+    this.indices,
+  }) : instances = instances,
+       colors = colors,
+       instanceWindingFlipped = instanceWindingFlipped,
+       assert(instances.length == colors.length),
+       assert(
+         instanceWindingFlipped == null ||
+             instanceWindingFlipped.length == instances.length,
+       ),
+       assert(indices == null || indices.length <= instances.length);
+
+  InstanceDataBatch.single({
+    required this.nodeTransform,
+    required this.nodeWindingFlipped,
+  }) : instances = null,
+       colors = null,
+       instanceWindingFlipped = null,
+       indices = null;
+
+  final Matrix4 nodeTransform;
+  final List<Matrix4>? instances;
+  final List<Vector4>? colors;
+  final bool nodeWindingFlipped;
+  final List<bool>? instanceWindingFlipped;
+  final List<int>? indices;
+
+  int get length =>
+      instances == null ? 1 : (indices?.length ?? instances!.length);
+}
+
+/// Packs several retained groups without building a flattened matrix list.
+PackedInstanceData packInstanceDataBatches(List<InstanceDataBatch> batches) {
+  var count = 0;
+  for (final batch in batches) {
+    count += batch.length;
+  }
+  final flipped = Uint8List(count);
+  var cwCount = 0;
+  var flatIndex = 0;
+  for (final batch in batches) {
+    final instances = batch.instances;
+    if (instances == null) {
+      if (batch.nodeWindingFlipped) {
+        flipped[flatIndex] = 1;
+        cwCount++;
+      }
+      flatIndex++;
+      continue;
+    }
+    final retainedParity = batch.instanceWindingFlipped;
+    final indices = batch.indices;
+    for (var slot = 0; slot < batch.length; slot++) {
+      final i = indices?[slot] ?? slot;
+      final instanceFlipped =
+          retainedParity?[i] ?? (instances[i].determinant() < 0);
+      if (batch.nodeWindingFlipped != instanceFlipped) {
+        flipped[flatIndex] = 1;
+        cwCount++;
+      }
+      flatIndex++;
+    }
+  }
+
+  final ccw = Float32List((count - cwCount) * 20);
+  final cw = Float32List(cwCount * 20);
+  final world = Matrix4.zero();
+  var ccwIndex = 0, cwIndex = 0;
+  flatIndex = 0;
+  for (final batch in batches) {
+    final instances = batch.instances;
+    if (instances == null) {
+      final isFlipped = flipped[flatIndex++] != 0;
+      final target = isFlipped ? cw : ccw;
+      final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+      final offset = targetIndex * 20;
+      target.setAll(offset, batch.nodeTransform.storage);
+      target.setRange(offset + 16, offset + 20, _whiteColor);
+      continue;
+    }
+    final colors = batch.colors!;
+    final indices = batch.indices;
+    for (var slot = 0; slot < batch.length; slot++) {
+      final i = indices?[slot] ?? slot;
+      world.setFrom(batch.nodeTransform);
+      world.multiply(instances[i]);
+      final isFlipped = flipped[flatIndex++] != 0;
+      final target = isFlipped ? cw : ccw;
+      final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+      final offset = targetIndex * 20;
+      target.setAll(offset, world.storage);
+      target.setAll(offset + 16, colors[i].storage);
+    }
+  }
+  return PackedInstanceData(ccw, cw);
+}
+
+const List<double> _whiteColor = [1, 1, 1, 1];
+
 /// Packs world transforms followed by linear RGBA color multipliers.
 PackedInstanceData packInstanceData(
   Matrix4 nodeTransform,
   List<Matrix4> instances,
   List<Vector4> colors, {
   bool nodeWindingFlipped = false,
+  List<bool>? instanceWindingFlipped,
+  List<int>? indices,
   Vector3? sortBackToFrontFrom,
 }) {
   assert(instances.length == colors.length);
   if (sortBackToFrontFrom == null) {
-    var cwCount = 0;
-    final flipped = List<bool>.filled(instances.length, false);
-    for (var i = 0; i < instances.length; i++) {
-      final flip = nodeWindingFlipped != (instances[i].determinant() < 0);
-      flipped[i] = flip;
-      if (flip) cwCount++;
-    }
-    final ccw = Float32List((instances.length - cwCount) * 20);
-    final cw = Float32List(cwCount * 20);
-    final world = Matrix4.zero();
-    var ccwIndex = 0, cwIndex = 0;
-    for (var i = 0; i < instances.length; i++) {
-      world.setFrom(nodeTransform);
-      world.multiply(instances[i]);
-      final target = flipped[i] ? cw : ccw;
-      final targetIndex = flipped[i] ? cwIndex++ : ccwIndex++;
-      final offset = targetIndex * 20;
-      target.setAll(offset, world.storage);
-      target.setAll(offset + 16, colors[i].storage);
-    }
-    return PackedInstanceData(ccw, cw);
+    return packInstanceDataBatches([
+      InstanceDataBatch(
+        nodeTransform: nodeTransform,
+        instances: instances,
+        colors: colors,
+        nodeWindingFlipped: nodeWindingFlipped,
+        instanceWindingFlipped: instanceWindingFlipped,
+        indices: indices,
+      ),
+    ]);
   }
 
-  final ccwWorld = <_InstanceData>[];
-  final cwWorld = <_InstanceData>[];
-  for (var i = 0; i < instances.length; i++) {
-    final instance = instances[i];
-    final world = nodeTransform * instance;
-    final translation = world.getTranslation();
-    final camera = sortBackToFrontFrom;
-    final dx = translation.x - camera.x;
-    final dy = translation.y - camera.y;
-    final dz = translation.z - camera.z;
-    final distanceSquared = dx * dx + dy * dy + dz * dz;
-    final entry = _InstanceData(world, colors[i], distanceSquared);
-    final flipped = nodeWindingFlipped != (instance.determinant() < 0);
-    (flipped ? cwWorld : ccwWorld).add(entry);
-  }
-  int farthestFirst(_InstanceData a, _InstanceData b) =>
-      b.distanceSquared.compareTo(a.distanceSquared);
-  ccwWorld.sort(farthestFirst);
-  cwWorld.sort(farthestFirst);
+  final sorted = _sortInstances(
+    nodeTransform,
+    instances,
+    nodeWindingFlipped,
+    sortBackToFrontFrom,
+    instanceWindingFlipped,
+    indices,
+  );
 
-  Float32List pack(List<_InstanceData> entries) {
-    final result = Float32List(entries.length * 20);
-    for (var i = 0; i < entries.length; i++) {
+  Float32List pack(List<int> order) {
+    final result = Float32List(order.length * 20);
+    for (var i = 0; i < order.length; i++) {
+      final source = order[i];
       final offset = i * 20;
-      result.setAll(offset, entries[i].transform.storage);
-      result.setAll(offset + 16, entries[i].color.storage);
+      result.setRange(offset, offset + 16, sorted.worldTransforms, source * 16);
+      result.setAll(offset + 16, colors[source].storage);
     }
     return result;
   }
 
-  return PackedInstanceData(pack(ccwWorld), pack(cwWorld));
-}
-
-class _InstanceData {
-  _InstanceData(this.transform, this.color, this.distanceSquared);
-
-  final Matrix4 transform;
-  final Vector4 color;
-  final double distanceSquared;
+  return PackedInstanceData(pack(sorted.ccw), pack(sorted.cw));
 }
 
 /// Packs `nodeTransform * instances[i]` into per-parity instance buffers.
@@ -133,6 +212,8 @@ PackedInstanceTransforms packInstanceTransforms(
   Matrix4 nodeTransform,
   List<Matrix4> instances, {
   bool nodeWindingFlipped = false,
+  List<bool>? instanceWindingFlipped,
+  List<int>? indices,
   Vector3? sortBackToFrontFrom,
 }) {
   if (sortBackToFrontFrom != null) {
@@ -141,23 +222,32 @@ PackedInstanceTransforms packInstanceTransforms(
       instances,
       nodeWindingFlipped,
       sortBackToFrontFrom,
+      instanceWindingFlipped,
+      indices,
     );
   }
+  final count = indices?.length ?? instances.length;
   var cwCount = 0;
-  final flipped = List<bool>.filled(instances.length, false);
-  for (var i = 0; i < instances.length; i++) {
-    final flip = nodeWindingFlipped != (instances[i].determinant() < 0);
-    flipped[i] = flip;
-    if (flip) cwCount++;
+  final flipped = Uint8List(count);
+  for (var slot = 0; slot < count; slot++) {
+    final i = indices?[slot] ?? slot;
+    final flip =
+        nodeWindingFlipped !=
+        (instanceWindingFlipped?[i] ?? (instances[i].determinant() < 0));
+    if (flip) {
+      flipped[slot] = 1;
+      cwCount++;
+    }
   }
-  final ccw = Float32List((instances.length - cwCount) * 16);
+  final ccw = Float32List((count - cwCount) * 16);
   final cw = Float32List(cwCount * 16);
   var ccwIndex = 0, cwIndex = 0;
   final world = Matrix4.zero();
-  for (var i = 0; i < instances.length; i++) {
+  for (var slot = 0; slot < count; slot++) {
+    final i = indices?[slot] ?? slot;
     world.setFrom(nodeTransform);
     world.multiply(instances[i]);
-    if (flipped[i]) {
+    if (flipped[slot] != 0) {
       cw.setAll(cwIndex * 16, world.storage);
       cwIndex++;
     } else {
@@ -173,38 +263,69 @@ PackedInstanceTransforms _packSortedInstanceTransforms(
   List<Matrix4> instances,
   bool nodeWindingFlipped,
   Vector3 cameraPosition,
+  List<bool>? instanceWindingFlipped,
+  List<int>? indices,
 ) {
-  final ccwWorld = <({Matrix4 transform, double distanceSquared})>[];
-  final cwWorld = <({Matrix4 transform, double distanceSquared})>[];
-  for (final instance in instances) {
-    final world = nodeTransform * instance;
-    final translation = world.getTranslation();
-    final dx = translation.x - cameraPosition.x;
-    final dy = translation.y - cameraPosition.y;
-    final dz = translation.z - cameraPosition.z;
-    final ({Matrix4 transform, double distanceSquared}) entry = (
-      transform: world,
-      distanceSquared: dx * dx + dy * dy + dz * dz,
-    );
-    final flipped = nodeWindingFlipped != (instance.determinant() < 0);
-    (flipped ? cwWorld : ccwWorld).add(entry);
-  }
-  int farthestFirst(
-    ({Matrix4 transform, double distanceSquared}) a,
-    ({Matrix4 transform, double distanceSquared}) b,
-  ) => b.distanceSquared.compareTo(a.distanceSquared);
-  ccwWorld.sort(farthestFirst);
-  cwWorld.sort(farthestFirst);
+  final sorted = _sortInstances(
+    nodeTransform,
+    instances,
+    nodeWindingFlipped,
+    cameraPosition,
+    instanceWindingFlipped,
+    indices,
+  );
 
-  Float32List pack(List<({Matrix4 transform, double distanceSquared})> sorted) {
-    final result = Float32List(sorted.length * 16);
-    for (var i = 0; i < sorted.length; i++) {
-      result.setAll(i * 16, sorted[i].transform.storage);
+  Float32List pack(List<int> order) {
+    final result = Float32List(order.length * 16);
+    for (var i = 0; i < order.length; i++) {
+      result.setRange(
+        i * 16,
+        i * 16 + 16,
+        sorted.worldTransforms,
+        order[i] * 16,
+      );
     }
     return result;
   }
 
-  return PackedInstanceTransforms(pack(ccwWorld), pack(cwWorld));
+  return PackedInstanceTransforms(pack(sorted.ccw), pack(sorted.cw));
+}
+
+({Float32List worldTransforms, List<int> ccw, List<int> cw}) _sortInstances(
+  Matrix4 nodeTransform,
+  List<Matrix4> instances,
+  bool nodeWindingFlipped,
+  Vector3 cameraPosition,
+  List<bool>? instanceWindingFlipped,
+  List<int>? indices,
+) {
+  final worldTransforms = Float32List(instances.length * 16);
+  final distances = Float64List(instances.length);
+  final ccw = <int>[];
+  final cw = <int>[];
+  final world = Matrix4.zero();
+  final count = indices?.length ?? instances.length;
+  for (var slot = 0; slot < count; slot++) {
+    final i = indices?[slot] ?? slot;
+    final instance = instances[i];
+    world
+      ..setFrom(nodeTransform)
+      ..multiply(instance);
+    worldTransforms.setAll(i * 16, world.storage);
+    final storage = world.storage;
+    final dx = storage[12] - cameraPosition.x;
+    final dy = storage[13] - cameraPosition.y;
+    final dz = storage[14] - cameraPosition.z;
+    distances[i] = dx * dx + dy * dy + dz * dz;
+    final flipped =
+        nodeWindingFlipped !=
+        (instanceWindingFlipped?[i] ?? (instance.determinant() < 0));
+    (flipped ? cw : ccw).add(i);
+  }
+  int farthestFirst(int a, int b) => distances[b].compareTo(distances[a]);
+  ccw.sort(farthestFirst);
+  cw.sort(farthestFirst);
+  return (worldTransforms: worldTransforms, ccw: ccw, cw: cw);
 }
 
 /// Uploads a single world transform as a one-element instance buffer and

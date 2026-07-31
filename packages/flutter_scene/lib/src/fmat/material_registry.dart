@@ -305,7 +305,7 @@ Future<PreprocessedMaterial> loadFmatMaterial(
   String? bundleName,
   AssetBundle? bundle,
 }) async {
-  final registry = await FmatMaterialRegistry.load(bundle: bundle);
+  final registry = await _registryFor(bundle ?? rootBundle);
   return registry.loadMaterial(
     sourcePath,
     package: package,
@@ -327,9 +327,15 @@ Future<PreprocessedSky> loadFmatSky(
   String? bundleName,
   AssetBundle? bundle,
 }) async {
-  final registry = await FmatMaterialRegistry.load(bundle: bundle);
+  final registry = await _registryFor(bundle ?? rootBundle);
   return registry.loadSky(sourcePath, package: package, bundleName: bundleName);
 }
+
+final Expando<Future<FmatMaterialRegistry>> _registryCache =
+    Expando<Future<FmatMaterialRegistry>>('fmat material registries');
+
+Future<FmatMaterialRegistry> _registryFor(AssetBundle bundle) =>
+    _registryCache[bundle] ??= FmatMaterialRegistry.load(bundle: bundle);
 
 /// Normalizes a `.fmat` source path for keying (drops a trailing `.fmat`).
 String _materialId(String sourcePath) => sourcePath.endsWith('.fmat')

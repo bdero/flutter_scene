@@ -215,6 +215,7 @@ class DepthPrepass extends RenderGraphPass {
       _camera.position,
       _cameraForward,
       _layerMask,
+      _cullingPlanes,
       writeNormals: _writeNormals,
       cameraRight: _cameraRight,
       cameraUp: _cameraUp,
@@ -245,7 +246,8 @@ class _DepthPrepassEncoder {
     this._cameraTransform,
     this._cameraPosition,
     Vector3 cameraForward,
-    this._layerMask, {
+    this._layerMask,
+    this._cullingPlanes, {
     required bool writeNormals,
     required Vector3 cameraRight,
     required Vector3 cameraUp,
@@ -286,6 +288,7 @@ class _DepthPrepassEncoder {
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
   final int _layerMask;
+  final List<Plane> _cullingPlanes;
   final bool _writeNormals;
   late final Float32List _depthInfo;
 
@@ -328,6 +331,7 @@ class _DepthPrepassEncoder {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
     if (!item.material.isOpaque()) return;
+    if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
     _records.add(item);
   }
 
@@ -363,8 +367,11 @@ class _DepthPrepassEncoder {
             transforms.add(Matrix4.copy(item.worldTransform));
             continue;
           }
-          for (final transform in instances) {
-            transforms.add(item.worldTransform * transform);
+          final visible = item.visibleInstanceIndices;
+          final count = visible?.length ?? instances.length;
+          for (var slot = 0; slot < count; slot++) {
+            final instanceIndex = visible?[slot] ?? slot;
+            transforms.add(item.worldTransform * instances[instanceIndex]);
           }
         }
         final combined =
@@ -495,7 +502,11 @@ class _DepthPrepassEncoder {
     if (instances != null) {
       if (geometry.instancedVertexLayout == null) {
         // Skinned geometry has no instance-attribute path; loop.
-        for (final instanceTransform in instances) {
+        final visible = item.visibleInstanceIndices;
+        final count = visible?.length ?? instances.length;
+        for (var slot = 0; slot < count; slot++) {
+          final instanceIndex = visible?[slot] ?? slot;
+          final instanceTransform = instances[instanceIndex];
           bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
@@ -513,6 +524,8 @@ class _DepthPrepassEncoder {
         item.worldTransform,
         instances,
         nodeWindingFlipped: item.windingFlipped,
+        instanceWindingFlipped: item.instanceWindingFlipped,
+        indices: item.visibleInstanceIndices,
       );
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);

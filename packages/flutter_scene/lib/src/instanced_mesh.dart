@@ -16,7 +16,11 @@ class InstancedMesh {
   /// Creates an instanced mesh that draws [geometry] shaded by
   /// [material]. It starts with no instances; add them with
   /// [addInstance].
-  InstancedMesh({required this.geometry, required this.material});
+  InstancedMesh({
+    required this.geometry,
+    required this.material,
+    this.cullInstances = false,
+  });
 
   /// The geometry drawn for every instance.
   final Geometry geometry;
@@ -24,8 +28,16 @@ class InstancedMesh {
   /// The material every instance is shaded with.
   final Material material;
 
+  /// Whether the renderer culls each instance after the aggregate bounds pass.
+  ///
+  /// Enable this for large spatial groups whose individual instances can enter
+  /// the view at different times. Small compact groups are usually cheaper to
+  /// draw after the single aggregate cull.
+  final bool cullInstances;
+
   final List<Matrix4> _instances = [];
   final List<Vector4> _colors = [];
+  final List<bool> _windingFlipped = [];
 
   Aabb3? _boundsCache;
   bool _boundsDirty = true;
@@ -41,6 +53,7 @@ class InstancedMesh {
   int addInstance(Matrix4 transform, {Vector4? color}) {
     _instances.add(transform.clone());
     _colors.add((color ?? _white).clone());
+    _windingFlipped.add(transform.determinant() < 0);
     _boundsDirty = true;
     _revision++;
     return _instances.length - 1;
@@ -51,6 +64,7 @@ class InstancedMesh {
   /// Replaces the transform of the instance at [index].
   void setInstanceTransform(int index, Matrix4 transform) {
     _instances[index].setFrom(transform);
+    _windingFlipped[index] = transform.determinant() < 0;
     _boundsDirty = true;
     _revision++;
   }
@@ -66,6 +80,7 @@ class InstancedMesh {
   void removeInstanceAt(int index) {
     _instances.removeAt(index);
     _colors.removeAt(index);
+    _windingFlipped.removeAt(index);
     _boundsDirty = true;
     _revision++;
   }
@@ -74,6 +89,7 @@ class InstancedMesh {
   void clearInstances() {
     _instances.clear();
     _colors.clear();
+    _windingFlipped.clear();
     _boundsDirty = true;
     _revision++;
   }
@@ -85,6 +101,10 @@ class InstancedMesh {
   /// Live per-instance linear RGBA multipliers.
   @internal
   List<Vector4> get colors => _colors;
+
+  /// Per-instance local winding parity matching [instances].
+  @internal
+  List<bool> get windingFlipped => _windingFlipped;
 
   /// Changes whenever instance data changes.
   @internal
