@@ -32,6 +32,17 @@ enum ShadowCasterFaces {
   both,
 }
 
+/// The sampling pattern used for directional shadow filtering.
+/// {@category Lighting and environment}
+enum DirectionalShadowFilter {
+  /// A screen-space rotated Poisson disk that hides the regular texel grid.
+  rotatedPoisson,
+
+  /// A deterministic 17-tap grid with stable, visibly stepped texel edges.
+  /// This avoids the per-fragment rotation used by [rotatedPoisson].
+  fixedPcf,
+}
+
 /// An infinitely-distant light source (e.g. the sun) that illuminates
 /// the whole scene from a single direction.
 ///
@@ -60,6 +71,7 @@ class DirectionalLight {
     Vector3? color,
     this.intensity = 3.0,
     this.castsShadow = false,
+    this.cacheStaticShadows = true,
     this.shadowFadeRange = 2.0,
     this.shadowSoftness = 0.08,
     this.shadowCascadeCount = 4,
@@ -69,6 +81,7 @@ class DirectionalLight {
     this.shadowDepthBias = 0.02,
     this.shadowNormalBias = 0.02,
     this.shadowAmbientStrength = 0.0,
+    this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
     this.shadowCasterFaces = ShadowCasterFaces.front,
   }) : direction = direction ?? Vector3(-0.3, -1.0, -0.2),
        color = color ?? Vector3(1.0, 1.0, 1.0);
@@ -85,6 +98,13 @@ class DirectionalLight {
 
   /// Whether this light casts shadows (adds a shadow-map pass).
   bool castsShadow;
+
+  /// Whether nodes marked `shadowStatic` are cached across frames.
+  ///
+  /// Disable this for a light whose direction changes every frame. Rebuilding
+  /// and replaying cached tiles would add work compared with rendering all
+  /// casters directly into the frame atlas.
+  bool cacheStaticShadows;
 
   /// World-space width of the band at the far shadow cascade's edge
   /// over which shadowing fades back to lit, so the shadow distance
@@ -139,6 +159,9 @@ class DirectionalLight {
   /// ambient as much as the direct light. A non-physical artistic control for
   /// sky-lit scenes that want shadows to read as shadows.
   double shadowAmbientStrength;
+
+  /// The percentage-closer filtering pattern used to sample the shadow map.
+  DirectionalShadowFilter shadowFilter;
 
   /// Which faces are rendered into the shadow map. Defaults to
   /// [ShadowCasterFaces.front]; use [ShadowCasterFaces.back] for solid,
@@ -196,21 +219,30 @@ class DirectionalLight {
 
     final cascades = <ShadowCascade>[];
     for (var c = 0; c < count; c++) {
-      // The corner average lies halfway between the near and far planes. The
-      // far corners are always farthest from it, so fit the sphere directly.
+      // The smallest stable sphere enclosing both rectangular end planes has
+      // its center on the view axis. Equalize the near/far corner distances,
+      // unless that point lies beyond the far plane, where the far rectangle's
+      // own circumcircle is the minimum. This keeps the rotation-invariant
+      // cascade fit while wasting less shadow-map area than a midpoint sphere.
       final sliceNear = splits[c];
       final sliceFar = splits[c + 1];
-      final halfDepth = (sliceFar - sliceNear) * 0.5;
-      final centerDepth = (sliceNear + sliceFar) * 0.5;
+      final centerDepth = math.min(
+        sliceFar,
+        (sliceNear + sliceFar) * (1.0 + tanRadius2) * 0.5,
+      );
       final position = camera.position;
       final center = Vector3(
         position.x + forward.x * centerDepth,
         position.y + forward.y * centerDepth,
         position.z + forward.z * centerDepth,
       );
-      final radius = math.sqrt(
-        halfDepth * halfDepth + sliceFar * sliceFar * tanRadius2,
-      );
+      final nearRadius2 =
+          (centerDepth - sliceNear) * (centerDepth - sliceNear) +
+          sliceNear * sliceNear * tanRadius2;
+      final farRadius2 =
+          (sliceFar - centerDepth) * (sliceFar - centerDepth) +
+          sliceFar * sliceFar * tanRadius2;
+      final radius = math.sqrt(math.max(nearRadius2, farRadius2));
 
       cascades.add(
         ShadowCascade(

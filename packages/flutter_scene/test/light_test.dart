@@ -97,6 +97,27 @@ void main() {
       );
     });
 
+    test('static shadow caching is enabled by default and can be disabled', () {
+      expect(DirectionalLight().cacheStaticShadows, isTrue);
+      expect(
+        DirectionalLight(cacheStaticShadows: false).cacheStaticShadows,
+        isFalse,
+      );
+    });
+
+    test('rotated shadow filtering is the default', () {
+      expect(
+        DirectionalLight().shadowFilter,
+        DirectionalShadowFilter.rotatedPoisson,
+      );
+      expect(
+        DirectionalLight(
+          shadowFilter: DirectionalShadowFilter.fixedPcf,
+        ).shadowFilter,
+        DirectionalShadowFilter.fixedPcf,
+      );
+    });
+
     // Every corner of a cascade's slice of the camera frustum must
     // project inside that cascade's shadow box, or geometry in view
     // would fall outside the shadow map.
@@ -143,6 +164,41 @@ void main() {
       for (final cascade in cascades) {
         expect(cascade.boxSize, greaterThan(0.0));
       }
+    });
+
+    test('uses the minimum stable frustum-slice sphere', () {
+      final light = DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 1,
+        shadowMaxDistance: 90,
+      );
+      final cascade = light.computeCascades(camera, aspectRatio).single;
+      final tanV = tan(camera.fovRadiansY * 0.5);
+      final tanH = tanV * aspectRatio;
+      final tanRadius2 = tanH * tanH + tanV * tanV;
+      final centerDepth = min(
+        light.shadowMaxDistance,
+        (camera.fovNear + light.shadowMaxDistance) * (1.0 + tanRadius2) * 0.5,
+      );
+      final expectedRadius = sqrt(
+        max(
+          pow(centerDepth - camera.fovNear, 2) +
+              camera.fovNear * camera.fovNear * tanRadius2,
+          pow(light.shadowMaxDistance - centerDepth, 2) +
+              light.shadowMaxDistance * light.shadowMaxDistance * tanRadius2,
+        ),
+      );
+      final midpointRadius = sqrt(
+        pow((light.shadowMaxDistance - camera.fovNear) * 0.5, 2) +
+            light.shadowMaxDistance * light.shadowMaxDistance * tanRadius2,
+      );
+      expect(cascade.center, isNotNull);
+      expect(
+        (cascade.center! - camera.position).dot(camera.forward),
+        closeTo(centerDepth, 1e-5),
+      );
+      expect(cascade.radius, closeTo(expectedRadius, 1e-6));
+      expect(cascade.radius, lessThan(midpointRadius));
     });
 
     test('scalar cascade matrices match the reference construction', () {

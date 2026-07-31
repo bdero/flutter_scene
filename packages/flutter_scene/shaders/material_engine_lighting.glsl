@@ -39,8 +39,9 @@ uniform FragInfo {
   vec4 diffuse_sh6;
   vec4 diffuse_sh7;
   vec4 diffuse_sh8;
-  // Directional light: xyz = direction the light travels (toward the
-  // scene); rgb of the second vector = color premultiplied by intensity.
+  // Directional light: xyz = direction the light travels (toward the scene),
+  // w = shadow filter (0 rotated Poisson, 1 fixed PCF). The second vector's
+  // rgb is color premultiplied by intensity.
   // Active only when has_directional_light > 0.5.
   vec4 directional_light_direction;
   vec4 directional_light_color;

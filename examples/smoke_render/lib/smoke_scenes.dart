@@ -299,6 +299,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           DirectionalLight(
             direction: vm.Vector3(-0.4, -1.0, -0.35),
             castsShadow: true,
+            shadowFilter: DirectionalShadowFilter.fixedPcf,
             shadowMaxDistance: 20.0,
           ),
         ),

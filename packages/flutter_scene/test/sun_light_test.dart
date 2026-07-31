@@ -2,6 +2,7 @@
 
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/sun_light.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -52,12 +53,16 @@ void main() {
     final sun = _FakeSun(Vector3(0, 1, 0), Vector3(1, 1, 1), 3.0);
     final binding = SunLight(
       sun,
+      cacheStaticShadows: false,
+      shadowFilter: DirectionalShadowFilter.fixedPcf,
       shadowMaxDistance: 80.0,
       shadowCascadeCount: 2,
       shadowSoftness: 0.2,
     );
 
     final light = binding.resolve();
+    expect(light.cacheStaticShadows, isFalse);
+    expect(light.shadowFilter, DirectionalShadowFilter.fixedPcf);
     expect(light.shadowMaxDistance, 80.0);
     expect(light.shadowCascadeCount, 2);
     expect(light.shadowSoftness, 0.2);

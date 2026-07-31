@@ -1332,10 +1332,13 @@ base class Scene implements SceneGraph {
     // shadow pass renders everything per frame, exactly as before.
     ShadowCachePlan? shadowCachePlan;
     var effectiveCascades = cascades;
-    if (cascades.isNotEmpty && hasStaticShadowCasters) {
+    if (cascades.isNotEmpty &&
+        hasStaticShadowCasters &&
+        light != null &&
+        light.cacheStaticShadows) {
       shadowCachePlan = (_directionalShadowCache ??= DirectionalShadowCache())
           .plan(
-            light: light!,
+            light: light,
             lightDirection: lightDirection ?? light.direction,
             idealCascades: cascades,
             staticSignature: staticShadowSignature,

@@ -39,6 +39,7 @@ class SunLight {
     this.intensityScale = 1.0,
     this.color,
     this.intensity,
+    this.cacheStaticShadows = true,
     this.shadowSoftness = 0.08,
     this.shadowMaxDistance = 150.0,
     this.shadowCascadeCount = 4,
@@ -48,6 +49,7 @@ class SunLight {
     this.shadowFadeRange = 2.0,
     this.shadowCascadeSplitLambda = 0.6,
     this.shadowAmbientStrength = 0.0,
+    this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
     this.shadowCasterFaces = ShadowCasterFaces.front,
   });
 
@@ -65,6 +67,10 @@ class SunLight {
 
   /// Overrides the sky-derived sun intensity when non-null.
   double? intensity;
+
+  /// Whether static shadow casters are cached; see
+  /// [DirectionalLight.cacheStaticShadows].
+  bool cacheStaticShadows;
 
   /// World-space penumbra radius; see [DirectionalLight.shadowSoftness].
   double shadowSoftness;
@@ -97,6 +103,9 @@ class SunLight {
   /// shadowed areas reading as fully lit.
   double shadowAmbientStrength;
 
+  /// Shadow sampling pattern; see [DirectionalLight.shadowFilter].
+  DirectionalShadowFilter shadowFilter;
+
   /// Which faces are rendered into the shadow map; see
   /// [DirectionalLight.shadowCasterFaces].
   ShadowCasterFaces shadowCasterFaces;
@@ -115,6 +124,7 @@ class SunLight {
     light.color.setFrom(color ?? source.sunLightColor);
     light.intensity = (intensity ?? source.sunLightIntensity) * intensityScale;
     light.castsShadow = castsShadow;
+    light.cacheStaticShadows = cacheStaticShadows;
     light.shadowSoftness = shadowSoftness;
     light.shadowMaxDistance = shadowMaxDistance;
     light.shadowCascadeCount = shadowCascadeCount;
@@ -124,6 +134,7 @@ class SunLight {
     light.shadowFadeRange = shadowFadeRange;
     light.shadowCascadeSplitLambda = shadowCascadeSplitLambda;
     light.shadowAmbientStrength = shadowAmbientStrength;
+    light.shadowFilter = shadowFilter;
     light.shadowCasterFaces = shadowCasterFaces;
     return light;
   }
