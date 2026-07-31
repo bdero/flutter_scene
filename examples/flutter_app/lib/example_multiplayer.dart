@@ -176,6 +176,9 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         if (mounted && _replication != null) _leave();
       });
       setState(() => _status = null);
+      // Clicking Host/Join focused the button (notably on web); reclaim the
+      // keyboard so movement keys reach the listener without another click.
+      _focus.requestFocus();
     } catch (error) {
       setState(() => _status = 'failed: $error');
     }
