@@ -115,5 +115,51 @@ void main() {
       expect(packed.ccw[32], 2);
       expect(packed.ccw.sublist(36, 40), [1, 0, 0, 1]);
     });
+
+    test('packs only selected instance indices', () {
+      final packed = packInstanceData(
+        Matrix4.identity(),
+        [
+          Matrix4.translation(Vector3(2, 0, 0)),
+          Matrix4.translation(Vector3(8, 0, 0)),
+          Matrix4.translation(Vector3(4, 0, 0)),
+        ],
+        [Vector4(1, 0, 0, 1), Vector4(0, 1, 0, 1), Vector4(0, 0, 1, 1)],
+        indices: const [2, 0],
+        sortBackToFrontFrom: Vector3.zero(),
+      );
+
+      expect(packed.ccwCount, 2);
+      expect(packed.ccw[12], 4);
+      expect(packed.ccw.sublist(16, 20), [0, 0, 1, 1]);
+      expect(packed.ccw[32], 2);
+      expect(packed.ccw.sublist(36, 40), [1, 0, 0, 1]);
+    });
+
+    test('packs retained groups without a flattened transform list', () {
+      final mirrored = Matrix4.identity()..scaleByVector3(Vector3(-1, 1, 1));
+      final packed = packInstanceDataBatches([
+        InstanceDataBatch(
+          nodeTransform: Matrix4.translation(Vector3(10, 0, 0)),
+          instances: [Matrix4.translation(Vector3(2, 0, 0)), mirrored],
+          colors: [Vector4(1, 0, 0, 1), Vector4(0, 1, 0, 1)],
+          nodeWindingFlipped: false,
+          instanceWindingFlipped: const [false, true],
+        ),
+        InstanceDataBatch.single(
+          nodeTransform: Matrix4.translation(Vector3(20, 0, 0)),
+          nodeWindingFlipped: false,
+        ),
+      ]);
+
+      expect(packed.ccwCount, 2);
+      expect(packed.cwCount, 1);
+      expect(packed.ccw[12], 12);
+      expect(packed.ccw.sublist(16, 20), [1, 0, 0, 1]);
+      expect(packed.ccw[32], 20);
+      expect(packed.ccw.sublist(36, 40), [1, 1, 1, 1]);
+      expect(packed.cw[12], 10);
+      expect(packed.cw.sublist(16, 20), [0, 1, 0, 1]);
+    });
   });
 }

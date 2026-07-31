@@ -63,6 +63,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   Set<RenderInput> _sceneInputs;
 
+  static final Float32List _fragInfoScratch = Float32List(
+    EngineLightingUniforms.fragInfoFloatCount,
+  );
+  static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
+
   @override
   Set<RenderInput> get sceneInputs => _sceneInputs;
 
@@ -148,7 +153,8 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
     if (shadingModel == FmatShadingModel.lit) {
       final env = environment ?? lighting.environmentMap;
-      final fragInfo = Float32List(EngineLightingUniforms.fragInfoFloatCount);
+      final fragInfo = _fragInfoScratch
+        ..fillRange(0, _fragInfoScratch.length, 0);
       EngineLightingUniforms.packInto(fragInfo, lighting, env);
       // radiance_blend.zw [162]/[163]: this item's punctual-light slice
       // (count, offset) into the per-frame light-index buffer.
@@ -156,7 +162,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       fragInfo[163] = lightListOffset.toDouble();
       pass.bindUniform(
         fragmentShader.getUniformSlot('FragInfo'),
-        transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+        transientsBuffer.emplace(_fragInfoBytes),
       );
       EngineLightingUniforms.bindEngineTextures(
         pass,

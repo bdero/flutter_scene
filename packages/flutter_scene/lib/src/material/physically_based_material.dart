@@ -221,7 +221,7 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
-      transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+      transientsBuffer.emplace(_fragInfoBytes),
     );
 
     _bindSlot(pass, 'base_color_texture', baseColorTexture);
@@ -250,6 +250,7 @@ class PhysicallyBasedMaterial extends Material {
   static final Float32List _fragInfoScratch = Float32List(
     EngineLightingUniforms.fragInfoFloatCount,
   );
+  static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
     widthAddressMode: gpu.SamplerAddressMode.repeat,

@@ -891,8 +891,15 @@ base class Scene implements SceneGraph {
   /// lazily on first draw (the common case) this front-loads that cost; on a
   /// backend that compiles asynchronously it kicks compilation off without
   /// blocking on completion.
+  ///
+  /// Set [includeOffscreen] to encode every render item once. This costs more
+  /// during loading, but avoids later pipeline stalls as a moving camera first
+  /// reaches parts of a large scene.
   /// {@category Assets and loading}
-  Future<void> warmUp(List<RenderView> views) async {
+  Future<void> warmUp(
+    List<RenderView> views, {
+    bool includeOffscreen = false,
+  }) async {
     await initializeStaticResources();
     if (views.isEmpty) {
       return;
@@ -907,9 +914,16 @@ base class Scene implements SceneGraph {
     // enough because pipeline identity is resolution-independent.
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
-    renderViews(views, canvas, region: const ui.Rect.fromLTWH(0, 0, 64, 64));
-    recorder.endRecording().dispose();
+    _warmUpIncludeOffscreen = includeOffscreen;
+    try {
+      renderViews(views, canvas, region: const ui.Rect.fromLTWH(0, 0, 64, 64));
+    } finally {
+      _warmUpIncludeOffscreen = false;
+      recorder.endRecording().dispose();
+    }
   }
+
+  bool _warmUpIncludeOffscreen = false;
 
   /// Renders a list of [views] of this scene onto [canvas].
   ///
@@ -1460,6 +1474,7 @@ base class Scene implements SceneGraph {
         publishDepth: resolveSceneDepth,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
+        includeOffscreen: _warmUpIncludeOffscreen,
       ),
     );
     if (resolveSceneDepth) {

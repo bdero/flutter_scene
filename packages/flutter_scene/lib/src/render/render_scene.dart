@@ -1,6 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, internal;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
@@ -125,6 +125,65 @@ class RenderItem {
 
   /// Per-instance linear RGBA multipliers matching [instanceTransforms].
   List<Vector4>? instanceColors;
+
+  /// Per-instance local winding parity matching [instanceTransforms].
+  List<bool>? instanceWindingFlipped;
+
+  /// Whether each instance is culled after this item's aggregate BVH test.
+  bool cullInstances = false;
+
+  /// Indices accepted by the current view, or null when every instance passes.
+  List<int>? visibleInstanceIndices;
+
+  final List<int> _visibleInstanceScratch = [];
+
+  static final Matrix4 _instanceWorldScratch = Matrix4.zero();
+  static final Aabb3 _instanceAabbScratch = Aabb3();
+
+  /// Refreshes [visibleInstanceIndices] and returns whether anything remains.
+  @internal
+  bool cullVisibleInstances(Frustum frustum, List<Plane> additionalPlanes) {
+    final instances = instanceTransforms;
+    final bounds = geometry.localBounds;
+    if (!cullInstances || instances == null || bounds == null) {
+      visibleInstanceIndices = null;
+      return true;
+    }
+
+    final visible = _visibleInstanceScratch..clear();
+    for (var i = 0; i < instances.length; i++) {
+      _instanceWorldScratch
+        ..setFrom(worldTransform)
+        ..multiply(instances[i]);
+      _instanceAabbScratch
+        ..copyFrom(bounds)
+        ..transform(_instanceWorldScratch);
+      if (!frustum.intersectsWithAabb3(_instanceAabbScratch)) continue;
+      var outside = false;
+      for (final plane in additionalPlanes) {
+        final normal = plane.normal;
+        final px = normal.x < 0
+            ? _instanceAabbScratch.min.x
+            : _instanceAabbScratch.max.x;
+        final py = normal.y < 0
+            ? _instanceAabbScratch.min.y
+            : _instanceAabbScratch.max.y;
+        final pz = normal.z < 0
+            ? _instanceAabbScratch.min.z
+            : _instanceAabbScratch.max.z;
+        if (normal.x * px + normal.y * py + normal.z * pz + plane.constant <
+            0) {
+          outside = true;
+          break;
+        }
+      }
+      if (!outside) visible.add(i);
+    }
+    visibleInstanceIndices = visible.length == instances.length
+        ? null
+        : visible;
+    return visible.isNotEmpty;
+  }
 
   /// Node-local aggregate AABB covering every instance, used to
   /// frustum-cull an instanced item as a single unit.

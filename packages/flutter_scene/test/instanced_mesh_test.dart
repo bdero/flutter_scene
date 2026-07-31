@@ -2,6 +2,7 @@
 // run without a Flutter GPU context.
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -98,6 +99,16 @@ void main() {
       expect(mesh.instances[0], moved);
     });
 
+    test('retains winding parity when transforms change', () {
+      final mesh = _instancedMesh();
+      final mirrored = Matrix4.identity()..scaleByVector3(Vector3(-1, 1, 1));
+      mesh.addInstance(mirrored);
+      expect(mesh.windingFlipped, [true]);
+
+      mesh.setInstanceTransform(0, Matrix4.identity());
+      expect(mesh.windingFlipped, [false]);
+    });
+
     test('removeInstanceAt removes and shifts later instances', () {
       final mesh = _instancedMesh();
       final a = Matrix4.translation(Vector3(1, 0, 0));
@@ -152,6 +163,48 @@ void main() {
 
       mesh.clearInstances();
       expect(mesh.aggregateBounds, isNull);
+    });
+  });
+
+  group('InstancedMesh culling', () {
+    test('selects individual instances through frustum and custom planes', () {
+      final geometry = _StubGeometry(
+        aabb: Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5)),
+      );
+      final item = RenderItem(geometry: geometry, material: _StubMaterial())
+        ..cullInstances = true
+        ..instanceTransforms = [
+          Matrix4.translation(Vector3(0, 0, 0)),
+          Matrix4.translation(Vector3(4, 0, 0)),
+          Matrix4.translation(Vector3(8, 0, 0)),
+        ];
+      final frustum = Frustum.matrix(
+        makeOrthographicMatrix(-5, 5, -5, 5, -5, 5),
+      );
+
+      expect(
+        item.cullVisibleInstances(frustum, [Plane.components(1, 0, 0, -2)]),
+        isTrue,
+      );
+      expect(item.visibleInstanceIndices, [1]);
+    });
+
+    test('uses null selection when every instance passes', () {
+      final geometry = _StubGeometry(
+        aabb: Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5)),
+      );
+      final item = RenderItem(geometry: geometry, material: _StubMaterial())
+        ..cullInstances = true
+        ..instanceTransforms = [Matrix4.identity()];
+
+      expect(
+        item.cullVisibleInstances(
+          Frustum.matrix(makeOrthographicMatrix(-5, 5, -5, 5, -5, 5)),
+          const [],
+        ),
+        isTrue,
+      );
+      expect(item.visibleInstanceIndices, isNull);
     });
   });
 }
