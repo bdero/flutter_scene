@@ -49,6 +49,10 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
   /// like a remote (renders in the past). Toggle to feel the difference.
   bool _predict = true;
 
+  /// Whether the physics backend actually supports prediction here, probed
+  /// at connect time; the HUD reports the real mode.
+  bool _canPredict = false;
+
   @override
   void initState() {
     super.initState();
@@ -146,7 +150,7 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
   Future<void> _start(Future<WireConnection> Function() connect) async {
     setState(() => _status = 'connecting');
     try {
-      final canPredict = await _predictionSupported();
+      final canPredict = _canPredict = await _predictionSupported();
       final session = await connectSession(
         await connect(),
         schemaHash: multiplayerRegistry().schemaHash,
@@ -397,7 +401,7 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
                     Text(
                       'rtt ${_replication!.session.clock.rttMillis.toStringAsFixed(0)}ms'
                       '${_simLatencyMs > 0 ? ' (+$_simLatencyMs sim)' : ''}'
-                      '  ${_predict ? 'predicted' : 'interpolated'}',
+                      '  ${_predict && _canPredict ? 'predicted' : 'interpolated'}',
                     ),
                     const Text(
                       'move with WASD or arrows',
