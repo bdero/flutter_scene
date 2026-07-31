@@ -67,6 +67,11 @@ class MeshGeometry extends UnskinnedGeometry {
   /// primitives when drawn, and defaults to a triangle list.
   ///
   /// [storage] selects whether the mesh can later be updated in place.
+  /// Pass [bufferArena] to share immutable GPU buffer blocks with other fixed
+  /// meshes. Set [retainCpuData] to false when the mesh does not need
+  /// raycasting or [extractMeshData], avoiding a retained CPU copy after the
+  /// upload. Updatable geometry requires retained CPU data and cannot use an
+  /// arena.
   /// An updatable mesh fixes its indexed-or-not state at construction:
   /// supplying [indices] makes [rebuild] require indices thereafter, and
   /// omitting them makes it reject them. To start empty, pass a
@@ -85,7 +90,15 @@ class MeshGeometry extends UnskinnedGeometry {
     gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
     Aabb3? bounds,
     this.storage = GeometryStorage.fixed,
+    GeometryBufferArena? bufferArena,
+    this.retainCpuData = true,
   }) {
+    if (storage == GeometryStorage.updatable && bufferArena != null) {
+      throw ArgumentError('Updatable geometry cannot use a buffer arena');
+    }
+    if (storage == GeometryStorage.updatable && !retainCpuData) {
+      throw ArgumentError('Updatable geometry must retain CPU data');
+    }
     if (positions.length % 3 != 0) {
       throw ArgumentError(
         'positions has ${positions.length} floats; expected a multiple of '
@@ -123,6 +136,7 @@ class MeshGeometry extends UnskinnedGeometry {
         texCoords,
         colors,
         indices,
+        bufferArena,
       );
     } else {
       _indexed = indices != null;
@@ -157,10 +171,13 @@ class MeshGeometry extends UnskinnedGeometry {
   /// The snapshot's CPU work (vertex assembly, normal generation) can run
   /// on a background isolate; this constructor performs only the GPU
   /// upload. See [MeshData] for the recipe. [storage] selects whether the
-  /// mesh can later be updated in place.
+  /// mesh can later be updated in place. [bufferArena] and [retainCpuData]
+  /// match [MeshGeometry.fromArrays].
   factory MeshGeometry.fromMeshData(
     MeshData data, {
     GeometryStorage storage = GeometryStorage.fixed,
+    GeometryBufferArena? bufferArena,
+    bool retainCpuData = true,
   }) {
     final geometry = MeshGeometry.fromArrays(
       positions: data.positions,
@@ -170,6 +187,8 @@ class MeshGeometry extends UnskinnedGeometry {
       indices: data.indices,
       primitiveType: data.primitiveType,
       storage: storage,
+      bufferArena: bufferArena,
+      retainCpuData: retainCpuData,
     );
     for (final entry in data.customAttributes.entries) {
       geometry.setCustomAttribute(
@@ -206,6 +225,9 @@ class MeshGeometry extends UnskinnedGeometry {
   /// How this geometry's GPU buffers are managed; see [GeometryStorage].
   final GeometryStorage storage;
 
+  /// Whether this mesh keeps CPU attributes for raycasting and extraction.
+  final bool retainCpuData;
+
   // --- Updatable-storage state. Unused while [storage] is fixed. ---
 
   bool _indexed = false;
@@ -239,17 +261,21 @@ class MeshGeometry extends UnskinnedGeometry {
   /// emits the de-interleaved [soaData] instead; this stays as a convenience
   /// for callers wanting the interleaved form.
   ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
-  get packedData => (
-    vertexBytes: _packedVertexBytes ??= InterleavedLayoutAdapter.packUnskinned(
-      positions: _cpuPositions,
-      vertexCount: _liveVertexCount,
-      normals: _cpuNormals,
-      texCoords: _cpuTexCoords,
-      colors: _cpuColors,
-    ),
-    indexBytes: _packedIndexBytes,
-    indices32Bit: _packedIndices32Bit,
-  );
+  get packedData {
+    _requireReadable('packedData');
+    return (
+      vertexBytes: _packedVertexBytes ??=
+          InterleavedLayoutAdapter.packUnskinned(
+            positions: _cpuPositions,
+            vertexCount: _liveVertexCount,
+            normals: _cpuNormals,
+            texCoords: _cpuTexCoords,
+            colors: _cpuColors,
+          ),
+      indexBytes: _packedIndexBytes,
+      indices32Bit: _packedIndices32Bit,
+    );
+  }
 
   /// The de-interleaved (structure-of-arrays) vertex bytes (the four attribute
   /// streams concatenated) plus the packed index bytes, for re-emitting this
@@ -258,18 +284,21 @@ class MeshGeometry extends UnskinnedGeometry {
   /// the per-attribute CPU streams, no interleave.
   @internal
   ({Uint8List vertexBytes, Uint8List? indexBytes, bool indices32Bit})
-  get soaData => (
-    vertexBytes: InterleavedLayoutAdapter.concatUnskinnedStreams(
-      UnskinnedAttributeStreams(
-        position: _bytesOf(_cpuPositions),
-        normal: _bytesOf(_cpuNormals),
-        texCoord: _bytesOf(_cpuTexCoords),
-        color: _bytesOf(_cpuColors),
+  get soaData {
+    _requireReadable('soaData');
+    return (
+      vertexBytes: InterleavedLayoutAdapter.concatUnskinnedStreams(
+        UnskinnedAttributeStreams(
+          position: _bytesOf(_cpuPositions),
+          normal: _bytesOf(_cpuNormals),
+          texCoord: _bytesOf(_cpuTexCoords),
+          color: _bytesOf(_cpuColors),
+        ),
       ),
-    ),
-    indexBytes: _packedIndexBytes,
-    indices32Bit: _packedIndices32Bit,
-  );
+      indexBytes: _packedIndexBytes,
+      indices32Bit: _packedIndices32Bit,
+    );
+  }
 
   Float32List _cpuPositions = Float32List(0);
   Float32List _cpuNormals = Float32List(0);
@@ -428,40 +457,53 @@ class MeshGeometry extends UnskinnedGeometry {
     Float32List? texCoords,
     Float32List? colors,
     List<int>? indices,
+    GeometryBufferArena? bufferArena,
   ) {
     _liveVertexCount = vertexCount;
     // Retain the structure-of-arrays attributes (defaults filled). These back
     // both lazy serialization (interleaved on demand) and raycasting, and they
     // are uploaded straight to per-attribute GPU streams with no interleave.
-    _setCpuStreams(positions, vertexCount, normals, texCoords, colors);
+    if (retainCpuData) {
+      _setCpuStreams(positions, vertexCount, normals, texCoords, colors);
+    }
     ByteData? indexBytes;
     var indexType = gpu.IndexType.int16;
     if (indices != null) {
       final packed = InterleavedLayoutAdapter.packIndices(indices);
       indexBytes = ByteData.sublistView(packed.bytes);
       indexType = packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
-      _packedIndexBytes = packed.bytes;
+      if (retainCpuData) _packedIndexBytes = packed.bytes;
       _packedIndices32Bit = packed.is32Bit;
     }
     uploadUnskinnedAttributes(
-      positions: _cpuPositions,
+      positions: retainCpuData ? _cpuPositions : positions,
       vertexCount: vertexCount,
-      normals: _cpuNormals,
-      texCoords: _cpuTexCoords,
-      colors: _cpuColors,
+      normals: retainCpuData ? _cpuNormals : normals,
+      texCoords: retainCpuData ? _cpuTexCoords : texCoords,
+      colors: retainCpuData ? _cpuColors : colors,
       indices: indexBytes,
       indexType: indexType,
+      bufferArena: bufferArena,
+      retainCpuData: retainCpuData,
     );
     // Raycast off this geometry's own attribute arrays instead of the
     // transient upload copies, so no extra position/texcoord copy lingers.
     // Keep the index bytes so an indexed mesh raycasts as indexed.
-    setRaycastAttributes(
-      positions: _cpuPositions,
-      texCoords: _cpuTexCoords,
-      normals: _cpuNormals,
-      colors: _cpuColors,
-      indices: indexBytes,
-    );
+    if (retainCpuData) {
+      setRaycastAttributes(
+        positions: _cpuPositions,
+        texCoords: _cpuTexCoords,
+        normals: _cpuNormals,
+        colors: _cpuColors,
+        indices: indexBytes,
+      );
+    }
+  }
+
+  void _requireReadable(String operation) {
+    if (!retainCpuData) {
+      throw StateError('$operation requires retainCpuData');
+    }
   }
 
   // Writes all four attribute streams into their rings and binds them.
@@ -925,8 +967,13 @@ class GeometryBuilder {
   /// Builds and GPU-uploads the accumulated mesh.
   ///
   /// Pass [GeometryStorage.updatable] for [storage] to build a mesh that
-  /// can be mutated in place afterwards.
-  MeshGeometry build({GeometryStorage storage = GeometryStorage.fixed}) {
+  /// can be mutated in place afterwards. [bufferArena] and [retainCpuData]
+  /// match [MeshGeometry.fromArrays].
+  MeshGeometry build({
+    GeometryStorage storage = GeometryStorage.fixed,
+    GeometryBufferArena? bufferArena,
+    bool retainCpuData = true,
+  }) {
     return MeshGeometry.fromArrays(
       positions: Float32List.fromList(_positions),
       normals: _resolveNormals(),
@@ -934,6 +981,8 @@ class GeometryBuilder {
       colors: Float32List.fromList(_colors),
       indices: _indices.isEmpty ? null : List.of(_indices),
       storage: storage,
+      bufferArena: bufferArena,
+      retainCpuData: retainCpuData,
     );
   }
 

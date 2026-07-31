@@ -25,7 +25,7 @@ export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
 export 'src/geometry/geometry.dart'
-    show Geometry, SkinnedGeometry, UnskinnedGeometry;
+    show Geometry, GeometryBufferArena, SkinnedGeometry, UnskinnedGeometry;
 export 'src/geometry/line_segments_geometry.dart' show LineSegmentsGeometry;
 export 'src/geometry/vertex_layout.dart'
     show
