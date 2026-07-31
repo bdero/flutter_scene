@@ -1107,9 +1107,7 @@ gpu.VertexFormat _vertexFormatForComponents(int components) =>
       _ => throw ArgumentError.value(components, 'components', 'must be 1..4'),
     };
 
-/// The instance-rate vertex buffer slot shared by every unskinned layout:
-/// the model matrix as four vec4 columns, 64 bytes per instance, advanced
-/// once per instance.
+/// The instance-rate transform used by depth-style passes.
 const VertexBufferDescriptor _kInstanceModelTransformBuffer =
     VertexBufferDescriptor(
       strideInBytes: 64,
@@ -1136,6 +1134,38 @@ const VertexBufferDescriptor _kInstanceModelTransformBuffer =
         ),
       ],
     );
+
+/// The instance-rate transform and color used by color passes.
+const VertexBufferDescriptor _kInstanceDataBuffer = VertexBufferDescriptor(
+  strideInBytes: 80,
+  stepMode: gpu.VertexStepMode.instance,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'model_transform_0',
+      format: gpu.VertexFormat.float32x4,
+    ),
+    VertexAttributeDescriptor(
+      name: 'model_transform_1',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 16,
+    ),
+    VertexAttributeDescriptor(
+      name: 'model_transform_2',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 32,
+    ),
+    VertexAttributeDescriptor(
+      name: 'model_transform_3',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 48,
+    ),
+    VertexAttributeDescriptor(
+      name: 'instance_color',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 64,
+    ),
+  ],
+);
 
 /// The tightly packed de-interleaved position stream: one `vec3` (12 bytes)
 /// per vertex, the slot-0 buffer of the de-interleaved unskinned layouts.
@@ -1183,7 +1213,7 @@ const VertexBufferDescriptor _kColorBuffer = VertexBufferDescriptor(
 /// The interleaved two-buffer pipeline layout for the unskinned vertex
 /// shader: slot 0 carries the interleaved 48-byte vertex stream (position,
 /// normal, texture coords, color), slot 1 carries the instance-rate model
-/// matrix as four vec4 columns (64 bytes per instance).
+/// matrix and linear color multiplier (80 bytes per instance).
 ///
 /// This is the canonical described layout; its slot-0 stride is
 /// [kUnskinnedPerVertexSize] and its attribute offsets match the bytes
@@ -1215,7 +1245,7 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
         ),
       ],
     ),
-    _kInstanceModelTransformBuffer,
+    _kInstanceDataBuffer,
   ],
 );
 
@@ -1265,7 +1295,7 @@ final VertexLayoutDescriptor kUnskinnedSoAColorLayout = VertexLayoutDescriptor(
     _kNormalBuffer,
     _kTexCoordBuffer,
     _kColorBuffer,
-    _kInstanceModelTransformBuffer,
+    _kInstanceDataBuffer,
   ],
 );
 

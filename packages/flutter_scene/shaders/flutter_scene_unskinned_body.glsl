@@ -24,6 +24,7 @@ in vec4 model_transform_0;
 in vec4 model_transform_1;
 in vec4 model_transform_2;
 in vec4 model_transform_3;
+in vec4 instance_color;
 
 // The v_* outputs are declared in material_vertex.glsl (included first), so a
 // material's custom varyings can follow them with matching interpolant slots.
@@ -39,7 +40,7 @@ void main() {
   vertex.world_position = model_position.xyz;
   vertex.world_normal = mat3(model_transform) * normal;
   vertex.uv = texture_coords;
-  vertex.color = color;
+  vertex.color = color * instance_color;
   vertex.camera_position = frame_info.camera_position;
   Vertex(vertex);
 
@@ -61,7 +62,8 @@ void main() {
   gl_Position += vertex_keep_alive.keep_alive.x *
       vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz +
                model_transform_0.xyz + model_transform_1.xyz +
-               model_transform_2.xyz + model_transform_3.xyz,
+               model_transform_2.xyz + model_transform_3.xyz +
+               instance_color.xyz,
            0.0);
 #ifdef MATERIAL_PARAMS_KEEP_ALIVE
   // Keep MaterialParams live even when Vertex() reads no parameter; the

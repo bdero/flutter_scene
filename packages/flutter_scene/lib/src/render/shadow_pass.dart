@@ -171,7 +171,8 @@ class ShadowPass extends RenderGraphPass {
         faces,
         filter: filter,
       );
-      _renderScene.cull(encoder.frustum, encoder.submit);
+      _renderScene.cull(encoder.frustum, encoder.submitCulled);
+      encoder.flush();
     }
 
     // Cascade tiles first (0..cascades.length), then the spot cones. With a
@@ -203,6 +204,7 @@ class ShadowPass extends RenderGraphPass {
         for (final item in _renderScene.items) {
           encoder.submit(item);
         }
+        encoder.flush();
       } else {
         renderTile(c, _cascades[c].lightSpaceMatrix, _casterFaces);
       }
@@ -266,7 +268,8 @@ class ShadowPass extends RenderGraphPass {
         _casterFaces,
         filter: ShadowCasterFilter.staticOnly,
       );
-      _renderScene.cull(encoder.frustum, encoder.submit);
+      _renderScene.cull(encoder.frustum, encoder.submitCulled);
+      encoder.flush();
       rendererSubmissions.submit(commandBuffer);
     }
   }

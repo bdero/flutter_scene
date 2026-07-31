@@ -124,21 +124,11 @@ class _ObjectMaskEncoder {
   static final gpu.Shader _maskShader = baseShaderLibrary['MaskFragment']!;
 
   late final Frustum frustum;
-  final Aabb3 cullScratchAabb = Aabb3();
   gpu.RenderPipeline? _boundPipeline;
 
   void submit(RenderItem item) {
     if (!item.visible) return;
     if (!_filter._matches(item, _layerMask)) return;
-    if (item.frustumCulled) {
-      final bounds = item.cullBounds;
-      if (bounds != null) {
-        cullScratchAabb
-          ..copyFrom(bounds)
-          ..transform(item.worldTransform);
-        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
-      }
-    }
     _renderPass.clearBindings();
     final geometry = item.geometry;
     // Skinned items draw through the full bind path below; apply this item's

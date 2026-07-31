@@ -59,5 +59,61 @@ void main() {
       expect(packed.ccwCount, 0);
       expect(packed.cwCount, 0);
     });
+
+    test('sorts each winding group back to front', () {
+      final mirrored = Matrix4.identity()
+        ..scaleByVector3(Vector3(-1, 1, 1))
+        ..setTranslationRaw(4, 0, 0);
+      final packed = packInstanceTransforms(Matrix4.identity(), [
+        Matrix4.translation(Vector3(2, 0, 0)),
+        mirrored,
+        Matrix4.translation(Vector3(8, 0, 0)),
+        Matrix4.identity()
+          ..scaleByVector3(Vector3(-1, 1, 1))
+          ..setTranslationRaw(12, 0, 0),
+      ], sortBackToFrontFrom: Vector3.zero());
+
+      expect(packed.ccwCount, 2);
+      expect(packed.cwCount, 2);
+      expect(packed.ccw[12], 8);
+      expect(packed.ccw[28], 2);
+      expect(packed.cw[12], 12);
+      expect(packed.cw[28], 4);
+    });
+  });
+
+  group('packInstanceData', () {
+    test('packs transform and color in each 20-float record', () {
+      final packed = packInstanceData(
+        Matrix4.translation(Vector3(1, 0, 0)),
+        [Matrix4.translation(Vector3(2, 0, 0))],
+        [Vector4(0.2, 0.4, 0.6, 0.8)],
+      );
+
+      expect(packed.ccwCount, 1);
+      expect(packed.ccw[12], 3);
+      expect(packed.ccw.sublist(16, 20), everyElement(isA<double>()));
+      expect(packed.ccw[16], closeTo(0.2, 1e-6));
+      expect(packed.ccw[17], closeTo(0.4, 1e-6));
+      expect(packed.ccw[18], closeTo(0.6, 1e-6));
+      expect(packed.ccw[19], closeTo(0.8, 1e-6));
+    });
+
+    test('sorts colors with their transforms', () {
+      final packed = packInstanceData(
+        Matrix4.identity(),
+        [
+          Matrix4.translation(Vector3(2, 0, 0)),
+          Matrix4.translation(Vector3(8, 0, 0)),
+        ],
+        [Vector4(1, 0, 0, 1), Vector4(0, 1, 0, 1)],
+        sortBackToFrontFrom: Vector3.zero(),
+      );
+
+      expect(packed.ccw[12], 8);
+      expect(packed.ccw.sublist(16, 20), [0, 1, 0, 1]);
+      expect(packed.ccw[32], 2);
+      expect(packed.ccw.sublist(36, 40), [1, 0, 0, 1]);
+    });
   });
 }

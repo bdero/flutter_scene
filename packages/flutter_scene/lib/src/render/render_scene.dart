@@ -123,6 +123,9 @@ class RenderItem {
   /// owning [InstancedMeshComponent].
   List<Matrix4>? instanceTransforms;
 
+  /// Per-instance linear RGBA multipliers matching [instanceTransforms].
+  List<Vector4>? instanceColors;
+
   /// Node-local aggregate AABB covering every instance, used to
   /// frustum-cull an instanced item as a single unit.
   ///
@@ -393,8 +396,12 @@ class RenderScene {
   /// Visits every item potentially visible to [frustum]: the bounded
   /// items whose world AABB intersects it, plus every always-visible
   /// item.
-  void cull(Frustum frustum, void Function(RenderItem) visit) {
-    _bvh.query(frustum, visit);
+  void cull(
+    Frustum frustum,
+    void Function(RenderItem) visit, {
+    List<Plane> additionalPlanes = const [],
+  }) {
+    _bvh.query(frustum, visit, additionalPlanes: additionalPlanes);
     for (final item in _alwaysVisible) {
       visit(item);
     }

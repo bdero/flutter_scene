@@ -35,6 +35,8 @@ class MeshComponent extends Component {
   // One render item per mesh primitive. Empty while the component is not
   // mounted.
   final List<RenderItem> _renderItems = [];
+  final List<int> _boundsVersions = [];
+  int _worldTransformVersion = -1;
 
   /// The render items registered for this component's mesh primitives, empty
   /// while not mounted. Exposed so a subclass (the LOD component) can tag the
@@ -58,6 +60,7 @@ class MeshComponent extends Component {
         material: primitive.material,
       )..sourceNode = node;
       _renderItems.add(item);
+      _boundsVersions.add(-1);
       renderScene.add(item);
     }
     onRenderItemsRegistered();
@@ -101,6 +104,8 @@ class MeshComponent extends Component {
       }
     }
     _renderItems.clear();
+    _boundsVersions.clear();
+    _worldTransformVersion = -1;
   }
 
   /// Refreshes this component's render items from the owning node's
@@ -110,6 +115,8 @@ class MeshComponent extends Component {
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
     final worldTransform = node.globalTransform;
+    final worldTransformVersion = node.worldTransformVersion;
+    final transformChanged = worldTransformVersion != _worldTransformVersion;
     final windingFlipped = node.windingFlipped;
 
     // A skinned node uploads its joint matrices once per frame. The texture
@@ -124,12 +131,13 @@ class MeshComponent extends Component {
     final frustumCulled = node.frustumCulled;
     final layers = node.layers;
     final highlightColor = node.highlightColor;
-    for (final item in _renderItems) {
+    for (var index = 0; index < _renderItems.length; index++) {
+      final item = _renderItems[index];
       item.visible = true;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.layers = layers;
-      item.worldTransform.setFrom(worldTransform);
+      if (transformChanged) item.worldTransform.setFrom(worldTransform);
       item.windingFlipped = windingFlipped;
       item.shadowStatic = node.shadowStatic;
       item.castsShadows = node.castsShadows;
@@ -137,8 +145,13 @@ class MeshComponent extends Component {
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
 
+      final boundsVersion = item.geometry.localBoundsVersion;
+      final geometryBoundsChanged = _boundsVersions[index] != boundsVersion;
+      _boundsVersions[index] = boundsVersion;
       final wasBounded = item.worldBounds != null;
-      final boundsChanged = item.refreshWorldBounds();
+      final boundsChanged = transformChanged || geometryBoundsChanged
+          ? item.refreshWorldBounds()
+          : false;
       final isBounded = item.worldBounds != null;
 
       // A toggled cull flag or a bounded/unbounded transition changes the
@@ -150,6 +163,7 @@ class MeshComponent extends Component {
         renderScene?.markBvhBoundsDirty();
       }
     }
+    _worldTransformVersion = worldTransformVersion;
   }
 
   /// Keeps this component's render items out of the render passes.
