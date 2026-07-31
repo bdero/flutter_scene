@@ -83,6 +83,7 @@ class InstancedMeshComponent extends Component {
     item.instanceColors = instancedMesh.colors;
     item.instanceWindingFlipped = instancedMesh.windingFlipped;
     item.cullInstances = instancedMesh.cullInstances;
+    item.sortTransparentInstances = instancedMesh.sortTransparentInstances;
     if (staticShadowChanged) {
       node.internalRenderScene?.markStaticShadowDirty();
     }
