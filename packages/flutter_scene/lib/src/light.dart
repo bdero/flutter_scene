@@ -182,12 +182,11 @@ class DirectionalLight {
       );
     }
 
-    // Camera basis and field-of-view tangents.
+    // Camera direction and field-of-view tangents.
     final forward = camera.forward;
-    final right = camera.up.cross(forward).normalized();
-    final up = forward.cross(right).normalized();
     final tanV = math.tan(perspective.fovRadiansY * 0.5);
     final tanH = tanV * aspectRatio;
+    final tanRadius2 = tanH * tanH + tanV * tanV;
 
     final effectiveDirection = worldDirection ?? direction;
     final lightLength = effectiveDirection.length;
@@ -197,29 +196,21 @@ class DirectionalLight {
 
     final cascades = <ShadowCascade>[];
     for (var c = 0; c < count; c++) {
-      // The eight world-space corners of this cascade's frustum slice.
-      final corners = <Vector3>[];
-      final center = Vector3.zero();
-      for (final depth in [splits[c], splits[c + 1]]) {
-        final planeCenter = camera.position + forward * depth;
-        for (final sx in const [-1.0, 1.0]) {
-          for (final sy in const [-1.0, 1.0]) {
-            final corner =
-                planeCenter +
-                right * (sx * depth * tanH) +
-                up * (sy * depth * tanV);
-            corners.add(corner);
-            center.add(corner);
-          }
-        }
-      }
-      // The slice is symmetric about the view axis, so the corner
-      // average is the center of their bounding sphere.
-      center.scale(1.0 / 8.0);
-      var radius = 0.0;
-      for (final corner in corners) {
-        radius = math.max(radius, (corner - center).length);
-      }
+      // The corner average lies halfway between the near and far planes. The
+      // far corners are always farthest from it, so fit the sphere directly.
+      final sliceNear = splits[c];
+      final sliceFar = splits[c + 1];
+      final halfDepth = (sliceFar - sliceNear) * 0.5;
+      final centerDepth = (sliceNear + sliceFar) * 0.5;
+      final position = camera.position;
+      final center = Vector3(
+        position.x + forward.x * centerDepth,
+        position.y + forward.y * centerDepth,
+        position.z + forward.z * centerDepth,
+      );
+      final radius = math.sqrt(
+        halfDepth * halfDepth + sliceFar * sliceFar * tanRadius2,
+      );
 
       cascades.add(
         ShadowCascade(
@@ -267,46 +258,63 @@ class DirectionalLight {
     Vector3 sphereCenter,
     double sphereRadius,
   ) {
-    final up = lightDir.y.abs() > 0.99
-        ? Vector3(0.0, 0.0, 1.0)
-        : Vector3(0.0, 1.0, 0.0);
-    // The eye sits far toward the sun so occluders casting long shadows still
-    // render into this cascade (see [_casterReachRadii]).
-    final eye = sphereCenter - lightDir * (sphereRadius * _casterReachRadii);
-    final view = _lookAt(eye, sphereCenter, up);
+    final fx = lightDir.x;
+    final fy = lightDir.y;
+    final fz = lightDir.z;
+    final useZUp = fy.abs() > 0.99;
+    final rx0 = useZUp ? -fy : fz;
+    final ry0 = useZUp ? fx : 0.0;
+    final rz0 = useZUp ? 0.0 : -fx;
+    final inverseRightLength =
+        1.0 / math.sqrt(rx0 * rx0 + ry0 * ry0 + rz0 * rz0);
+    final rx = rx0 * inverseRightLength;
+    final ry = ry0 * inverseRightLength;
+    final rz = rz0 * inverseRightLength;
+    final ux = fy * rz - fz * ry;
+    final uy = fz * rx - fx * rz;
+    final uz = fx * ry - fy * rx;
 
-    const near = 0.0;
-    final far = sphereRadius * (_casterReachRadii + _forwardMarginRadii);
-    final s = sphereRadius * 2.0;
-    final ortho = Matrix4(
-      2.0 / s,
-      0.0,
-      0.0,
-      0.0, //
-      0.0,
-      2.0 / s,
-      0.0,
-      0.0, //
-      0.0,
-      0.0,
-      1.0 / (far - near),
-      0.0, //
-      0.0,
-      0.0,
-      -near / (far - near),
-      1.0, //
-    );
-    final matrix = ortho * view;
+    final inverseRadius = 1.0 / sphereRadius;
+    final inverseDepth =
+        inverseRadius / (_casterReachRadii + _forwardMarginRadii);
+    var tx =
+        -(rx * sphereCenter.x + ry * sphereCenter.y + rz * sphereCenter.z) *
+        inverseRadius;
+    var ty =
+        -(ux * sphereCenter.x + uy * sphereCenter.y + uz * sphereCenter.z) *
+        inverseRadius;
+    final tz =
+        (-(fx * sphereCenter.x + fy * sphereCenter.y + fz * sphereCenter.z) +
+            sphereRadius * _casterReachRadii) *
+        inverseDepth;
 
     // Texel-snap against the world origin so the cascade's texel grid
     // is stable as the camera (and so the cascade) moves.
-    final reference = matrix.transformed(Vector4(0.0, 0.0, 0.0, 1.0));
     final resolution = shadowMapResolution.toDouble();
-    final texelX = (reference.x * 0.5 + 0.5) * resolution;
-    final texelY = (reference.y * 0.5 + 0.5) * resolution;
+    final texelX = (tx * 0.5 + 0.5) * resolution;
+    final texelY = (ty * 0.5 + 0.5) * resolution;
     final offsetX = (texelX.roundToDouble() - texelX) / resolution * 2.0;
     final offsetY = (texelY.roundToDouble() - texelY) / resolution * 2.0;
-    return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
+    tx += offsetX;
+    ty += offsetY;
+    return Matrix4(
+      rx * inverseRadius,
+      ux * inverseRadius,
+      fx * inverseDepth,
+      0.0, //
+      ry * inverseRadius,
+      uy * inverseRadius,
+      fy * inverseDepth,
+      0.0, //
+      rz * inverseRadius,
+      uz * inverseRadius,
+      fz * inverseDepth,
+      0.0, //
+      tx,
+      ty,
+      tz,
+      1.0, //
+    );
   }
 
   static Matrix4 _lookAt(Vector3 position, Vector3 target, Vector3 up) {

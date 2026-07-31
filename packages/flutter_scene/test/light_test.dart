@@ -8,6 +8,71 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
+Matrix4 _referenceLookAt(Vector3 position, Vector3 target, Vector3 up) {
+  final forward = (target - position).normalized();
+  final right = up.cross(forward).normalized();
+  final newUp = forward.cross(right).normalized();
+  return Matrix4(
+    right.x,
+    newUp.x,
+    forward.x,
+    0.0,
+    right.y,
+    newUp.y,
+    forward.y,
+    0.0,
+    right.z,
+    newUp.z,
+    forward.z,
+    0.0,
+    -right.dot(position),
+    -newUp.dot(position),
+    -forward.dot(position),
+    1.0,
+  );
+}
+
+Matrix4 _referenceCascadeMatrix(
+  Vector3 lightDir,
+  Vector3 center,
+  double radius,
+  int resolution,
+) {
+  const casterReach = 12.0;
+  const forwardMargin = 2.0;
+  final up = lightDir.y.abs() > 0.99
+      ? Vector3(0.0, 0.0, 1.0)
+      : Vector3(0.0, 1.0, 0.0);
+  final eye = center - lightDir * (radius * casterReach);
+  final view = _referenceLookAt(eye, center, up);
+  final far = radius * (casterReach + forwardMargin);
+  final ortho = Matrix4(
+    1.0 / radius,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0 / radius,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0 / far,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+  );
+  final matrix = ortho * view;
+  final reference = matrix.transformed(Vector4(0.0, 0.0, 0.0, 1.0));
+  final texelX = (reference.x * 0.5 + 0.5) * resolution;
+  final texelY = (reference.y * 0.5 + 0.5) * resolution;
+  final offsetX = (texelX.roundToDouble() - texelX) / resolution * 2.0;
+  final offsetY = (texelY.roundToDouble() - texelY) / resolution * 2.0;
+  return Matrix4.translation(Vector3(offsetX, offsetY, 0.0)) * matrix;
+}
+
 void main() {
   group('DirectionalLight.computeCascades', () {
     final camera = PerspectiveCamera(
@@ -77,6 +142,27 @@ void main() {
       final cascades = light.computeCascades(camera, aspectRatio);
       for (final cascade in cascades) {
         expect(cascade.boxSize, greaterThan(0.0));
+      }
+    });
+
+    test('scalar cascade matrices match the reference construction', () {
+      final light = DirectionalLight(shadowMapResolution: 2048);
+      final cases = [
+        (Vector3(0.3, -1.0, 0.2).normalized(), Vector3(3, 7, -11), 9.0),
+        (Vector3(0.01, -1.0, 0.01).normalized(), Vector3(-40, 2, 91), 31.0),
+        (Vector3(-0.7, -0.2, 0.5).normalized(), Vector3(0, 0, 0), 140.0),
+      ];
+      for (final (direction, center, radius) in cases) {
+        final actual = light.cascadeLightSpaceMatrix(direction, center, radius);
+        final expected = _referenceCascadeMatrix(
+          direction,
+          center,
+          radius,
+          light.shadowMapResolution,
+        );
+        for (var i = 0; i < 16; i++) {
+          expect(actual.storage[i], closeTo(expected.storage[i], 1e-6));
+        }
       }
     });
   });
