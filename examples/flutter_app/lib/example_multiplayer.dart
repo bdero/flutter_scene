@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:dashwire/dashwire.dart';
 import 'package:dashwire_replication/dashwire_replication.dart' hide Authority;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
+import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
@@ -125,9 +125,28 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     ),
   );
 
+  /// Whether the physics backend on this platform can rollback-predict.
+  /// True on native; on the web it needs a wasm module carrying the
+  /// snapshot exports (an older published module degrades to interpolation).
+  Future<bool> _predictionSupported() async {
+    try {
+      await RapierWorld.ensureInitialized();
+      final probe = RapierWorld();
+      try {
+        probe.snapshot();
+      } finally {
+        probe.dispose();
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _start(Future<WireConnection> Function() connect) async {
     setState(() => _status = 'connecting');
     try {
+      final canPredict = await _predictionSupported();
       final session = await connectSession(
         await connect(),
         schemaHash: multiplayerRegistry().schemaHash,
@@ -142,10 +161,8 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         // the world back to the acked tick and replay unacked inputs. Remote
         // players stay interpolated. When prediction is off the local player
         // interpolates too, so it visibly lags input under latency.
-        // TODO(wasm): enable on web once the rapier wasm carries the
-        // snapshot/restore exports and the Dart-side marshalling lands.
         localPrediction: (replica) {
-          if (!_predict || kIsWeb) return null;
+          if (!_predict || !canPredict) return null;
           final controller = _PlayerController(_pressed, replica as NetPlayer);
           _clientWorlds.add(controller.simulation);
           return controller;
