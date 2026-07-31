@@ -94,6 +94,7 @@ class ShadowEncoder {
     // a plain flag before any virtual call.
     if (_filter == ShadowCasterFilter.staticOnly && !item.shadowStatic) return;
     if (_filter == ShadowCasterFilter.dynamicOnly && item.shadowStatic) return;
+    if (!item.castsShadows) return;
     if (!item.visible) return;
     if (!item.material.isOpaque()) return;
     if (item.frustumCulled) {

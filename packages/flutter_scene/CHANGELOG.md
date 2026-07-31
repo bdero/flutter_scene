@@ -7,7 +7,7 @@
 * Debug builds check a custom material's uniform blocks against the shader's reflection, so a misspelled or optimized-out block name and a buffer too small for its std140 layout raise named exceptions instead of failing at bind time or reading past the end.
 * Debug builds check a caller-declared vertex layout against the buffers actually bound, so a slot count mismatch raises instead of feeding the pipeline undefined vertex data.
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
-
+* Added `Node.castsShadows` for excluding individual meshes from shadow passes.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.

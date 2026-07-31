@@ -132,6 +132,7 @@ class MeshComponent extends Component {
       item.worldTransform.setFrom(worldTransform);
       item.windingFlipped = windingFlipped;
       item.shadowStatic = node.shadowStatic;
+      item.castsShadows = node.castsShadows;
       item.highlightColor = highlightColor;
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
