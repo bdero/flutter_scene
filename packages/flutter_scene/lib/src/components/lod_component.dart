@@ -79,7 +79,7 @@ class LodComponent extends MeshComponent {
   void onRenderItemsRegistered() {
     // Tag the items the base class just registered so the encoder selects a
     // level per view instead of drawing the highest-detail fallback. Runs on
-    // every re-registration, so the tags survive material refreshes.
+    // every re-registration, so the tags survive geometry changes.
     for (final item in renderItems) {
       item.lod = _selection;
     }

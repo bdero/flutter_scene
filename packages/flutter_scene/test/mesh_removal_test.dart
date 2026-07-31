@@ -7,6 +7,7 @@
 // GPU context is required (same pattern as cull_test / bounds_test).
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -40,6 +41,11 @@ class _StubMaterial extends Material {
   ) => throw UnsupportedError('Stub material is not renderable');
 }
 
+class _InputMaterial extends _StubMaterial {
+  @override
+  Set<RenderInput> get sceneInputs => const {RenderInput.depth};
+}
+
 Node _meshNode() => Node(
   mesh: Mesh.primitives(
     primitives: [MeshPrimitive(_StubGeometry(), _StubMaterial())],
@@ -47,6 +53,55 @@ Node _meshNode() => Node(
 );
 
 void main() {
+  test('material-only mesh replacement retains the render item', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final geometry = _StubGeometry();
+    final firstMaterial = _StubMaterial();
+    final secondMaterial = _StubMaterial();
+    final child = Node(mesh: Mesh(geometry, firstMaterial));
+    root.add(child);
+    renderScene.rebuildIfDirty();
+
+    final item = renderScene.items.single;
+    final revision = renderScene.structureRevision;
+    child.mesh = Mesh(geometry, secondMaterial);
+
+    expect(identical(renderScene.items.single, item), isTrue);
+    expect(identical(item.material, secondMaterial), isTrue);
+    expect(renderScene.structureRevision, revision);
+  });
+
+  test('geometry replacement re-registers the render item', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final child = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()));
+    root.add(child);
+
+    final item = renderScene.items.single;
+    final revision = renderScene.structureRevision;
+    child.mesh = Mesh(_StubGeometry(), _StubMaterial());
+
+    expect(identical(renderScene.items.single, item), isFalse);
+    expect(renderScene.structureRevision, greaterThan(revision));
+  });
+
+  test('material replacement invalidates changed scene inputs only', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final geometry = _StubGeometry();
+    final child = Node(mesh: Mesh(geometry, _StubMaterial()));
+    root.add(child);
+
+    final beforeInputChange = materialSceneInputsRevision;
+    child.mesh = Mesh(geometry, _InputMaterial());
+    expect(materialSceneInputsRevision, greaterThan(beforeInputChange));
+
+    final beforeEquivalentChange = materialSceneInputsRevision;
+    child.mesh = Mesh(geometry, _InputMaterial());
+    expect(materialSceneInputsRevision, beforeEquivalentChange);
+  });
+
   test('removing a mounted mesh node drops its render items', () {
     final renderScene = RenderScene();
     final root = Node()..debugMountInto(renderScene);

@@ -190,8 +190,7 @@ class MaterialsVariantsComponent extends Component {
     return first;
   }
 
-  // Render items capture materials at registration, so mounted meshes must
-  // re-register for a swap to take effect on screen.
+  // Mounted render items retain their identity while materials change.
   void _refreshRenderItems() {
     final seen = <Node>{};
     for (final binding in _bindings) {
