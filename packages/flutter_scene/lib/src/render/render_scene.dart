@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter/foundation.dart' show ValueNotifier, internal;
@@ -137,8 +139,79 @@ class RenderItem {
 
   final List<int> _visibleInstanceScratch = [];
 
+  /// Packed world-space instance AABBs, six floats per instance.
+  Float32List? _instanceWorldBounds;
+
+  /// Packed world transform and color records, twenty floats per instance.
+  @internal
+  Float32List? instanceWorldData;
+
+  /// Combined node/instance winding parity matching [instanceWorldData].
+  @internal
+  Uint8List? instanceWorldWindingFlipped;
+
   static final Matrix4 _instanceWorldScratch = Matrix4.zero();
   static final Aabb3 _instanceAabbScratch = Aabb3();
+
+  /// Rebuilds cached world-space bounds and draw data after a node, geometry,
+  /// or instance change. Static groups pay this once during setup.
+  @internal
+  void refreshInstanceData() {
+    final instances = instanceTransforms;
+    final bounds = geometry.localBounds;
+    final colors = instanceColors;
+    if (instances == null) {
+      _instanceWorldBounds = null;
+      instanceWorldData = null;
+      instanceWorldWindingFlipped = null;
+      return;
+    }
+    final boundsLength = instances.length * 6;
+    final packedBounds = bounds == null
+        ? null
+        : (_instanceWorldBounds?.length == boundsLength
+              ? _instanceWorldBounds!
+              : Float32List(boundsLength));
+    final dataLength = instances.length * 20;
+    final packedData = colors == null || colors.length != instances.length
+        ? null
+        : (instanceWorldData?.length == dataLength
+              ? instanceWorldData!
+              : Float32List(dataLength));
+    final packedWinding =
+        instanceWorldWindingFlipped?.length == instances.length
+        ? instanceWorldWindingFlipped!
+        : Uint8List(instances.length);
+    final retainedWinding = instanceWindingFlipped;
+    for (var i = 0; i < instances.length; i++) {
+      _instanceWorldScratch
+        ..setFrom(worldTransform)
+        ..multiply(instances[i]);
+      if (packedBounds != null) {
+        _instanceAabbScratch
+          ..copyFrom(bounds!)
+          ..transform(_instanceWorldScratch);
+        final offset = i * 6;
+        packedBounds[offset] = _instanceAabbScratch.min.x;
+        packedBounds[offset + 1] = _instanceAabbScratch.min.y;
+        packedBounds[offset + 2] = _instanceAabbScratch.min.z;
+        packedBounds[offset + 3] = _instanceAabbScratch.max.x;
+        packedBounds[offset + 4] = _instanceAabbScratch.max.y;
+        packedBounds[offset + 5] = _instanceAabbScratch.max.z;
+      }
+      if (packedData != null) {
+        final offset = i * 20;
+        packedData.setAll(offset, _instanceWorldScratch.storage);
+        packedData.setAll(offset + 16, colors![i].storage);
+      }
+      final instanceFlipped =
+          retainedWinding?[i] ?? (instances[i].determinant() < 0);
+      packedWinding[i] = windingFlipped != instanceFlipped ? 1 : 0;
+    }
+    _instanceWorldBounds = packedBounds;
+    instanceWorldData = packedData;
+    instanceWorldWindingFlipped = packedWinding;
+  }
 
   /// Refreshes [visibleInstanceIndices] and returns whether anything remains.
   @internal
@@ -150,29 +223,25 @@ class RenderItem {
       return true;
     }
 
+    if (_instanceWorldBounds?.length != instances.length * 6) {
+      refreshInstanceData();
+    }
+    final worldBounds = _instanceWorldBounds!;
+
     final visible = _visibleInstanceScratch..clear();
     for (var i = 0; i < instances.length; i++) {
-      _instanceWorldScratch
-        ..setFrom(worldTransform)
-        ..multiply(instances[i]);
-      _instanceAabbScratch
-        ..copyFrom(bounds)
-        ..transform(_instanceWorldScratch);
-      if (!frustum.intersectsWithAabb3(_instanceAabbScratch)) continue;
+      final offset = i * 6;
+      if (_outsidePlane(worldBounds, offset, frustum.plane0) ||
+          _outsidePlane(worldBounds, offset, frustum.plane1) ||
+          _outsidePlane(worldBounds, offset, frustum.plane2) ||
+          _outsidePlane(worldBounds, offset, frustum.plane3) ||
+          _outsidePlane(worldBounds, offset, frustum.plane4) ||
+          _outsidePlane(worldBounds, offset, frustum.plane5)) {
+        continue;
+      }
       var outside = false;
       for (final plane in additionalPlanes) {
-        final normal = plane.normal;
-        final px = normal.x < 0
-            ? _instanceAabbScratch.min.x
-            : _instanceAabbScratch.max.x;
-        final py = normal.y < 0
-            ? _instanceAabbScratch.min.y
-            : _instanceAabbScratch.max.y;
-        final pz = normal.z < 0
-            ? _instanceAabbScratch.min.z
-            : _instanceAabbScratch.max.z;
-        if (normal.x * px + normal.y * py + normal.z * pz + plane.constant <
-            0) {
+        if (_outsidePlane(worldBounds, offset, plane)) {
           outside = true;
           break;
         }
@@ -183,6 +252,14 @@ class RenderItem {
         ? null
         : visible;
     return visible.isNotEmpty;
+  }
+
+  static bool _outsidePlane(Float32List bounds, int offset, Plane plane) {
+    final normal = plane.normal;
+    final x = bounds[offset + (normal.x < 0 ? 0 : 3)];
+    final y = bounds[offset + (normal.y < 0 ? 1 : 4)];
+    final z = bounds[offset + (normal.z < 0 ? 2 : 5)];
+    return normal.x * x + normal.y * y + normal.z * z + plane.constant < 0;
   }
 
   /// Node-local aggregate AABB covering every instance, used to

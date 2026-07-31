@@ -9,6 +9,8 @@
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
 * Added `Node.castsShadows` for excluding individual meshes from shadow passes.
 * Added `GeometryBufferArena` and optional CPU-data release for lower-overhead immutable mesh batches.
+* Cached instanced bounds and render data to keep moving-camera culling allocation-light.
+* Reused large transient buffers across changing instance counts.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.

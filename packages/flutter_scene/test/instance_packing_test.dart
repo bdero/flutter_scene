@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -160,6 +162,86 @@ void main() {
       expect(packed.ccw.sublist(36, 40), [1, 1, 1, 1]);
       expect(packed.cw[12], 10);
       expect(packed.cw.sublist(16, 20), [0, 1, 0, 1]);
+    });
+
+    test('reuses scratch storage across immediate uploads', () {
+      final scratch = InstancePackingScratch();
+      final first = packInstanceData(
+        Matrix4.identity(),
+        [Matrix4.translation(Vector3(2, 0, 0))],
+        [Vector4(1, 0, 0, 1)],
+        scratch: scratch,
+      );
+
+      final second = packInstanceData(
+        Matrix4.identity(),
+        [Matrix4.translation(Vector3(8, 0, 0))],
+        [Vector4(0, 1, 0, 1)],
+        scratch: scratch,
+      );
+
+      expect(first.ccw[12], 8);
+      expect(second.ccw[12], 8);
+      expect(second.ccw.sublist(16, 20), [0, 1, 0, 1]);
+    });
+
+    test('copies selected cached records by winding group', () {
+      final records = Float32List(3 * 20);
+      for (var i = 0; i < 3; i++) {
+        Matrix4.translation(
+          Vector3(i * 4, 0, 0),
+        ).copyIntoArray(records, i * 20);
+        records.setAll(i * 20 + 16, [i.toDouble(), 0, 0, 1]);
+      }
+      final packed = packInstanceDataBatches([
+        InstanceDataBatch.cached(
+          packedWorldData: records,
+          packedWindingFlipped: Uint8List.fromList([0, 1, 0]),
+          indices: const [2, 1],
+        ),
+      ]);
+
+      expect(packed.ccwCount, 1);
+      expect(packed.cwCount, 1);
+      expect(packed.ccw[12], 8);
+      expect(packed.ccw[16], 2);
+      expect(packed.cw[12], 4);
+      expect(packed.cw[16], 1);
+    });
+
+    test('copies homogeneous cached records contiguously', () {
+      final records = Float32List(2 * 20);
+      Matrix4.translation(Vector3(3, 0, 0)).copyIntoArray(records, 0);
+      records.setAll(16, [1, 0, 0, 1]);
+      Matrix4.translation(Vector3(7, 0, 0)).copyIntoArray(records, 20);
+      records.setAll(36, [0, 1, 0, 1]);
+
+      final packed = packInstanceDataBatches([
+        InstanceDataBatch.cached(
+          packedWorldData: records,
+          packedWindingFlipped: Uint8List(2),
+        ),
+      ]);
+
+      expect(packed.ccw, records);
+      expect(packed.cw, isEmpty);
+    });
+
+    test('copies cached transform records without color lanes', () {
+      final records = Float32List(2 * 20);
+      Matrix4.translation(Vector3(3, 0, 0)).copyIntoArray(records, 0);
+      Matrix4.translation(Vector3(7, 0, 0)).copyIntoArray(records, 20);
+      final packed = packInstanceTransformBatches([
+        InstanceDataBatch.cached(
+          packedWorldData: records,
+          packedWindingFlipped: Uint8List.fromList([1, 0]),
+        ),
+      ]);
+
+      expect(packed.ccwCount, 1);
+      expect(packed.cwCount, 1);
+      expect(packed.ccw[12], 7);
+      expect(packed.cw[12], 3);
     });
   });
 }

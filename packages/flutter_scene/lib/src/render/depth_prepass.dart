@@ -526,6 +526,7 @@ class _DepthPrepassEncoder {
         nodeWindingFlipped: item.windingFlipped,
         instanceWindingFlipped: item.instanceWindingFlipped,
         indices: item.visibleInstanceIndices,
+        scratch: transientInstancePackingScratch,
       );
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);

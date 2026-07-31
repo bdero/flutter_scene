@@ -202,6 +202,13 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
 /// their `bind` callbacks, which receive the `gpu.RenderPass` and
 /// `TransientWriter` directly.
 base class SceneEncoder {
+  static const bool _profile = bool.fromEnvironment('FLUTTER_SCENE_PROFILE');
+  static int _profileSamples = 0;
+  static int _sortMicros = 0;
+  static int _encodeMicros = 0;
+  static int _draws = 0;
+  static int _instances = 0;
+
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
   ///
@@ -271,6 +278,8 @@ base class SceneEncoder {
   int _boundMaterialLightCount = -1;
   gpu.WindingOrder? _boundWindingOrder;
   gpu.PrimitiveType? _boundPrimitiveType;
+  int _encodedDraws = 0;
+  int _encodedInstances = 0;
 
   /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
@@ -576,6 +585,10 @@ base class SceneEncoder {
   }
 
   void _drawGeometry(Geometry geometry, {int instanceCount = 1}) {
+    if (_profile) {
+      _encodedDraws++;
+      _encodedInstances += instanceCount;
+    }
     geometry.draw(_renderPass, instanceCount: instanceCount);
   }
 
@@ -648,6 +661,8 @@ base class SceneEncoder {
     List<bool>? instanceWindingFlipped,
     List<int>? instanceIndices,
     Vector3? sortBackToFrontFrom,
+    Float32List? packedWorldData,
+    Uint8List? packedWorldWindingFlipped,
   }) {
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
@@ -680,15 +695,27 @@ base class SceneEncoder {
     }
 
     _bindGeometry(geometry, nodeTransform, materialVertex);
-    final packed = packInstanceData(
-      nodeTransform,
-      instances,
-      colors,
-      nodeWindingFlipped: windingFlipped,
-      instanceWindingFlipped: instanceWindingFlipped,
-      indices: instanceIndices,
-      sortBackToFrontFrom: sortBackToFrontFrom,
-    );
+    final packed =
+        sortBackToFrontFrom == null &&
+            packedWorldData != null &&
+            packedWorldWindingFlipped != null
+        ? packInstanceDataBatches([
+            InstanceDataBatch.cached(
+              packedWorldData: packedWorldData,
+              packedWindingFlipped: packedWorldWindingFlipped,
+              indices: instanceIndices,
+            ),
+          ], scratch: transientInstancePackingScratch)
+        : packInstanceData(
+            nodeTransform,
+            instances,
+            colors,
+            nodeWindingFlipped: windingFlipped,
+            instanceWindingFlipped: instanceWindingFlipped,
+            indices: instanceIndices,
+            sortBackToFrontFrom: sortBackToFrontFrom,
+            scratch: transientInstancePackingScratch,
+          );
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
@@ -719,7 +746,10 @@ base class SceneEncoder {
     _bindMaterial(material, materialVertex, fade);
     _setPrimitiveType(geometry.primitiveType);
     _bindGeometry(geometry, _identityTransform, materialVertex);
-    final packed = packInstanceDataBatches(batches);
+    final packed = packInstanceDataBatches(
+      batches,
+      scratch: transientInstancePackingScratch,
+    );
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
@@ -752,6 +782,7 @@ base class SceneEncoder {
   /// [flushTranslucent] when the scene pass splits the frame into two GPU
   /// passes to snapshot the opaque color between them.
   void flushOpaque() {
+    final sortWatch = _profile ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
@@ -771,6 +802,8 @@ base class SceneEncoder {
       if (byFade != 0) return byFade;
       return a.depth.compareTo(b.depth);
     });
+    sortWatch?.stop();
+    final encodeWatch = _profile ? (Stopwatch()..start()) : null;
     var index = 0;
     while (index < _opaqueRecords.length) {
       final record = _opaqueRecords[index];
@@ -797,6 +830,18 @@ base class SceneEncoder {
               InstanceDataBatch.single(
                 nodeTransform: batchItem.worldTransform,
                 nodeWindingFlipped: batchItem.windingFlipped,
+              ),
+            );
+            continue;
+          }
+          final packedWorldData = batchItem.instanceWorldData;
+          final packedWinding = batchItem.instanceWorldWindingFlipped;
+          if (packedWorldData != null && packedWinding != null) {
+            batches.add(
+              InstanceDataBatch.cached(
+                packedWorldData: packedWorldData,
+                packedWindingFlipped: packedWinding,
+                indices: batchItem.visibleInstanceIndices,
               ),
             );
             continue;
@@ -836,6 +881,8 @@ base class SceneEncoder {
           record.fade,
           instanceWindingFlipped: item.instanceWindingFlipped,
           instanceIndices: item.visibleInstanceIndices,
+          packedWorldData: item.instanceWorldData,
+          packedWorldWindingFlipped: item.instanceWorldWindingFlipped,
         );
       } else {
         _encode(
@@ -849,11 +896,47 @@ base class SceneEncoder {
       }
       index++;
     }
+    encodeWatch?.stop();
+    if (_profile) {
+      _recordProfile(
+        sortWatch!.elapsedMicroseconds,
+        encodeWatch!.elapsedMicroseconds,
+        _encodedDraws,
+        _encodedInstances,
+      );
+    }
     for (final record in _opaqueRecords) {
       if (_opaqueRecordPool.length == _recordPoolLimit) break;
       _opaqueRecordPool.add(record);
     }
     _opaqueRecords.clear();
+  }
+
+  static void _recordProfile(
+    int sortMicros,
+    int encodeMicros,
+    int draws,
+    int instances,
+  ) {
+    _profileSamples++;
+    _sortMicros += sortMicros;
+    _encodeMicros += encodeMicros;
+    _draws += draws;
+    _instances += instances;
+    if (_profileSamples < 120) return;
+    // ignore: avoid_print
+    print(
+      'FLUTTER_SCENE_PROFILE_ENCODER '
+      'sort_mean_us=${_sortMicros ~/ _profileSamples} '
+      'encode_mean_us=${_encodeMicros ~/ _profileSamples} '
+      'draws_mean=${_draws ~/ _profileSamples} '
+      'instances_mean=${_instances ~/ _profileSamples}',
+    );
+    _profileSamples = 0;
+    _sortMicros = 0;
+    _encodeMicros = 0;
+    _draws = 0;
+    _instances = 0;
   }
 
   bool _canBatchOpaque(_OpaqueRecord first, _OpaqueRecord next) {
@@ -921,6 +1004,8 @@ base class SceneEncoder {
           instanceWindingFlipped: record.item.instanceWindingFlipped,
           instanceIndices: record.item.visibleInstanceIndices,
           sortBackToFrontFrom: _camera.position,
+          packedWorldData: record.item.instanceWorldData,
+          packedWorldWindingFlipped: record.item.instanceWorldWindingFlipped,
         );
       } else {
         _encode(

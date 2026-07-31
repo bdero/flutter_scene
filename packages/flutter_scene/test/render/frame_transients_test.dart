@@ -148,6 +148,47 @@ void main() {
       expect(identical(small.buffer, big.buffer), isFalse);
     });
 
+    test('oversize requests reuse a capacity class after completion', () {
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(
+        tracker,
+        alignment: 256,
+        blockLengthInBytes: 1024,
+      );
+
+      final first = arena.emplace(_bytes(3000));
+      final firstId = tracker.record();
+      arena.beginFrame();
+      tracker.complete(firstId);
+
+      // Both requests belong to the 4096-byte class.
+      final second = arena.emplace(_bytes(3500));
+      expect(identical(second.buffer, first.buffer), isTrue);
+      expect(second.lengthInBytes, 3500);
+    });
+
+    test('oversize capacity classes shrink after an idle frame', () {
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(
+        tracker,
+        alignment: 256,
+        blockLengthInBytes: 1024,
+      );
+
+      final ids = <int>[];
+      for (var frame = 0; frame < 4; frame++) {
+        arena.emplace(_bytes(3000));
+        ids.add(tracker.record());
+        arena.beginFrame();
+      }
+      for (final id in ids) {
+        tracker.complete(id);
+      }
+      arena.beginFrame();
+      arena.beginFrame();
+      expect(arena.blockCount, lessThanOrEqualTo(1));
+    });
+
     test('reuses blocks only after their submissions complete', () {
       final tracker = GpuSubmissionTracker();
       final arena = TransientArena(

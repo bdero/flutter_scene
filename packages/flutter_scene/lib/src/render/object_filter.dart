@@ -223,6 +223,7 @@ class _ObjectMaskEncoder {
         item.worldTransform,
         instances,
         nodeWindingFlipped: item.windingFlipped,
+        scratch: transientInstancePackingScratch,
       );
       if (packed.ccwCount > 0) {
         bindInstanceTransforms(_renderPass, packed.ccw);

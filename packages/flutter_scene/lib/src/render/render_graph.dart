@@ -1,6 +1,14 @@
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
+const bool _profileRenderGraph = bool.fromEnvironment('FLUTTER_SCENE_PROFILE');
+
+class _PassProfile {
+  int samples = 0;
+  int totalMicroseconds = 0;
+  int maxMicroseconds = 0;
+}
+
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
 ///
@@ -223,6 +231,9 @@ abstract class RenderGraphPass {
 /// synchronization internally), alias transient memory, or cull unused
 /// passes.
 class RenderGraph {
+  static final Map<String, _PassProfile> _profiles = {};
+  static int _profileFrames = 0;
+
   final List<RenderGraphPass> _passes = [];
   final Blackboard _blackboard = Blackboard();
 
@@ -244,7 +255,39 @@ class RenderGraph {
       blackboard: _blackboard,
     );
     for (final pass in _passes) {
+      if (!_profileRenderGraph) {
+        pass.execute(context);
+        continue;
+      }
+      final stopwatch = Stopwatch()..start();
       pass.execute(context);
+      stopwatch.stop();
+      final elapsed = stopwatch.elapsedMicroseconds;
+      final profile = _profiles.putIfAbsent(pass.name, _PassProfile.new);
+      profile
+        ..samples += 1
+        ..totalMicroseconds += elapsed
+        ..maxMicroseconds = elapsed > profile.maxMicroseconds
+            ? elapsed
+            : profile.maxMicroseconds;
+    }
+    if (_profileRenderGraph && ++_profileFrames % 120 == 0) {
+      final entries = _profiles.entries.toList()
+        ..sort(
+          (a, b) =>
+              b.value.totalMicroseconds.compareTo(a.value.totalMicroseconds),
+        );
+      final summary = entries
+          .map(
+            (entry) =>
+                '${entry.key}_mean_us='
+                '${entry.value.totalMicroseconds ~/ entry.value.samples} '
+                '${entry.key}_max_us=${entry.value.maxMicroseconds}',
+          )
+          .join(' ');
+      // ignore: avoid_print
+      print('FLUTTER_SCENE_PROFILE $summary');
+      _profiles.clear();
     }
   }
 }

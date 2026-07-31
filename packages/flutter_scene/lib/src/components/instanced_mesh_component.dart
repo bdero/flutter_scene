@@ -20,6 +20,7 @@ class InstancedMeshComponent extends Component {
   RenderItem? _renderItem;
   int _worldTransformVersion = -1;
   int _instanceRevision = -1;
+  int _geometryBoundsVersion = -1;
 
   @override
   void onMount() {
@@ -41,6 +42,7 @@ class InstancedMeshComponent extends Component {
       _renderItem = null;
       _worldTransformVersion = -1;
       _instanceRevision = -1;
+      _geometryBoundsVersion = -1;
     }
   }
 
@@ -59,9 +61,11 @@ class InstancedMeshComponent extends Component {
     final worldTransform = node.globalTransform;
     final worldTransformVersion = node.worldTransformVersion;
     final instanceRevision = instancedMesh.revision;
+    final geometryBoundsVersion = instancedMesh.geometry.localBoundsVersion;
     final boundsChangedByInput =
         worldTransformVersion != _worldTransformVersion ||
-        instanceRevision != _instanceRevision;
+        instanceRevision != _instanceRevision ||
+        geometryBoundsVersion != _geometryBoundsVersion;
     final staticShadowChanged =
         (item.visible != true ||
             item.shadowStatic != node.shadowStatic ||
@@ -82,8 +86,12 @@ class InstancedMeshComponent extends Component {
     if (staticShadowChanged) {
       node.internalRenderScene?.markStaticShadowDirty();
     }
-    if (instanceRevision != _instanceRevision) {
+    if (instanceRevision != _instanceRevision ||
+        geometryBoundsVersion != _geometryBoundsVersion) {
       item.instanceBounds = instancedMesh.aggregateBounds;
+    }
+    if (boundsChangedByInput) {
+      item.refreshInstanceData();
     }
 
     final wasBounded = item.worldBounds != null;
@@ -103,6 +111,7 @@ class InstancedMeshComponent extends Component {
     }
     _worldTransformVersion = worldTransformVersion;
     _instanceRevision = instanceRevision;
+    _geometryBoundsVersion = geometryBoundsVersion;
   }
 
   /// Keeps this component's render item out of the render passes. Called

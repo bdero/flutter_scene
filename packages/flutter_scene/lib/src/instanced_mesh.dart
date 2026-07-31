@@ -41,6 +41,7 @@ class InstancedMesh {
 
   Aabb3? _boundsCache;
   bool _boundsDirty = true;
+  int _boundsGeometryVersion = -1;
   int _revision = 0;
 
   /// The number of instances.
@@ -115,9 +116,11 @@ class InstancedMesh {
   /// are no instances. Cached; recomputed after any instance change.
   @internal
   Aabb3? get aggregateBounds {
-    if (_boundsDirty) {
+    final geometryVersion = geometry.localBoundsVersion;
+    if (_boundsDirty || _boundsGeometryVersion != geometryVersion) {
       _boundsCache = _computeAggregateBounds();
       _boundsDirty = false;
+      _boundsGeometryVersion = geometryVersion;
     }
     return _boundsCache;
   }
