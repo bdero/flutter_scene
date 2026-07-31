@@ -113,14 +113,11 @@ class ShadowPass extends RenderGraphPass {
     // hundreds of world units, and fp16's ~11-bit mantissa quantizes
     // window-space depth into steps coarser than the shadow depth bias.
     // That made the flat distant ground self-shadow in moire bands.
-    //
-    // TODO(bdero): Only the red channel is used. Add r32Float to Flutter
-    // GPU and use it here instead.
     final color = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: atlasWidth,
         height: _tileResolution,
-        format: gpu.PixelFormat.r32g32b32a32Float,
+        format: gpu.PixelFormat.r32Float,
         debugName: 'directional_shadow_map',
       ),
     );
@@ -236,7 +233,7 @@ class ShadowPass extends RenderGraphPass {
         gpu.StorageMode.devicePrivate,
         _tileResolution,
         _tileResolution,
-        format: gpu.PixelFormat.r32g32b32a32Float,
+        format: gpu.PixelFormat.r32Float,
       );
       // The depth attachment only backs this pass's depth test; the same
       // pooled texture serves every refresh this frame (passes run in order

@@ -65,6 +65,7 @@ class EngineLightingUniforms {
       fragInfo[44] = direction.x;
       fragInfo[45] = direction.y;
       fragInfo[46] = direction.z;
+      fragInfo[47] = light.shadowFilter.index.toDouble();
       fragInfo[48] = light.color.x * light.intensity;
       fragInfo[49] = light.color.y * light.intensity;
       fragInfo[50] = light.color.z * light.intensity;

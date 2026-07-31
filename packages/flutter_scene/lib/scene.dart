@@ -170,6 +170,7 @@ export 'src/instanced_mesh.dart' show InstancedMesh;
 export 'src/light.dart'
     show
         DirectionalLight,
+        DirectionalShadowFilter,
         Lighting,
         PointLight,
         ShadowCascade,

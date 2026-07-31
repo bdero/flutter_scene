@@ -11,6 +11,11 @@
 * Added `GeometryBufferArena` and optional CPU-data release for lower-overhead immutable mesh batches.
 * Added `InstancedMesh.updateInstanceTransforms` for allocation-light bulk motion.
 * Added `InstancedMesh.sortTransparentInstances` to skip unnecessary particle sorting.
+* Added `DirectionalLight.cacheStaticShadows` for continuously changing shadow lights.
+* Added `DirectionalShadowFilter.fixedPcf` for stable lower-ALU shadow filtering.
+* Tightened stable cascade fitting to increase effective shadow resolution.
+* Reduced shadow-map color bandwidth with single-channel fp32 tiles.
+* Fixed cascade-edge striping from normal-biased receiver positions.
 * Cached instanced bounds and render data to keep moving-camera culling allocation-light.
 * Skipped per-instance bounds packing when instance culling is disabled.
 * Skipped per-instance culling when an entire batch is inside every active plane.

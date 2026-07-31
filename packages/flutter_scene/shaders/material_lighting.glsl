@@ -46,9 +46,8 @@ vec3 EvaluateDiffuseSH(sampler2D coefficients, vec3 n, float row) {
 float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
                 float inv_count, float receiver_depth) {
   vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
-  // Keep samples a texel inside this cascade's tile, so bilinear filtering of
-  // the atlas never reaches across the tile boundary into a neighbouring
-  // cascade's depths.
+  // Keep samples a texel inside this cascade's tile. This also protects the
+  // boundary if a custom backend applies filtering to the atlas.
   vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
                    vec2(1.0 - frag_info.shadow_texel_size));
   vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
@@ -61,26 +60,25 @@ float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
   return receiver_depth <= caster_depth ? 1.0 : 0.0;
 }
 
-// Samples one cascade's tile of the shadow atlas strip with a rotated
-// 16-tap Poisson-disk PCF. `world_pos` and `n` are world-space.
-float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
-                    vec3 world_pos, vec3 n) {
-  // Normal-offset bias. A soft PCF kernel on a surface tilted relative
-  // to the light straddles a depth gradient and would self-shadow, so
-  // lift the receiver along its normal far enough that the whole kernel
-  // clears the surface. The offset scales with the kernel's world
-  // radius (shadow_softness) and the surface's slope to the light. It
-  // depends only on geometry, not the cascade, so all cascades agree
-  // and there is no banding at their seams.
+// Applies the directional shadow receiver's normal-offset bias. A soft PCF
+// kernel on a surface tilted relative to the light straddles a depth gradient,
+// so lift the receiver far enough that the whole kernel clears the surface.
+// The offset depends only on world-space geometry, so every cascade agrees.
+vec3 BiasDirectionalShadowPosition(vec3 world_pos, vec3 n) {
   vec3 light_toward = -normalize(frag_info.directional_light_direction.xyz);
   float ndotl = max(dot(n, light_toward), 0.15);
   float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / (ndotl * ndotl),
                     8.0);
   float normal_offset =
       frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
-  vec3 biased = world_pos + n * normal_offset;
+  return world_pos + n * normal_offset;
+}
 
-  vec4 light_clip = cascade_matrix * vec4(biased, 1.0);
+// Samples one cascade's tile of the shadow atlas strip. `biased_world_pos` is
+// the world-space receiver after normal bias.
+float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
+                    vec3 biased_world_pos) {
+  vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);
   vec3 proj = light_clip.xyz / light_clip.w;
   vec2 uv = proj.xy * 0.5 + 0.5;
   // The depth bias is world-space; convert it to this cascade's clip-z (its
@@ -97,49 +95,77 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
   float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
 
-  // A per-fragment rotation hides the 16-tap pattern as a smooth edge.
-  float noise = fract(
-      52.9829189 *
-      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  float angle = noise * 6.28318530718;
-  float ca = cos(angle);
-  float sa = sin(angle);
+  float lit = 0.0;
+  float sample_count = 16.0;
+  if (frag_info.directional_light_direction.w > 0.5) {
+    // Deterministic 17-tap PCF. The half-texel inner ring fills gaps in the
+    // outer 3x3 grid while preserving a stable, visibly stepped edge.
+#define _FIXED_SHADOW_TAP(px, py) \
+  ShadowTap(vec2(px, py), 1.0, 0.0, radius, uv, cascade, inv_count, \
+            receiver_depth)
+    lit += _FIXED_SHADOW_TAP(-1.0, -1.0);
+    lit += _FIXED_SHADOW_TAP(0.0, -1.0);
+    lit += _FIXED_SHADOW_TAP(1.0, -1.0);
+    lit += _FIXED_SHADOW_TAP(-0.5, -0.5);
+    lit += _FIXED_SHADOW_TAP(0.0, -0.5);
+    lit += _FIXED_SHADOW_TAP(0.5, -0.5);
+    lit += _FIXED_SHADOW_TAP(-1.0, 0.0);
+    lit += _FIXED_SHADOW_TAP(-0.5, 0.0);
+    lit += _FIXED_SHADOW_TAP(0.0, 0.0);
+    lit += _FIXED_SHADOW_TAP(0.5, 0.0);
+    lit += _FIXED_SHADOW_TAP(1.0, 0.0);
+    lit += _FIXED_SHADOW_TAP(-0.5, 0.5);
+    lit += _FIXED_SHADOW_TAP(0.0, 0.5);
+    lit += _FIXED_SHADOW_TAP(0.5, 0.5);
+    lit += _FIXED_SHADOW_TAP(-1.0, 1.0);
+    lit += _FIXED_SHADOW_TAP(0.0, 1.0);
+    lit += _FIXED_SHADOW_TAP(1.0, 1.0);
+#undef _FIXED_SHADOW_TAP
+    sample_count = 17.0;
+  } else {
+    // A per-fragment rotation hides the 16-tap pattern as a smooth edge.
+    float noise = fract(
+        52.9829189 *
+        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float angle = noise * 6.28318530718;
+    float ca = cos(angle);
+    float sa = sin(angle);
 
-  // 16-tap Poisson-disk PCF, unrolled with the kernel as inline literals.
-  //
-  // TODO(flutter_scene): this would naturally loop over a file-scope
-  // `const vec2 kPoissonDisk[16] = vec2[](...)`, but *any* const array (even
-  // one filled element by element, which the SPIR-V optimizer folds back into
-  // a constant) makes impellerc/SPIRV-Cross emit a GLSL array constructor
-  // (`vec2[](...)`) in its `#version 100` GLES output. That is invalid
-  // ES 1.00, so the shader fails to compile on conformant ES drivers
-  // (e.g. Mesa/llvmpipe under headless CI); lenient drivers accept it. Flutter
-  // GPU shaders should compile anywhere Flutter runs, so the real fix belongs
-  // upstream (impellerc should emit valid ES 1.00, or the bundle's GLES stage
-  // should target ES 3.00). Restore the const-array loop once that lands.
-  // See: <upstream issue>.
+    // 16-tap Poisson-disk PCF, unrolled with inline kernel literals.
+    //
+    // TODO(flutter_scene): this would naturally loop over a file-scope
+    // `const vec2 kPoissonDisk[16] = vec2[](...)`, but *any* const array (even
+    // one filled element by element, which the SPIR-V optimizer folds back into
+    // a constant) makes impellerc/SPIRV-Cross emit a GLSL array constructor
+    // (`vec2[](...)`) in its `#version 100` GLES output. That is invalid
+    // ES 1.00, so the shader fails to compile on conformant ES drivers
+    // (e.g. Mesa/llvmpipe under headless CI); lenient drivers accept it. Flutter
+    // GPU shaders should compile anywhere Flutter runs, so the real fix belongs
+    // upstream (impellerc should emit valid ES 1.00, or the bundle's GLES stage
+    // should target ES 3.00). Restore the const-array loop once that lands.
+    // See: <upstream issue>.
 #define _SHADOW_TAP(px, py) \
   ShadowTap(vec2(px, py), ca, sa, radius, uv, cascade, inv_count, \
             receiver_depth)
-  float lit = 0.0;
-  lit += _SHADOW_TAP(-0.94201624, -0.39906216);
-  lit += _SHADOW_TAP(0.94558609, -0.76890725);
-  lit += _SHADOW_TAP(-0.09418410, -0.92938870);
-  lit += _SHADOW_TAP(0.34495938, 0.29387760);
-  lit += _SHADOW_TAP(-0.91588581, 0.45771432);
-  lit += _SHADOW_TAP(-0.81544232, -0.87912464);
-  lit += _SHADOW_TAP(-0.38277543, 0.27676845);
-  lit += _SHADOW_TAP(0.97484398, 0.75648379);
-  lit += _SHADOW_TAP(0.44323325, -0.97511554);
-  lit += _SHADOW_TAP(0.53742981, -0.47373420);
-  lit += _SHADOW_TAP(-0.26496911, -0.41893023);
-  lit += _SHADOW_TAP(0.79197514, 0.19090188);
-  lit += _SHADOW_TAP(-0.24188840, 0.99706507);
-  lit += _SHADOW_TAP(-0.81409955, 0.91437590);
-  lit += _SHADOW_TAP(0.19984126, 0.78641367);
-  lit += _SHADOW_TAP(0.14383161, -0.14100790);
+    lit += _SHADOW_TAP(-0.94201624, -0.39906216);
+    lit += _SHADOW_TAP(0.94558609, -0.76890725);
+    lit += _SHADOW_TAP(-0.09418410, -0.92938870);
+    lit += _SHADOW_TAP(0.34495938, 0.29387760);
+    lit += _SHADOW_TAP(-0.91588581, 0.45771432);
+    lit += _SHADOW_TAP(-0.81544232, -0.87912464);
+    lit += _SHADOW_TAP(-0.38277543, 0.27676845);
+    lit += _SHADOW_TAP(0.97484398, 0.75648379);
+    lit += _SHADOW_TAP(0.44323325, -0.97511554);
+    lit += _SHADOW_TAP(0.53742981, -0.47373420);
+    lit += _SHADOW_TAP(-0.26496911, -0.41893023);
+    lit += _SHADOW_TAP(0.79197514, 0.19090188);
+    lit += _SHADOW_TAP(-0.24188840, 0.99706507);
+    lit += _SHADOW_TAP(-0.81409955, 0.91437590);
+    lit += _SHADOW_TAP(0.19984126, 0.78641367);
+    lit += _SHADOW_TAP(0.14383161, -0.14100790);
 #undef _SHADOW_TAP
-  float shadow = lit / 16.0;
+  }
+  float shadow = lit / sample_count;
 
   // Only the last cascade has a real outer edge (inner cascades hand
   // off to the next), so fade just it back to lit at the boundary.
@@ -153,8 +179,8 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
 }
 
 // Soft cascaded-shadow lookup. Returns 1.0 (lit) .. 0.0 (fully
-// shadowed). `world_pos` and `n` are world-space; `n` is the
-// (perturbed) shading normal. Picks the first (highest-resolution)
+// shadowed). `world_pos` and `n` are world-space; `n` is the geometric
+// normal. Picks the first (highest-resolution)
 // cascade whose box contains the fragment.
 // Tries cascade IDX (a literal): if the fragment lies inside its tile with
 // room for the PCF kernel, samples it and marks `found`. IDX is a literal so
@@ -164,20 +190,25 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   if (!found && count > IDX) {                                               \
     mat4 cascade_matrix = frag_info.light_space_matrix[IDX];                 \
     float box = frag_info.cascade_box_sizes[IDX];                            \
-    vec4 light_clip = cascade_matrix * vec4(world_pos, 1.0);                 \
+    vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);          \
     vec3 proj = light_clip.xyz / light_clip.w;                              \
     vec2 uv = proj.xy * 0.5 + 0.5;                                           \
     float margin =                                                          \
         max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);   \
     if (!(uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||          \
           uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0)) {           \
-      result = SampleCascade(IDX, count, cascade_matrix, box, world_pos, n); \
+      result = SampleCascade(IDX, count, cascade_matrix, box,                \
+                             biased_world_pos);                              \
       found = true;                                                          \
     }                                                                        \
   }
 
 float SampleShadow(vec3 world_pos, vec3 n) {
   int count = int(frag_info.shadow_cascade_count);
+  // Select and sample with the same displaced position. Selecting with the
+  // original point could choose a tile that normal bias moves outside, making
+  // every PCF tap clamp to one edge texel and producing a visible band.
+  vec3 biased_world_pos = BiasDirectionalShadowPosition(world_pos, n);
   // Unrolled with literal cascade indices: see _TRY_CASCADE. A single `return`
   // (no early return inside a loop) also avoids a nested-loop pattern that
   // crashes a Direct3D shader compiler.
