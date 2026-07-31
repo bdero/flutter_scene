@@ -223,25 +223,46 @@ class RenderItem {
       return true;
     }
 
+    final aggregate = worldBounds;
+    if (aggregate != null &&
+        _insidePlane(aggregate, frustum.plane0) &&
+        _insidePlane(aggregate, frustum.plane1) &&
+        _insidePlane(aggregate, frustum.plane2) &&
+        _insidePlane(aggregate, frustum.plane3) &&
+        _insidePlane(aggregate, frustum.plane4) &&
+        _insidePlane(aggregate, frustum.plane5)) {
+      var insideAdditionalPlanes = true;
+      for (final plane in additionalPlanes) {
+        if (!_insidePlane(aggregate, plane)) {
+          insideAdditionalPlanes = false;
+          break;
+        }
+      }
+      if (insideAdditionalPlanes) {
+        visibleInstanceIndices = null;
+        return true;
+      }
+    }
+
     if (_instanceWorldBounds?.length != instances.length * 6) {
       refreshInstanceData();
     }
-    final worldBounds = _instanceWorldBounds!;
+    final instanceWorldBounds = _instanceWorldBounds!;
 
     final visible = _visibleInstanceScratch..clear();
     for (var i = 0; i < instances.length; i++) {
       final offset = i * 6;
-      if (_outsidePlane(worldBounds, offset, frustum.plane0) ||
-          _outsidePlane(worldBounds, offset, frustum.plane1) ||
-          _outsidePlane(worldBounds, offset, frustum.plane2) ||
-          _outsidePlane(worldBounds, offset, frustum.plane3) ||
-          _outsidePlane(worldBounds, offset, frustum.plane4) ||
-          _outsidePlane(worldBounds, offset, frustum.plane5)) {
+      if (_outsidePlane(instanceWorldBounds, offset, frustum.plane0) ||
+          _outsidePlane(instanceWorldBounds, offset, frustum.plane1) ||
+          _outsidePlane(instanceWorldBounds, offset, frustum.plane2) ||
+          _outsidePlane(instanceWorldBounds, offset, frustum.plane3) ||
+          _outsidePlane(instanceWorldBounds, offset, frustum.plane4) ||
+          _outsidePlane(instanceWorldBounds, offset, frustum.plane5)) {
         continue;
       }
       var outside = false;
       for (final plane in additionalPlanes) {
-        if (_outsidePlane(worldBounds, offset, plane)) {
+        if (_outsidePlane(instanceWorldBounds, offset, plane)) {
           outside = true;
           break;
         }
@@ -260,6 +281,14 @@ class RenderItem {
     final y = bounds[offset + (normal.y < 0 ? 1 : 4)];
     final z = bounds[offset + (normal.z < 0 ? 2 : 5)];
     return normal.x * x + normal.y * y + normal.z * z + plane.constant < 0;
+  }
+
+  static bool _insidePlane(Aabb3 bounds, Plane plane) {
+    final normal = plane.normal;
+    final x = normal.x < 0 ? bounds.max.x : bounds.min.x;
+    final y = normal.y < 0 ? bounds.max.y : bounds.min.y;
+    final z = normal.z < 0 ? bounds.max.z : bounds.min.z;
+    return normal.x * x + normal.y * y + normal.z * z + plane.constant >= 0;
   }
 
   /// Node-local aggregate AABB covering every instance, used to

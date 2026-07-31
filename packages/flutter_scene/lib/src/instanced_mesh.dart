@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
@@ -38,6 +40,7 @@ class InstancedMesh {
   final List<Matrix4> _instances = [];
   final List<Vector4> _colors = [];
   final List<bool> _windingFlipped = [];
+  List<Matrix4>? _instanceUpdateView;
 
   Aabb3? _boundsCache;
   bool _boundsDirty = true;
@@ -68,6 +71,28 @@ class InstancedMesh {
     _windingFlipped[index] = transform.determinant() < 0;
     _boundsDirty = true;
     _revision++;
+  }
+
+  /// Updates every instance transform in place and invalidates the batch once.
+  ///
+  /// [update] receives a fixed-length view. Mutate its matrices without adding,
+  /// removing, or replacing entries. Set [recomputeWinding] to false only when
+  /// the edits cannot change any transform's winding parity.
+  void updateInstanceTransforms(
+    void Function(List<Matrix4> transforms) update, {
+    bool recomputeWinding = true,
+  }) {
+    try {
+      update(_instanceUpdateView ??= UnmodifiableListView<Matrix4>(_instances));
+    } finally {
+      if (recomputeWinding) {
+        for (var i = 0; i < _instances.length; i++) {
+          _windingFlipped[i] = _instances[i].determinant() < 0;
+        }
+      }
+      _boundsDirty = true;
+      _revision++;
+    }
   }
 
   /// Replaces the color multiplier of the instance at [index].
