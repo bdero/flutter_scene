@@ -206,6 +206,10 @@ base class SceneEncoder {
   static int _profileSamples = 0;
   static int _sortMicros = 0;
   static int _encodeMicros = 0;
+  static int _instancePackMicros = 0;
+  static int _instancePackMaxMicros = 0;
+  static int _instanceBindMicros = 0;
+  static int _instanceBytes = 0;
   static int _draws = 0;
   static int _instances = 0;
 
@@ -595,7 +599,13 @@ base class SceneEncoder {
   }
 
   void _bindPackedInstances(Float32List packed, int slot) {
+    final watch = _profile ? (Stopwatch()..start()) : null;
     bindInstanceData(_renderPass, packed, slot: slot);
+    if (_profile) {
+      watch!.stop();
+      _instanceBindMicros += watch.elapsedMicroseconds;
+      _instanceBytes += packed.lengthInBytes;
+    }
   }
 
   void _drawGeometry(Geometry geometry, {int instanceCount = 1}) {
@@ -709,6 +719,7 @@ base class SceneEncoder {
     }
 
     _bindGeometry(geometry, nodeTransform, materialVertex);
+    final packWatch = _profile ? (Stopwatch()..start()) : null;
     final packed =
         sortBackToFrontFrom == null &&
             packedWorldData != null &&
@@ -730,6 +741,13 @@ base class SceneEncoder {
             sortBackToFrontFrom: sortBackToFrontFrom,
             scratch: transientInstancePackingScratch,
           );
+    if (_profile) {
+      packWatch!.stop();
+      _instancePackMicros += packWatch.elapsedMicroseconds;
+      if (packWatch.elapsedMicroseconds > _instancePackMaxMicros) {
+        _instancePackMaxMicros = packWatch.elapsedMicroseconds;
+      }
+    }
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
@@ -760,10 +778,18 @@ base class SceneEncoder {
     _bindMaterial(material, materialVertex, fade);
     _setPrimitiveType(geometry.primitiveType);
     _bindGeometry(geometry, _identityTransform, materialVertex);
+    final packWatch = _profile ? (Stopwatch()..start()) : null;
     final packed = packInstanceDataBatches(
       batches,
       scratch: transientInstancePackingScratch,
     );
+    if (_profile) {
+      packWatch!.stop();
+      _instancePackMicros += packWatch.elapsedMicroseconds;
+      if (packWatch.elapsedMicroseconds > _instancePackMaxMicros) {
+        _instancePackMaxMicros = packWatch.elapsedMicroseconds;
+      }
+    }
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
@@ -943,12 +969,20 @@ base class SceneEncoder {
       'FLUTTER_SCENE_PROFILE_ENCODER '
       'sort_mean_us=${_sortMicros ~/ _profileSamples} '
       'encode_mean_us=${_encodeMicros ~/ _profileSamples} '
+      'instance_pack_mean_us=${_instancePackMicros ~/ _profileSamples} '
+      'instance_pack_max_us=$_instancePackMaxMicros '
+      'instance_bind_mean_us=${_instanceBindMicros ~/ _profileSamples} '
+      'instance_kib_mean=${_instanceBytes ~/ _profileSamples ~/ 1024} '
       'draws_mean=${_draws ~/ _profileSamples} '
       'instances_mean=${_instances ~/ _profileSamples}',
     );
     _profileSamples = 0;
     _sortMicros = 0;
     _encodeMicros = 0;
+    _instancePackMicros = 0;
+    _instancePackMaxMicros = 0;
+    _instanceBindMicros = 0;
+    _instanceBytes = 0;
     _draws = 0;
     _instances = 0;
   }
