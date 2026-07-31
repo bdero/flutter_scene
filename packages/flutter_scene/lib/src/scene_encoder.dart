@@ -349,7 +349,7 @@ base class SceneEncoder {
     // back to front while their transform buffer is packed at draw time.
     final instances = item.instanceTransforms;
     if (instances != null) {
-      final center = item.worldBounds?.center;
+      final bounds = item.worldBounds;
       _translucentRecords.add(
         _obtainTranslucentRecord(
           item,
@@ -358,9 +358,13 @@ base class SceneEncoder {
           material,
           fade,
           pipeline,
-          center == null
+          bounds == null
               ? _depthOf(item.worldTransform)
-              : center.distanceTo(_camera.position),
+              : _depthOfPoint(
+                  (bounds.min.x + bounds.max.x) * 0.5,
+                  (bounds.min.y + bounds.max.y) * 0.5,
+                  (bounds.min.z + bounds.max.z) * 0.5,
+                ),
           item.windingFlipped,
           item.lightListOffset,
           item.lightListCount,
@@ -482,8 +486,18 @@ base class SceneEncoder {
     return lod.resolve(size);
   }
 
-  double _depthOf(Matrix4 worldTransform) =>
-      worldTransform.getTranslation().distanceTo(_camera.position);
+  double _depthOf(Matrix4 worldTransform) {
+    final storage = worldTransform.storage;
+    return _depthOfPoint(storage[12], storage[13], storage[14]);
+  }
+
+  double _depthOfPoint(double x, double y, double z) {
+    final camera = _camera.position;
+    final dx = x - camera.x;
+    final dy = y - camera.y;
+    final dz = z - camera.z;
+    return dx * dx + dy * dy + dz * dz;
+  }
 
   // Binds [pipeline] unless it is already the bound one. `clearBindings`
   // leaves the pipeline in place, so consecutive draws that share a

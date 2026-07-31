@@ -109,6 +109,44 @@ void main() {
       expect(mesh.windingFlipped, [false]);
     });
 
+    test('updates a transform batch with one revision', () {
+      final mesh = _instancedMesh()
+        ..addInstance(Matrix4.identity())
+        ..addInstance(Matrix4.identity());
+      final revision = mesh.revision;
+
+      mesh.updateInstanceTransforms((transforms) {
+        transforms[0].setTranslationRaw(2, 0, 0);
+        transforms[1]
+          ..setIdentity()
+          ..scaleByVector3(Vector3(-1, 1, 1));
+      });
+
+      expect(mesh.instances[0].getTranslation().x, 2);
+      expect(mesh.windingFlipped, [false, true]);
+      expect(mesh.revision, revision + 1);
+    });
+
+    test('bulk transform view has a fixed structure', () {
+      final mesh = _instancedMesh()..addInstance(Matrix4.identity());
+      expect(
+        () => mesh.updateInstanceTransforms((transforms) {
+          transforms.add(Matrix4.identity());
+        }),
+        throwsUnsupportedError,
+      );
+      expect(mesh.instanceCount, 1);
+    });
+
+    test('bulk transform update can retain known winding parity', () {
+      final mesh = _instancedMesh()..addInstance(Matrix4.identity());
+      mesh.updateInstanceTransforms(
+        (transforms) => transforms[0].scaleByVector3(Vector3(-1, 1, 1)),
+        recomputeWinding: false,
+      );
+      expect(mesh.windingFlipped, [false]);
+    });
+
     test('removeInstanceAt removes and shifts later instances', () {
       final mesh = _instancedMesh();
       final a = Matrix4.translation(Vector3(1, 0, 0));
@@ -192,7 +230,11 @@ void main() {
           Matrix4.translation(Vector3(0, 0, 0)),
           Matrix4.translation(Vector3(4, 0, 0)),
           Matrix4.translation(Vector3(8, 0, 0)),
-        ];
+        ]
+        ..worldBounds = Aabb3.minMax(
+          Vector3(-0.5, -0.5, -0.5),
+          Vector3(8.5, 0.5, 0.5),
+        );
       final frustum = Frustum.matrix(
         makeOrthographicMatrix(-5, 5, -5, 5, -5, 5),
       );
@@ -210,7 +252,8 @@ void main() {
       );
       final item = RenderItem(geometry: geometry, material: _StubMaterial())
         ..cullInstances = true
-        ..instanceTransforms = [Matrix4.identity()];
+        ..instanceTransforms = [Matrix4.identity()]
+        ..worldBounds = Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5));
 
       expect(
         item.cullVisibleInstances(
