@@ -323,6 +323,19 @@ class RenderScene {
       cameraOverride ?? (cameras.isEmpty ? null : cameras.first.toCamera());
 
   Bvh _bvh = Bvh.build([]);
+  int _structureRevision = 0;
+  int _staticShadowRevision = 0;
+
+  /// Changes when render items are added or removed.
+  int get structureRevision => _structureRevision;
+
+  /// Changes when a retained static shadow caster changes.
+  int get staticShadowRevision => _staticShadowRevision;
+
+  /// Invalidates the cached static-caster fingerprint.
+  void markStaticShadowDirty() {
+    _staticShadowRevision++;
+  }
 
   /// The spatial structure over the bounded items, current after
   /// [rebuildIfDirty]. Used by the light culler to scatter each light onto the
@@ -341,6 +354,7 @@ class RenderScene {
   void add(RenderItem item) {
     item.sceneSlot = items.length;
     items.add(item);
+    _structureRevision++;
     _structureDirty = true;
   }
 
@@ -353,6 +367,7 @@ class RenderScene {
       last.sceneSlot = slot;
     }
     item.sceneSlot = -1;
+    _structureRevision++;
     _structureDirty = true;
   }
 

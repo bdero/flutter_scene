@@ -61,4 +61,26 @@ void main() {
     expect(renderScene.items, hasLength(2));
     expect(renderScene.items.where((item) => !item.castsShadows), hasLength(2));
   });
+
+  test('static shadow revision changes only when a static caster changes', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final caster = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
+      ..shadowStatic = true;
+    root.add(caster);
+
+    root.scenePrePass(0);
+    final initial = renderScene.staticShadowRevision;
+    root.scenePrePass(0);
+    expect(renderScene.staticShadowRevision, initial);
+
+    caster.localTransform = Matrix4.translationValues(1, 0, 0);
+    root.scenePrePass(0);
+    expect(renderScene.staticShadowRevision, greaterThan(initial));
+    final moved = renderScene.staticShadowRevision;
+
+    caster.visible = false;
+    root.scenePrePass(0);
+    expect(renderScene.staticShadowRevision, greaterThan(moved));
+  });
 }

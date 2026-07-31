@@ -115,6 +115,13 @@ enum AntiAliasingMode {
 /// it provides methods for adding and removing nodes from the scene graph.
 /// {@category Scene graph}
 base class Scene implements SceneGraph {
+  int _renderMetadataStructureRevision = -1;
+  int _renderMetadataMaterialRevision = -1;
+  int _renderMetadataStaticShadowRevision = -1;
+  Set<RenderInput> _cachedMaterialInputs = const {};
+  int _cachedStaticShadowSignature = 0;
+  bool _cachedHasStaticShadowCasters = false;
+
   Scene() {
     initializeStaticResources();
     root.registerAsRoot(this);
@@ -699,8 +706,7 @@ base class Scene implements SceneGraph {
 
   /// Depth of field with bokeh. Off by default; set [DepthOfField.enabled]
   /// to turn it on. Requires a [PerspectiveCamera] (it reconstructs blur from
-  /// the camera depth prepass, which it forces while enabled); skipped
-  /// otherwise.
+  /// camera depth); skipped otherwise.
   final DepthOfField depthOfField = DepthOfField();
 
   /// Automatic exposure (eye adaptation). Off by default; set
@@ -1234,42 +1240,75 @@ base class Scene implements SceneGraph {
     }
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
-    // Scene inputs requested by materials (Material.sceneInputs): depth
-    // forces the prepass like a custom pass would, and opaqueSceneColor
-    // splits the scene pass around an opaque color snapshot. Scenes whose
-    // materials request nothing skip all of it. The same walk fingerprints
-    // the static shadow casters (geometry identity + world translation), so
-    // the shadow cache notices content appearing, vanishing, or moving.
-    final materialInputs = <RenderInput>{};
-    var staticShadowSignature = 0;
-    var hasStaticShadowCasters = false;
-    for (final item in renderScene.items) {
-      final inputs = item.material.sceneInputs;
-      if (inputs.isNotEmpty) materialInputs.addAll(inputs);
-      if (item.shadowStatic && item.castsShadows && item.visible) {
-        hasStaticShadowCasters = true;
-        final t = item.worldTransform.storage;
-        staticShadowSignature =
-            0x3fffffff &
-            (staticShadowSignature * 31 +
-                identityHashCode(item.geometry) +
-                identityHashCode(item.instanceTransforms) +
-                // Material identity matters to the depth pass (alpha-masked
-                // casters render through the masked depth shader), so a
-                // swapped material must invalidate cached static tiles.
-                identityHashCode(item.material) +
-                t[12].hashCode * 3 +
-                t[13].hashCode * 7 +
-                t[14].hashCode * 13);
+    // Scene inputs requested by materials (Material.sceneInputs). Depth forces
+    // a prepass because the material samples it while the scene is drawn, and
+    // opaqueSceneColor splits the scene pass around an opaque color snapshot.
+    // Scenes whose materials request nothing skip both. The same cached
+    // metadata fingerprints static shadow casters.
+    final structureRevision = renderScene.structureRevision;
+    final materialRevision = materialSceneInputsRevision;
+    final staticShadowRevision = renderScene.staticShadowRevision;
+    final refreshMaterialInputs =
+        _renderMetadataStructureRevision != structureRevision ||
+        _renderMetadataMaterialRevision != materialRevision;
+    final refreshStaticShadows =
+        _renderMetadataStructureRevision != structureRevision ||
+        _renderMetadataStaticShadowRevision != staticShadowRevision;
+    if (refreshMaterialInputs || refreshStaticShadows) {
+      final materialInputs = refreshMaterialInputs
+          ? <RenderInput>{}
+          : _cachedMaterialInputs;
+      var staticShadowSignature = _cachedStaticShadowSignature;
+      var hasStaticShadowCasters = _cachedHasStaticShadowCasters;
+      if (refreshStaticShadows) {
+        staticShadowSignature = 0;
+        hasStaticShadowCasters = false;
       }
+      for (final item in renderScene.items) {
+        if (refreshMaterialInputs) {
+          final inputs = item.material.sceneInputs;
+          if (inputs.isNotEmpty) materialInputs.addAll(inputs);
+        }
+        if (refreshStaticShadows &&
+            item.shadowStatic &&
+            item.castsShadows &&
+            item.visible) {
+          hasStaticShadowCasters = true;
+          final t = item.worldTransform.storage;
+          staticShadowSignature =
+              0x3fffffff &
+              (staticShadowSignature * 31 +
+                  identityHashCode(item.geometry) +
+                  identityHashCode(item.instanceTransforms) +
+                  // Material identity matters to the depth pass (alpha-masked
+                  // casters render through the masked depth shader), so a
+                  // swapped material must invalidate cached static tiles.
+                  identityHashCode(item.material) +
+                  t[12].hashCode * 3 +
+                  t[13].hashCode * 7 +
+                  t[14].hashCode * 13);
+        }
+      }
+      if (refreshMaterialInputs) {
+        _cachedMaterialInputs = materialInputs;
+        _renderMetadataMaterialRevision = materialRevision;
+      }
+      if (refreshStaticShadows) {
+        _cachedStaticShadowSignature = staticShadowSignature;
+        _cachedHasStaticShadowCasters = hasStaticShadowCasters;
+        _renderMetadataStaticShadowRevision = staticShadowRevision;
+      }
+      _renderMetadataStructureRevision = structureRevision;
     }
+    final materialInputs = _cachedMaterialInputs;
+    final staticShadowSignature = _cachedStaticShadowSignature;
+    final hasStaticShadowCasters = _cachedHasStaticShadowCasters;
     final captureOpaqueColor = materialInputs.contains(
       RenderInput.opaqueSceneColor,
     );
     final bindSceneDepth = materialInputs.contains(RenderInput.depth);
     if (bindSceneDepth) customInputs.add(RenderInput.depth);
-    // Depth of field reconstructs blur from the camera depth, so it forces
-    // the prepass like a depth-consuming custom pass would.
+    // Depth of field reconstructs blur from camera depth.
     if (depthOfField.enabled) customInputs.add(RenderInput.depth);
 
     // When any visible caster is static, route the cascades through the
@@ -1324,9 +1363,9 @@ base class Scene implements SceneGraph {
         ),
       );
     }
-    // Ambient occlusion and screen-space reflections are both reconstructed
-    // from a camera depth prepass, so they need a perspective projection
-    // (others render without them) and share the one prepass.
+    // Ambient occlusion, screen-space reflections, normals, and materials
+    // that sample scene depth need the geometry prepass. Depth-only post
+    // effects reuse the stored main-pass depth when it is single-sampled.
     final perspective = camera.projection;
     final perspectiveCamera = perspective is PerspectiveProjection
         ? perspective
@@ -1338,9 +1377,17 @@ base class Scene implements SceneGraph {
     final wantCustomNormals = customInputs.contains(RenderInput.normals);
     final wantCustomDepth =
         wantCustomNormals || customInputs.contains(RenderInput.depth);
+    final wantDepthPrepass =
+        bindSceneDepth ||
+        wantCustomNormals ||
+        wantSsr ||
+        ambientOcclusion.enabled ||
+        (enableMsaa && wantCustomDepth);
+    final resolveSceneDepth =
+        perspectiveCamera != null && wantCustomDepth && !wantDepthPrepass;
     if (perspectiveCamera != null) {
       final wantAo = ambientOcclusion.enabled;
-      if (wantAo || wantSsr || wantCustomDepth) {
+      if (wantDepthPrepass) {
         // Ambient occlusion evaluates its chain (depth prepass, occlusion,
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
         // occlusion pass reading a full-resolution depth would alias on fine
@@ -1410,10 +1457,20 @@ base class Scene implements SceneGraph {
         captureOpaqueColor: captureOpaqueColor,
         // Depth binding needs the prepass, which needs a perspective camera.
         bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
+        publishDepth: resolveSceneDepth,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
       ),
     );
+    if (resolveSceneDepth) {
+      graph.addPass(
+        LinearDepthResolvePass(
+          dimensions: pixelSize,
+          near: perspectiveCamera.near,
+          far: perspectiveCamera.far,
+        ),
+      );
+    }
     // Screen-space reflections refine the lit HDR color in place, before
     // bloom and tone mapping, so reflected highlights bloom and tone-map
     // with the rest of the image.
@@ -1488,7 +1545,7 @@ base class Scene implements SceneGraph {
     // Depth of field on the linear HDR scene color, before the custom
     // effects and bloom so both act on the defocused image (bokeh highlights
     // still bloom). Needs the perspective camera's FOV for the thin-lens
-    // math and the prepass depth (forced via customInputs above).
+    // math and camera depth.
     if (depthOfField.enabled && perspectiveCamera != null) {
       graph.addPass(
         DofPass(

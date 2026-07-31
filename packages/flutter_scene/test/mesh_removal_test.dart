@@ -52,19 +52,23 @@ void main() {
     final root = Node()..debugMountInto(renderScene);
 
     final child = _meshNode();
+    final beforeAdd = renderScene.structureRevision;
     root.add(child);
     expect(
       renderScene.items.length,
       1,
       reason: 'mounting the mesh registers one render item',
     );
+    expect(renderScene.structureRevision, greaterThan(beforeAdd));
 
+    final beforeRemove = renderScene.structureRevision;
     root.remove(child);
     expect(
       renderScene.items,
       isEmpty,
       reason: 'removing the node must unregister its render item',
     );
+    expect(renderScene.structureRevision, greaterThan(beforeRemove));
   });
 
   test('removing one of several mesh nodes leaves the others', () {

@@ -52,6 +52,17 @@ LightCullResult assignLightsToItems({
   required List<CullableLight> lights,
   required int maxPerItem,
 }) {
+  if (lights.every((light) => light.bounds == null)) {
+    final count = lights.length.clamp(0, maxPerItem);
+    for (final item in items) {
+      item.lightListOffset = 0;
+      item.lightListCount = count;
+    }
+    return LightCullResult([
+      for (var i = 0; i < count; i++) lights[i].index,
+    ], lights.length > maxPerItem);
+  }
+
   for (final item in items) {
     item.lightScratch.clear();
   }

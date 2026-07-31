@@ -199,6 +199,17 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(_cuboid(vm.Vector4(0.85, 0.30, 0.20, 1.0), 0.1, 0.5));
     return (scene: scene, camera: _camera());
   }),
+  // Exercises the stored scene-depth resolve used by depth-only effects.
+  SmokeScene('depth_post', () {
+    final scene = Scene();
+    scene.depthOfField
+      ..enabled = true
+      ..focusDistance = 5.0
+      ..fStop = 5.6
+      ..quality = DepthOfFieldQuality.low;
+    scene.add(_cuboid(vm.Vector4(0.25, 0.65, 0.90, 1.0), 0.1, 0.5));
+    return (scene: scene, camera: _camera());
+  }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {

@@ -133,6 +133,13 @@ class MeshComponent extends Component {
     final highlightColor = node.highlightColor;
     for (var index = 0; index < _renderItems.length; index++) {
       final item = _renderItems[index];
+      final staticShadowChanged =
+          (item.visible != true ||
+              item.shadowStatic != node.shadowStatic ||
+              item.castsShadows != node.castsShadows ||
+              transformChanged) &&
+          (item.shadowStatic || node.shadowStatic) &&
+          (item.castsShadows || node.castsShadows);
       item.visible = true;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
@@ -144,6 +151,7 @@ class MeshComponent extends Component {
       item.highlightColor = highlightColor;
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
+      if (staticShadowChanged) renderScene?.markStaticShadowDirty();
 
       final boundsVersion = item.geometry.localBoundsVersion;
       final geometryBoundsChanged = _boundsVersions[index] != boundsVersion;
@@ -171,6 +179,9 @@ class MeshComponent extends Component {
   @internal
   void hideRenderItems() {
     for (final item in _renderItems) {
+      if (item.visible && item.shadowStatic && item.castsShadows) {
+        node.internalRenderScene?.markStaticShadowDirty();
+      }
       item.visible = false;
     }
   }
