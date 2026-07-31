@@ -12,6 +12,82 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
+/// Packs immutable mesh uploads into shared GPU buffers.
+///
+/// Pass one arena to many `MeshGeometry` objects to avoid one GPU allocation
+/// per mesh. The arena uses fixed-size bump-allocated blocks, while uploads
+/// larger than [blockSizeInBytes] receive a dedicated block. Geometry buffer
+/// views retain their blocks, so the arena itself need not outlive the meshes.
+///
+/// This is intended for geometry loaded or generated in batches. Updatable
+/// geometry owns its ring buffers and cannot use an arena.
+/// {@category Geometry}
+class GeometryBufferArena {
+  /// Creates an arena with the given minimum block size.
+  GeometryBufferArena({this.blockSizeInBytes = 16 * 1024 * 1024}) {
+    if (blockSizeInBytes <= 0) {
+      throw ArgumentError.value(
+        blockSizeInBytes,
+        'blockSizeInBytes',
+        'must be positive',
+      );
+    }
+  }
+
+  /// Minimum size of each GPU buffer block.
+  final int blockSizeInBytes;
+
+  final List<_GeometryBufferBlock> _blocks = [];
+
+  /// Number of GPU buffers allocated by this arena.
+  int get bufferCount => _blocks.length;
+
+  /// Total bytes reserved across all GPU buffers.
+  int get capacityInBytes =>
+      _blocks.fold(0, (total, block) => total + block.buffer.sizeInBytes);
+
+  /// Bytes consumed by geometry data and alignment padding.
+  int get usedInBytes =>
+      _blocks.fold(0, (total, block) => total + block.usedInBytes);
+
+  gpu.BufferView _allocate(int sizeInBytes) {
+    assert(sizeInBytes > 0);
+    final alignedSize = (sizeInBytes + 15) & ~15;
+    _GeometryBufferBlock? block;
+    if (_blocks.isNotEmpty &&
+        _blocks.last.usedInBytes + alignedSize <=
+            _blocks.last.buffer.sizeInBytes) {
+      block = _blocks.last;
+    }
+    if (block == null) {
+      final capacity = alignedSize > blockSizeInBytes
+          ? alignedSize
+          : blockSizeInBytes;
+      block = _GeometryBufferBlock(
+        gpu.gpuContext.createDeviceBuffer(
+          gpu.StorageMode.hostVisible,
+          capacity,
+        ),
+      );
+      _blocks.add(block);
+    }
+    final offset = block.usedInBytes;
+    block.usedInBytes += alignedSize;
+    return gpu.BufferView(
+      block.buffer,
+      offsetInBytes: offset,
+      lengthInBytes: sizeInBytes,
+    );
+  }
+}
+
+class _GeometryBufferBlock {
+  _GeometryBufferBlock(this.buffer);
+
+  final gpu.DeviceBuffer buffer;
+  int usedInBytes = 0;
+}
+
 /// Vertex (and optional index) data along with the vertex shader used to
 /// transform it.
 ///
@@ -272,6 +348,7 @@ abstract class Geometry {
       vertexCount,
       indices,
       indexType,
+      null,
     );
 
     if (_localBounds == null && vertexCount > 0 && _autoScanBoundsOnUpload) {
@@ -289,25 +366,36 @@ abstract class Geometry {
     int vertexCount,
     ByteData? indices,
     gpu.IndexType indexType,
+    GeometryBufferArena? bufferArena,
   ) {
     var vertexBytes = 0;
     for (final stream in streams) {
       vertexBytes += stream.lengthInBytes;
     }
 
-    final gpu.DeviceBuffer deviceBuffer = gpu.gpuContext.createDeviceBuffer(
-      gpu.StorageMode.hostVisible,
-      vertexBytes + (indices?.lengthInBytes ?? 0),
-    );
+    final totalBytes = vertexBytes + (indices?.lengthInBytes ?? 0);
+    final allocation = bufferArena == null || totalBytes == 0
+        ? null
+        : bufferArena._allocate(totalBytes);
+    final gpu.DeviceBuffer deviceBuffer =
+        allocation?.buffer ??
+        gpu.gpuContext.createDeviceBuffer(
+          gpu.StorageMode.hostVisible,
+          totalBytes,
+        );
+    final baseOffset = allocation?.offsetInBytes ?? 0;
 
     var offset = 0;
     final views = <gpu.BufferView>[];
     for (final stream in streams) {
-      deviceBuffer.overwrite(stream, destinationOffsetInBytes: offset);
+      deviceBuffer.overwrite(
+        stream,
+        destinationOffsetInBytes: baseOffset + offset,
+      );
       views.add(
         gpu.BufferView(
           deviceBuffer,
-          offsetInBytes: offset,
+          offsetInBytes: baseOffset + offset,
           lengthInBytes: stream.lengthInBytes,
         ),
       );
@@ -316,15 +404,21 @@ abstract class Geometry {
     setVertexStreams(views, vertexCount);
 
     if (indices != null) {
-      deviceBuffer.overwrite(indices, destinationOffsetInBytes: offset);
+      deviceBuffer.overwrite(
+        indices,
+        destinationOffsetInBytes: baseOffset + offset,
+      );
       setIndices(
         gpu.BufferView(
           deviceBuffer,
-          offsetInBytes: offset,
+          offsetInBytes: baseOffset + offset,
           lengthInBytes: indices.lengthInBytes,
         ),
         indexType,
       );
+    }
+    if (totalBytes > 0) {
+      deviceBuffer.flush(offsetInBytes: baseOffset, lengthInBytes: totalBytes);
     }
   }
 
@@ -835,6 +929,8 @@ class UnskinnedGeometry extends Geometry {
     Float32List? colors,
     ByteData? indices,
     gpu.IndexType indexType = gpu.IndexType.int16,
+    GeometryBufferArena? bufferArena,
+    bool retainCpuData = true,
   }) {
     final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
       positions: positions,
@@ -853,14 +949,17 @@ class UnskinnedGeometry extends Geometry {
       vertexCount,
       indices,
       indexType,
+      bufferArena,
     );
-    setRaycastAttributes(
-      positions: Float32List.sublistView(streams.position),
-      texCoords: Float32List.sublistView(streams.texCoord),
-      normals: Float32List.sublistView(streams.normal),
-      colors: Float32List.sublistView(streams.color),
-      indices: indices,
-    );
+    if (retainCpuData) {
+      setRaycastAttributes(
+        positions: Float32List.sublistView(streams.position),
+        texCoords: Float32List.sublistView(streams.texCoord),
+        normals: Float32List.sublistView(streams.normal),
+        colors: Float32List.sublistView(streams.color),
+        indices: indices,
+      );
+    }
     if (localBounds == null && vertexCount > 0) {
       scanLocalBoundsFromPositions(
         Float32List.sublistView(streams.position),
@@ -893,6 +992,7 @@ class UnskinnedGeometry extends Geometry {
       vertexCount,
       indices,
       indexType,
+      null,
     );
     setRaycastAttributes(
       positions: Float32List.sublistView(streams.position),

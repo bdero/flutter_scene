@@ -229,12 +229,16 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(node);
     return (scene: scene, camera: _camera());
   }),
-  // Two instanced meshes plus a plain mesh, all sharing a lit pipeline.
-  // Covers hardware instancing and, because the draws share a pipeline, the
-  // engine-lighting bind bookkeeping between instanced and non-instanced
-  // draws; a lost bind reads as black or missing geometry here.
+  // Two instanced meshes plus a plain mesh, all sharing a lit pipeline. The
+  // instanced geometries occupy separate slices of one geometry buffer arena.
+  // Covers hardware instancing, arena offsets, and engine-lighting bind
+  // bookkeeping between instanced and non-instanced draws.
   SmokeScene('instanced_lighting', () {
     final scene = Scene();
+    final arena = GeometryBufferArena(blockSizeInBytes: 1024 * 1024);
+    final cubeData = CuboidGeometry(
+      vm.Vector3(0.5, 0.5, 0.5),
+    ).extractMeshData();
     scene.add(
       Node()..addComponent(
         DirectionalLightComponent(
@@ -259,7 +263,11 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // same-pipeline run has already started.
     for (var mesh = 0; mesh < 2; mesh++) {
       final instanced = InstancedMesh(
-        geometry: CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5)),
+        geometry: MeshGeometry.fromMeshData(
+          cubeData,
+          bufferArena: arena,
+          retainCpuData: false,
+        ),
         material: PhysicallyBasedMaterial()
           ..baseColorFactor = mesh == 0
               ? vm.Vector4(0.85, 0.35, 0.20, 1.0)

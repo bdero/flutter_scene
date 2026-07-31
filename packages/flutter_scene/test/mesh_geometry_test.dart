@@ -5,11 +5,47 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 void main() {
+  group('GeometryBufferArena', () {
+    test('validates its block size without allocating', () {
+      expect(
+        () => GeometryBufferArena(blockSizeInBytes: 0),
+        throwsArgumentError,
+      );
+      final arena = GeometryBufferArena(blockSizeInBytes: 1024);
+      expect(arena.bufferCount, 0);
+      expect(arena.capacityInBytes, 0);
+      expect(arena.usedInBytes, 0);
+    });
+
+    test('rejects arena allocation for updatable geometry', () {
+      expect(
+        () => MeshGeometry.fromArrays(
+          positions: Float32List(0),
+          storage: GeometryStorage.updatable,
+          bufferArena: GeometryBufferArena(),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('requires updatable geometry to retain CPU data', () {
+      expect(
+        () => MeshGeometry.fromArrays(
+          positions: Float32List(0),
+          storage: GeometryStorage.updatable,
+          retainCpuData: false,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('GeometryBuilder', () {
     test('addVertex returns sequential indices', () {
       final builder = GeometryBuilder(deduplicate: false);
