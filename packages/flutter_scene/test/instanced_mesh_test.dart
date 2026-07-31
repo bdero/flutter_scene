@@ -46,15 +46,27 @@ class _StubMaterial extends Material {
   }
 }
 
-InstancedMesh _instancedMesh({Aabb3? aabb}) => InstancedMesh(
+InstancedMesh _instancedMesh({
+  Aabb3? aabb,
+  bool sortTransparentInstances = true,
+}) => InstancedMesh(
   geometry: _StubGeometry(aabb: aabb),
   material: _StubMaterial(),
+  sortTransparentInstances: sortTransparentInstances,
 );
 
 void main() {
   group('InstancedMesh instances', () {
     test('a new instanced mesh has no instances', () {
-      expect(_instancedMesh().instanceCount, 0);
+      final mesh = _instancedMesh();
+      expect(mesh.instanceCount, 0);
+      expect(mesh.sortTransparentInstances, isTrue);
+      expect(
+        _instancedMesh(
+          sortTransparentInstances: false,
+        ).sortTransparentInstances,
+        isFalse,
+      );
     });
 
     test('addInstance appends and returns the new index', () {

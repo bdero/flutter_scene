@@ -22,6 +22,7 @@ class InstancedMesh {
     required this.geometry,
     required this.material,
     this.cullInstances = false,
+    this.sortTransparentInstances = true,
   });
 
   /// The geometry drawn for every instance.
@@ -36,6 +37,12 @@ class InstancedMesh {
   /// the view at different times. Small compact groups are usually cheaper to
   /// draw after the single aggregate cull.
   final bool cullInstances;
+
+  /// Whether translucent instances are sorted back to front before drawing.
+  ///
+  /// Disable this for dense particles or other order-independent batches when
+  /// the sort costs more than the small blending difference it produces.
+  final bool sortTransparentInstances;
 
   final List<Matrix4> _instances = [];
   final List<Vector4> _colors = [];

@@ -134,6 +134,9 @@ class RenderItem {
   /// Whether each instance is culled after this item's aggregate BVH test.
   bool cullInstances = false;
 
+  /// Whether translucent instances are sorted back to front within this item.
+  bool sortTransparentInstances = true;
+
   /// Indices accepted by the current view, or null when every instance passes.
   List<int>? visibleInstanceIndices;
 
@@ -167,7 +170,7 @@ class RenderItem {
       return;
     }
     final boundsLength = instances.length * 6;
-    final packedBounds = bounds == null
+    final packedBounds = bounds == null || !cullInstances
         ? null
         : (_instanceWorldBounds?.length == boundsLength
               ? _instanceWorldBounds!

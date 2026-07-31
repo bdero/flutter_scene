@@ -10,7 +10,9 @@
 * Added `Node.castsShadows` for excluding individual meshes from shadow passes.
 * Added `GeometryBufferArena` and optional CPU-data release for lower-overhead immutable mesh batches.
 * Added `InstancedMesh.updateInstanceTransforms` for allocation-light bulk motion.
+* Added `InstancedMesh.sortTransparentInstances` to skip unnecessary particle sorting.
 * Cached instanced bounds and render data to keep moving-camera culling allocation-light.
+* Skipped per-instance bounds packing when instance culling is disabled.
 * Skipped per-instance culling when an entire batch is inside every active plane.
 * Reused large transient buffers across changing instance counts.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.

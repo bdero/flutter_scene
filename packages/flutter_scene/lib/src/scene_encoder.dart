@@ -1017,7 +1017,9 @@ base class SceneEncoder {
           record.fade,
           instanceWindingFlipped: record.item.instanceWindingFlipped,
           instanceIndices: record.item.visibleInstanceIndices,
-          sortBackToFrontFrom: _camera.position,
+          sortBackToFrontFrom: record.item.sortTransparentInstances
+              ? _camera.position
+              : null,
           packedWorldData: record.item.instanceWorldData,
           packedWorldWindingFlipped: record.item.instanceWorldWindingFlipped,
         );
