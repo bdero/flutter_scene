@@ -18,6 +18,8 @@ class InstancedMeshComponent extends Component {
   final InstancedMesh instancedMesh;
 
   RenderItem? _renderItem;
+  int _worldTransformVersion = -1;
+  int _instanceRevision = -1;
 
   @override
   void onMount() {
@@ -37,6 +39,8 @@ class InstancedMeshComponent extends Component {
     if (item != null) {
       node.internalRenderScene?.remove(item);
       _renderItem = null;
+      _worldTransformVersion = -1;
+      _instanceRevision = -1;
     }
   }
 
@@ -52,15 +56,28 @@ class InstancedMeshComponent extends Component {
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
     item.frustumCulled = frustumCulled;
     item.layers = node.layers;
-    item.worldTransform.setFrom(node.globalTransform);
+    final worldTransform = node.globalTransform;
+    final worldTransformVersion = node.worldTransformVersion;
+    final instanceRevision = instancedMesh.revision;
+    final boundsChangedByInput =
+        worldTransformVersion != _worldTransformVersion ||
+        instanceRevision != _instanceRevision;
+    if (worldTransformVersion != _worldTransformVersion) {
+      item.worldTransform.setFrom(worldTransform);
+    }
     item.windingFlipped = node.windingFlipped;
     item.shadowStatic = node.shadowStatic;
     item.castsShadows = node.castsShadows;
     item.instanceTransforms = instancedMesh.instances;
-    item.instanceBounds = instancedMesh.aggregateBounds;
+    item.instanceColors = instancedMesh.colors;
+    if (instanceRevision != _instanceRevision) {
+      item.instanceBounds = instancedMesh.aggregateBounds;
+    }
 
     final wasBounded = item.worldBounds != null;
-    final boundsChanged = item.refreshWorldBounds();
+    final boundsChanged = boundsChangedByInput
+        ? item.refreshWorldBounds()
+        : false;
     final isBounded = item.worldBounds != null;
 
     // A toggled cull flag or a bounded/unbounded transition changes the
@@ -72,6 +89,8 @@ class InstancedMeshComponent extends Component {
     } else if (boundsChanged && item.frustumCulled) {
       renderScene?.markBvhBoundsDirty();
     }
+    _worldTransformVersion = worldTransformVersion;
+    _instanceRevision = instanceRevision;
   }
 
   /// Keeps this component's render item out of the render passes. Called

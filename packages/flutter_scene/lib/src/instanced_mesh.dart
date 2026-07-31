@@ -11,8 +11,6 @@ import 'package:vector_math/vector_math.dart';
 /// [InstancedMeshComponent]; the whole set is then one render item, one
 /// pipeline, and one cull test rather than one node per copy.
 ///
-/// Phase 3c carries a per-instance transform only. The naive backend
-/// still issues one draw call per instance.
 /// {@category Scene graph}
 class InstancedMesh {
   /// Creates an instanced mesh that draws [geometry] shaded by
@@ -27,9 +25,11 @@ class InstancedMesh {
   final Material material;
 
   final List<Matrix4> _instances = [];
+  final List<Vector4> _colors = [];
 
   Aabb3? _boundsCache;
   bool _boundsDirty = true;
+  int _revision = 0;
 
   /// The number of instances.
   int get instanceCount => _instances.length;
@@ -38,34 +38,57 @@ class InstancedMesh {
   ///
   /// The matrix is copied, so later mutating [transform] does not affect
   /// the instance; use [setInstanceTransform] to move it.
-  int addInstance(Matrix4 transform) {
+  int addInstance(Matrix4 transform, {Vector4? color}) {
     _instances.add(transform.clone());
+    _colors.add((color ?? _white).clone());
     _boundsDirty = true;
+    _revision++;
     return _instances.length - 1;
   }
+
+  static final Vector4 _white = Vector4(1, 1, 1, 1);
 
   /// Replaces the transform of the instance at [index].
   void setInstanceTransform(int index, Matrix4 transform) {
     _instances[index].setFrom(transform);
     _boundsDirty = true;
+    _revision++;
+  }
+
+  /// Replaces the color multiplier of the instance at [index].
+  void setInstanceColor(int index, Vector4 color) {
+    _colors[index].setFrom(color);
+    _revision++;
   }
 
   /// Removes the instance at [index]. Instances after it shift down by
   /// one, so their indices change.
   void removeInstanceAt(int index) {
     _instances.removeAt(index);
+    _colors.removeAt(index);
     _boundsDirty = true;
+    _revision++;
   }
 
   /// Removes every instance.
   void clearInstances() {
     _instances.clear();
+    _colors.clear();
     _boundsDirty = true;
+    _revision++;
   }
 
   /// The live per-instance transform list the render item iterates.
   @internal
   List<Matrix4> get instances => _instances;
+
+  /// Live per-instance linear RGBA multipliers.
+  @internal
+  List<Vector4> get colors => _colors;
+
+  /// Changes whenever instance data changes.
+  @internal
+  int get revision => _revision;
 
   /// Aggregate AABB over every instance, in the instanced mesh's local
   /// space, or `null` when [geometry] has no computable bounds or there

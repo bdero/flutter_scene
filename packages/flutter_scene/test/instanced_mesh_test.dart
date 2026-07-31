@@ -72,6 +72,23 @@ void main() {
       expect(mesh.instances[0], Matrix4.identity());
     });
 
+    test('stores white by default and copies explicit colors', () {
+      final mesh = _instancedMesh();
+      mesh.addInstance(Matrix4.identity());
+      final color = Vector4(0.2, 0.4, 0.6, 0.8);
+      mesh.addInstance(Matrix4.identity(), color: color);
+      color.setZero();
+
+      expect(mesh.colors[0], Vector4(1, 1, 1, 1));
+      expect(mesh.colors[1], Vector4(0.2, 0.4, 0.6, 0.8));
+    });
+
+    test('updates an instance color', () {
+      final mesh = _instancedMesh()..addInstance(Matrix4.identity());
+      mesh.setInstanceColor(0, Vector4(0.1, 0.2, 0.3, 1));
+      expect(mesh.colors[0], Vector4(0.1, 0.2, 0.3, 1));
+    });
+
     test('setInstanceTransform replaces an instance transform', () {
       final mesh = _instancedMesh();
       mesh.addInstance(Matrix4.identity());
@@ -93,6 +110,7 @@ void main() {
       mesh.removeInstanceAt(0);
       expect(mesh.instanceCount, 2);
       expect(mesh.instances[0], b);
+      expect(mesh.colors, hasLength(2));
       expect(mesh.instances[1], c);
     });
 
@@ -103,6 +121,7 @@ void main() {
       mesh.clearInstances();
 
       expect(mesh.instanceCount, 0);
+      expect(mesh.colors, isEmpty);
     });
   });
 

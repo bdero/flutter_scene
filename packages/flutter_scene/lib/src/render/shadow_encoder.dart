@@ -78,17 +78,22 @@ class ShadowEncoder {
   /// culling.
   late final Frustum frustum;
 
-  /// Reusable AABB for the per-item cull check.
-  final Aabb3 cullScratchAabb = Aabb3();
+  final Aabb3 _cullScratchAabb = Aabb3();
 
   /// The pipeline currently bound on the render pass, or null before the
   /// first draw. `clearBindings` leaves the pipeline in place, so
   /// consecutive casters that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
+  final List<RenderItem> _records = [];
 
   /// Records [item]'s depth, unless it is hidden, translucent (no shadow),
   /// or culled by the light frustum.
-  void submit(RenderItem item) {
+  void submit(RenderItem item) => _submit(item, false);
+
+  /// Records an item already accepted by [RenderScene.cull].
+  void submitCulled(RenderItem item) => _submit(item, true);
+
+  void _submit(RenderItem item, bool alreadyCulled) {
     // The filter checks run first: the dynamic composite iterates the whole
     // item list (most of which is static), so the common case must reject on
     // a plain flag before any virtual call.
@@ -97,15 +102,82 @@ class ShadowEncoder {
     if (!item.castsShadows) return;
     if (!item.visible) return;
     if (!item.material.isOpaque()) return;
-    if (item.frustumCulled) {
+    if (!alreadyCulled && item.frustumCulled) {
       final bounds = item.cullBounds;
       if (bounds != null) {
-        cullScratchAabb
+        _cullScratchAabb
           ..copyFrom(bounds)
           ..transform(item.worldTransform);
-        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
+        if (!frustum.intersectsWithAabb3(_cullScratchAabb)) return;
       }
     }
+    _records.add(item);
+  }
+
+  /// Emits the accepted casters, merging compatible spatial cells back into
+  /// one hardware-instanced draw after culling.
+  void flush() {
+    _records.sort((a, b) {
+      final byMaterial = identityHashCode(
+        a.material,
+      ).compareTo(identityHashCode(b.material));
+      if (byMaterial != 0) return byMaterial;
+      return identityHashCode(
+        a.geometry,
+      ).compareTo(identityHashCode(b.geometry));
+    });
+    var index = 0;
+    while (index < _records.length) {
+      final first = _records[index];
+      var end = index + 1;
+      if (first.geometry.instancedVertexLayout != null &&
+          first.jointsTexture == null) {
+        while (end < _records.length &&
+            identical(first.geometry, _records[end].geometry) &&
+            identical(first.material, _records[end].material) &&
+            _records[end].jointsTexture == null) {
+          end++;
+        }
+      }
+      if (end > index + 1) {
+        final transforms = <Matrix4>[];
+        final colors = <Vector4>[];
+        for (var batchIndex = index; batchIndex < end; batchIndex++) {
+          final item = _records[batchIndex];
+          final instances = item.instanceTransforms;
+          if (instances == null) {
+            transforms.add(Matrix4.copy(item.worldTransform));
+            colors.add(Vector4.all(1));
+            continue;
+          }
+          final instanceColors = item.instanceColors!;
+          for (
+            var instanceIndex = 0;
+            instanceIndex < instances.length;
+            instanceIndex++
+          ) {
+            transforms.add(item.worldTransform * instances[instanceIndex]);
+            colors.add(instanceColors[instanceIndex]);
+          }
+        }
+        final combined =
+            RenderItem(geometry: first.geometry, material: first.material)
+              ..visible = true
+              ..castsShadows = true
+              ..shadowStatic = first.shadowStatic
+              ..instanceTransforms = transforms
+              ..instanceColors = colors;
+        _encode(combined);
+        index = end;
+        continue;
+      }
+      _encode(first);
+      index++;
+    }
+    _records.clear();
+  }
+
+  void _encode(RenderItem item) {
     _renderPass.clearBindings();
     final geometry = item.geometry;
     // Skinned casters bind their joints texture through the full-vertex
@@ -209,18 +281,33 @@ class ShadowEncoder {
         return;
       }
       bindDraw(item.worldTransform);
-      final packed = packInstanceTransforms(
-        item.worldTransform,
-        instances,
-        nodeWindingFlipped: item.windingFlipped,
-      );
+      final PackedInstances packed = depthVertex == null
+          ? packInstanceData(
+              item.worldTransform,
+              instances,
+              item.instanceColors!,
+              nodeWindingFlipped: item.windingFlipped,
+            )
+          : packInstanceTransforms(
+              item.worldTransform,
+              instances,
+              nodeWindingFlipped: item.windingFlipped,
+            );
       if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
+        if (depthVertex == null) {
+          bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
+        } else {
+          bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
+        }
         _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
         geometry.draw(_renderPass, instanceCount: packed.ccwCount);
       }
       if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
+        if (depthVertex == null) {
+          bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
+        } else {
+          bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
+        }
         _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
         geometry.draw(_renderPass, instanceCount: packed.cwCount);
       }

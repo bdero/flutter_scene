@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/scene.dart' show AntiAliasingMode, Scene;
+import 'package:vector_math/vector_math.dart' show Plane;
 
 /// One view of a `Scene`: a [camera] plus where and how its image is drawn.
 ///
@@ -25,6 +26,7 @@ class RenderView {
     this.antiAliasingMode,
     this.renderScale,
     this.filterQuality,
+    this.cullingPlanes = const [],
   }) : assert(
          renderScale == null || (renderScale.isFinite && renderScale > 0.0),
          'renderScale must be a positive, finite number.',
@@ -85,4 +87,11 @@ class RenderView {
   /// Ignored when [target] is set; display filtering of a render texture
   /// belongs to its consumer (for example `RenderTextureView`).
   ui.FilterQuality? filterQuality;
+
+  /// Extra world-space planes used to reject bounded objects before drawing.
+  ///
+  /// The visible half-space satisfies `normal.dot(point) + constant >= 0`.
+  /// This supports horizon, portal, and application-defined occlusion culling.
+  /// Objects with frustum culling disabled ignore these planes.
+  List<Plane> cullingPlanes;
 }

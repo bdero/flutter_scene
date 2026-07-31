@@ -93,6 +93,21 @@ void main() {
       expect(hits, items.toSet());
     });
 
+    test('additional planes reject boxes outside their visible half-space', () {
+      final items = [_itemAt(0), _itemAt(4), _itemAt(8)];
+      final frustum = Frustum.matrix(
+        makeOrthographicMatrix(-100, 100, -100, 100, -100, 100),
+      );
+      final hits = <RenderItem>{};
+      Bvh.build(items).query(
+        frustum,
+        hits.add,
+        additionalPlanes: [Plane.components(1, 0, 0, -5)],
+      );
+
+      expect(hits, {items[2]});
+    });
+
     test('refit tracks an item that moved', () {
       final mover = _itemAt(0);
       final bvh = Bvh.build([

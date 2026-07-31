@@ -154,7 +154,11 @@ class Bvh {
 
   /// Calls [visit] once for every item whose world AABB intersects
   /// [frustum].
-  void query(Frustum frustum, void Function(RenderItem) visit) {
+  void query(
+    Frustum frustum,
+    void Function(RenderItem) visit, {
+    List<Plane> additionalPlanes = const [],
+  }) {
     if (_nodeCount == 0) return;
     _loadPlane(0, frustum.plane0);
     _loadPlane(1, frustum.plane1);
@@ -182,6 +186,20 @@ class Bvh {
         if (nx * px + ny * py + nz * pz + planes[p + 3] < 0) {
           outside = true;
           break;
+        }
+      }
+      if (!outside) {
+        for (final plane in additionalPlanes) {
+          final nx = plane.normal.x;
+          final ny = plane.normal.y;
+          final nz = plane.normal.z;
+          final px = nx < 0 ? bounds[o] : bounds[o + 3];
+          final py = ny < 0 ? bounds[o + 1] : bounds[o + 4];
+          final pz = nz < 0 ? bounds[o + 2] : bounds[o + 5];
+          if (nx * px + ny * py + nz * pz + plane.constant < 0) {
+            outside = true;
+            break;
+          }
         }
       }
       if (outside) continue;

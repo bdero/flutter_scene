@@ -137,6 +137,7 @@ base class Node implements SceneGraph {
   // false. Recomputed lazily by globalTransform and by the render walk.
   final Matrix4 _worldTransform = Matrix4.identity();
   bool _worldTransformDirty = true;
+  int _worldTransformVersion = 0;
 
   // Whether this node's accumulated transform reverses triangle winding (an
   // odd number of negative-determinant transforms up the chain). Cached
@@ -196,7 +197,15 @@ base class Node implements SceneGraph {
       _windingFlipped = selfFlip != parent._windingFlipped;
     }
     _worldTransformDirty = false;
+    _worldTransformVersion++;
     return _worldTransform;
+  }
+
+  /// Changes whenever this node's world transform is recomputed.
+  @internal
+  int get worldTransformVersion {
+    globalTransform;
+    return _worldTransformVersion;
   }
 
   /// Whether this node's accumulated transform reverses triangle winding (a

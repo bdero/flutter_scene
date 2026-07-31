@@ -38,12 +38,16 @@ base class _OpaqueRecord {
   final gpu.RenderPipeline pipeline;
   final int pipelineKey;
   final double depth;
+
+  int get geometryKey => identityHashCode(geometry);
+  int get materialKey => identityHashCode(material);
 }
 
 /// A deferred translucent draw. An instanced translucent item produces
 /// one record per instance, so each carries its own world transform.
 base class _TranslucentRecord {
   _TranslucentRecord(
+    this.item,
     this.worldTransform,
     this.geometry,
     this.material,
@@ -56,6 +60,7 @@ base class _TranslucentRecord {
     this.jointsTexture,
     this.jointsTextureWidth,
   );
+  final RenderItem item;
   final Matrix4 worldTransform;
   final Geometry geometry;
   final Material material;
@@ -199,11 +204,6 @@ base class SceneEncoder {
   /// the start of this frame. Used by [submit] for per-item culling.
   late final Frustum frustum;
 
-  /// Reusable AABB owned by this encoder so the per-item cull check can
-  /// transform a local AABB into world space without allocating a new
-  /// [Aabb3] for every item, every frame.
-  final Aabb3 cullScratchAabb = Aabb3();
-
   // The pipeline currently bound on the render pass, or null before the
   // first bind. `clearBindings` does not clear the pipeline, so a draw
   // that reuses it can skip the rebind. Opaque draws are pipeline-sorted,
@@ -220,22 +220,10 @@ base class SceneEncoder {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
 
-    // The world-space AABB is needed for frustum culling and, when the item
-    // has levels of detail, for the screen-size metric; compute it once.
+    // The render scene already rejected this item through its BVH. Reuse its
+    // retained world bounds for the LOD metric instead of transforming again.
     final lod = item.lod;
-    Aabb3? worldBounds;
-    final localBounds = item.cullBounds;
-    if ((item.frustumCulled || lod != null) && localBounds != null) {
-      cullScratchAabb
-        ..copyFrom(localBounds)
-        ..transform(item.worldTransform);
-      worldBounds = cullScratchAabb;
-    }
-    if (item.frustumCulled &&
-        worldBounds != null &&
-        !frustum.intersectsWithAabb3(worldBounds)) {
-      return;
-    }
+    final worldBounds = item.worldBounds;
 
     // Queue the level(s) of detail to draw (or cull). A cross-fading node
     // returns its two adjacent levels with complementary dither coverage.
@@ -281,31 +269,33 @@ base class SceneEncoder {
       return;
     }
 
-    // Translucent. Instanced items are exploded into one record per
-    // instance, like any other translucent draw.
+    // Keep instanced translucency in one record. The instances are sorted
+    // back to front while their transform buffer is packed at draw time.
     final instances = item.instanceTransforms;
     if (instances != null) {
-      for (final instanceTransform in instances) {
-        final worldTransform = item.worldTransform * instanceTransform;
-        _translucentRecords.add(
-          _TranslucentRecord(
-            worldTransform,
-            geometry,
-            material,
-            fade,
-            pipeline,
-            _depthOf(worldTransform),
-            item.windingFlipped != (instanceTransform.determinant() < 0),
-            item.lightListOffset,
-            item.lightListCount,
-            item.jointsTexture,
-            item.jointsTextureWidth,
-          ),
-        );
-      }
+      final center = item.worldBounds?.center;
+      _translucentRecords.add(
+        _TranslucentRecord(
+          item,
+          item.worldTransform,
+          geometry,
+          material,
+          fade,
+          pipeline,
+          center == null
+              ? _depthOf(item.worldTransform)
+              : center.distanceTo(_camera.position),
+          item.windingFlipped,
+          item.lightListOffset,
+          item.lightListCount,
+          item.jointsTexture,
+          item.jointsTextureWidth,
+        ),
+      );
     } else {
       _translucentRecords.add(
         _TranslucentRecord(
+          item,
           item.worldTransform,
           geometry,
           material,
@@ -409,7 +399,7 @@ base class SceneEncoder {
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
       // bound to the slot after the geometry's vertex streams.
-      bindSingleInstanceTransform(
+      bindSingleInstanceData(
         _renderPass,
         worldTransform,
         slot: geometry.vertexStreamCount,
@@ -443,9 +433,11 @@ base class SceneEncoder {
     Geometry geometry,
     Material material,
     List<Matrix4> instances,
+    List<Vector4> colors,
     bool windingFlipped,
-    double fade,
-  ) {
+    double fade, {
+    Vector3? sortBackToFrontFrom,
+  }) {
     _clearBindings();
     _bindPipeline(pipeline);
     material.lodFade = fade;
@@ -486,19 +478,21 @@ base class SceneEncoder {
       _camera.position,
       shaderOverride: materialVertex,
     );
-    final packed = packInstanceTransforms(
+    final packed = packInstanceData(
       nodeTransform,
       instances,
+      colors,
       nodeWindingFlipped: windingFlipped,
+      sortBackToFrontFrom: sortBackToFrontFrom,
     );
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
-      bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
+      bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
       _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       geometry.draw(_renderPass, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
-      bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
+      bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       geometry.draw(_renderPass, instanceCount: packed.cwCount);
     }
@@ -524,13 +518,73 @@ base class SceneEncoder {
     _opaqueRecords.sort((a, b) {
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
+      final byMaterial = a.materialKey.compareTo(b.materialKey);
+      if (byMaterial != 0) return byMaterial;
+      final byGeometry = a.geometryKey.compareTo(b.geometryKey);
+      if (byGeometry != 0) return byGeometry;
+      final byLightOffset = a.item.lightListOffset.compareTo(
+        b.item.lightListOffset,
+      );
+      if (byLightOffset != 0) return byLightOffset;
+      final byLightCount = a.item.lightListCount.compareTo(
+        b.item.lightListCount,
+      );
+      if (byLightCount != 0) return byLightCount;
+      final byFade = a.fade.compareTo(b.fade);
+      if (byFade != 0) return byFade;
       return a.depth.compareTo(b.depth);
     });
-    for (final record in _opaqueRecords) {
+    var index = 0;
+    while (index < _opaqueRecords.length) {
+      final record = _opaqueRecords[index];
       final item = record.item;
       record.material.lightListOffset = item.lightListOffset;
       record.material.lightListCount = item.lightListCount;
       item.applyJointsTexture(record.geometry);
+
+      var end = index + 1;
+      if (record.geometry.instancedVertexLayout != null &&
+          item.jointsTexture == null) {
+        while (end < _opaqueRecords.length &&
+            _canBatchOpaque(record, _opaqueRecords[end])) {
+          end++;
+        }
+      }
+      if (end > index + 1) {
+        final transforms = <Matrix4>[];
+        final colors = <Vector4>[];
+        for (var batchIndex = index; batchIndex < end; batchIndex++) {
+          final batchItem = _opaqueRecords[batchIndex].item;
+          final instances = batchItem.instanceTransforms;
+          if (instances == null) {
+            transforms.add(Matrix4.copy(batchItem.worldTransform));
+            colors.add(Vector4.all(1));
+            continue;
+          }
+          final instanceColors = batchItem.instanceColors!;
+          for (
+            var instanceIndex = 0;
+            instanceIndex < instances.length;
+            instanceIndex++
+          ) {
+            transforms.add(batchItem.worldTransform * instances[instanceIndex]);
+            colors.add(instanceColors[instanceIndex]);
+          }
+        }
+        _encodeInstanced(
+          record.pipeline,
+          Matrix4.identity(),
+          record.geometry,
+          record.material,
+          transforms,
+          colors,
+          false,
+          record.fade,
+        );
+        index = end;
+        continue;
+      }
+
       final instances = item.instanceTransforms;
       if (instances != null) {
         _encodeInstanced(
@@ -539,6 +593,7 @@ base class SceneEncoder {
           record.geometry,
           record.material,
           instances,
+          item.instanceColors!,
           item.windingFlipped,
           record.fade,
         );
@@ -552,8 +607,21 @@ base class SceneEncoder {
           record.fade,
         );
       }
+      index++;
     }
     _opaqueRecords.clear();
+  }
+
+  bool _canBatchOpaque(_OpaqueRecord first, _OpaqueRecord next) {
+    final a = first.item;
+    final b = next.item;
+    return identical(first.pipeline, next.pipeline) &&
+        identical(first.geometry, next.geometry) &&
+        identical(first.material, next.material) &&
+        first.fade == next.fade &&
+        a.lightListOffset == b.lightListOffset &&
+        a.lightListCount == b.lightListCount &&
+        b.jointsTexture == null;
   }
 
   /// Emits only the translucent phase (see [flush]). When [translucentPass]
@@ -590,14 +658,29 @@ base class SceneEncoder {
       if (joints != null) {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
       }
-      _encode(
-        record.pipeline,
-        record.worldTransform,
-        record.geometry,
-        record.material,
-        record.windingFlipped,
-        record.fade,
-      );
+      final instances = record.item.instanceTransforms;
+      if (instances != null) {
+        _encodeInstanced(
+          record.pipeline,
+          record.worldTransform,
+          record.geometry,
+          record.material,
+          instances,
+          record.item.instanceColors!,
+          record.windingFlipped,
+          record.fade,
+          sortBackToFrontFrom: _camera.position,
+        );
+      } else {
+        _encode(
+          record.pipeline,
+          record.worldTransform,
+          record.geometry,
+          record.material,
+          record.windingFlipped,
+          record.fade,
+        );
+      }
     }
     _translucentRecords.clear();
   }

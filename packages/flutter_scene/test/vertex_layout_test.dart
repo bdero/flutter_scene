@@ -36,9 +36,9 @@ void main() {
         ],
       );
 
-      // Slot 1: the instance-rate model matrix, four vec4 columns.
+      // Slot 1 carries the model matrix and color multiplier.
       final instance = layout.buffers[1];
-      expect(instance.strideInBytes, 64);
+      expect(instance.strideInBytes, 80);
       expect(instance.stepMode, gpu.VertexStepMode.instance);
       expect(
         instance.attributes.map((a) => (a.name, a.format, a.offsetInBytes)),
@@ -47,6 +47,7 @@ void main() {
           ('model_transform_1', gpu.VertexFormat.float32x4, 16),
           ('model_transform_2', gpu.VertexFormat.float32x4, 32),
           ('model_transform_3', gpu.VertexFormat.float32x4, 48),
+          ('instance_color', gpu.VertexFormat.float32x4, 64),
         ],
       );
     });
@@ -125,7 +126,7 @@ void main() {
           (12, 'normal'),
           (8, 'texture_coords'),
           (16, 'color'),
-          (64, 'model_transform_0'),
+          (80, 'model_transform_0'),
         ],
       );
       expect(layout.buffers.last.stepMode, gpu.VertexStepMode.instance);

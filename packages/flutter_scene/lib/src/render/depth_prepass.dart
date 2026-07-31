@@ -44,12 +44,14 @@ class DepthPrepass extends RenderGraphPass {
     bool writeNormals = false,
     Vector3? cameraRight,
     Vector3? cameraUp,
+    List<Plane> cullingPlanes = const [],
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _cameraForward = cameraForward,
        _farDepth = farDepth,
        _layerMask = layerMask,
+       _cullingPlanes = cullingPlanes,
        _writeNormals = writeNormals,
        _cameraRight = cameraRight ?? Vector3.zero(),
        _cameraUp = cameraUp ?? Vector3.zero();
@@ -60,6 +62,7 @@ class DepthPrepass extends RenderGraphPass {
   final Vector3 _cameraForward;
   final double _farDepth;
   final int _layerMask;
+  final List<Plane> _cullingPlanes;
 
   // When set, the prepass also writes the interpolated view-space normal
   // into the linear-depth target's green/blue/alpha channels (the depth uses
@@ -126,7 +129,12 @@ class DepthPrepass extends RenderGraphPass {
       cameraRight: _cameraRight,
       cameraUp: _cameraUp,
     );
-    _renderScene.cull(encoder.frustum, encoder.submit);
+    _renderScene.cull(
+      encoder.frustum,
+      encoder.submit,
+      additionalPlanes: _cullingPlanes,
+    );
+    encoder.flush();
     rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kLinearDepthBlackboardKey, linearDepth);
@@ -218,29 +226,72 @@ class _DepthPrepassEncoder {
   /// Frustum of the camera view-projection, used for per-item culling.
   late final Frustum frustum;
 
-  /// Reusable AABB for the per-item cull check.
-  final Aabb3 cullScratchAabb = Aabb3();
-
   /// The pipeline currently bound on the render pass, or null before the
   /// first draw. `clearBindings` leaves the pipeline in place, so
   /// consecutive objects that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
+  final List<RenderItem> _records = [];
 
   /// Records [item]'s depth, unless it is hidden, translucent (no depth
-  /// contribution), or culled by the camera frustum.
+  /// contribution), or rejected by its layer mask.
   void submit(RenderItem item) {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
     if (!item.material.isOpaque()) return;
-    if (item.frustumCulled) {
-      final bounds = item.cullBounds;
-      if (bounds != null) {
-        cullScratchAabb
-          ..copyFrom(bounds)
-          ..transform(item.worldTransform);
-        if (!frustum.intersectsWithAabb3(cullScratchAabb)) return;
+    _records.add(item);
+  }
+
+  void flush() {
+    _records.sort((a, b) {
+      final byMaterial = identityHashCode(
+        a.material,
+      ).compareTo(identityHashCode(b.material));
+      if (byMaterial != 0) return byMaterial;
+      return identityHashCode(
+        a.geometry,
+      ).compareTo(identityHashCode(b.geometry));
+    });
+    var index = 0;
+    while (index < _records.length) {
+      final first = _records[index];
+      var end = index + 1;
+      if (first.geometry.instancedVertexLayout != null &&
+          first.jointsTexture == null) {
+        while (end < _records.length &&
+            identical(first.geometry, _records[end].geometry) &&
+            identical(first.material, _records[end].material) &&
+            _records[end].jointsTexture == null) {
+          end++;
+        }
       }
+      if (end > index + 1) {
+        final transforms = <Matrix4>[];
+        for (var batchIndex = index; batchIndex < end; batchIndex++) {
+          final item = _records[batchIndex];
+          final instances = item.instanceTransforms;
+          if (instances == null) {
+            transforms.add(Matrix4.copy(item.worldTransform));
+            continue;
+          }
+          for (final transform in instances) {
+            transforms.add(item.worldTransform * transform);
+          }
+        }
+        final combined =
+            RenderItem(geometry: first.geometry, material: first.material)
+              ..visible = true
+              ..instanceTransforms = transforms;
+        _encode(combined);
+        index = end;
+        continue;
+      }
+      _encode(first);
+      index++;
     }
+    _records.clear();
+  }
+
+  void _encode(RenderItem item) {
     _renderPass.clearBindings();
     // Cull the same faces as the color pass; a double-sided (culling: none)
     // material must stay double-sided here, or its camera-facing back faces are

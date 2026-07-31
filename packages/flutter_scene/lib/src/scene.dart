@@ -1369,6 +1369,7 @@ base class Scene implements SceneGraph {
             writeNormals: wantSsr || wantCustomNormals,
             cameraRight: cameraRight,
             cameraUp: cameraUp,
+            cullingPlanes: view.cullingPlanes,
           ),
         );
       }
@@ -1410,6 +1411,7 @@ base class Scene implements SceneGraph {
         // Depth binding needs the prepass, which needs a perspective camera.
         bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
+        cullingPlanes: view.cullingPlanes,
       ),
     );
     // Screen-space reflections refine the lit HDR color in place, before
