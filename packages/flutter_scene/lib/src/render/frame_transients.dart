@@ -224,8 +224,9 @@ FrameTransients createFrameTransients(
 /// Blocks are pooled: reuse is gated on the tracker's completion watermark,
 /// the pool grows with actual GPU queue depth, and idle blocks beyond the
 /// previous frame's usage (plus a spare) are dropped so memory shrinks back
-/// after load spikes. Requests larger than [blockLengthInBytes] get a
-/// dedicated buffer that is pooled the same way.
+/// after load spikes. Requests larger than [blockLengthInBytes] use pooled
+/// power-of-two size classes so a changing visible-instance count does not
+/// allocate a new CPU/GPU buffer every frame.
 class TransientArena implements FrameTransients {
   TransientArena(
     this._tracker, {
@@ -266,6 +267,10 @@ class TransientArena implements FrameTransients {
   int _lastFrameBlockCount = 0;
   int _thisFrameBlockCount = 0;
 
+  /// Oversize acquisitions by capacity class in the previous/current frame.
+  final Map<int, int> _lastOversizeUse = {};
+  final Map<int, int> _thisOversizeUse = {};
+
   /// Total pooled blocks (open + sealed). For tests.
   @visibleForTesting
   int get blockCount => _open.length + _sealed.length;
@@ -281,21 +286,28 @@ class TransientArena implements FrameTransients {
     }
     _open.clear();
 
-    // Shrink: drop completed standard blocks beyond last frame's usage plus
-    // one spare. Oversize blocks are dropped as soon as they complete (they
-    // are rare and their sizes rarely repeat).
+    // Shrink each capacity class to last frame's usage plus one spare.
     final completed = _tracker.completedThrough;
     final keepStandard = _lastFrameBlockCount + 1;
     var idleStandard = 0;
+    final keptOversize = <int, int>{};
     _sealed.removeWhere((block) {
       if (block.stamp > completed) return false; // still in flight
-      if (block.oversize) return true;
+      if (block.oversize) {
+        final count = (keptOversize[block.length] ?? 0) + 1;
+        keptOversize[block.length] = count;
+        return count > (_lastOversizeUse[block.length] ?? 0) + 1;
+      }
       idleStandard++;
       return idleStandard > keepStandard;
     });
 
     _lastFrameBlockCount = _thisFrameBlockCount;
     _thisFrameBlockCount = 0;
+    _lastOversizeUse
+      ..clear()
+      ..addAll(_thisOversizeUse);
+    _thisOversizeUse.clear();
   }
 
   /// Decides where an emplacement of [length] lands: at the aligned offset
@@ -362,8 +374,10 @@ class TransientArena implements FrameTransients {
   }
 
   gpu.BufferView _emplaceOversize(ByteData bytes) {
-    final block = _acquireBlock(bytes.lengthInBytes, oversize: true);
+    final capacity = _oversizeSizeClass(bytes.lengthInBytes);
+    final block = _acquireBlock(capacity, oversize: true);
     _open.add(block);
+    _thisOversizeUse[capacity] = (_thisOversizeUse[capacity] ?? 0) + 1;
     block.staging.buffer
         .asUint8List(block.staging.offsetInBytes)
         .setRange(
@@ -379,28 +393,31 @@ class TransientArena implements FrameTransients {
     );
   }
 
-  /// Reuses a completed pooled block or creates a new one. For oversize
-  /// requests, a pooled oversize block is reused when it fits without more
-  /// than doubling the waste.
+  int _oversizeSizeClass(int length) {
+    var capacity = blockLengthInBytes;
+    while (capacity < length) {
+      capacity <<= 1;
+    }
+    return capacity;
+  }
+
+  /// Reuses a completed pooled block or creates a new one.
   _TransientBlock _acquireBlock(int length, {bool oversize = false}) {
     final completed = _tracker.completedThrough;
     for (var i = 0; i < _sealed.length; i++) {
       final block = _sealed[i];
       if (block.stamp > completed) continue;
       if (block.oversize != oversize) continue;
-      if (oversize && (block.length < length || block.length > 2 * length)) {
-        continue;
-      }
+      if (block.length != length) continue;
       _sealed.removeAt(i);
       block.cursor = 0;
       return block;
     }
     final device = gpu.gpuContext.createDeviceBuffer(
       gpu.StorageMode.hostVisible,
-      oversize ? length : blockLengthInBytes,
+      length,
     );
-    final capacity = oversize ? length : blockLengthInBytes;
-    return _TransientBlock(device, ByteData(capacity), capacity, oversize);
+    return _TransientBlock(device, ByteData(length), length, oversize);
   }
 
   /// Uploads and seals every open block. Runs just before each submission,

@@ -3,6 +3,50 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart';
 
+/// Reusable storage for instance data copied into transient GPU buffers.
+class InstancePackingScratch {
+  Float32List _ccw = Float32List(0);
+  Float32List _cw = Float32List(0);
+  Uint8List _flipped = Uint8List(0);
+  final Matrix4 world = Matrix4.zero();
+
+  Float32List ccw(int length) {
+    _ccw = _growFloat(_ccw, length);
+    return Float32List.sublistView(_ccw, 0, length);
+  }
+
+  Float32List cw(int length) {
+    _cw = _growFloat(_cw, length);
+    return Float32List.sublistView(_cw, 0, length);
+  }
+
+  Uint8List flipped(int length) {
+    _flipped = _growBytes(_flipped, length);
+    final result = Uint8List.sublistView(_flipped, 0, length);
+    result.fillRange(0, length, 0);
+    return result;
+  }
+
+  static Float32List _growFloat(Float32List current, int length) =>
+      current.length >= length ? current : Float32List(_capacity(length));
+
+  static Uint8List _growBytes(Uint8List current, int length) =>
+      current.length >= length ? current : Uint8List(_capacity(length));
+
+  static int _capacity(int length) {
+    var capacity = 1;
+    while (capacity < length) {
+      capacity <<= 1;
+    }
+    return capacity;
+  }
+}
+
+/// Shared by synchronous render encoders. Each bind copies the packed bytes
+/// before another call can overwrite this storage.
+final InstancePackingScratch transientInstancePackingScratch =
+    InstancePackingScratch();
+
 /// Per-instance world transforms packed for the instance-rate vertex buffer
 /// (slot 1), split by winding parity.
 ///
@@ -61,6 +105,8 @@ class InstanceDataBatch {
     this.indices,
   }) : instances = instances,
        colors = colors,
+       packedWorldData = null,
+       packedWindingFlipped = null,
        instanceWindingFlipped = instanceWindingFlipped,
        assert(instances.length == colors.length),
        assert(
@@ -74,30 +120,70 @@ class InstanceDataBatch {
     required this.nodeWindingFlipped,
   }) : instances = null,
        colors = null,
+       packedWorldData = null,
+       packedWindingFlipped = null,
        instanceWindingFlipped = null,
        indices = null;
+
+  InstanceDataBatch.cached({
+    required Float32List packedWorldData,
+    required Uint8List packedWindingFlipped,
+    this.indices,
+  }) : nodeTransform = _identity,
+       instances = null,
+       colors = null,
+       packedWorldData = packedWorldData,
+       packedWindingFlipped = packedWindingFlipped,
+       nodeWindingFlipped = false,
+       instanceWindingFlipped = null,
+       assert(packedWorldData.length % 20 == 0),
+       assert(packedWindingFlipped.length == packedWorldData.length ~/ 20),
+       assert(
+         indices == null || indices.length <= packedWorldData.length ~/ 20,
+       );
+
+  static final Matrix4 _identity = Matrix4.identity();
 
   final Matrix4 nodeTransform;
   final List<Matrix4>? instances;
   final List<Vector4>? colors;
+  final Float32List? packedWorldData;
+  final Uint8List? packedWindingFlipped;
   final bool nodeWindingFlipped;
   final List<bool>? instanceWindingFlipped;
   final List<int>? indices;
 
-  int get length =>
-      instances == null ? 1 : (indices?.length ?? instances!.length);
+  int get length => packedWorldData == null
+      ? (instances == null ? 1 : (indices?.length ?? instances!.length))
+      : (indices?.length ?? packedWorldData!.length ~/ 20);
 }
 
 /// Packs several retained groups without building a flattened matrix list.
-PackedInstanceData packInstanceDataBatches(List<InstanceDataBatch> batches) {
+PackedInstanceData packInstanceDataBatches(
+  List<InstanceDataBatch> batches, {
+  InstancePackingScratch? scratch,
+}) {
   var count = 0;
   for (final batch in batches) {
     count += batch.length;
   }
-  final flipped = Uint8List(count);
+  final flipped = scratch?.flipped(count) ?? Uint8List(count);
   var cwCount = 0;
   var flatIndex = 0;
   for (final batch in batches) {
+    final packedWinding = batch.packedWindingFlipped;
+    if (packedWinding != null) {
+      final indices = batch.indices;
+      for (var slot = 0; slot < batch.length; slot++) {
+        final i = indices?[slot] ?? slot;
+        if (packedWinding[i] != 0) {
+          flipped[flatIndex] = 1;
+          cwCount++;
+        }
+        flatIndex++;
+      }
+      continue;
+    }
     final instances = batch.instances;
     if (instances == null) {
       if (batch.nodeWindingFlipped) {
@@ -121,12 +207,43 @@ PackedInstanceData packInstanceDataBatches(List<InstanceDataBatch> batches) {
     }
   }
 
-  final ccw = Float32List((count - cwCount) * 20);
-  final cw = Float32List(cwCount * 20);
-  final world = Matrix4.zero();
+  final ccwLength = (count - cwCount) * 20;
+  final cwLength = cwCount * 20;
+  final ccw = scratch?.ccw(ccwLength) ?? Float32List(ccwLength);
+  final cw = scratch?.cw(cwLength) ?? Float32List(cwLength);
+  final world = scratch?.world ?? Matrix4.zero();
   var ccwIndex = 0, cwIndex = 0;
   flatIndex = 0;
   for (final batch in batches) {
+    final packedData = batch.packedWorldData;
+    if (packedData != null) {
+      final indices = batch.indices;
+      if (indices == null) {
+        final winding = _uniformWinding(batch.packedWindingFlipped!);
+        if (winding >= 0) {
+          final target = winding == 0 ? ccw : cw;
+          final targetIndex = winding == 0 ? ccwIndex : cwIndex;
+          final offset = targetIndex * 20;
+          target.setRange(offset, offset + packedData.length, packedData);
+          if (winding == 0) {
+            ccwIndex += batch.length;
+          } else {
+            cwIndex += batch.length;
+          }
+          flatIndex += batch.length;
+          continue;
+        }
+      }
+      for (var slot = 0; slot < batch.length; slot++) {
+        final source = indices?[slot] ?? slot;
+        final isFlipped = flipped[flatIndex++] != 0;
+        final target = isFlipped ? cw : ccw;
+        final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+        final offset = targetIndex * 20;
+        target.setRange(offset, offset + 20, packedData, source * 20);
+      }
+      continue;
+    }
     final instances = batch.instances;
     if (instances == null) {
       final isFlipped = flipped[flatIndex++] != 0;
@@ -154,6 +271,108 @@ PackedInstanceData packInstanceDataBatches(List<InstanceDataBatch> batches) {
   return PackedInstanceData(ccw, cw);
 }
 
+int _uniformWinding(Uint8List winding) {
+  if (winding.isEmpty) return 0;
+  final first = winding.first;
+  for (var i = 1; i < winding.length; i++) {
+    if (winding[i] != first) return -1;
+  }
+  return first;
+}
+
+/// Packs retained groups as transform-only records for depth-style passes.
+PackedInstanceTransforms packInstanceTransformBatches(
+  List<InstanceDataBatch> batches, {
+  InstancePackingScratch? scratch,
+}) {
+  var count = 0;
+  for (final batch in batches) {
+    count += batch.length;
+  }
+  final flipped = scratch?.flipped(count) ?? Uint8List(count);
+  var cwCount = 0;
+  var flatIndex = 0;
+  for (final batch in batches) {
+    final packedWinding = batch.packedWindingFlipped;
+    if (packedWinding != null) {
+      final indices = batch.indices;
+      for (var slot = 0; slot < batch.length; slot++) {
+        final i = indices?[slot] ?? slot;
+        if (packedWinding[i] != 0) {
+          flipped[flatIndex] = 1;
+          cwCount++;
+        }
+        flatIndex++;
+      }
+      continue;
+    }
+    final instances = batch.instances;
+    if (instances == null) {
+      if (batch.nodeWindingFlipped) {
+        flipped[flatIndex] = 1;
+        cwCount++;
+      }
+      flatIndex++;
+      continue;
+    }
+    final retainedParity = batch.instanceWindingFlipped;
+    final indices = batch.indices;
+    for (var slot = 0; slot < batch.length; slot++) {
+      final i = indices?[slot] ?? slot;
+      final instanceFlipped =
+          retainedParity?[i] ?? (instances[i].determinant() < 0);
+      if (batch.nodeWindingFlipped != instanceFlipped) {
+        flipped[flatIndex] = 1;
+        cwCount++;
+      }
+      flatIndex++;
+    }
+  }
+
+  final ccwLength = (count - cwCount) * 16;
+  final cwLength = cwCount * 16;
+  final ccw = scratch?.ccw(ccwLength) ?? Float32List(ccwLength);
+  final cw = scratch?.cw(cwLength) ?? Float32List(cwLength);
+  final world = scratch?.world ?? Matrix4.zero();
+  var ccwIndex = 0, cwIndex = 0;
+  flatIndex = 0;
+  for (final batch in batches) {
+    final packedData = batch.packedWorldData;
+    if (packedData != null) {
+      final indices = batch.indices;
+      for (var slot = 0; slot < batch.length; slot++) {
+        final source = indices?[slot] ?? slot;
+        final isFlipped = flipped[flatIndex++] != 0;
+        final target = isFlipped ? cw : ccw;
+        final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+        final offset = targetIndex * 16;
+        target.setRange(offset, offset + 16, packedData, source * 20);
+      }
+      continue;
+    }
+    final instances = batch.instances;
+    if (instances == null) {
+      final isFlipped = flipped[flatIndex++] != 0;
+      final target = isFlipped ? cw : ccw;
+      final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+      target.setAll(targetIndex * 16, batch.nodeTransform.storage);
+      continue;
+    }
+    final indices = batch.indices;
+    for (var slot = 0; slot < batch.length; slot++) {
+      final i = indices?[slot] ?? slot;
+      world
+        ..setFrom(batch.nodeTransform)
+        ..multiply(instances[i]);
+      final isFlipped = flipped[flatIndex++] != 0;
+      final target = isFlipped ? cw : ccw;
+      final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
+      target.setAll(targetIndex * 16, world.storage);
+    }
+  }
+  return PackedInstanceTransforms(ccw, cw);
+}
+
 const List<double> _whiteColor = [1, 1, 1, 1];
 
 /// Packs world transforms followed by linear RGBA color multipliers.
@@ -165,6 +384,7 @@ PackedInstanceData packInstanceData(
   List<bool>? instanceWindingFlipped,
   List<int>? indices,
   Vector3? sortBackToFrontFrom,
+  InstancePackingScratch? scratch,
 }) {
   assert(instances.length == colors.length);
   if (sortBackToFrontFrom == null) {
@@ -177,7 +397,7 @@ PackedInstanceData packInstanceData(
         instanceWindingFlipped: instanceWindingFlipped,
         indices: indices,
       ),
-    ]);
+    ], scratch: scratch);
   }
 
   final sorted = _sortInstances(
@@ -215,6 +435,7 @@ PackedInstanceTransforms packInstanceTransforms(
   List<bool>? instanceWindingFlipped,
   List<int>? indices,
   Vector3? sortBackToFrontFrom,
+  InstancePackingScratch? scratch,
 }) {
   if (sortBackToFrontFrom != null) {
     return _packSortedInstanceTransforms(
@@ -228,7 +449,7 @@ PackedInstanceTransforms packInstanceTransforms(
   }
   final count = indices?.length ?? instances.length;
   var cwCount = 0;
-  final flipped = Uint8List(count);
+  final flipped = scratch?.flipped(count) ?? Uint8List(count);
   for (var slot = 0; slot < count; slot++) {
     final i = indices?[slot] ?? slot;
     final flip =
@@ -239,10 +460,12 @@ PackedInstanceTransforms packInstanceTransforms(
       cwCount++;
     }
   }
-  final ccw = Float32List((count - cwCount) * 16);
-  final cw = Float32List(cwCount * 16);
+  final ccwLength = (count - cwCount) * 16;
+  final cwLength = cwCount * 16;
+  final ccw = scratch?.ccw(ccwLength) ?? Float32List(ccwLength);
+  final cw = scratch?.cw(cwLength) ?? Float32List(cwLength);
   var ccwIndex = 0, cwIndex = 0;
-  final world = Matrix4.zero();
+  final world = scratch?.world ?? Matrix4.zero();
   for (var slot = 0; slot < count; slot++) {
     final i = indices?[slot] ?? slot;
     world.setFrom(nodeTransform);

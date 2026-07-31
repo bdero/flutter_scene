@@ -164,6 +164,21 @@ void main() {
       mesh.clearInstances();
       expect(mesh.aggregateBounds, isNull);
     });
+
+    test('bounds update when the geometry bounds change', () {
+      final geometry = _StubGeometry(
+        aabb: Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5)),
+      );
+      final mesh = InstancedMesh(geometry: geometry, material: _StubMaterial())
+        ..addInstance(Matrix4.identity());
+      expect(mesh.aggregateBounds!.max.x, 0.5);
+
+      geometry.setLocalBounds(
+        Aabb3.minMax(Vector3.all(-2), Vector3.all(2)),
+        Sphere.centerRadius(Vector3.zero(), 4),
+      );
+      expect(mesh.aggregateBounds!.max.x, 2);
+    });
   });
 
   group('InstancedMesh culling', () {
@@ -205,6 +220,24 @@ void main() {
         isTrue,
       );
       expect(item.visibleInstanceIndices, isNull);
+    });
+
+    test('refreshes cached world bounds after a transform change', () {
+      final geometry = _StubGeometry(
+        aabb: Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5)),
+      );
+      final item = RenderItem(geometry: geometry, material: _StubMaterial())
+        ..cullInstances = true
+        ..instanceTransforms = [Matrix4.identity()];
+      final frustum = Frustum.matrix(
+        makeOrthographicMatrix(-5, 5, -5, 5, -5, 5),
+      );
+
+      item.refreshInstanceData();
+      expect(item.cullVisibleInstances(frustum, const []), isTrue);
+      item.worldTransform.setTranslationRaw(20, 0, 0);
+      item.refreshInstanceData();
+      expect(item.cullVisibleInstances(frustum, const []), isFalse);
     });
   });
 }

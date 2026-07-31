@@ -1,5 +1,5 @@
 import 'package:flutter_scene/src/geometry/geometry.dart'
-    show bindUnskinnedFrameInfo;
+    show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/instance_packing.dart';
@@ -140,34 +140,41 @@ class ShadowEncoder {
         }
       }
       if (end > index + 1) {
-        final transforms = <Matrix4>[];
-        final colors = <Vector4>[];
+        final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _records[batchIndex];
           final instances = item.instanceTransforms;
           if (instances == null) {
-            transforms.add(Matrix4.copy(item.worldTransform));
-            colors.add(Vector4.all(1));
+            batches.add(
+              InstanceDataBatch.single(
+                nodeTransform: item.worldTransform,
+                nodeWindingFlipped: item.windingFlipped,
+              ),
+            );
             continue;
           }
-          final instanceColors = item.instanceColors!;
-          for (
-            var instanceIndex = 0;
-            instanceIndex < instances.length;
-            instanceIndex++
-          ) {
-            transforms.add(item.worldTransform * instances[instanceIndex]);
-            colors.add(instanceColors[instanceIndex]);
+          final packedWorldData = item.instanceWorldData;
+          final packedWinding = item.instanceWorldWindingFlipped;
+          if (packedWorldData != null && packedWinding != null) {
+            batches.add(
+              InstanceDataBatch.cached(
+                packedWorldData: packedWorldData,
+                packedWindingFlipped: packedWinding,
+              ),
+            );
+          } else {
+            batches.add(
+              InstanceDataBatch(
+                nodeTransform: item.worldTransform,
+                instances: instances,
+                colors: item.instanceColors!,
+                nodeWindingFlipped: item.windingFlipped,
+                instanceWindingFlipped: item.instanceWindingFlipped,
+              ),
+            );
           }
         }
-        final combined =
-            RenderItem(geometry: first.geometry, material: first.material)
-              ..visible = true
-              ..castsShadows = true
-              ..shadowStatic = first.shadowStatic
-              ..instanceTransforms = transforms
-              ..instanceColors = colors;
-        _encode(combined);
+        _encode(first, batches: batches);
         index = end;
         continue;
       }
@@ -177,7 +184,7 @@ class ShadowEncoder {
     _records.clear();
   }
 
-  void _encode(RenderItem item) {
+  void _encode(RenderItem item, {List<InstanceDataBatch>? batches}) {
     final geometry = item.geometry;
     // Skinned casters bind their joints texture through the full-vertex
     // path below; apply this item's skeleton to the (possibly shared)
@@ -263,6 +270,21 @@ class ShadowEncoder {
     // matching the prepass and color encoders.
     final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
 
+    if (batches != null) {
+      bindDraw(_identityTransform);
+      final PackedInstances packed = depthVertex == null
+          ? packInstanceDataBatches(
+              batches,
+              scratch: transientInstancePackingScratch,
+            )
+          : packInstanceTransformBatches(
+              batches,
+              scratch: transientInstancePackingScratch,
+            );
+      _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
+      return;
+    }
+
     final instances = item.instanceTransforms;
     if (instances != null) {
       if (geometry.instancedVertexLayout == null) {
@@ -281,38 +303,43 @@ class ShadowEncoder {
         return;
       }
       bindDraw(item.worldTransform);
+      final packedWorldData = item.instanceWorldData;
+      final packedWinding = item.instanceWorldWindingFlipped;
+      final cached = packedWorldData == null || packedWinding == null
+          ? null
+          : [
+              InstanceDataBatch.cached(
+                packedWorldData: packedWorldData,
+                packedWindingFlipped: packedWinding,
+              ),
+            ];
       final PackedInstances packed = depthVertex == null
-          ? packInstanceData(
-              item.worldTransform,
-              instances,
-              item.instanceColors!,
-              nodeWindingFlipped: item.windingFlipped,
-              instanceWindingFlipped: item.instanceWindingFlipped,
-            )
-          : packInstanceTransforms(
-              item.worldTransform,
-              instances,
-              nodeWindingFlipped: item.windingFlipped,
-              instanceWindingFlipped: item.instanceWindingFlipped,
-            );
-      if (packed.ccwCount > 0) {
-        if (depthVertex == null) {
-          bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
-        } else {
-          bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
-        }
-        _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-        geometry.draw(_renderPass, instanceCount: packed.ccwCount);
-      }
-      if (packed.cwCount > 0) {
-        if (depthVertex == null) {
-          bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
-        } else {
-          bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
-        }
-        _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-        geometry.draw(_renderPass, instanceCount: packed.cwCount);
-      }
+          ? (cached == null
+                ? packInstanceData(
+                    item.worldTransform,
+                    instances,
+                    item.instanceColors!,
+                    nodeWindingFlipped: item.windingFlipped,
+                    instanceWindingFlipped: item.instanceWindingFlipped,
+                    scratch: transientInstancePackingScratch,
+                  )
+                : packInstanceDataBatches(
+                    cached,
+                    scratch: transientInstancePackingScratch,
+                  ))
+          : (cached == null
+                ? packInstanceTransforms(
+                    item.worldTransform,
+                    instances,
+                    nodeWindingFlipped: item.windingFlipped,
+                    instanceWindingFlipped: item.instanceWindingFlipped,
+                    scratch: transientInstancePackingScratch,
+                  )
+                : packInstanceTransformBatches(
+                    cached,
+                    scratch: transientInstancePackingScratch,
+                  ));
+      _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
       return;
     }
 
@@ -336,5 +363,33 @@ class ShadowEncoder {
           : gpu.WindingOrder.counterClockwise,
     );
     geometry.draw(_renderPass);
+  }
+
+  static final Matrix4 _identityTransform = Matrix4.identity();
+
+  void _drawPacked(
+    Geometry geometry,
+    PackedInstances packed,
+    bool withColor,
+    int instanceSlot,
+  ) {
+    if (packed.ccwCount > 0) {
+      if (withColor) {
+        bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
+      } else {
+        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
+      }
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+    }
+    if (packed.cwCount > 0) {
+      if (withColor) {
+        bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
+      } else {
+        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
+      }
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      geometry.draw(_renderPass, instanceCount: packed.cwCount);
+    }
   }
 }

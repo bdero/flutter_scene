@@ -42,6 +42,13 @@ const String kOpaqueSceneColorBlackboardKey = 'opaque_scene_color';
 /// [ShadowPass] ran earlier this frame its shadow map is picked up from
 /// the blackboard and threaded into the per-draw [Lighting].
 class ScenePass extends RenderGraphPass {
+  static const bool _profile = bool.fromEnvironment('FLUTTER_SCENE_PROFILE');
+  static int _profileSamples = 0;
+  static int _cullMicros = 0;
+  static int _cullMaxMicros = 0;
+  static int _flushMicros = 0;
+  static int _flushMaxMicros = 0;
+
   ScenePass({
     required Camera camera,
     required RenderScene renderScene,
@@ -310,6 +317,7 @@ class ScenePass extends RenderGraphPass {
       _cullingPlanes,
       !_includeOffscreen,
     );
+    final cullWatch = _profile ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {
       for (final item in _renderScene.items) {
         encoder.submit(item);
@@ -321,9 +329,18 @@ class ScenePass extends RenderGraphPass {
         additionalPlanes: _cullingPlanes,
       );
     }
+    cullWatch?.stop();
 
     if (!capture) {
+      final flushWatch = _profile ? (Stopwatch()..start()) : null;
       encoder.flush();
+      flushWatch?.stop();
+      if (_profile) {
+        _recordProfile(
+          cullWatch!.elapsedMicroseconds,
+          flushWatch!.elapsedMicroseconds,
+        );
+      }
       rendererSubmissions.submit(commandBuffer);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
       if (_publishDepth) {
@@ -364,6 +381,11 @@ class ScenePass extends RenderGraphPass {
       _encodeCopy(translucentPass, opaqueColor!);
     }
     encoder.flushTranslucent(translucentPass: translucentPass);
+    if (_profile) {
+      // The split path is uncommon and measured as one combined flush by the
+      // outer ScenePass timer.
+      _recordProfile(cullWatch?.elapsedMicroseconds ?? 0, 0);
+    }
     rendererSubmissions.submit(translucentCommands);
 
     context.blackboard.set(kOpaqueSceneColorBlackboardKey, opaqueColor!);
@@ -371,6 +393,28 @@ class ScenePass extends RenderGraphPass {
     if (_publishDepth) {
       context.blackboard.set(kSceneDepthStencilBlackboardKey, depth);
     }
+  }
+
+  static void _recordProfile(int cullMicros, int flushMicros) {
+    _profileSamples++;
+    _cullMicros += cullMicros;
+    _flushMicros += flushMicros;
+    _cullMaxMicros = math.max(_cullMaxMicros, cullMicros);
+    _flushMaxMicros = math.max(_flushMaxMicros, flushMicros);
+    if (_profileSamples < 120) return;
+    // ignore: avoid_print
+    print(
+      'FLUTTER_SCENE_PROFILE_DETAIL '
+      'cull_mean_us=${_cullMicros ~/ _profileSamples} '
+      'cull_max_us=$_cullMaxMicros '
+      'flush_mean_us=${_flushMicros ~/ _profileSamples} '
+      'flush_max_us=$_flushMaxMicros',
+    );
+    _profileSamples = 0;
+    _cullMicros = 0;
+    _cullMaxMicros = 0;
+    _flushMicros = 0;
+    _flushMaxMicros = 0;
   }
 
   static final gpu.Shader _copyVertexShader =
