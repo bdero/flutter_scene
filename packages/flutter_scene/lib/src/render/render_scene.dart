@@ -68,6 +68,9 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
+  /// Mirrors the owning node's `castsShadows` setting, refreshed each frame.
+  bool castsShadows = true;
+
   /// The owning node's joints texture and its edge length in texels, or
   /// null/0 for an unskinned node. Refreshed each frame from the node's
   /// [Skin]. Carried per item rather than on the geometry so nodes sharing

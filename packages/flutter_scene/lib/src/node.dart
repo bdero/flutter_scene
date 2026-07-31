@@ -83,6 +83,13 @@ base class Node implements SceneGraph {
   /// camera-dependent displacement.
   bool shadowStatic = false;
 
+  /// Whether this node's meshes cast shadows. Defaults to `true`.
+  ///
+  /// This does not affect whether the meshes receive shadows. The value is not
+  /// inherited by children.
+  /// {@category Rendering}
+  bool castsShadows = true;
+
   /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.
   ///
   /// Disable for geometry that renders but should be transparent to rays

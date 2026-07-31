@@ -55,6 +55,7 @@ class InstancedMeshComponent extends Component {
     item.worldTransform.setFrom(node.globalTransform);
     item.windingFlipped = node.windingFlipped;
     item.shadowStatic = node.shadowStatic;
+    item.castsShadows = node.castsShadows;
     item.instanceTransforms = instancedMesh.instances;
     item.instanceBounds = instancedMesh.aggregateBounds;
 

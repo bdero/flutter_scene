@@ -1246,7 +1246,7 @@ base class Scene implements SceneGraph {
     for (final item in renderScene.items) {
       final inputs = item.material.sceneInputs;
       if (inputs.isNotEmpty) materialInputs.addAll(inputs);
-      if (item.shadowStatic && item.visible) {
+      if (item.shadowStatic && item.castsShadows && item.visible) {
         hasStaticShadowCasters = true;
         final t = item.worldTransform.storage;
         staticShadowSignature =
