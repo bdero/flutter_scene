@@ -5,6 +5,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/material/shader_material.dart'
+    show missingVertexVariantMessage;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -13,6 +16,17 @@ void main() {
     for (final variant in MeshVariant.values) {
       expect(material.vertexShaderFor(variant), isNull);
     }
+  });
+
+  test('the missing-variant warning names both sides', () {
+    final message = missingVertexVariantMessage([
+      MeshVariant.unskinned,
+    ], MeshVariant.skinned);
+    // The author needs to know which variant to add and why the engine's
+    // fallback may not link, so both variant names have to appear.
+    expect(message, contains('unskinned'));
+    expect(message, contains('skinned'));
+    expect(message, contains('varying'));
   });
 
   test('MeshVariant maps the names the geometry and sidecar use', () {

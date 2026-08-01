@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/light.dart';
@@ -166,9 +168,31 @@ class ShaderMaterial extends Material {
   /// standard one runs.
   gpu.Shader? vertexShaderFor(MeshVariant variant) => _vertexShaders[variant];
 
+  final Set<MeshVariant> _warnedMissingVariants = <MeshVariant>{};
+
   @override
-  gpu.Shader? materialVertexShader(String variant) =>
-      _vertexShaders[MeshVariant.fromName(variant)];
+  gpu.Shader? materialVertexShader(String variant) {
+    final kind = MeshVariant.fromName(variant);
+    final shader = _vertexShaders[kind];
+    // Falling back to the engine's shader is fine when the fragment shader
+    // only reads engine varyings, and fatal when it reads one this material's
+    // own vertex shader writes: the engine's does not write it, and pipeline
+    // creation fails with a backend interface error naming an anonymous
+    // location. Say which variant is missing while the author can still act
+    // on it. Debug-only, and once per variant.
+    assert(() {
+      if (shader == null && _vertexShaders.isNotEmpty) {
+        _warnMissingVertexVariant(kind);
+      }
+      return true;
+    }());
+    return shader;
+  }
+
+  void _warnMissingVertexVariant(MeshVariant kind) {
+    if (!_warnedMissingVariants.add(kind)) return;
+    debugPrint(missingVertexVariantMessage(_vertexShaders.keys, kind));
+  }
 
   /// Assign the byte contents of a uniform block by name.
   ///
@@ -355,3 +379,18 @@ class _BoundTexture {
   final Object source;
   final gpu.SamplerOptions? sampler;
 }
+
+/// The warning a [ShaderMaterial] prints when it is asked for a vertex shader
+/// for [missing] while supplying [supplied]. Library-visible for tests.
+@visibleForTesting
+String missingVertexVariantMessage(
+  Iterable<MeshVariant> supplied,
+  MeshVariant missing,
+) =>
+    'flutter_scene: a ShaderMaterial supplies a vertex shader for '
+    '${supplied.map((v) => v.name).join(', ')} but not for ${missing.name}, '
+    'so this draw pairs the engine\'s ${missing.name} vertex shader with '
+    'your fragment shader. That works only if the fragment shader reads '
+    'engine varyings alone; a custom varying the engine shader does not write '
+    'fails pipeline creation. Supply a ${missing.name} variant, or keep the '
+    'fragment shader to the engine varyings.';

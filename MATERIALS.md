@@ -683,8 +683,16 @@ material.setVertexShader(depthShader, variant: MeshVariant.depth);
 
 `MeshVariant.depth` is the position-only pass that draws shadow maps and the
 depth prepass. Supply it when your vertex stage moves geometry, or the shadow
-keeps the undisplaced shape. Any variant you leave unset falls back to the
-engine's shader.
+keeps the undisplaced shape.
+
+Any variant you leave unset falls back to the engine's shader for that mesh
+kind, which is what makes customizing only static meshes a one-shader job. The
+catch is that the engine's shader writes only the engine varyings. If your
+fragment shader reads a varying your own vertex shader writes, the fallback
+pairs it with a vertex shader that never writes it, and pipeline creation fails
+on the backend. A debug build warns and names the missing variant when this is
+about to happen. So either supply every variant your scene draws, or keep the
+fragment shader to the engine varyings.
 
 ## Your own vertex layout
 
