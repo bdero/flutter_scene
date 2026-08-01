@@ -86,7 +86,13 @@ export 'src/material/unlit_material.dart' show UnlitMaterial;
 export 'src/fmat/material_registry.dart'
     show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
 export 'src/importer/scene_registry.dart'
-    show SceneRegistry, SceneReloadCallback, loadScene, loadSceneSubtree;
+    show
+        SceneRegistry,
+        SceneReloadCallback,
+        clearSceneTemplateCache,
+        loadScene,
+        loadSceneSubtree,
+        releaseScene;
 
 export 'src/ambient_occlusion.dart'
     show AmbientOcclusionSettings, SpecularAmbientOcclusionMode;
@@ -194,7 +200,10 @@ export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
-export 'src/texture/texture_registry.dart' show loadTexture;
+export 'src/memory_report.dart'
+    show MemoryCategory, MemoryReport, takeMemoryReport;
+export 'src/texture/texture_registry.dart'
+    show clearTextureCache, loadTexture, releaseTexture;
 export 'src/texture/mipmap.dart' show TextureContent;
 // Audio is an optional contract, exported from
 // `package:flutter_scene/audio.dart`.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 
 import 'package:scene/scene.dart';
@@ -27,6 +28,11 @@ typedef SceneReloadCallback = void Function(Node root);
 /// call realizes its own node graph from it. An entry is dropped when the
 /// scene's assets hot reload, so the next load re-reads them.
 final Map<String, Future<_SceneTemplate>> _sceneTemplates = {};
+
+/// Outstanding [loadScene] claims per template key, so releasing one caller's
+/// claim cannot drop a template another caller is still loading instances
+/// from.
+final Map<String, int> _sceneTemplateHolders = {};
 
 /// Tracked dependency sets of streamed lazy subtrees, keyed by placeholder
 /// node, so repeated loads refresh the registration instead of duplicating it.
@@ -219,12 +225,14 @@ final class SceneRegistry {
     }
 
     final pending = _sceneTemplates[key] ??= loadTemplate();
+    _sceneTemplateHolders.update(key, (n) => n + 1, ifAbsent: () => 1);
     _SceneTemplate template;
     try {
       template = await pending;
     } catch (_) {
       // Don't cache a failed load; the next call retries.
       _sceneTemplates.remove(key);
+      _sceneTemplateHolders.remove(key);
       rethrow;
     }
 
@@ -460,3 +468,46 @@ Future<void> loadSceneSubtree(
     registry: registry,
   );
 }
+
+/// Releases one claim on the template [loadScene] built for [sourcePath],
+/// dropping it from the shared cache when no claims remain.
+///
+/// Returns whether the template was dropped. A template holds the scene's
+/// realized geometry, materials, and textures, shared by every instance loaded
+/// from it, so this is the lever for unloading a level.
+///
+/// Dropping the template releases the engine's reference, not the memory.
+/// Nodes already realized from it keep their own references and stay resident
+/// until they are removed from the scene and collected. See
+/// `Scene.memoryReport` for what is actually resident.
+/// {@category Assets and loading}
+Future<bool> releaseScene(
+  String sourcePath, {
+  String? package,
+  AssetBundle? bundle,
+}) async {
+  final registry = await SceneRegistry.load(bundle: bundle);
+  final key = registry.resolveKey(sourcePath, package: package);
+  final holders = _sceneTemplateHolders[key];
+  if (holders == null) return false;
+  if (holders > 1) {
+    _sceneTemplateHolders[key] = holders - 1;
+    return false;
+  }
+  _sceneTemplateHolders.remove(key);
+  return _sceneTemplates.remove(key) != null;
+}
+
+/// Drops every cached scene template, whatever their outstanding claims.
+///
+/// Prefer [releaseScene] where the caller knows what it loaded. Nodes already
+/// realized keep their own references and stay resident until collected.
+/// {@category Assets and loading}
+void clearSceneTemplateCache() {
+  _sceneTemplates.clear();
+  _sceneTemplateHolders.clear();
+}
+
+/// The number of scene templates the shared cache is holding.
+@internal
+int sceneTemplateCacheCount() => _sceneTemplates.length;
