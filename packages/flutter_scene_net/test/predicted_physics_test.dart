@@ -83,8 +83,13 @@ final class _FakeController implements PredictedPhysicsController {
   @override
   final _FakeSim simulation;
 
+  int worldRestores = 0;
+
   @override
   int get bodyHandle => 0;
+
+  @override
+  void onWorldRestored() => worldRestores++;
 
   @override
   Uint8List sampleInput() => _encodeVel(1);
@@ -154,12 +159,13 @@ void main() {
       );
       await admitted;
 
+      _FakeController? controller;
       final replication = SceneReplication(
         registry: _registry(),
         session: session,
         root: Node(),
         builders: {'pawn': (replica) => Node()},
-        localPrediction: (replica) => _FakeController(_FakeSim()),
+        localPrediction: (replica) => controller = _FakeController(_FakeSim()),
       );
 
       final sw = Stopwatch()..start();
@@ -187,9 +193,11 @@ void main() {
       // Local input moved the predicted body right immediately.
       expect(predictedX, greaterThan(1));
       // The unpredictable shove happened and the rollback correction adopted
-      // it; the prediction tracks authority within the send-ahead lead.
+      // it; the prediction tracks authority within the send-ahead lead, and
+      // the restore hook told the controller about the rollback.
       expect(shoved, isTrue);
       expect((predictedX - pawn.position.value.$1).abs(), lessThan(3));
+      expect(controller!.worldRestores, greaterThan(0));
 
       await replication.close();
       await room.stop();
