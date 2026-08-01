@@ -1,5 +1,9 @@
 ## 0.20.1
 
+* GPU memory can be inspected and released. `takeMemoryReport()` reports what the engine's shared caches are pinning, `releaseTexture`/`releaseScene` give a claim back, and `clearTextureCache`/`clearSceneTemplateCache` drop everything.
+* `ResourceGroup.track` scopes a load to the group's lifetime, so `dispose()` releases the claims it took. Previously `dispose()` only released the progress notifier despite the name.
+* Fixed `ResourceGroup` throwing when it was disposed while a tracked load was still in flight, which is what tearing down a level mid-load does.
+
 * `ShaderMaterial` owns the vertex stage too. Pass a `vertexShader` (per `MeshVariant`, so skinned and shadow passes can differ) and set uniforms and textures on either stage with `ShaderStage`, so a hand-written shader pair needs no subclassing.
 * Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
 * Custom vertex attributes work on skinned meshes.

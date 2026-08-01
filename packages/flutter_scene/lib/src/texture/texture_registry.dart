@@ -3,6 +3,7 @@
 /// texture counterpart of `loadScene` / `loadFmatMaterial`).
 library;
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 
 import '../gpu/gpu.dart' as gpu;
@@ -57,7 +58,26 @@ final class TextureEntry {
 /// Uploaded textures shared across [loadTexture] calls, keyed by asset key,
 /// so repeated loads of the same source share one GPU texture (and every
 /// holder sees the same hot-reload swap).
-final Map<String, Future<_ReloadableTextureSource>> _textureCache = {};
+final Map<String, _TextureCacheEntry> _textureCache = {};
+
+/// One cached texture plus the number of outstanding [loadTexture] calls that
+/// have not been released. The count exists so releasing one holder's claim
+/// cannot pull the texture out from under another holder that is still
+/// drawing with it.
+final class _TextureCacheEntry {
+  _TextureCacheEntry(this.source) {
+    // Kept so the footprint can be read synchronously; a texture still loading
+    // has no size to report yet.
+    // A failed load leaves it unresolved and uncounted.
+    source.then<void>((s) => _resolved = s).catchError((Object _) {});
+  }
+
+  final Future<_ReloadableTextureSource> source;
+  int holders = 0;
+  _ReloadableTextureSource? _resolved;
+
+  gpu.Texture? get resolvedTexture => _resolved?.sampledTexture;
+}
 
 /// The live handle [loadTexture] returns. Materials re-resolve
 /// [sampledTexture] at bind time, so swapping the GPU texture here (the
@@ -204,29 +224,105 @@ Future<TextureSource> loadTexture(
 
   final registry = await TextureRegistry.load(bundle: bundle);
   final key = registry.resolveKey(sourcePath, package: package);
-  final future = _textureCache.putIfAbsent(key, () async {
-    final source = _ReloadableTextureSource(
-      await gpuTextureFromKtx2Async(await loadBytes(key)),
-    );
-    HotReloadCoordinator.instance.registerTexture(
-      source,
-      assetKey: key,
-      bundle: assetBundle,
-      onReload: () async =>
-          source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
-    );
-    return source;
-  });
+  final entry = _textureCache.putIfAbsent(
+    key,
+    () => _TextureCacheEntry(() async {
+      final source = _ReloadableTextureSource(
+        await gpuTextureFromKtx2Async(await loadBytes(key)),
+      );
+      HotReloadCoordinator.instance.registerTexture(
+        source,
+        assetKey: key,
+        bundle: assetBundle,
+        onReload: () async =>
+            source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
+      );
+      return source;
+    }()),
+  );
+  entry.holders++;
   final _ReloadableTextureSource source;
   try {
-    source = await future;
+    source = await entry.source;
   } catch (_) {
     // Do not pin a failed load; the next call retries it.
-    if (identical(_textureCache[key], future)) {
+    entry.holders--;
+    if (identical(_textureCache[key], entry)) {
       _textureCache.remove(key);
     }
     rethrow;
   }
   if (sampling == null) return source;
   return _SampledTextureView(source, sampling.toSamplerOptions());
+}
+
+/// Releases one claim on the texture [loadTexture] returned for [sourcePath],
+/// dropping it from the shared cache when no claims remain.
+///
+/// Returns whether the cache entry was dropped. Every [loadTexture] call takes
+/// a claim, so a texture two callers loaded needs two releases before it
+/// leaves the cache; releasing one holder's claim never pulls the texture out
+/// from under the other.
+///
+/// Dropping the entry releases the engine's reference, not the memory. A
+/// texture a live material still points at stays resident until that reference
+/// goes too, and the GPU allocation is reclaimed after that on the engine's
+/// schedule rather than at this call. See `Scene.memoryReport` for what is
+/// actually resident.
+/// {@category Assets and loading}
+Future<bool> releaseTexture(
+  String sourcePath, {
+  String? package,
+  AssetBundle? bundle,
+}) async {
+  final registry = await TextureRegistry.load(bundle: bundle);
+  final key = registry.resolveKey(sourcePath, package: package);
+  return releaseTextureByAssetKey(key);
+}
+
+/// [releaseTexture] by resolved asset key, for callers that already have one.
+@internal
+bool releaseTextureByAssetKey(String assetKey) {
+  final entry = _textureCache[assetKey];
+  if (entry == null) return false;
+  entry.holders--;
+  if (entry.holders > 0) return false;
+  _textureCache.remove(assetKey);
+  return true;
+}
+
+/// Drops every cached texture, whatever their outstanding claims.
+///
+/// The blunt instrument, for tearing down a whole world at once. Prefer
+/// [releaseTexture] where the caller knows what it loaded. Textures a live
+/// scene still references stay resident until those references go.
+/// {@category Assets and loading}
+void clearTextureCache() => _textureCache.clear();
+
+/// Resident bytes and count of the textures held by the shared cache.
+///
+/// Sums each texture's whole mip chain, so it is the real GPU footprint of
+/// what the cache is pinning rather than an estimate. Textures still loading
+/// are not counted, since their size is not known yet.
+@internal
+({int bytes, int count}) textureCacheFootprint() {
+  var bytes = 0;
+  var count = 0;
+  for (final entry in _textureCache.values) {
+    final texture = entry.resolvedTexture;
+    if (texture == null) continue;
+    count++;
+    bytes += gpuTextureBytes(texture);
+  }
+  return (bytes: bytes, count: count);
+}
+
+/// The resident size of [texture], summed across its mip chain.
+@internal
+int gpuTextureBytes(gpu.Texture texture) {
+  var bytes = 0;
+  for (var level = 0; level < texture.mipLevelCount; level++) {
+    bytes += texture.getMipLevelSizeInBytes(level);
+  }
+  return bytes;
 }

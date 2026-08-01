@@ -40,6 +40,8 @@ class ResourceGroup {
   int _completed = 0;
   final List<Object> _failures = <Object>[];
   final List<Future<void>> _tracked = <Future<void>>[];
+  final List<Future<void> Function()> _releases = <Future<void> Function()>[];
+  bool _disposed = false;
   final ValueNotifier<double> _progress = ValueNotifier<double>(1.0);
 
   /// Tracks [load] and returns it unchanged, so the call reads inline:
@@ -101,9 +103,56 @@ class ResourceGroup {
   /// The errors from any tracked loads that failed, in completion order.
   List<Object> get failures => List<Object>.unmodifiable(_failures);
 
-  /// Releases the [progress] notifier. Call when the group is no longer used;
-  /// after disposal the group must not be added to or listened on.
-  void dispose() => _progress.dispose();
+  /// Releases this group's claim on everything loaded through [track], then
+  /// releases the [progress] notifier.
+  ///
+  /// Call when the scope this group represents ends, typically a level or a
+  /// screen. Each tracked load took a claim on the engine's shared cache, and
+  /// this gives them all back, so a resource nothing else claims leaves the
+  /// cache. After disposal the group must not be added to or listened on.
+  ///
+  /// This releases the engine's references, not the memory. A resource a live
+  /// scene still points at stays resident until that reference goes too, and
+  /// the GPU allocation is reclaimed after that on the engine's schedule
+  /// rather than at this call. Use [takeMemoryReport] to see what is actually
+  /// pinned.
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    release();
+    _progress.dispose();
+  }
+
+  /// Releases this group's claims without disposing [progress], so the group
+  /// can be refilled and reused. [dispose] calls this for you.
+  void release() {
+    for (final release in _releases) {
+      release();
+    }
+    _releases.clear();
+  }
+
+  /// Tracks [load] like [add], and additionally takes ownership of it, so
+  /// [dispose] gives the claim back.
+  ///
+  /// Use this for the source-path loaders whose results live in a shared
+  /// cache ([loadScene], [loadTexture]). [add] only waits for a load; this
+  /// also scopes it to the group's lifetime.
+  ///
+  /// ```dart
+  /// final level = ResourceGroup();
+  /// final terrain = level.track(loadScene('levels/ice.fsceneb'),
+  ///     release: () => releaseScene('levels/ice.fsceneb'));
+  /// // ...
+  /// level.dispose(); // gives the template's claim back
+  /// ```
+  Future<T> track<T>(
+    Future<T> load, {
+    required Future<void> Function() release,
+  }) {
+    _releases.add(release);
+    return add(load);
+  }
 
   void _markSettled() {
     _completed++;
@@ -111,6 +160,11 @@ class ResourceGroup {
   }
 
   void _updateProgress() {
+    // A group is routinely disposed while loads are still in flight (a level
+    // torn down mid-load), and those loads still settle afterwards. Reporting
+    // progress into a disposed notifier would throw from a future nobody is
+    // awaiting.
+    if (_disposed) return;
     _progress.value = _total == 0 ? 1.0 : _completed / _total;
   }
 }
