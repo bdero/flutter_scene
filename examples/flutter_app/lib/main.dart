@@ -45,6 +45,7 @@ import 'example_ssr.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
+import 'example_raw_shader.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
 import 'example_vertex_curve.dart';
@@ -178,6 +179,7 @@ class _MyAppState extends State<MyApp> {
       'Auto Exposure': (context) => const ExampleAutoExposure(),
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
+      'Raw shader': (context) => const ExampleRawShader(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Custom vertices (.fmat)': (context) => const ExampleVertexCurve(),
       'Materialize (.fmat)': (context) => const ExampleMaterialize(),

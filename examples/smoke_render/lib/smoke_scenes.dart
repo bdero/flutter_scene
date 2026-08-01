@@ -116,7 +116,14 @@ Future<void> loadSmokeMaterials() async {
     'build/shaderbundles/materials.fmat.json',
   );
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
+  _rawPairLibrary = await gpu.loadShaderLibraryAsync(
+    'build/shaderbundles/smoke.shaderbundle',
+  );
 }
+
+/// The hand-written shader pair pre-loaded by [loadSmokeMaterials], so the
+/// synchronous scene setup can build a [ShaderMaterial] from both stages.
+gpu.ShaderLibrary? _rawPairLibrary;
 
 /// Builds a `PreprocessedMaterial` for the named `.fmat`, resolving its
 /// generated vertex variants from the sidecar's variant map (as the DataAssets
@@ -502,6 +509,71 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       camera: PerspectiveCamera(
         position: vm.Vector3(0.8, 2.0, -6.5),
         target: vm.Vector3(0, 1.5, 0),
+      ),
+    );
+  }),
+
+  // A hand-written vertex/fragment pair driven through ShaderMaterial, with no
+  // engine vertex shader involved. The vertex stage displaces the grid along
+  // its normal from a vertex-stage uniform block, so a backend that fails to
+  // compile the pair, mismatches the described layout, or drops the vertex
+  // uniform draws a flat or empty surface instead of a ripple.
+  SmokeScene('raw_shader_pair', () {
+    final material =
+        ShaderMaterial(
+          vertexShader: _rawPairLibrary!['RawPairVertex']!,
+          fragmentShader: _rawPairLibrary!['RawPairFragment']!,
+        )..setUniformBlockFromFloats('TintInfo', [
+          0.45, 0.85, 1.0, 1.0, // crest
+          0.04, 0.16, 0.42, 1.0, // trough
+        ]);
+    // Fixed time, so the frame is deterministic.
+    material.setUniformBlock(
+      'RippleInfo',
+      ByteData.sublistView(Float32List.fromList([1.2, 0.3, 0.22, 1.0])),
+      stage: ShaderStage.vertex,
+    );
+
+    const n = 48;
+    const size = 3.0;
+    final count = (n + 1) * (n + 1);
+    final positions = Float32List(count * 3);
+    final normals = Float32List(count * 3);
+    var v = 0;
+    for (var r = 0; r <= n; r++) {
+      for (var c = 0; c <= n; c++) {
+        positions[v * 3] = (c / n - 0.5) * size;
+        positions[v * 3 + 2] = (r / n - 0.5) * size;
+        normals[v * 3 + 1] = 1.0;
+        v++;
+      }
+    }
+    final indices = <int>[];
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        final i0 = r * (n + 1) + c;
+        final i2 = i0 + (n + 1);
+        indices.addAll([i0, i0 + 1, i2, i0 + 1, i2 + 1, i2]);
+      }
+    }
+    final scene = Scene()..environmentIntensity = 0.0;
+    scene.add(
+      Node(
+        mesh: Mesh(
+          MeshGeometry.fromArrays(
+            positions: positions,
+            normals: normals,
+            indices: indices,
+          ),
+          material,
+        ),
+      ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 2.6, 3.4),
+        target: vm.Vector3.zero(),
       ),
     );
   }),

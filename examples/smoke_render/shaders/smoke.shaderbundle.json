@@ -1,0 +1,10 @@
+{
+    "RawPairVertex": {
+        "type": "vertex",
+        "file": "shaders/raw_pair.vert"
+    },
+    "RawPairFragment": {
+        "type": "fragment",
+        "file": "shaders/raw_pair.frag"
+    }
+}

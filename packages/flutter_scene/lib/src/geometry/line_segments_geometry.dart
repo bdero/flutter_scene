@@ -123,7 +123,7 @@ class LineSegmentsGeometry extends Geometry {
   }
 
   @override
-  VertexLayoutDescriptor? get instancedVertexLayout => _kLineSegmentsLayout;
+  VertexLayoutDescriptor? get defaultVertexLayout => _kLineSegmentsLayout;
 
   // The segments supply their own slot-1 instance buffer and read the model
   // transform from the FrameInfo uniform, so the color encoder must not bind

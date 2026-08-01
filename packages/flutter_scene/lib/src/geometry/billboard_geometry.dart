@@ -168,7 +168,7 @@ class BillboardGeometry extends Geometry {
   }
 
   @override
-  VertexLayoutDescriptor? get instancedVertexLayout => _kBillboardLayout;
+  VertexLayoutDescriptor? get defaultVertexLayout => _kBillboardLayout;
 
   // The billboard supplies its own slot-1 instance buffer (per-instance
   // attributes) and reads the model transform from the FrameInfo uniform, so

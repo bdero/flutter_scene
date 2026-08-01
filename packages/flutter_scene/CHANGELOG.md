@@ -1,5 +1,10 @@
 ## 0.20.1
 
+* `ShaderMaterial` owns the vertex stage too. Pass a `vertexShader` (per `MeshVariant`, so skinned and shadow passes can differ) and set uniforms and textures on either stage with `ShaderStage`, so a hand-written shader pair needs no subclassing.
+* Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
+* Custom vertex attributes work on skinned meshes.
+* `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
+
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.

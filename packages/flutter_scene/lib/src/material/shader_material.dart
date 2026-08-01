@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/shader_stage.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
@@ -87,6 +88,9 @@ class ShaderMaterial extends Material {
   /// names.
   ShaderMaterial({
     gpu.Shader? fragmentShader,
+    gpu.Shader? vertexShader,
+    gpu.Shader? skinnedVertexShader,
+    gpu.Shader? depthVertexShader,
     this.useEnvironment = false,
     this.cullingMode = gpu.CullMode.backFace,
     this.windingOrder = gpu.WindingOrder.counterClockwise,
@@ -95,6 +99,9 @@ class ShaderMaterial extends Material {
     if (fragmentShader != null) {
       setFragmentShader(fragmentShader);
     }
+    setVertexShader(vertexShader);
+    setVertexShader(skinnedVertexShader, variant: MeshVariant.skinned);
+    setVertexShader(depthVertexShader, variant: MeshVariant.depth);
   }
 
   /// Whether the engine should bind the active environment's IBL textures
@@ -120,42 +127,110 @@ class ShaderMaterial extends Material {
 
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _BoundTexture> _textures = {};
+  final Map<String, ByteData> _vertexUniformBlocks = {};
+  final Map<String, _BoundTexture> _vertexTextures = {};
+  final Map<MeshVariant, gpu.Shader> _vertexShaders = {};
+
+  Map<String, ByteData> _blocksFor(ShaderStage stage) =>
+      stage == ShaderStage.vertex ? _vertexUniformBlocks : _uniformBlocks;
+
+  Map<String, _BoundTexture> _texturesFor(ShaderStage stage) =>
+      stage == ShaderStage.vertex ? _vertexTextures : _textures;
+
+  /// Assigns the vertex shader this material draws [variant] meshes with, or
+  /// clears it when [shader] is null.
+  ///
+  /// With no vertex shader the engine's standard one runs, which is the
+  /// fragment-only workflow. Supplying one takes over the vertex stage for
+  /// that mesh kind, and the shader must then satisfy the engine contract
+  /// (see `MATERIALS.md`): it declares the `FrameInfo` block, the attributes
+  /// its geometry's layout provides, and the `v_*` outputs the fragment stage
+  /// reads.
+  ///
+  /// A mesh kind with no shader falls back to the engine's, so a material can
+  /// customize static meshes and leave skinned ones alone. Supply
+  /// [MeshVariant.depth] when the vertex stage moves geometry and the shadow
+  /// and depth passes should see the same displacement.
+  void setVertexShader(
+    gpu.Shader? shader, {
+    MeshVariant variant = MeshVariant.unskinned,
+  }) {
+    if (shader == null) {
+      _vertexShaders.remove(variant);
+      return;
+    }
+    _vertexShaders[variant] = shader;
+  }
+
+  /// The vertex shader assigned for [variant], or null when the engine's
+  /// standard one runs.
+  gpu.Shader? vertexShaderFor(MeshVariant variant) => _vertexShaders[variant];
+
+  @override
+  gpu.Shader? materialVertexShader(String variant) =>
+      _vertexShaders[MeshVariant.fromName(variant)];
 
   /// Assign the byte contents of a uniform block by name.
   ///
   /// [bytes] must already match the block's std140 layout. Replacing
   /// an existing assignment overrides the previous value. Pass `null`
-  /// to clear the binding.
-  void setUniformBlock(String name, ByteData? bytes) {
+  /// to clear the binding. [stage] picks which shader the block binds
+  /// against; a block declared in both stages must be set for both.
+  void setUniformBlock(
+    String name,
+    ByteData? bytes, {
+    ShaderStage stage = ShaderStage.fragment,
+  }) {
+    final blocks = _blocksFor(stage);
     if (bytes == null) {
-      _uniformBlocks.remove(name);
+      blocks.remove(name);
     } else {
-      _uniformBlocks[name] = bytes;
+      blocks[name] = bytes;
     }
   }
 
   /// Convenience wrapper around [setUniformBlock] that packs a list
   /// of float values. The caller is still responsible for std140
   /// padding; see the class doc.
-  void setUniformBlockFromFloats(String name, List<double> floats) {
-    setUniformBlock(name, ByteData.sublistView(Float32List.fromList(floats)));
+  void setUniformBlockFromFloats(
+    String name,
+    List<double> floats, {
+    ShaderStage stage = ShaderStage.fragment,
+  }) {
+    setUniformBlock(
+      name,
+      ByteData.sublistView(Float32List.fromList(floats)),
+      stage: stage,
+    );
   }
 
   /// Read back a previously-set uniform block, or `null` when none
   /// has been set.
-  ByteData? getUniformBlock(String name) => _uniformBlocks[name];
+  ByteData? getUniformBlock(
+    String name, {
+    ShaderStage stage = ShaderStage.fragment,
+  }) => _blocksFor(stage)[name];
 
-  /// All currently-bound uniform block names. Order is insertion order.
+  /// All currently-bound fragment uniform block names, in insertion order.
   Iterable<String> get uniformBlockNames => _uniformBlocks.keys;
+
+  /// All currently-bound vertex uniform block names, in insertion order.
+  Iterable<String> get vertexUniformBlockNames => _vertexUniformBlocks.keys;
 
   /// Assign a texture to a sampler uniform by name.
   ///
   /// [texture] accepts a raw [gpu.Texture] (the low-level custom-shader path),
   /// a [Texture2D], or a `RenderTexture` (sampled live; an explicit [sampler]
   /// overrides the source's own sampling). Pass `null` to clear the binding.
-  void setTexture(String name, Object? texture, {gpu.SamplerOptions? sampler}) {
+  void setTexture(
+    String name,
+    Object? texture, {
+    gpu.SamplerOptions? sampler,
+    ShaderStage stage = ShaderStage.fragment,
+  }) {
+    final textures = _texturesFor(stage);
     if (texture == null) {
-      _textures.remove(name);
+      textures.remove(name);
       return;
     }
     if (texture is! gpu.Texture && texture is! TextureSource) {
@@ -165,7 +240,7 @@ class ShaderMaterial extends Material {
         'Expected a gpu.Texture, a Texture2D, or a RenderTexture',
       );
     }
-    _textures[name] = _BoundTexture(texture, sampler);
+    textures[name] = _BoundTexture(texture, sampler);
   }
 
   /// Read back a previously-set texture binding, or `null` when none
@@ -173,8 +248,10 @@ class ShaderMaterial extends Material {
   ///
   /// A slot holding a `RenderTexture` resolves to its latest completed
   /// frame (null before the first render).
-  gpu.Texture? getTexture(String name) =>
-      _resolveShaderTexture(_textures[name]?.source);
+  gpu.Texture? getTexture(
+    String name, {
+    ShaderStage stage = ShaderStage.fragment,
+  }) => _resolveShaderTexture(_texturesFor(stage)[name]?.source);
 
   // ShaderMaterial accepts a raw gpu.Texture in addition to a TextureSource, so
   // it resolves locally rather than through the material.dart helpers.
@@ -183,8 +260,11 @@ class ShaderMaterial extends Material {
   static gpu.SamplerOptions? _shaderTextureSampler(Object? source) =>
       source is TextureSource ? source.sampledSampler : null;
 
-  /// All currently-bound sampler names. Order is insertion order.
+  /// All currently-bound fragment sampler names, in insertion order.
   Iterable<String> get textureNames => _textures.keys;
+
+  /// All currently-bound vertex sampler names, in insertion order.
+  Iterable<String> get vertexTextureNames => _vertexTextures.keys;
 
   @override
   bool isOpaque() => isOpaqueOverride;
@@ -221,6 +301,31 @@ class ShaderMaterial extends Material {
 
     if (useEnvironment) {
       _bindEnvironmentTextures(pass, lighting);
+    }
+  }
+
+  @override
+  void bindVertexStage(
+    gpu.RenderPass pass,
+    gpu.Shader vertexShader,
+    TransientWriter transientsBuffer,
+  ) {
+    for (final entry in _vertexUniformBlocks.entries) {
+      pass.bindUniform(
+        vertexShader.getUniformSlot(entry.key),
+        transientsBuffer.emplace(entry.value),
+      );
+    }
+    for (final entry in _vertexTextures.entries) {
+      final resolved = _resolveShaderTexture(entry.value.source);
+      pass.bindTexture(
+        vertexShader.getUniformSlot(entry.key),
+        Material.whitePlaceholder(resolved),
+        sampler:
+            entry.value.sampler ??
+            _shaderTextureSampler(entry.value.source) ??
+            gpu.SamplerOptions(),
+      );
     }
   }
 

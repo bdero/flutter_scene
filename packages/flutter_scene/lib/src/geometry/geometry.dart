@@ -199,8 +199,9 @@ abstract class Geometry {
   /// is uploaded to its own buffer and bound after the geometry's built-in
   /// attributes in the color pass; the depth-style passes fetch only position,
   /// so an attribute-driven vertex displacement is not reflected in shadows.
-  /// Re-attaching the same [name] replaces it. Custom attributes require the
-  /// described-layout (unskinned) geometry path.
+  /// Re-attaching the same [name] replaces it. Attaching one to a skinned mesh
+  /// switches it to a described layout, since reflection cannot know which
+  /// slot the stream was bound to.
   /// {@category Geometry}
   void setCustomAttribute(
     String name,
@@ -630,11 +631,43 @@ abstract class Geometry {
   /// The explicit pipeline vertex layout this geometry's vertex shader
   /// expects, or null for the shader bundle's default interleaved layout.
   ///
-  /// A non-null layout signals the encoders that the shader consumes the
-  /// model transform from the instance-rate vertex buffer (slot 1) rather
-  /// than a per-draw uniform, so every draw must bind an instance buffer.
+  /// A caller-supplied layout ([setVertexLayout]) wins over the subclass's
+  /// [defaultVertexLayout].
   @internal
-  VertexLayoutDescriptor? get instancedVertexLayout => null;
+  VertexLayoutDescriptor? get instancedVertexLayout =>
+      _vertexLayout ?? defaultVertexLayout;
+
+  /// The layout this geometry kind uses when the caller supplies none.
+  /// Subclasses that describe their vertices override this.
+  @protected
+  VertexLayoutDescriptor? get defaultVertexLayout => null;
+
+  VertexLayoutDescriptor? _vertexLayout;
+  bool? _bindsModelTransformInstance;
+
+  /// Declares the pipeline vertex layout this geometry's buffers provide,
+  /// overriding the built-in one, or restores the built-in when [layout] is
+  /// null.
+  ///
+  /// Use this with [setVertexShader] to run a vertex stage over vertices the
+  /// engine has no opinion about (extra channels, a packed format, or fewer
+  /// attributes than the standard vertex carries). The buffers bound by
+  /// [setVertices] and [setCustomAttribute] must match the slots described
+  /// here, in order.
+  ///
+  /// A described layout normally means the shader reads the model transform
+  /// from an instance-rate buffer the encoder binds in the trailing slot. Pass
+  /// [bindsModelTransform] false when the shader gets the transform some other
+  /// way (a uniform, as skinned meshes do), so the encoder leaves that slot
+  /// alone.
+  /// {@category Geometry}
+  void setVertexLayout(
+    VertexLayoutDescriptor? layout, {
+    bool bindsModelTransform = true,
+  }) {
+    _vertexLayout = layout;
+    _bindsModelTransformInstance = layout == null ? null : bindsModelTransform;
+  }
 
   /// Whether the color encoder should bind the node's model transform as a
   /// one-element instance-rate buffer at the slot after this geometry's
@@ -647,7 +680,8 @@ abstract class Geometry {
   /// takes the model transform some other way (a uniform) overrides this to
   /// false so the encoder leaves its slot alone.
   @internal
-  bool get bindsModelTransformInstance => instancedVertexLayout != null;
+  bool get bindsModelTransformInstance =>
+      _bindsModelTransformInstance ?? (instancedVertexLayout != null);
 
   /// Whether this geometry should be drawn without back-face culling.
   ///
@@ -853,7 +887,7 @@ class UnskinnedGeometry extends Geometry {
   }
 
   @override
-  VertexLayoutDescriptor? get instancedVertexLayout {
+  VertexLayoutDescriptor? get defaultVertexLayout {
     final base = _isDeInterleaved
         ? kUnskinnedSoAColorLayout
         : kUnskinnedInstancedLayout;
@@ -926,6 +960,24 @@ class SkinnedGeometry extends Geometry {
 
   @override
   String get materialVertexVariant => 'skinned';
+
+  @override
+  VertexLayoutDescriptor? get defaultVertexLayout {
+    // Without custom attributes the pipeline layout comes from the shader's
+    // own reflection, which is how skinned meshes have always drawn. Custom
+    // attribute streams have to be described, though, since reflection cannot
+    // know which slot the caller bound them to.
+    if (!hasCustomAttributes) return null;
+    return VertexLayoutDescriptor(
+      buffers: [kSkinnedVertexBuffer, ...customAttributeBuffers],
+    );
+  }
+
+  // The model transform rides in the skinned FrameInfo block, not an
+  // instance-rate buffer, so describing the layout must not make the encoder
+  // bind one.
+  @override
+  bool get bindsModelTransformInstance => false;
 
   @override
   bool get _autoScanBoundsOnUpload => false;
@@ -1235,3 +1287,42 @@ void bindUnskinnedFrameInfo(
     transientsBuffer.emplace(ByteData.sublistView(scratch)),
   );
 }
+
+/// Slot 0 of a skinned mesh: the interleaved 80-byte vertex stream the
+/// `SkinnedVertex` shader reads. Offsets match the bytes
+/// [InterleavedLayoutAdapter.packSkinned] emits.
+@internal
+const VertexBufferDescriptor kSkinnedVertexBuffer = VertexBufferDescriptor(
+  strideInBytes: kSkinnedPerVertexSize,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'position',
+      format: gpu.VertexFormat.float32x3,
+    ),
+    VertexAttributeDescriptor(
+      name: 'normal',
+      format: gpu.VertexFormat.float32x3,
+      offsetInBytes: 12,
+    ),
+    VertexAttributeDescriptor(
+      name: 'texture_coords',
+      format: gpu.VertexFormat.float32x2,
+      offsetInBytes: 24,
+    ),
+    VertexAttributeDescriptor(
+      name: 'color',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 32,
+    ),
+    VertexAttributeDescriptor(
+      name: 'joints',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 48,
+    ),
+    VertexAttributeDescriptor(
+      name: 'weights',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 64,
+    ),
+  ],
+);
