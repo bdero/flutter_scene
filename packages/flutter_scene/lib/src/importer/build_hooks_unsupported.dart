@@ -19,6 +19,7 @@ Never buildScenes({
   String discoveryRoot = 'assets/',
   SceneAssetMode assetMode = SceneAssetMode.legacyOnly,
   bool compressTextures = false,
+  bool alignForCompression = false,
 }) => throw UnsupportedError(
   'buildScenes runs at build time on native platforms only.',
 );

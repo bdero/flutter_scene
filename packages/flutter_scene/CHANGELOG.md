@@ -5,6 +5,8 @@
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.
 * Texture resources record what their pixels represent, so mip levels downsample by role (normal maps average as vectors, color in linear light).
 * `buildScenes` warns when a texture is not block aligned and falls back to uncompressed, instead of dropping the compressed form silently.
+* `buildScenes` and `buildTextures` take `alignForCompression` to resample a misaligned source up to the next multiple of 4 rather than failing or storing it uncompressed.
+* Cooked textures build their mip chain on a background isolate, so a large uncompressed scene no longer pays for it on the calling thread.
 * Loose images cook to compressed, mipmapped `.fstex` through `buildTextures`, loaded by source path with `loadTexture` (shipped in 0.20.0, missing from its notes).
 
 ## 0.20.0

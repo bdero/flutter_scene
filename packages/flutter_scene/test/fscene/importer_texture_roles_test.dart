@@ -121,6 +121,43 @@ void main() {
     );
   });
 
+  test('resamples up to block alignment when asked, and stays compressed', () {
+    final built = _document(
+      sizes: [6],
+      material: GltfMaterial(
+        pbrMetallicRoughness: GltfPbrMetallicRoughness(
+          baseColorTexture: GltfTextureInfo(index: 0),
+        ),
+      ),
+    );
+
+    final logged = <String>[];
+    final previous = sceneLog;
+    sceneLog = logged.add;
+    final SceneDocument document;
+    try {
+      document = buildSceneDocument(
+        built.doc,
+        built.buffer,
+        compressTextures: true,
+        alignForCompression: true,
+      );
+    } finally {
+      sceneLog = previous;
+    }
+
+    expect(logged.single, allOf(contains('6x6'), contains('8x8')));
+    final payloads = [
+      for (final payload in document.payloads.values)
+        if (payload.encoding == PayloadEncoding.image) payload,
+    ];
+    expect(payloads.single.format, 'ktx2');
+    // The recorded size must follow the resample, or the realizer uploads the
+    // block payload against the wrong dimensions.
+    expect(payloads.single.width, 8);
+    expect(payloads.single.height, 8);
+  });
+
   test('stays quiet when the source is block aligned', () {
     final built = _document(
       sizes: [8],

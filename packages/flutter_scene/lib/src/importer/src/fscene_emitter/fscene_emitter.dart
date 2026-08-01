@@ -26,6 +26,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/scene.dart';
 import '../../../geometry/interleaved_layout.dart';
+import '../../../texture/block_alignment.dart';
 import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';
 import '../gltf/accessor.dart';
@@ -39,8 +40,14 @@ Uint8List emitFsceneb(
   GltfDocument doc,
   Uint8List bufferData, {
   bool compressTextures = false,
+  bool alignForCompression = false,
 }) => writeFsceneb(
-  buildSceneDocument(doc, bufferData, compressTextures: compressTextures),
+  buildSceneDocument(
+    doc,
+    bufferData,
+    compressTextures: compressTextures,
+    alignForCompression: alignForCompression,
+  ),
 );
 
 /// Builds an `.fscene` [SceneDocument] from a parsed glTF document.
@@ -50,11 +57,14 @@ Uint8List emitFsceneb(
 ///
 /// When [compressTextures] is set, images are stored as mipped, supercompressed
 /// KTX2 block payloads (`format: 'ktx2'`) instead of raw `rgba8`, shrinking the
-/// container; the realizer transcodes or decodes them at load.
+/// container; the realizer transcodes or decodes them at load. An image that is
+/// not block aligned is stored uncompressed, or resampled up to alignment when
+/// [alignForCompression] is also set.
 SceneDocument buildSceneDocument(
   GltfDocument doc,
   Uint8List bufferData, {
   bool compressTextures = false,
+  bool alignForCompression = false,
 }) {
   // The document id stays content-derived, so distinct imports get distinct
   // ids, but local ids are minted from a fixed session: a node's id then
@@ -86,6 +96,7 @@ SceneDocument buildSceneDocument(
         doc,
         bufferData,
         compressTextures: compressTextures,
+        alignForCompression: alignForCompression,
         content: textureContents[i],
       ),
   ];
@@ -668,6 +679,7 @@ LocalId? _buildTexture(
   GltfDocument doc,
   Uint8List bufferData, {
   bool compressTextures = false,
+  bool alignForCompression = false,
   TextureContent content = TextureContent.color,
 }) {
   if (texture.source == null || texture.source! >= doc.images.length) {
@@ -692,35 +704,45 @@ LocalId? _buildTexture(
       // sRGB color in linear light and renormalize normals.
       // ASTC 4x4 (the compressed format) requires both dimensions to be a
       // multiple of the 4x4 block size; a non-aligned compressed texture is
-      // rejected at GPU load and shows a placeholder. Fall back to uncompressed
-      // rgba8 for those.
-      // TODO(texture-compression): pad/rescale to a multiple of 4 (adjusting
-      // UVs) so these can stay compressed.
-      final blockAligned = rgba.width % 4 == 0 && rgba.height % 4 == 0;
-      final compress = compressTextures && blockAligned;
-      if (compressTextures && !blockAligned) {
-        sceneLog(
-          'fscene: texture ${rgba.width}x${rgba.height} is not a multiple of '
-          '4, storing it uncompressed. Resize it to keep the compressed form.',
-        );
+      // rejected at GPU load and shows a placeholder. Resample those up to the
+      // next multiple when asked, otherwise store them uncompressed.
+      var image = rgba;
+      var pixels = raw;
+      if (compressTextures && !isBlockAligned(image.width, image.height)) {
+        if (alignForCompression) {
+          image = resampleToBlockAlignment(image);
+          pixels = image.getBytes(order: img.ChannelOrder.rgba);
+          sceneLog(
+            'fscene: resampled a ${rgba.width}x${rgba.height} texture to '
+            '${image.width}x${image.height} to keep it compressed',
+          );
+        } else {
+          sceneLog(
+            'fscene: texture ${rgba.width}x${rgba.height} is not a multiple '
+            'of 4, storing it uncompressed. Resize it, or pass '
+            'alignForCompression to resample it.',
+          );
+        }
       }
+      final compress =
+          compressTextures && isBlockAligned(image.width, image.height);
       final bytes = compress
           ? encodeImageToKtx2Bytes(
-              raw,
-              rgba.width,
-              rgba.height,
+              pixels,
+              image.width,
+              image.height,
               generateMips: true,
               content: content,
               supercompress: true,
             )
-          : raw;
+          : pixels;
       final payload = document.addPayload(
         PayloadSpec(
           document.newId(),
           encoding: PayloadEncoding.image,
           format: compress ? 'ktx2' : 'rgba8',
-          width: rgba.width,
-          height: rgba.height,
+          width: image.width,
+          height: image.height,
           length: bytes.length,
           bytes: bytes,
         ),

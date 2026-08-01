@@ -4,7 +4,10 @@ import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:scene/scene.dart' show sceneLog;
+
 import '../importer/build_cache.dart';
+import 'block_alignment.dart';
 import 'ktx2_image.dart';
 import 'mipmap.dart';
 
@@ -61,7 +64,8 @@ String textureDataAssetName(String relativeTexturePath) =>
 /// [TextureContent.data] for non-color data.
 ///
 /// Source images must be block-aligned (width and height multiples of 4);
-/// misaligned images fail the build.
+/// misaligned images fail the build, or are resampled up to the next multiple
+/// when [alignForCompression] is set.
 ///
 /// Call this from a consuming app's `hook/build.dart`:
 ///
@@ -87,6 +91,7 @@ void buildTextures({
   Map<String, TextureContent> contents = const {},
   String outputDirectory = 'build/textures/',
   TextureAssetMode assetMode = TextureAssetMode.legacyOnly,
+  bool alignForCompression = false,
 }) {
   // A typo here would silently cook a normal map with the sRGB color
   // downsample, so unknown keys fail the build instead.
@@ -152,16 +157,23 @@ void buildTextures({
       }
       // The compressed formats are 4x4 block formats; a misaligned base level
       // is rejected at GPU load on devices that take the compressed path.
-      // TODO(texture-compression): pad/rescale to a multiple of 4 (adjusting
-      // UVs is not an option here, so resample) so these can be cooked too.
-      if (decoded.width % 4 != 0 || decoded.height % 4 != 0) {
-        throw Exception(
-          'Texture dimensions must be multiples of 4 (the compressed block '
-          'size): $inputFilePath is ${decoded.width}x${decoded.height}. '
-          'Resize the image.',
+      var source = decoded;
+      if (!isBlockAligned(source.width, source.height)) {
+        if (!alignForCompression) {
+          throw Exception(
+            'Texture dimensions must be multiples of 4 (the compressed block '
+            'size): $inputFilePath is ${decoded.width}x${decoded.height}. '
+            'Resize the image, or pass alignForCompression to resample it.',
+          );
+        }
+        source = resampleToBlockAlignment(source);
+        sceneLog(
+          'flutter_scene: resampled $inputFilePath from '
+          '${decoded.width}x${decoded.height} to '
+          '${source.width}x${source.height} for block alignment',
         );
       }
-      final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
+      final rgba = source.convert(numChannels: 4, format: img.Format.uint8);
       File(outputTextureUri.toFilePath()).writeAsBytesSync(
         encodeImageToKtx2Bytes(
           rgba.getBytes(order: img.ChannelOrder.rgba),

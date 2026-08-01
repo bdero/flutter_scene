@@ -14,6 +14,7 @@ void importGltfToFsceneb(
   String outputFscenebFilePath, {
   String? workingDirectory,
   bool compressTextures = false,
+  bool alignForCompression = false,
 }) {
   final workingDirectoryUri = Uri.directory(
     workingDirectory ?? Directory.current.path,
@@ -32,6 +33,7 @@ void importGltfToFsceneb(
     doc,
     container.binaryChunk,
     compressTextures: compressTextures,
+    alignForCompression: alignForCompression,
   );
   final outputFile = File(outputFscenebFilePath);
   outputFile.parent.createSync(recursive: true);

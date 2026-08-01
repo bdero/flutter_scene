@@ -21,6 +21,7 @@ Never buildTextures({
   Map<String, TextureContent> contents = const {},
   String outputDirectory = 'build/textures/',
   TextureAssetMode assetMode = TextureAssetMode.legacyOnly,
+  bool alignForCompression = false,
 }) => throw UnsupportedError(
   'buildTextures runs at build time on native platforms only.',
 );
