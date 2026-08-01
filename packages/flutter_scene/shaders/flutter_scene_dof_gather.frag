@@ -29,6 +29,8 @@ void main() {
   float nearC = texture(near_coc, v_uv).r;
   float farC = max(center.a, 0.0);
   float radius = max(nearC, farC);
+  // Keep one exit from main. Some GLES translators fail this shader when main
+  // returns before the dynamic gather loop.
   if (radius < 0.5) {
     frag_color = vec4(0.0);
   } else {
