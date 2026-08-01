@@ -67,7 +67,11 @@ out vec4 frag_color;
 
 #include <tone_mapping.glsl>
 
-const float kGamma = 2.2;
+vec3 LinearToSRGB(vec3 color) {
+  return mix(color * 12.92,
+             1.055 * pow(max(color, vec3(0.0031308)), vec3(1.0 / 2.4)) - 0.055,
+             step(0.0031308, color));
+}
 
 // Color grading on the exposed linear HDR color, before tone mapping.
 // Neutral defaults leave the color unchanged.
@@ -172,7 +176,7 @@ void main() {
 
   // The swapchain texture is a plain UNorm render target, so encode the
   // resolved linear color before handing it to Texture.asImage().
-  mapped = pow(mapped, vec3(1.0 / kGamma));
+  mapped = LinearToSRGB(mapped);
 
   frag_color = vec4(mapped * alpha, alpha);
 }

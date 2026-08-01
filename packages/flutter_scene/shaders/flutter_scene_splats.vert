@@ -189,7 +189,9 @@ void main() {
   // Captured splats are trained against display-encoded images; decode to
   // linear for the scene's linear HDR pipeline. Mode 1 skips the decode.
   if (frame_info.camera_position.w < 0.5) {
-    color = pow(color, vec3(2.2));
+    color = mix(color / 12.92,
+                pow((color + 0.055) / 1.055, vec3(2.4)),
+                step(0.04045, color));
   }
   v_color = vec4(color * frame_info.tint.rgb, alpha);
 }

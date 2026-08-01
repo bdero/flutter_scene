@@ -594,7 +594,10 @@ base class EnvironmentMap {
 
   static int _encodeSrgb(double linear) {
     final c = linear.clamp(0.0, 1.0);
-    return (math.pow(c, 1.0 / 2.2) * 255.0).round().clamp(0, 255).toInt();
+    final encoded = c <= 0.0031308
+        ? c * 12.92
+        : 1.055 * math.pow(c, 1.0 / 2.4).toDouble() - 0.055;
+    return (encoded * 255.0).round().clamp(0, 255).toInt();
   }
 
   static double _smoothstep01(double x) {
@@ -747,7 +750,8 @@ base class EnvironmentMap {
     }
   }
 
-  static double _srgbToLinear(double c) => math.pow(c, 2.2).toDouble();
+  static double _srgbToLinear(double c) =>
+      c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
 
   // Not final: re-baked in place once the web GL context is warm (see
   // [markContextWarmAndRebakeRadiance]).
