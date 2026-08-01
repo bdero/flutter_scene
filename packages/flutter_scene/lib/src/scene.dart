@@ -1394,12 +1394,17 @@ base class Scene implements SceneGraph {
     final wantCustomNormals = customInputs.contains(RenderInput.normals);
     final wantCustomDepth =
         wantCustomNormals || customInputs.contains(RenderInput.depth);
+    // Impeller's GLES backend cannot sample its combined D24/S8 attachment.
+    // TODO(flutter-gpu): Use a readable-depth capability once one is exposed.
+    final canSampleSceneDepth =
+        gpu.gpuContext.defaultDepthStencilFormat ==
+        gpu.PixelFormat.d32FloatS8UInt;
     final wantDepthPrepass =
         bindSceneDepth ||
         wantCustomNormals ||
         wantSsr ||
         ambientOcclusion.enabled ||
-        (enableMsaa && wantCustomDepth);
+        (wantCustomDepth && (enableMsaa || !canSampleSceneDepth));
     final resolveSceneDepth =
         perspectiveCamera != null && wantCustomDepth && !wantDepthPrepass;
     if (perspectiveCamera != null) {
