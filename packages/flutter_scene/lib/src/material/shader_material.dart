@@ -189,6 +189,37 @@ class ShaderMaterial extends Material {
     return shader;
   }
 
+  // Validates a uniform block against the shader's reflection before binding
+  // it. Debug-only (the reflection lookup is a native call, and it must stay
+  // fresh across a shader hot reload rather than being memoized), and it turns
+  // two silent-or-fatal mistakes into named exceptions: a block the shader
+  // does not declare, and a buffer smaller than the block's std140 size.
+  bool _checkBlock(
+    gpu.UniformSlot slot,
+    String name,
+    ByteData bytes,
+    ShaderStage stage,
+  ) {
+    final size = slot.sizeInBytes;
+    if (size == null) {
+      throw StateError(
+        'ShaderMaterial: the ${stage.name} shader declares no uniform block '
+        'named "$name". Check the spelling (a block binds by its type name, '
+        'not its instance name), and note that a block nothing in the shader '
+        'reads is optimized out and reflects as absent.',
+      );
+    }
+    if (bytes.lengthInBytes < size) {
+      throw StateError(
+        'ShaderMaterial: uniform block "$name" on the ${stage.name} shader '
+        'needs $size bytes but was given ${bytes.lengthInBytes}. std140 pads '
+        'a vec3 to 16 bytes and strides array elements to 16, so a packed '
+        'Float32List is usually short; see the std140 table in MATERIALS.md.',
+      );
+    }
+    return true;
+  }
+
   void _warnMissingVertexVariant(MeshVariant kind) {
     if (!_warnedMissingVariants.add(kind)) return;
     debugPrint(missingVertexVariantMessage(_vertexShaders.keys, kind));
@@ -303,10 +334,9 @@ class ShaderMaterial extends Material {
     pass.setWindingOrder(windingOrder);
 
     for (final entry in _uniformBlocks.entries) {
-      pass.bindUniform(
-        fragmentShader.getUniformSlot(entry.key),
-        transientsBuffer.emplace(entry.value),
-      );
+      final slot = fragmentShader.getUniformSlot(entry.key);
+      assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.fragment));
+      pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
     }
 
     for (final entry in _textures.entries) {
@@ -335,10 +365,9 @@ class ShaderMaterial extends Material {
     TransientWriter transientsBuffer,
   ) {
     for (final entry in _vertexUniformBlocks.entries) {
-      pass.bindUniform(
-        vertexShader.getUniformSlot(entry.key),
-        transientsBuffer.emplace(entry.value),
-      );
+      final slot = vertexShader.getUniformSlot(entry.key);
+      assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.vertex));
+      pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
     }
     for (final entry in _vertexTextures.entries) {
       final resolved = _resolveShaderTexture(entry.value.source);
