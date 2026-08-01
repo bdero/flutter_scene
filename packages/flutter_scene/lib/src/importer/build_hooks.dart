@@ -105,6 +105,12 @@ List<String> discoverSceneSources(
 /// `packages/<package>/flutter_scene/scene/<name>.fsceneb`), and each source is
 /// declared as a build dependency so changing it retriggers the build (and hot
 /// reload). Conversion runs in-process (no subprocess, no native binary).
+///
+/// Set [compressTextures] to store embedded images as supercompressed block
+/// payloads that transcode to the device's format at load, shrinking the
+/// container and the GPU footprint. Sources must be a multiple of 4 in both
+/// dimensions; anything else is stored uncompressed, with a warning naming it.
+/// Textures are mipmapped either way.
 void buildScenes({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,

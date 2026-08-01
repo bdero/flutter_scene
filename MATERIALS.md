@@ -19,7 +19,8 @@ Filament's `.mat` files or Godot's shaders, the `.fmat` model will feel
 familiar; if you've used Three.js's `ShaderMaterial`, that's `ShaderMaterial`
 here.
 
-The roadmap for this surface is tracked in [issue #22][issue22].
+What is built and what is still missing is in [Current state and what's
+next](#current-state-and-whats-next).
 
 ---
 
@@ -287,7 +288,7 @@ outputs it premultiplied.
 
 > The per-light `light()` hook (a custom BRDF inside the engine light loop) is
 > not implemented yet; today, `lit` uses the engine BRDF and `unlit` gives you
-> full control. See [issue #22][issue22].
+> full control.
 
 ---
 
@@ -566,6 +567,16 @@ When you need a shader shape the `.fmat` format doesn't cover, write a complete
 raw fragment shader and drive it with `ShaderMaterial`. You declare your own
 uniform blocks and samplers and bind them by name, packing std140 yourself.
 
+`ShaderMaterial` covers the fragment stage. The vertex stage has two routes: a
+`.fmat` `vertex { }` block, which runs on every mesh type and pass for you, or a
+`Geometry` subclass that sets its own vertex shader and buffers, where the
+pipeline layout comes from the shader's own reflection. The second is how you
+get a fully custom attribute layout, but `Geometry.bind` and `Material.bind`
+take render-pass and buffer types that `package:flutter_scene/gpu.dart` does not
+export yet, so it currently means importing from `lib/src`. If you are writing a
+material that needs those, file an issue; the intent is to make that path
+supported rather than an internals reach-through.
+
 ```glsl
 // shaders/vertex_color.frag
 uniform FragInfo { vec4 tint; } frag_info;
@@ -625,7 +636,7 @@ constructor fields.
 Today `blending` is `opaque` (depth-write on, drawn in order) or `alpha`
 (depth-write off, depth-sorted, premultiplied source-over). Additive/multiply
 blend modes and per-material depth state are not configurable yet; they are
-encoder-controlled. See [issue #22][issue22].
+encoder-controlled.
 
 ---
 
@@ -661,8 +672,7 @@ participate; it carries no sidecar.)
 
 The `.fmat` format, its preprocessor, the `buildMaterials` hook,
 `PreprocessedMaterial`, the `vertex { }` stage (with custom varyings and
-attributes), and hot reload are implemented. Remaining and in-flight work,
-tracked in [issue #22][issue22]:
+attributes), and hot reload are implemented. Remaining and in-flight work:
 
 - **The `light()` hook** for a custom per-light BRDF (toon banding inside the
   engine light loop) is not implemented; use `unlit` for fully custom shading
@@ -725,6 +735,3 @@ garbage on some backends).
 - `packages/flutter_scene/shaders/flutter_scene_standard.frag` and
   `material_lighting.glsl`: the engine's PBR shader and the lighting framework a
   `lit` material composes against.
-- [Issue #22][issue22]: the custom-materials roadmap.
-
-[issue22]: https://github.com/bdero/flutter_scene/issues/22

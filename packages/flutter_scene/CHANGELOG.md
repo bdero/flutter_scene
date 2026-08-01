@@ -2,6 +2,7 @@
 
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
+* Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.
 * Texture resources record what their pixels represent, so mip levels downsample by role (normal maps average as vectors, color in linear light).
 * `buildScenes` warns when a texture is not block aligned and falls back to uncompressed, instead of dropping the compressed form silently.
 * Loose images cook to compressed, mipmapped `.fstex` through `buildTextures`, loaded by source path with `loadTexture` (shipped in 0.20.0, missing from its notes).
