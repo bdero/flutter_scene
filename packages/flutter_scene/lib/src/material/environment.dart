@@ -87,10 +87,11 @@ base class EnvironmentMap {
   /// afterwards.
   ///
   /// Devices that report the layout as supported but sample every texture at
-  /// its base mip (Adreno Vulkan, flutter/flutter#189965) do not need this
-  /// turned off by hand; [mipRadianceLayoutSupported] measures the defect and
-  /// keeps them on the atlas. Note the same clamp applies to every other
-  /// mipmapped texture in the app, which no layout choice can work around.
+  /// its base mip (Adreno Vulkan, see
+  /// https://github.com/flutter/flutter/issues/189965) do not need this turned
+  /// off by hand; [mipRadianceLayoutSupported] measures the defect and keeps
+  /// them on the atlas. Note the same clamp applies to every other mipmapped
+  /// texture in the app, which no layout choice can work around.
   static bool useMipRadianceLayout = true;
 
   /// Base-mip face size of the prefiltered radiance cubemap new environments
@@ -110,9 +111,9 @@ base class EnvironmentMap {
   /// the legacy band atlas regardless of [useMipRadianceLayout]. On native
   /// Android the capability bits over-report (some engines clamp every
   /// Vulkan sampler to the base mip level on Adreno GPUs, see
-  /// flutter/flutter#161283), so support there is measured at startup by
-  /// `probePlatformMipSampling` and devices where the clamp is active stay
-  /// on the atlas.
+  /// https://github.com/flutter/flutter/issues/161283), so support there is
+  /// measured at startup by `probePlatformMipSampling` and devices where the
+  /// clamp is active stay on the atlas.
   static bool get mipRadianceLayoutSupported => shouldUseMipRadianceLayout(
     isWeb: kIsWeb,
     targetPlatform: defaultTargetPlatform,

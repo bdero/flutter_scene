@@ -15,15 +15,25 @@ import 'package:vector_math/vector_math.dart';
 /// not apply).
 bool? platformMipSamplingWorks;
 
+/// Whether uploading a mip chain is worth anything on this device.
+///
+/// False only where the probe positively measured the sampler clamp, so the
+/// levels above the base would be transcoded, uploaded, and then never read.
+/// A probe that could not run leaves this true, since skipping mips on a
+/// healthy device would be a real quality regression.
+bool get mipChainsAreSampled => platformMipSamplingWorks != false;
+
 /// Measures whether mip sampling actually works, on platforms where the
 /// backend capability bits are known to over-report it.
 ///
 /// Android engines clamp every Vulkan sampler to the base mip level on Adreno
-/// GPUs (flutter/flutter#161283) while still reporting mipmap support, which
-/// silently breaks any content that relies on a hand-uploaded mip chain. The
-/// probe measures the defect itself instead of guessing from the GPU name, so
-/// unaffected devices keep full mip support and the fallback retires on its
-/// own once fixed engines (flutter/flutter#190264) reach users.
+/// GPUs while still reporting mipmap support, which silently breaks any
+/// content that relies on a hand-uploaded mip chain
+/// (https://github.com/flutter/flutter/issues/161283). The probe measures the
+/// defect itself instead of guessing from the GPU name, so unaffected devices
+/// keep full mip support and the fallback retires on its own once fixed
+/// engines reach users
+/// (https://github.com/flutter/flutter/pull/190264).
 ///
 /// Runs during `Scene.initializeStaticResources`. On other platforms (and on
 /// web) the capability bits are trusted and no probe runs.
@@ -37,10 +47,20 @@ Future<void> probePlatformMipSampling() async {
   try {
     platformMipSamplingWorks = await measureMipSampling();
   } catch (error) {
-    // Treat a failed measurement as broken sampling; the atlas path works
-    // everywhere.
-    platformMipSamplingWorks = false;
+    // Leave the result unknown rather than asserting the defect. Radiance
+    // layout selection already treats unknown as broken (the atlas works
+    // everywhere), while [mipChainsAreSampled] stays true, so a probe that
+    // could not run never costs a healthy device its mipmaps.
     debugPrint('flutter_scene: mip sampling probe failed: $error');
+    return;
+  }
+  if (platformMipSamplingWorks == false) {
+    debugPrint(
+      'flutter_scene: this device samples every texture at its base mip, so '
+      'mipmaps are skipped and minified textures will alias. Cooked mip '
+      'chains are not uploaded, and image based lighting uses the radiance '
+      'atlas. See https://github.com/flutter/flutter/issues/189965',
+    );
   }
 }
 
