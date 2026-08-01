@@ -201,7 +201,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(_cuboid(vm.Vector4(0.85, 0.30, 0.20, 1.0), 0.1, 0.5));
     return (scene: scene, camera: _camera());
   }),
-  // Exercises the stored scene-depth resolve used by depth-only effects.
+  // Exercises the camera depth prepass used by depth-only effects.
   SmokeScene('depth_post', () {
     final scene = Scene();
     scene.depthOfField

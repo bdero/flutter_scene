@@ -1395,7 +1395,7 @@ base class Scene implements SceneGraph {
     final wantCustomDepth =
         wantCustomNormals || customInputs.contains(RenderInput.depth);
     // Flutter GPU does not expose whether a stored depth/stencil attachment is
-    // shader-readable. Some native backends terminate when one is sampled.
+    // shader-readable, so its readability cannot be assumed.
     // TODO(flutter-gpu): Reuse stored depth once that capability is exposed.
     final wantDepthPrepass =
         bindSceneDepth ||
