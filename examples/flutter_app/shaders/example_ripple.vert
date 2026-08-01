@@ -31,6 +31,7 @@ in vec4 model_transform_0;
 in vec4 model_transform_1;
 in vec4 model_transform_2;
 in vec4 model_transform_3;
+in vec4 instance_color;
 
 out vec3 v_position;
 out vec3 v_normal;
@@ -53,7 +54,7 @@ void main() {
   v_normal = world_normal;
   v_viewvector = frame_info.camera_position - world_position.xyz;
   v_texture_coords = texture_coords;
-  v_color = color;
+  v_color = color * instance_color;
   v_ripple = wave * 0.5 + 0.5;
 
   gl_Position = frame_info.camera_transform * world_position;
