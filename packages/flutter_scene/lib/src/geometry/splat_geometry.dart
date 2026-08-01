@@ -156,7 +156,7 @@ class SplatGeometry extends Geometry {
   );
 
   @override
-  VertexLayoutDescriptor? get instancedVertexLayout => _kSplatLayout;
+  VertexLayoutDescriptor? get defaultVertexLayout => _kSplatLayout;
 
   // The splat index arrives through the slot-1 instance buffer; the model
   // transform rides the FrameInfo uniform.

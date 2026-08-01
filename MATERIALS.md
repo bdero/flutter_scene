@@ -8,10 +8,11 @@ flutter_scene gives you two ways to write a custom material:
    name-addressed parameters with no std140 packing by hand, and the engine's
    physically based lighting for free if you want it. This is the path most
    materials should use.
-2. **`ShaderMaterial` (the low-level escape hatch).** You write a complete raw
-   GLSL fragment shader, declare your own uniform blocks and samplers, and bind
-   them by name from Dart, packing std140 yourself. Use this when you need full
-   control or a shader shape the `.fmat` format doesn't cover yet.
+2. **`ShaderMaterial` (the low-level escape hatch).** You write complete raw
+   GLSL, for the fragment stage and optionally the vertex stage too, declare
+   your own uniform blocks and samplers, and bind them by name from Dart,
+   packing std140 yourself. Use this when you need full control or a shader
+   shape the `.fmat` format doesn't cover yet.
 
 Both paths share the same engine contract (the vertex outputs your shader
 receives and the color it must output), documented below. If you've used
@@ -567,15 +568,10 @@ When you need a shader shape the `.fmat` format doesn't cover, write a complete
 raw fragment shader and drive it with `ShaderMaterial`. You declare your own
 uniform blocks and samplers and bind them by name, packing std140 yourself.
 
-`ShaderMaterial` covers the fragment stage. The vertex stage has two routes: a
-`.fmat` `vertex { }` block, which runs on every mesh type and pass for you, or a
-`Geometry` subclass that sets its own vertex shader and buffers, where the
-pipeline layout comes from the shader's own reflection. The second is how you
-get a fully custom attribute layout, but `Geometry.bind` and `Material.bind`
-take render-pass and buffer types that `package:flutter_scene/gpu.dart` does not
-export yet, so it currently means importing from `lib/src`. If you are writing a
-material that needs those, file an issue; the intent is to make that path
-supported rather than an internals reach-through.
+`ShaderMaterial` covers both stages. Pass only a `fragmentShader` and the
+engine's vertex shader runs, which is the common case. Pass a `vertexShader`
+too and the material owns the whole pipeline; see [Raw vertex
+shaders](#raw-vertex-shaders) for the contract yours has to meet.
 
 ```glsl
 // shaders/vertex_color.frag
@@ -623,6 +619,110 @@ The footguns are mixing `vec3` and `float`: a `float` after a `vec3` fills the
 `vec3`'s trailing pad, while a `vec3` after a `float` jumps to the next 16-byte
 boundary. **When in doubt, declare blocks with `vec4`s and group trailing scalars
 into `vec4`-aligned rows of four**, and the layout is unambiguous.
+
+---
+
+# Raw vertex shaders
+
+A `ShaderMaterial` can supply the vertex shader as well as the fragment one.
+The engine's standard vertex shader then does not run, so your shader owns
+everything it used to provide.
+
+```dart
+final material = ShaderMaterial(
+  vertexShader: library['RippleVertex']!,
+  fragmentShader: library['RippleFragment']!,
+);
+material.setUniformBlockFromFloats('TintInfo', [...]);            // fragment
+material.setUniformBlock('RippleInfo', bytes,
+    stage: ShaderStage.vertex);                                    // vertex
+```
+
+Uniform blocks and textures are set by name on either stage, chosen with
+`ShaderStage`. A block declared in both stages is two bindings, so set it twice.
+
+## The contract
+
+For an unskinned mesh, the engine binds these and your shader declares whatever
+it uses:
+
+```glsl
+uniform FrameInfo {
+  mat4 camera_transform;
+  vec3 camera_position;
+} frame_info;
+
+in vec3 position;
+in vec3 normal;
+in vec2 texture_coords;
+in vec4 color;
+
+// Instance-rate model matrix columns, bound in the slot after the vertex
+// streams. A non-instanced draw gets a single-element buffer.
+in vec4 model_transform_0;
+in vec4 model_transform_1;
+in vec4 model_transform_2;
+in vec4 model_transform_3;
+```
+
+Your shader writes `gl_Position` and the five outputs the fragment stage reads
+(`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`, `v_color`), plus
+any of your own varyings. A skinned mesh instead takes its model transform,
+`enable_skinning`, and `joint_texture_size` in `FrameInfo`, and adds the
+`joints` and `weights` attributes and a `joints_texture` sampler.
+
+## Mesh kinds and passes
+
+A vertex shader is registered per mesh kind, so one material can customize
+static meshes and leave others to the engine:
+
+```dart
+material.setVertexShader(skinnedShader, variant: MeshVariant.skinned);
+material.setVertexShader(depthShader, variant: MeshVariant.depth);
+```
+
+`MeshVariant.depth` is the position-only pass that draws shadow maps and the
+depth prepass. Supply it when your vertex stage moves geometry, or the shadow
+keeps the undisplaced shape. Any variant you leave unset falls back to the
+engine's shader.
+
+## Your own vertex layout
+
+By default your shader is fed the engine's standard layout, which is what the
+declarations above describe. To feed it something else (extra channels, a
+packed format, or fewer attributes), describe the layout and bind buffers to
+match:
+
+```dart
+geometry.setVertexLayout(
+  VertexLayoutDescriptor(buffers: [
+    VertexBufferDescriptor(
+      strideInBytes: 20,
+      attributes: [
+        VertexAttributeDescriptor(name: 'position', format: VertexFormat.float32x3),
+        VertexAttributeDescriptor(
+            name: 'uv2', format: VertexFormat.float32x2, offsetInBytes: 12),
+      ],
+    ),
+  ]),
+  bindsModelTransform: false,
+);
+```
+
+Attributes match the shader by name, so extra UV sets and per-vertex data are
+ordinary channels rather than special cases. Pass `bindsModelTransform: false`
+when your shader takes the model transform some other way than the instance-rate
+slot, so the encoder leaves that slot alone.
+
+For a single extra channel alongside the standard vertex, `setCustomAttribute`
+is simpler and needs no layout (it also works on skinned meshes):
+
+```dart
+geometry.setCustomAttribute('phase', phaseValues, components: 1);
+```
+
+See `examples/flutter_app/lib/example_raw_shader.dart` with
+`shaders/example_ripple.vert` and `.frag` for a worked pair.
 
 ---
 
@@ -682,10 +782,9 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
   `MaterialParameters` API.
 - **Additive/multiply blending and per-material depth state** are not yet
   configurable.
-- **Custom vertex attributes on skinned meshes** are not supported (they use the
-  engine's default layout, not the described layout the attributes ride on), and
-  per-instance custom attributes are not exposed yet. See [The `vertex`
-  block](#the-vertex-block).
+- **Per-instance custom attributes** are not exposed yet; the instance-rate slot
+  carries the model transform. Per-vertex custom attributes work on both static
+  and skinned meshes.
 - **An inspector** that surfaces the parameter hints as UI does not exist (the
   metadata is emitted for future tooling).
 

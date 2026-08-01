@@ -24,4 +24,8 @@ export 'src/gpu/gpu.dart'
         SamplerOptions,
         MinMagFilter,
         MipFilter,
-        SamplerAddressMode;
+        SamplerAddressMode,
+        // Value types a caller-declared vertex layout and index buffer need.
+        IndexType,
+        VertexFormat,
+        VertexStepMode;

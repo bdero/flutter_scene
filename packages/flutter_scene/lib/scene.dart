@@ -27,6 +27,11 @@ export 'src/geometry/billboard_geometry.dart'
 export 'src/geometry/geometry.dart'
     show Geometry, SkinnedGeometry, UnskinnedGeometry;
 export 'src/geometry/line_segments_geometry.dart' show LineSegmentsGeometry;
+export 'src/geometry/vertex_layout.dart'
+    show
+        VertexAttributeDescriptor,
+        VertexBufferDescriptor,
+        VertexLayoutDescriptor;
 export 'src/geometry/mesh_data.dart'
     show
         LineSegmentData,
@@ -75,6 +80,7 @@ export 'src/material/physically_based_material.dart'
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
 export 'src/material/shader_material.dart' show ShaderMaterial;
+export 'src/material/shader_stage.dart' show MeshVariant, ShaderStage;
 export 'src/material/sprite_material.dart' show SpriteBlendMode, SpriteMaterial;
 export 'src/material/unlit_material.dart' show UnlitMaterial;
 export 'src/fmat/material_registry.dart'
