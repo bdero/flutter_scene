@@ -528,6 +528,7 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         remap(r.id),
         payload: r.payload == null ? null : remap(r.payload!),
         asset: r.asset,
+        content: r.content,
       ),
       MaterialResource() => MaterialResource(
         remap(r.id),

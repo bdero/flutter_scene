@@ -17,6 +17,14 @@ enum TextureContent {
   normal,
 }
 
+/// The [TextureContent] named [name] (a serialized `TextureResource.content`),
+/// falling back to [TextureContent.color] for an unknown name.
+TextureContent textureContentFromName(String name) => switch (name) {
+  'data' => TextureContent.data,
+  'normal' => TextureContent.normal,
+  _ => TextureContent.color,
+};
+
 /// One mip level's RGBA8888 pixels.
 class MipLevel {
   MipLevel(this.width, this.height, this.pixels);

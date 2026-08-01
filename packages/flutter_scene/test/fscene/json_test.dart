@@ -328,5 +328,26 @@ void main() {
       expect(material.type, 'fmat');
       expect(material.asset?.key, 'materials/toon.fmat');
     });
+
+    test('texture content roles round-trip, with color left implicit', () {
+      final doc = SceneDocument();
+      final color = doc.addResource(
+        TextureResource(doc.newId(), asset: const AssetRef('albedo.png')),
+      );
+      final normal = doc.addResource(
+        TextureResource(
+          doc.newId(),
+          asset: const AssetRef('normal.png'),
+          content: 'normal',
+        ),
+      );
+
+      final json = writeFscene(doc);
+      expect(json, isNot(contains('"content": "color"')));
+
+      final back = readFscene(json);
+      expect((back.resource(color.id) as TextureResource).content, 'color');
+      expect((back.resource(normal.id) as TextureResource).content, 'normal');
+    });
   });
 }
