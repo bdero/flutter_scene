@@ -3,7 +3,6 @@ import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
@@ -21,95 +20,6 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// camera linear-depth texture: planar view-space depth (world units) in
 /// the red channel, with the far value where no geometry was drawn.
 const String kLinearDepthBlackboardKey = 'linear_depth';
-
-/// Render-graph key for the main scene pass's stored depth attachment.
-const String kSceneDepthStencilBlackboardKey = 'scene_depth_stencil';
-
-/// Converts a stored main-pass depth attachment to linear view-space depth.
-class LinearDepthResolvePass extends RenderGraphPass {
-  LinearDepthResolvePass({
-    required this.dimensions,
-    required this.near,
-    required this.far,
-  });
-
-  final ui.Size dimensions;
-  final double near;
-  final double far;
-
-  static final gpu.Shader _vertexShader =
-      baseShaderLibrary['FullscreenVertex']!;
-  static final gpu.Shader _fragmentShader =
-      baseShaderLibrary['DepthResolveFragment']!;
-  static final gpu.DeviceBuffer _quadBuffer = gpu.gpuContext
-      .createDeviceBufferWithCopy(
-        ByteData.sublistView(
-          Float32List.fromList(const [
-            -1,
-            -1,
-            1,
-            -1,
-            -1,
-            1,
-            -1,
-            1,
-            1,
-            -1,
-            1,
-            1,
-          ]),
-        ),
-      );
-  static final gpu.BufferView _quadView = gpu.BufferView(
-    _quadBuffer,
-    offsetInBytes: 0,
-    lengthInBytes: 6 * 2 * 4,
-  );
-
-  @override
-  String get name => 'LinearDepthResolvePass';
-
-  @override
-  void execute(RenderGraphContext context) {
-    final depth = context.blackboard.require<gpu.Texture>(
-      kSceneDepthStencilBlackboardKey,
-    );
-    final linearDepth = context.texturePool.acquire(
-      TransientTextureDescriptor.color(
-        width: dimensions.width.toInt(),
-        height: dimensions.height.toInt(),
-        format: gpu.PixelFormat.r32g32b32a32Float,
-        debugName: 'linear_depth_resolved',
-      ),
-    );
-    final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final pass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: linearDepth)),
-    );
-    pass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
-    bindVertexBufferCompat(pass, _quadView, 6);
-    pass.bindTexture(
-      _fragmentShader.getUniformSlot('scene_depth'),
-      depth,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
-    );
-    final info = Float32List(4)
-      ..[0] = near
-      ..[1] = far;
-    pass.bindUniform(
-      _fragmentShader.getUniformSlot('DepthResolveInfo'),
-      context.transientsBuffer.emplace(ByteData.sublistView(info)),
-    );
-    drawCompat(pass, 6);
-    rendererSubmissions.submit(commandBuffer);
-    context.blackboard.set(kLinearDepthBlackboardKey, linearDepth);
-  }
-}
 
 /// Renders the opaque scene's depth from the camera into a linear-depth
 /// color target and publishes it on the render-graph blackboard.
