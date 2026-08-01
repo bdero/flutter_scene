@@ -35,6 +35,9 @@ on:
       DISCORD_WEBHOOK_URL:
         required: false
 
+env:
+  FLUTTER_DART_DATA_ASSETS: "true"
+
 jobs:
   linux:
     name: ${{ inputs.argos_prefix }}linux (${{ inputs.label }})

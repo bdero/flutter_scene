@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "master" ]
 
+env:
+  FLUTTER_DART_DATA_ASSETS: "true"
+
 jobs:
   lint:
     name: Lint
