@@ -160,6 +160,33 @@ void main() {
     expect(late_.x, 10);
   });
 
+  test('the interpolation delay adapts to arrival cadence and jitter', () {
+    var nowMicros = 1000000;
+    var x = 0.0;
+    final pawn = _Pawn()..position.value = (0.0, 0.0, 0.0);
+    final component = NetworkTransformComponent(pawn, now: () => nowMicros);
+    expect(component.currentDelay.inMilliseconds, 100); // starts at the cap
+
+    // A metronomic 30Hz stream converges well under the ceiling.
+    for (var i = 0; i < 300; i++) {
+      nowMicros += 33333;
+      pawn.position.value = (x += 0.1, 0.0, 0.0);
+    }
+    expect(component.currentDelay.inMilliseconds, lessThan(70));
+    expect(
+      component.currentDelay,
+      greaterThanOrEqualTo(const Duration(milliseconds: 25)),
+    );
+    final settled = component.currentDelay;
+
+    // Heavy jitter under the idle threshold deepens the buffer again.
+    for (var i = 0; i < 300; i++) {
+      nowMicros += i.isEven ? 8000 : 58000;
+      pawn.position.value = (x += 0.1, 0.0, 0.0);
+    }
+    expect(component.currentDelay, greaterThan(settled));
+  });
+
   test('resuming after an idle gap eases in instead of snapping', () {
     var nowMicros = 1000000;
     final pawn = _Pawn()..position.value = (0.0, 0.0, 0.0);

@@ -33,6 +33,7 @@ final class SceneReplication {
     required this.root,
     required Map<String, ReplicaNodeBuilder> builders,
     this.interpolationDelay = const Duration(milliseconds: 100),
+    int inputTargetDepth = 2,
     LocalPredictionBuilder? localPrediction,
     void Function(Replica replica, Node node)? onSpawn,
     void Function(Replica replica, Node node)? onDespawn,
@@ -43,6 +44,7 @@ final class SceneReplication {
     client = ReplicationClient(
       registry: registry,
       session: session,
+      inputTargetDepth: inputTargetDepth,
       onSpawn: _spawned,
       onDespawn: _despawned,
     );
@@ -54,6 +56,9 @@ final class SceneReplication {
   final Node root;
 
   final Map<String, ReplicaNodeBuilder> _builders;
+
+  /// Ceiling for the remote-pose render delay; the interpolation buffer
+  /// sizes itself below this from measured arrival cadence and jitter.
   final Duration interpolationDelay;
   final LocalPredictionBuilder? _localPrediction;
   final void Function(Replica, Node)? _onSpawn;
