@@ -9,9 +9,12 @@ import 'transform_replica.dart';
 
 /// Drives the owning node's transform from a [TransformReplica].
 ///
-/// Replicated poses arrive at packet rate; rendering [delay] in the past
+/// Replicated poses arrive at packet rate; rendering a little in the past
 /// through a small sample buffer turns them into smooth motion, the
-/// standard snapshot-interpolation tradeoff of latency for continuity.
+/// standard snapshot-interpolation tradeoff of latency for continuity. The
+/// delay sizes itself from the measured arrival cadence and jitter, easing
+/// between [minDelay] and [delay] (the ceiling and starting value), so a
+/// clean local link renders barely behind while a jittery one buffers deep.
 // TODO(prediction): owned replicas currently render on the same delayed
 // timeline as everything else; input-replay prediction needs the tick
 // infrastructure wired through here.
@@ -19,8 +22,11 @@ final class NetworkTransformComponent extends Component {
   NetworkTransformComponent(
     this.replica, {
     this.delay = const Duration(milliseconds: 100),
+    this.minDelay = const Duration(milliseconds: 25),
+    this.adaptive = true,
     NowMicros now = defaultNowMicros,
-  }) : _now = now {
+  }) : _now = now,
+       _delayMicros = delay.inMicroseconds {
     _push();
     replica.position.onChanged((_, _) => _push());
     replica.rotation.onChanged((_, _) => _push());
@@ -28,32 +34,71 @@ final class NetworkTransformComponent extends Component {
 
   final TransformReplica replica;
 
-  /// How far in the past remote poses render.
+  /// The deepest (and initial) render delay; the fixed delay when
+  /// [adaptive] is off.
   final Duration delay;
+
+  /// The shallowest the adaptive delay will go.
+  final Duration minDelay;
+
+  /// Whether the delay tracks measured arrival cadence and jitter.
+  final bool adaptive;
 
   final NowMicros _now;
 
   final List<(int, Vector3, Quaternion)> _samples = [];
+  int _delayMicros;
+  int _lastArrival = 0;
+  double _intervalEwma = 0;
+  double _jitterEwma = 0;
+
+  /// How far in the past remote poses currently render.
+  Duration get currentDelay => Duration(microseconds: _delayMicros);
 
   void _push() {
     final now = _now();
     // Samples are only pushed on pose change, so after an idle stretch the
     // newest one is stale. Re-anchor the held pose at now - delay before
-    // appending the fresh one, so resuming motion eases in over `delay`
+    // appending the fresh one, so resuming motion eases in over the delay
     // instead of interpolating across the whole gap (which snaps forward).
+    // Idleness is judged against the fixed ceiling, not the adapted delay,
+    // so a jitter spike is measured rather than mistaken for a gap.
     if (_samples.isNotEmpty && now - _samples.last.$1 > delay.inMicroseconds) {
       final (_, p, q) = _samples.last;
       _samples
         ..clear()
-        ..add((now - delay.inMicroseconds, p, q));
+        ..add((now - _delayMicros, p, q));
+      _lastArrival = 0; // The cadence measurement restarts after a gap.
     }
+    _adapt(now);
     _samples.add((now, replica.positionVector, replica.rotationQuaternion));
     if (_samples.length > 64) _samples.removeAt(0);
   }
 
+  // Sizes the delay off the arrival stream, enough to bridge one and a half
+  // typical intervals plus a few deviations, eased so the render timeline
+  // never jumps.
+  void _adapt(int now) {
+    if (!adaptive) return;
+    if (_lastArrival != 0) {
+      final interval = (now - _lastArrival).toDouble();
+      _intervalEwma = _intervalEwma == 0
+          ? interval
+          : _intervalEwma + (interval - _intervalEwma) * 0.1;
+      final deviation = (interval - _intervalEwma).abs();
+      _jitterEwma += (deviation - _jitterEwma) * 0.1;
+      final target = (_intervalEwma * 1.5 + _jitterEwma * 4).clamp(
+        minDelay.inMicroseconds.toDouble(),
+        delay.inMicroseconds.toDouble(),
+      );
+      _delayMicros += ((target - _delayMicros) * 0.05).round();
+    }
+    _lastArrival = now;
+  }
+
   @override
   void update(double deltaSeconds) {
-    final (position, rotation) = sampleAt(_now() - delay.inMicroseconds);
+    final (position, rotation) = sampleAt(_now() - _delayMicros);
     node.localTransform = Matrix4.compose(position, rotation, _unitScale);
   }
 
