@@ -119,7 +119,8 @@ Future<void> loadSmokeMaterials() async {
   );
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
   _rawPairLibrary = await gpu.loadShaderLibraryAsync(
-    'build/shaderbundles/smoke.shaderbundle',
+    'packages/smoke_render/flutter_gpu_shaders/shaderbundles/'
+    'smoke.shaderbundle',
   );
 }
 
