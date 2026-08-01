@@ -13,17 +13,12 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
 ///
-/// Construct one from a shader bundle entry and its metadata, then set
-/// parameters by name through [parameters]:
+/// Prefer `loadFmatMaterial`, which resolves the generated DataAssets by the
+/// checked-in `.fmat` source path, then set parameters through [parameters]:
 ///
 /// ```dart
-/// final library = (await gpu.loadShaderLibraryAsync('build/shaderbundles/materials.shaderbundle'))!;
-/// final metadata = jsonDecode(await rootBundle.loadString(
-///     'build/shaderbundles/materials.fmat.json')) as Map<String, Object?>;
-/// final toon = PreprocessedMaterial(
-///   fragmentShader: library['Toon']!,
-///   metadata: (metadata['Toon'] as Map).cast<String, Object?>(),
-/// )..parameters.setColor('base_color', const Color(0xff8844ff));
+/// final toon = await loadFmatMaterial('assets/toon.fmat');
+/// toon.parameters.setColor('base_color', const Color(0xff8844ff));
 /// ```
 ///
 /// A `lit` material is lit by the engine's physically based pipeline (the

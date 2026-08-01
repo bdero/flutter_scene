@@ -110,10 +110,12 @@ Map<String, Object?>? _materialsMetadata;
 Future<void> loadSmokeMaterials() async {
   if (_materialsLibrary != null) return;
   _materialsLibrary = await gpu.loadShaderLibraryAsync(
-    'build/shaderbundles/materials.shaderbundle',
+    'packages/smoke_render/flutter_scene/fmat/materials/'
+    'materials.shaderbundle',
   );
   final sidecar = await rootBundle.loadString(
-    'build/shaderbundles/materials.fmat.json',
+    'packages/smoke_render/flutter_scene/fmat/materials/'
+    'materials.fmat.json',
   );
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
   _rawPairLibrary = await gpu.loadShaderLibraryAsync(

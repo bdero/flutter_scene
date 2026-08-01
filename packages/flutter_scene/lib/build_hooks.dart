@@ -24,6 +24,7 @@
 ///       buildInput: config,
 ///       buildOutput: output,
 ///       materials: ['materials/toon.fmat'],
+///       assetMode: MaterialAssetMode.dataAssetsRequired,
 ///     );
 ///   });
 /// }

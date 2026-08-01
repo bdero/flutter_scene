@@ -289,7 +289,8 @@ ExampleSettings resetExampleSettings([ExampleSettings Function()? defaults]) {
 /// effects. Awaited at startup alongside [Scene.initializeStaticResources].
 Future<void> loadExampleEffects() async {
   final library = await gpu.loadShaderLibraryAsync(
-    'build/shaderbundles/example.shaderbundle',
+    'packages/example_app/flutter_gpu_shaders/shaderbundles/'
+    'example.shaderbundle',
   );
   final waveShader = library?['WaveFragment'];
   if (waveShader != null) {

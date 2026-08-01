@@ -162,6 +162,20 @@ Future<void> buildMaterials({
   if (materialPaths.isEmpty) {
     return;
   }
+  if (assetMode == MaterialAssetMode.legacyOnly) {
+    stderr.writeln(
+      'flutter_scene warning, buildMaterials is using legacy generated '
+      'assets. Shader bundles are tied to the active Flutter engine. Use '
+      'MaterialAssetMode.dataAssetsRequired instead of committing generated '
+      'files or listing them in flutter.assets.',
+    );
+  } else if (!dataAssetsAvailable) {
+    stderr.writeln(
+      'flutter_scene warning, DataAssets are unavailable, so buildMaterials '
+      'is falling back to legacy generated assets. Enable DataAssets or use '
+      'MaterialAssetMode.dataAssetsRequired to fail instead.',
+    );
+  }
 
   // Locate flutter_scene's framework shader directory. flutter_scene has no
   // top-level `flutter_scene.dart` library, so resolve through this package's

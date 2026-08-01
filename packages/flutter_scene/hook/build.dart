@@ -8,10 +8,9 @@ void main(List<String> args) async {
       buildInput: config,
       buildOutput: output,
       manifestFileName: 'shaders/base.shaderbundle.json',
-      // Registers a data asset on toolchains with Dart data assets enabled
-      // (per-project output, hash-tracked); everyone else keeps the pubspec
-      // asset. The runtime probes for whichever key shipped.
-      assetMode: ShaderBundleAssetMode.dataAssetsIfAvailable,
+      // The compiled bundle is tied to this Flutter engine. Keep it as a
+      // managed build output rather than a checked-in or pubspec asset.
+      assetMode: ShaderBundleAssetMode.dataAssetsRequired,
       // GLSL ES 3.00 for the OpenGL ES dialect. The radiance sampling uses
       // textureLod, which is core in 300 es; the 1.00 form needs
       // GL_EXT_shader_texture_lod, which software GL stacks (Mesa llvmpipe,

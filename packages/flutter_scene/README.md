@@ -78,7 +78,7 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 - Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), which hasn't shipped to the stable channel yet, so Flutter Scene requires the Flutter [master channel](https://docs.flutter.dev/release/upgrade#other-channels). Version 0.19.0 needs a master build from 2026-06-09 or later, which is when render-to-mip-level Flutter GPU support landed (flutter/flutter#187685). The `flutter` lower bound in `pubspec.yaml` is set to the latest stable instead (so pub.dev can resolve and score the package), which is looser than the real requirement, so a recent master is what you actually want.
 - On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop. The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
-- Build automation (shader bundles, scene and texture pre-conversion) uses [Dart native assets](https://github.com/dart-lang/sdk/issues/50565); enable it once with `flutter config --enable-native-assets`. Zero-manifest `.fmat` material builds additionally use the Dart DataAssets feature, enabled with `flutter config --enable-dart-data-assets`.
+- Build automation compiles shaders and converts scenes, materials, and textures into managed DataAssets. Enable DataAssets once with `flutter config --enable-dart-data-assets`. Generated `.shaderbundle`, `.fsceneb`, and `.fstex` files are engine-coupled intermediates. Keep their source files in version control, but never commit the generated files or list them in `flutter.assets`.
 
 ## Features
 
@@ -168,8 +168,7 @@ To run the example app from a fresh clone:
 
 ```sh
 flutter pub get                                             # resolves the workspace
-flutter config --enable-native-assets                       # one-time setup
-flutter config --enable-dart-data-assets                    # one-time setup for DataAssets-backed .fmat materials
+flutter config --enable-dart-data-assets                    # one-time setup for build-hook outputs
 
 cd examples/flutter_app
 flutter create . --platforms=macos,ios,android,linux,windows,web  # generate gitignored platform stubs
