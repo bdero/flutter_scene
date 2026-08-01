@@ -16,6 +16,7 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       manifestFileName: 'shaders/smoke.shaderbundle.json',
+      assetMode: ShaderBundleAssetMode.dataAssetsRequired,
       glesLanguageVersion: 300,
     );
   });

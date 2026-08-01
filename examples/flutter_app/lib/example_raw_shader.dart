@@ -49,7 +49,8 @@ class _ExampleRawShaderState extends State<ExampleRawShader> {
 
   Future<void> _load() async {
     final library = await gpu.loadShaderLibraryAsync(
-      'build/shaderbundles/example.shaderbundle',
+      'packages/example_app/flutter_gpu_shaders/shaderbundles/'
+      'example.shaderbundle',
     );
     final vertexShader = library?['RippleVertex'];
     final fragmentShader = library?['RippleFragment'];
