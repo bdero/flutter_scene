@@ -129,6 +129,19 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     ),
   );
 
+  /// Rendered poses of every player this client does not own, fed to the
+  /// prediction world as collision proxies.
+  Iterable<(Object, vm.Vector3)> _remotePlayerPoses() {
+    final replication = _replication;
+    if (replication == null) return const [];
+    return [
+      for (final other in replication.replicas.whereType<NetPlayer>())
+        if (other.owner != replication.localPeerId && other.id != null)
+          if (replication.nodeFor(other.id!) case final node?)
+            (other.id!, node.localTransform.getTranslation()),
+    ];
+  }
+
   /// Whether the physics backend on this platform can rollback-predict.
   /// True on native; on the web it needs a wasm module carrying the
   /// snapshot exports (an older published module degrades to interpolation).
@@ -165,9 +178,17 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         // the world back to the acked tick and replay unacked inputs. Remote
         // players stay interpolated. When prediction is off the local player
         // interpolates too, so it visibly lags input under latency.
+        // Remote players render ~2.5 ticks in the past; a tighter buffer
+        // narrows the visible gap between a predicted self and the
+        // interpolated ball it collides with.
+        interpolationDelay: const Duration(milliseconds: 75),
         localPrediction: (replica) {
           if (!_predict || !canPredict) return null;
-          final controller = _PlayerController(_pressed, replica as NetPlayer);
+          final controller = _PlayerController(
+            _pressed,
+            replica as NetPlayer,
+            _remotePlayerPoses,
+          );
           _clientWorlds.add(controller.simulation);
           return controller;
         },
@@ -433,9 +454,11 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
 
 /// Samples keyboard movement and drives a client-side copy of the arena
 /// world, the same physics the server runs, so the local ball is
-/// rollback-predicted and reconciled.
+/// rollback-predicted and reconciled. Remote players are mirrored in as
+/// kinematic proxies at their rendered poses, so a bump responds locally
+/// against what this player sees instead of waiting a round trip.
 class _PlayerController implements PredictedPhysicsController {
-  _PlayerController(this._pressed, this.player)
+  _PlayerController(this._pressed, this.player, this._remotePoses)
     : simulation = buildArenaWorld() {
     bodyHandle = createPlayerBody(simulation, player.positionVector);
   }
@@ -448,6 +471,62 @@ class _PlayerController implements PredictedPhysicsController {
 
   @override
   late final int bodyHandle;
+
+  /// Rendered (interpolated) poses of the other players, keyed by a stable
+  /// per-player identity.
+  final Iterable<(Object, vm.Vector3)> Function() _remotePoses;
+
+  final Map<Object, int> _proxies = {};
+
+  /// Every proxy handle ever created. A rollback restore resurrects
+  /// whatever proxies the retained snapshot held, so a rebuild destroys
+  /// all of these (dead handles no-op) before recreating the current set.
+  /// TODO(prediction): replace with a body-aliveness or lifecycle API on
+  /// the seam instead of this bookkeeping.
+  final List<int> _everCreated = [];
+  bool _proxiesStale = false;
+
+  @override
+  void onWorldRestored() => _proxiesStale = true;
+
+  // Mirrors the other players as kinematic proxies at their rendered
+  // poses. Runs on fresh ticks only; world snapshots retain the proxies,
+  // so rollback replays collide against their historical poses.
+  void _syncProxies() {
+    if (_proxiesStale) {
+      _proxiesStale = false;
+      for (final handle in _everCreated) {
+        simulation.destroyBody(handle);
+      }
+      _proxies.clear();
+    }
+    final present = <Object>{};
+    for (final (id, position) in _remotePoses()) {
+      present.add(id);
+      var proxy = _proxies[id];
+      if (proxy == null) {
+        proxy = createPlayerProxy(simulation, position);
+        _proxies[id] = proxy;
+        _everCreated.add(proxy);
+        if (_everCreated.length > 256) _everCreated.removeAt(0);
+      }
+      simulation.setBodyKinematicTargetPose(proxy, position, _noRotation);
+    }
+    // A leaver's proxy parks out of reach; destroying it here would let an
+    // older snapshot resurrect it unmanaged.
+    for (final entry in _proxies.entries) {
+      if (!present.contains(entry.key)) {
+        simulation.setBodyKinematicTargetPose(
+          entry.value,
+          _parked,
+          _noRotation,
+        );
+      }
+    }
+  }
+
+  static final vm.Quaternion _noRotation = vm.Quaternion.identity();
+  static final vm.Vector3 _parked = vm.Vector3(0, -100, 0);
 
   @override
   void applyInput(Uint8List input, double dt) =>
@@ -479,6 +558,7 @@ class _PlayerController implements PredictedPhysicsController {
 
   @override
   Uint8List sampleInput() {
+    _syncProxies();
     // Screen-right is world -X under the fixed overhead camera, so negate the
     // strafe axis to keep A left and D right.
     final strafe = -_axis(

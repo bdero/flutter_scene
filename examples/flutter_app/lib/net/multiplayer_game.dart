@@ -126,6 +126,22 @@ int createPlayerBody(PhysicsSimulation world, Vector3 position) {
   return body;
 }
 
+/// Creates a kinematic stand-in for a remote player ball at [position], so
+/// a predicting client collides locally with the players it renders instead
+/// of passing through them until the server correction arrives.
+int createPlayerProxy(PhysicsSimulation world, Vector3 position) {
+  final body = world.createBody(
+    target: SimplePoseTarget(translation: position),
+    type: BodyType.kinematic,
+  );
+  world.createColliders(
+    body,
+    const SphereShape(radius: playerRadius),
+    material: const PhysicsMaterial(friction: 0.8, restitution: 0.3),
+  );
+  return body;
+}
+
 /// Applies one tick of movement input to a player ball, a horizontal push
 /// the next step integrates. Shared by the authoritative server tick and
 /// client prediction so the two simulate identically.
