@@ -66,14 +66,21 @@ final class FmatRuntimeCompiler {
   FmatRuntimeCompiler({
     required this.impellerc,
     required this.includeDirectories,
+    Uri? shaderLibDirectory,
     Directory? cacheDirectory,
-  }) : cacheDirectory =
+  }) : shaderLibDirectory =
+           shaderLibDirectory ?? impellerc.resolve('./shader_lib'),
+       cacheDirectory =
            cacheDirectory ??
            Directory.systemTemp.createTempSync('fmat_runtime_');
 
-  /// The impellerc binary. Its sibling `shader_lib/` directory joins the
-  /// include path, matching the layout it ships in.
+  /// The impellerc binary.
   final Uri impellerc;
+
+  /// impellerc's `shader_lib/` include directory. Defaults to the binary's
+  /// sibling (the SDK cache layout); a packaged editor keeps it in the
+  /// bundle's data directory instead.
+  final Uri shaderLibDirectory;
 
   /// Extra include directories (flutter_scene's `shaders/`, so the generated
   /// GLSL's framework includes resolve).
@@ -93,7 +100,10 @@ final class FmatRuntimeCompiler {
     final compiled = compileFmat(source, fileName: fileName);
     final sourceHash = contentHash(utf8.encode(source));
     final key = contentHash(
-      utf8.encode('$_toolStamp\n${includeDirectories.join(' ')}\n$sourceHash'),
+      utf8.encode(
+        '$_toolStamp\n$shaderLibDirectory\n'
+        '${includeDirectories.join(' ')}\n$sourceHash',
+      ),
     );
     final entryDir = Directory('${cacheDirectory.path}/$key');
     final cached = _readCache(entryDir, sourceHash, compiled.material.name);
@@ -140,7 +150,7 @@ final class FmatRuntimeCompiler {
       outputBundleFilePath: bundleFile.uri,
       manifestJson: jsonEncode(manifest),
       manifestDirectory: genDir.uri,
-      shaderLibDirectory: impellerc.resolve('./shader_lib'),
+      shaderLibDirectory: shaderLibDirectory,
       includeDirectories: includeDirectories,
       depfilePath: supportsDepfile ? depfile.uri : null,
       // Match the engine bundle's GLES dialect (GLSL ES 3.00); the framework

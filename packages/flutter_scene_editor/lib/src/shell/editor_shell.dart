@@ -208,6 +208,35 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     ..._dockLayout.hidden,
   }.where(_extraViewportPattern.hasMatch).toList()..sort();
 
+  // Shows what the .fmat compiler resolved to (which impellerc, where the
+  // framework shaders came from, the packaged Flutter revision), or why it
+  // could not resolve. The library resolves lazily, so before any fmat has
+  // loaded there is nothing to report yet.
+  void _showToolchain() {
+    final library = _ctrl.fmatLibrary;
+    final toolchain = library.toolchain;
+    final message =
+        toolchain?.describe() ??
+        library.toolchainError ??
+        'Not resolved yet; the toolchain resolves on the first .fmat load.';
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Shader toolchain', style: TextStyle(fontSize: 14)),
+        content: SelectableText(
+          message,
+          style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _newViewport() {
     final existing = _extraViewportIds.toSet();
     var n = 2;
@@ -455,6 +484,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
                   onNewViewport: _newViewport,
+                  onShowToolchain: _showToolchain,
                   leadingInset: widget.menuBarLeadingInset,
                   onDragStart: widget.onMenuBarDragStart,
                 ),
@@ -788,6 +818,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.isPanelVisible,
     required this.onTogglePanel,
     required this.onNewViewport,
+    required this.onShowToolchain,
     required this.leadingInset,
     this.onDragStart,
   });
@@ -813,6 +844,7 @@ class _EditorMenuBar extends StatelessWidget {
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
   final VoidCallback onNewViewport;
+  final VoidCallback onShowToolchain;
   final double leadingInset;
   final VoidCallback? onDragStart;
 
@@ -905,6 +937,7 @@ class _EditorMenuBar extends StatelessWidget {
                     checked: isPanelVisible(entry.key),
                     onTap: () => onTogglePanel(entry.key),
                   ),
+                _MenuItem(label: 'Shader Toolchain…', onTap: onShowToolchain),
               ],
             ),
             _MenuButton(label: 'Commands', onTap: onPaletteOpen),
