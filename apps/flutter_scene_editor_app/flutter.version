@@ -1,0 +1,5 @@
+# The flutter/flutter revision editor distributions build against. The
+# release workflow clones this exact revision, so the packaged engine, the
+# bundled impellerc, and the shader bundle format stay in lockstep by
+# construction. Update deliberately (build + smoke locally first).
+c83f80b2367baf0560fd9c73553a10b2fc51df5b

@@ -17,22 +17,81 @@ import 'package:flutter_scene/src/fmat/fmat_bytes_library.dart';
 import 'package:flutter_scene/src/fmat/runtime_compile.dart';
 import 'package:scene/scene.dart' show AssetRef;
 
-/// The resolved offline shader compiler plus the include directory the
-/// generated GLSL's framework includes resolve against.
+/// The resolved offline shader compiler and the directories the generated
+/// GLSL's includes resolve against, plus provenance for diagnostics.
 final class FmatToolchain {
-  FmatToolchain({required this.impellerc, required this.frameworkShaders});
+  FmatToolchain({
+    required this.impellerc,
+    required this.frameworkShaders,
+    required this.source,
+    this.shaderLib,
+    this.manifest,
+  });
 
-  /// The impellerc binary (its sibling `shader_lib/` joins the include path).
+  /// The impellerc binary.
   final Uri impellerc;
 
   /// flutter_scene's `shaders/` directory.
   final Uri frameworkShaders;
+
+  /// impellerc's `shader_lib/` include directory, or null for the binary's
+  /// sibling (the SDK cache layout).
+  final Uri? shaderLib;
+
+  /// Where the toolchain came from (`bundled`, `IMPELLERC`, `FLUTTER_ROOT`,
+  /// or `PATH`), for the diagnostics surface.
+  final String source;
+
+  /// The packaged bundle's `tool_manifest.json` contents (the Flutter
+  /// revision the tools were built from), or null outside a packaged build.
+  final Map<String, Object?>? manifest;
+
+  /// A short human-readable description for the diagnostics surface.
+  String describe() {
+    final buffer = StringBuffer()
+      ..writeln('impellerc ($source): ${impellerc.toFilePath()}')
+      ..writeln('framework shaders: ${frameworkShaders.toFilePath()}');
+    final info = manifest;
+    if (info != null) {
+      buffer.writeln(
+        'built from Flutter ${info['flutterVersion']} '
+        '(engine ${info['engineRevision']})',
+      );
+    }
+    return buffer.toString().trimRight();
+  }
 }
 
-/// Locates the impellerc the editor compiles `.fmat` sources with, trying the
-/// `IMPELLERC` environment variable, a tool bundled beside the executable,
-/// the Flutter SDK cache under `FLUTTER_ROOT`, then the `flutter` command on
-/// PATH. Throws a [StateError] naming every location tried.
+// The packaged bundle's tool and data locations, resolved relative to the
+// executable. macOS keeps the tool in Contents/Helpers and the data in
+// Contents/Resources; Linux and Windows use bin/ and data/ next to the
+// binary (the layout tool/package_editor.dart produces).
+({Uri impellerc, String dataDir})? _bundledLayout() {
+  final exeDir = File(Platform.resolvedExecutable).parent.path;
+  final exeName = Platform.isWindows ? 'impellerc.exe' : 'impellerc';
+  final candidates = [
+    (tool: '$exeDir/../Helpers/$exeName', data: '$exeDir/../Resources'),
+    (tool: '$exeDir/bin/$exeName', data: '$exeDir/data'),
+  ];
+  for (final candidate in candidates) {
+    if (File(candidate.tool).existsSync() &&
+        Directory('${candidate.data}/flutter_scene_shaders').existsSync()) {
+      return (
+        impellerc: File(candidate.tool).absolute.uri,
+        dataDir: Directory(candidate.data).absolute.path,
+      );
+    }
+  }
+  return null;
+}
+
+/// Locates the toolchain the editor compiles `.fmat` sources with.
+///
+/// A packaged bundle (impellerc, shader_lib, and the framework shaders laid
+/// out by the packaging script) wins after an explicit `IMPELLERC` override;
+/// a dev-mode process falls back to the Flutter SDK cache (via `FLUTTER_ROOT`
+/// or the `flutter` on PATH) and the workspace's package config. Throws a
+/// [StateError] naming every location tried.
 Future<FmatToolchain> findFmatToolchain() async {
   final tried = <String>[];
   final exeName = Platform.isWindows ? 'impellerc.exe' : 'impellerc';
@@ -59,20 +118,24 @@ Future<FmatToolchain> findFmatToolchain() async {
     return null;
   }
 
+  final bundled = _bundledLayout();
+
   Uri? impellerc;
-
+  String source = 'bundled';
   final env = Platform.environment['IMPELLERC'];
-  if (env != null && env.isNotEmpty) impellerc = probe(env);
-
-  // TODO(editor-dist): read the bundle's tool_manifest.json and cover the
-  // per-platform distribution layouts once packaged builds ship the tool.
-  final exeDir = File(Platform.resolvedExecutable).parent.path;
-  impellerc ??= probe('$exeDir/$exeName');
-  impellerc ??= probe('$exeDir/../Helpers/$exeName');
+  if (env != null && env.isNotEmpty) {
+    impellerc = probe(env);
+    source = 'IMPELLERC';
+  }
+  if (impellerc == null && bundled != null) {
+    impellerc = bundled.impellerc;
+    source = 'bundled';
+  }
 
   final flutterRoot = Platform.environment['FLUTTER_ROOT'];
   if (impellerc == null && flutterRoot != null && flutterRoot.isNotEmpty) {
     impellerc = probeSdkRoot(flutterRoot);
+    source = 'FLUTTER_ROOT';
   }
 
   if (impellerc == null) {
@@ -86,6 +149,7 @@ Future<FmatToolchain> findFmatToolchain() async {
           // <flutter root>/bin/flutter, following a PATH symlink.
           final script = File(path).resolveSymbolicLinksSync();
           impellerc = probeSdkRoot(File(script).parent.parent.path);
+          source = 'PATH';
         } on FileSystemException {
           tried.add('$path (unresolvable symlink)');
         }
@@ -103,7 +167,7 @@ Future<FmatToolchain> findFmatToolchain() async {
     );
   }
 
-  final frameworkShaders = _findFrameworkShaders();
+  final frameworkShaders = _findFrameworkShaders(bundled?.dataDir);
   if (frameworkShaders == null) {
     throw StateError(
       'The flutter_scene framework shaders could not be resolved, so .fmat '
@@ -111,17 +175,38 @@ Future<FmatToolchain> findFmatToolchain() async {
       "flutter_scene's shaders directory.",
     );
   }
-  return FmatToolchain(impellerc: impellerc, frameworkShaders: frameworkShaders);
+
+  Uri? shaderLib;
+  Map<String, Object?>? manifest;
+  if (bundled != null) {
+    final bundledShaderLib = Directory('${bundled.dataDir}/shader_lib');
+    if (bundledShaderLib.existsSync()) shaderLib = bundledShaderLib.uri;
+    final manifestFile = File('${bundled.dataDir}/tool_manifest.json');
+    if (manifestFile.existsSync()) {
+      try {
+        manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
+            .cast<String, Object?>();
+      } catch (_) {
+        // A malformed manifest only degrades diagnostics.
+      }
+    }
+  }
+
+  return FmatToolchain(
+    impellerc: impellerc,
+    frameworkShaders: frameworkShaders,
+    shaderLib: shaderLib,
+    source: source,
+    manifest: manifest,
+  );
 }
 
 // Locates flutter_scene's shaders/ directory (the framework GLSL the
-// generated material shaders include). Flutter apps cannot resolve package
-// URIs at runtime, so this reads the package_config.json a dev-mode process
+// generated material shaders include). A packaged bundle ships them under
+// its data directory; a dev-mode process reads the package_config.json it
 // can reach by walking up from the working directory (flutter run inherits
 // the project directory).
-// TODO(editor-dist): materialize the framework GLSL from bundled assets for
-// packaged builds, which have no package config on disk.
-Uri? _findFrameworkShaders() {
+Uri? _findFrameworkShaders(String? bundledDataDir) {
   bool valid(Directory dir) =>
       File('${dir.path}/pbr.glsl').existsSync() &&
       File('${dir.path}/material_inputs.glsl').existsSync();
@@ -132,14 +217,18 @@ Uri? _findFrameworkShaders() {
     if (valid(dir)) return dir.absolute.uri;
   }
 
+  if (bundledDataDir != null) {
+    final dir = Directory('$bundledDataDir/flutter_scene_shaders');
+    if (valid(dir)) return dir.absolute.uri;
+  }
+
   var probe = Directory.current.absolute;
   for (var depth = 0; depth < 8; depth++) {
     final config = File('${probe.path}/.dart_tool/package_config.json');
     if (config.existsSync()) {
       try {
-        final json =
-            (jsonDecode(config.readAsStringSync()) as Map)
-                .cast<String, Object?>();
+        final json = (jsonDecode(config.readAsStringSync()) as Map)
+            .cast<String, Object?>();
         for (final entry in (json['packages'] as List? ?? const [])) {
           final package = (entry as Map).cast<String, Object?>();
           if (package['name'] != 'flutter_scene') continue;
@@ -203,12 +292,19 @@ class EditorFmatLibrary {
   final Future<void> Function()? onStructuralChange;
 
   FmatRuntimeCompiler? _compiler;
+  FmatToolchain? _toolchain;
   String? _toolchainError;
+
+  /// The resolved toolchain, or null before the first fmat load (or when
+  /// resolution failed; see [toolchainError]).
+  FmatToolchain? get toolchain => _toolchain;
+
+  /// Why toolchain resolution failed, or null.
+  String? get toolchainError => _toolchainError;
 
   final Map<String, _FmatEntry> _entries = {};
   final Map<String, Future<_FmatEntry?>> _pending = {};
-  final Map<String, StreamSubscription<FileSystemEvent>> _directoryWatches =
-      {};
+  final Map<String, StreamSubscription<FileSystemEvent>> _directoryWatches = {};
   // Watched file -> the .fmat sources to recompile when it changes (a shared
   // include maps to many; a source maps to itself).
   final Map<String, Set<String>> _fmatsByWatchedFile = {};
@@ -219,8 +315,7 @@ class EditorFmatLibrary {
   /// The last compile/load error for [key], or the toolchain error, or null.
   String? errorForKey(String key) {
     final path = resolvePath(key);
-    return (path == null ? null : _entries[path]?.lastError) ??
-        _toolchainError;
+    return (path == null ? null : _entries[path]?.lastError) ?? _toolchainError;
   }
 
   /// The loaded sidecar metadata for [key] (parameter and sampler schemas for
@@ -297,9 +392,8 @@ class EditorFmatLibrary {
           result.sidecar,
         )
         ..entryName = result.entryName
-        ..metadata =
-            (result.sidecar[result.entryName] as Map?)
-                ?.cast<String, Object?>()
+        ..metadata = (result.sidecar[result.entryName] as Map?)
+            ?.cast<String, Object?>()
         ..lastError = null;
       _watch(path, result.includeDependencies);
       return entry;
@@ -319,12 +413,14 @@ class EditorFmatLibrary {
     if (_toolchainError != null) return null;
     try {
       final toolchain = await findFmatToolchain();
+      _toolchain = toolchain;
       final cacheDir = Directory(
         '${Directory.systemTemp.path}/flutter_scene_editor/fmat_cache',
       )..createSync(recursive: true);
       _compiler = FmatRuntimeCompiler(
         impellerc: toolchain.impellerc,
         includeDirectories: [toolchain.frameworkShaders],
+        shaderLibDirectory: toolchain.shaderLib,
         cacheDirectory: cacheDir,
       );
       return _compiler;
@@ -387,8 +483,11 @@ class EditorFmatLibrary {
     try {
       source = File(path).readAsStringSync();
     } catch (e) {
-      _fail(entry, 'Could not read .fmat "$path"; keeping the last good '
-          'shaders ($e)');
+      _fail(
+        entry,
+        'Could not read .fmat "$path"; keeping the last good '
+        'shaders ($e)',
+      );
       return;
     }
     final FmatCompileResult result;
@@ -409,9 +508,8 @@ class EditorFmatLibrary {
           result.sidecar,
         )
         ..entryName = result.entryName
-        ..metadata =
-            (result.sidecar[result.entryName] as Map?)
-                ?.cast<String, Object?>()
+        ..metadata = (result.sidecar[result.entryName] as Map?)
+            ?.cast<String, Object?>()
         ..lastError = null;
       _watch(path, result.includeDependencies);
       await onStructuralChange?.call();
@@ -423,8 +521,8 @@ class EditorFmatLibrary {
       return;
     }
     entry
-      ..metadata =
-          (result.sidecar[result.entryName] as Map?)?.cast<String, Object?>()
+      ..metadata = (result.sidecar[result.entryName] as Map?)
+          ?.cast<String, Object?>()
       ..lastError = null;
     _watch(path, result.includeDependencies);
     onReload?.call();
