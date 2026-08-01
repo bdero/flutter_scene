@@ -79,7 +79,7 @@ String textureDataAssetName(String relativeTexturePath) =>
 ///       buildInput: config,
 ///       buildOutput: output,
 ///       textures: ['assets/shadow_plane.png'],
-///       assetMode: TextureAssetMode.dataAssetsIfAvailable,
+///       assetMode: TextureAssetMode.dataAssetsRequired,
 ///     );
 ///   });
 /// }

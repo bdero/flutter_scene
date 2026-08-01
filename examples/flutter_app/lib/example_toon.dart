@@ -5,7 +5,7 @@
 //   1. Author a fragment shader (shaders/example_toon.frag) that
 //      consumes the engine's standard vertex outputs.
 //   2. Compile it offline through `flutter_gpu_shaders` build hook
-//      into `build/shaderbundles/example.shaderbundle`.
+//      and register the generated bundle as a DataAsset.
 //   3. Load the bundle at runtime and pull out the fragment shader.
 //   4. Construct a ShaderMaterial, set its uniform block + texture by
 //      name, attach it to the model's mesh primitives.
@@ -60,7 +60,8 @@ class _ExampleToonState extends State<ExampleToon> {
     // Use the async loader: shader bundles can't be read synchronously on
     // web (gpu.ShaderLibrary.fromAsset throws there).
     final shaderLibrary = await gpu.loadShaderLibraryAsync(
-      'build/shaderbundles/example.shaderbundle',
+      'packages/example_app/flutter_gpu_shaders/shaderbundles/'
+      'example.shaderbundle',
     );
     final toonShader = shaderLibrary?['ToonFragment'];
     if (toonShader == null) {

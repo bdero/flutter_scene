@@ -6,10 +6,8 @@
 // Demonstrates the `.fmat` workflow end-to-end:
 //   1. Declare typed parameters and a small `Surface()` function in
 //      assets/toon.fmat (no hand-packed std140 uniform block).
-//   2. Compile it offline with the `buildMaterials` build hook into
-//      `build/shaderbundles/materials.shaderbundle` plus a parameter sidecar
-//      `materials.fmat.json`.
-//   3. Load the bundle + sidecar at runtime and build a PreprocessedMaterial.
+//   2. Compile it with the `buildMaterials` hook into managed DataAssets.
+//   3. Load it by source path as a PreprocessedMaterial.
 //   4. Set parameters by name through `material.parameters`; the setters are
 //      type-checked and the std140 offsets come from shader reflection, so
 //      there is no manual packing and a wrong-typed value throws.

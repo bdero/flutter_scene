@@ -18,7 +18,7 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       inputFilePaths: corpus,
-      assetMode: SceneAssetMode.dataAssetsIfAvailable,
+      assetMode: SceneAssetMode.dataAssetsRequired,
       // Store imported textures as compressed KTX2 block payloads so the
       // import -> compress -> render path is exercised in the app (dash's
       // textures shrink the most).
@@ -31,25 +31,25 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       textures: ['assets/ground_grid.png'],
-      assetMode: TextureAssetMode.dataAssetsIfAvailable,
+      assetMode: TextureAssetMode.dataAssetsRequired,
     );
     await buildShaderBundleJson(
       buildInput: config,
       buildOutput: output,
       manifestFileName: 'shaders/example.shaderbundle.json',
+      assetMode: ShaderBundleAssetMode.dataAssetsRequired,
       // Match the engine bundle's GLES dialect (see the flutter_scene hook).
       glesLanguageVersion: 300,
     );
     // Compile .fmat custom materials into a bundle plus a parameter sidecar,
     // consumed by the "Toon (.fmat)" example through loadFmatMaterial. With no
     // explicit list, assets/**/*.fmat is auto-discovered (assets/toon.fmat
-    // here). dataAssetsIfAvailable registers the bundle, sidecar, and index as
-    // DataAssets (so materials resolve by source path and hot reload), falling
-    // back to the legacy build/shaderbundles/* files otherwise.
+    // here). The generated bundle, sidecar, and index are DataAssets, so
+    // materials resolve by source path and hot reload without pubspec entries.
     await buildMaterials(
       buildInput: config,
       buildOutput: output,
-      assetMode: MaterialAssetMode.dataAssetsIfAvailable,
+      assetMode: MaterialAssetMode.dataAssetsRequired,
     );
   });
 }

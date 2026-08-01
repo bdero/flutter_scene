@@ -25,10 +25,11 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 ///    standard vertex outputs and declare its own uniform blocks /
 ///    samplers for any parameters. See `MATERIALS.md` for the full
 ///    contract.
-/// 2. Compile the shader through the `flutter_gpu_shaders` build
-///    hook into a `.shaderbundle` packaged with your app.
+/// 2. Compile the shader through the `flutter_gpu_shaders` build hook with
+///    `ShaderBundleAssetMode.dataAssetsRequired`. The generated
+///    `.shaderbundle` is a managed DataAsset, not a source file.
 /// 3. Load the bundle at runtime with
-///    `await gpu.loadShaderLibraryAsync('path/to/your.shaderbundle')` and
+///    `await gpu.loadShaderLibraryAsync('packages/<package>/flutter_gpu_shaders/shaderbundles/<name>.shaderbundle')` and
 ///    pull out the fragment shader entry.
 /// 4. Construct a `ShaderMaterial` pointing at the shader, populate
 ///    its uniform blocks and textures by name, and attach it to a

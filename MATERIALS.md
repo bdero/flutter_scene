@@ -23,6 +23,18 @@ here.
 What is built and what is still missing is in [Current state and what's
 next](#current-state-and-whats-next).
 
+## Generated shader assets
+
+Keep shader sources, `.fmat` files, and `.shaderbundle.json` source manifests in
+version control. A `.shaderbundle.json` file only names shader entry points and
+their source files. It is portable input to the build hook.
+
+The generated `.shaderbundle` is different. It is compiled by the `impellerc`
+that ships with the active Flutter engine and must be rebuilt by that same
+toolchain. Register it as a DataAsset from `hook/build.dart`. Do not commit it,
+copy it into an assets directory, or list it under `flutter.assets` in
+`pubspec.yaml`.
+
 ---
 
 # The `.fmat` format
@@ -64,7 +76,7 @@ fragment {
 }
 ```
 
-For the DataAssets workflow, install the build hook once from your app root:
+Install the DataAssets build hook once from your app root.
 
 ```sh
 dart run flutter_scene:init
@@ -92,70 +104,14 @@ toon.parameters
 node.mesh!.primitives[0].material = toon;
 ```
 
-No generated files need to be listed in `flutter.assets` for the DataAssets
-workflow. Materials loaded this way **hot reload**: render the scene with a
-`SceneView` and editing `assets/toon.fmat` updates the running app in place
+No generated files belong in `flutter.assets`. Materials loaded this way **hot
+reload**. Render the scene with a `SceneView` and editing `assets/toon.fmat`
+updates the running app in place
 (see [Hot reload](#hot-reload)).
 
-For the legacy workflow, compile it from your app's `hook/build.dart`:
-
-```dart
-import 'package:flutter_scene/build_hooks.dart';
-import 'package:hooks/hooks.dart';
-
-void main(List<String> args) {
-  build(args, (config, output) async {
-    await buildMaterials(
-      buildInput: config,
-      buildOutput: output,
-      materials: ['assets/toon.fmat'],
-    );
-  });
-}
-```
-
-Declare the outputs as assets in `pubspec.yaml` (a `.shaderbundle` plus a
-`.fmat.json` parameter sidecar):
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  flutter_scene: ^0.15.1
-  hooks: ^2.0.0
-
-flutter:
-  assets:
-    - build/shaderbundles/materials.shaderbundle
-    - build/shaderbundles/materials.fmat.json
-```
-
-Then construct and use it at runtime:
-
-```dart
-import 'dart:convert';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_scene/gpu.dart' as gpu;
-import 'package:flutter_scene/scene.dart';
-
-final library = gpu.ShaderLibrary.fromAsset(
-  'build/shaderbundles/materials.shaderbundle',
-)!;
-final sidecar = (jsonDecode(
-  await rootBundle.loadString('build/shaderbundles/materials.fmat.json'),
-) as Map).cast<String, Object?>();
-
-final toon = PreprocessedMaterial(
-  fragmentShader: library['Toon']!,
-  metadata: (sidecar['Toon'] as Map).cast<String, Object?>(),
-);
-toon.parameters
-  ..setColor('base_color', const Color(0xFFE0A030))
-  ..setInt('band_count', 4)
-  ..setTexture('base_color_texture', myTexture);
-
-node.mesh!.primitives[0].material = toon;
-```
+`MaterialAssetMode.legacyOnly` remains available only for older Flutter
+toolchains without DataAssets. It requires manual `flutter.assets` entries and
+does not provide the managed source-path loading and hot-reload workflow.
 
 The bundle entry name and the sidecar key are the material's `name`
 (`"Toon"` above). One `buildMaterials` call can compile several `.fmat` files
@@ -498,39 +454,39 @@ visible in the fragment stage; the world-space outputs already encode it.
 # Building: the `buildMaterials` hook
 
 `buildMaterials` (from `package:flutter_scene/build_hooks.dart`) preprocesses
-each `.fmat`, emits GLSL, compiles it through `impellerc`, and writes two outputs
-under `build/shaderbundles/`:
+each `.fmat`, emits GLSL, compiles it through `impellerc`, and generates these
+managed outputs:
 
 - `<bundleName>.shaderbundle` — the compiled Flutter GPU shader bundle.
 - `<bundleName>.fmat.json` — the parameter sidecar the runtime needs.
+- `<bundleName>.index.json` — the source-path index used by
+  `loadFmatMaterial`.
 
 `bundleName` defaults to `materials`. If `materials` is omitted,
 `buildMaterials` discovers `assets/**/*.fmat` automatically; pass
 `discoveryRoot` to search a directory other than `assets/`.
 
-The default `MaterialAssetMode.legacyOnly` preserves the historical behavior:
-list the `.shaderbundle` and `.fmat.json` files as assets. With
-`MaterialAssetMode.dataAssetsIfAvailable`, the hook registers generated files as
-DataAssets when the toolchain supports them and otherwise falls back to legacy
-output. With `MaterialAssetMode.dataAssetsRequired`, the hook fails early with
-setup guidance if DataAssets are unavailable; this is what
-`dart run flutter_scene:init` installs.
+Use `MaterialAssetMode.dataAssetsRequired`, which fails early with setup
+guidance when DataAssets are unavailable. This is what
+`dart run flutter_scene:init` installs. `dataAssetsIfAvailable` and
+`legacyOnly` exist for compatibility with older toolchains and should not be
+used by new applications.
 
 The generated shaders `#include` flutter_scene's framework GLSL; the hook puts
 that directory on `impellerc`'s include path for you, so nothing is copied into
 your project.
 
-You can call `buildMaterials` alongside `buildModels` and
+You can call `buildMaterials` alongside `buildScenes` and
 `buildShaderBundleJson` in the same hook.
 
 ---
 
 # Runtime: `PreprocessedMaterial` and `MaterialParameters`
 
-Load the bundle (`gpu.ShaderLibrary.fromAsset`, or `loadShaderLibraryAsync` on
-web) and the sidecar (`rootBundle.loadString` + `jsonDecode`), then construct a
-`PreprocessedMaterial` per material entry (see the quick start). Set its
-parameters through `material.parameters`, a `MaterialParameters`.
+Load each material by its checked-in source path with `loadFmatMaterial`, as in
+the quick start. The registry resolves its generated bundle, sidecar, and entry
+from the DataAsset index. Set its parameters through `material.parameters`, a
+`MaterialParameters`.
 
 `MaterialParameters` is type-checked and name-addressed. You never compute std140
 offsets: parameter types come from the sidecar, byte offsets come from the
@@ -585,11 +541,32 @@ void main() {
 }
 ```
 
-Add it to a `flutter_gpu_shaders` manifest, compile it with
-`buildShaderBundleJson` (add a `flutter_gpu_shaders: ^0.4.5` dependency), then:
+Add it to a checked-in `flutter_gpu_shaders` source manifest and compile it as a
+required DataAsset from `hook/build.dart`.
 
 ```dart
-final library = gpu.ShaderLibrary.fromAsset('build/shaderbundles/my_bundle.shaderbundle')!;
+import 'package:flutter_gpu_shaders/build.dart';
+import 'package:hooks/hooks.dart';
+
+void main(List<String> args) {
+  build(args, (config, output) async {
+    await buildShaderBundleJson(
+      buildInput: config,
+      buildOutput: output,
+      manifestFileName: 'shaders/my_bundle.shaderbundle.json',
+      assetMode: ShaderBundleAssetMode.dataAssetsRequired,
+    );
+  });
+}
+```
+
+Load the generated DataAsset using its Flutter asset key.
+
+```dart
+final library = (await gpu.loadShaderLibraryAsync(
+  'packages/my_app/flutter_gpu_shaders/shaderbundles/'
+  'my_bundle.shaderbundle',
+))!;
 final material = ShaderMaterial(fragmentShader: library['VertexColorFragment']!);
 material.setUniformBlockFromFloats('FragInfo', [1.0, 0.8, 0.4, 1.0]); // tint
 node.mesh!.primitives[0].material = material;
@@ -800,11 +777,12 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
 
 # Troubleshooting
 
-**`gpu.ShaderLibrary.fromAsset` returns null.** The bundle is not in your app's
-assets. Check that `build/shaderbundles/<name>.shaderbundle` (and, for `.fmat`,
-the `.fmat.json` sidecar) are under `flutter.assets`, and that your
-`hook/build.dart` ran. If a shader edit doesn't take effect, the build hook's
-input-hash cache may be stale; follow CLAUDE.md Trap #3's reset recipe.
+**`loadShaderLibraryAsync` returns null.** Confirm that the hook uses
+`ShaderBundleAssetMode.dataAssetsRequired`, DataAssets are enabled, and the key
+uses `packages/<app_package>/flutter_gpu_shaders/shaderbundles/<name>.shaderbundle`.
+For `.fmat`, use `loadFmatMaterial` with the source `.fmat` path instead of
+loading generated files directly. If a shader edit does not take effect, clear
+the app's `.dart_tool` and `build` directories and rebuild.
 
 **A `MaterialParameters` setter throws.** You used an unknown parameter name or a
 type that doesn't match the declared type. The message names the parameter and

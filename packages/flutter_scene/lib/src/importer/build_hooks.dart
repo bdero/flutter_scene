@@ -93,7 +93,7 @@ List<String> discoverSceneSources(
 ///     buildScenes(
 ///       buildInput: config,
 ///       buildOutput: output,
-///       assetMode: SceneAssetMode.dataAssetsIfAvailable,
+///       assetMode: SceneAssetMode.dataAssetsRequired,
 ///     );
 ///   });
 /// }

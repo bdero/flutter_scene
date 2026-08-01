@@ -10,7 +10,9 @@
 /// ```dart
 /// import 'package:flutter_scene/gpu.dart' as gpu;
 ///
-/// final library = await gpu.loadShaderLibraryAsync('my.shaderbundle');
+/// final library = await gpu.loadShaderLibraryAsync(
+///   'packages/my_app/flutter_gpu_shaders/shaderbundles/my.shaderbundle',
+/// );
 /// final material = ShaderMaterial(fragmentShader: library!['MyFragment']!);
 /// ```
 library;

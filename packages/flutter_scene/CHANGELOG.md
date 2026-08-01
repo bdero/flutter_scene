@@ -7,6 +7,7 @@
 * Debug builds check a custom material's uniform blocks against the shader's reflection, so a misspelled or optimized-out block name and a buffer too small for its std140 layout raise named exceptions instead of failing at bind time or reading past the end.
 * Debug builds check a caller-declared vertex layout against the buffers actually bound, so a slot count mismatch raises instead of feeding the pipeline undefined vertex data.
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
+* Made first-party shader/material hooks and examples DataAssets-only, with migration guidance for legacy assets.
 * Added `Node.castsShadows` for excluding individual meshes from shadow passes.
 * Added `GeometryBufferArena` and optional CPU-data release for lower-overhead immutable mesh batches.
 * Added `InstancedMesh.updateInstanceTransforms` for allocation-light bulk motion.

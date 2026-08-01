@@ -8,6 +8,7 @@ void main(List<String> args) {
       buildInput: config,
       buildOutput: output,
       materials: ['assets/custom_material.fmat', 'assets/noise_parity.fmat'],
+      assetMode: MaterialAssetMode.dataAssetsRequired,
     );
     // The hand-written vertex/fragment pair the raw_shader_pair scene draws
     // with. Compiled here so every backend's compiler sees it.
