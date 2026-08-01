@@ -353,7 +353,7 @@ class GeometryResource extends ResourceSpec {
 /// {@category Documents}
 class TextureResource extends ResourceSpec {
   /// Creates a texture from an embedded [payload] or an external [asset].
-  TextureResource(super.id, {this.payload, this.asset})
+  TextureResource(super.id, {this.payload, this.asset, this.content = 'color'})
     : assert(
         (payload == null) != (asset == null),
         'A texture has exactly one source: a payload or an asset',
@@ -364,6 +364,11 @@ class TextureResource extends ResourceSpec {
 
   /// The external image asset, or null when [payload] is set.
   final AssetRef? asset;
+
+  /// What the pixels represent (`color`, `data`, `normal`), mapped to the
+  /// runtime `TextureContent` at realization. Mip levels downsample by this
+  /// rule, so a normal map averages as vectors rather than as color.
+  final String content;
 }
 
 /// An offscreen render target a serialized render view draws into and

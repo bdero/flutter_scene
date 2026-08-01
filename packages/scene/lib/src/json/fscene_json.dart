@@ -360,11 +360,12 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
           },
         if (r.topology != 'triangle') 'topology': r.topology,
       };
-    case TextureResource(:final payload, :final asset):
+    case TextureResource(:final payload, :final asset, :final content):
       return {
         'kind': 'texture',
         if (payload != null) 'payload': idKey(payload),
         if (asset != null) 'ref': asset.key,
+        if (content != 'color') 'content': content,
       };
     case RenderTextureResource(
       :final width,
@@ -739,6 +740,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
             ? LocalId.parse(json['payload'] as String)
             : null,
         asset: json['ref'] != null ? AssetRef(json['ref'] as String) : null,
+        content: json['content'] as String? ?? 'color',
       );
     case 'renderTexture':
       return RenderTextureResource(

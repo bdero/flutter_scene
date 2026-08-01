@@ -698,6 +698,12 @@ LocalId? _buildTexture(
       // UVs) so these can stay compressed.
       final blockAligned = rgba.width % 4 == 0 && rgba.height % 4 == 0;
       final compress = compressTextures && blockAligned;
+      if (compressTextures && !blockAligned) {
+        sceneLog(
+          'fscene: texture ${rgba.width}x${rgba.height} is not a multiple of '
+          '4, storing it uncompressed. Resize it to keep the compressed form.',
+        );
+      }
       final bytes = compress
           ? encodeImageToKtx2Bytes(
               raw,
@@ -720,7 +726,13 @@ LocalId? _buildTexture(
         ),
       );
       return document
-          .addResource(TextureResource(document.newId(), payload: payload.id))
+          .addResource(
+            TextureResource(
+              document.newId(),
+              payload: payload.id,
+              content: content.name,
+            ),
+          )
           .id;
     }
   }
@@ -730,7 +742,11 @@ LocalId? _buildTexture(
     // valid bundle asset path.
     return document
         .addResource(
-          TextureResource(document.newId(), asset: AssetRef(image.uri!)),
+          TextureResource(
+            document.newId(),
+            asset: AssetRef(image.uri!),
+            content: content.name,
+          ),
         )
         .id;
   }

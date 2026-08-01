@@ -24,6 +24,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
+import 'package:flutter_scene/src/texture/mipmap.dart';
 
 /// Loads a decoded [ui.Image] for a [TextureResource.asset] from outside the
 /// asset bundle (the editor loads a user-imported image from disk). Returns
@@ -202,22 +203,23 @@ class ResourceRealizer {
   }
 
   Future<gpu.Texture> _loadTextureAsync(TextureResource res) async {
+    final content = textureContentFromName(res.content);
     final asset = res.asset;
     if (asset != null) {
       // Prefer a disk-loaded image (an editor-imported texture under
       // `imported/`); fall back to the asset bundle for in-bundle assets.
       final loaded = await textureLoader?.call(asset);
-      return gpuTextureFromImage(
-        loaded ?? await imageFromAsset(asset.key, bundle: bundle),
-      );
+      final image = loaded ?? await imageFromAsset(asset.key, bundle: bundle);
+      return (await Texture2D.fromImage(image, content: content)).gpuTexture;
     }
     final bytes = _payloadBytes(res.payload!, 'image');
-    // KTX2 block payloads transcode off the main isolate; other encoded images
-    // decode via dart:ui.
+    // KTX2 block payloads carry their own mip chain and transcode off the main
+    // isolate; other encoded images decode via dart:ui and get one built here.
     if (document.payload(res.payload!)?.format == 'ktx2') {
       return gpuTextureFromKtx2Async(bytes);
     }
-    return gpuTextureFromImage(await imageFromBytes(bytes));
+    final image = await imageFromBytes(bytes);
+    return (await Texture2D.fromImage(image, content: content)).gpuTexture;
   }
 
   Future<void> _preloadFmat(MaterialResource res) async {
@@ -472,13 +474,14 @@ class ResourceRealizer {
       );
       return _placeholderTexture();
     }
-    final texture = gpu.gpuContext.createTexture(
-      gpu.StorageMode.hostVisible,
+    // Through Texture2D so the upload carries a role-aware mip chain; only
+    // the compressed (ktx2) payloads ship their own.
+    return Texture2D.fromPixels(
+      Uint8List.sublistView(bytes),
       width,
       height,
-    );
-    texture.overwrite(ByteData.sublistView(bytes));
-    return texture;
+      content: textureContentFromName(res.content),
+    ).gpuTexture;
   }
 
   // Resolves a texture property to either a gpu.Texture or, when the ref
