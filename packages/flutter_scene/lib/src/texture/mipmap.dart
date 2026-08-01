@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
-
 /// What a texture's pixels represent, which controls how mip levels are
 /// downsampled so the result is correct (color must average in linear light,
 /// normals must be averaged as vectors and renormalized).
@@ -18,28 +16,6 @@ enum TextureContent {
   /// A tangent-space normal map. Averaged as vectors and renormalized.
   normal,
 }
-
-/// Builds the mip chain for [pixels] on a background isolate, so a large
-/// texture does not block the caller while it downsamples.
-///
-/// The synchronous [generateMipChain] stays for the sync realize path, which
-/// cannot await.
-Future<List<MipLevel>> generateMipChainAsync(
-  Uint8List pixels,
-  int width,
-  int height,
-  TextureContent content,
-) => compute(_generateMipChain, (
-  pixels: pixels,
-  width: width,
-  height: height,
-  content: content,
-));
-
-/// Isolate entry point. Pure Dart, no GPU.
-List<MipLevel> _generateMipChain(
-  ({Uint8List pixels, int width, int height, TextureContent content}) input,
-) => generateMipChain(input.pixels, input.width, input.height, input.content);
 
 /// The [TextureContent] named [name] (a serialized `TextureResource.content`),
 /// falling back to [TextureContent.color] for an unknown name.
