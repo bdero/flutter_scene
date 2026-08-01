@@ -86,11 +86,11 @@ base class EnvironmentMap {
   /// texture), so flipping this affects only environments built
   /// afterwards.
   ///
-  /// Set it false on Adreno Vulkan, where reflections otherwise stay sharp at
-  /// every roughness. Those drivers report the layout as supported but sample
-  /// every texture at its base mip, so the roughness bands never resolve
-  /// (github.com/flutter/flutter/issues/189965). The band atlas needs no mip
-  /// sampling, so it is unaffected.
+  /// Devices that report the layout as supported but sample every texture at
+  /// its base mip (Adreno Vulkan, flutter/flutter#189965) do not need this
+  /// turned off by hand; [mipRadianceLayoutSupported] measures the defect and
+  /// keeps them on the atlas. Note the same clamp applies to every other
+  /// mipmapped texture in the app, which no layout choice can work around.
   static bool useMipRadianceLayout = true;
 
   /// Base-mip face size of the prefiltered radiance cubemap new environments
