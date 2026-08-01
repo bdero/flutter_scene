@@ -20,7 +20,10 @@ const double fieldHalfSize = 11;
 const double playerRadius = 0.5;
 const double pelletPickupRadius = 1.0;
 const int pelletTotal = 24;
-const int gameTickRate = 30;
+// 60Hz halves every tick-denominated latency (input buffering, snapshot
+// cadence, alignment) at double the bandwidth and sim cost, the
+// competitive-feel configuration.
+const int gameTickRate = 60;
 const int gamePort = 8123;
 
 /// Force pushing the ball toward the input direction, newtons.

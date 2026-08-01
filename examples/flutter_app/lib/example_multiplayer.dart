@@ -178,10 +178,11 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         // the world back to the acked tick and replay unacked inputs. Remote
         // players stay interpolated. When prediction is off the local player
         // interpolates too, so it visibly lags input under latency.
-        // Remote players render ~2.5 ticks in the past; a tighter buffer
-        // narrows the visible gap between a predicted self and the
-        // interpolated ball it collides with.
-        interpolationDelay: const Duration(milliseconds: 75),
+        // The interpolation delay adapts to the measured snapshot cadence
+        // under its default ceiling; a shallow input buffer trades jitter
+        // headroom for a tick less input latency, right for a local or
+        // LAN demo (the sim-latency toggle shows the degraded-link case).
+        inputTargetDepth: 1,
         localPrediction: (replica) {
           if (!_predict || !canPredict) return null;
           final controller = _PlayerController(
