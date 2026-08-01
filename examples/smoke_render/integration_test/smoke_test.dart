@@ -37,11 +37,6 @@ void main() {
   }
 
   for (final smoke in kSmokeScenes) {
-    // TODO(windows-dof): Re-enable after the Flutter GPU process exit is fixed.
-    final skipWindowsDof =
-        !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.windows &&
-        smoke.id == 'depth_post';
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
       // Let Flutter render one ordinary frame before touching flutter_scene.
       // Android GLES can race GPU context setup if Scene initialization uploads
@@ -130,7 +125,7 @@ void main() {
         greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
-    }, skip: skipWindowsDof);
+    });
   }
 
   testWidgets('noise parity between CPU and GPU', (tester) async {
