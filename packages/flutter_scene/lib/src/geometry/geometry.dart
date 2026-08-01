@@ -661,6 +661,28 @@ abstract class Geometry {
   /// way (a uniform, as skinned meshes do), so the encoder leaves that slot
   /// alone.
   /// {@category Geometry}
+  // A caller-declared layout describes one buffer per bound slot, so a count
+  // mismatch means the pipeline reads a slot nothing was bound to. That reads
+  // undefined vertex data rather than failing, so catch it in debug where the
+  // cause is still obvious. Debug-only; the built-in layouts always agree.
+  bool _checkDeclaredLayout() {
+    final layout = _vertexLayout;
+    if (layout == null) return true;
+    final expected = vertexStreamCount + (bindsModelTransformInstance ? 1 : 0);
+    if (layout.buffers.length != expected) {
+      throw StateError(
+        'Geometry: setVertexLayout described ${layout.buffers.length} vertex '
+        'buffer slots, but this draw binds $expected (${_vertexStreams.length} '
+        'vertex stream(s), ${_customAttributes.length} custom attribute(s)'
+        '${bindsModelTransformInstance ? ", plus the instance-rate model "
+                  "transform" : ""}). Describe one buffer per bound slot, in order, '
+        'or pass bindsModelTransform: false if the shader takes the model '
+        'transform another way.',
+      );
+    }
+    return true;
+  }
+
   void setVertexLayout(
     VertexLayoutDescriptor? layout, {
     bool bindsModelTransform = true,
@@ -704,6 +726,7 @@ abstract class Geometry {
   @internal
   void bindGeometryBuffers(gpu.RenderPass pass) {
     _requireVertices();
+    assert(_checkDeclaredLayout());
     var slot = 0;
     for (; slot < _vertexStreams.length; slot++) {
       bindVertexBufferCompat(

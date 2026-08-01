@@ -4,6 +4,8 @@
 * Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
 * Custom vertex attributes work on skinned meshes.
 * A `ShaderMaterial` that supplies a vertex shader for some mesh kinds but not others warns in debug builds, naming the missing variant, instead of failing opaquely at pipeline creation.
+* Debug builds check a custom material's uniform blocks against the shader's reflection, so a misspelled or optimized-out block name and a buffer too small for its std140 layout raise named exceptions instead of failing at bind time or reading past the end.
+* Debug builds check a caller-declared vertex layout against the buffers actually bound, so a slot count mismatch raises instead of feeding the pipeline undefined vertex data.
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
 
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
