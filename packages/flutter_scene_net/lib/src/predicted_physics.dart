@@ -34,6 +34,13 @@ abstract interface class PredictedPhysicsController
 
   void applyInput(Uint8List input, double dt);
 
+  /// Called after a rollback correction restores a retained world snapshot,
+  /// before pending inputs replay. Bodies the controller created after that
+  /// snapshot no longer exist (their handles dangle silently), so mark any
+  /// dynamically managed bodies, remote-player proxies, say, for recreation
+  /// on the next fresh tick.
+  void onWorldRestored();
+
   Vector3? get authoritativeLinearVelocity;
 
   Vector3? get authoritativeAngularVelocity;
@@ -117,7 +124,10 @@ final class PredictedPhysicsComponent extends Component {
 
   _WorldState _step(_WorldState state, Uint8List input, double dt) {
     final sim = controller.simulation;
-    if (!identical(state.world, _liveWorld)) sim.restore(state.world);
+    if (!identical(state.world, _liveWorld)) {
+      sim.restore(state.world);
+      controller.onWorldRestored();
+    }
     // The state's body fields override the restored world, so an
     // authoritative base injected by reconcile takes effect here.
     sim.setBodyPose(controller.bodyHandle, state.position, state.rotation);
