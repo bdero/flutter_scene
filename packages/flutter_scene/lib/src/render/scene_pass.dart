@@ -69,13 +69,11 @@ class ScenePass extends RenderGraphPass {
     Fog? fog,
     bool captureOpaqueColor = false,
     bool bindSceneDepth = false,
-    bool publishDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
     bool includeOffscreen = false,
   }) : _captureOpaqueColor = captureOpaqueColor,
        _bindSceneDepth = bindSceneDepth,
-       _publishDepth = publishDepth,
        _time = time,
        _camera = camera,
        _layerMask = layerMask,
@@ -120,7 +118,6 @@ class ScenePass extends RenderGraphPass {
   // prepass linear depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
   final bool _bindSceneDepth;
-  final bool _publishDepth;
   final double _time;
   late final List<Plane> _cullingPlanes;
   final bool _includeOffscreen;
@@ -152,7 +149,7 @@ class ScenePass extends RenderGraphPass {
         height: height,
         format: gpu.gpuContext.defaultDepthStencilFormat,
         sampleCount: _enableMsaa ? 4 : 1,
-        shaderReadable: capture || _publishDepth,
+        shaderReadable: capture,
         debugName: 'scene_depth',
       ),
     );
@@ -208,7 +205,7 @@ class ScenePass extends RenderGraphPass {
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
         depthClearValue: 1.0,
-        depthStoreAction: capture || _publishDepth
+        depthStoreAction: capture
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
       ),
@@ -343,9 +340,6 @@ class ScenePass extends RenderGraphPass {
       }
       rendererSubmissions.submit(commandBuffer);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
-      if (_publishDepth) {
-        context.blackboard.set(kSceneDepthStencilBlackboardKey, depth);
-      }
       return;
     }
 
@@ -390,9 +384,6 @@ class ScenePass extends RenderGraphPass {
 
     context.blackboard.set(kOpaqueSceneColorBlackboardKey, opaqueColor!);
     context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
-    if (_publishDepth) {
-      context.blackboard.set(kSceneDepthStencilBlackboardKey, depth);
-    }
   }
 
   static void _recordProfile(int cullMicros, int flushMicros) {

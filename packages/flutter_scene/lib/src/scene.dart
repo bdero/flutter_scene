@@ -1394,21 +1394,15 @@ base class Scene implements SceneGraph {
     final wantCustomNormals = customInputs.contains(RenderInput.normals);
     final wantCustomDepth =
         wantCustomNormals || customInputs.contains(RenderInput.depth);
-    // Impeller's GLES and Windows backends cannot sample their combined
-    // depth/stencil attachments through Flutter GPU.
-    // TODO(flutter-gpu): Use a readable-depth capability once one is exposed.
-    final canSampleSceneDepth =
-        defaultTargetPlatform != TargetPlatform.windows &&
-        gpu.gpuContext.defaultDepthStencilFormat ==
-            gpu.PixelFormat.d32FloatS8UInt;
+    // Flutter GPU does not expose whether a stored depth/stencil attachment is
+    // shader-readable. Some native backends terminate when one is sampled.
+    // TODO(flutter-gpu): Reuse stored depth once that capability is exposed.
     final wantDepthPrepass =
         bindSceneDepth ||
         wantCustomNormals ||
         wantSsr ||
         ambientOcclusion.enabled ||
-        (wantCustomDepth && (enableMsaa || !canSampleSceneDepth));
-    final resolveSceneDepth =
-        perspectiveCamera != null && wantCustomDepth && !wantDepthPrepass;
+        wantCustomDepth;
     if (perspectiveCamera != null) {
       final wantAo = ambientOcclusion.enabled;
       if (wantDepthPrepass) {
@@ -1481,21 +1475,11 @@ base class Scene implements SceneGraph {
         captureOpaqueColor: captureOpaqueColor,
         // Depth binding needs the prepass, which needs a perspective camera.
         bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
-        publishDepth: resolveSceneDepth,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
         includeOffscreen: _warmUpIncludeOffscreen,
       ),
     );
-    if (resolveSceneDepth) {
-      graph.addPass(
-        LinearDepthResolvePass(
-          dimensions: pixelSize,
-          near: perspectiveCamera.near,
-          far: perspectiveCamera.far,
-        ),
-      );
-    }
     // Screen-space reflections refine the lit HDR color in place, before
     // bloom and tone mapping, so reflected highlights bloom and tone-map
     // with the rest of the image.

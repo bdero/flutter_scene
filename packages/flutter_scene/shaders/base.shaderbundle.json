@@ -67,10 +67,6 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth.frag"
   },
-  "DepthResolveFragment": {
-    "type": "fragment",
-    "file": "shaders/flutter_scene_depth_resolve.frag"
-  },
   "LinearDepthMaskedFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_linear_depth_masked.frag"
