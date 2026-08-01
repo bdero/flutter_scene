@@ -24,6 +24,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
+import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/texture/mipmap.dart';
 
 /// Loads a decoded [ui.Image] for a [TextureResource.asset] from outside the
@@ -260,7 +261,9 @@ class ResourceRealizer {
     int height,
     TextureContent content,
   ) async => uploadMipLevels(
-    await generateMipChainAsync(pixels, width, height, content),
+    mipChainsAreSampled
+        ? await generateMipChainAsync(pixels, width, height, content)
+        : <MipLevel>[MipLevel(width, height, pixels)],
     width,
     height,
   );

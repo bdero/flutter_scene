@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../asset_helpers.dart';
 import '../gpu/gpu.dart' as gpu;
+import '../render/mip_sampling_probe.dart';
 import 'mipmap.dart';
 
 /// Something a material can sample: it yields the GPU texture to sample for the
@@ -152,7 +153,7 @@ class Texture2D implements TextureSource {
     TextureSampling sampling = const TextureSampling(),
   }) => Texture2D._(
     uploadMipLevels(
-      sampling.mipmaps
+      sampling.mipmaps && mipChainsAreSampled
           ? generateMipChain(pixels, width, height, content)
           : <MipLevel>[MipLevel(width, height, pixels)],
       width,

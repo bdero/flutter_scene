@@ -18,6 +18,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/texture/block/transcode_astc.dart';
 import 'package:flutter_scene/src/texture/block/transcode_bc1.dart';
 import 'package:flutter_scene/src/texture/block/transcode_bc3.dart';
@@ -54,7 +55,7 @@ typedef _Prepared = ({List<Uint8List> levels, int mode, int width, int height});
 Future<gpu.Texture> gpuTextureFromKtx2Async(Uint8List bytes) async {
   _logFamiliesOnce();
   final mode = _selectMode();
-  final mips = gpu.gpuContext.doesSupportManuallyMippedTextures;
+  final mips = uploadableMipChains;
   final prepared = await compute(_prepareFromBytes, (
     ktx2: bytes,
     mode: mode,
@@ -72,14 +73,13 @@ gpu.Texture gpuTextureFromKtx2(Uint8List bytes) =>
 /// As [gpuTextureFromKtx2], for an already-parsed [texture].
 gpu.Texture gpuTextureFromKtx2Texture(Ktx2Texture texture) {
   _logFamiliesOnce();
-  return _upload(
-    _prepare(
-      texture,
-      _selectMode(),
-      mips: gpu.gpuContext.doesSupportManuallyMippedTextures,
-    ),
-  );
+  return _upload(_prepare(texture, _selectMode(), mips: uploadableMipChains));
 }
+
+/// Whether a hand-uploaded mip chain is worth transcoding and uploading: the
+/// backend must accept one, and the device must actually sample it.
+bool get uploadableMipChains =>
+    gpu.gpuContext.doesSupportManuallyMippedTextures && mipChainsAreSampled;
 
 /// Picks the transcode target for the current device.
 int _selectMode() {
