@@ -150,30 +150,17 @@ class Texture2D implements TextureSource {
     int height, {
     TextureContent content = TextureContent.color,
     TextureSampling sampling = const TextureSampling(),
-  }) {
-    var levels = sampling.mipmaps
-        ? generateMipChain(pixels, width, height, content)
-        : <MipLevel>[MipLevel(width, height, pixels)];
-    // The GPU allocator caps mip levels at fullMipCount (floor(log2(min(w, h)))),
-    // which is below the canonical chain length for non-square textures, so
-    // clamp before requesting the texture or creation throws a range error.
-    final maxLevels = gpu.Texture.fullMipCount(width, height);
-    final cap = sampling.maxMipmapLevels;
-    final limit = cap != null && cap >= 1 && cap < maxLevels ? cap : maxLevels;
-    if (limit < levels.length) {
-      levels = levels.sublist(0, limit);
-    }
-    final texture = gpu.gpuContext.createTexture(
-      gpu.StorageMode.hostVisible,
+  }) => Texture2D._(
+    uploadMipLevels(
+      sampling.mipmaps
+          ? generateMipChain(pixels, width, height, content)
+          : <MipLevel>[MipLevel(width, height, pixels)],
       width,
       height,
-      mipLevelCount: levels.length,
-    );
-    for (var i = 0; i < levels.length; i++) {
-      texture.overwrite(ByteData.sublistView(levels[i].pixels), mipLevel: i);
-    }
-    return Texture2D._(texture, sampling.toSamplerOptions());
-  }
+      maxMipmapLevels: sampling.maxMipmapLevels,
+    ),
+    sampling.toSamplerOptions(),
+  );
 
   /// Builds a texture from a decoded [image].
   static Future<Texture2D> fromImage(
@@ -210,4 +197,35 @@ class Texture2D implements TextureSource {
       image.dispose();
     }
   }
+}
+
+/// Uploads a prebuilt mip chain ([levels], base first) as a texture of
+/// [width] x [height], capping the chain the allocator will accept.
+///
+/// Shared by the synchronous [Texture2D.fromPixels] and the async paths that
+/// build their chain on a background isolate, so both agree on the cap and the
+/// per-level upload.
+gpu.Texture uploadMipLevels(
+  List<MipLevel> levels,
+  int width,
+  int height, {
+  int? maxMipmapLevels,
+}) {
+  // The GPU allocator caps mip levels at fullMipCount (floor(log2(min(w, h)))),
+  // which is below the canonical chain length for non-square textures, so
+  // clamp before requesting the texture or creation throws a range error.
+  final maxLevels = gpu.Texture.fullMipCount(width, height);
+  final cap = maxMipmapLevels;
+  final limit = cap != null && cap >= 1 && cap < maxLevels ? cap : maxLevels;
+  final capped = limit < levels.length ? levels.sublist(0, limit) : levels;
+  final texture = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    width,
+    height,
+    mipLevelCount: capped.length,
+  );
+  for (var i = 0; i < capped.length; i++) {
+    texture.overwrite(ByteData.sublistView(capped[i].pixels), mipLevel: i);
+  }
+  return texture;
 }

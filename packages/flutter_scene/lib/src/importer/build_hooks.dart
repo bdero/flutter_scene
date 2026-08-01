@@ -119,6 +119,7 @@ void buildScenes({
   String discoveryRoot = 'assets/',
   SceneAssetMode assetMode = SceneAssetMode.legacyOnly,
   bool compressTextures = false,
+  bool alignForCompression = false,
 }) {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == SceneAssetMode.dataAssetsRequired && !dataAssetsAvailable) {
@@ -220,6 +221,7 @@ void buildScenes({
           outputSceneUri.toFilePath(),
           workingDirectory: packageRoot.toFilePath(),
           compressTextures: compressTextures,
+          alignForCompression: alignForCompression,
         );
       } else {
         // `.fscene` (authored text) -> `.fsceneb` (binary), embedding referenced

@@ -126,9 +126,13 @@ class ResourceRealizer {
   /// are built in [preload]; this returns the cached result.
   EnvironmentSettings? environment(LocalId id) => _environments[id];
 
-  /// Resolves the resources that need asynchronous work (external image
-  /// assets, encoded image payloads, and `fmat` materials), caching them so
-  /// the synchronous realize path finds them ready.
+  /// Resolves the resources that want asynchronous work (every texture, and
+  /// `fmat` materials), caching them so the synchronous realize path finds
+  /// them ready.
+  ///
+  /// External image assets and encoded payloads have no synchronous path at
+  /// all; an embedded `rgba8` payload does, but preloading it builds its mip
+  /// chain on a background isolate instead of the calling thread.
   ///
   /// Await this before realizing a document that may reference such resources
   /// (the async loaders do). A resource that fails to load degrades to a
@@ -143,7 +147,10 @@ class ResourceRealizer {
     // texture resource, which must be decoded before the override resolves it.
     final textures = <Future<void>>[];
     for (final resource in document.resources.values) {
-      if (resource is TextureResource && _needsAsyncTexture(resource)) {
+      // Every texture preloads, not only the ones the sync path cannot do at
+      // all: an rgba8 payload realizes synchronously but builds its mip chain
+      // on the calling thread, and preloading moves that off it.
+      if (resource is TextureResource) {
         textures.add(_preloadTexture(resource));
       }
     }
@@ -179,16 +186,6 @@ class ResourceRealizer {
     }
   }
 
-  bool _needsAsyncTexture(TextureResource res) {
-    if (res.asset != null) return true;
-    final payload = res.payload;
-    if (payload == null) return false;
-    // Only raw rgba8 payloads realize synchronously (a plain upload). Encoded
-    // (PNG/JPEG) images decode asynchronously, and KTX2 block payloads
-    // transcode on a background isolate, so both go through preload.
-    return document.payload(payload)?.format != 'rgba8';
-  }
-
   Future<void> _preloadTexture(TextureResource res) async {
     try {
       _textures[res.id] = tagResourceOrigin(
@@ -210,17 +207,63 @@ class ResourceRealizer {
       // `imported/`); fall back to the asset bundle for in-bundle assets.
       final loaded = await textureLoader?.call(asset);
       final image = loaded ?? await imageFromAsset(asset.key, bundle: bundle);
-      return (await Texture2D.fromImage(image, content: content)).gpuTexture;
+      return _mippedTextureFromImage(image, content);
     }
+    final payload = document.payload(res.payload!);
     final bytes = _payloadBytes(res.payload!, 'image');
     // KTX2 block payloads carry their own mip chain and transcode off the main
-    // isolate; other encoded images decode via dart:ui and get one built here.
-    if (document.payload(res.payload!)?.format == 'ktx2') {
+    // isolate; the rest build one here, also off the main isolate.
+    if (payload?.format == 'ktx2') {
       return gpuTextureFromKtx2Async(bytes);
     }
-    final image = await imageFromBytes(bytes);
-    return (await Texture2D.fromImage(image, content: content)).gpuTexture;
+    if (payload?.format == 'rgba8') {
+      final width = payload!.width;
+      final height = payload.height;
+      if (width == null || height == null) {
+        throw FsceneFormatException(
+          'Image payload ${res.payload} is missing its width/height',
+        );
+      }
+      return _mippedTexture(
+        Uint8List.sublistView(bytes),
+        width,
+        height,
+        content,
+      );
+    }
+    return _mippedTextureFromImage(await imageFromBytes(bytes), content);
   }
+
+  // Decodes [image] to straight-alpha RGBA and uploads it with a mip chain
+  // built off the main isolate.
+  Future<gpu.Texture> _mippedTextureFromImage(
+    ui.Image image,
+    TextureContent content,
+  ) async {
+    final bytes = await image.toByteData(
+      format: ui.ImageByteFormat.rawStraightRgba,
+    );
+    if (bytes == null) {
+      throw FsceneFormatException('Failed to read RGBA data from an image');
+    }
+    return _mippedTexture(
+      bytes.buffer.asUint8List(),
+      image.width,
+      image.height,
+      content,
+    );
+  }
+
+  Future<gpu.Texture> _mippedTexture(
+    Uint8List pixels,
+    int width,
+    int height,
+    TextureContent content,
+  ) async => uploadMipLevels(
+    await generateMipChainAsync(pixels, width, height, content),
+    width,
+    height,
+  );
 
   Future<void> _preloadFmat(MaterialResource res) async {
     final asset = res.asset;
@@ -475,11 +518,9 @@ class ResourceRealizer {
       return _placeholderTexture();
     }
     // Through Texture2D so the upload carries a role-aware mip chain; only
-    // the compressed (ktx2) payloads ship their own.
-    // TODO(texture-mips): the chain is built on the calling thread here, which
-    // is the raster thread for a synchronous realize. Move it to the isolate
-    // that already transcodes ktx2 payloads so a large uncompressed scene
-    // stops paying for it at load.
+    // the compressed (ktx2) payloads ship their own. This builds the chain on
+    // the calling thread, which only a synchronous realize reaches: preload()
+    // takes every texture through the isolate first.
     return Texture2D.fromPixels(
       Uint8List.sublistView(bytes),
       width,
@@ -491,9 +532,6 @@ class ResourceRealizer {
   // Resolves a texture property to either a gpu.Texture or, when the ref
   // points at a render-texture resource, the live RenderTexture handle
   // (material slots accept both).
-  // TODO(mipmaps): route offline rgba8 payload textures through Texture2D so
-  // they get mipmaps too; ktx2 payloads already carry their chain
-  // in-container.
   TextureSource? _textureRef(Map<String, PropertyValue> p, String key) {
     final v = p[key];
     if (v is! ResourceRefValue) return null;
