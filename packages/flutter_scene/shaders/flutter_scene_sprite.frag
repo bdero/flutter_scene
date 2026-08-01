@@ -24,8 +24,11 @@ in float v_view_depth;
 
 out vec4 frag_color;
 
-const float kGamma = 2.2;
-vec3 SRGBToLinear(vec3 color) { return pow(color, vec3(kGamma)); }
+vec3 SRGBToLinear(vec3 color) {
+  return mix(color / 12.92,
+             pow((color + 0.055) / 1.055, vec3(2.4)),
+             step(0.04045, color));
+}
 
 void main() {
   // Crossfade between adjacent flipbook cells (v_frame_blend is zero when

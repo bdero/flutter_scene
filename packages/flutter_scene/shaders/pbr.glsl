@@ -8,8 +8,6 @@ const float kPi = 3.14159265358979323846;
 ///           https://google.github.io/filament/Filament.html
 ///
 
-const float kGamma = 2.2;
-
 // Lower bound on perceptual roughness. Glossier than this and the GGX lobe
 // collapses to a delta; on half-float mobile hardware the resulting
 // denormalized `alpha` (= roughness^2) also triggers large performance
@@ -18,7 +16,11 @@ const float kMinRoughness = 0.045;
 
 // Convert from sRGB to linear space.
 // This can be removed once Impeller supports sRGB texture inputs.
-vec3 SRGBToLinear(vec3 color) { return pow(color, vec3(kGamma)); }
+vec3 SRGBToLinear(vec3 color) {
+  return mix(color / 12.92,
+             pow((color + 0.055) / 1.055, vec3(2.4)),
+             step(0.04045, color));
+}
 
 vec3 FresnelSchlick(float cos_theta, vec3 reflectance) {
   return reflectance +

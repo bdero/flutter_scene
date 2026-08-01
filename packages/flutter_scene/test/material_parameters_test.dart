@@ -92,13 +92,23 @@ void main() {
     test('sRGB-decodes rgb for a source_color parameter, alpha as-is', () {
       final p = _params();
       p.setColor('tint', const Color(0xff800000)); // r = 0x80/0xff
-      final expected = math.pow(0x80 / 0xff, 2.2).toDouble();
+      final c = 0x80 / 0xff;
+      final expected = math.pow((c + 0.055) / 1.055, 2.4).toDouble();
       expect(p.rawBlock.getFloat32(0, Endian.host), closeTo(expected, 1e-5));
       expect(p.rawBlock.getFloat32(4, Endian.host), closeTo(0.0, 1e-6));
       expect(
         p.rawBlock.getFloat32(12, Endian.host),
         closeTo(1.0, 1e-6),
       ); // alpha
+    });
+
+    test('sRGB-decodes dark colors with the linear segment', () {
+      final p = _params();
+      p.setColor('tint', const Color(0xff010101));
+      final expected = (1 / 0xff) / 12.92;
+      expect(p.rawBlock.getFloat32(0, Endian.host), closeTo(expected, 1e-6));
+      expect(p.rawBlock.getFloat32(4, Endian.host), closeTo(expected, 1e-6));
+      expect(p.rawBlock.getFloat32(8, Endian.host), closeTo(expected, 1e-6));
     });
 
     test('writes raw channels for a non-source_color parameter', () {

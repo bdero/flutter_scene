@@ -544,9 +544,9 @@ class MaterialParameters {
   };
 }
 
-// sRGB -> linear matching pbr.glsl's SRGBToLinear, which is pow(color, kGamma)
-// with kGamma = 2.2.
-double _srgbToLinear(double c) => math.pow(c, 2.2).toDouble();
+// sRGB -> linear matching pbr.glsl's SRGBToLinear on the GPU.
+double _srgbToLinear(double c) =>
+    c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
 
 FmatHintKind? _hintKind(String? kind) => switch (kind) {
   'default_white' => FmatHintKind.defaultWhite,
