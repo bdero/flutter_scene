@@ -476,6 +476,10 @@ class ResourceRealizer {
     }
     // Through Texture2D so the upload carries a role-aware mip chain; only
     // the compressed (ktx2) payloads ship their own.
+    // TODO(texture-mips): the chain is built on the calling thread here, which
+    // is the raster thread for a synchronous realize. Move it to the isolate
+    // that already transcodes ktx2 payloads so a large uncompressed scene
+    // stops paying for it at load.
     return Texture2D.fromPixels(
       Uint8List.sublistView(bytes),
       width,
