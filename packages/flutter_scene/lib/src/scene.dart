@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
@@ -339,6 +340,9 @@ base class Scene implements SceneGraph {
               loadBaseShaderLibrary(),
               Material.initializeStaticResources(),
             ])
+            // Needs the shader library, so it runs after the load and before
+            // rendering unblocks (environment radiance builds consult it).
+            .then((_) => probePlatformMipSampling())
             .then((_) {
               _readyToRender = true;
             })

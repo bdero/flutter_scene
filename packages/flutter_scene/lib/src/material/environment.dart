@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/asset_helpers.dart';
 import 'package:flutter_scene/src/material/equirect_image.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/env_prefilter.dart';
+import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/render/sky_bake.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:vector_math/vector_math.dart';
@@ -106,10 +107,39 @@ base class EnvironmentMap {
   ///
   /// Currently false on the native GLES backend (Impeller does not yet
   /// implement render-to-mip-level there), where new environments build
-  /// the legacy band atlas regardless of [useMipRadianceLayout].
-  static bool get mipRadianceLayoutSupported =>
-      gpu.gpuContext.doesSupportFramebufferRenderMipmap &&
-      gpu.gpuContext.doesSupportManuallyMippedTextures;
+  /// the legacy band atlas regardless of [useMipRadianceLayout]. On native
+  /// Android the capability bits over-report (some engines clamp every
+  /// Vulkan sampler to the base mip level on Adreno GPUs, see
+  /// flutter/flutter#161283), so support there is measured at startup by
+  /// `probePlatformMipSampling` and devices where the clamp is active stay
+  /// on the atlas.
+  static bool get mipRadianceLayoutSupported => shouldUseMipRadianceLayout(
+    isWeb: kIsWeb,
+    targetPlatform: defaultTargetPlatform,
+    backendSupportsMips:
+        gpu.gpuContext.doesSupportFramebufferRenderMipmap &&
+        gpu.gpuContext.doesSupportManuallyMippedTextures,
+    platformMipSamplingWorks: platformMipSamplingWorks,
+  );
+
+  /// Applies the backend capability and the measured Android mip sampling
+  /// probe. Before the probe resolves, Android conservatively stays on the
+  /// atlas so environments built early are never wrong.
+  @visibleForTesting
+  static bool shouldUseMipRadianceLayout({
+    required bool isWeb,
+    required TargetPlatform targetPlatform,
+    required bool backendSupportsMips,
+    required bool? platformMipSamplingWorks,
+  }) {
+    if (!backendSupportsMips) {
+      return false;
+    }
+    if (isWeb || targetPlatform != TargetPlatform.android) {
+      return true;
+    }
+    return platformMipSamplingWorks ?? false;
+  }
 
   /// The layout new environments build: [useMipRadianceLayout] resolved
   /// against backend support.
