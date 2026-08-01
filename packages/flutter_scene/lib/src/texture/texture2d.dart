@@ -27,18 +27,22 @@ abstract interface class TextureSource {
 /// {@category Assets and loading}
 class GpuTextureSource implements TextureSource {
   GpuTextureSource(this.texture, {gpu.SamplerOptions? sampler})
-    : sampler =
-          sampler ??
-          gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.linear,
-            magFilter: gpu.MinMagFilter.linear,
-            // Trilinear when the texture actually carries a mip chain.
-            mipFilter: texture.mipLevelCount > 1
-                ? gpu.MipFilter.linear
-                : gpu.MipFilter.nearest,
-            widthAddressMode: gpu.SamplerAddressMode.repeat,
-            heightAddressMode: gpu.SamplerAddressMode.repeat,
-          );
+    : sampler = sampler ?? _defaultSampler(texture);
+
+  // Trilinear and anisotropic when the texture carries a mip chain, matching
+  // what [TextureSampling] gives a [Texture2D]. Anisotropy needs linear
+  // min/mag/mip filtering, so a mipless texture leaves it off.
+  static gpu.SamplerOptions _defaultSampler(gpu.Texture texture) {
+    final mipped = texture.mipLevelCount > 1;
+    return gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.linear,
+      magFilter: gpu.MinMagFilter.linear,
+      mipFilter: mipped ? gpu.MipFilter.linear : gpu.MipFilter.nearest,
+      widthAddressMode: gpu.SamplerAddressMode.repeat,
+      heightAddressMode: gpu.SamplerAddressMode.repeat,
+      maxAnisotropy: mipped ? TextureSampling.defaultMaxAnisotropy : 1,
+    );
+  }
 
   final gpu.Texture texture;
   final gpu.SamplerOptions sampler;
@@ -61,9 +65,13 @@ class TextureSampling {
     this.minFilter = gpu.MinMagFilter.linear,
     this.magFilter = gpu.MinMagFilter.linear,
     this.mipFilter = gpu.MipFilter.linear,
-    this.maxAnisotropy = 8,
+    this.maxAnisotropy = defaultMaxAnisotropy,
     this.addressMode = gpu.SamplerAddressMode.repeat,
   });
+
+  /// The anisotropy a mipmapped texture samples with by default, shared with
+  /// [GpuTextureSource] so a texture filters the same however it was built.
+  static const int defaultMaxAnisotropy = 8;
 
   /// Whether the texture carries a mip chain (built at creation) and is sampled
   /// with mip filtering. Turn off for UI/full-screen sources never minified.

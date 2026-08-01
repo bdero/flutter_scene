@@ -72,9 +72,9 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// member order (including padding) and pass it via
 /// [setUniformBlock].
 ///
-/// TODO(https://github.com/bdero/flutter_scene/issues/22): generate
-/// this packing code at build time from a declarative material
-/// source so callers don't write it by hand.
+/// TODO(fmat-codegen): generate this packing from the shader's
+/// reflection at build time so callers don't write it by hand, the
+/// way `PreprocessedMaterial` packs a `.fmat`.
 /// {@category Materials}
 class ShaderMaterial extends Material {
   /// Creates a [ShaderMaterial] wrapping [fragmentShader].
