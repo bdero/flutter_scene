@@ -26,6 +26,7 @@ import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/texture/mipmap.dart';
+import 'package:flutter_scene/src/texture/mipmap_async.dart';
 
 /// Loads a decoded [ui.Image] for a [TextureResource.asset] from outside the
 /// asset bundle (the editor loads a user-imported image from disk). Returns
