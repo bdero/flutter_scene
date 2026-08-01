@@ -31,39 +31,39 @@ void main() {
   float radius = max(nearC, farC);
   if (radius < 0.5) {
     frag_color = vec4(0.0);
-    return;
-  }
-  vec2 texel = gather_info.params0.yz;
-  float centerAbs = max(abs(center.a), 1.0);
-  vec3 accum = center.rgb;
-  float weightSum = 1.0;
-  int pairs = int(gather_info.params0.x);
+  } else {
+    vec2 texel = gather_info.params0.yz;
+    float centerAbs = max(abs(center.a), 1.0);
+    vec3 accum = center.rgb;
+    float weightSum = 1.0;
+    int pairs = int(gather_info.params0.x);
 
-  for (int i = 0; i < 24; i++) {
-    if (i >= pairs) break;
-    vec4 pair = gather_info.taps[i];
-    for (int j = 0; j < 2; j++) {
-      vec2 k = (j == 0) ? pair.xy : pair.zw;
-      float dist = length(k) * radius;
-      vec2 uv = v_uv + k * radius * texel;
-      vec4 s = texture(coc_color, uv);
-      float sNear = texture(near_coc, uv).r;
-      float sCoc = max(abs(s.a), sNear);
-      // CoC is monotonic in depth around the focus plane, so a larger signed
-      // CoC means farther away; clamp how far behind-samples can spread.
-      if (s.a > center.a) {
-        sCoc = min(sCoc, centerAbs * 2.0);
+    for (int i = 0; i < 24; i++) {
+      if (i >= pairs) break;
+      vec4 pair = gather_info.taps[i];
+      for (int j = 0; j < 2; j++) {
+        vec2 k = (j == 0) ? pair.xy : pair.zw;
+        float dist = length(k) * radius;
+        vec2 uv = v_uv + k * radius * texel;
+        vec4 s = texture(coc_color, uv);
+        float sNear = texture(near_coc, uv).r;
+        float sCoc = max(abs(s.a), sNear);
+        // CoC is monotonic in depth around the focus plane, so a larger signed
+        // CoC means farther away; clamp how far behind-samples can spread.
+        if (s.a > center.a) {
+          sCoc = min(sCoc, centerAbs * 2.0);
+        }
+        float w = clamp((sCoc - dist) * 0.5 + 0.5, 0.0, 1.0);
+        accum += s.rgb * w;
+        weightSum += w;
       }
-      float w = clamp((sCoc - dist) * 0.5 + 0.5, 0.0, 1.0);
-      accum += s.rgb * w;
-      weightSum += w;
     }
+    float coverage = clamp(radius - 0.5, 0.0, 1.0);
+    // Premultiplied by coverage: the postfilter and the composite's bilinear
+    // upsample average this output against the transparent-black pixels at the
+    // focus boundary, and only premultiplied color survives that filtering
+    // without pulling toward black (a dark seam along the focus plane
+    // otherwise).
+    frag_color = vec4(accum / weightSum * coverage, coverage);
   }
-  float coverage = clamp(radius - 0.5, 0.0, 1.0);
-  // Premultiplied by coverage: the postfilter and the composite's bilinear
-  // upsample average this output against the early-out transparent-black
-  // pixels at the focus boundary, and only premultiplied color survives that
-  // filtering without pulling toward black (a dark seam along the focus
-  // plane otherwise).
-  frag_color = vec4(accum / weightSum * coverage, coverage);
 }
