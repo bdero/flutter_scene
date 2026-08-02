@@ -13,6 +13,8 @@ void main() {
       brightness: 1.0,
       bloomIntensity: 0.0,
       toneMapping: ToneMappingMode.linear,
+      agxWhite: 6.0,
+      agxContrast: 1.0,
     );
     final b = EnvironmentSettings(
       exposure: 3.0,
@@ -20,6 +22,8 @@ void main() {
       brightness: 2.0,
       bloomIntensity: 1.0,
       toneMapping: ToneMappingMode.aces,
+      agxWhite: 16.0,
+      agxContrast: 1.5,
     );
 
     final mid = EnvironmentSettings.lerp(a, b, 0.5);
@@ -27,6 +31,8 @@ void main() {
     expect(mid.environmentIntensity, 1.0);
     expect(mid.brightness, 1.5);
     expect(mid.bloomIntensity, 0.5);
+    expect(mid.agxWhite, 11.0);
+    expect(mid.agxContrast, 1.25);
     // Discrete fields switch to b at t >= 0.5.
     expect(mid.toneMapping, ToneMappingMode.aces);
 

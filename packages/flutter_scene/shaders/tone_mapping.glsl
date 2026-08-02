@@ -62,3 +62,34 @@ vec3 PBRNeutralToneMapping(vec3 color) {
 
 // Reinhard tone mapping: c / (1 + c). Cheap, desaturates highlights.
 vec3 ReinhardToneMapping(vec3 color) { return color / (1.0 + color); }
+
+// AgX gamut transforms with the AllenWP curve.
+// https://github.com/EaryChow/AgX_LUT_Gen/blob/main/AgXBasesRGB.py
+// https://allenwp.com/blog/2025/05/29/allenwp-tonemapping-curve/
+vec3 AllenWpToneMappingCurve(vec3 x, vec4 params) {
+  const float kCrossover = 0.18;
+  const float kShoulderMax = 1.0 - kCrossover;
+  vec3 s = x - kCrossover;
+  vec3 slope_s = params.z * s;
+  s = slope_s * (1.0 + s / params.w) /
+      (1.0 + slope_s / kShoulderMax);
+  s += kCrossover;
+  vec3 p = pow(x, vec3(params.x));
+  vec3 t = p / (p + params.y);
+  return mix(s, t, lessThan(x, vec3(kCrossover)));
+}
+
+vec3 AgXToneMapping(vec3 color, vec4 params) {
+  const mat3 kInset = mat3(
+      0.544814746488245, 0.140416948464053, 0.0888104196149096,
+      0.373787398372697, 0.754137554567394, 0.178871756420858,
+      0.0813978551390581, 0.105445496968552, 0.732317823964232);
+  const mat3 kOutset = mat3(
+      1.96488741169489, -0.299313364904742, -0.164352742528393,
+      -0.855988495690215, 1.32639796461980, -0.238183969428088,
+      -0.108898916004672, -0.0270845997150571, 1.40253671195648);
+  color = kInset * max(color, vec3(0.0));
+  color = AllenWpToneMappingCurve(color, params);
+  color = min(color, vec3(1.0));
+  return clamp(kOutset * color, 0.0, 1.0);
+}

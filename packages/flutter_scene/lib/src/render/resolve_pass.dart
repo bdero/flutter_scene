@@ -30,15 +30,21 @@ class ResolvePass extends RenderGraphPass {
     required gpu.Texture outputColor,
     required double exposure,
     required ToneMappingMode toneMappingMode,
+    required double agxWhite,
+    required double agxContrast,
     required PostProcessSettings postProcess,
   }) : _outputColor = outputColor,
        _exposure = exposure,
        _toneMappingMode = toneMappingMode,
+       _agxWhite = agxWhite,
+       _agxContrast = agxContrast,
        _postProcess = postProcess;
 
   final gpu.Texture _outputColor;
   final double _exposure;
   final ToneMappingMode _toneMappingMode;
+  final double _agxWhite;
+  final double _agxContrast;
   final PostProcessSettings _postProcess;
 
   static final gpu.Shader _vertexShader =
@@ -88,6 +94,8 @@ class ResolvePass extends RenderGraphPass {
     final info = packResolveInfo(
       exposure: _exposure,
       toneMappingMode: _toneMappingMode,
+      agxWhite: _agxWhite,
+      agxContrast: _agxContrast,
       flipY: false,
       time: timeSeconds,
       settings: _postProcess,

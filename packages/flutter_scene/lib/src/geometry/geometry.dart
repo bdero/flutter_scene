@@ -691,6 +691,10 @@ abstract class Geometry {
   /// nodes carries the correct skeleton for every draw.
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
+  /// Depth bias for the current draw, set by the active render encoder.
+  @internal
+  double depthBias = 0.0;
+
   /// Binds vertex/index buffers and per-frame uniforms onto [pass] in
   /// preparation for a draw call.
   ///
@@ -1060,6 +1064,7 @@ class UnskinnedGeometry extends Geometry {
       shaderOverride ?? vertexShader,
       cameraTransform,
       cameraPosition,
+      depthBias: depthBias,
     );
   }
 }
@@ -1189,6 +1194,7 @@ class SkinnedGeometry extends Geometry {
       cameraPosition.z,
       _jointsTexture != null ? 1 : 0,
       _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
+      depthBias,
     ]);
     final frameInfoView = transientsBuffer.emplace(
       frameInfoFloats.buffer.asByteData(),
@@ -1419,7 +1425,7 @@ final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
 // Reused across every call: this runs for every draw of every pass, and
 // [TransientWriter.emplace] copies the bytes out immediately, so a shared
 // scratch is safe and avoids a per-draw allocation.
-final Float32List _unskinnedFrameInfoScratch = Float32List(19);
+final Float32List _unskinnedFrameInfoScratch = Float32List(20);
 
 @internal
 void bindUnskinnedFrameInfo(
@@ -1427,14 +1433,16 @@ void bindUnskinnedFrameInfo(
   TransientWriter transientsBuffer,
   gpu.Shader shader,
   vm.Matrix4 cameraTransform,
-  vm.Vector3 cameraPosition,
-) {
+  vm.Vector3 cameraPosition, {
+  double depthBias = 0.0,
+}) {
   final frameInfoSlot = shader.getUniformSlot('FrameInfo');
   final scratch = _unskinnedFrameInfoScratch
     ..setAll(0, cameraTransform.storage)
     ..[16] = cameraPosition.x
     ..[17] = cameraPosition.y
-    ..[18] = cameraPosition.z;
+    ..[18] = cameraPosition.z
+    ..[19] = depthBias;
   pass.bindUniform(
     frameInfoSlot,
     transientsBuffer.emplace(ByteData.sublistView(scratch)),

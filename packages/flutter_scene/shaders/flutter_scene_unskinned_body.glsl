@@ -7,6 +7,7 @@
 uniform FrameInfo {
   mat4 camera_transform;
   vec3 camera_position;
+  float depth_bias;
 }
 frame_info;
 
@@ -46,6 +47,7 @@ void main() {
 
   v_position = vertex.world_position;
   gl_Position = frame_info.camera_transform * vec4(vertex.world_position, 1.0);
+  gl_Position.z -= frame_info.depth_bias * gl_Position.w;
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vertex.world_normal;
   v_texture_coords = vertex.uv;

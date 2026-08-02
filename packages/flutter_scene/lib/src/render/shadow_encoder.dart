@@ -193,6 +193,7 @@ class ShadowEncoder {
     // fragment shader ignores camera_position, but a material's Vertex() hook
     // reads it, so the real camera position is bound).
     void bindDraw(Matrix4 worldTransform) {
+      geometry.depthBias = item.material.depthBias;
       if (depthVertex != null) {
         geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
@@ -201,6 +202,7 @@ class ShadowEncoder {
           activeVertex,
           _lightSpaceMatrix,
           _cameraPosition,
+          depthBias: item.material.depthBias,
         );
       } else {
         geometry.bind(

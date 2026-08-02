@@ -42,6 +42,8 @@ class EnvironmentSettings {
     this.skyEnvironment,
     this.sunLight,
     this.toneMapping = ToneMappingMode.pbrNeutral,
+    this.agxWhite = 16.29,
+    this.agxContrast = 1.25,
     this.environmentIntensity = 1.0,
     this.exposure = 1.0,
     this.colorGradingEnabled = false,
@@ -79,6 +81,8 @@ class EnvironmentSettings {
   SkyEnvironment? skyEnvironment;
   SunLight? sunLight;
   ToneMappingMode toneMapping;
+  double agxWhite;
+  double agxContrast;
 
   // Scene scalars (continuous).
   double environmentIntensity;
@@ -136,6 +140,8 @@ class EnvironmentSettings {
       skyEnvironment: scene.skyEnvironment,
       sunLight: scene.sunLight,
       toneMapping: scene.toneMapping,
+      agxWhite: scene.agxWhite,
+      agxContrast: scene.agxContrast,
       environmentIntensity: scene.environmentIntensity,
       exposure: scene.exposure,
       colorGradingEnabled: cg.enabled,
@@ -179,6 +185,8 @@ class EnvironmentSettings {
     scene.skyEnvironment = skyEnvironment;
     scene.sunLight = sunLight;
     scene.toneMapping = toneMapping;
+    scene.agxWhite = agxWhite;
+    scene.agxContrast = agxContrast;
     scene.environmentIntensity = environmentIntensity;
     scene.exposure = exposure;
 
@@ -238,6 +246,8 @@ class EnvironmentSettings {
       skyEnvironment: d.skyEnvironment,
       sunLight: d.sunLight,
       toneMapping: d.toneMapping,
+      agxWhite: _lerp(a.agxWhite, b.agxWhite, t),
+      agxContrast: _lerp(a.agxContrast, b.agxContrast, t),
       environmentIntensity: _lerp(
         a.environmentIntensity,
         b.environmentIntensity,
