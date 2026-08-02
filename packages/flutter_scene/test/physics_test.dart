@@ -34,6 +34,22 @@ class FixedTickRecorder extends Component {
   }
 }
 
+class _FixedTreeMutator extends Component {
+  _FixedTreeMutator(this.mutate);
+
+  final void Function(Node node) mutate;
+  bool _didMutate = false;
+
+  @override
+  void fixedUpdate(double fixedDt) {
+    if (_didMutate) {
+      return;
+    }
+    _didMutate = true;
+    mutate(node);
+  }
+}
+
 class FakeSimulation extends PhysicsSimulation {
   final List<double> stepCalls = [];
   final List<double> interpolateCalls = [];
@@ -275,6 +291,21 @@ void main() {
 
       root.sceneFixedPass(0.016);
       expect(events, ['parent', 'child']);
+    });
+
+    test('does not skip a sibling after a child detaches', () async {
+      final root = Node();
+      final mutator = _FixedTreeMutator((node) => node.detach());
+      final sibling = FixedTickRecorder();
+      root.add(Node()..addComponent(mutator));
+      root.add(Node()..addComponent(sibling));
+      mutator.mount();
+      sibling.mount();
+      await Future<void>.delayed(Duration.zero);
+
+      root.sceneFixedPass(0.016);
+
+      expect(sibling.fixedCalls, 1);
     });
   });
 
