@@ -226,7 +226,7 @@ const QUERY_INCLUDE_KINEMATIC: u8 = 2;
 const QUERY_INCLUDE_DYNAMIC: u8 = 4;
 const QUERY_INCLUDE_SENSORS: u8 = 8;
 
-fn query_filter(flags: u8) -> QueryFilter<'static> {
+fn query_filter(flags: u8, layer_mask: u32) -> QueryFilter<'static> {
     let mut qf = QueryFilterFlags::empty();
     if flags & QUERY_INCLUDE_FIXED == 0 {
         qf |= QueryFilterFlags::EXCLUDE_FIXED;
@@ -242,6 +242,11 @@ fn query_filter(flags: u8) -> QueryFilter<'static> {
     }
     let mut filter = QueryFilter::new();
     filter.flags = qf;
+    filter.groups = Some(InteractionGroups::new(
+        Group::ALL,
+        Group::from(layer_mask),
+        InteractionTestMode::And,
+    ));
     filter
 }
 
@@ -305,6 +310,7 @@ pub unsafe extern "C" fn fsr_world_raycast(
     max_distance: Real,
     solid: u8,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     let w = &mut *world;
@@ -313,7 +319,7 @@ pub unsafe extern "C" fn fsr_world_raycast(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
         &w.collider_set,
-        query_filter(filter_flags),
+        query_filter(filter_flags, layer_mask),
     );
     let Some((handle, hit)) = qp.cast_ray_and_get_normal(&ray, max_distance, solid != 0) else {
         return 0;
@@ -344,6 +350,7 @@ pub unsafe extern "C" fn fsr_world_raycast_all(
     max_distance: Real,
     solid: u8,
     filter_flags: u8,
+    layer_mask: u32,
 ) -> usize {
     let w = &mut *world;
     let ray = parry::query::Ray::new(Vector::new(ox, oy, oz), Vector::new(dx, dy, dz).normalize());
@@ -352,7 +359,7 @@ pub unsafe extern "C" fn fsr_world_raycast_all(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
         &w.collider_set,
-        query_filter(filter_flags),
+        query_filter(filter_flags, layer_mask),
     );
     for (handle, _, hit) in qp.intersect_ray(ray, max_distance, solid != 0) {
         let point = ray.point_at(hit.time_of_impact);
@@ -381,6 +388,7 @@ pub unsafe extern "C" fn fsr_world_overlap_sphere(
     cz: Real,
     radius: Real,
     filter_flags: u8,
+    layer_mask: u32,
 ) -> usize {
     let w = &mut *world;
     w.query_hits.clear();
@@ -390,7 +398,7 @@ pub unsafe extern "C" fn fsr_world_overlap_sphere(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
         &w.collider_set,
-        query_filter(filter_flags),
+        query_filter(filter_flags, layer_mask),
     );
     for (handle, _) in qp.intersect_shape(pose, &shape) {
         w.query_hits
@@ -418,6 +426,7 @@ pub unsafe extern "C" fn fsr_world_overlap_box(
     qz: Real,
     qw: Real,
     filter_flags: u8,
+    layer_mask: u32,
 ) -> usize {
     let w = &mut *world;
     w.query_hits.clear();
@@ -427,7 +436,7 @@ pub unsafe extern "C" fn fsr_world_overlap_box(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
         &w.collider_set,
-        query_filter(filter_flags),
+        query_filter(filter_flags, layer_mask),
     );
     for (handle, _) in qp.intersect_shape(pose, &shape) {
         w.query_hits
@@ -449,6 +458,7 @@ unsafe fn shape_cast_impl(
     shape: &dyn parry::shape::Shape,
     distance: Real,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     let w = &mut *world;
@@ -462,7 +472,7 @@ unsafe fn shape_cast_impl(
         w.narrow_phase.query_dispatcher(),
         &w.rigid_body_set,
         &w.collider_set,
-        query_filter(filter_flags),
+        query_filter(filter_flags, layer_mask),
     );
     let Some((handle, hit)) = qp.cast_shape(&pose, dir, shape, options) else {
         return 0;
@@ -488,6 +498,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_sphere(
     dz: Real,
     distance: Real,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     // A sphere is rotation-invariant, so the probe pose carries no
@@ -501,6 +512,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_sphere(
         &shape,
         distance,
         filter_flags,
+        layer_mask,
         out,
     )
 }
@@ -529,6 +541,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_box(
     dz: Real,
     distance: Real,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
@@ -540,6 +553,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_box(
         &shape,
         distance,
         filter_flags,
+        layer_mask,
         out,
     )
 }
@@ -566,6 +580,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_capsule(
     dz: Real,
     distance: Real,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
@@ -577,6 +592,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_capsule(
         &shape,
         distance,
         filter_flags,
+        layer_mask,
         out,
     )
 }
@@ -603,6 +619,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_cylinder(
     dz: Real,
     distance: Real,
     filter_flags: u8,
+    layer_mask: u32,
     out: *mut FsrHit,
 ) -> u8 {
     let pose = Pose::from_parts(Vector::new(ox, oy, oz), Rotation::from_xyzw(qx, qy, qz, qw));
@@ -614,6 +631,7 @@ pub unsafe extern "C" fn fsr_world_shape_cast_cylinder(
         &shape,
         distance,
         filter_flags,
+        layer_mask,
         out,
     )
 }

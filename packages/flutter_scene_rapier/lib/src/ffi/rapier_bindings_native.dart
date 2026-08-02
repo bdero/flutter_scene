@@ -920,6 +920,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double maxDistance,
     int flags,
+    int layerMask,
   ) {
     final hit = native.worldRaycast(
       _handle,
@@ -932,6 +933,7 @@ class NativeRapierBindings extends RapierBindings {
       maxDistance,
       1,
       flags,
+      layerMask,
       _hitBuffer,
     );
     return hit == 0 ? null : _hitFromBuffer();
@@ -947,6 +949,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double maxDistance,
     int flags,
+    int layerMask,
   ) {
     final count = native.worldRaycastAll(
       _handle,
@@ -959,6 +962,7 @@ class NativeRapierBindings extends RapierBindings {
       maxDistance,
       1,
       flags,
+      layerMask,
     );
     final results = <RawHit>[];
     for (var i = 0; i < count; i++) {
@@ -984,8 +988,17 @@ class NativeRapierBindings extends RapierBindings {
     double cz,
     double radius,
     int flags,
+    int layerMask,
   ) {
-    final count = native.worldOverlapSphere(_handle, cx, cy, cz, radius, flags);
+    final count = native.worldOverlapSphere(
+      _handle,
+      cx,
+      cy,
+      cz,
+      radius,
+      flags,
+      layerMask,
+    );
     return _drainColliderHandles(count);
   }
 
@@ -1002,6 +1015,7 @@ class NativeRapierBindings extends RapierBindings {
     double qz,
     double qw,
     int flags,
+    int layerMask,
   ) {
     final count = native.worldOverlapBox(
       _handle,
@@ -1016,6 +1030,7 @@ class NativeRapierBindings extends RapierBindings {
       qz,
       qw,
       flags,
+      layerMask,
     );
     return _drainColliderHandles(count);
   }
@@ -1031,6 +1046,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double distance,
     int flags,
+    int layerMask,
   ) {
     final hit = native.worldShapeCastSphere(
       _handle,
@@ -1043,6 +1059,7 @@ class NativeRapierBindings extends RapierBindings {
       dz,
       distance,
       flags,
+      layerMask,
       _hitBuffer,
     );
     return hit == 0 ? null : _hitFromBuffer();
@@ -1065,6 +1082,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double distance,
     int flags,
+    int layerMask,
   ) {
     final hit = native.worldShapeCastBox(
       _handle,
@@ -1083,6 +1101,7 @@ class NativeRapierBindings extends RapierBindings {
       dz,
       distance,
       flags,
+      layerMask,
       _hitBuffer,
     );
     return hit == 0 ? null : _hitFromBuffer();
@@ -1104,6 +1123,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double distance,
     int flags,
+    int layerMask,
   ) {
     final hit = native.worldShapeCastCapsule(
       _handle,
@@ -1121,6 +1141,7 @@ class NativeRapierBindings extends RapierBindings {
       dz,
       distance,
       flags,
+      layerMask,
       _hitBuffer,
     );
     return hit == 0 ? null : _hitFromBuffer();
@@ -1142,6 +1163,7 @@ class NativeRapierBindings extends RapierBindings {
     double dz,
     double distance,
     int flags,
+    int layerMask,
   ) {
     final hit = native.worldShapeCastCylinder(
       _handle,
@@ -1159,6 +1181,7 @@ class NativeRapierBindings extends RapierBindings {
       dz,
       distance,
       flags,
+      layerMask,
       _hitBuffer,
     );
     return hit == 0 ? null : _hitFromBuffer();
