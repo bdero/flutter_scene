@@ -1,5 +1,6 @@
 ## 0.20.1
 
+* `ExternalTexture` samples a platform texture as a material texture, so video, camera preview, and anything else a plugin registers with Flutter's texture registry can be drawn on scene geometry. Point it at a texture id and assign it to a texture slot; it captures on the frames that sample it.
 * `ShaderMaterial` owns the vertex stage too. Pass a `vertexShader` (per `MeshVariant`, so skinned and shadow passes can differ) and set uniforms and textures on either stage with `ShaderStage`, so a hand-written shader pair needs no subclassing.
 * Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
 * Custom vertex attributes work on skinned meshes.

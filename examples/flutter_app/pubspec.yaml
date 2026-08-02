@@ -35,6 +35,9 @@ dependencies:
   archive: ^4.0.0
   path_provider: ^2.1.0
   vector_math: ^2.1.4
+  video_player: ^2.13.0
+  camera: ^0.12.0+2
+  video_player_platform_interface: ^6.9.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0
@@ -46,6 +49,8 @@ flutter:
 
   assets:
     - assets/little_paris_eiffel_tower.png
+    # Looping test pattern for the External Texture example.
+    - assets/testsrc.mp4
     # Generated test tones for the Audio example.
     - assets/sounds/
     # Imported scenes are registered as DataAssets by buildScenes (loaded via
