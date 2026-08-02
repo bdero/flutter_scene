@@ -8,6 +8,7 @@ class InstancePackingScratch {
   Float32List _ccw = Float32List(0);
   Float32List _cw = Float32List(0);
   Uint8List _flipped = Uint8List(0);
+  Uint8List _batchWinding = Uint8List(0);
   final Matrix4 world = Matrix4.zero();
 
   Float32List ccw(int length) {
@@ -25,6 +26,11 @@ class InstancePackingScratch {
     final result = Uint8List.sublistView(_flipped, 0, length);
     result.fillRange(0, length, 0);
     return result;
+  }
+
+  Uint8List batchWinding(int length) {
+    _batchWinding = _growBytes(_batchWinding, length);
+    return Uint8List.sublistView(_batchWinding, 0, length);
   }
 
   static Float32List _growFloat(Float32List current, int length) =>
@@ -98,22 +104,20 @@ class PackedInstanceData implements PackedInstances {
 class InstanceDataBatch {
   InstanceDataBatch({
     required this.nodeTransform,
-    required List<Matrix4> instances,
-    required List<Vector4> colors,
+    required this.instances,
+    required this.colors,
     required this.nodeWindingFlipped,
-    List<bool>? instanceWindingFlipped,
+    this.instanceWindingFlipped,
     this.indices,
-  }) : instances = instances,
-       colors = colors,
-       packedWorldData = null,
+  }) : packedWorldData = null,
        packedWindingFlipped = null,
-       instanceWindingFlipped = instanceWindingFlipped,
-       assert(instances.length == colors.length),
+       assert(instances != null && colors != null),
+       assert(instances!.length == colors!.length),
        assert(
          instanceWindingFlipped == null ||
-             instanceWindingFlipped.length == instances.length,
+             instanceWindingFlipped.length == instances!.length,
        ),
-       assert(indices == null || indices.length <= instances.length);
+       assert(indices == null || indices.length <= instances!.length);
 
   InstanceDataBatch.single({
     required this.nodeTransform,
@@ -168,9 +172,13 @@ PackedInstanceData packInstanceDataBatches(
     count += batch.length;
   }
   final flipped = scratch?.flipped(count) ?? Uint8List(count);
+  final batchWinding =
+      scratch?.batchWinding(batches.length) ?? Uint8List(batches.length);
   var cwCount = 0;
   var flatIndex = 0;
-  for (final batch in batches) {
+  for (var batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    final batch = batches[batchIndex];
+    final batchCwStart = cwCount;
     final packedWinding = batch.packedWindingFlipped;
     if (packedWinding != null) {
       final indices = batch.indices;
@@ -182,6 +190,10 @@ PackedInstanceData packInstanceDataBatches(
         }
         flatIndex++;
       }
+      final batchCwCount = cwCount - batchCwStart;
+      batchWinding[batchIndex] = batchCwCount == 0
+          ? 0
+          : (batchCwCount == batch.length ? 1 : 2);
       continue;
     }
     final instances = batch.instances;
@@ -191,6 +203,7 @@ PackedInstanceData packInstanceDataBatches(
         cwCount++;
       }
       flatIndex++;
+      batchWinding[batchIndex] = batch.nodeWindingFlipped ? 1 : 0;
       continue;
     }
     final retainedParity = batch.instanceWindingFlipped;
@@ -205,6 +218,10 @@ PackedInstanceData packInstanceDataBatches(
       }
       flatIndex++;
     }
+    final batchCwCount = cwCount - batchCwStart;
+    batchWinding[batchIndex] = batchCwCount == 0
+        ? 0
+        : (batchCwCount == batch.length ? 1 : 2);
   }
 
   final ccwLength = (count - cwCount) * 20;
@@ -214,13 +231,14 @@ PackedInstanceData packInstanceDataBatches(
   final world = scratch?.world ?? Matrix4.zero();
   var ccwIndex = 0, cwIndex = 0;
   flatIndex = 0;
-  for (final batch in batches) {
+  for (var batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    final batch = batches[batchIndex];
     final packedData = batch.packedWorldData;
     if (packedData != null) {
       final indices = batch.indices;
       if (indices == null) {
-        final winding = _uniformWinding(batch.packedWindingFlipped!);
-        if (winding >= 0) {
+        final winding = batchWinding[batchIndex];
+        if (winding != 2) {
           final target = winding == 0 ? ccw : cw;
           final targetIndex = winding == 0 ? ccwIndex : cwIndex;
           final offset = targetIndex * 20;
@@ -269,15 +287,6 @@ PackedInstanceData packInstanceDataBatches(
     }
   }
   return PackedInstanceData(ccw, cw);
-}
-
-int _uniformWinding(Uint8List winding) {
-  if (winding.isEmpty) return 0;
-  final first = winding.first;
-  for (var i = 1; i < winding.length; i++) {
-    if (winding[i] != first) return -1;
-  }
-  return first;
 }
 
 /// Packs retained groups as transform-only records for depth-style passes.

@@ -233,7 +233,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(_cuboid(vm.Vector4(0.85, 0.30, 0.20, 1.0), 0.1, 0.5));
     return (scene: scene, camera: _camera());
   }),
-  // Exercises the camera depth prepass used by depth-only effects.
+  // Exercises the full-layout camera depth prepass used by reflections. The
+  // matching plain meshes collapse into one synthetic instanced draw.
   SmokeScene('depth_post', () {
     final scene = _smokeScene();
     scene.depthOfField
@@ -241,7 +242,24 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..focusDistance = 5.0
       ..fStop = 5.6
       ..quality = DepthOfFieldQuality.low;
-    scene.add(_cuboid(vm.Vector4(0.25, 0.65, 0.90, 1.0), 0.1, 0.5));
+    scene.screenSpaceReflections
+      ..enabled = true
+      ..resolutionScale = 0.5
+      ..maxSteps = 16;
+    final geometry = CuboidGeometry(vm.Vector3(0.65, 0.65, 0.65));
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.25, 0.65, 0.90, 1.0)
+      ..metallicFactor = 0.1
+      ..roughnessFactor = 0.5
+      ..vertexColorWeight = 0.0;
+    for (var i = -1; i <= 1; i++) {
+      scene.add(
+        Node(mesh: Mesh(geometry, material))
+          ..localTransform = vm.Matrix4.translation(
+            vm.Vector3(i * 0.85, i.abs() * -0.25, i * -0.2),
+          ),
+      );
+    }
     return (scene: scene, camera: _camera());
   }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
@@ -333,7 +351,6 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           DirectionalLight(
             direction: vm.Vector3(-0.4, -1.0, -0.35),
             castsShadow: true,
-            shadowFilter: DirectionalShadowFilter.fixedPcf,
             shadowMaxDistance: 20.0,
           ),
         ),

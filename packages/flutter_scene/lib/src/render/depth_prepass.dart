@@ -7,7 +7,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
-    show bindUnskinnedFrameInfo;
+    show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/material/material.dart' show Material;
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/instance_batching.dart';
 
 /// Render-graph blackboard key under which [DepthPrepass] publishes the
 /// camera linear-depth texture: planar view-space depth (world units) in
@@ -258,37 +259,13 @@ class _DepthPrepassEncoder {
     var index = 0;
     while (index < _records.length) {
       final first = _records[index];
-      var end = index + 1;
-      if (first.geometry.instancedVertexLayout != null &&
-          first.jointsTexture == null) {
-        while (end < _records.length &&
-            identical(first.geometry, _records[end].geometry) &&
-            identical(first.material, _records[end].material) &&
-            _records[end].jointsTexture == null) {
-          end++;
-        }
-      }
+      final end = depthBatchEnd(_records, index);
       if (end > index + 1) {
-        final transforms = <Matrix4>[];
+        final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          final item = _records[batchIndex];
-          final instances = item.instanceTransforms;
-          if (instances == null) {
-            transforms.add(Matrix4.copy(item.worldTransform));
-            continue;
-          }
-          final visible = item.visibleInstanceIndices;
-          final count = visible?.length ?? instances.length;
-          for (var slot = 0; slot < count; slot++) {
-            final instanceIndex = visible?[slot] ?? slot;
-            transforms.add(item.worldTransform * instances[instanceIndex]);
-          }
+          batches.add(instanceDataBatchFor(_records[batchIndex]));
         }
-        final combined =
-            RenderItem(geometry: first.geometry, material: first.material)
-              ..visible = true
-              ..instanceTransforms = transforms;
-        _encode(combined);
+        _encode(first, batches: batches);
         index = end;
         continue;
       }
@@ -298,7 +275,7 @@ class _DepthPrepassEncoder {
     _records.clear();
   }
 
-  void _encode(RenderItem item) {
+  void _encode(RenderItem item, {List<InstanceDataBatch>? batches}) {
     // Cull the same faces as the color pass; a double-sided (culling: none)
     // material must stay double-sided here, or its camera-facing back faces are
     // absent from the prepass and SSAO/SSR read the farther surface behind them.
@@ -408,6 +385,21 @@ class _DepthPrepassEncoder {
     // [vertexStreamCount]), matching the color encoder.
     final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
 
+    if (batches != null) {
+      bindDraw(_identityTransform);
+      final PackedInstances packed = depthVertex == null
+          ? packInstanceDataBatches(
+              batches,
+              scratch: transientInstancePackingScratch,
+            )
+          : packInstanceTransformBatches(
+              batches,
+              scratch: transientInstancePackingScratch,
+            );
+      _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
+      return;
+    }
+
     final instances = item.instanceTransforms;
     if (instances != null) {
       if (geometry.instancedVertexLayout == null) {
@@ -430,24 +422,46 @@ class _DepthPrepassEncoder {
         return;
       }
       bindDraw(item.worldTransform);
-      final packed = packInstanceTransforms(
-        item.worldTransform,
-        instances,
-        nodeWindingFlipped: item.windingFlipped,
-        instanceWindingFlipped: item.instanceWindingFlipped,
-        indices: item.visibleInstanceIndices,
-        scratch: transientInstancePackingScratch,
-      );
-      if (packed.ccwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
-        _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-        geometry.draw(_renderPass, instanceCount: packed.ccwCount);
-      }
-      if (packed.cwCount > 0) {
-        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
-        _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-        geometry.draw(_renderPass, instanceCount: packed.cwCount);
-      }
+      final packedWorldData = item.instanceWorldData;
+      final packedWinding = item.instanceWorldWindingFlipped;
+      final cached = packedWorldData == null || packedWinding == null
+          ? null
+          : [
+              InstanceDataBatch.cached(
+                packedWorldData: packedWorldData,
+                packedWindingFlipped: packedWinding,
+                indices: item.visibleInstanceIndices,
+              ),
+            ];
+      final PackedInstances packed = depthVertex == null
+          ? (cached == null
+                ? packInstanceData(
+                    item.worldTransform,
+                    instances,
+                    item.instanceColors!,
+                    nodeWindingFlipped: item.windingFlipped,
+                    instanceWindingFlipped: item.instanceWindingFlipped,
+                    indices: item.visibleInstanceIndices,
+                    scratch: transientInstancePackingScratch,
+                  )
+                : packInstanceDataBatches(
+                    cached,
+                    scratch: transientInstancePackingScratch,
+                  ))
+          : (cached == null
+                ? packInstanceTransforms(
+                    item.worldTransform,
+                    instances,
+                    nodeWindingFlipped: item.windingFlipped,
+                    instanceWindingFlipped: item.instanceWindingFlipped,
+                    indices: item.visibleInstanceIndices,
+                    scratch: transientInstancePackingScratch,
+                  )
+                : packInstanceTransformBatches(
+                    cached,
+                    scratch: transientInstancePackingScratch,
+                  ));
+      _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
       return;
     }
 
@@ -457,11 +471,19 @@ class _DepthPrepassEncoder {
     // stream slot.
     if (geometry.instancedVertexLayout != null &&
         geometry.bindsModelTransformInstance) {
-      bindSingleInstanceTransform(
-        _renderPass,
-        item.worldTransform,
-        slot: instanceSlot,
-      );
+      if (depthVertex == null) {
+        bindSingleInstanceData(
+          _renderPass,
+          item.worldTransform,
+          slot: instanceSlot,
+        );
+      } else {
+        bindSingleInstanceTransform(
+          _renderPass,
+          item.worldTransform,
+          slot: instanceSlot,
+        );
+      }
     }
     _renderPass.setWindingOrder(
       item.windingFlipped
@@ -469,5 +491,33 @@ class _DepthPrepassEncoder {
           : gpu.WindingOrder.counterClockwise,
     );
     geometry.draw(_renderPass);
+  }
+
+  static final Matrix4 _identityTransform = Matrix4.identity();
+
+  void _drawPacked(
+    Geometry geometry,
+    PackedInstances packed,
+    bool withColor,
+    int instanceSlot,
+  ) {
+    if (packed.ccwCount > 0) {
+      if (withColor) {
+        bindInstanceData(_renderPass, packed.ccw, slot: instanceSlot);
+      } else {
+        bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
+      }
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+    }
+    if (packed.cwCount > 0) {
+      if (withColor) {
+        bindInstanceData(_renderPass, packed.cw, slot: instanceSlot);
+      } else {
+        bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
+      }
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      geometry.draw(_renderPass, instanceCount: packed.cwCount);
+    }
   }
 }

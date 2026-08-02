@@ -1,13 +1,6 @@
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
-
-const bool _profileRenderGraph = bool.fromEnvironment('FLUTTER_SCENE_PROFILE');
-
-class _PassProfile {
-  int samples = 0;
-  int totalMicroseconds = 0;
-  int maxMicroseconds = 0;
-}
+import 'package:flutter_scene/src/render/render_profile.dart';
 
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
@@ -231,8 +224,7 @@ abstract class RenderGraphPass {
 /// synchronization internally), alias transient memory, or cull unused
 /// passes.
 class RenderGraph {
-  static final Map<String, _PassProfile> _profiles = {};
-  static int _profileFrames = 0;
+  static final RenderProfileAccumulator _profile = RenderProfileAccumulator();
 
   final List<RenderGraphPass> _passes = [];
   final Blackboard _blackboard = Blackboard();
@@ -255,39 +247,29 @@ class RenderGraph {
       blackboard: _blackboard,
     );
     for (final pass in _passes) {
-      if (!_profileRenderGraph) {
+      if (!profileRendering) {
         pass.execute(context);
         continue;
       }
       final stopwatch = Stopwatch()..start();
       pass.execute(context);
       stopwatch.stop();
-      final elapsed = stopwatch.elapsedMicroseconds;
-      final profile = _profiles.putIfAbsent(pass.name, _PassProfile.new);
-      profile
-        ..samples += 1
-        ..totalMicroseconds += elapsed
-        ..maxMicroseconds = elapsed > profile.maxMicroseconds
-            ? elapsed
-            : profile.maxMicroseconds;
+      _profile.add(pass.name, stopwatch.elapsedMicroseconds, trackMax: true);
     }
-    if (_profileRenderGraph && ++_profileFrames % 120 == 0) {
-      final entries = _profiles.entries.toList()
-        ..sort(
-          (a, b) =>
-              b.value.totalMicroseconds.compareTo(a.value.totalMicroseconds),
-        );
+    if (profileRendering) {
+      final snapshot = _profile.endSample();
+      if (snapshot == null) return;
+      final entries = snapshot.totals.keys.toList()
+        ..sort((a, b) => snapshot.totals[b]!.compareTo(snapshot.totals[a]!));
       final summary = entries
           .map(
-            (entry) =>
-                '${entry.key}_mean_us='
-                '${entry.value.totalMicroseconds ~/ entry.value.samples} '
-                '${entry.key}_max_us=${entry.value.maxMicroseconds}',
+            (name) =>
+                '${name}_mean_us=${snapshot.mean(name)} '
+                '${name}_max_us=${snapshot.max(name)}',
           )
           .join(' ');
       // ignore: avoid_print
       print('FLUTTER_SCENE_PROFILE $summary');
-      _profiles.clear();
     }
   }
 }

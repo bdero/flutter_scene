@@ -2,6 +2,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
+import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -129,50 +130,11 @@ class ShadowEncoder {
     var index = 0;
     while (index < _records.length) {
       final first = _records[index];
-      var end = index + 1;
-      if (first.geometry.instancedVertexLayout != null &&
-          first.jointsTexture == null) {
-        while (end < _records.length &&
-            identical(first.geometry, _records[end].geometry) &&
-            identical(first.material, _records[end].material) &&
-            _records[end].jointsTexture == null) {
-          end++;
-        }
-      }
+      final end = depthBatchEnd(_records, index);
       if (end > index + 1) {
         final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          final item = _records[batchIndex];
-          final instances = item.instanceTransforms;
-          if (instances == null) {
-            batches.add(
-              InstanceDataBatch.single(
-                nodeTransform: item.worldTransform,
-                nodeWindingFlipped: item.windingFlipped,
-              ),
-            );
-            continue;
-          }
-          final packedWorldData = item.instanceWorldData;
-          final packedWinding = item.instanceWorldWindingFlipped;
-          if (packedWorldData != null && packedWinding != null) {
-            batches.add(
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWinding,
-              ),
-            );
-          } else {
-            batches.add(
-              InstanceDataBatch(
-                nodeTransform: item.worldTransform,
-                instances: instances,
-                colors: item.instanceColors!,
-                nodeWindingFlipped: item.windingFlipped,
-                instanceWindingFlipped: item.instanceWindingFlipped,
-              ),
-            );
-          }
+          batches.add(instanceDataBatchFor(_records[batchIndex]));
         }
         _encode(first, batches: batches);
         index = end;
@@ -349,11 +311,19 @@ class ShadowEncoder {
     // stream slot.
     if (geometry.instancedVertexLayout != null &&
         geometry.bindsModelTransformInstance) {
-      bindSingleInstanceTransform(
-        _renderPass,
-        item.worldTransform,
-        slot: instanceSlot,
-      );
+      if (depthVertex == null) {
+        bindSingleInstanceData(
+          _renderPass,
+          item.worldTransform,
+          slot: instanceSlot,
+        );
+      } else {
+        bindSingleInstanceTransform(
+          _renderPass,
+          item.worldTransform,
+          slot: instanceSlot,
+        );
+      }
     }
     // Mirrored casters reverse winding; flip the cull order so the same faces
     // that are visible also cast shadows.

@@ -135,7 +135,8 @@ const _frameworkShaderFiles = <String>[
 /// sidecar to `build/shaderbundles/[bundleName].fmat.json`. In
 /// [MaterialAssetMode.legacyOnly], list both as assets in the app's pubspec.
 /// In DataAssets modes, the generated files are registered as DataAssets when
-/// the toolchain supports them.
+/// the toolchain supports them. [MaterialAssetMode.dataAssetsIfAvailable] is
+/// the default.
 ///
 /// The generated shaders `#include` flutter_scene's framework GLSL; this hook
 /// puts flutter_scene's `shaders/` directory on `impellerc`'s include path (via
@@ -147,7 +148,7 @@ Future<void> buildMaterials({
   List<String>? materials,
   String bundleName = 'materials',
   String discoveryRoot = 'assets/',
-  MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
+  MaterialAssetMode assetMode = MaterialAssetMode.dataAssetsIfAvailable,
 }) async {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == MaterialAssetMode.dataAssetsRequired &&
