@@ -25,6 +25,7 @@ import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/scene.dart';
+
 import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/block_alignment.dart';
 import '../../../texture/ktx2_image.dart';
@@ -136,31 +137,42 @@ SceneDocument buildSceneDocument(
 
   // Geometry resources per mesh primitive, shared across the nodes that
   // reference the same mesh.
-  final meshPairs = <int, List<(LocalId, LocalId)>>{};
+  final meshPairs = <(int, bool), List<(LocalId, LocalId)>>{};
   for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++) {
-    final pairs = <(LocalId, LocalId)>[];
-    var primIndex = 0;
-    for (final primitive in doc.meshes[meshIndex].primitives) {
-      if (primitive.mode != 4) continue; // triangles only
-      final bounds = _primitiveBounds(
-        primitive,
-        doc,
-        primIndex,
-        skinnedUsers: skinnedUsers[meshIndex],
-        alsoUsedUnskinned: unskinnedUse.contains(meshIndex),
-        poseUnions: poseUnions,
-      );
-      final geometryId = _buildGeometry(
-        document,
-        primitive,
-        doc,
-        bufferData,
-        bounds: bounds,
-      );
-      pairs.add((geometryId, materialFor(primitive.material)));
-      primIndex++;
+    List<(LocalId, LocalId)> buildPairs(bool skinned) {
+      final pairs = <(LocalId, LocalId)>[];
+      var primIndex = 0;
+      for (final primitive in doc.meshes[meshIndex].primitives) {
+        if (primitive.mode != 4) continue; // triangles only
+        final bounds = _primitiveBounds(
+          primitive,
+          doc,
+          primIndex,
+          skinnedUsers: skinned ? skinnedUsers[meshIndex] : null,
+          alsoUsedUnskinned: false,
+          poseUnions: poseUnions,
+        );
+        final geometryId = _buildGeometry(
+          document,
+          primitive,
+          doc,
+          bufferData,
+          bounds: bounds,
+          includeSkinning: skinned,
+        );
+        pairs.add((geometryId, materialFor(primitive.material)));
+        primIndex++;
+      }
+      return pairs;
     }
-    meshPairs[meshIndex] = pairs;
+
+    final hasSkinnedUsers = skinnedUsers[meshIndex]?.isNotEmpty ?? false;
+    if (unskinnedUse.contains(meshIndex) || !hasSkinnedUsers) {
+      meshPairs[(meshIndex, false)] = buildPairs(false);
+    }
+    if (hasSkinnedUsers) {
+      meshPairs[(meshIndex, true)] = buildPairs(true);
+    }
   }
 
   // Skins (joints reference nodes by id; inverse-bind matrices ride in a
@@ -175,7 +187,7 @@ SceneDocument buildSceneDocument(
     final node = doc.nodes[i];
     final components = <ComponentSpec>[];
     if (node.mesh != null && node.mesh! < doc.meshes.length) {
-      final pairs = meshPairs[node.mesh!] ?? const [];
+      final pairs = meshPairs[(node.mesh!, node.skin != null)] ?? const [];
       if (pairs.isNotEmpty) components.add(_meshComponent(pairs));
     }
     document.addNode(
@@ -417,12 +429,14 @@ LocalId _buildGeometry(
   GltfDocument doc,
   Uint8List bufferData, {
   required BoundsSpec? bounds,
+  required bool includeSkinning,
 }) {
   final packed = packGltfPrimitive(
     primitive: primitive,
     accessors: doc.accessors,
     bufferViews: doc.bufferViews,
     bufferData: bufferData,
+    includeSkinning: includeSkinning,
   );
   // Unskinned geometry is stored de-interleaved (structure of arrays) so the
   // realizer uploads each attribute straight to its own GPU buffer with no

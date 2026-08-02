@@ -76,30 +76,57 @@ Future<Node> importGltf(
 /// decode still run on the calling thread. They are small next to vertex
 /// packing, but could also move onto the isolate (parse from raw bytes there,
 /// return the packed skins/animations too) to fully offload a heavy import.
-Future<List<List<PackedPrimitive?>>> _packPrimitives(
+typedef _PackedPrimitiveVariants = ({
+  PackedPrimitive unskinned,
+  PackedPrimitive skinned,
+});
+
+Future<List<List<_PackedPrimitiveVariants?>>> _packPrimitives(
   GltfDocument doc,
   Uint8List bufferData,
 ) => compute(_packPrimitivesIsolate, (doc: doc, bufferData: bufferData));
 
 // Top-level so it can run on a background isolate. Packs each primitive with
 // the shared [packGltfPrimitive]; non-triangle topologies pack to null.
-List<List<PackedPrimitive?>> _packPrimitivesIsolate(
+List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
   ({GltfDocument doc, Uint8List bufferData}) input,
 ) {
   final doc = input.doc;
+  final skinnedMeshes = <int>{};
+  final unskinnedMeshes = <int>{};
+  for (final node in doc.nodes) {
+    final mesh = node.mesh;
+    if (mesh == null) continue;
+    (node.skin == null ? unskinnedMeshes : skinnedMeshes).add(mesh);
+  }
+
+  _PackedPrimitiveVariants pack(int meshIndex, GltfMeshPrimitive primitive) {
+    PackedPrimitive run(bool includeSkinning) => packGltfPrimitive(
+      primitive: primitive,
+      accessors: doc.accessors,
+      bufferViews: doc.bufferViews,
+      bufferData: input.bufferData,
+      includeSkinning: includeSkinning,
+    );
+    final carriesSkinning =
+        primitive.attributes.containsKey('JOINTS_0') &&
+        primitive.attributes.containsKey('WEIGHTS_0');
+    if (carriesSkinning && skinnedMeshes.contains(meshIndex)) {
+      final skinned = run(true);
+      if (!unskinnedMeshes.contains(meshIndex)) {
+        return (unskinned: skinned, skinned: skinned);
+      }
+      return (unskinned: run(false), skinned: skinned);
+    }
+    final unskinned = run(false);
+    return (unskinned: unskinned, skinned: unskinned);
+  }
+
   return [
-    for (final mesh in doc.meshes)
+    for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++)
       [
-        for (final p in mesh.primitives)
-          if (p.mode != 4)
-            null
-          else
-            packGltfPrimitive(
-              primitive: p,
-              accessors: doc.accessors,
-              bufferViews: doc.bufferViews,
-              bufferData: input.bufferData,
-            ),
+        for (final p in doc.meshes[meshIndex].primitives)
+          if (p.mode != 4) null else pack(meshIndex, p),
       ],
   ];
 }
@@ -109,7 +136,7 @@ List<List<PackedPrimitive?>> _packPrimitivesIsolate(
 Future<Node> _buildScene(
   GltfDocument doc,
   Uint8List bufferData,
-  List<List<PackedPrimitive?>> packed,
+  List<List<_PackedPrimitiveVariants?>> packed,
   GltfResourceResolver? resolveUri,
 ) async {
   // Decode all textures up front so material construction can reference
@@ -215,7 +242,7 @@ void _populateNode({
   required Node engineNode,
   required GltfNode gltfNode,
   required GltfDocument doc,
-  required List<List<PackedPrimitive?>> packed,
+  required List<List<_PackedPrimitiveVariants?>> packed,
   required List<Node> engineNodes,
   required List<Texture2D> textures,
   required List<MaterialsVariantBinding> variantBindings,
@@ -243,16 +270,19 @@ void _populateNode({
     final primitives = <MeshPrimitive>[];
     for (int pi = 0; pi < gltfMesh.primitives.length; pi++) {
       final p = gltfMesh.primitives[pi];
-      final packedPrimitive = packedMesh[pi];
+      final packedVariants = packedMesh[pi];
       // A null entry is a non-triangle topology skipped during packing; they
       // need shader/render-state support that flutter_scene's pipeline doesn't
       // currently expose.
-      if (packedPrimitive == null) {
+      if (packedVariants == null) {
         debugPrint(
           'Skipping mesh primitive with unsupported topology mode ${p.mode}',
         );
         continue;
       }
+      final packedPrimitive = gltfNode.skin == null
+          ? packedVariants.unskinned
+          : packedVariants.skinned;
       final geometry = geometryFromPacked(packedPrimitive);
       final material = p.material != null
           ? buildMaterial(doc.materials[p.material!], textures)

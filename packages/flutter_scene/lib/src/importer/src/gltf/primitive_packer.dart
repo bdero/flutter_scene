@@ -57,11 +57,15 @@ class PackedPrimitive {
 /// de-indexed (every triangle expanded to three unique vertices, each
 /// carrying that triangle's face normal) with a sequential index
 /// buffer. Primitives that author normals are kept as-is.
+///
+/// Set [includeSkinning] to false when the owning node has no skin. Some
+/// exporters leave joint attributes on otherwise static primitives.
 PackedPrimitive packGltfPrimitive({
   required GltfMeshPrimitive primitive,
   required List<GltfAccessor> accessors,
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
+  bool includeSkinning = true,
 }) {
   final positionIdx = primitive.attributes['POSITION'];
   if (positionIdx == null) {
@@ -110,6 +114,7 @@ PackedPrimitive packGltfPrimitive({
     vertexCount,
   );
   final hasJoints =
+      includeSkinning &&
       primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
   final joints = hasJoints

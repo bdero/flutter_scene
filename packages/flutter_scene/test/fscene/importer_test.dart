@@ -10,6 +10,7 @@
 // Runs only when the source GLB corpus is present (CI without it skips).
 
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
@@ -46,17 +47,28 @@ void main() {
         // Expected packed primitives, in the same mesh/primitive walk order
         // the emitter uses.
         final expected = <PackedPrimitive>[];
-        for (final mesh in doc.meshes) {
-          for (final primitive in mesh.primitives) {
-            if (primitive.mode != 4) continue;
-            expected.add(
-              packGltfPrimitive(
-                primitive: primitive,
-                accessors: doc.accessors,
-                bufferViews: doc.bufferViews,
-                bufferData: container.binaryChunk,
-              ),
-            );
+        for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++) {
+          final users = doc.nodes.where((node) => node.mesh == meshIndex);
+          final hasSkinnedUsers = users.any((node) => node.skin != null);
+          final hasUnskinnedUsers = users.any((node) => node.skin == null);
+          final modes = [
+            if (hasUnskinnedUsers || !hasSkinnedUsers) false,
+            if (hasSkinnedUsers) true,
+          ];
+          final mesh = doc.meshes[meshIndex];
+          for (final includeSkinning in modes) {
+            for (final primitive in mesh.primitives) {
+              if (primitive.mode != 4) continue;
+              expected.add(
+                packGltfPrimitive(
+                  primitive: primitive,
+                  accessors: doc.accessors,
+                  bufferViews: doc.bufferViews,
+                  bufferData: container.binaryChunk,
+                  includeSkinning: includeSkinning,
+                ),
+              );
+            }
           }
         }
 
@@ -135,6 +147,19 @@ void main() {
         expect(document.payload(channel.timeline)?.bytes, isNotNull);
         expect(document.payload(channel.keyframes)?.bytes, isNotNull);
       }
+    });
+
+    test('joint attributes without a skin emit unskinned geometry', () {
+      final document = importGlbToSceneDocument(_jointedStaticGlb());
+      final geometry =
+          document.resources.values.singleWhere(
+                (resource) => resource is GeometryResource,
+              )
+              as GeometryResource;
+      expect(
+        document.payload(geometry.vertices!)!.layout,
+        InterleavedLayoutAdapter.unskinnedSoaLayout,
+      );
     });
 
     test('declares right-handed glTF coordinates and a generator', () {
@@ -344,6 +369,138 @@ void main() {
       expect(checked, greaterThan(0));
     });
   });
+}
+
+Uint8List _jointedStaticGlb() {
+  final buffer = BytesBuilder();
+  buffer.add(
+    Float32List.fromList([
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+    ]).buffer.asUint8List(),
+  );
+  buffer.add(Uint16List(12).buffer.asUint8List());
+  buffer.add(
+    Float32List.fromList([
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+    ]).buffer.asUint8List(),
+  );
+  buffer.add(Uint16List.fromList([0, 1, 2]).buffer.asUint8List());
+  buffer.add(Uint8List(2));
+  final binary = buffer.takeBytes();
+  final json = {
+    'asset': {'version': '2.0'},
+    'scene': 0,
+    'scenes': [
+      {
+        'nodes': [0],
+      },
+    ],
+    'nodes': [
+      {'mesh': 0},
+    ],
+    'meshes': [
+      {
+        'primitives': [
+          {
+            'attributes': {
+              'POSITION': 0,
+              'NORMAL': 1,
+              'TEXCOORD_0': 2,
+              'JOINTS_0': 3,
+              'WEIGHTS_0': 4,
+            },
+            'indices': 5,
+          },
+        ],
+      },
+    ],
+    'buffers': [
+      {'byteLength': binary.length},
+    ],
+    'bufferViews': [
+      {'buffer': 0, 'byteOffset': 0, 'byteLength': 36},
+      {'buffer': 0, 'byteOffset': 36, 'byteLength': 36},
+      {'buffer': 0, 'byteOffset': 72, 'byteLength': 24},
+      {'buffer': 0, 'byteOffset': 96, 'byteLength': 24},
+      {'buffer': 0, 'byteOffset': 120, 'byteLength': 48},
+      {'buffer': 0, 'byteOffset': 168, 'byteLength': 6},
+    ],
+    'accessors': [
+      {
+        'bufferView': 0,
+        'componentType': 5126,
+        'count': 3,
+        'type': 'VEC3',
+        'min': [0, 0, 0],
+        'max': [1, 1, 0],
+      },
+      {'bufferView': 1, 'componentType': 5126, 'count': 3, 'type': 'VEC3'},
+      {'bufferView': 2, 'componentType': 5126, 'count': 3, 'type': 'VEC2'},
+      {'bufferView': 3, 'componentType': 5123, 'count': 3, 'type': 'VEC4'},
+      {'bufferView': 4, 'componentType': 5126, 'count': 3, 'type': 'VEC4'},
+      {'bufferView': 5, 'componentType': 5123, 'count': 3, 'type': 'SCALAR'},
+    ],
+  };
+  return _glb(json, binary);
+}
+
+Uint8List _glb(Map<String, Object?> json, Uint8List binary) {
+  final jsonBytes = utf8.encode(jsonEncode(json));
+  final jsonLength = (jsonBytes.length + 3) & ~3;
+  final binaryLength = (binary.length + 3) & ~3;
+  final output = BytesBuilder();
+  void uint32(int value) => output.add(
+    Uint8List(4)..buffer.asByteData().setUint32(0, value, Endian.little),
+  );
+  output.add(ascii.encode('glTF'));
+  uint32(2);
+  uint32(12 + 8 + jsonLength + 8 + binaryLength);
+  uint32(jsonLength);
+  output.add(ascii.encode('JSON'));
+  output.add(jsonBytes);
+  output.add(
+    Uint8List(jsonLength - jsonBytes.length)
+      ..fillRange(0, jsonLength - jsonBytes.length, 0x20),
+  );
+  uint32(binaryLength);
+  output.add([0x42, 0x49, 0x4e, 0]);
+  output.add(binary);
+  output.add(Uint8List(binaryLength - binary.length));
+  return output.takeBytes();
 }
 
 double _f32(double v) => (Float32List(1)..[0] = v)[0];
