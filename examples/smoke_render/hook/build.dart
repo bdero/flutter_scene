@@ -1,9 +1,13 @@
+import 'package:data_assets/data_assets.dart';
 import 'package:flutter_gpu_shaders/build.dart';
 import 'package:flutter_scene/build_hooks.dart';
 import 'package:hooks/hooks.dart';
 
 void main(List<String> args) {
   build(args, (config, output) async {
+    if (!config.config.buildDataAssets) {
+      return;
+    }
     await buildMaterials(
       buildInput: config,
       buildOutput: output,

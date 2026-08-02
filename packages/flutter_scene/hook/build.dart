@@ -5,6 +5,8 @@ import 'package:flutter_gpu_shaders/build.dart';
 
 void main(List<String> args) async {
   await build(args, (config, output) async {
+    // This is also false when Dart data assets are disabled. Runtime loading
+    // reports the required Flutter configuration in that case.
     if (!config.config.buildDataAssets) {
       return;
     }

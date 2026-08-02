@@ -71,7 +71,12 @@ Future<void> loadBaseShaderLibrary() async {
   final key = await resolveBaseShaderBundleKey();
   final lib = await gpu.loadShaderLibraryAsync(key);
   if (lib == null) {
-    throw Exception("Failed to load base shader bundle! ($key)");
+    throw Exception(baseShaderBundleLoadFailureMessage(key));
   }
   _baseShaderLibrary = lib;
 }
+
+@visibleForTesting
+String baseShaderBundleLoadFailureMessage(String key) =>
+    'Failed to load base shader bundle ($key). Run '
+    '`flutter config --enable-dart-data-assets`, then rebuild the app.';

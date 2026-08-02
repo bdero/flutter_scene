@@ -138,25 +138,40 @@ void main() {
       final geometry = _StubGeometry();
       final material = _StubMaterial();
       final single = _item(geometry, material);
-      expect(instanceDataBatchFor(single).instances, isNull);
+      expect(instanceDataBatchFor(single, indices: null).instances, isNull);
 
       final item = _item(geometry, material)
         ..instanceTransforms = [Matrix4.identity(), Matrix4.identity()]
         ..instanceColors = [Vector4.all(1), Vector4.all(1)]
         ..visibleInstanceIndices = [1];
-      final uncached = instanceDataBatchFor(item);
+      final uncached = instanceDataBatchFor(
+        item,
+        indices: item.visibleInstanceIndices,
+      );
       expect(uncached.instances, same(item.instanceTransforms));
       expect(uncached.indices, [1]);
+
+      final uncachedShadow = instanceDataBatchFor(item, indices: null);
+      expect(uncachedShadow.instances, same(item.instanceTransforms));
+      expect(uncachedShadow.indices, isNull);
 
       final packed = Float32List(40);
       final winding = Uint8List.fromList([0, 1]);
       item
         ..instanceWorldData = packed
         ..instanceWorldWindingFlipped = winding;
-      final cached = instanceDataBatchFor(item);
+      final cached = instanceDataBatchFor(
+        item,
+        indices: item.visibleInstanceIndices,
+      );
       expect(cached.packedWorldData, same(packed));
       expect(cached.packedWindingFlipped, same(winding));
       expect(cached.indices, [1]);
+
+      final cachedShadow = instanceDataBatchFor(item, indices: null);
+      expect(cachedShadow.packedWorldData, same(packed));
+      expect(cachedShadow.packedWindingFlipped, same(winding));
+      expect(cachedShadow.indices, isNull);
     });
   });
 }

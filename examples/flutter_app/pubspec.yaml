@@ -10,6 +10,7 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
+  data_assets: ^0.20.0
   flutter:
     sdk: flutter
   flutter_gpu_shaders: ^0.5.1

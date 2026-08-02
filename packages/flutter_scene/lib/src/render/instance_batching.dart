@@ -55,7 +55,10 @@ int depthBatchEnd(List<RenderItem> records, int start) {
   return end;
 }
 
-InstanceDataBatch instanceDataBatchFor(RenderItem item) {
+InstanceDataBatch instanceDataBatchFor(
+  RenderItem item, {
+  required List<int>? indices,
+}) {
   final instances = item.instanceTransforms;
   if (instances == null) {
     return InstanceDataBatch.single(
@@ -69,7 +72,7 @@ InstanceDataBatch instanceDataBatchFor(RenderItem item) {
     return InstanceDataBatch.cached(
       packedWorldData: packedWorldData,
       packedWindingFlipped: packedWinding,
-      indices: item.visibleInstanceIndices,
+      indices: indices,
     );
   }
   return InstanceDataBatch(
@@ -78,6 +81,6 @@ InstanceDataBatch instanceDataBatchFor(RenderItem item) {
     colors: item.instanceColors!,
     nodeWindingFlipped: item.windingFlipped,
     instanceWindingFlipped: item.instanceWindingFlipped,
-    indices: item.visibleInstanceIndices,
+    indices: indices,
   );
 }

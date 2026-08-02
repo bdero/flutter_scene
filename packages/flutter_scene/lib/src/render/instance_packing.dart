@@ -104,20 +104,21 @@ class PackedInstanceData implements PackedInstances {
 class InstanceDataBatch {
   InstanceDataBatch({
     required this.nodeTransform,
-    required this.instances,
-    required this.colors,
+    required List<Matrix4> instances,
+    required List<Vector4> colors,
     required this.nodeWindingFlipped,
     this.instanceWindingFlipped,
     this.indices,
-  }) : packedWorldData = null,
+  }) : instances = instances,
+       colors = colors,
+       packedWorldData = null,
        packedWindingFlipped = null,
-       assert(instances != null && colors != null),
-       assert(instances!.length == colors!.length),
+       assert(instances.length == colors.length),
        assert(
          instanceWindingFlipped == null ||
-             instanceWindingFlipped.length == instances!.length,
+             instanceWindingFlipped.length == instances.length,
        ),
-       assert(indices == null || indices.length <= instances!.length);
+       assert(indices == null || indices.length <= instances.length);
 
   InstanceDataBatch.single({
     required this.nodeTransform,

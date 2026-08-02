@@ -263,7 +263,10 @@ class _DepthPrepassEncoder {
       if (end > index + 1) {
         final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          batches.add(instanceDataBatchFor(_records[batchIndex]));
+          final item = _records[batchIndex];
+          batches.add(
+            instanceDataBatchFor(item, indices: item.visibleInstanceIndices),
+          );
         }
         _encode(first, batches: batches);
         index = end;

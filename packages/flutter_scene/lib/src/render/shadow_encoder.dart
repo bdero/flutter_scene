@@ -134,7 +134,9 @@ class ShadowEncoder {
       if (end > index + 1) {
         final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          batches.add(instanceDataBatchFor(_records[batchIndex]));
+          batches.add(
+            instanceDataBatchFor(_records[batchIndex], indices: null),
+          );
         }
         _encode(first, batches: batches);
         index = end;
