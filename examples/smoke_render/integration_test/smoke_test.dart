@@ -130,6 +130,59 @@ void main() {
         greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
+      if (smoke.id == 'ambient_occlusion_edge') {
+        double meanLuma(int left, int top, int right, int bottom) {
+          var sum = 0.0;
+          var count = 0;
+          for (var y = top; y < bottom; y++) {
+            for (var x = left; x < right; x++) {
+              final offset = (y * image.width + x) * 4;
+              sum +=
+                  0.2126 * rgba.getUint8(offset) +
+                  0.7152 * rgba.getUint8(offset + 1) +
+                  0.0722 * rgba.getUint8(offset + 2);
+              count++;
+            }
+          }
+          return sum / count;
+        }
+
+        final bandWidth = image.width ~/ 32;
+        final inset = image.width * 3 ~/ 32;
+        final bandTop = image.height * 300 ~/ 512;
+        final bandBottom = image.height * 321 ~/ 512;
+        final leftEdge = meanLuma(0, bandTop, bandWidth, bandBottom);
+        final leftInterior = meanLuma(
+          inset,
+          bandTop,
+          inset + bandWidth,
+          bandBottom,
+        );
+        final rightInterior = meanLuma(
+          image.width - inset - bandWidth,
+          bandTop,
+          image.width - inset,
+          bandBottom,
+        );
+        final rightEdge = meanLuma(
+          image.width - bandWidth,
+          bandTop,
+          image.width,
+          bandBottom,
+        );
+        expect(
+          (leftEdge - leftInterior).abs(),
+          lessThan(6.0),
+          reason:
+              'ambient occlusion changes abruptly at the left viewport edge',
+        );
+        expect(
+          (rightEdge - rightInterior).abs(),
+          lessThan(6.0),
+          reason:
+              'ambient occlusion changes abruptly at the right viewport edge',
+        );
+      }
     });
   }
 
