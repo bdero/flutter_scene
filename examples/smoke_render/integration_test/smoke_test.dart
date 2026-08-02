@@ -112,13 +112,11 @@ void main() {
         greaterThan(0.05),
         reason: 'little or no geometry drew in the center',
       );
-      if (!smoke.allowsDarkForeground) {
-        expect(
-          stats.foregroundMeanLuma,
-          greaterThan(20),
-          reason: 'foreground is ~black; lighting or textures may have broken',
-        );
-      }
+      expect(
+        stats.foregroundMeanLuma,
+        greaterThan(20),
+        reason: 'foreground is ~black; lighting or textures may have broken',
+      );
       // A loose backstop against a flat/uniform fill; corners, coverage, and
       // foreground luma above are the primary blank detectors. Kept very low
       // because this metric is noisy: it is dominated by the anti-aliased
