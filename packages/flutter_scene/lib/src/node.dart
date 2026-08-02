@@ -87,7 +87,6 @@ base class Node implements SceneGraph {
   ///
   /// This does not affect whether the meshes receive shadows. The value is not
   /// inherited by children.
-  /// {@category Rendering}
   bool castsShadows = true;
 
   /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.

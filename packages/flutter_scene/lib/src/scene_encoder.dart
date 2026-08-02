@@ -13,30 +13,43 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/render_profile.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/instance_batching.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
 /// distance, all captured when [SceneEncoder.submit] is called.
-base class _OpaqueRecord {
+base class _OpaqueRecord implements OpaqueBatchRecord {
   _OpaqueRecord(
-    this.item,
-    this.geometry,
-    this.material,
+    RenderItem item,
+    Geometry geometry,
+    Material material,
     this.fade,
-    this.pipeline,
+    gpu.RenderPipeline pipeline,
     this.pipelineKey,
     this.depth,
-  );
-  late RenderItem item;
+  ) : _item = item,
+      _geometry = geometry,
+      _material = material,
+      _pipeline = pipeline;
+  RenderItem? _item;
+  RenderItem get item => _item!;
   // The geometry and material to draw, which differ from the item's own when
   // a level of detail was selected.
-  late Geometry geometry;
-  late Material material;
+  Geometry? _geometry;
+  @override
+  Geometry get geometry => _geometry!;
+  Material? _material;
+  @override
+  Material get material => _material!;
   // LOD cross-fade coverage for this draw (1 when not fading); see
   // [Material.lodFade].
+  @override
   late double fade;
-  late gpu.RenderPipeline pipeline;
+  gpu.RenderPipeline? _pipeline;
+  @override
+  gpu.RenderPipeline get pipeline => _pipeline!;
   late int pipelineKey;
   late double depth;
 
@@ -49,42 +62,64 @@ base class _OpaqueRecord {
     int pipelineKey,
     double depth,
   ) {
-    this.item = item;
-    this.geometry = geometry;
-    this.material = material;
+    _item = item;
+    _geometry = geometry;
+    _material = material;
     this.fade = fade;
-    this.pipeline = pipeline;
+    _pipeline = pipeline;
     this.pipelineKey = pipelineKey;
     this.depth = depth;
   }
 
   int get geometryKey => identityHashCode(geometry);
   int get materialKey => identityHashCode(material);
+  @override
+  int get lightListOffset => item.lightListOffset;
+  @override
+  int get lightListCount => item.lightListCount;
+  @override
+  Object? get jointsTexture => item.jointsTexture;
+
+  void release() {
+    _item = null;
+    _geometry = null;
+    _material = null;
+    _pipeline = null;
+  }
 }
 
 /// A deferred translucent draw. Instanced draws retain their item so their
 /// transforms can be sorted while the instance buffer is packed.
 base class _TranslucentRecord {
   _TranslucentRecord(
-    this.item,
-    this.worldTransform,
-    this.geometry,
-    this.material,
+    RenderItem item,
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
     this.fade,
-    this.pipeline,
+    gpu.RenderPipeline pipeline,
     this.depth,
     this.windingFlipped,
     this.lightListOffset,
     this.lightListCount,
     this.jointsTexture,
     this.jointsTextureWidth,
-  );
-  late RenderItem item;
-  late Matrix4 worldTransform;
-  late Geometry geometry;
-  late Material material;
+  ) : _item = item,
+      _worldTransform = worldTransform,
+      _geometry = geometry,
+      _material = material,
+      _pipeline = pipeline;
+  RenderItem? _item;
+  RenderItem get item => _item!;
+  Matrix4? _worldTransform;
+  Matrix4 get worldTransform => _worldTransform!;
+  Geometry? _geometry;
+  Geometry get geometry => _geometry!;
+  Material? _material;
+  Material get material => _material!;
   late double fade;
-  late gpu.RenderPipeline pipeline;
+  gpu.RenderPipeline? _pipeline;
+  gpu.RenderPipeline get pipeline => _pipeline!;
   late double depth;
   late bool windingFlipped;
   // The owning item's punctual-light slice, captured at submit time.
@@ -109,18 +144,27 @@ base class _TranslucentRecord {
     gpu.Texture? jointsTexture,
     int jointsTextureWidth,
   ) {
-    this.item = item;
-    this.worldTransform = worldTransform;
-    this.geometry = geometry;
-    this.material = material;
+    _item = item;
+    _worldTransform = worldTransform;
+    _geometry = geometry;
+    _material = material;
     this.fade = fade;
-    this.pipeline = pipeline;
+    _pipeline = pipeline;
     this.depth = depth;
     this.windingFlipped = windingFlipped;
     this.lightListOffset = lightListOffset;
     this.lightListCount = lightListCount;
     this.jointsTexture = jointsTexture;
     this.jointsTextureWidth = jointsTextureWidth;
+  }
+
+  void release() {
+    _item = null;
+    _worldTransform = null;
+    _geometry = null;
+    _material = null;
+    _pipeline = null;
+    jointsTexture = null;
   }
 }
 
@@ -202,16 +246,10 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
 /// their `bind` callbacks, which receive the `gpu.RenderPass` and
 /// `TransientWriter` directly.
 base class SceneEncoder {
-  static const bool _profile = bool.fromEnvironment('FLUTTER_SCENE_PROFILE');
-  static int _profileSamples = 0;
-  static int _sortMicros = 0;
-  static int _encodeMicros = 0;
-  static int _instancePackMicros = 0;
-  static int _instancePackMaxMicros = 0;
-  static int _instanceBindMicros = 0;
-  static int _instanceBytes = 0;
-  static int _draws = 0;
-  static int _instances = 0;
+  static final RenderProfileAccumulator _profile = RenderProfileAccumulator();
+  int _instancePackMicros = 0;
+  int _instanceBindMicros = 0;
+  int _instanceBytes = 0;
 
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
@@ -599,9 +637,9 @@ base class SceneEncoder {
   }
 
   void _bindPackedInstances(Float32List packed, int slot) {
-    final watch = _profile ? (Stopwatch()..start()) : null;
+    final watch = profileRendering ? (Stopwatch()..start()) : null;
     bindInstanceData(_renderPass, packed, slot: slot);
-    if (_profile) {
+    if (profileRendering) {
       watch!.stop();
       _instanceBindMicros += watch.elapsedMicroseconds;
       _instanceBytes += packed.lengthInBytes;
@@ -609,7 +647,7 @@ base class SceneEncoder {
   }
 
   void _drawGeometry(Geometry geometry, {int instanceCount = 1}) {
-    if (_profile) {
+    if (profileRendering) {
       _encodedDraws++;
       _encodedInstances += instanceCount;
     }
@@ -719,7 +757,7 @@ base class SceneEncoder {
     }
 
     _bindGeometry(geometry, nodeTransform, materialVertex);
-    final packWatch = _profile ? (Stopwatch()..start()) : null;
+    final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed =
         sortBackToFrontFrom == null &&
             packedWorldData != null &&
@@ -741,12 +779,9 @@ base class SceneEncoder {
             sortBackToFrontFrom: sortBackToFrontFrom,
             scratch: transientInstancePackingScratch,
           );
-    if (_profile) {
+    if (profileRendering) {
       packWatch!.stop();
       _instancePackMicros += packWatch.elapsedMicroseconds;
-      if (packWatch.elapsedMicroseconds > _instancePackMaxMicros) {
-        _instancePackMaxMicros = packWatch.elapsedMicroseconds;
-      }
     }
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
@@ -778,17 +813,14 @@ base class SceneEncoder {
     _bindMaterial(material, materialVertex, fade);
     _setPrimitiveType(geometry.primitiveType);
     _bindGeometry(geometry, _identityTransform, materialVertex);
-    final packWatch = _profile ? (Stopwatch()..start()) : null;
+    final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed = packInstanceDataBatches(
       batches,
       scratch: transientInstancePackingScratch,
     );
-    if (_profile) {
+    if (profileRendering) {
       packWatch!.stop();
       _instancePackMicros += packWatch.elapsedMicroseconds;
-      if (packWatch.elapsedMicroseconds > _instancePackMaxMicros) {
-        _instancePackMaxMicros = packWatch.elapsedMicroseconds;
-      }
     }
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
@@ -822,7 +854,7 @@ base class SceneEncoder {
   /// [flushTranslucent] when the scene pass splits the frame into two GPU
   /// passes to snapshot the opaque color between them.
   void flushOpaque() {
-    final sortWatch = _profile ? (Stopwatch()..start()) : null;
+    final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
@@ -843,7 +875,7 @@ base class SceneEncoder {
       return a.depth.compareTo(b.depth);
     });
     sortWatch?.stop();
-    final encodeWatch = _profile ? (Stopwatch()..start()) : null;
+    final encodeWatch = profileRendering ? (Stopwatch()..start()) : null;
     var index = 0;
     while (index < _opaqueRecords.length) {
       final record = _opaqueRecords[index];
@@ -852,50 +884,11 @@ base class SceneEncoder {
       record.material.lightListCount = item.lightListCount;
       item.applyJointsTexture(record.geometry);
 
-      var end = index + 1;
-      if (record.geometry.instancedVertexLayout != null &&
-          item.jointsTexture == null) {
-        while (end < _opaqueRecords.length &&
-            _canBatchOpaque(record, _opaqueRecords[end])) {
-          end++;
-        }
-      }
+      final end = opaqueBatchEnd(_opaqueRecords, index);
       if (end > index + 1) {
         final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          final batchItem = _opaqueRecords[batchIndex].item;
-          final instances = batchItem.instanceTransforms;
-          if (instances == null) {
-            batches.add(
-              InstanceDataBatch.single(
-                nodeTransform: batchItem.worldTransform,
-                nodeWindingFlipped: batchItem.windingFlipped,
-              ),
-            );
-            continue;
-          }
-          final packedWorldData = batchItem.instanceWorldData;
-          final packedWinding = batchItem.instanceWorldWindingFlipped;
-          if (packedWorldData != null && packedWinding != null) {
-            batches.add(
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWinding,
-                indices: batchItem.visibleInstanceIndices,
-              ),
-            );
-            continue;
-          }
-          batches.add(
-            InstanceDataBatch(
-              nodeTransform: batchItem.worldTransform,
-              instances: instances,
-              colors: batchItem.instanceColors!,
-              nodeWindingFlipped: batchItem.windingFlipped,
-              instanceWindingFlipped: batchItem.instanceWindingFlipped,
-              indices: batchItem.visibleInstanceIndices,
-            ),
-          );
+          batches.add(instanceDataBatchFor(_opaqueRecords[batchIndex].item));
         }
         _encodeInstancedBatches(
           record.pipeline,
@@ -937,7 +930,7 @@ base class SceneEncoder {
       index++;
     }
     encodeWatch?.stop();
-    if (_profile) {
+    if (profileRendering) {
       _recordProfile(
         sortWatch!.elapsedMicroseconds,
         encodeWatch!.elapsedMicroseconds,
@@ -947,56 +940,42 @@ base class SceneEncoder {
     }
     for (final record in _opaqueRecords) {
       if (_opaqueRecordPool.length == _recordPoolLimit) break;
+      record.release();
       _opaqueRecordPool.add(record);
     }
     _opaqueRecords.clear();
   }
 
-  static void _recordProfile(
+  void _recordProfile(
     int sortMicros,
     int encodeMicros,
     int draws,
     int instances,
   ) {
-    _profileSamples++;
-    _sortMicros += sortMicros;
-    _encodeMicros += encodeMicros;
-    _draws += draws;
-    _instances += instances;
-    if (_profileSamples < 120) return;
+    _profile.add('sort', sortMicros);
+    _profile.add('encode', encodeMicros);
+    _profile.add('instance_pack', _instancePackMicros, trackMax: true);
+    _profile.add('instance_bind', _instanceBindMicros);
+    _profile.add('instance_bytes', _instanceBytes);
+    _profile.add('draws', draws);
+    _profile.add('instances', instances);
+    final snapshot = _profile.endSample();
+    _instancePackMicros = 0;
+    _instanceBindMicros = 0;
+    _instanceBytes = 0;
+    if (snapshot == null) return;
     // ignore: avoid_print
     print(
       'FLUTTER_SCENE_PROFILE_ENCODER '
-      'sort_mean_us=${_sortMicros ~/ _profileSamples} '
-      'encode_mean_us=${_encodeMicros ~/ _profileSamples} '
-      'instance_pack_mean_us=${_instancePackMicros ~/ _profileSamples} '
-      'instance_pack_max_us=$_instancePackMaxMicros '
-      'instance_bind_mean_us=${_instanceBindMicros ~/ _profileSamples} '
-      'instance_kib_mean=${_instanceBytes ~/ _profileSamples ~/ 1024} '
-      'draws_mean=${_draws ~/ _profileSamples} '
-      'instances_mean=${_instances ~/ _profileSamples}',
+      'sort_mean_us=${snapshot.mean('sort')} '
+      'encode_mean_us=${snapshot.mean('encode')} '
+      'instance_pack_mean_us=${snapshot.mean('instance_pack')} '
+      'instance_pack_max_us=${snapshot.max('instance_pack')} '
+      'instance_bind_mean_us=${snapshot.mean('instance_bind')} '
+      'instance_kib_mean=${snapshot.mean('instance_bytes') ~/ 1024} '
+      'draws_mean=${snapshot.mean('draws')} '
+      'instances_mean=${snapshot.mean('instances')}',
     );
-    _profileSamples = 0;
-    _sortMicros = 0;
-    _encodeMicros = 0;
-    _instancePackMicros = 0;
-    _instancePackMaxMicros = 0;
-    _instanceBindMicros = 0;
-    _instanceBytes = 0;
-    _draws = 0;
-    _instances = 0;
-  }
-
-  bool _canBatchOpaque(_OpaqueRecord first, _OpaqueRecord next) {
-    final a = first.item;
-    final b = next.item;
-    return identical(first.pipeline, next.pipeline) &&
-        identical(first.geometry, next.geometry) &&
-        identical(first.material, next.material) &&
-        first.fade == next.fade &&
-        a.lightListOffset == b.lightListOffset &&
-        a.lightListCount == b.lightListCount &&
-        b.jointsTexture == null;
   }
 
   /// Emits only the translucent phase (see [flush]). When [translucentPass]
@@ -1070,6 +1049,7 @@ base class SceneEncoder {
     }
     for (final record in _translucentRecords) {
       if (_translucentRecordPool.length == _recordPoolLimit) break;
+      record.release();
       _translucentRecordPool.add(record);
     }
     _translucentRecords.clear();

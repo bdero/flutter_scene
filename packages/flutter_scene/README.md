@@ -175,3 +175,5 @@ flutter create . --platforms=macos,ios,android,linux,windows,web  # generate git
 flutter run --enable-flutter-gpu --enable-impeller            # native; add `-d <device>` if needed
 flutter run -d chrome                                         # web
 ```
+
+Pass `--dart-define=FLUTTER_SCENE_PROFILE=true` to print 120-frame render graph, culling, encoding, instance packing, binding, byte, draw, and instance summaries. Multiple active `RenderView`s share the counters.

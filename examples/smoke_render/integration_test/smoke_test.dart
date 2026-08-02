@@ -67,6 +67,8 @@ void main() {
 
       // Let the post-ready repaint and GPU frames settle. Android software
       // renderers need fewer, longer frames to stay below emulator watchdogs.
+      // TODO(smoke): restore multi-frame Android settling when the emulator
+      // watchdog no longer terminates sustained software rendering.
       final settleFrames =
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android ? 1 : 20;
       final settleStep = Duration(milliseconds: 1000 ~/ settleFrames);

@@ -98,13 +98,17 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // Select the tap positions without duplicating the texture samples in both
   // branches. Duplicating both kernels here expands to 33 samples per cascade
   // in the generated GLES source even though the choice is uniform.
-  float fixed_filter = step(0.5, frag_info.directional_light_direction.w);
-  float noise = fract(
-      52.9829189 *
-      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-  float angle = noise * 6.28318530718 * (1.0 - fixed_filter);
-  float ca = cos(angle);
-  float sa = sin(angle);
+  bool fixed_filter = frag_info.directional_light_direction.w >= 0.5;
+  float ca = 1.0;
+  float sa = 0.0;
+  if (!fixed_filter) {
+    float noise = fract(
+        52.9829189 *
+        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float angle = noise * 6.28318530718;
+    ca = cos(angle);
+    sa = sin(angle);
+  }
 
   // The Poisson positions are selected when fixed_filter is 0, the stable grid
   // positions when it is 1. The latter preserves the same 17-tap pattern.
@@ -113,7 +117,7 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // arrays, but impellerc/SPIRV-Cross emits invalid ES 1.00 array constructors.
   // Restore the const-array loop once the GLES stage supports them.
 #define _SHADOW_TAP(rpx, rpy, fpx, fpy) \
-  ShadowTap(mix(vec2(rpx, rpy), vec2(fpx, fpy), fixed_filter), ca, sa, radius, \
+  ShadowTap(fixed_filter ? vec2(fpx, fpy) : vec2(rpx, rpy), ca, sa, radius, \
             uv, cascade, inv_count, receiver_depth)
   float lit = 0.0;
   lit += _SHADOW_TAP(-0.94201624, -0.39906216, -1.0, -1.0);
@@ -133,11 +137,11 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   lit += _SHADOW_TAP(0.19984126, 0.78641367, -1.0, 1.0);
   lit += _SHADOW_TAP(0.14383161, -0.14100790, 0.0, 1.0);
 #undef _SHADOW_TAP
-  if (fixed_filter > 0.5) {
+  if (fixed_filter) {
     lit += ShadowTap(vec2(1.0), 1.0, 0.0, radius, uv, cascade, inv_count,
                      receiver_depth);
   }
-  float sample_count = 16.0 + fixed_filter;
+  float sample_count = fixed_filter ? 17.0 : 16.0;
   float shadow = lit / sample_count;
 
   // Only the last cascade has a real outer edge (inner cascades hand

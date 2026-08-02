@@ -68,6 +68,8 @@ jobs:
             xvfb libgl1-mesa-dri libegl-mesa0 libgles2 mesa-vulkan-drivers
       - run: flutter config --enable-linux-desktop --enable-native-assets
       - run: flutter pub get
+      # Keep host pressure and process evidence when SwiftShader or the emulator
+      # is terminated without an Android crash report.
       - name: Render smoke scenes
         working-directory: examples/smoke_render
         run: >
@@ -130,8 +132,8 @@ jobs:
         include:
           - backend: gles
             expected_backend: opengles
-            lightweight_environment: false
-            render_size: 512
+            lightweight_environment: true
+            render_size: 384
             emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           - backend: vulkan
             expected_backend: vulkan

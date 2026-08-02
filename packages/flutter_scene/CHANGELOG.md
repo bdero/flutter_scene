@@ -1,4 +1,4 @@
-## 0.20.1
+## 0.21.0
 
 * `ShaderMaterial` owns the vertex stage too. Pass a `vertexShader` (per `MeshVariant`, so skinned and shadow passes can differ) and set uniforms and textures on either stage with `ShaderStage`, so a hand-written shader pair needs no subclassing.
 * Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
@@ -9,18 +9,23 @@
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
 * Made first-party shader/material hooks and examples DataAssets-only, with migration guidance for legacy assets.
 * Added `Node.castsShadows` for excluding individual meshes from shadow passes.
-* Added `GeometryBufferArena` and optional CPU-data release for lower-overhead immutable mesh batches.
-* Added `InstancedMesh.updateInstanceTransforms` for allocation-light bulk motion.
+* Added `GeometryBufferArena` and `GeometryBuilder.build({bufferArena, retainCpuData})` for lower-overhead immutable mesh batches.
+* Added per-instance colors through `InstancedMesh.addInstance(color:)` and `setInstanceColor`.
+* Breaking change, instanced vertex layouts now require `instance_color` and use an 80-byte instance stride instead of 64 bytes.
+* Added `InstancedMesh.updateInstanceTransforms` for allocation-light bulk motion and `InstancedMesh.cullInstances` for opt-in per-instance culling.
 * Added `InstancedMesh.sortTransparentInstances` to skip unnecessary particle sorting.
-* Added `DirectionalLight.cacheStaticShadows` for continuously changing shadow lights.
-* Added `DirectionalShadowFilter.fixedPcf` for stable lower-ALU shadow filtering.
+* Added `RenderView.cullingPlanes` for application-defined frustum planes and `Scene.warmUp(includeOffscreen:)` for full-scene preparation.
+* Added `SunLight.cacheStaticShadows` and `DirectionalLight.cacheStaticShadows` for continuously changing shadow lights.
+* Added `SunLight.shadowFilter` and `DirectionalShadowFilter.fixedPcf` for stable lower-ALU shadow filtering.
 * Tightened stable cascade fitting to increase effective shadow resolution.
 * Reduced shadow-map color bandwidth with single-channel fp32 tiles.
 * Fixed cascade-edge striping from normal-biased receiver positions.
+* Switched material and resolve color conversion to exact sRGB transfer functions.
 * Cached instanced bounds and render data to keep moving-camera culling allocation-light.
 * Skipped per-instance bounds packing when instance culling is disabled.
 * Skipped per-instance culling when an entire batch is inside every active plane.
 * Reused large transient buffers across changing instance counts.
+* Translucent instanced meshes now sort as one batch, with instances ordered within it.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.

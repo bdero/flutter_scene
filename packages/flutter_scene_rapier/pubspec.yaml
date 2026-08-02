@@ -39,7 +39,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   # Tests drive the backend through flutter_scene's generic physics
   # components; the library itself depends only on the scene contract.
-  flutter_scene: ^0.20.0
+  flutter_scene: ^0.21.0
   flutter_test:
     sdk: flutter
   test: ^1.25.15
