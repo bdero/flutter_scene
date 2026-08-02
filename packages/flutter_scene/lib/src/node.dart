@@ -963,8 +963,14 @@ base class Node implements SceneGraph {
         instancedMeshComponent.hideRenderItem();
       }
     }
-    for (final child in children) {
+    var childIndex = 0;
+    while (childIndex < children.length) {
+      final child = children[childIndex];
       child.scenePrePass(deltaSeconds, _effectiveVisible);
+      if (childIndex < children.length &&
+          identical(children[childIndex], child)) {
+        childIndex++;
+      }
     }
   }
 
@@ -978,8 +984,14 @@ base class Node implements SceneGraph {
     for (int i = 0; i < _components.length; i++) {
       _components[i].fixedTick(fixedDt);
     }
-    for (final child in children) {
+    var childIndex = 0;
+    while (childIndex < children.length) {
+      final child = children[childIndex];
       child.sceneFixedPass(fixedDt);
+      if (childIndex < children.length &&
+          identical(children[childIndex], child)) {
+        childIndex++;
+      }
     }
   }
 }

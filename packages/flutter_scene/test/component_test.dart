@@ -26,6 +26,22 @@ class TickCountingComponent extends Component {
   }
 }
 
+class TreeMutatingComponent extends Component {
+  TreeMutatingComponent(this.mutate);
+
+  final void Function(Node node) mutate;
+  bool _didMutate = false;
+
+  @override
+  void update(double deltaSeconds) {
+    if (_didMutate) {
+      return;
+    }
+    _didMutate = true;
+    mutate(node);
+  }
+}
+
 void main() {
   group('Node component collection', () {
     test('addComponent fires onAttach and sets the owner', () {
@@ -177,6 +193,42 @@ void main() {
 
       component.tick(1.0);
       expect(component.updateCalls, 0);
+    });
+  });
+
+  group('Node.scenePrePass mutation', () {
+    test('visits a child inserted during traversal', () async {
+      final root = Node();
+      final inserted = TickCountingComponent();
+      final mutator = TreeMutatingComponent((node) {
+        final child = Node()..addComponent(inserted);
+        inserted.mount();
+        node.parent!.add(child);
+      });
+      root.add(Node()..addComponent(mutator));
+      mutator.mount();
+      await Future<void>.delayed(Duration.zero);
+
+      root.scenePrePass(0.016);
+      await Future<void>.delayed(Duration.zero);
+      root.scenePrePass(0.016);
+
+      expect(inserted.updateCalls, 1);
+    });
+
+    test('does not skip a sibling after a child detaches', () async {
+      final root = Node();
+      final mutator = TreeMutatingComponent((node) => node.detach());
+      final sibling = TickCountingComponent();
+      root.add(Node()..addComponent(mutator));
+      root.add(Node()..addComponent(sibling));
+      mutator.mount();
+      sibling.mount();
+      await Future<void>.delayed(Duration.zero);
+
+      root.scenePrePass(0.016);
+
+      expect(sibling.updateCalls, 1);
     });
   });
 }
