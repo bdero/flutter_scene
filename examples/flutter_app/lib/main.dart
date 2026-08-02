@@ -49,6 +49,7 @@ import 'example_settings.dart';
 import 'example_chrome.dart';
 import 'example_shapes.dart';
 import 'example_explosion.dart';
+import 'example_external_texture.dart';
 import 'example_particles.dart';
 import 'example_planar_mirror.dart';
 import 'example_splats.dart';
@@ -261,6 +262,7 @@ class _MyAppState extends State<MyApp> {
       'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
       'Widget Input (inset view)': (context) => const ExampleWidgetInset(),
+      'External Texture': (context) => const ExampleExternalTexture(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(

@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview), captured through the compositor on frames that sample it.
 * Widget-surface pointer forwarding dispatches events in the framework's global space (with the host's transform in the hit path), so widgets that convert `globalPosition` through render objects (Slider, text selection) work when the scene view is not at the window origin.
 * glTF import validates `extensionsRequired` and surfaces warnings through an `onWarning` callback on every entry point.
 * Sparse glTF accessors apply, including the zero-filled base for an absent `bufferView`.

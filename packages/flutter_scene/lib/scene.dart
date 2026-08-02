@@ -247,6 +247,8 @@ export 'src/node.dart' show Node;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;
+export 'src/texture/external_texture.dart'
+    show ExternalTexture, ExternalTextureSampling, ExternalTextureUpdate;
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
 export 'src/memory_report.dart'
