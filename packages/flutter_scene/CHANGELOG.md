@@ -41,6 +41,7 @@
 * Devices measured to sample every texture at its base mip skip mip chains entirely, reclaiming the memory and transcode time they were spending on levels the sampler ignores, and say so once at startup.
 * Loose images cook to compressed, mipmapped `.fstex` through `buildTextures`, loaded by source path with `loadTexture` (shipped in 0.20.0, missing from its notes).
 * Fixed a `RangeError` when an updatable mesh rebuilds at a smaller vertex count.
+* Fixed ambient-occlusion banding and over-darkening with normalized sampling, robust normals, and depth-aware filtering.
 
 ## 0.20.0
 

@@ -115,6 +115,9 @@ uniform FragInfo {
   // environments share RadianceLayoutInfo (the layout is a per-backend choice,
   // not per-environment).
   vec4 radiance_blend;
+  // Screen-space occlusion lighting controls. x is the fraction applied to
+  // analytic direct lights. yzw are reserved.
+  vec4 ssao_lighting;
 }
 frag_info;
 

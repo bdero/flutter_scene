@@ -19,11 +19,12 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (656 bytes / 164 floats:
+  /// The float count of the full `FragInfo` block (672 bytes / 168 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
-  /// 160..163). See the layout map in the implementation.
-  static const fragInfoFloatCount = 164;
+  /// 160..163, then `ssao_lighting` at 164..167). See the layout map in the
+  /// implementation.
+  static const fragInfoFloatCount = 168;
 
   /// Index of the LOD cross-fade `fade` field in `FragInfo`, occupying std140
   /// padding before `environment_transform` (so the block size is unchanged).
@@ -118,6 +119,9 @@ class EngineLightingUniforms {
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
+    // ssao_lighting at [164..167]: x is the fraction of screen-space
+    // occlusion applied to analytic direct lights. yzw reserved.
+    fragInfo[164] = lighting.ssaoDirectLightAffect.clamp(0.0, 1.0);
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index

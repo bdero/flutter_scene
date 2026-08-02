@@ -618,6 +618,7 @@ class Lighting {
     this.cascades = const [],
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
+    this.ssaoDirectLightAffect = 0.0,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -715,6 +716,9 @@ class Lighting {
   /// occlusion factor, `1` derives a dedicated specular occlusion. Mirrors
   /// `SpecularAmbientOcclusionMode.index`.
   final double specularOcclusionMode;
+
+  /// Fraction of screen-space occlusion applied to analytic direct lights.
+  final double ssaoDirectLightAffect;
 
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.
