@@ -57,6 +57,21 @@ Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
     ..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3);
 }
 
+void _configureAmbientOcclusion(Scene scene) {
+  scene.ambientOcclusion
+    ..enabled = true
+    ..radius = 1.0
+    ..bias = 0.0
+    ..horizonAngle = 0.06
+    ..intensity = 3.0
+    ..power = 1.5
+    ..detail = 0.5
+    ..directLightAffect = 0.59
+    ..sampleCount = 24
+    ..halfResolution = false
+    ..depthMipChain = true;
+}
+
 /// A deterministic anisotropic Gaussian splat cloud (degree-1 SH) for the
 /// splat smoke scene. Built from a fixed seed, so the packed data and the
 /// resulting depth sort are identical across runs and backends. Splats form
@@ -248,18 +263,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // screen-axis banding regression is most visible on the pale back wall.
   SmokeScene('ambient_occlusion', () {
     final scene = Scene();
-    scene.ambientOcclusion
-      ..enabled = true
-      ..radius = 1.0
-      ..bias = 0.0
-      ..horizonAngle = 0.06
-      ..intensity = 3.0
-      ..power = 1.5
-      ..detail = 0.5
-      ..directLightAffect = 0.59
-      ..sampleCount = 24
-      ..halfResolution = false
-      ..depthMipChain = true;
+    _configureAmbientOcclusion(scene);
     final material = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
       ..metallicFactor = 0.0
@@ -293,6 +297,34 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       camera: PerspectiveCamera(
         position: vm.Vector3(3.6, 2.4, 5.0),
         target: vm.Vector3(0, -0.05, -0.4),
+      ),
+    );
+  }),
+  // AO contact continues across a surface that exits both horizontal edges.
+  // This catches viewport-boundary brightness ramps and discontinuities.
+  SmokeScene('ambient_occlusion_edge', () {
+    final scene = Scene();
+    _configureAmbientOcclusion(scene);
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 8.0, depth: 2.4), material))
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0, -1.0)) *
+            vm.Matrix4.rotationX(math.pi * 0.5),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(8.0, 0.35, 0.35)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, -0.72, -0.82)),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, 4.0),
+        target: vm.Vector3(0, 0, -1.0),
       ),
     );
   }),

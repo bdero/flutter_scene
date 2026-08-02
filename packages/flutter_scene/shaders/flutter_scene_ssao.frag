@@ -42,9 +42,6 @@ out vec4 frag_color;
 
 const float kPi = 3.14159265359;
 const float kNumericEpsilon = 0.0001;
-// Widest screen-edge occlusion fade, as a fraction of the viewport. Keeps the
-// fade a thin border even for near, large-radius geometry.
-const float kEdgeFadeMax = 0.04;
 
 // Reconstructs a view-space position from a depth-buffer UV. Camera space
 // places the eye at the origin looking down +Z (the convention the depth
@@ -85,12 +82,26 @@ vec3 ReconstructNormal(vec2 uv, vec3 center) {
   vec3 right = ViewPositionBase(p + ivec2(1, 0));
   vec3 down = ViewPositionBase(p - ivec2(0, 1));
   vec3 up = ViewPositionBase(p + ivec2(0, 1));
-  vec3 dx = length(center_sample - left) < length(right - center_sample)
-      ? center_sample - left
-      : right - center_sample;
-  vec3 dy = length(center_sample - down) < length(up - center_sample)
-      ? center_sample - down
-      : up - center_sample;
+  vec3 dx;
+  if (p.x == 0) {
+    dx = right - center_sample;
+  } else if (p.x == size.x - 1) {
+    dx = center_sample - left;
+  } else {
+    dx = length(center_sample - left) < length(right - center_sample)
+        ? center_sample - left
+        : right - center_sample;
+  }
+  vec3 dy;
+  if (p.y == 0) {
+    dy = up - center_sample;
+  } else if (p.y == size.y - 1) {
+    dy = center_sample - down;
+  } else {
+    dy = length(center_sample - down) < length(up - center_sample)
+        ? center_sample - down
+        : up - center_sample;
+  }
   vec3 normal = normalize(cross(dx, dy));
   return dot(normal, center) > 0.0 ? -normal : normal;
 }
@@ -132,6 +143,9 @@ void main() {
   vec3 normal = ReconstructNormal(v_uv, origin);
 
   // Screen-space disk radius: the world radius projected to this depth.
+  // Keep the full radius at viewport boundaries. Depth sampling clamps there,
+  // so the same normalized kernel remains stable without a separate output
+  // fade or a boundary-dependent change in contact strength.
   float screen_radius = 0.85 * proj_scale * radius / origin.z;
 
   // A non-repeating pixel hash avoids the screen-aligned 4x4 phase pattern
@@ -201,18 +215,6 @@ void main() {
       max(weight_sum, kNumericEpsilon);
   obscurance = min(intensity * obscurance, 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
-
-  // Fade occlusion toward unoccluded in a thin band at the screen edge, so an
-  // occluder crossing the edge (whose samples leave the viewport and have no
-  // depth to read) ramps out smoothly instead of popping. The band is the
-  // sample-disk reach, capped to a small fraction of the screen so near or
-  // large-radius geometry does not fade a large region.
-  vec2 reach = min(vec2(screen_radius) * ssao.viewport.zw, vec2(kEdgeFadeMax));
-  vec2 edge = clamp(min(v_uv, 1.0 - v_uv) /
-                        max(reach, vec2(kNumericEpsilon)),
-                    0.0, 1.0);
-  float edge_fade = smoothstep(0.0, 1.0, edge.x) * smoothstep(0.0, 1.0, edge.y);
-  ao = mix(1.0, ao, edge_fade);
 
   frag_color = vec4(ao, ao, ao, 1.0);
 }
