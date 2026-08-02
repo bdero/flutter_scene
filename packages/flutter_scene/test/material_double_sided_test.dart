@@ -23,6 +23,16 @@ void main() {
     });
   });
 
+  group('Material.depthBias field', () {
+    test('defaults to zero', () {
+      expect(ShaderMaterial().depthBias, 0.0);
+    });
+
+    test('is settable', () {
+      expect((ShaderMaterial()..depthBias = 0.00001).depthBias, 0.00001);
+    });
+  });
+
   group('glTF parser reads material.doubleSided', () {
     test('true when present', () {
       final doc = parseGltfJson(<String, Object?>{

@@ -317,6 +317,7 @@ base class SceneEncoder {
   Material? _boundMaterial;
   gpu.Shader? _boundMaterialVertex;
   gpu.Shader? _boundFrameInfoShader;
+  double _boundFrameInfoDepthBias = double.nan;
   double _boundMaterialFade = double.nan;
   int _boundMaterialLightOffset = -1;
   int _boundMaterialLightCount = -1;
@@ -562,6 +563,7 @@ base class SceneEncoder {
     _boundMaterial = null;
     _boundMaterialVertex = null;
     _boundFrameInfoShader = null;
+    _boundFrameInfoDepthBias = double.nan;
     _boundMaterialFade = double.nan;
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
@@ -612,19 +614,24 @@ base class SceneEncoder {
     Geometry geometry,
     Matrix4 worldTransform,
     gpu.Shader? materialVertex,
+    double depthBias,
   ) {
+    geometry.depthBias = depthBias;
     if (geometry is UnskinnedGeometry) {
       geometry.bindGeometryBuffers(_renderPass);
       final shader = materialVertex ?? geometry.vertexShader;
-      if (!identical(_boundFrameInfoShader, shader)) {
+      if (!identical(_boundFrameInfoShader, shader) ||
+          _boundFrameInfoDepthBias != depthBias) {
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,
           shader,
           _cameraTransform,
           _camera.position,
+          depthBias: depthBias,
         );
         _boundFrameInfoShader = shader;
+        _boundFrameInfoDepthBias = depthBias;
       }
     } else {
       geometry.bind(
@@ -683,7 +690,7 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    _bindGeometry(geometry, worldTransform, materialVertex);
+    _bindGeometry(geometry, worldTransform, materialVertex, material.depthBias);
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
       // bound to the slot after the geometry's vertex streams.
@@ -747,6 +754,7 @@ base class SceneEncoder {
           geometry,
           nodeTransform * instanceTransform,
           materialVertex,
+          material.depthBias,
         );
         // Each instance can itself mirror; combine with the node's parity.
         final flip = windingFlipped != (instanceTransform.determinant() < 0);
@@ -758,7 +766,7 @@ base class SceneEncoder {
       return;
     }
 
-    _bindGeometry(geometry, nodeTransform, materialVertex);
+    _bindGeometry(geometry, nodeTransform, materialVertex, material.depthBias);
     final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed =
         sortBackToFrontFrom == null &&
@@ -814,7 +822,12 @@ base class SceneEncoder {
     );
     _bindMaterial(material, materialVertex, fade);
     _setPrimitiveType(geometry.primitiveType);
-    _bindGeometry(geometry, _identityTransform, materialVertex);
+    _bindGeometry(
+      geometry,
+      _identityTransform,
+      materialVertex,
+      material.depthBias,
+    );
     final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed = packInstanceDataBatches(
       batches,
@@ -993,6 +1006,7 @@ base class SceneEncoder {
       _boundMaterial = null;
       _boundMaterialVertex = null;
       _boundFrameInfoShader = null;
+      _boundFrameInfoDepthBias = double.nan;
       _boundWindingOrder = null;
       _boundPrimitiveType = null;
       _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);

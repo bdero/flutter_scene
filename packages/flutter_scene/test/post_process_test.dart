@@ -77,7 +77,7 @@ void main() {
         settings: PostProcessSettings(),
       );
       expect(info.length, kResolveInfoFloatCount);
-      expect(info.length, 40);
+      expect(info.length, 44);
     });
 
     test('packs the resolve controls', () {
@@ -192,6 +192,24 @@ void main() {
       expect(info[37], closeTo(0.8, 1e-6));
       expect(info[38], 0.0);
       expect(info[39], 0.0);
+    });
+
+    test('packs AgX curve parameters', () {
+      final info = packResolveInfo(
+        exposure: 1.0,
+        toneMappingMode: ToneMappingMode.agx,
+        agxWhite: 6.0,
+        agxContrast: 1.53,
+        flipY: false,
+        time: 0.0,
+        settings: PostProcessSettings(),
+      );
+
+      expect(info[1], ToneMappingMode.agx.index.toDouble());
+      expect(info[40], closeTo(1.53, 1e-6));
+      expect(info[41], greaterThan(0.0));
+      expect(info[42], greaterThan(0.0));
+      expect(info[43], greaterThan(0.0));
     });
   });
 }

@@ -184,6 +184,12 @@ abstract class Material {
   /// material.
   bool doubleSided = false;
 
+  /// Clip-space offset toward the camera used for coplanar surface details.
+  /// Zero leaves depth unchanged. Small positive values such as `0.00001`
+  /// keep an overlay in front of its supporting surface without moving its
+  /// world-space geometry.
+  double depthBias = 0.0;
+
   /// Per-draw level-of-detail cross-fade coverage, set by the encoder right
   /// before [bind] and written into the material's `FragInfo.fade`. 1 draws
   /// every fragment; a value in (0, 1) keeps that dithered fraction and a

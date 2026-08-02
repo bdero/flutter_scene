@@ -571,6 +571,12 @@ base class Scene implements SceneGraph {
   /// display image. Defaults to [ToneMappingMode.pbrNeutral].
   ToneMappingMode toneMapping = ToneMappingMode.pbrNeutral;
 
+  /// AgX reference white. Only used by [ToneMappingMode.agx].
+  double agxWhite = 16.29;
+
+  /// AgX curve contrast. Only used by [ToneMappingMode.agx].
+  double agxContrast = 1.25;
+
   /// Built-in post-processing settings, such as color grading. Every
   /// effect is off by default.
   final PostProcessSettings postProcess = PostProcessSettings();
@@ -1637,6 +1643,8 @@ base class Scene implements SceneGraph {
         outputColor: output,
         exposure: exposure,
         toneMappingMode: toneMapping,
+        agxWhite: agxWhite,
+        agxContrast: agxContrast,
         postProcess: postProcess,
       ),
     );

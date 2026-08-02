@@ -20,4 +20,8 @@ enum ToneMappingMode {
   /// No tone curve; the lighting result is just exposed and clamped to
   /// `[0, 1]`.
   linear,
+
+  /// AgX filmic tone mapping. Preserves bright hues while smoothly rolling
+  /// highlights into the display range.
+  agx,
 }

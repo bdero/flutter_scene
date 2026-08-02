@@ -6,7 +6,7 @@
 // branch and leaves the image unchanged.
 uniform ResolveInfo {
   float exposure;
-  // 0 = Khronos PBR Neutral, 1 = ACES filmic, 2 = Reinhard, else linear.
+  // 0 = PBR Neutral, 1 = ACES, 2 = Reinhard, 3 = linear, 4 = AgX.
   float tone_mapping_mode;
   // 1.0 -> flip V when sampling scene_color. The scene color is a
   // render-to-texture target, and its sampled Y orientation differs by
@@ -51,6 +51,8 @@ uniform ResolveInfo {
   float bloom_intensity;
   float _pad6;
   float _pad7;
+
+  vec4 agx_params;
 }
 resolve_info;
 
@@ -153,8 +155,10 @@ void main() {
     mapped = ACESFilmicToneMapping(color, 1.0);
   } else if (resolve_info.tone_mapping_mode < 2.5) {
     mapped = ReinhardToneMapping(color);
-  } else {
+  } else if (resolve_info.tone_mapping_mode < 3.5) {
     mapped = clamp(color, 0.0, 1.0);
+  } else {
+    mapped = AgXToneMapping(color, resolve_info.agx_params);
   }
 
   // Vignette: darken toward the edges of the screen.

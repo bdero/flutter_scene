@@ -174,6 +174,7 @@ class _ObjectMaskEncoder {
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
     void bindDraw(Matrix4 worldTransform) {
+      geometry.depthBias = item.material.depthBias;
       if (depthVertex != null) {
         geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
@@ -182,6 +183,7 @@ class _ObjectMaskEncoder {
           activeVertex,
           _cameraTransform,
           _cameraPosition,
+          depthBias: item.material.depthBias,
         );
       } else {
         geometry.bind(

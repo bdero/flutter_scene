@@ -1,11 +1,12 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:flutter_scene/src/post_process/post_process.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 
-/// Number of floats in the `ResolveInfo` uniform block: ten std140 rows
+/// Number of floats in the `ResolveInfo` uniform block: eleven std140 rows
 /// of four floats each.
-const int kResolveInfoFloatCount = 40;
+const int kResolveInfoFloatCount = 44;
 
 /// Packs the resolve pass's `ResolveInfo` uniform block.
 ///
@@ -18,6 +19,8 @@ const int kResolveInfoFloatCount = 40;
 Float32List packResolveInfo({
   required double exposure,
   required ToneMappingMode toneMappingMode,
+  double agxWhite = 16.29,
+  double agxContrast = 1.25,
   required bool flipY,
   required double time,
   required PostProcessSettings settings,
@@ -78,6 +81,25 @@ Float32List packResolveInfo({
   // Row 9: bloom, then padding.
   info[36] = bloom.enabled ? 1.0 : 0.0;
   info[37] = bloom.intensity;
+
+  // Row 10: AgX curve parameters.
+  const crossover = 0.18;
+  const shoulderMax = 1.0 - crossover;
+  final contrast = math.max(agxContrast, 0.01);
+  final white = math.max(agxWhite, 2.0);
+  final crossoverPower = math.pow(crossover, contrast).toDouble();
+  final toeA = (1.0 / crossover - 1.0) * crossoverPower;
+  final slopeDenominator = crossoverPower + toeA;
+  final slope =
+      contrast *
+      math.pow(crossover, contrast - 1.0) *
+      toeA /
+      (slopeDenominator * slopeDenominator);
+  final shoulderWidth = white - crossover;
+  info[40] = contrast;
+  info[41] = toeA;
+  info[42] = slope;
+  info[43] = shoulderWidth * shoulderWidth / shoulderMax * slope;
 
   return info;
 }
