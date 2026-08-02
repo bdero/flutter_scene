@@ -13,6 +13,7 @@ void main() {
     test('reads version, base url, tag, and per-triple entries', () {
       final manifest = NativeBinaryManifest.parse({
         'version': '1.2.3',
+        'abi_version': 2,
         'base_url': 'https://example.com/dl',
         'tag': 'flutter_scene_rapier-1.2.3',
         'binaries': {
@@ -22,6 +23,7 @@ void main() {
       });
 
       expect(manifest.version, '1.2.3');
+      expect(manifest.abiVersion, 2);
       expect(manifest.baseUrl, 'https://example.com/dl');
       expect(manifest.tag, 'flutter_scene_rapier-1.2.3');
       expect(manifest.binaries.keys, hasLength(2));
@@ -36,6 +38,7 @@ void main() {
         'tag': 't',
       });
       expect(manifest.binaries, isEmpty);
+      expect(manifest.abiVersion, 1);
     });
   });
 

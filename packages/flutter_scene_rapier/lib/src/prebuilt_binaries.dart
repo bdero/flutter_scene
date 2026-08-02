@@ -15,6 +15,7 @@ import 'package:crypto/crypto.dart';
 class NativeBinaryManifest {
   NativeBinaryManifest({
     required this.version,
+    required this.abiVersion,
     required this.baseUrl,
     required this.tag,
     required this.binaries,
@@ -22,6 +23,9 @@ class NativeBinaryManifest {
 
   /// The package version these binaries were built for.
   final String version;
+
+  /// The native function ABI implemented by every listed binary.
+  final int abiVersion;
 
   /// The download root, e.g. a GitHub releases download URL. The full URL
   /// for an entry is `$baseUrl/$tag/$file`.
@@ -47,6 +51,7 @@ class NativeBinaryManifest {
     }
     return NativeBinaryManifest(
       version: json['version'] as String,
+      abiVersion: (json['abi_version'] as int?) ?? 1,
       baseUrl: json['base_url'] as String,
       tag: json['tag'] as String,
       binaries: binaries,
