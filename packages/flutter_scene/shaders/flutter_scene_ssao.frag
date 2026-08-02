@@ -1,13 +1,11 @@
 // Screen-space ambient occlusion, evaluated from the camera linear-depth
 // prepass.
 //
-// Implements Scalable Ambient Obscurance (McGuire, Mara, and Luebke 2012,
-// https://research.nvidia.com/publication/scalable-ambient-obscurance): it
-// reconstructs each pixel's view-space position and a face normal from
-// depth alone (no normal buffer), then estimates obscurance from a spiral
-// of neighbour samples. The output is a single occlusion factor in the red
-// channel: 1 is unoccluded, 0 is fully occluded. A bilateral blur pass
-// cleans up the per-pixel noise afterwards.
+// Reconstructs each pixel's view-space position and face normal from depth,
+// then averages normalized angular obscurance over a world-space sampling
+// radius. The output is a single occlusion factor in the red channel: 1 is
+// unoccluded, 0 is fully occluded. A bilateral blur pass cleans up the
+// per-pixel noise afterwards.
 
 uniform sampler2D linear_depth;
 
@@ -23,11 +21,14 @@ uniform SsaoInfo {
   vec4 viewport;
   // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
   vec4 proj;
-  // x: radius (world units). y: bias (world units). z: intensity (final
-  // contrast power). w: projection scale (pixels per world unit at depth 1).
+  // x: radius (world units). y: bias (world units). z: obscurance intensity.
+  // w: projection scale (pixels per world unit at depth 1).
   vec4 params;
-  // x: sample count. y: mip level count (1 disables the chain).
+  // x: sample count. y: mip level count. z: minimum horizon cosine term.
+  // w: final visibility power.
   vec4 params2;
+  // x: immediate-neighbour detail intensity. yzw: unused.
+  vec4 params3;
 }
 ssao;
 
@@ -40,9 +41,7 @@ out vec4 frag_color;
 #define MAX_SSAO_SAMPLES 32
 
 const float kPi = 3.14159265359;
-const float kEpsilon = 0.0001;
-// Golden angle, for the Vogel-disk sample distribution.
-const float kGoldenAngle = 2.39996323;
+const float kNumericEpsilon = 0.0001;
 // Widest screen-edge occlusion fade, as a fraction of the viewport. Keeps the
 // fade a thin border even for near, large-radius geometry.
 const float kEdgeFadeMax = 0.04;
@@ -66,6 +65,50 @@ vec3 ViewPositionAt(vec2 uv, int level) {
   return vec3(ndc.x * z * ssao.proj.x, ndc.y * z * ssao.proj.y, z);
 }
 
+vec3 ViewPositionBase(ivec2 coord) {
+  ivec2 size = textureSize(linear_depth, 0);
+  coord = clamp(coord, ivec2(0), size - ivec2(1));
+  float z = texelFetch(linear_depth, coord, 0).r;
+  vec2 uv = (vec2(coord) + vec2(0.5)) / vec2(size);
+  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
+  return vec3(ndc.x * z * ssao.proj.x, ndc.y * z * ssao.proj.y, z);
+}
+
+// Selects the smoother one-sided derivative on each axis. This avoids joining
+// foreground and background positions at silhouettes, while retaining fp32
+// position differences across broad sloped surfaces.
+vec3 ReconstructNormal(vec2 uv, vec3 center) {
+  ivec2 size = textureSize(linear_depth, 0);
+  ivec2 p = clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1));
+  vec3 center_sample = ViewPositionBase(p);
+  vec3 left = ViewPositionBase(p - ivec2(1, 0));
+  vec3 right = ViewPositionBase(p + ivec2(1, 0));
+  vec3 down = ViewPositionBase(p - ivec2(0, 1));
+  vec3 up = ViewPositionBase(p + ivec2(0, 1));
+  vec3 dx = length(center_sample - left) < length(right - center_sample)
+      ? center_sample - left
+      : right - center_sample;
+  vec3 dy = length(center_sample - down) < length(up - center_sample)
+      ? center_sample - down
+      : up - center_sample;
+  vec3 normal = normalize(cross(dx, dy));
+  return dot(normal, center) > 0.0 ? -normal : normal;
+}
+
+float InterleavedGradientNoise(vec2 pixel) {
+  return fract(52.9829189 * fract(dot(floor(pixel),
+                                      vec2(0.06711056, 0.00583715))));
+}
+
+float SampleObscurance(vec3 normal, vec3 delta, float falloff_scale,
+                       float horizon) {
+  float distance2 = dot(delta, delta);
+  float normal_dot_delta =
+      dot(normal, delta) * inversesqrt(max(distance2, kNumericEpsilon));
+  float falloff = max(0.0, 1.0 + distance2 * falloff_scale);
+  return max(0.0, normal_dot_delta - horizon) * falloff;
+}
+
 void main() {
   float radius = ssao.params.x;
   float bias = ssao.params.y;
@@ -73,6 +116,9 @@ void main() {
   float proj_scale = ssao.params.w;
   int sample_count = int(ssao.params2.x);
   int mip_levels = int(ssao.params2.y);
+  float horizon_angle = ssao.params2.z;
+  float power = ssao.params2.w;
+  float detail = ssao.params3.x;
   float far = ssao.proj.w;
 
   vec3 origin = ViewPositionAt(v_uv, 0);
@@ -83,45 +129,33 @@ void main() {
     return;
   }
 
-  // Face normal from the screen-space gradient of the reconstructed
-  // position. With precise (fp32) depth this is smooth across surfaces; the
-  // single-pixel errors at silhouettes are removed by the bilateral blur
-  // (see the SAO paper). A per-axis "nearest depth neighbour" reconstruction
-  // is sharper at edges but compares near-equal depth steps on smooth
-  // surfaces, which flips per pixel and injects normal noise, so the plain
-  // gradient is preferred here. Oriented toward the camera (the eye is at
-  // the origin, so the view direction is -origin).
-  vec3 normal = normalize(cross(dFdx(origin), dFdy(origin)));
-  if (dot(normal, origin) > 0.0) {
-    normal = -normal;
-  }
+  vec3 normal = ReconstructNormal(v_uv, origin);
 
   // Screen-space disk radius: the world radius projected to this depth.
-  float screen_radius = proj_scale * radius / origin.z;
+  float screen_radius = 0.85 * proj_scale * radius / origin.z;
 
-  // Interleaved rotation: 16 well-separated angles tiled over a 4x4 screen
-  // block (the golden-ratio sequence spreads them, and neighbours differ
-  // sharply). The matching 4x4 box blur that follows averages all 16, which
-  // resolves uniform regions to a smooth result without temporal
-  // accumulation. Per-pixel random rotation instead leaves screen-locked
-  // grain the blur cannot fully remove.
-  vec2 tile = mod(gl_FragCoord.xy, 4.0);
-  float rotation_index = tile.y * 4.0 + tile.x;
-  float rotation = fract(rotation_index * 0.61803399) * 2.0 * kPi;
+  // A non-repeating pixel hash avoids the screen-aligned 4x4 phase pattern
+  // that survives filtering as horizontal and vertical bands.
+  float noise = InterleavedGradientNoise(gl_FragCoord.xy);
+  float rotation = noise * 2.0 * kPi;
+  float spiral_turns = sample_count <= 8 ? 3.0
+      : (sample_count <= 12 ? 5.0 : (sample_count <= 20 ? 7.0 : 14.0));
 
   float radius2 = radius * radius;
+  float falloff_scale = -1.0 / max(radius2, kNumericEpsilon);
+  float horizon = horizon_angle + max(bias, 0.0) / max(radius, kNumericEpsilon);
   float sum = 0.0;
+  float weight_sum = 0.0;
   for (int i = 0; i < MAX_SSAO_SAMPLES; i++) {
     if (i >= sample_count) {
       break;
     }
-    // Vogel disk: a near-uniform area distribution for any sample count. The
-    // sqrt radius spreads samples evenly (rather than clustering toward the
-    // center like a linear spiral, whose clusters alias into screen-axis
-    // streaks on receding surfaces).
-    float sample_radius = sqrt((float(i) + 0.5) / float(sample_count));
-    float theta = float(i) * kGoldenAngle + rotation;
-    float pixel_radius = sample_radius * screen_radius;
+    // The linear radial progression and prime-ish turn counts follow the SAO
+    // reference kernel. Unlike sqrt spacing, this retains enough close taps to
+    // resolve contact occlusion without amplifying distant depth variation.
+    float sample_radius = (float(i) + 0.5) / float(sample_count);
+    float theta = sample_radius * spiral_turns * 2.0 * kPi + rotation;
+    float pixel_radius = max(1.0, sample_radius * screen_radius);
     vec2 offset = vec2(cos(theta), sin(theta)) * pixel_radius;
     vec2 sample_uv = v_uv + offset * ssao.viewport.zw;
 
@@ -137,21 +171,36 @@ void main() {
     }
     vec3 q = ViewPositionAt(sample_uv, level);
     vec3 v = q - origin;
-    float vv = dot(v, v);
-    float vn = dot(v, normal);
-
-    // SAO falloff: (radius^2 - vv)^3 weights nearer occluders and clamps
-    // anything beyond the world radius to zero.
-    float f = max(radius2 - vv, 0.0);
-    sum += f * f * f * max((vn - bias) / (kEpsilon + vv), 0.0);
+    float reduce = clamp(
+        max(0.0, -v.z) * (-1.0 / max(radius, kNumericEpsilon)) + 2.0,
+        0.0, 1.0);
+    float weight = 0.6 * reduce + 0.4;
+    sum += SampleObscurance(normal, v, falloff_scale, horizon) * weight;
+    weight_sum += weight;
   }
 
-  // Empirical normalisation (the constant follows the SAO reference); the
-  // user intensity is applied as a final contrast power.
-  float ao = max(
-      0.0,
-      1.0 - 5.0 * sum / (float(sample_count) * radius2 * radius2 * radius2));
-  ao = pow(clamp(ao, 0.0, 1.0), intensity);
+  // Immediate neighbours recover tight contact detail before the wide kernel
+  // is filtered. Their falloff is four times faster, matching the main radius
+  // normalisation used by the reference ASSAO implementation.
+  ivec2 center_coord = ivec2(v_uv * vec2(textureSize(linear_depth, 0)));
+  float detail_sum = 0.0;
+  detail_sum += SampleObscurance(
+      normal, ViewPositionBase(center_coord + ivec2(-1, 0)) - origin,
+      falloff_scale * 4.0, horizon);
+  detail_sum += SampleObscurance(
+      normal, ViewPositionBase(center_coord + ivec2(1, 0)) - origin,
+      falloff_scale * 4.0, horizon);
+  detail_sum += SampleObscurance(
+      normal, ViewPositionBase(center_coord + ivec2(0, -1)) - origin,
+      falloff_scale * 4.0, horizon);
+  detail_sum += SampleObscurance(
+      normal, ViewPositionBase(center_coord + ivec2(0, 1)) - origin,
+      falloff_scale * 4.0, horizon);
+
+  float obscurance = (sum + detail * detail_sum) /
+      max(weight_sum, kNumericEpsilon);
+  obscurance = min(intensity * obscurance, 0.98);
+  float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
 
   // Fade occlusion toward unoccluded in a thin band at the screen edge, so an
   // occluder crossing the edge (whose samples leave the viewport and have no
@@ -159,7 +208,8 @@ void main() {
   // sample-disk reach, capped to a small fraction of the screen so near or
   // large-radius geometry does not fade a large region.
   vec2 reach = min(vec2(screen_radius) * ssao.viewport.zw, vec2(kEdgeFadeMax));
-  vec2 edge = clamp(min(v_uv, 1.0 - v_uv) / max(reach, vec2(kEpsilon)),
+  vec2 edge = clamp(min(v_uv, 1.0 - v_uv) /
+                        max(reach, vec2(kNumericEpsilon)),
                     0.0, 1.0);
   float edge_fade = smoothstep(0.0, 1.0, edge.x) * smoothstep(0.0, 1.0, edge.y);
   ao = mix(1.0, ao, edge_fade);

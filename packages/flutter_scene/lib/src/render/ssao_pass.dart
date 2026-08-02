@@ -21,9 +21,9 @@ const String kSsaoTextureBlackboardKey = 'ssao_texture';
 // [SsaoBlurPass].
 const String _kSsaoRawBlackboardKey = 'ssao_raw';
 
-// Single-channel, filterable, and color-renderable on every backend, which
-// is all the occlusion factor needs.
-const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8UNormInt;
+// Android GLES does not guarantee renderable single-channel normalized color
+// attachments. The shader only reads red, but RGBA8 keeps the pass portable.
+const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
 /// The render size of the ambient-occlusion chain for a full-resolution
 /// target of [dimensions], halved (floored, minimum 1) when
@@ -117,7 +117,7 @@ class SsaoPass extends RenderGraphPass {
   String get name => 'SsaoPass';
 
   // Downsamples [source] into a half-size (rounded down) depth level via the
-  // depth-downsample shader (nearest 2x2 minimum). Used to build the SAO chain.
+  // depth-downsample shader (rotated-grid subsample). Used to build the chain.
   gpu.Texture _downsampleDepth(
     RenderGraphContext context,
     gpu.Texture source,
@@ -214,7 +214,7 @@ class SsaoPass extends RenderGraphPass {
     // screen-space disk. Based on the occlusion target's own height.
     final projScale = aoHeight / (2.0 * tanHalfFovY);
 
-    final info = Float32List(16)
+    final info = Float32List(20)
       ..[0] = aoWidth.toDouble()
       ..[1] = aoHeight.toDouble()
       ..[2] = 1.0 / aoWidth
@@ -228,7 +228,10 @@ class SsaoPass extends RenderGraphPass {
       ..[10] = _settings.intensity
       ..[11] = projScale
       ..[12] = _settings.sampleCount.toDouble()
-      ..[13] = mipLevels.toDouble();
+      ..[13] = mipLevels.toDouble()
+      ..[14] = _settings.horizonAngle
+      ..[15] = _settings.power
+      ..[16] = _settings.detail;
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('SsaoInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
@@ -293,49 +296,73 @@ class SsaoBlurPass extends RenderGraphPass {
     final aoWidth = aoSize.width.toInt();
     final aoHeight = aoSize.height.toInt();
 
-    // The bilateral depth weight falls off over roughly the occlusion radius,
-    // so neighbours on the same (even steeply slanted) surface still average
-    // while a real depth step at a silhouette, far larger than the radius,
-    // cuts the blur.
-    final depthScale = math.max(_settings.radius, 1e-3);
+    // The plane-aware filter removes the local slope before this threshold is
+    // applied, so it can reject real depth steps much more tightly.
+    final depthScale = math.max(_settings.radius * 0.05, 1e-3);
 
-    final blurred = context.texturePool.acquire(
-      TransientTextureDescriptor.color(
-        width: aoWidth,
-        height: aoHeight,
-        format: _aoFormat,
-        debugName: 'ssao_blurred',
-      ),
-    );
+    gpu.Texture blur(
+      gpu.Texture source,
+      double axisX,
+      double axisY, {
+      required bool finalPass,
+      required String debugName,
+    }) {
+      final target = context.texturePool.acquire(
+        TransientTextureDescriptor.color(
+          width: aoWidth,
+          height: aoHeight,
+          format: _aoFormat,
+          debugName: debugName,
+        ),
+      );
+      final commandBuffer = gpu.gpuContext.createCommandBuffer();
+      final renderPass = commandBuffer.createRenderPass(
+        gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
+      );
+      renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
+      renderPass.setColorBlendEnable(false);
+      bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
 
-    final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: blurred)),
-    );
-    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
-    renderPass.setColorBlendEnable(false);
-    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+      final info = Float32List(8)
+        ..[0] = 1.0 / aoWidth
+        ..[1] = 1.0 / aoHeight
+        ..[2] = depthScale
+        ..[3] = finalPass ? 1.0 : 0.0
+        ..[4] = axisX
+        ..[5] = axisY;
+      renderPass.bindUniform(
+        _fragmentShader.getUniformSlot('BlurInfo'),
+        context.transientsBuffer.emplace(ByteData.sublistView(info)),
+      );
+      renderPass.bindTexture(
+        _fragmentShader.getUniformSlot('ao_texture'),
+        source,
+        sampler: _linearClamp,
+      );
+      renderPass.bindTexture(
+        _fragmentShader.getUniformSlot('linear_depth'),
+        linearDepth,
+        sampler: _nearestClamp,
+      );
+      drawCompat(renderPass, 6);
+      rendererSubmissions.submit(commandBuffer);
+      return target;
+    }
 
-    final info = Float32List(4)
-      ..[0] = 1.0 / aoWidth
-      ..[1] = 1.0 / aoHeight
-      ..[2] = depthScale;
-    renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('BlurInfo'),
-      context.transientsBuffer.emplace(ByteData.sublistView(info)),
-    );
-    renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('ao_texture'),
+    final horizontal = blur(
       raw,
-      sampler: _linearClamp,
+      1.0,
+      0.0,
+      finalPass: false,
+      debugName: 'ssao_blurred_horizontal',
     );
-    renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('linear_depth'),
-      linearDepth,
-      sampler: _nearestClamp,
+    final blurred = blur(
+      horizontal,
+      0.0,
+      1.0,
+      finalPass: true,
+      debugName: 'ssao_blurred',
     );
-    drawCompat(renderPass, 6);
-    rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kSsaoTextureBlackboardKey, blurred);
   }

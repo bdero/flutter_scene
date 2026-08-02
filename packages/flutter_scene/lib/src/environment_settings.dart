@@ -69,7 +69,7 @@ class EnvironmentSettings {
     this.filmGrainIntensity = 0.3,
     this.ambientOcclusionEnabled = false,
     this.ambientOcclusionRadius = 0.33,
-    this.ambientOcclusionIntensity = 1.22,
+    this.ambientOcclusionIntensity = 2.0,
     this.ambientOcclusionBias = 0.07,
   }) : lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),

@@ -9,13 +9,10 @@
 /// Disabled by default: a fresh scene does no ambient-occlusion work and
 /// adds no render passes. Set [enabled] to turn it on.
 ///
-/// The technique is Scalable Ambient Obscurance (McGuire, Mara, and
-/// Luebke 2012,
-/// https://research.nvidia.com/publication/scalable-ambient-obscurance),
-/// evaluated from a camera depth prepass. It takes only a depth buffer
-/// (the per-pixel normal is reconstructed from depth), so it fits a
-/// forward renderer with no normal buffer, and runs as full-screen
-/// fragment passes with no compute.
+/// The technique evaluates normalized angular obscurance from a camera depth
+/// prepass. It takes only a depth buffer (the per-pixel normal is reconstructed
+/// from depth), so it fits a forward renderer with no normal buffer, and runs
+/// as full-screen fragment passes with no compute.
 /// {@category Rendering}
 class AmbientOcclusionSettings {
   /// Whether ambient occlusion runs. Off by default. When false the scene
@@ -27,15 +24,31 @@ class AmbientOcclusionSettings {
   /// contact creases.
   double radius = 0.33;
 
-  /// Strength of the darkening, applied as a power on the occlusion
-  /// factor. `1.0` is the raw estimate; higher values deepen the
-  /// occlusion and `0.0` removes it.
-  double intensity = 1.22;
+  /// Scalar applied to the averaged obscurance before it is converted to
+  /// visibility. `0.0` removes screen-space occlusion.
+  double intensity = 2.0;
+
+  /// Contrast power applied to the final visibility. Values above `1.0`
+  /// deepen already-occluded regions without increasing the raw estimate.
+  double power = 1.5;
+
+  /// Strength of the four immediate-neighbour samples. This restores tight
+  /// contact detail that the wider sampling disk and blur can soften.
+  double detail = 0.5;
 
   /// Distance, in world units, a sampled surface must sit in front of the
   /// shaded point before it counts as an occluder. Lifts the estimate off
   /// the surface so a flat plane does not occlude itself.
   double bias = 0.07;
+
+  /// Minimum sine of the sample angle above the surface horizon. Samples
+  /// closer to tangent are rejected to prevent shallow surfaces from
+  /// self-occluding because of depth precision and coarse tessellation.
+  double horizonAngle = 0.06;
+
+  /// Fraction of screen-space occlusion applied to analytic direct lights.
+  /// `0.0` affects indirect lighting only, while `1.0` affects both equally.
+  double directLightAffect = 0.0;
 
   /// Number of samples taken per pixel. More samples cut noise at a
   /// roughly linear cost. Reasonable values are about 8 to 32.

@@ -373,7 +373,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // backend reports gl_FragCoord with a flipped origin, this sample needs
     // screen_uv.y = 1.0 - screen_uv.y; verify against the depth prepass on
     // each backend.
-    occlusion *= texture(ssao_texture, screen_uv).r;
+    // Both terms estimate the same visibility. Multiplying them counts the
+    // same blocked hemisphere twice and over-darkens surfaces with baked AO.
+    occlusion = min(occlusion, texture(ssao_texture, screen_uv).r);
   }
 
   vec3 camera_normal = normalize(v_viewvector);
@@ -578,7 +580,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // operator, and display encoding are applied later by the tone-mapping
   // resolve pass (see flutter_scene_resolve.frag), so this writes into a
   // floating-point scene-color target.
-  vec3 out_color = ambient + direct + emissive;
+  float direct_occlusion = mix(
+      1.0, occlusion, clamp(frag_info.ssao_lighting.x, 0.0, 1.0));
+  vec3 out_color = ambient + direct * direct_occlusion + emissive;
 
   // Sky-colored fog: when active, sample the environment in the view direction
   // (rotated by the same environment_transform, cross-faded like the IBL, and

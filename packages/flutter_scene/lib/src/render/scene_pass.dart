@@ -61,6 +61,7 @@ class ScenePass extends RenderGraphPass {
     PunctualLighting punctualLighting = const PunctualLighting.empty(),
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
+    double ssaoDirectLightAffect = 0.0,
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
@@ -87,6 +88,7 @@ class ScenePass extends RenderGraphPass {
        _punctualLighting = punctualLighting,
        _cascades = cascades,
        _specularOcclusionMode = specularOcclusionMode,
+       _ssaoDirectLightAffect = ssaoDirectLightAffect,
        _fog = fog,
        _cullingPlanes = cullingPlanes,
        _includeOffscreen = includeOffscreen;
@@ -107,6 +109,7 @@ class ScenePass extends RenderGraphPass {
   final int _layerMask;
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
+  final double _ssaoDirectLightAffect;
   final Fog? _fog;
 
   // Material scene inputs (see Material.sceneInputs): whether to split the
@@ -266,6 +269,7 @@ class ScenePass extends RenderGraphPass {
       cascades: shadowMap == null ? const [] : _cascades,
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
+      ssaoDirectLightAffect: ssaoMap == null ? 0.0 : _ssaoDirectLightAffect,
       viewportSize: _dimensions,
       fog: _fog,
       sceneDepthLinear: _bindSceneDepth
