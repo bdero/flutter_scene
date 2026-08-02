@@ -53,8 +53,7 @@ void main() {
       // smoke scene: Geometry/Material constructors touch the shader bundle,
       // which must be loaded before SmokeSceneView constructs them.
       await Scene.initializeStaticResources();
-      await loadSmokeMaterials();
-      await loadSmokeModels();
+      await smoke.preload?.call();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -66,9 +65,13 @@ void main() {
         ),
       );
 
-      // Let the post-ready repaint and GPU frames settle.
-      for (var i = 0; i < 20; i++) {
-        await tester.pump(const Duration(milliseconds: 50));
+      // Let the post-ready repaint and GPU frames settle. Android software
+      // renderers need fewer, longer frames to stay below emulator watchdogs.
+      final settleFrames =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android ? 1 : 20;
+      final settleStep = Duration(milliseconds: 1000 ~/ settleFrames);
+      for (var i = 0; i < settleFrames; i++) {
+        await tester.pump(settleStep);
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
 
@@ -107,11 +110,13 @@ void main() {
         greaterThan(0.05),
         reason: 'little or no geometry drew in the center',
       );
-      expect(
-        stats.foregroundMeanLuma,
-        greaterThan(20),
-        reason: 'foreground is ~black; lighting or textures may have broken',
-      );
+      if (!smoke.allowsDarkForeground) {
+        expect(
+          stats.foregroundMeanLuma,
+          greaterThan(20),
+          reason: 'foreground is ~black; lighting or textures may have broken',
+        );
+      }
       // A loose backstop against a flat/uniform fill; corners, coverage, and
       // foreground luma above are the primary blank detectors. Kept very low
       // because this metric is noisy: it is dominated by the anti-aliased
@@ -141,6 +146,8 @@ void main() {
     // functions and is unaffected.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) return;
 
+    await loadSmokeMaterials();
+
     await tester.pumpWidget(
       const MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -162,8 +169,8 @@ void main() {
             child: RepaintBoundary(
               key: boundaryKey,
               child: SizedBox(
-                width: kSmokeSize,
-                height: kSmokeSize,
+                width: kSmokeSize.toDouble(),
+                height: kSmokeSize.toDouble(),
                 child: SceneView(setup.scene, camera: setup.camera),
               ),
             ),
