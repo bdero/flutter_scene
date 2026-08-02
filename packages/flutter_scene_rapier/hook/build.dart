@@ -84,7 +84,7 @@ Future<Uri> _resolveLibrary(
     final manifest = NativeBinaryManifest.fromFile(manifestFile)!;
     final entry = manifest.binaries[triple];
     if (entry != null) {
-      return _downloadPrebuilt(input, manifest, entry, triple);
+      return _downloadPrebuilt(input, code, manifest, entry, triple);
     }
     // No prebuilt for this triple (exotic arch / custom embedder): fall
     // through to a source build below.
@@ -105,6 +105,7 @@ Future<Uri> _resolveLibrary(
 
 Future<Uri> _downloadPrebuilt(
   BuildInput input,
+  CodeConfig code,
   NativeBinaryManifest manifest,
   NativeBinaryEntry entry,
   String triple,
@@ -116,7 +117,8 @@ Future<Uri> _downloadPrebuilt(
   // repeated builds reuse it.
   final cacheFile = File.fromUri(
     input.outputDirectoryShared.resolve(
-      '$_nativeLibraryName/${manifest.version}/$triple/${entry.file}',
+      '$_nativeLibraryName/${manifest.version}/$triple/'
+      '${code.targetOS.dylibFileName(_nativeLibraryName)}',
     ),
   );
 

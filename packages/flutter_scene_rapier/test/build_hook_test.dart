@@ -32,7 +32,14 @@ void main() {
           'package:flutter_scene_rapier/flutter_scene_rapier_native',
         );
         expect(asset.linkMode, isA<DynamicLoadingBundled>());
-        expect(File.fromUri(asset.file!).existsSync(), isTrue);
+        final file = File.fromUri(asset.file!);
+        expect(file.existsSync(), isTrue);
+        expect(
+          file.uri.pathSegments.last,
+          input.config.code.targetOS.dylibFileName(
+            'flutter_scene_rapier_native',
+          ),
+        );
       },
     );
   }, timeout: const Timeout(Duration(minutes: 10)));
