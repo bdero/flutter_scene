@@ -68,8 +68,6 @@ jobs:
             xvfb libgl1-mesa-dri libegl-mesa0 libgles2 mesa-vulkan-drivers
       - run: flutter config --enable-linux-desktop --enable-native-assets
       - run: flutter pub get
-      # Keep host pressure and process evidence when SwiftShader or the emulator
-      # is terminated without an Android crash report.
       - name: Render smoke scenes
         working-directory: examples/smoke_render
         run: >
@@ -156,6 +154,8 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # Keep host pressure and process evidence when SwiftShader or the emulator
+      # is terminated without an Android crash report.
       - name: Render smoke scenes
         uses: reactivecircus/android-emulator-runner@v2
         with:

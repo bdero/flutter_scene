@@ -1,9 +1,13 @@
+import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:flutter_gpu_shaders/build.dart';
 import 'package:flutter_scene/build_hooks.dart';
 
 void main(List<String> args) {
   build(args, (config, output) async {
+    if (!config.config.buildDataAssets) {
+      return;
+    }
     // Reference the shared corpus through the in-package `assets_src` symlink
     // so each asset is keyed by a path relative to the package root.
     const corpus = [

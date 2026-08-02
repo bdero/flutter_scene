@@ -8,6 +8,7 @@
 * Debug builds check a caller-declared vertex layout against the buffers actually bound, so a slot count mismatch raises instead of feeding the pipeline undefined vertex data.
 * `IndexType`, `VertexFormat`, and `VertexStepMode` are exported, so 32-bit indices and caller-declared layouts no longer need `lib/src` imports.
 * Made first-party shader/material hooks and examples DataAssets-only, with migration guidance for legacy assets.
+* `buildMaterials` registers generated outputs as DataAssets when available by default.
 * Added `Node.castsShadows` for excluding individual meshes from shadow passes.
 * Added `GeometryBufferArena` and `GeometryBuilder.build({bufferArena, retainCpuData})` for lower-overhead immutable mesh batches.
 * Added per-instance colors through `InstancedMesh.addInstance(color:)` and `setInstanceColor`.

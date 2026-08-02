@@ -65,4 +65,11 @@ void main() {
       _dataAssetKey,
     );
   });
+
+  test('a missing bundle names the data-assets setup step', () {
+    expect(
+      baseShaderBundleLoadFailureMessage(_legacyKey),
+      contains('flutter config --enable-dart-data-assets'),
+    );
+  });
 }

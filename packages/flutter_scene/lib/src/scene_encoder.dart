@@ -250,6 +250,8 @@ base class SceneEncoder {
   int _instancePackMicros = 0;
   int _instanceBindMicros = 0;
   int _instanceBytes = 0;
+  int _opaqueSortMicros = 0;
+  int _opaqueEncodeMicros = 0;
 
   /// Creates an encoder that records into [renderPass], allocating
   /// transient uniforms from [transientsBuffer].
@@ -888,7 +890,10 @@ base class SceneEncoder {
       if (end > index + 1) {
         final batches = <InstanceDataBatch>[];
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          batches.add(instanceDataBatchFor(_opaqueRecords[batchIndex].item));
+          final item = _opaqueRecords[batchIndex].item;
+          batches.add(
+            instanceDataBatchFor(item, indices: item.visibleInstanceIndices),
+          );
         }
         _encodeInstancedBatches(
           record.pipeline,
@@ -931,12 +936,8 @@ base class SceneEncoder {
     }
     encodeWatch?.stop();
     if (profileRendering) {
-      _recordProfile(
-        sortWatch!.elapsedMicroseconds,
-        encodeWatch!.elapsedMicroseconds,
-        _encodedDraws,
-        _encodedInstances,
-      );
+      _opaqueSortMicros = sortWatch!.elapsedMicroseconds;
+      _opaqueEncodeMicros = encodeWatch!.elapsedMicroseconds;
     }
     for (final record in _opaqueRecords) {
       if (_opaqueRecordPool.length == _recordPoolLimit) break;
@@ -963,6 +964,8 @@ base class SceneEncoder {
     _instancePackMicros = 0;
     _instanceBindMicros = 0;
     _instanceBytes = 0;
+    _opaqueSortMicros = 0;
+    _opaqueEncodeMicros = 0;
     if (snapshot == null) return;
     // ignore: avoid_print
     print(
@@ -995,7 +998,10 @@ base class SceneEncoder {
       _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
     }
 
+    final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
+    sortWatch?.stop();
+    final encodeWatch = profileRendering ? (Stopwatch()..start()) : null;
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
     // Premultiplied source-over blending.
@@ -1046,6 +1052,15 @@ base class SceneEncoder {
           record.fade,
         );
       }
+    }
+    encodeWatch?.stop();
+    if (profileRendering) {
+      _recordProfile(
+        _opaqueSortMicros + sortWatch!.elapsedMicroseconds,
+        _opaqueEncodeMicros + encodeWatch!.elapsedMicroseconds,
+        _encodedDraws,
+        _encodedInstances,
+      );
     }
     for (final record in _translucentRecords) {
       if (_translucentRecordPool.length == _recordPoolLimit) break;
