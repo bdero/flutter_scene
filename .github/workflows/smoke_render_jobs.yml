@@ -132,13 +132,9 @@ jobs:
         include:
           - backend: gles
             expected_backend: opengles
-            lightweight_environment: true
-            render_size: 384
             emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           - backend: vulkan
             expected_backend: vulkan
-            lightweight_environment: false
-            render_size: 512
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
     steps:
       - uses: actions/checkout@v7
@@ -198,8 +194,6 @@ jobs:
             -d emulator-5554
             --flavor ${{ matrix.backend }}
             --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
-            --dart-define=SMOKE_USE_LIGHTWEIGHT_ENVIRONMENT=${{ matrix.lightweight_environment }}
-            --dart-define=SMOKE_RENDER_SIZE=${{ matrix.render_size }}
             --enable-impeller
             --enable-flutter-gpu; };
             drive;
