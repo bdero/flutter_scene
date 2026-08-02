@@ -95,76 +95,49 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
   float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
 
-  float lit = 0.0;
-  float sample_count = 16.0;
-  if (frag_info.directional_light_direction.w > 0.5) {
-    // Deterministic 17-tap PCF. The half-texel inner ring fills gaps in the
-    // outer 3x3 grid while preserving a stable, visibly stepped edge.
-#define _FIXED_SHADOW_TAP(px, py) \
-  ShadowTap(vec2(px, py), 1.0, 0.0, radius, uv, cascade, inv_count, \
-            receiver_depth)
-    lit += _FIXED_SHADOW_TAP(-1.0, -1.0);
-    lit += _FIXED_SHADOW_TAP(0.0, -1.0);
-    lit += _FIXED_SHADOW_TAP(1.0, -1.0);
-    lit += _FIXED_SHADOW_TAP(-0.5, -0.5);
-    lit += _FIXED_SHADOW_TAP(0.0, -0.5);
-    lit += _FIXED_SHADOW_TAP(0.5, -0.5);
-    lit += _FIXED_SHADOW_TAP(-1.0, 0.0);
-    lit += _FIXED_SHADOW_TAP(-0.5, 0.0);
-    lit += _FIXED_SHADOW_TAP(0.0, 0.0);
-    lit += _FIXED_SHADOW_TAP(0.5, 0.0);
-    lit += _FIXED_SHADOW_TAP(1.0, 0.0);
-    lit += _FIXED_SHADOW_TAP(-0.5, 0.5);
-    lit += _FIXED_SHADOW_TAP(0.0, 0.5);
-    lit += _FIXED_SHADOW_TAP(0.5, 0.5);
-    lit += _FIXED_SHADOW_TAP(-1.0, 1.0);
-    lit += _FIXED_SHADOW_TAP(0.0, 1.0);
-    lit += _FIXED_SHADOW_TAP(1.0, 1.0);
-#undef _FIXED_SHADOW_TAP
-    sample_count = 17.0;
-  } else {
-    // A per-fragment rotation hides the 16-tap pattern as a smooth edge.
-    float noise = fract(
-        52.9829189 *
-        fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    float angle = noise * 6.28318530718;
-    float ca = cos(angle);
-    float sa = sin(angle);
+  // Select the tap positions without duplicating the texture samples in both
+  // branches. Duplicating both kernels here expands to 33 samples per cascade
+  // in the generated GLES source even though the choice is uniform.
+  float fixed_filter = step(0.5, frag_info.directional_light_direction.w);
+  float noise = fract(
+      52.9829189 *
+      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float angle = noise * 6.28318530718 * (1.0 - fixed_filter);
+  float ca = cos(angle);
+  float sa = sin(angle);
 
-    // 16-tap Poisson-disk PCF, unrolled with inline kernel literals.
-    //
-    // TODO(flutter_scene): this would naturally loop over a file-scope
-    // `const vec2 kPoissonDisk[16] = vec2[](...)`, but *any* const array (even
-    // one filled element by element, which the SPIR-V optimizer folds back into
-    // a constant) makes impellerc/SPIRV-Cross emit a GLSL array constructor
-    // (`vec2[](...)`) in its `#version 100` GLES output. That is invalid
-    // ES 1.00, so the shader fails to compile on conformant ES drivers
-    // (e.g. Mesa/llvmpipe under headless CI); lenient drivers accept it. Flutter
-    // GPU shaders should compile anywhere Flutter runs, so the real fix belongs
-    // upstream (impellerc should emit valid ES 1.00, or the bundle's GLES stage
-    // should target ES 3.00). Restore the const-array loop once that lands.
-    // See: <upstream issue>.
-#define _SHADOW_TAP(px, py) \
-  ShadowTap(vec2(px, py), ca, sa, radius, uv, cascade, inv_count, \
-            receiver_depth)
-    lit += _SHADOW_TAP(-0.94201624, -0.39906216);
-    lit += _SHADOW_TAP(0.94558609, -0.76890725);
-    lit += _SHADOW_TAP(-0.09418410, -0.92938870);
-    lit += _SHADOW_TAP(0.34495938, 0.29387760);
-    lit += _SHADOW_TAP(-0.91588581, 0.45771432);
-    lit += _SHADOW_TAP(-0.81544232, -0.87912464);
-    lit += _SHADOW_TAP(-0.38277543, 0.27676845);
-    lit += _SHADOW_TAP(0.97484398, 0.75648379);
-    lit += _SHADOW_TAP(0.44323325, -0.97511554);
-    lit += _SHADOW_TAP(0.53742981, -0.47373420);
-    lit += _SHADOW_TAP(-0.26496911, -0.41893023);
-    lit += _SHADOW_TAP(0.79197514, 0.19090188);
-    lit += _SHADOW_TAP(-0.24188840, 0.99706507);
-    lit += _SHADOW_TAP(-0.81409955, 0.91437590);
-    lit += _SHADOW_TAP(0.19984126, 0.78641367);
-    lit += _SHADOW_TAP(0.14383161, -0.14100790);
+  // The Poisson positions are selected when fixed_filter is 0, the stable grid
+  // positions when it is 1. The latter preserves the same 17-tap pattern.
+  //
+  // TODO(flutter_scene): this would naturally loop over file-scope const
+  // arrays, but impellerc/SPIRV-Cross emits invalid ES 1.00 array constructors.
+  // Restore the const-array loop once the GLES stage supports them.
+#define _SHADOW_TAP(rpx, rpy, fpx, fpy) \
+  ShadowTap(mix(vec2(rpx, rpy), vec2(fpx, fpy), fixed_filter), ca, sa, radius, \
+            uv, cascade, inv_count, receiver_depth)
+  float lit = 0.0;
+  lit += _SHADOW_TAP(-0.94201624, -0.39906216, -1.0, -1.0);
+  lit += _SHADOW_TAP(0.94558609, -0.76890725, 0.0, -1.0);
+  lit += _SHADOW_TAP(-0.09418410, -0.92938870, 1.0, -1.0);
+  lit += _SHADOW_TAP(0.34495938, 0.29387760, -0.5, -0.5);
+  lit += _SHADOW_TAP(-0.91588581, 0.45771432, 0.0, -0.5);
+  lit += _SHADOW_TAP(-0.81544232, -0.87912464, 0.5, -0.5);
+  lit += _SHADOW_TAP(-0.38277543, 0.27676845, -1.0, 0.0);
+  lit += _SHADOW_TAP(0.97484398, 0.75648379, -0.5, 0.0);
+  lit += _SHADOW_TAP(0.44323325, -0.97511554, 0.0, 0.0);
+  lit += _SHADOW_TAP(0.53742981, -0.47373420, 0.5, 0.0);
+  lit += _SHADOW_TAP(-0.26496911, -0.41893023, 1.0, 0.0);
+  lit += _SHADOW_TAP(0.79197514, 0.19090188, -0.5, 0.5);
+  lit += _SHADOW_TAP(-0.24188840, 0.99706507, 0.0, 0.5);
+  lit += _SHADOW_TAP(-0.81409955, 0.91437590, 0.5, 0.5);
+  lit += _SHADOW_TAP(0.19984126, 0.78641367, -1.0, 1.0);
+  lit += _SHADOW_TAP(0.14383161, -0.14100790, 0.0, 1.0);
 #undef _SHADOW_TAP
+  if (fixed_filter > 0.5) {
+    lit += ShadowTap(vec2(1.0), 1.0, 0.0, radius, uv, cascade, inv_count,
+                     receiver_depth);
   }
+  float sample_count = 16.0 + fixed_filter;
   float shadow = lit / sample_count;
 
   // Only the last cascade has a real outer edge (inner cascades hand

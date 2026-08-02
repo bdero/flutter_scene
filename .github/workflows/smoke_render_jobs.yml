@@ -122,15 +122,21 @@ jobs:
     name: ${{ inputs.argos_prefix }}android_${{ matrix.backend }} (${{ inputs.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
     strategy:
       fail-fast: false
       matrix:
         include:
           - backend: gles
             expected_backend: opengles
+            lightweight_environment: false
+            render_size: 512
             emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           - backend: vulkan
             expected_backend: vulkan
+            lightweight_environment: false
+            render_size: 512
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
     steps:
       - uses: actions/checkout@v7
@@ -144,7 +150,7 @@ jobs:
           channel: ${{ inputs.flutter_channel }}
       - name: Flutter and engine revision
         run: flutter --version
-      - run: flutter config --enable-native-assets
+      - run: flutter config --enable-native-assets --enable-dart-data-assets
       - run: flutter pub get
       - name: Enable KVM access
         run: |
@@ -171,30 +177,49 @@ jobs:
             (adb devices -l > examples/smoke_render/build/android-diagnostics/adb_devices_before_${{ matrix.backend }}.txt 2>&1 || true) &&
             (adb shell getprop > examples/smoke_render/build/android-diagnostics/getprop_${{ matrix.backend }}.txt 2>&1 || true) &&
             (adb shell dumpsys SurfaceFlinger > examples/smoke_render/build/android-diagnostics/surfaceflinger_${{ matrix.backend }}.txt 2>&1 || true) &&
+            (host_monitor() { while true; do
+            date -u +%FT%TZ;
+            free -m;
+            cat /proc/pressure/memory;
+            cat /sys/fs/cgroup/memory.events 2>/dev/null || true;
+            ps -eo pid,ppid,rss,vsz,%mem,%cpu,stat,comm,args --sort=-rss | head -n 20;
+            sleep 2;
+            done; };
+            host_monitor > examples/smoke_render/build/android-diagnostics/host_resources_${{ matrix.backend }}.txt 2>&1 &
+            echo $! > /tmp/smoke-host-monitor.pid) &&
             adb logcat -c &&
             (adb logcat -v time > examples/smoke_render/build/android-diagnostics/logcat_${{ matrix.backend }}.txt 2>&1 & echo $! > /tmp/smoke-logcat.pid) &&
             cd examples/smoke_render &&
             (drive() { timeout 1200 flutter drive
-            --flavor ${{ matrix.backend }}
             --driver=test_driver/integration_test.dart
             --target=integration_test/smoke_test.dart
             -d emulator-5554
+            --flavor ${{ matrix.backend }}
             --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
+            --dart-define=SMOKE_USE_LIGHTWEIGHT_ENVIRONMENT=${{ matrix.lightweight_environment }}
+            --dart-define=SMOKE_RENDER_SIZE=${{ matrix.render_size }}
             --enable-impeller
             --enable-flutter-gpu; };
             drive;
-            status=$?;
-            if [ "$status" -ne 0 ] && ! ls build/smoke/*.png >/dev/null 2>&1; then
-            echo "flutter drive failed (status $status) before rendering any frames; restarting adb and retrying once.";
+            drive_code=$?;
+            if [ "$drive_code" -ne 0 ] && ! ls build/smoke/*.png >/dev/null 2>&1; then
+            echo "flutter drive failed (status $drive_code) before rendering any frames; restarting adb and retrying once.";
             adb kill-server || true;
             adb start-server || true;
-            adb wait-for-device;
+            if timeout 30 adb wait-for-device && [ "$(adb get-state 2>/dev/null)" = "device" ]; then
             drive;
-            status=$?;
+            drive_code=$?;
+            else
+            echo "The emulator did not reconnect within 30 seconds; skipping retry.";
+            fi;
             fi;
             (adb devices -l > build/android-diagnostics/adb_devices_after_${{ matrix.backend }}.txt 2>&1 || true);
+            (sudo dmesg -T > build/android-diagnostics/host_dmesg_${{ matrix.backend }}.txt 2>&1 || true);
+            (cat /sys/fs/cgroup/memory.events > build/android-diagnostics/host_memory_events_${{ matrix.backend }}.txt 2>&1 || true);
+            (cat /proc/meminfo > build/android-diagnostics/host_meminfo_after_${{ matrix.backend }}.txt 2>&1 || true);
+            kill "$(cat /tmp/smoke-host-monitor.pid)" || true;
             kill "$(cat /tmp/smoke-logcat.pid)" || true;
-            exit "$status")
+            exit "$drive_code")
       - name: Upload Android diagnostics
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7

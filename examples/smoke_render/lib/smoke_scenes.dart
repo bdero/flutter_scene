@@ -14,7 +14,14 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 /// Side length of the captured render, in logical pixels. Fixed for
 /// determinism (independent of window size).
-const double kSmokeSize = 512;
+const int kSmokeSize = int.fromEnvironment(
+  'SMOKE_RENDER_SIZE',
+  defaultValue: 512,
+);
+
+const bool _useLightweightEnvironment = bool.fromEnvironment(
+  'SMOKE_USE_LIGHTWEIGHT_ENVIRONMENT',
+);
 
 /// Distinctive background behind the scene so the sanity assertions can tell
 /// rendered geometry from empty space.
@@ -27,10 +34,17 @@ final GlobalKey smokeSceneKey = GlobalKey();
 /// A deterministic smoke scene: a builder that produces a [Scene] and the
 /// camera to view it from. No animation, no wall-clock input.
 class SmokeScene {
-  const SmokeScene(this.id, this.setup);
+  const SmokeScene(
+    this.id,
+    this.setup, {
+    this.preload,
+    this.allowsDarkForeground = false,
+  });
 
   final String id;
   final ({Scene scene, PerspectiveCamera camera}) Function() setup;
+  final Future<void> Function()? preload;
+  final bool allowsDarkForeground;
 }
 
 /// The fixed three-quarter view shared by the scenes.
@@ -45,6 +59,23 @@ PerspectiveCamera _shadowCamera() => PerspectiveCamera(
   position: vm.Vector3(2.6, 2.4, 3.0),
   target: vm.Vector3(0, 0.25, 0),
 );
+
+Scene _smokeScene({bool hasAnalyticLight = false}) {
+  final scene = Scene();
+  if (!_useLightweightEnvironment) return scene;
+
+  scene.environment = EnvironmentMap.empty();
+  if (!hasAnalyticLight) {
+    scene.add(
+      Node()..addComponent(
+        DirectionalLightComponent(
+          DirectionalLight(direction: vm.Vector3(-3.0, -2.0, -4.0)),
+        ),
+      ),
+    );
+  }
+  return scene;
+}
 
 Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
   final material = PhysicallyBasedMaterial()
@@ -198,13 +229,13 @@ MeshGeometry _phaseGrid() {
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Diffuse-ish PBR under the default studio IBL.
   SmokeScene('pbr_cuboid', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.add(_cuboid(vm.Vector4(0.85, 0.30, 0.20, 1.0), 0.1, 0.5));
     return (scene: scene, camera: _camera());
   }),
   // Exercises the camera depth prepass used by depth-only effects.
   SmokeScene('depth_post', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.depthOfField
       ..enabled = true
       ..focusDistance = 5.0
@@ -216,14 +247,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.add(_cuboid(vm.Vector4(0.95, 0.95, 0.95, 1.0), 1.0, 0.15));
     return (scene: scene, camera: _camera());
-  }),
+  }, allowsDarkForeground: _useLightweightEnvironment),
   // Issue #134 regression: a negative-scale (mirrored) node must render
   // right-side-out, not inside-out.
   SmokeScene('mirrored_node', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     final node = _cuboid(vm.Vector4(0.20, 0.55, 0.90, 1.0), 0.1, 0.5)
       ..localTransform =
           vm.Matrix4.rotationY(0.6) *
@@ -237,7 +268,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Covers hardware instancing, arena offsets, and engine-lighting bind
   // bookkeeping between instanced and non-instanced draws.
   SmokeScene('instanced_lighting', () {
-    final scene = Scene();
+    final scene = _smokeScene(hasAnalyticLight: true);
     final arena = GeometryBufferArena(blockSizeInBytes: 1024 * 1024);
     final cubeData = CuboidGeometry(
       vm.Vector3(0.5, 0.5, 0.5),
@@ -295,7 +326,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // ground plane. Exercises the ShadowPass (a depth-only shadow-map pass)
   // and the lit material's shadow sampling, which the other scenes don't.
   SmokeScene('directional_shadow', () {
-    final scene = Scene();
+    final scene = _smokeScene(hasAnalyticLight: true);
     scene.add(
       Node()..addComponent(
         DirectionalLightComponent(
@@ -367,7 +398,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..metallicFactor = 0.0
       ..roughnessFactor = 0.7
       ..vertexColorWeight = 0.0;
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.add(
       Node(
         mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)), material),
@@ -384,7 +415,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('fmat_custom_material', () {
     final material = _fmatMaterial('CustomMaterial')
       ..parameters.setFloat('amplitude', 0.3);
-    final scene = Scene();
+    final scene = _smokeScene(hasAnalyticLight: true);
     scene.add(
       Node()..addComponent(
         DirectionalLightComponent(
@@ -434,14 +465,14 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.5, 0)),
     );
     return (scene: scene, camera: _shadowCamera());
-  }),
+  }, preload: loadSmokeMaterials),
   // Distance fog: a near and a far cuboid, the far one fading toward the fog
   // color, with height fog and sun in-scatter enabled so those branches of
   // ApplyFog run too. Geometry stays central so the corners keep the clear
   // color (the frame-sanity check). One scene covers the global per-fragment
   // fog path across backends.
   SmokeScene('fog', () {
-    final scene = Scene();
+    final scene = _smokeScene(hasAnalyticLight: true);
     scene.fog
       ..enabled = true
       ..mode = FogMode.exponential
@@ -482,7 +513,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // clamp-pinned value that is robust to small cross-backend metering
   // differences.
   SmokeScene('auto_exposure', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.environmentIntensity = 0.4;
     scene.autoExposure.enabled = true;
     scene.add(_cuboid(vm.Vector4(0.30, 0.60, 0.85, 1.0), 0.0, 0.5));
@@ -496,7 +527,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // texture fetch and evaluation, and the crop branch. The surrounding
   // cuboid exercises the splat/mesh depth composite (occlusion both ways).
   SmokeScene('gaussian_splats', () {
-    final scene = Scene();
+    final scene = _smokeScene();
     scene.add(_cuboid(vm.Vector4(0.85, 0.75, 0.20, 1.0), 0.1, 0.5));
     final splats = SplatComponent(_splatCloud())
       // Exclude a slab off the -x side, so the crop branch culls real splats
@@ -520,21 +551,26 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // the per-stage texture-unit validation on drivers reporting the minimum
   // 16 fragment units (the skinned-draw crash on Windows ANGLE), so this
   // scene reproduces that crash on CI's GLES backends.
-  SmokeScene('skinned_animation', () {
-    final scene = Scene();
-    final model = _skinnedModel!;
-    scene.add(model);
-    model
-        .createAnimationClip(model.findAnimationByName('Metronome')!)
-        .seek(0.4);
-    return (
-      scene: scene,
-      camera: PerspectiveCamera(
-        position: vm.Vector3(0.8, 2.0, -6.5),
-        target: vm.Vector3(0, 1.5, 0),
-      ),
-    );
-  }),
+  SmokeScene(
+    'skinned_animation',
+    () {
+      final scene = _smokeScene();
+      final model = _skinnedModel!;
+      scene.add(model);
+      model
+          .createAnimationClip(model.findAnimationByName('Metronome')!)
+          .seek(0.4);
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(0.8, 2.0, -6.5),
+          target: vm.Vector3(0, 1.5, 0),
+        ),
+      );
+    },
+    preload: loadSmokeModels,
+    allowsDarkForeground: _useLightweightEnvironment,
+  ),
 
   // A hand-written vertex/fragment pair driven through ShaderMaterial, with no
   // engine vertex shader involved. The vertex stage displaces the grid along
@@ -579,7 +615,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         indices.addAll([i0, i0 + 1, i2, i0 + 1, i2 + 1, i2]);
       }
     }
-    final scene = Scene()..environmentIntensity = 0.0;
+    final scene = _smokeScene()..environmentIntensity = 0.0;
     scene.add(
       Node(
         mesh: Mesh(
@@ -599,7 +635,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3.zero(),
       ),
     );
-  }),
+  }, preload: loadSmokeMaterials),
 ];
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the
@@ -610,7 +646,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
 /// diff service. Tone mapping and anti-aliasing are configured so the packed
 /// bytes survive the display encode exactly.
 ({Scene scene, PerspectiveCamera camera}) buildNoiseParityScene() {
-  final scene = Scene()
+  final scene = _smokeScene()
     ..toneMapping = ToneMappingMode.linear
     ..antiAliasingMode = AntiAliasingMode.none;
   // A camera-facing quad spanning world [-1, 1] in x/y; the material derives
@@ -667,8 +703,8 @@ class _SmokeSceneViewState extends State<SmokeSceneView> {
     return RepaintBoundary(
       key: smokeSceneKey,
       child: SizedBox(
-        width: kSmokeSize,
-        height: kSmokeSize,
+        width: kSmokeSize.toDouble(),
+        height: kSmokeSize.toDouble(),
         child: Container(
           color: kSmokeClear,
           child: CustomPaint(
