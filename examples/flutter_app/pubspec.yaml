@@ -17,7 +17,7 @@ dependencies:
   flutter_scene: ^0.21.0
   # Multiplayer example.
   dashwire: ^0.1.0
-  dashwire_replication: ^0.1.0
+  dashwire_replication: ^0.2.0
   flutter_scene_net: ^0.1.0
   # Native Rapier physics backend, used by the Physics example. Pulls
   # in a Rust build hook, so building this app now requires cargo.
