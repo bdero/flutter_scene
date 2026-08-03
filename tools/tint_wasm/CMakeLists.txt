@@ -34,7 +34,11 @@ target_link_options(tint_wasm PRIVATE
   "-sMODULARIZE=1"
   "-sEXPORT_NAME=createTintWasm"
   "-sEXPORT_ES6=1"
-  "-sALLOW_MEMORY_GROWTH=1"
+  # A fixed heap rather than ALLOW_MEMORY_GROWTH. A growable heap is backed by
+  # a resizable ArrayBuffer in current Chrome, and TextDecoder refuses those,
+  # which breaks every string the module returns. Translation is bounded work,
+  # so a fixed heap costs nothing.
+  "-sINITIAL_MEMORY=512MB"
   "-sENVIRONMENT=web,worker,node"
   "-sDYNAMIC_EXECUTION=0"
   # Tint's IR validator recurses deeply; the 64KB default overflows on real
