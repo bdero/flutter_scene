@@ -1,12 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - `PhysicsSimulation.snapshot`/`restore` (opt-in via `supportsSnapshot`), world serialization for rollback prediction and lag-compensation rewind.
 - `PhysicsSimulation.setBodyPose`, immediate body teleport for rollback correction (default throws on backends without it).
-
-## 0.1.1
-
 - `TextureResource` carries a `content` role (`color`, `data`, `normal`) describing what its pixels represent.
 
 ## 0.1.0

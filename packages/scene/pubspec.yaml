@@ -1,6 +1,6 @@
 name: scene
 description: The engine-agnostic scene document core, the .fscene document model, stable ids, serialization, prefab composition, and diffing.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/bdero/flutter_scene
 environment:
   sdk: ^3.10.0

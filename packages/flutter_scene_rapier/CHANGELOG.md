@@ -1,5 +1,6 @@
-## Unreleased
+## 0.4.0
 
+* Requires the scene 0.1.1 physics contract.
 * `RapierWorld.snapshot`/`restore`, full world serialization for rollback prediction and lag-compensation rewind, on native and web.
 * `RapierWorld.setBodyPose`, immediate body teleport for rollback correction.
 * Ships new native binaries and wasm (new `fsr_world_snapshot`/`fsr_world_restore`/`fsr_body_set_pose` exports).
