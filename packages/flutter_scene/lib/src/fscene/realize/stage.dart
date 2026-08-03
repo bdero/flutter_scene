@@ -95,7 +95,7 @@ Future<void> realizeStage(
   final envRef = stage.environmentRef;
   final resource = envRef == null ? null : document.resource(envRef);
   final look = resource is EnvironmentResource ? resource : null;
-  (await realizeEnvironmentSettings(
+  final settings = await realizeEnvironmentSettings(
     environment: look?.environment ?? const StudioEnvironment(),
     environmentIntensity: look?.environmentIntensity ?? 1.0,
     exposure: look?.exposure ?? 1.0,
@@ -106,7 +106,8 @@ Future<void> realizeStage(
     bundle: bundle,
     environmentLoader: environmentLoader,
     payloadLookup: payloadLookup,
-  )).applyTo(scene);
+  );
+  _applyStageLook(settings, scene);
 
   // Spatial environment-volume components blend over the stage as the global
   // base. Capture the just-applied stage look as that base so the components
@@ -116,6 +117,19 @@ Future<void> realizeStage(
   // by the document, so a realize clears it.
   scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
   scene.environmentVolumes.clear();
+}
+
+void _applyStageLook(EnvironmentSettings settings, Scene scene) {
+  if (settings.environment != null || settings.skyEnvironment == null) {
+    scene.environment = settings.environment;
+  }
+  scene
+    ..skybox = settings.skybox
+    ..skyEnvironment = settings.skyEnvironment
+    ..sunLight = settings.sunLight
+    ..toneMapping = settings.toneMapping
+    ..environmentIntensity = settings.environmentIntensity
+    ..exposure = settings.exposure;
 }
 
 /// Realizes a look (the fields an [EnvironmentResource] or a volume carries)
