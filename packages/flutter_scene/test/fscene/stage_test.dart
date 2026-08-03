@@ -9,7 +9,8 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
-import 'package:flutter_scene/src/material/material_parameters.dart';
+import 'package:flutter_scene/src/fscene/realize/stage.dart';
+import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -61,6 +62,45 @@ SceneDocument _envDocument(void Function(EnvironmentResource) look) {
 }
 
 void main() {
+  test('applying a stage preserves unrepresented post effects', () async {
+    late final Scene scene;
+    try {
+      scene = Scene();
+    } catch (_) {
+      return;
+    }
+    scene
+      ..ambientOcclusion.enabled = true
+      ..ambientOcclusion.radius = 1.25
+      ..ambientOcclusion.intensity = 3.5;
+    scene.postProcess.bloom
+      ..enabled = true
+      ..threshold = 0.8
+      ..intensity = 0.2;
+    scene.postProcess.colorGrading
+      ..enabled = true
+      ..saturation = 1.4;
+    final document = _envDocument((environment) {
+      environment
+        ..environment = const EmptyEnvironment()
+        ..exposure = 3
+        ..toneMapping = 'agx';
+    });
+
+    await realizeStage(document, scene);
+
+    expect(scene.exposure, 3);
+    expect(scene.toneMapping, ToneMappingMode.agx);
+    expect(scene.ambientOcclusion.enabled, isTrue);
+    expect(scene.ambientOcclusion.radius, 1.25);
+    expect(scene.ambientOcclusion.intensity, 3.5);
+    expect(scene.postProcess.bloom.enabled, isTrue);
+    expect(scene.postProcess.bloom.threshold, 0.8);
+    expect(scene.postProcess.bloom.intensity, 0.2);
+    expect(scene.postProcess.colorGrading.enabled, isTrue);
+    expect(scene.postProcess.colorGrading.saturation, 1.4);
+  });
+
   group('stage environment-resource sky JSON', () {
     test('skybox and sky environment round-trip', () {
       final restored = readFscene(writeFscene(_skyDocument()));
