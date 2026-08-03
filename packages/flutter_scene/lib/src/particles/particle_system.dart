@@ -62,7 +62,7 @@ class ParticleSystem {
     this.fixedStep = 1.0 / 60.0,
     this.maxFrameTime = 0.25,
     this.seed = 0,
-    double prewarm = 0.0,
+    this.prewarm = 0.0,
   }) : assert(maxParticles > 0),
        assert(duration > 0),
        assert(fixedStep > 0),
@@ -83,6 +83,9 @@ class ParticleSystem {
 
   /// The backing structure-of-arrays storage; a renderer reads its live prefix.
   final ParticleStorage storage;
+
+  /// Seconds simulated during construction to populate the initial state.
+  final double prewarm;
 
   /// Where particles spawn and which way they initially head.
   EmitterShape shape;

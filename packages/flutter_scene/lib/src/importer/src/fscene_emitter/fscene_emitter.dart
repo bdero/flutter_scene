@@ -190,6 +190,13 @@ SceneDocument buildSceneDocument(
       final pairs = meshPairs[(node.mesh!, node.skin != null)] ?? const [];
       if (pairs.isNotEmpty) components.add(_meshComponent(pairs));
     }
+    final lightIndex = node.light;
+    if (lightIndex != null &&
+        lightIndex >= 0 &&
+        lightIndex < doc.lights.length) {
+      final component = _lightComponent(doc.lights[lightIndex]);
+      if (component != null) components.add(component);
+    }
     document.addNode(
       NodeSpec(
         id: nodeIds[i],
@@ -412,6 +419,29 @@ ComponentSpec _meshComponent(List<(LocalId, LocalId)> pairs) {
       ]),
     },
   );
+}
+
+ComponentSpec? _lightComponent(GltfPunctualLight light) {
+  final properties = <String, PropertyValue>{
+    'color': Vec3Value(light.color.clone()),
+    'intensity': DoubleValue(light.intensity),
+  };
+  switch (light.type) {
+    case 'directional':
+      properties['direction'] = Vec3Value(Vector3(0, 0, -1));
+      return ComponentSpec('directionalLight', properties: properties);
+    case 'point':
+      properties['range'] = DoubleValue(light.range ?? 0);
+      return ComponentSpec('pointLight', properties: properties);
+    case 'spot':
+      properties
+        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
+        ..['range'] = DoubleValue(light.range ?? 0)
+        ..['innerConeAngle'] = DoubleValue(light.innerConeAngle)
+        ..['outerConeAngle'] = DoubleValue(light.outerConeAngle);
+      return ComponentSpec('spotLight', properties: properties);
+  }
+  return null;
 }
 
 TransformSpec _transform(GltfNode node) {

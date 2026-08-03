@@ -268,6 +268,10 @@ Map<String, dynamic> _encodeLook({
       'type': 'payload',
       'payload': idKey(payload),
     },
+    ConstantEnvironment(:final color) => {
+      'type': 'constant',
+      'color': _vec3Json(color),
+    },
     EmptyEnvironment() => {'type': 'empty'},
   },
   'environmentIntensity': environmentIntensity,
@@ -802,6 +806,24 @@ Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
     'segments': segments,
     'rings': rings,
   },
+  TorusGeometrySpec(
+    :final radius,
+    :final tubeRadius,
+    :final radialSegments,
+    :final tubularSegments,
+  ) =>
+    {
+      'shape': 'torus',
+      'radius': radius,
+      'tubeRadius': tubeRadius,
+      'radialSegments': radialSegments,
+      'tubularSegments': tubularSegments,
+    },
+  IcosphereGeometrySpec(:final radius, :final subdivisions) => {
+    'shape': 'icosphere',
+    'radius': radius,
+    'subdivisions': subdivisions,
+  },
 };
 
 ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
@@ -825,6 +847,18 @@ ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
         radius: _d(json['radius'] ?? 0.5),
         segments: json['segments'] as int? ?? 32,
         rings: json['rings'] as int? ?? 16,
+      );
+    case 'torus':
+      return TorusGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        tubeRadius: _d(json['tubeRadius'] ?? 0.15),
+        radialSegments: json['radialSegments'] as int? ?? 32,
+        tubularSegments: json['tubularSegments'] as int? ?? 16,
+      );
+    case 'icosphere':
+      return IcosphereGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        subdivisions: json['subdivisions'] as int? ?? 2,
       );
     default:
       throw FsceneFormatException('Unknown procedural geometry shape: $shape');
@@ -985,6 +1019,11 @@ EnvironmentSpec _decodeEnvironment(Object? json) {
       return PayloadEnvironment(LocalId.parse(m['payload'] as String));
     case 'empty':
       return const EmptyEnvironment();
+    case 'constant':
+      final color = m['color'] as List;
+      return ConstantEnvironment(
+        Vector3(_d(color[0]), _d(color[1]), _d(color[2])),
+      );
     case 'studio':
     default:
       return const StudioEnvironment();

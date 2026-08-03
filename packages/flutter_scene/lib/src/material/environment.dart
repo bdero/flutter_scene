@@ -75,6 +75,21 @@ base class EnvironmentMap {
     );
   }
 
+  /// A black reflection environment with uniform diffuse [irradiance].
+  ///
+  /// The color is linear RGB irradiance after Lambertian convolution.
+  /// {@category Lighting and environment}
+  factory EnvironmentMap.constantDiffuse(Vector3 irradiance) {
+    const sh0Basis = 0.28209479177387814;
+    final sh = _zeroSphericalHarmonics();
+    sh[0].setValues(
+      irradiance.x / sh0Basis,
+      irradiance.y / sh0Basis,
+      irradiance.z / sh0Basis,
+    );
+    return EnvironmentMap._(Material.getBlackPlaceholderTexture(), sh);
+  }
+
   /// Whether newly built environments store their prefiltered roughness
   /// bands as mip levels of one equirect (sampled with hardware trilinear
   /// `textureLod`) rather than the legacy vertically stacked band atlas.

@@ -14,6 +14,7 @@ import '../scene.dart';
 
 const String _sceneAssetMarker = 'flutter_scene/scene/';
 const String _sceneAssetSuffix = '.fsceneb';
+const String _sceneSourceSuffix = '.fscene';
 
 /// Called after a hot-reloaded scene has been patched in place (see
 /// [loadScene]), so the app can re-apply per-instance customizations the
@@ -203,14 +204,20 @@ final class SceneRegistry {
     // collecting the asset keys touched into [seen]. (Lazily streamed
     // subtrees register their own assets when loaded; see [loadSubtree].)
     Future<SceneDocument> readComposed(Set<String> seen) async {
-      final document = await _readDocument(key, assetBundle);
+      final document = _resolveEagerRefs(
+        await _readDocument(key, assetBundle),
+        key,
+      );
       return document.nodes.values.any((n) => n.instance != null)
           ? await composeSceneAsync(
               document,
               load: (ref) {
-                final refKey = resolveRefKey(sourcePath, ref.key, package);
+                final refKey = ref.key;
                 seen.add(refKey);
-                return _readDocument(refKey, assetBundle);
+                return _readDocument(
+                  refKey,
+                  assetBundle,
+                ).then((document) => _resolveEagerRefs(document, refKey));
               },
             )
           : document;
@@ -375,6 +382,29 @@ final class SceneRegistry {
     );
   }
 
+  SceneDocument _resolveEagerRefs(SceneDocument document, String hostKey) {
+    final host = _entries.singleWhere((entry) => entry.assetKey == hostKey);
+    for (final node in document.nodes.values) {
+      final instance = node.instance;
+      if (instance == null || instance.load != LoadPolicy.eager) continue;
+      final source = resolveRefKey(
+        host.sceneId,
+        instance.source.key,
+        host.package,
+      );
+      node.instance = PrefabInstanceSpec(
+        source: AssetRef(source),
+        load: instance.load,
+        overrides: instance.overrides,
+        attachments: instance.attachments,
+        removedNodes: instance.removedNodes,
+        addedComponents: instance.addedComponents,
+        removedComponentTypes: instance.removedComponentTypes,
+      );
+    }
+    return document;
+  }
+
   static Future<List<String>> _loadAssetManifestKeys(AssetBundle bundle) async {
     final manifest = await AssetManifest.loadFromAssetBundle(bundle);
     return manifest.listAssets();
@@ -405,6 +435,12 @@ String _joinScenePath(String dir, String rel) {
 String _sceneId(String sourcePath) {
   if (sourcePath.endsWith('.glb')) {
     return sourcePath.substring(0, sourcePath.length - '.glb'.length);
+  }
+  if (sourcePath.endsWith(_sceneSourceSuffix)) {
+    return sourcePath.substring(
+      0,
+      sourcePath.length - _sceneSourceSuffix.length,
+    );
   }
   if (sourcePath.endsWith(_sceneAssetSuffix)) {
     return sourcePath.substring(

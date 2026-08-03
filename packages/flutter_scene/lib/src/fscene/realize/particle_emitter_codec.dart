@@ -180,6 +180,13 @@ class ParticleEmitterCodec extends ComponentCodec {
       doc: 'Seed for all spawn randomness.',
     ),
     ComponentPropertyDef(
+      'prewarm',
+      ComponentPropertyKind.number,
+      const DoubleValue(0),
+      doc: 'Seconds simulated before the emitter first renders.',
+      min: 0,
+    ),
+    ComponentPropertyDef(
       'texture',
       ComponentPropertyKind.resourceRef,
       null,
@@ -260,6 +267,7 @@ ParticleSystem particleSystemFromProperties(
     looping: _bool(properties, 'looping', true),
     duration: _num(properties, 'duration', 5.0),
     seed: _int(properties, 'seed', 0),
+    prewarm: _num(properties, 'prewarm', 0),
   );
 }
 
@@ -309,6 +317,7 @@ Map<String, PropertyValue> particleSystemToProperties(
     'looping': BoolValue(system.looping),
     'duration': DoubleValue(system.duration),
     'seed': IntValue(system.seed),
+    'prewarm': DoubleValue(system.prewarm),
     if (textureId != null) 'texture': ResourceRefValue(textureId),
   };
 }
