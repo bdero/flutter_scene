@@ -20,7 +20,7 @@ const String wasmReleaseBaseUrl =
 
 /// The release tag the module is attached to, e.g.
 /// `flutter_scene_rapier-0.0.1`. Empty until the first release.
-const String wasmReleaseTag = 'flutter_scene_rapier-0.1.0';
+const String wasmReleaseTag = 'flutter_scene_rapier-0.4.0';
 
 /// File name of the module within the release.
 const String wasmFileName = 'flutter_scene_rapier_native.wasm';
@@ -28,4 +28,4 @@ const String wasmFileName = 'flutter_scene_rapier_native.wasm';
 /// Lower-case hex sha256 of the released module, verified after download.
 /// Empty until the first release.
 const String wasmSha256 =
-    'f586c5e4fa25d81c9368d591e639e2b134dea270c01967941bec0cd64ae7bb8d';
+    '0da07c83112fbe57df3f215c19cd291bceb38644627032192dbccb551aa515f5';

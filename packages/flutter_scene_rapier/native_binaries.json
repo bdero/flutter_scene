@@ -1,51 +1,51 @@
 {
-  "version": "0.1.0",
+  "version": "0.4.0",
   "base_url": "https://github.com/bdero/flutter_scene/releases/download",
-  "tag": "flutter_scene_rapier-0.1.0",
+  "tag": "flutter_scene_rapier-0.4.0",
   "binaries": {
     "aarch64-apple-darwin": {
       "file": "flutter_scene_rapier_native-aarch64-apple-darwin.dylib",
-      "sha256": "f659ebd032ec533728fd00daf4b8be074170071bb22d654ee074cbe653c1aa27"
+      "sha256": "04f77f341b38bdcdd9797aeb30b78631a8177414947b8b2a28b24ac45dbc9d71"
     },
     "aarch64-apple-ios": {
       "file": "flutter_scene_rapier_native-aarch64-apple-ios.dylib",
-      "sha256": "df96447d43cd203d7569c31d37d2a3f064e73852fee8bbe5bdee583e954a2aec"
+      "sha256": "c6b2bd51ee13c2ce28bf43a2781268d5c5f3a35676d97101dcc5c8eacf806cbf"
     },
     "aarch64-apple-ios-sim": {
       "file": "flutter_scene_rapier_native-aarch64-apple-ios-sim.dylib",
-      "sha256": "24cb260414c3c090c6f2c628c66239ae8e8e488ccd2e4138e7a1870a8c3a2a8b"
+      "sha256": "a2ce456f4edbf384e7ace32e81d219ed40b19d9435664544b660c3077766b8d7"
     },
     "aarch64-linux-android": {
       "file": "flutter_scene_rapier_native-aarch64-linux-android.so",
-      "sha256": "8f3371127250187d0cbd9b70277a6d1aef845117701fc05c1b29f8af04ead4eb"
+      "sha256": "12faa4cb2931a7d8078678e0c4903fc39bfac7d1e69a2f30367d167a75ce17ec"
     },
     "aarch64-pc-windows-msvc": {
       "file": "flutter_scene_rapier_native-aarch64-pc-windows-msvc.dll",
-      "sha256": "b97fcce3827ada980aecb7671927f611fc725fbb083a9583dd389c4347c4fb0d"
+      "sha256": "6fd6938d275386c2cce2c3d4a21b8311d28a31f2ae32593f2317dfbc4115dec8"
     },
     "aarch64-unknown-linux-gnu": {
       "file": "flutter_scene_rapier_native-aarch64-unknown-linux-gnu.so",
-      "sha256": "925f5f5e573c454040d210922cff4ead2601a0ca889402fd895eec1ab38ab567"
+      "sha256": "c8a3ffcd5dd33340c0c3ad5c08378bf9256af6a223ed5a406ceefd8cdd96fc4a"
     },
     "armv7-linux-androideabi": {
       "file": "flutter_scene_rapier_native-armv7-linux-androideabi.so",
-      "sha256": "4c6a8760ec8841479d6a7324fe7d76a8739cb2f51ed4a652e6fd1cd086029d4c"
+      "sha256": "ac6422ae5dfe026488cf46c1feda53140cb94c2a57735701fb3be1e8366b95cd"
     },
     "wasm32-unknown-unknown": {
       "file": "flutter_scene_rapier_native.wasm",
-      "sha256": "f586c5e4fa25d81c9368d591e639e2b134dea270c01967941bec0cd64ae7bb8d"
+      "sha256": "0da07c83112fbe57df3f215c19cd291bceb38644627032192dbccb551aa515f5"
     },
     "x86_64-linux-android": {
       "file": "flutter_scene_rapier_native-x86_64-linux-android.so",
-      "sha256": "90a0e7d61906cbf240ccd725fd2d04ec8a229bd8d9d5c57c1d2f8ea1b4c9d77a"
+      "sha256": "5f83960d4aefc3a0078362dd84fd36290b66e61ca40e5098f9454e615fbcf711"
     },
     "x86_64-pc-windows-msvc": {
       "file": "flutter_scene_rapier_native-x86_64-pc-windows-msvc.dll",
-      "sha256": "c61d9f5b937524d56e4386a2d809462aa77a64c374dad186a6d7ce949cda2729"
+      "sha256": "4fc77433eba93106d89007f0fd2f063a1c2a838b9ddd7241bc88afaff096272e"
     },
     "x86_64-unknown-linux-gnu": {
       "file": "flutter_scene_rapier_native-x86_64-unknown-linux-gnu.so",
-      "sha256": "6799bdf6950edcf2267bbd689ef8029d8dda672fdc548d6bc9dc74deb1a540af"
+      "sha256": "789e51406e45fe1a5e19f8f26064c987443d00969c88f589eee2991b9bc5a522"
     }
   }
 }
