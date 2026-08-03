@@ -1,8 +1,8 @@
 /// Canonical WGSL binding assignment for shaders translated from the shader
 /// bundle's Vulkan SPIR-V.
 ///
-/// Tint splits each combined image sampler into a separate texture and sampler
-/// and renumbers every binding densely, so the numbers a shader's reflection
+/// Tint splits each combined image sampler into a separate texture and sampler,
+/// which displaces every binding above it, so the numbers a shader's reflection
 /// carries are not the numbers the emitted WGSL uses. This computes what Tint
 /// will produce, so bind group layouts can be built without parsing WGSL, and
 /// verifies the prediction against the emitted source so a future Tint that
