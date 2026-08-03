@@ -1,3 +1,9 @@
+## Unreleased
+
+* `RapierWorld.snapshot`/`restore`, full world serialization for rollback prediction and lag-compensation rewind, on native and web.
+* `RapierWorld.setBodyPose`, immediate body teleport for rollback correction.
+* Ships new native binaries and wasm (new `fsr_world_snapshot`/`fsr_world_restore`/`fsr_body_set_pose` exports).
+
 ## 0.3.0
 
 * Requires flutter_scene 0.20.0.

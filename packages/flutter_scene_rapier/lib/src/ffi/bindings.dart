@@ -159,6 +159,26 @@ external void worldSetGravity(
 @Native<Void Function(Pointer<NativeWorld>, Float)>(symbol: 'fsr_world_step')
 external void worldStep(Pointer<NativeWorld> world, double dt);
 
+@Native<Pointer<Uint8> Function(Pointer<NativeWorld>, Pointer<Size>)>(
+  symbol: 'fsr_world_snapshot',
+)
+external Pointer<Uint8> worldSnapshot(
+  Pointer<NativeWorld> world,
+  Pointer<Size> outLen,
+);
+
+@Native<Void Function(Pointer<Uint8>, Size)>(symbol: 'fsr_world_snapshot_free')
+external void worldSnapshotFree(Pointer<Uint8> ptr, int len);
+
+@Native<Int Function(Pointer<NativeWorld>, Pointer<Uint8>, Size)>(
+  symbol: 'fsr_world_restore',
+)
+external int worldRestore(
+  Pointer<NativeWorld> world,
+  Pointer<Uint8> ptr,
+  int len,
+);
+
 @Native<
   Uint8 Function(
     Pointer<NativeWorld>,
@@ -523,6 +543,31 @@ external void bodyAngularVelocity(
   )
 >(symbol: 'fsr_body_set_next_kinematic_pose')
 external void bodySetNextKinematicPose(
+  Pointer<NativeWorld> world,
+  int handle,
+  double px,
+  double py,
+  double pz,
+  double qx,
+  double qy,
+  double qz,
+  double qw,
+);
+
+@Native<
+  Void Function(
+    Pointer<NativeWorld>,
+    Uint64,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+    Float,
+  )
+>(symbol: 'fsr_body_set_pose')
+external void bodySetPose(
   Pointer<NativeWorld> world,
   int handle,
   double px,

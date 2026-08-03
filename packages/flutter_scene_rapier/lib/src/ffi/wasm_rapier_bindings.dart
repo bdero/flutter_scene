@@ -90,6 +90,40 @@ class WasmRapierBindings extends RapierBindings {
   void step(double dt) => _invoke('fsr_world_step', [_w, _f(dt)]);
 
   @override
+  Uint8List snapshot() {
+    // usize is 4 bytes on wasm32; the shim allocates the buffer and
+    // fsr_world_snapshot_free releases it after the copy out.
+    final lengthPtr = _runtime.alloc(4);
+    try {
+      final ptr = _invokeInt('fsr_world_snapshot', [_w, _i(lengthPtr)]);
+      final length = _runtime.readU32(lengthPtr);
+      if (ptr == 0 || length == 0) return Uint8List(0);
+      final bytes = _runtime.readBytes(ptr, length);
+      _invoke('fsr_world_snapshot_free', [_i(ptr), _i(length)]);
+      return bytes;
+    } finally {
+      _runtime.free(lengthPtr, 4);
+    }
+  }
+
+  @override
+  bool restore(Uint8List snapshot) {
+    if (snapshot.isEmpty) return false;
+    final ptr = _runtime.alloc(snapshot.length);
+    try {
+      _runtime.writeBytes(ptr, snapshot);
+      final ok = _invokeInt('fsr_world_restore', [
+        _w,
+        _i(ptr),
+        _i(snapshot.length),
+      ]);
+      return ok != 0;
+    } finally {
+      _runtime.free(ptr, snapshot.length);
+    }
+  }
+
+  @override
   void dispose() {
     _invoke('fsr_world_destroy', [_w]);
     _runtime.free(_readScratch, 16);
@@ -226,6 +260,28 @@ class WasmRapierBindings extends RapierBindings {
     double qz,
     double qw,
   ) => _invoke('fsr_body_set_next_kinematic_pose', [
+    _w,
+    _h(handle),
+    _f(px),
+    _f(py),
+    _f(pz),
+    _f(qx),
+    _f(qy),
+    _f(qz),
+    _f(qw),
+  ]);
+
+  @override
+  void setBodyPose(
+    int handle,
+    double px,
+    double py,
+    double pz,
+    double qx,
+    double qy,
+    double qz,
+    double qw,
+  ) => _invoke('fsr_body_set_pose', [
     _w,
     _h(handle),
     _f(px),
