@@ -824,7 +824,14 @@ class _RingBufferStream {
     // The caller's change makes every buffer stale over that span.
     final change = (start: dirtyStart, end: dirtyEnd);
     for (var i = 0; i < _stale.length; i++) {
-      _stale[i] = unionVertexRange(_stale[i], change);
+      final stale = unionVertexRange(_stale[i], change);
+      // A previous, larger mesh can leave a stale span beyond this snapshot's
+      // byte array. Those vertices are no longer rendered, and a later growth
+      // will mark them stale again through its full-stream change range.
+      _stale[i] = (
+        start: stale.start > vertexCount ? vertexCount : stale.start,
+        end: stale.end > vertexCount ? vertexCount : stale.end,
+      );
     }
 
     final buffer = _buffers[_cursor];
