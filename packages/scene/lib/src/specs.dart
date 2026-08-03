@@ -305,6 +305,43 @@ class SphereGeometrySpec extends ProceduralGeometry {
   final int rings;
 }
 
+/// A torus centered on the origin around the Y axis.
+/// {@category Documents}
+class TorusGeometrySpec extends ProceduralGeometry {
+  /// Creates a torus spec.
+  TorusGeometrySpec({
+    this.radius = 0.5,
+    this.tubeRadius = 0.15,
+    this.radialSegments = 32,
+    this.tubularSegments = 16,
+  });
+
+  /// Distance from the origin to the tube center.
+  final double radius;
+
+  /// Tube radius.
+  final double tubeRadius;
+
+  /// Divisions around the main ring.
+  final int radialSegments;
+
+  /// Divisions around the tube.
+  final int tubularSegments;
+}
+
+/// A geodesic sphere made by subdividing an icosahedron.
+/// {@category Documents}
+class IcosphereGeometrySpec extends ProceduralGeometry {
+  /// Creates an icosphere spec.
+  IcosphereGeometrySpec({this.radius = 0.5, this.subdivisions = 2});
+
+  /// Sphere radius.
+  final double radius;
+
+  /// Recursive triangle subdivision count.
+  final int subdivisions;
+}
+
 /// Mesh geometry, sourced either from a binary [payload] chunk (imported
 /// content) or a [procedural] descriptor (a runtime primitive). Exactly one
 /// source is set. Carries optional local [bounds].
@@ -693,6 +730,16 @@ class AssetEnvironment extends EnvironmentSpec {
 class EmptyEnvironment extends EnvironmentSpec {
   /// The empty environment.
   const EmptyEnvironment();
+}
+
+/// A reflection-free environment with uniform diffuse irradiance.
+/// {@category Documents}
+class ConstantEnvironment extends EnvironmentSpec {
+  /// Creates a uniform diffuse environment with linear RGB [color].
+  ConstantEnvironment(Vector3 color) : color = color.clone();
+
+  /// Linear RGB diffuse irradiance.
+  final Vector3 color;
 }
 
 /// An environment built from an embedded image [payload] chunk (a Radiance

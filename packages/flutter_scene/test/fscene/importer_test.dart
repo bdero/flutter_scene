@@ -18,7 +18,10 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/src/fscene_emitter/fscene_emitter.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart';
 
 // Every committed corpus GLB; each is checked when present.
 const _corpus = [
@@ -30,6 +33,52 @@ const _corpus = [
 
 void main() {
   group('buildSceneDocument', () {
+    test('emits punctual lights as node components', () {
+      final source = GltfDocument(
+        scenes: [
+          GltfScene(nodes: [0, 1, 2]),
+        ],
+        nodes: [
+          GltfNode(name: 'Sun', light: 0),
+          GltfNode(name: 'Lamp', light: 1),
+          GltfNode(name: 'Cone', light: 2),
+        ],
+        lights: [
+          GltfPunctualLight(
+            type: 'directional',
+            color: Vector3(1, 0.75, 0.5),
+            intensity: 2,
+          ),
+          GltfPunctualLight(type: 'point', intensity: 4, range: 12),
+          GltfPunctualLight(
+            type: 'spot',
+            intensity: 8,
+            range: 20,
+            innerConeAngle: 0.1,
+            outerConeAngle: 0.5,
+          ),
+        ],
+      );
+
+      final document = buildSceneDocument(source, Uint8List(0));
+      final nodes = {for (final node in document.nodes.values) node.name: node};
+      final directional = nodes['Sun']!.components.single;
+      final point = nodes['Lamp']!.components.single;
+      final spot = nodes['Cone']!.components.single;
+
+      expect(directional.type, 'directionalLight');
+      expect(
+        (directional.properties['direction'] as Vec3Value).value,
+        Vector3(0, 0, -1),
+      );
+      expect(point.type, 'pointLight');
+      expect((point.properties['range'] as DoubleValue).value, 12);
+      expect(spot.type, 'spotLight');
+      expect((spot.properties['intensity'] as DoubleValue).value, 8);
+      expect((spot.properties['innerConeAngle'] as DoubleValue).value, 0.1);
+      expect((spot.properties['outerConeAngle'] as DoubleValue).value, 0.5);
+    });
+
     for (final name in _corpus) {
       test('packs $name geometry byte-for-byte like the shared packer', () {
         final path = _resolve('examples/assets_src/$name');

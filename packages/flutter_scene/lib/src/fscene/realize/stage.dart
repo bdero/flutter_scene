@@ -470,6 +470,8 @@ Future<EnvironmentMap?> _buildEnvironment(
       environment = EnvironmentMap.studio();
     case EmptyEnvironment():
       environment = EnvironmentMap.empty();
+    case ConstantEnvironment(:final color):
+      environment = EnvironmentMap.constantDiffuse(color);
     case PayloadEnvironment(:final payload):
       final chunk = payloadLookup?.call(payload);
       final bytes = chunk?.bytes;
@@ -528,6 +530,10 @@ Map<String, Object> _encodeEnvironment(EnvironmentSpec spec) => switch (spec) {
   PayloadEnvironment(:final payload) => {
     'type': 'payload',
     'payload': payload.toToken(),
+  },
+  ConstantEnvironment(:final color) => {
+    'type': 'constant',
+    'color': [color.x, color.y, color.z],
   },
   EmptyEnvironment() => {'type': 'empty'},
 };

@@ -712,6 +712,15 @@ class PointLightCodec extends ComponentCodec {
       min: 0,
       read: (c) => DoubleValue((c as PointLightComponent).light.range),
     ),
+    ComponentPropertyDef(
+      'falloffExponent',
+      ComponentPropertyKind.number,
+      const DoubleValue(2.0),
+      doc: 'Distance falloff exponent.',
+      min: 0,
+      read: (c) =>
+          DoubleValue((c as PointLightComponent).light.falloffExponent),
+    ),
   ];
 
   @override
@@ -728,6 +737,11 @@ class PointLightCodec extends ComponentCodec {
         color: readVec3(p, 'color', vec3Default('color')),
         intensity: readDouble(p, 'intensity', numberDefault('intensity')),
         range: readDouble(p, 'range', numberDefault('range')),
+        falloffExponent: readDouble(
+          p,
+          'falloffExponent',
+          numberDefault('falloffExponent'),
+        ),
       ),
     );
   }
@@ -770,6 +784,14 @@ class SpotLightCodec extends ComponentCodec {
       read: (c) => DoubleValue((c as SpotLightComponent).light.range),
     ),
     ComponentPropertyDef(
+      'falloffExponent',
+      ComponentPropertyKind.number,
+      const DoubleValue(2.0),
+      doc: 'Distance falloff exponent.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.falloffExponent),
+    ),
+    ComponentPropertyDef(
       'innerConeAngle',
       ComponentPropertyKind.number,
       const DoubleValue(0.0),
@@ -784,6 +806,53 @@ class SpotLightCodec extends ComponentCodec {
       doc: 'Half-angle (radians) at which the cone falls to zero.',
       min: 0,
       read: (c) => DoubleValue((c as SpotLightComponent).light.outerConeAngle),
+    ),
+    ComponentPropertyDef(
+      'castsShadow',
+      ComponentPropertyKind.boolean,
+      const BoolValue(false),
+      doc: 'Whether this light renders a shadow map.',
+      read: (c) => BoolValue((c as SpotLightComponent).light.castsShadow),
+    ),
+    ComponentPropertyDef(
+      'shadowMapResolution',
+      ComponentPropertyKind.integer,
+      const IntValue(1024),
+      doc: 'Shadow map resolution, in texels.',
+      min: 1,
+      read: (c) =>
+          IntValue((c as SpotLightComponent).light.shadowMapResolution),
+    ),
+    ComponentPropertyDef(
+      'shadowNear',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.1),
+      doc: 'Near clip distance of the shadow frustum.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowNear),
+    ),
+    ComponentPropertyDef(
+      'shadowDepthBias',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Depth bias used by shadow sampling.',
+      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowDepthBias),
+    ),
+    ComponentPropertyDef(
+      'shadowNormalBias',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.1),
+      doc: 'World-space normal offset used by shadow sampling.',
+      read: (c) =>
+          DoubleValue((c as SpotLightComponent).light.shadowNormalBias),
+    ),
+    ComponentPropertyDef(
+      'shadowSoftness',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Shadow filter radius, in texels.',
+      min: 0,
+      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowSoftness),
     ),
   ];
 
@@ -802,6 +871,11 @@ class SpotLightCodec extends ComponentCodec {
         color: readVec3(p, 'color', vec3Default('color')),
         intensity: readDouble(p, 'intensity', numberDefault('intensity')),
         range: readDouble(p, 'range', numberDefault('range')),
+        falloffExponent: readDouble(
+          p,
+          'falloffExponent',
+          numberDefault('falloffExponent'),
+        ),
         innerConeAngle: readDouble(
           p,
           'innerConeAngle',
@@ -811,6 +885,28 @@ class SpotLightCodec extends ComponentCodec {
           p,
           'outerConeAngle',
           numberDefault('outerConeAngle'),
+        ),
+        castsShadow: readBool(p, 'castsShadow', boolDefault('castsShadow')),
+        shadowMapResolution: readInt(
+          p,
+          'shadowMapResolution',
+          intDefault('shadowMapResolution'),
+        ),
+        shadowNear: readDouble(p, 'shadowNear', numberDefault('shadowNear')),
+        shadowDepthBias: readDouble(
+          p,
+          'shadowDepthBias',
+          numberDefault('shadowDepthBias'),
+        ),
+        shadowNormalBias: readDouble(
+          p,
+          'shadowNormalBias',
+          numberDefault('shadowNormalBias'),
+        ),
+        shadowSoftness: readDouble(
+          p,
+          'shadowSoftness',
+          numberDefault('shadowSoftness'),
         ),
       ),
     );

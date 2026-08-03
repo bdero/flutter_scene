@@ -442,6 +442,20 @@ class ResourceRealizer {
       ),
     SphereGeometrySpec(:final radius, :final segments, :final rings) =>
       SphereGeometry(radius: radius, segments: segments, rings: rings),
+    TorusGeometrySpec(
+      :final radius,
+      :final tubeRadius,
+      :final radialSegments,
+      :final tubularSegments,
+    ) =>
+      TorusGeometry(
+        radius: radius,
+        tubeRadius: tubeRadius,
+        radialSegments: radialSegments,
+        tubularSegments: tubularSegments,
+      ),
+    IcosphereGeometrySpec(:final radius, :final subdivisions) =>
+      IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };
 
   Material _buildMaterial(LocalId id) {
@@ -552,6 +566,7 @@ class ResourceRealizer {
     final baseColorTexture = _textureRef(p, 'baseColorTexture');
     if (baseColorTexture != null) m.baseColorTexture = baseColorTexture;
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
+    m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     return m;
   }
 

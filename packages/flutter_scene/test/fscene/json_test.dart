@@ -121,6 +121,24 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
 }
 
 void main() {
+  test('constant diffuse environment round-trips', () {
+    final document = SceneDocument();
+    final environment = document.addResource(
+      EnvironmentResource(
+        document.newId(),
+        environment: ConstantEnvironment(Vector3(0.2, 0.3, 0.4)),
+      ),
+    );
+    document.stage.environmentRef = environment.id;
+
+    final decoded = readFscene(writeFscene(document));
+    final decodedResource =
+        decoded.resource(decoded.stage.environmentRef!)! as EnvironmentResource;
+    final constant = decodedResource.environment as ConstantEnvironment;
+
+    expect(constant.color, Vector3(0.2, 0.3, 0.4));
+  });
+
   group('canonicalJson', () {
     test('inlines number arrays and rejects non-finite numbers', () {
       final out = canonicalJson({
@@ -252,7 +270,7 @@ void main() {
   });
 
   group('procedural geometry', () {
-    test('cuboid/plane/sphere resources round-trip through JSON', () {
+    test('procedural geometry resources round-trip through JSON', () {
       final doc = SceneDocument(
         documentId: DocumentId.generate(Random(1)),
         allocator: IdAllocator(session: 2),
@@ -279,14 +297,47 @@ void main() {
           procedural: SphereGeometrySpec(radius: 0.7, segments: 12, rings: 6),
         ),
       );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TorusGeometrySpec(
+            radius: 2.5,
+            tubeRadius: 0.08,
+            radialSegments: 48,
+            tubularSegments: 10,
+          ),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: IcosphereGeometrySpec(radius: 1.75, subdivisions: 3),
+        ),
+      );
 
       final back = readFscene(writeFscene(doc));
-      expect(back.resources, hasLength(3));
+      expect(back.resources, hasLength(5));
       final shape =
           (back.resource(cuboid.id) as GeometryResource).procedural
               as CuboidGeometrySpec;
       expect(shape.extents, Vector3(2, 1, 0.5));
       expect(shape.debugColors, isTrue);
+      final torus = back.resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TorusGeometrySpec>()
+          .single;
+      expect(torus.radius, 2.5);
+      expect(torus.tubeRadius, 0.08);
+      expect(torus.radialSegments, 48);
+      expect(torus.tubularSegments, 10);
+      final icosphere = back.resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<IcosphereGeometrySpec>()
+          .single;
+      expect(icosphere.radius, 1.75);
+      expect(icosphere.subdivisions, 3);
     });
 
     test('fmat materials and external/encoded textures round-trip', () {

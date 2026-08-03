@@ -210,6 +210,43 @@ void main() {
     });
   });
 
+  test('nested prefab references resolve relative to each document', () async {
+    const hostKey =
+        'packages/app/flutter_scene/scene/assets/levels/host.fsceneb';
+    const wrapperKey =
+        'packages/app/flutter_scene/scene/assets/levels/parts/wrapper.fsceneb';
+    const modelKey =
+        'packages/app/flutter_scene/scene/assets/levels/models/model.fsceneb';
+
+    final model = SceneDocument();
+    final modelRoot = model.createNode(name: 'modelRoot', root: true);
+    final detail = model.createNode(name: 'model');
+    modelRoot.children.add(detail.id);
+    final wrapper = SceneDocument();
+    wrapper.createNode(name: 'wrapper', root: true).instance =
+        PrefabInstanceSpec(source: const AssetRef('../models/model.glb'));
+    final host = SceneDocument();
+    host.createNode(name: 'host', root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('parts/wrapper.fscene'),
+    );
+
+    final bundle = _BytesAssetBundle({
+      hostKey: writeFsceneb(host),
+      wrapperKey: writeFsceneb(wrapper),
+      modelKey: writeFsceneb(model),
+    });
+    final registry = await SceneRegistry.load(
+      assetKeys: const [hostKey, wrapperKey, modelKey],
+    );
+
+    final root = await registry.loadScene(
+      'assets/levels/host.fscene',
+      bundle: bundle,
+    );
+
+    expect(root.getChildByName('model'), isNotNull);
+  });
+
   group('streamed subtrees', () {
     test(
       'loadSubtree streams by source path and hot-reloads in place',
