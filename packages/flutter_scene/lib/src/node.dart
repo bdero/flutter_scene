@@ -29,23 +29,33 @@ void _visitMutable<T>(List<T> items, void Function(T item) visit) {
     }
     visit(item);
 
-    // The unmutated path stays linear and allocation-free. Supported mutation
-    // creates identity tracking for the remaining traversal.
+    // Unmutated and detachment paths stay linear and allocation-free.
+    // Insertion before the cursor creates identity tracking.
     if (index < items.length && identical(items[index], item)) {
       tracked?.add(item);
       index++;
       continue;
     }
 
+    final detached =
+        (item is Component && !item.isAttached) ||
+        (item is Node && item.parent == null);
+    if (detached) {
+      tracked?.add(item);
+      continue;
+    }
+
+    final currentIndex = items.indexWhere(
+      (candidate) => identical(candidate, item),
+    );
+    if (currentIndex <= index) {
+      tracked?.add(item);
+      continue;
+    }
+
     if (tracked == null) {
-      final currentIndex = items.indexWhere(
-        (candidate) => identical(candidate, item),
-      );
-      final prefixEnd = currentIndex < 0
-          ? (index < items.length ? index : items.length)
-          : currentIndex + 1;
       visited = HashSet<T>.identity()
-        ..addAll(items.take(prefixEnd))
+        ..addAll(items.take(currentIndex + 1))
         ..add(item);
     } else {
       tracked.add(item);
