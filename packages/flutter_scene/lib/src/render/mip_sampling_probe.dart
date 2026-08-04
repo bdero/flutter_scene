@@ -183,7 +183,7 @@ Future<bool> measureMipSampling() async {
   // wrong reason).
   await awaitRasterThread();
 
-  final ui.Image image = target.asImage();
+  final ui.Image image = gpu.gpuHost.textureToImage(target);
   final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
   image.dispose();
   if (bytes == null) {

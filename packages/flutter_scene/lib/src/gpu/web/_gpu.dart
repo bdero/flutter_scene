@@ -17,6 +17,9 @@ import '../shared/glsl_transpile.dart';
 import '../shared/shader_library_sources.dart';
 import 'shader_bundle_generated.dart' as fb;
 
+import '../shared/gpu_capabilities.dart';
+
+part 'host.dart';
 part 'buffer.dart';
 part 'command_buffer.dart';
 part 'encoded_image.dart';
