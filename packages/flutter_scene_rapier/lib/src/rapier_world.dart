@@ -61,10 +61,23 @@ class RapierWorld extends PhysicsSimulation {
   bool get supportsSnapshot => true;
 
   @override
-  Uint8List snapshot() => _bindings.snapshot();
+  Uint8List snapshot() =>
+      _WorldSnapshot.encode(_bindings.snapshot(), _bodies.keys);
 
   @override
-  bool restore(Uint8List snapshot) => _bindings.restore(snapshot);
+  bool restore(Uint8List snapshot) {
+    final decoded = _WorldSnapshot.decode(snapshot);
+    if (decoded == null || !_hasSameBodies(decoded.bodyHandles)) return false;
+    return _bindings.restore(decoded.nativeSnapshot);
+  }
+
+  // A native snapshot preserves handle values, but it cannot restore the
+  // Dart-side pose targets that own those handles. Reject structural changes
+  // before asking native code to restore, so both sides stay in lockstep.
+  bool _hasSameBodies(Set<int> snapshotHandles) {
+    if (_bodies.length != snapshotHandles.length) return false;
+    return _bodies.keys.every(snapshotHandles.contains);
+  }
 
   final StreamController<SimCollisionEvent> _events =
       StreamController<SimCollisionEvent>.broadcast();
@@ -1051,6 +1064,52 @@ class _BodyRecord {
   // Pose after the most recent physics step.
   final Vector3 currTranslation;
   final Quaternion currRotation;
+}
+
+class _WorldSnapshot {
+  _WorldSnapshot(this.nativeSnapshot, this.bodyHandles);
+
+  static const _magic = 0x46535253; // FSRS
+  static const _version = 1;
+  static const _headerBytes = 12;
+
+  final Uint8List nativeSnapshot;
+  final Set<int> bodyHandles;
+
+  static Uint8List encode(Uint8List nativeSnapshot, Iterable<int> handles) {
+    final bodyHandles = handles.toList()..sort();
+    final payloadOffset = _headerBytes + bodyHandles.length * 8;
+    final bytes = Uint8List(payloadOffset + nativeSnapshot.length);
+    final data = ByteData.sublistView(bytes);
+    data
+      ..setUint32(0, _magic, Endian.little)
+      ..setUint32(4, _version, Endian.little)
+      ..setUint32(8, bodyHandles.length, Endian.little);
+    for (var i = 0; i < bodyHandles.length; i++) {
+      data.setUint64(_headerBytes + i * 8, bodyHandles[i], Endian.little);
+    }
+    bytes.setRange(payloadOffset, bytes.length, nativeSnapshot);
+    return bytes;
+  }
+
+  static _WorldSnapshot? decode(Uint8List bytes) {
+    if (bytes.length < _headerBytes) return null;
+    final data = ByteData.sublistView(bytes);
+    if (data.getUint32(0, Endian.little) != _magic ||
+        data.getUint32(4, Endian.little) != _version) {
+      return null;
+    }
+    final count = data.getUint32(8, Endian.little);
+    if (count > (bytes.length - _headerBytes) ~/ 8) return null;
+    final payloadOffset = _headerBytes + count * 8;
+    final handles = <int>{};
+    for (var i = 0; i < count; i++) {
+      if (!handles.add(data.getUint64(_headerBytes + i * 8, Endian.little))) {
+        return null;
+      }
+    }
+    return _WorldSnapshot(Uint8List.sublistView(bytes, payloadOffset), handles);
+  }
 }
 
 /// Shortest-arc quaternion slerp between [a] and [b] by [t]. Falls
