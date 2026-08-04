@@ -36,6 +36,7 @@
 * Cooked textures build their mip chain on a background isolate, so a large uncompressed scene no longer pays for it on the calling thread.
 * Devices measured to sample every texture at its base mip skip mip chains entirely, reclaiming the memory and transcode time they were spending on levels the sampler ignores, and say so once at startup.
 * Loose images cook to compressed, mipmapped `.fstex` through `buildTextures`, loaded by source path with `loadTexture` (shipped in 0.20.0, missing from its notes).
+* Fixed a `RangeError` when an updatable mesh rebuilds at a smaller vertex count.
 
 ## 0.20.0
 

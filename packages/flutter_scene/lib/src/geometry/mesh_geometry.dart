@@ -753,6 +753,19 @@ int nextBufferCapacity(int needed, {int minimum = 16}) {
   );
 }
 
+/// [range] with both ends pulled back to [vertexCount].
+///
+/// A mesh that shrank leaves a stale span reaching past the current
+/// snapshot's byte array. Those vertices are no longer rendered, and a later
+/// growth marks them stale again through its full-stream change range.
+({int start, int end}) clampVertexRange(
+  ({int start, int end}) range,
+  int vertexCount,
+) => (
+  start: range.start > vertexCount ? vertexCount : range.start,
+  end: range.end > vertexCount ? vertexCount : range.end,
+);
+
 // A ring of host-visible device buffers for one updatable attribute stream.
 //
 // Vertex data must be CPU-written every update, and `hostVisible` is the
@@ -821,16 +834,13 @@ class _RingBufferStream {
       _cursor = (_cursor + 1) % _ringDepth;
     }
 
-    // The caller's change makes every buffer stale over that span.
+    // The caller's change makes every buffer stale over that span. A mesh that
+    // shrank leaves spans reaching past the new snapshot, so clamp them back.
     final change = (start: dirtyStart, end: dirtyEnd);
     for (var i = 0; i < _stale.length; i++) {
-      final stale = unionVertexRange(_stale[i], change);
-      // A previous, larger mesh can leave a stale span beyond this snapshot's
-      // byte array. Those vertices are no longer rendered, and a later growth
-      // will mark them stale again through its full-stream change range.
-      _stale[i] = (
-        start: stale.start > vertexCount ? vertexCount : stale.start,
-        end: stale.end > vertexCount ? vertexCount : stale.end,
+      _stale[i] = clampVertexRange(
+        unionVertexRange(_stale[i], change),
+        vertexCount,
       );
     }
 

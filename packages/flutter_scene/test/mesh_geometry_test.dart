@@ -194,4 +194,33 @@ void main() {
       expect(stale, span);
     });
   });
+
+  group('clampVertexRange', () {
+    test('a range within the snapshot is unchanged', () {
+      expect(clampVertexRange((start: 2, end: 5), 8), (start: 2, end: 5));
+      expect(clampVertexRange((start: 0, end: 8), 8), (start: 0, end: 8));
+    });
+
+    test('a range past the snapshot is pulled back', () {
+      expect(clampVertexRange((start: 0, end: 64), 1), (start: 0, end: 1));
+      // A span that starts past the snapshot clamps to empty.
+      final empty = clampVertexRange((start: 30, end: 64), 1);
+      expect(empty.end <= empty.start, isTrue);
+    });
+
+    test('a shrink leaves no stale span past the current snapshot', () {
+      // Mirrors a ring buffer's stale bookkeeping across 64 -> 1 -> 64.
+      // Unclamped, the shrink kept the 64-vertex span and the upload read
+      // past the 1-vertex CPU array.
+      var stale = (start: 0, end: 64);
+      stale = clampVertexRange(unionVertexRange(stale, (start: 0, end: 1)), 1);
+      expect(stale, (start: 0, end: 1));
+      // Growing back marks the restored vertices stale again.
+      stale = clampVertexRange(
+        unionVertexRange(stale, (start: 0, end: 64)),
+        64,
+      );
+      expect(stale, (start: 0, end: 64));
+    });
+  });
 }
