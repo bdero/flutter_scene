@@ -18,6 +18,10 @@ import 'package:image/image.dart' as img;
 
 import 'package:scene/scene.dart';
 
+import '../texture/block_alignment.dart';
+import '../texture/ktx2_image.dart';
+import '../texture/mipmap.dart';
+
 /// An external image file a scene references through a [TextureResource.asset],
 /// resolved to a file on disk.
 typedef ExternalImageAsset = ({String key, File file});
@@ -67,17 +71,17 @@ List<ExternalImageAsset> resolveExternalImageAssets(
 /// that referenced it to read the embedded payload instead of the external
 /// asset.
 ///
-/// A texture's image is decoded to an `rgba8` payload (the realizer uploads it
-/// directly). An environment's image is embedded as its encoded bytes (tagged
-/// with its file extension), so the realizer decodes it with the right path
-/// (HDR/EXR float decode preserves the radiance range, unlike an `rgba8`
-/// clamp). After this, [writeFsceneb] embeds
-/// the bytes and realizing needs no asset-bundle lookup. An image that fails to
-/// load is left as its external reference (and reported).
+/// A texture's image is decoded to an `rgba8` payload, or a supercompressed
+/// KTX2 payload when [compressTextures] is set. An environment's image is
+/// embedded as its encoded bytes, so HDR/EXR radiance is preserved. After this,
+/// [writeFsceneb] embeds the bytes and realizing needs no asset-bundle lookup.
+/// An image that fails to load is left as its external reference.
 void inlineExternalImageAssets(
   SceneDocument document,
-  List<ExternalImageAsset> assets,
-) {
+  List<ExternalImageAsset> assets, {
+  bool compressTextures = false,
+  bool alignForCompression = false,
+}) {
   final fileByKey = {for (final asset in assets) asset.key: asset.file};
   // One payload per (key, kind): a texture wants rgba8, an environment wants the
   // encoded bytes, so a key used as both gets two payloads. A null entry caches
@@ -91,14 +95,23 @@ void inlineExternalImageAssets(
       final key = resource.asset?.key;
       final file = key == null ? null : fileByKey[key];
       if (key == null || file == null) continue;
+      final cacheKey = '$key|${resource.content}';
       final payload = texturePayloadByKey.putIfAbsent(
-        key,
-        () => _embedRgba8(document, key, file),
+        cacheKey,
+        () => _embedTexture(
+          document,
+          key,
+          file,
+          content: resource.content,
+          compressTextures: compressTextures,
+          alignForCompression: alignForCompression,
+        ),
       );
       if (payload == null) continue;
       document.resources[entry.key] = TextureResource(
         resource.id,
         payload: payload,
+        content: resource.content,
       );
     } else if (resource is EnvironmentResource) {
       final environment = resource.environment;
@@ -115,9 +128,15 @@ void inlineExternalImageAssets(
   }
 }
 
-// Decodes [file] to an rgba8 image payload and returns its id, or null when it
-// cannot be decoded.
-LocalId? _embedRgba8(SceneDocument document, String key, File file) {
+// Decodes [file] to a raw or compressed texture payload.
+LocalId? _embedTexture(
+  SceneDocument document,
+  String key,
+  File file, {
+  required String content,
+  required bool compressTextures,
+  required bool alignForCompression,
+}) {
   final decoded = img.decodeImage(file.readAsBytesSync());
   if (decoded == null) {
     stderr.writeln(
@@ -126,18 +145,48 @@ LocalId? _embedRgba8(SceneDocument document, String key, File file) {
     );
     return null;
   }
-  final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
-  final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
+  var image = decoded.convert(numChannels: 4, format: img.Format.uint8);
+  var pixels = image.getBytes(order: img.ChannelOrder.rgba);
+  if (compressTextures && !isBlockAligned(image.width, image.height)) {
+    if (alignForCompression) {
+      final originalWidth = image.width;
+      final originalHeight = image.height;
+      image = resampleToBlockAlignment(image);
+      pixels = image.getBytes(order: img.ChannelOrder.rgba);
+      sceneLog(
+        'fscene: resampled a ${originalWidth}x$originalHeight texture to '
+        '${image.width}x${image.height} to keep it compressed',
+      );
+    } else {
+      sceneLog(
+        'fscene: texture ${image.width}x${image.height} is not a multiple of '
+        '4, storing it uncompressed. Resize it, or pass alignForCompression '
+        'to resample it.',
+      );
+    }
+  }
+  final compress =
+      compressTextures && isBlockAligned(image.width, image.height);
+  final bytes = compress
+      ? encodeImageToKtx2Bytes(
+          pixels,
+          image.width,
+          image.height,
+          generateMips: true,
+          content: textureContentFromName(content),
+          supercompress: true,
+        )
+      : pixels;
   return document
       .addPayload(
         PayloadSpec(
           document.newId(),
           encoding: PayloadEncoding.image,
-          format: 'rgba8',
-          width: rgba.width,
-          height: rgba.height,
-          length: raw.length,
-          bytes: raw,
+          format: compress ? 'ktx2' : 'rgba8',
+          width: image.width,
+          height: image.height,
+          length: bytes.length,
+          bytes: bytes,
         ),
       )
       .id;

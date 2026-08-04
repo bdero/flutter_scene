@@ -384,7 +384,7 @@ void _applyDelta(
 /// The grammar for [PropertyOverride.path] is the same as the override grammar
 /// used during composition: `name`, `layers`, `visible`, `transform.matrix`,
 /// `transform.trs.t`, `transform.trs.r`, `transform.trs.s`, and
-/// `components.<type>.<prop>`.
+/// `components.<type>.<prop>`, including nested map/list segments.
 /// {@category Composition}
 void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
   final node = document.node(override.target);
@@ -423,10 +423,18 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
       return;
     }
   }
-  if (parts.length == 3 && parts[0] == 'components') {
+  if (parts.length >= 3 && parts[0] == 'components') {
     for (final component in node.components) {
       if (component.type == parts[1]) {
-        component.properties[parts[2]] = value;
+        if (parts.length == 3) {
+          component.properties[parts[2]] = value;
+        } else if (!_setNestedProperty(
+          component.properties[parts[2]],
+          parts.sublist(3),
+          value,
+        )) {
+          sceneLog('fscene: override "$path" found no nested property');
+        }
         return;
       }
     }
@@ -434,6 +442,35 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     return;
   }
   sceneLog('fscene: unsupported override path "$path"');
+}
+
+bool _setNestedProperty(
+  PropertyValue? current,
+  List<String> path,
+  PropertyValue value,
+) {
+  if (current == null || path.isEmpty) return false;
+  final segment = path.first;
+  if (current is MapValue) {
+    if (path.length == 1) {
+      if (!current.values.containsKey(segment)) return false;
+      current.values[segment] = value;
+      return true;
+    }
+    return _setNestedProperty(current.values[segment], path.sublist(1), value);
+  }
+  if (current is ListValue) {
+    final index = int.tryParse(segment);
+    if (index == null || index < 0 || index >= current.values.length) {
+      return false;
+    }
+    if (path.length == 1) {
+      current.values[index] = value;
+      return true;
+    }
+    return _setNestedProperty(current.values[index], path.sublist(1), value);
+  }
+  return false;
 }
 
 void _setTrs(NodeSpec node, String component, PropertyValue value) {

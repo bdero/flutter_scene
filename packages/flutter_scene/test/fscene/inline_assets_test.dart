@@ -33,7 +33,11 @@ void main() {
     final key = writeImage('wood.png', 4, 2);
     final document = SceneDocument();
     final texture = document.addResource(
-      TextureResource(document.newId(), asset: AssetRef(key)),
+      TextureResource(
+        document.newId(),
+        asset: AssetRef(key),
+        content: 'normal',
+      ),
     );
 
     final assets = resolveExternalImageAssets(document, sceneUri());
@@ -44,6 +48,7 @@ void main() {
     final embedded = document.resource(texture.id)! as TextureResource;
     expect(embedded.asset, isNull, reason: 'asset reference is replaced');
     expect(embedded.payload, isNotNull);
+    expect(embedded.content, 'normal');
     final payload = document.payload(embedded.payload!)!;
     expect(payload.format, 'rgba8');
     expect(payload.width, 4);
@@ -55,6 +60,28 @@ void main() {
     final reread = readFsceneb(writeFsceneb(document));
     final rereadTexture = reread.resource(texture.id)! as TextureResource;
     expect(reread.payload(rereadTexture.payload!)!.bytes, payload.bytes);
+  });
+
+  test('compresses an aligned external texture as ktx2', () {
+    final key = writeImage('compressed.png', 64, 64);
+    final document = SceneDocument();
+    final texture = document.addResource(
+      TextureResource(document.newId(), asset: AssetRef(key), content: 'data'),
+    );
+
+    inlineExternalImageAssets(
+      document,
+      resolveExternalImageAssets(document, sceneUri()),
+      compressTextures: true,
+    );
+
+    final embedded = document.resource(texture.id)! as TextureResource;
+    final payload = document.payload(embedded.payload!)!;
+    expect(embedded.content, 'data');
+    expect(payload.format, 'ktx2');
+    expect(payload.width, 64);
+    expect(payload.height, 64);
+    expect(payload.bytes!.length, lessThan(64 * 64 * 4));
   });
 
   test('textures sharing one image collapse to a single payload', () {

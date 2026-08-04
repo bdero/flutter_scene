@@ -403,6 +403,7 @@ class MeshCodec extends ComponentCodec {
       'doubleSided': BoolValue(m.doubleSided),
       'alphaMode': StringValue(m.alphaMode.name),
       'alphaCutoff': DoubleValue(m.alphaCutoff),
+      if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
     };
     _textureProperty(
       properties,
@@ -449,6 +450,7 @@ class MeshCodec extends ComponentCodec {
     final properties = <String, PropertyValue>{
       'baseColor': _color(m.baseColorFactor),
       'doubleSided': BoolValue(m.doubleSided),
+      if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
     };
     _textureProperty(
       properties,

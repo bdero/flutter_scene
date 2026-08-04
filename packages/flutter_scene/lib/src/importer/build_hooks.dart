@@ -227,7 +227,12 @@ void buildScenes({
         // `.fscene` (authored text) -> `.fsceneb` (binary), embedding referenced
         // images so the container is self-contained and keeping prefab instances
         // intact for the runtime to compose.
-        inlineExternalImageAssets(fsceneDocument!, imageAssets);
+        inlineExternalImageAssets(
+          fsceneDocument!,
+          imageAssets,
+          compressTextures: compressTextures,
+          alignForCompression: alignForCompression,
+        );
         File(
           outputSceneUri.toFilePath(),
         ).writeAsBytesSync(writeFsceneb(fsceneDocument));

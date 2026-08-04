@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
+import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
@@ -32,6 +33,10 @@ import 'package:flutter_scene/src/texture/mipmap_async.dart';
 /// asset bundle (the editor loads a user-imported image from disk). Returns
 /// null to fall back to the asset bundle (the in-bundle example assets).
 typedef TextureAssetLoader = Future<ui.Image?> Function(AssetRef asset);
+
+/// Loads a compiled `.fmat` material from outside the active asset bundle.
+typedef FmatMaterialLoader =
+    Future<PreprocessedMaterial> Function(AssetRef asset);
 
 /// Turns a document's resources into live, GPU-backed [Geometry] and
 /// [Material] objects, memoizing each so a resource shared by many nodes is
@@ -48,11 +53,13 @@ class ResourceRealizer {
   /// [environmentLoader] builds an [AssetEnvironment] from outside the bundle
   /// (the editor loads a user-picked file from disk). [textureLoader] decodes a
   /// [TextureResource.asset] from outside the bundle the same way.
+  /// [fmatMaterialLoader] loads compiled `.fmat` output from outside the bundle.
   ResourceRealizer(
     this.document, {
     AssetBundle? bundle,
     this.environmentLoader,
     this.textureLoader,
+    this.fmatMaterialLoader,
   }) : bundle = bundle ?? rootBundle;
 
   /// The document whose resources are realized.
@@ -68,6 +75,9 @@ class ResourceRealizer {
   /// Decodes a [TextureResource.asset] from outside the asset bundle, or null
   /// to use the bundle. See [TextureAssetLoader].
   final TextureAssetLoader? textureLoader;
+
+  /// Loads a compiled `.fmat` from outside the asset bundle.
+  final FmatMaterialLoader? fmatMaterialLoader;
 
   final Map<LocalId, Geometry> _geometries = {};
   final Map<LocalId, Material> _materials = {};
@@ -274,15 +284,21 @@ class ResourceRealizer {
     if (asset == null) {
       debugPrint('fscene: fmat material ${res.id} has no asset; using unlit');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties)..name = res.name,
+        _unlit(res.properties)
+          ..name = res.name
+          ..depthBias = readDouble(res.properties, 'depthBias', 0),
         document,
         res.id,
       );
       return;
     }
     try {
-      final material = await loadFmatMaterial(asset.key, bundle: bundle);
-      material.name = res.name;
+      final material = fmatMaterialLoader == null
+          ? await loadFmatMaterial(asset.key, bundle: bundle)
+          : await fmatMaterialLoader!(asset);
+      material
+        ..name = res.name
+        ..depthBias = readDouble(res.properties, 'depthBias', 0);
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.
       applyFmatParameterOverrides(
@@ -294,7 +310,9 @@ class ResourceRealizer {
     } catch (e) {
       debugPrint('fscene: failed to load fmat ${res.id} ("${asset.key}"): $e');
       _materials[res.id] = tagResourceOrigin(
-        _unlit(res.properties)..name = res.name,
+        _unlit(res.properties)
+          ..name = res.name
+          ..depthBias = readDouble(res.properties, 'depthBias', 0),
         document,
         res.id,
       );
@@ -463,7 +481,9 @@ class ResourceRealizer {
     if (res is! MaterialResource) {
       throw FsceneFormatException('Resource $id is not a material');
     }
-    return _materialForType(res)..name = res.name;
+    return _materialForType(res)
+      ..name = res.name
+      ..depthBias = readDouble(res.properties, 'depthBias', 0);
   }
 
   Material _materialForType(MaterialResource res) {

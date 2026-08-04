@@ -18,11 +18,13 @@
 /// realizer's own id tagging ([nodeFsceneId]).
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show CachingAssetBundle;
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
@@ -331,7 +333,8 @@ class EditorController extends ChangeNotifier {
   /// Loads and caches the prefab document referenced by [source].
   ///
   /// Resolves [source.key] relative to [baseDirectory] (or treats it as
-  /// absolute when it starts with `/`). Results are cached keyed by
+  /// absolute when it is an absolute file path). Linked `.fscene`, `.fsceneb`,
+  /// `.glb`, and `.gltf` files are supported. Results are cached keyed by
   /// [source.key] so repeated calls from the inspector rebuild cheaply. Throws
   /// a [StateError] when [baseDirectory] is null and the path is relative, and
   /// an [IOException] when the file cannot be read.
@@ -1261,6 +1264,7 @@ class EditorController extends ChangeNotifier {
       toRealize,
       environmentLoader: _loadAssetEnvironment,
       textureLoader: _loadAssetTexture,
+      fmatMaterialLoader: _loadDiskFmatMaterial,
     );
     await realizer.preload();
     final root = await realizeSceneAsync(
@@ -1321,6 +1325,7 @@ class EditorController extends ChangeNotifier {
   }
 
   final Map<String, ui.Image> _diskTextureCache = {};
+  final Map<String, Future<FmatMaterialRegistry>> _diskFmatRegistryCache = {};
 
   // The texture loader handed to the realizers, so a TextureResource.asset that
   // resolves to a file on disk (an editor-imported image under imported/) is
@@ -1345,35 +1350,159 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  String? _resolveAssetPath(String key) {
-    if (key.startsWith('/')) return key;
-    final dir = baseDirectory;
-    return dir == null ? null : '$dir/$key';
+  String? _resolveAssetPath(String key) => _resolveFilePath(key, baseDirectory);
+
+  Future<PreprocessedMaterial> _loadDiskFmatMaterial(AssetRef asset) async {
+    final projectRoot = _findProjectRoot(asset.key);
+    if (projectRoot == null) {
+      throw StateError('Could not find source material "${asset.key}"');
+    }
+    final outputDirectory = Directory(
+      '$projectRoot${Platform.pathSeparator}build${Platform.pathSeparator}'
+      'shaderbundles',
+    );
+    if (!outputDirectory.existsSync()) {
+      // TODO(fmat-editor): Compile source materials when cooked output is absent.
+      throw StateError(
+        'No compiled material output exists under "${outputDirectory.path}"',
+      );
+    }
+    final indexFiles =
+        outputDirectory
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.index.json'))
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
+    for (final indexFile in indexFiles) {
+      final indexJson = (jsonDecode(await indexFile.readAsString()) as Map)
+          .cast<String, Object?>();
+      final materials = (indexJson['materials'] as Map).values;
+      final matches = materials.any(
+        (entry) => (entry as Map)['source'] == asset.key,
+      );
+      if (!matches) continue;
+      final package = indexJson['package'] as String;
+      final bundleName = indexJson['bundleName'] as String;
+      final shaderKey = indexJson['shaderBundleAssetKey'] as String;
+      final sidecarKey = indexJson['sidecarAssetKey'] as String;
+      final indexKey =
+          'packages/$package/flutter_scene/fmat/$bundleName/'
+          '$bundleName.index.json';
+      final registry = await _diskFmatRegistryCache.putIfAbsent(
+        indexFile.path,
+        () => FmatMaterialRegistry.load(
+          bundle: _DiskAssetBundle({
+            indexKey: indexFile,
+            shaderKey: File(
+              '${outputDirectory.path}${Platform.pathSeparator}'
+              '$bundleName.shaderbundle',
+            ),
+            sidecarKey: File(
+              '${outputDirectory.path}${Platform.pathSeparator}'
+              '$bundleName.fmat.json',
+            ),
+          }),
+          assetKeys: [indexKey],
+        ),
+      );
+      return registry.loadMaterial(asset.key);
+    }
+    throw StateError('No compiled material entry exists for "${asset.key}"');
+  }
+
+  String? _findProjectRoot(String relativePath) {
+    var directory = baseDirectory == null
+        ? null
+        : Directory(baseDirectory!).absolute;
+    while (directory != null) {
+      final candidate = File(
+        '${directory.path}${Platform.pathSeparator}$relativePath',
+      );
+      if (candidate.existsSync()) return directory.path;
+      final parent = directory.parent;
+      directory = parent.path == directory.path ? null : parent;
+    }
+    return null;
   }
 
   Future<SceneDocument> _loadPrefab(AssetRef ref) async {
     final key = ref.key;
-    final String path;
-    if (key.startsWith('/')) {
-      // An absolute path needs no base directory (the common case for a prefab
-      // added to an unsaved scene, where the picked file is stored absolute).
-      path = key;
+    final path = _resolveFilePath(key, baseDirectory);
+    if (path == null) {
+      throw StateError(
+        'Cannot resolve relative prefab "$key" without a base directory',
+      );
+    }
+    final lowerPath = path.toLowerCase();
+    final SceneDocument prefab;
+    if (lowerPath.endsWith('.fsceneb')) {
+      prefab = readFsceneb(await File(path).readAsBytes());
+    } else if (lowerPath.endsWith('.glb')) {
+      prefab = importGlbToSceneDocument(await File(path).readAsBytes());
+    } else if (lowerPath.endsWith('.gltf')) {
+      final directory = File(path).parent.path;
+      prefab = importGltfToSceneDocument(
+        await File(path).readAsBytes(),
+        resolveUri: (uri) {
+          final file = File('$directory${Platform.pathSeparator}$uri');
+          return file.existsSync() ? file.readAsBytesSync() : null;
+        },
+      );
     } else {
-      final dir = baseDirectory;
-      if (dir == null) {
-        throw StateError(
-          'Cannot resolve relative prefab "$key" without a base directory',
+      prefab = readFscene(await File(path).readAsString());
+    }
+    _resolveDocumentFileAssets(prefab, File(path).parent.path);
+    return prefab;
+  }
+
+  // A linked scene owns its relative prefab and image paths. Composition loses
+  // that file boundary, so resolve those paths before returning the document.
+  void _resolveDocumentFileAssets(SceneDocument prefab, String directory) {
+    for (final node in prefab.nodes.values) {
+      final instance = node.instance;
+      if (instance == null) continue;
+      final path = _resolveFilePath(instance.source.key, directory)!;
+      node.instance = PrefabInstanceSpec(
+        source: AssetRef(path),
+        load: instance.load,
+        overrides: instance.overrides,
+        attachments: instance.attachments,
+        removedNodes: instance.removedNodes,
+        addedComponents: instance.addedComponents,
+        removedComponentTypes: instance.removedComponentTypes,
+      );
+    }
+    for (final entry in prefab.resources.entries.toList()) {
+      final resource = entry.value;
+      if (resource is TextureResource && resource.asset != null) {
+        prefab.resources[entry.key] = TextureResource(
+          resource.id,
+          asset: AssetRef(_resolveFilePath(resource.asset!.key, directory)!),
+          content: resource.content,
+        );
+      } else if (resource is EnvironmentResource &&
+          resource.environment is AssetEnvironment) {
+        final environment = resource.environment as AssetEnvironment;
+        resource.environment = AssetEnvironment(
+          AssetRef(_resolveFilePath(environment.asset.key, directory)!),
         );
       }
-      path = '$dir/$key';
     }
-    // Prefab sources may be authored `.fscene` text or imported `.fsceneb`
-    // binary (a linked glTF asset carries its geometry/texture payloads).
-    if (path.endsWith('.fsceneb')) {
-      return readFsceneb(await File(path).readAsBytes());
-    }
-    return readFscene(await File(path).readAsString());
   }
+
+  String? _resolveFilePath(String key, String? directory) {
+    if (_isAbsoluteFilePath(key)) return key;
+    if (directory == null) return null;
+    return File(
+      '$directory${Platform.pathSeparator}$key',
+    ).absolute.uri.normalizePath().toFilePath();
+  }
+
+  bool _isAbsoluteFilePath(String path) =>
+      path.startsWith('/') ||
+      path.startsWith(r'\\') ||
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
 
   void _index(Node node, LocalId? sourceAncestor) {
     final id = nodeFsceneId(node);
@@ -1394,6 +1523,19 @@ class EditorController extends ChangeNotifier {
     previewEpoch.dispose();
     scene.removeAll();
     super.dispose();
+  }
+}
+
+final class _DiskAssetBundle extends CachingAssetBundle {
+  _DiskAssetBundle(this.files);
+
+  final Map<String, File> files;
+
+  @override
+  Future<ByteData> load(String key) async {
+    final file = files[key];
+    if (file == null) throw FlutterError('Unknown disk asset "$key"');
+    return ByteData.sublistView(await file.readAsBytes());
   }
 }
 
