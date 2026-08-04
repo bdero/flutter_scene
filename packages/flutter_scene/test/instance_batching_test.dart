@@ -22,6 +22,7 @@ class _StubGeometry extends Geometry {
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     throw UnsupportedError('Stub geometry is not renderable');
   }

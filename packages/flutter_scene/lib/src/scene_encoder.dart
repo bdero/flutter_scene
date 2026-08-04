@@ -616,7 +616,6 @@ base class SceneEncoder {
     gpu.Shader? materialVertex,
     double depthBias,
   ) {
-    geometry.depthBias = depthBias;
     if (geometry is UnskinnedGeometry) {
       geometry.bindGeometryBuffers(_renderPass);
       final shader = materialVertex ?? geometry.vertexShader;
@@ -641,6 +640,7 @@ base class SceneEncoder {
         _cameraTransform,
         _camera.position,
         shaderOverride: materialVertex,
+        depthBias: depthBias,
       );
     }
   }

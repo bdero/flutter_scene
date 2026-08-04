@@ -54,6 +54,9 @@ abstract class Component {
 
   /// Called once per frame while the component is mounted, [enabled], and
   /// loaded. [deltaSeconds] is the elapsed time since the previous tick.
+  /// A traversal visits each component at most once. Removing this component
+  /// or an earlier sibling is safe. A component inserted before the current
+  /// traversal position starts on the next frame.
   void update(double deltaSeconds) {}
 
   /// Called once per fixed physics step while the component is mounted,
@@ -65,6 +68,7 @@ abstract class Component {
   /// components should not override this; it exists for behavior that
   /// must advance on the physics clock (kinematic body controllers,
   /// character motion drivers).
+  /// Mutation follows the same traversal rules as [update].
   void fixedUpdate(double fixedDt) {}
 
   /// Called when the owning node leaves a live scene graph.

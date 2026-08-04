@@ -297,6 +297,7 @@ class _TrailGeometry extends MeshGeometry {
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     if (_localPoints.length == maxPoints) {
       // Expand toward the camera in local space (the points' space), so

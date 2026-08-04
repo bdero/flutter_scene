@@ -197,6 +197,53 @@ void main() {
   });
 
   group('Node.scenePrePass mutation', () {
+    test(
+      'does not retick after a child is inserted before the cursor',
+      () async {
+        final root = Node();
+        final first = TickCountingComponent();
+        final last = TickCountingComponent();
+        final mutator = TreeMutatingComponent((node) {
+          node.parent!.children.insert(0, Node());
+        });
+        root.add(Node()..addComponent(first));
+        root.add(Node()..addComponent(mutator));
+        root.add(Node()..addComponent(last));
+        first.mount();
+        mutator.mount();
+        last.mount();
+        await Future<void>.delayed(Duration.zero);
+
+        root.scenePrePass(0.016);
+
+        expect(first.updateCalls, 1);
+        expect(last.updateCalls, 1);
+      },
+    );
+
+    test(
+      'does not skip a component after removing an earlier sibling',
+      () async {
+        final node = Node();
+        final first = TickCountingComponent();
+        final last = TickCountingComponent();
+        late final TreeMutatingComponent mutator;
+        mutator = TreeMutatingComponent((node) => node.removeComponent(first));
+        node
+          ..addComponent(first)
+          ..addComponent(mutator)
+          ..addComponent(last);
+        first.mount();
+        mutator.mount();
+        last.mount();
+        await Future<void>.delayed(Duration.zero);
+
+        node.scenePrePass(0.016);
+
+        expect(last.updateCalls, 1);
+      },
+    );
+
     test('visits a child inserted during traversal', () async {
       final root = Node();
       final inserted = TickCountingComponent();

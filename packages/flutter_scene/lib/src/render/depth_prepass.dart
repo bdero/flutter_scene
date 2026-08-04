@@ -351,7 +351,6 @@ class _DepthPrepassEncoder {
     // skinned fallback uses the geometry's own bind (which ignores the model
     // transform passed here, since skinned uses joint matrices).
     void bindDraw(Matrix4 worldTransform) {
-      geometry.depthBias = item.material.depthBias;
       if (depthVertex != null) {
         geometry.bindPositionStream(_renderPass);
         bindUnskinnedFrameInfo(
@@ -370,6 +369,7 @@ class _DepthPrepassEncoder {
           _cameraTransform,
           _cameraPosition,
           shaderOverride: materialVertex,
+          depthBias: item.material.depthBias,
         );
       }
       // Feed the material's parameters to its vertex variant so the same

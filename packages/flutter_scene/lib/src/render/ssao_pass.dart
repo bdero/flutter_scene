@@ -21,8 +21,9 @@ const String kSsaoTextureBlackboardKey = 'ssao_texture';
 // [SsaoBlurPass].
 const String _kSsaoRawBlackboardKey = 'ssao_raw';
 
-// Android GLES does not guarantee renderable single-channel normalized color
-// attachments. The shader only reads red, but RGBA8 keeps the pass portable.
+// The pass stores one scalar visibility value per pixel.
+// Impeller's GLES backend only supports RGBA8 for this color attachment.
+// TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
 const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 
 /// The render size of the ambient-occlusion chain for a full-resolution

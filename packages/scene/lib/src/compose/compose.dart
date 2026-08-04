@@ -590,6 +590,8 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         environmentIntensity: r.environmentIntensity,
         exposure: r.exposure,
         toneMapping: r.toneMapping,
+        agxWhite: r.agxWhite,
+        agxContrast: r.agxContrast,
         radianceCubeSize: r.radianceCubeSize,
         skybox: r.skybox == null ? null : _copySkybox(r.skybox!),
         skyEnvironment: r.skyEnvironment == null

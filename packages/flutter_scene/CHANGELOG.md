@@ -42,6 +42,18 @@
 * Loose images cook to compressed, mipmapped `.fstex` through `buildTextures`, loaded by source path with `loadTexture` (shipped in 0.20.0, missing from its notes).
 * Fixed a `RangeError` when an updatable mesh rebuilds at a smaller vertex count.
 * Fixed ambient-occlusion banding and over-darkening with normalized sampling, robust normals, and depth-aware filtering.
+* Ambient occlusion gains power, detail, horizon, direct-light, depth-mip, and specular controls. Intensity now scales obscurance, defaults to `2.0`, and its former contrast role is `power`.
+* Baked and screen-space ambient occlusion now combine with `min` instead of multiplication.
+* Added `ToneMappingMode.agx` with configurable `Scene.agxWhite` and `Scene.agxContrast`, persisted by environment resources.
+* Added `Material.depthBias`, a world-space camera offset for coplanar surface details.
+* Breaking change, custom `Geometry.bind` overrides accept the per-draw `depthBias` value.
+* `EnvironmentSettings` preserves every ambient-occlusion control and can apply only its environment look with `applyLookTo`.
+* Added `EnvironmentMap.constantDiffuse` and declarative `ConstantEnvironment` ambient lighting.
+* Added declarative torus and icosphere geometry specs.
+* `ParticleSystem.prewarm` is now readable after construction.
+* Nested prefab material overrides and linked material/scene references now compose and round-trip.
+* Custom asset bundles can load fmat shaders from bytes and provide their own fmat material loader.
+* Cooked glTF scenes import punctual lights with photometric intensity conversion.
 
 ## 0.20.0
 

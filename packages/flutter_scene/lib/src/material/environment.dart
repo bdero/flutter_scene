@@ -32,6 +32,8 @@ const int kDiffuseShCoefficientCount = 9;
 /// [EnvironmentMap.fromEquirectImageBytes] (which detect HDR, EXR, or sRGB
 /// sources and compute the SH and prefilter the radiance for you),
 /// [EnvironmentMap.studio] (the built-in procedural default),
+/// [EnvironmentMap.constantDiffuse] for uniform ambient radiance with black
+/// reflections,
 /// [EnvironmentMap.fromGpuTextures] when you already hold a prefiltered
 /// atlas, or [EnvironmentMap.empty] for a no-op black environment.
 ///
@@ -75,17 +77,19 @@ base class EnvironmentMap {
     );
   }
 
-  /// A black reflection environment with uniform diffuse [irradiance].
+  /// A black reflection environment with uniform diffuse [ambientRadiance].
   ///
-  /// The color is linear RGB irradiance after Lambertian convolution.
+  /// The color is the linear RGB radiance a white Lambertian surface receives
+  /// from the environment after its `1/pi` BRDF term. The resulting diffuse
+  /// shading equals `ambientRadiance * baseColor` for every surface normal.
   /// {@category Lighting and environment}
-  factory EnvironmentMap.constantDiffuse(Vector3 irradiance) {
+  factory EnvironmentMap.constantDiffuse(Vector3 ambientRadiance) {
     const sh0Basis = 0.28209479177387814;
     final sh = _zeroSphericalHarmonics();
     sh[0].setValues(
-      irradiance.x / sh0Basis,
-      irradiance.y / sh0Basis,
-      irradiance.z / sh0Basis,
+      ambientRadiance.x / sh0Basis,
+      ambientRadiance.y / sh0Basis,
+      ambientRadiance.z / sh0Basis,
     );
     return EnvironmentMap._(Material.getBlackPlaceholderTexture(), sh);
   }

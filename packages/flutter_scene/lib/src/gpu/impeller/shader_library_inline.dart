@@ -24,8 +24,6 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
 
 /// Loads a shader bundle directly from [bytes].
 Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) {
-  // TODO(shader-bytes): drop the ignore once fromBytes reaches stable Flutter.
-  // ignore: undefined_method
   return Future.value(ShaderLibrary.fromBytes(bytes));
 }
 

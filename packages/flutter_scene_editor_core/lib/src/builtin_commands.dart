@@ -1115,6 +1115,8 @@ EnvironmentResource _copyEnvironmentResource(EnvironmentResource r) =>
       environmentIntensity: r.environmentIntensity,
       exposure: r.exposure,
       toneMapping: r.toneMapping,
+      agxWhite: r.agxWhite,
+      agxContrast: r.agxContrast,
       radianceCubeSize: r.radianceCubeSize,
       skybox: r.skybox,
       skyEnvironment: r.skyEnvironment,

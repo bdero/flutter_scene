@@ -278,6 +278,7 @@ class SplatGeometry extends Geometry {
     // Splats use the engine's splat vertex shader; custom material vertex
     // variants do not apply, so this override is accepted and ignored.
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     if (splats.count == 0) return;
     _ensureGpuResources();

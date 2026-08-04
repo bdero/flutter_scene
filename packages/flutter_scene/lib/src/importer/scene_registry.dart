@@ -204,10 +204,7 @@ final class SceneRegistry {
     // collecting the asset keys touched into [seen]. (Lazily streamed
     // subtrees register their own assets when loaded; see [loadSubtree].)
     Future<SceneDocument> readComposed(Set<String> seen) async {
-      final document = _resolveEagerRefs(
-        await _readDocument(key, assetBundle),
-        key,
-      );
+      final document = _resolveRefs(await _readDocument(key, assetBundle), key);
       return document.nodes.values.any((n) => n.instance != null)
           ? await composeSceneAsync(
               document,
@@ -217,7 +214,7 @@ final class SceneRegistry {
                 return _readDocument(
                   refKey,
                   assetBundle,
-                ).then((document) => _resolveEagerRefs(document, refKey));
+                ).then((document) => _resolveRefs(document, refKey));
               },
             )
           : document;
@@ -325,12 +322,14 @@ final class SceneRegistry {
         registry: registry,
         bundle: assetBundle,
         load: (ref) {
-          // TODO(lazy-relative-refs): resolve relative to the streamed scene's
-          // directory (like resolveRefKey) once the placeholder carries it;
-          // lazy instances currently take package-root-relative refs.
-          final key = resolveKey(ref.key, package: package);
+          final key = isSceneAssetKey(ref.key)
+              ? ref.key
+              : resolveKey(ref.key, package: package);
           seen.add(key);
-          return _readDocument(key, assetBundle);
+          return _readDocument(
+            key,
+            assetBundle,
+          ).then((document) => _resolveRefs(document, key));
         },
       );
       return seen;
@@ -382,11 +381,23 @@ final class SceneRegistry {
     );
   }
 
-  SceneDocument _resolveEagerRefs(SceneDocument document, String hostKey) {
-    final host = _entries.singleWhere((entry) => entry.assetKey == hostKey);
+  SceneDocument _resolveRefs(SceneDocument document, String hostKey) {
+    SceneEntry? host;
+    for (final entry in _entries) {
+      if (entry.assetKey == hostKey) {
+        host = entry;
+        break;
+      }
+    }
+    if (host == null) {
+      throw StateError(
+        'Scene asset "$hostKey" is not registered. Rebuild the app so its '
+        'DataAssets manifest includes every referenced scene.',
+      );
+    }
     for (final node in document.nodes.values) {
       final instance = node.instance;
-      if (instance == null || instance.load != LoadPolicy.eager) continue;
+      if (instance == null) continue;
       final source = resolveRefKey(
         host.sceneId,
         instance.source.key,

@@ -211,7 +211,6 @@ jobs:
 
           manifest = {
               "version": version,
-              "abi_version": 2,
               "base_url": f"https://github.com/{repo}/releases/download",
               "tag": tag,
               "binaries": binaries,

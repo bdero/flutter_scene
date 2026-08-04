@@ -71,12 +71,20 @@ void main() {
         (directional.properties['direction'] as Vec3Value).value,
         Vector3(0, 0, -1),
       );
+      expect(
+        (directional.properties['castsShadow'] as BoolValue).value,
+        isFalse,
+      );
       expect(point.type, 'pointLight');
       expect((point.properties['range'] as DoubleValue).value, 12);
       expect(spot.type, 'spotLight');
-      expect((spot.properties['intensity'] as DoubleValue).value, 8);
+      expect(
+        (spot.properties['intensity'] as DoubleValue).value,
+        closeTo(8 / 683, 1e-12),
+      );
       expect((spot.properties['innerConeAngle'] as DoubleValue).value, 0.1);
       expect((spot.properties['outerConeAngle'] as DoubleValue).value, 0.5);
+      expect((spot.properties['castsShadow'] as BoolValue).value, isFalse);
     });
 
     for (final name in _corpus) {

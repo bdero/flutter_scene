@@ -6,6 +6,10 @@
 // radius. The output is a single occlusion factor in the red channel: 1 is
 // unoccluded, 0 is fully occluded. A bilateral blur pass cleans up the
 // per-pixel noise afterwards.
+//
+// The depth hierarchy and sampling follow McGuire et al., "Scalable Ambient
+// Obscurance" (2012),
+// https://research.nvidia.com/publication/scalable-ambient-obscurance.
 
 uniform sampler2D linear_depth;
 
@@ -24,7 +28,7 @@ uniform SsaoInfo {
   // x: radius (world units). y: bias (world units). z: obscurance intensity.
   // w: projection scale (pixels per world unit at depth 1).
   vec4 params;
-  // x: sample count. y: mip level count. z: minimum horizon cosine term.
+  // x: sample count. y: mip level count. z: minimum horizon sine term.
   // w: final visibility power.
   vec4 params2;
   // x: immediate-neighbour detail intensity. yzw: unused.
@@ -169,7 +173,10 @@ void main() {
     // resolve contact occlusion without amplifying distant depth variation.
     float sample_radius = (float(i) + 0.5) / float(sample_count);
     float theta = sample_radius * spiral_turns * 2.0 * kPi + rotation;
-    float pixel_radius = max(1.0, sample_radius * screen_radius);
+    float pixel_radius = sample_radius * screen_radius;
+    if (pixel_radius < 1.0) {
+      continue;
+    }
     vec2 offset = vec2(cos(theta), sin(theta)) * pixel_radius;
     vec2 sample_uv = v_uv + offset * ssao.viewport.zw;
 
@@ -211,8 +218,8 @@ void main() {
       normal, ViewPositionBase(center_coord + ivec2(0, 1)) - origin,
       falloff_scale * 4.0, horizon);
 
-  float obscurance = (sum + detail * detail_sum) /
-      max(weight_sum, kNumericEpsilon);
+  float wide_obscurance = weight_sum > 0.0 ? sum / weight_sum : 0.0;
+  float obscurance = wide_obscurance + detail * detail_sum * 0.25;
   obscurance = min(intensity * obscurance, 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
 

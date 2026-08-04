@@ -29,6 +29,8 @@ SceneDocument _skyDocument() {
       doc.newId(),
       exposure: 1.5,
       toneMapping: 'aces',
+      agxWhite: 10.0,
+      agxContrast: 1.3,
       skybox: SkyboxSpec(
         GradientSkySpec(
           zenithColor: Vector3(0.1, 0.2, 0.3),
@@ -105,6 +107,8 @@ void main() {
     test('skybox and sky environment round-trip', () {
       final restored = readFscene(writeFscene(_skyDocument()));
       final env = _stageEnv(restored);
+      expect(env.agxWhite, 10.0);
+      expect(env.agxContrast, 1.3);
 
       final skybox = env.skybox!;
       expect(skybox.intensity, 2.0);

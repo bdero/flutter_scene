@@ -205,6 +205,8 @@ void main() {
         environmentIntensity: 1.5,
         exposure: 0.5,
         toneMapping: 'aces',
+        agxWhite: 12.0,
+        agxContrast: 1.4,
         radianceCubeSize: 1024,
         skybox: SkyboxSpec(PhysicalSkySpec(turbidity: 6.0), intensity: 2.0),
         skyEnvironment: SkyEnvironmentSpec(
@@ -223,6 +225,8 @@ void main() {
     expect(env.environmentIntensity, 1.5);
     expect(env.exposure, 0.5);
     expect(env.toneMapping, 'aces');
+    expect(env.agxWhite, 12.0);
+    expect(env.agxContrast, 1.4);
     expect(env.radianceCubeSize, 1024);
     expect((env.skybox!.source as PhysicalSkySpec).turbidity, 6.0);
     expect(env.skybox!.intensity, 2.0);

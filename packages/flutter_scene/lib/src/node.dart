@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' hide Matrix4;
@@ -14,6 +16,25 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
+
+void _visitMutable<T>(List<T> items, void Function(T item) visit) {
+  final visited = HashSet<T>.identity();
+  var index = 0;
+  while (index < items.length) {
+    final item = items[index];
+    if (!visited.add(item)) {
+      index++;
+      continue;
+    }
+    visit(item);
+    final currentIndex = items.indexWhere(
+      (candidate) => identical(candidate, item),
+    );
+    if (currentIndex >= 0) {
+      index = currentIndex + 1;
+    }
+  }
+}
 
 /// A `Node` represents a single element in a 3D scene graph.
 ///
@@ -323,21 +344,13 @@ base class Node implements SceneGraph {
 
   void _mount(RenderScene renderScene) {
     _renderScene = renderScene;
-    for (final component in _components) {
-      component.mount();
-    }
-    for (final child in children) {
-      child._mount(renderScene);
-    }
+    _visitMutable(_components, (component) => component.mount());
+    _visitMutable(children, (child) => child._mount(renderScene));
   }
 
   void _unmount() {
-    for (final child in children) {
-      child._unmount();
-    }
-    for (final component in _components) {
-      component.unmount();
-    }
+    _visitMutable(children, (child) => child._unmount());
+    _visitMutable(_components, (component) => component.unmount());
     _renderScene = null;
   }
 
@@ -939,12 +952,8 @@ base class Node implements SceneGraph {
   void scenePrePass(double deltaSeconds, [bool ancestorsVisible = true]) {
     _effectiveVisible = ancestorsVisible && visible;
 
-    // Components tick whenever the node is mounted, independent of
-    // visibility. An index loop tolerates a component adding or removing
-    // a sibling component during its own update.
-    for (int i = 0; i < _components.length; i++) {
-      _components[i].tick(deltaSeconds);
-    }
+    // Components tick whenever the node is mounted, independent of visibility.
+    _visitMutable(_components, (component) => component.tick(deltaSeconds));
 
     if (_effectiveVisible) {
       _animationPlayer?.update(deltaSeconds);
@@ -963,15 +972,10 @@ base class Node implements SceneGraph {
         instancedMeshComponent.hideRenderItem();
       }
     }
-    var childIndex = 0;
-    while (childIndex < children.length) {
-      final child = children[childIndex];
-      child.scenePrePass(deltaSeconds, _effectiveVisible);
-      if (childIndex < children.length &&
-          identical(children[childIndex], child)) {
-        childIndex++;
-      }
-    }
+    _visitMutable(
+      children,
+      (child) => child.scenePrePass(deltaSeconds, _effectiveVisible),
+    );
   }
 
   /// Walks this node's subtree once per physics substep and dispatches
@@ -981,17 +985,7 @@ base class Node implements SceneGraph {
   /// before the physics world's step. Traversal order is parent before
   /// children, matching [scenePrePass].
   void sceneFixedPass(double fixedDt) {
-    for (int i = 0; i < _components.length; i++) {
-      _components[i].fixedTick(fixedDt);
-    }
-    var childIndex = 0;
-    while (childIndex < children.length) {
-      final child = children[childIndex];
-      child.sceneFixedPass(fixedDt);
-      if (childIndex < children.length &&
-          identical(children[childIndex], child)) {
-        childIndex++;
-      }
-    }
+    _visitMutable(_components, (component) => component.fixedTick(fixedDt));
+    _visitMutable(children, (child) => child.sceneFixedPass(fixedDt));
   }
 }

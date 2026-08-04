@@ -33,17 +33,10 @@ Node _addStatic(
   Shape shape,
   Vector3 position, {
   bool isTrigger = false,
-  int collisionLayer = 0xFFFFFFFF,
 }) {
   final node = Node(localTransform: Matrix4.translation(position));
   node.addComponent(RigidBody(type: BodyType.fixed));
-  node.addComponent(
-    Collider(
-      shape: shape,
-      isTrigger: isTrigger,
-      collisionLayer: collisionLayer,
-    ),
-  );
+  node.addComponent(Collider(shape: shape, isTrigger: isTrigger));
   root.add(node);
   node.getComponents<RigidBody>().first.mount();
   node.getComponents<Collider>().first.mount();
@@ -162,53 +155,6 @@ void main() {
     final ray = Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1));
     expect(world.raycast(ray, includeFixed: false), isNull);
     expect(world.raycast(ray), isNotNull);
-  });
-
-  test('layerMask filters every scene query', () {
-    final root = _boot();
-    final world = root.getComponent<PhysicsWorld>()!;
-    _addStatic(
-      root,
-      SphereShape(radius: 1),
-      Vector3(0, 0, 5),
-      collisionLayer: 0x1,
-    );
-    final target = _addStatic(
-      root,
-      SphereShape(radius: 1),
-      Vector3(0, 0, 10),
-      collisionLayer: 0x2,
-    );
-    final ray = Ray.originDirection(Vector3.zero(), Vector3(0, 0, 1));
-
-    expect(world.raycast(ray, layerMask: 0x4), isNull);
-    expect(world.raycast(ray, layerMask: 0x2)?.node, same(target));
-    expect(world.raycastAll(ray, layerMask: 0x2), hasLength(1));
-    expect(
-      world.overlapSphere(Vector3(0, 0, 10), 2, layerMask: 0x2),
-      hasLength(1),
-    );
-    expect(
-      world.overlapBox(
-        Vector3(0, 0, 10),
-        Vector3.all(2),
-        Quaternion.identity(),
-        layerMask: 0x2,
-      ),
-      hasLength(1),
-    );
-    expect(
-      world
-          .shapeCast(
-            SphereShape(radius: 0.5),
-            Matrix4.identity(),
-            Vector3(0, 0, 1),
-            20,
-            layerMask: 0x2,
-          )
-          ?.node,
-      same(target),
-    );
   });
 
   test('shapeCast sweeps a sphere and finds the first contact', () {

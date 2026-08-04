@@ -191,6 +191,7 @@ class BillboardGeometry extends Geometry {
     // Billboards use the engine's billboard vertex shader; custom material
     // vertex variants do not apply, so this override is accepted and ignored.
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     // Slot 0: the shared unit quad (and its indices).
     bindGeometryBuffers(pass);
