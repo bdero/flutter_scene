@@ -44,12 +44,13 @@ void main() {
           GltfNode(name: 'Cone', light: 2),
         ],
         lights: [
+          GltfPunctualLight(type: 'directional', intensity: 100000),
           GltfPunctualLight(
-            type: 'directional',
-            color: Vector3(1, 0.75, 0.5),
-            intensity: 2,
+            type: 'point',
+            color: Vector3(0, 0, 1),
+            intensity: 4,
+            range: 12,
           ),
-          GltfPunctualLight(type: 'point', intensity: 4, range: 12),
           GltfPunctualLight(
             type: 'spot',
             intensity: 8,
@@ -75,7 +76,15 @@ void main() {
         (directional.properties['castsShadow'] as BoolValue).value,
         isFalse,
       );
+      expect(
+        (directional.properties['intensity'] as DoubleValue).value,
+        closeTo(100000 / 683, 1e-9),
+      );
       expect(point.type, 'pointLight');
+      expect(
+        (point.properties['intensity'] as DoubleValue).value,
+        closeTo(4 / (683 * 0.0722), 1e-9),
+      );
       expect((point.properties['range'] as DoubleValue).value, 12);
       expect(spot.type, 'spotLight');
       expect(

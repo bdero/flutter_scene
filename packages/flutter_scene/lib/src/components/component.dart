@@ -56,7 +56,8 @@ abstract class Component {
   /// loaded. [deltaSeconds] is the elapsed time since the previous tick.
   /// A traversal visits each component at most once. Removing this component
   /// or an earlier sibling is safe. A component inserted before the current
-  /// traversal position starts on the next frame.
+  /// traversal position starts on the next frame. Reordering component or
+  /// child lists during traversal is unsupported.
   void update(double deltaSeconds) {}
 
   /// Called once per fixed physics step while the component is mounted,

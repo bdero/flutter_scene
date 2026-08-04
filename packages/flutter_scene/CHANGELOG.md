@@ -46,14 +46,14 @@
 * Baked and screen-space ambient occlusion now combine with `min` instead of multiplication.
 * Added `ToneMappingMode.agx` with configurable `Scene.agxWhite` and `Scene.agxContrast`, persisted by environment resources.
 * Added `Material.depthBias`, a world-space camera offset for coplanar surface details.
-* Breaking change, custom `Geometry.bind` overrides accept the per-draw `depthBias` value.
+* Breaking change, custom `Geometry.bind` overrides must add the named parameter `double depthBias = 0.0`.
 * `EnvironmentSettings` preserves every ambient-occlusion control and can apply only its environment look with `applyLookTo`.
 * Added `EnvironmentMap.constantDiffuse` and declarative `ConstantEnvironment` ambient lighting.
 * Added declarative torus and icosphere geometry specs.
 * `ParticleSystem.prewarm` is now readable after construction.
 * Nested prefab material overrides and linked material/scene references now compose and round-trip.
 * Custom asset bundles can load fmat shaders from bytes and provide their own fmat material loader.
-* Cooked glTF scenes import punctual lights with photometric intensity conversion.
+* Cooked glTF scenes import photometric punctual lights for use with physical camera exposure.
 
 ## 0.20.0
 

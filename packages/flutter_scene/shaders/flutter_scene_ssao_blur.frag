@@ -27,6 +27,8 @@ out vec4 frag_color;
 
 const float kEpsilon = 0.0001;
 
+#include <interleaved_gradient_noise.glsl>
+
 float GaussianWeight(int offset) {
   int i = abs(offset);
   if (i == 0) return 0.153170;
@@ -34,11 +36,6 @@ float GaussianWeight(int offset) {
   if (i == 2) return 0.122649;
   if (i == 3) return 0.092902;
   return 0.062970;
-}
-
-float InterleavedGradientNoise(vec2 pixel) {
-  return fract(52.9829189 * fract(dot(floor(pixel),
-                                      vec2(0.06711056, 0.00583715))));
 }
 
 void main() {

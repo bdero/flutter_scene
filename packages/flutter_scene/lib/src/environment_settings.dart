@@ -35,6 +35,8 @@ Vector3 _lerpVec3(Vector3 a, Vector3 b, double t) =>
 /// ```
 /// {@category Lighting and environment}
 class EnvironmentSettings {
+  // TODO(environment-settings): compose per-feature snapshots that each
+  // capture, apply, and interpolate their fields in one place.
   /// Creates a settings snapshot. Most callers use `Scene.environmentSettings`
   /// or [EnvironmentSettings.lerp] instead of this directly.
   EnvironmentSettings({
