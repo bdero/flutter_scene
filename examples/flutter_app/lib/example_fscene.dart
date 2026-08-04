@@ -536,7 +536,7 @@ GeometryResource _payloadCuboid(SceneDocument doc, vm.Vector3 extents) {
     PayloadSpec(
       doc.newId(),
       encoding: PayloadEncoding.vertexBuffer,
-      layout: 'unskinned',
+      layout: InterleavedLayoutAdapter.unskinnedInterleavedLayout,
       bytes: vertexBytes,
     ),
   );

@@ -120,6 +120,8 @@ GaussianSplats _splatCloud() {
 /// synchronous [SmokeScene] setup closures can build a [PreprocessedMaterial].
 gpu.ShaderLibrary? _materialsLibrary;
 Map<String, Object?>? _materialsMetadata;
+PhysicalMaterial? _layeredPhysicalMaterial;
+PhysicalMaterial? _transmissionPhysicalMaterial;
 
 /// Loads the `buildMaterials` output (bundle plus parameter sidecar) once. Call
 /// before pumping a scene that uses a custom material.
@@ -137,6 +139,35 @@ Future<void> loadSmokeMaterials() async {
   _rawPairLibrary = await gpu.loadShaderLibraryAsync(
     'packages/smoke_render/flutter_gpu_shaders/shaderbundles/'
     'smoke.shaderbundle',
+  );
+  _layeredPhysicalMaterial = await PhysicalMaterial.fromDescriptor(
+    PhysicalMaterialDescriptor(
+      baseColor: vm.Vector4(0.45, 0.08, 0.03, 1.0),
+      metallic: 0.1,
+      roughness: 0.45,
+      clearcoat: 0.9,
+      clearcoatRoughness: 0.12,
+      sheenColor: vm.Vector4(0.35, 0.08, 0.03, 1.0),
+      sheenRoughness: 0.35,
+      anisotropy: 0.55,
+      anisotropyRotation: 0.4,
+      iridescence: 0.35,
+      iridescenceThicknessMinimum: 180.0,
+      iridescenceThicknessMaximum: 360.0,
+    ),
+  );
+  _transmissionPhysicalMaterial = await PhysicalMaterial.fromDescriptor(
+    PhysicalMaterialDescriptor(
+      baseColor: vm.Vector4(0.72, 0.92, 1.0, 1.0),
+      metallic: 0.0,
+      roughness: 0.08,
+      transmission: 0.78,
+      ior: 1.45,
+      thickness: 0.7,
+      attenuationColor: vm.Vector4(0.55, 0.85, 1.0, 1.0),
+      attenuationDistance: 2.5,
+      dispersion: 0.25,
+    ),
   );
 }
 
@@ -294,6 +325,39 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(_cuboid(vm.Vector4(0.95, 0.95, 0.95, 1.0), 1.0, 0.15));
     return (scene: scene, camera: _camera());
   }),
+  // Layered physical shader with several factor-only lobes enabled.
+  SmokeScene('physical_layered', () {
+    final scene = Scene();
+    scene.add(
+      Node(mesh: Mesh(SphereGeometry(radius: 0.85), _layeredPhysicalMaterial!)),
+    );
+    return (scene: scene, camera: _camera());
+  }, preload: loadSmokeMaterials),
+  // Screen-space transmission over an opaque object, including depth-driven
+  // volume attenuation and RGB dispersion.
+  SmokeScene('physical_transmission', () {
+    final scene = Scene();
+    scene.add(
+      _cuboid(vm.Vector4(0.95, 0.35, 0.08, 1.0), 0.0, 0.55)
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0, -0.65)) *
+            vm.Matrix4.rotationY(0.5),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          SphereGeometry(radius: 0.72),
+          _transmissionPhysicalMaterial!,
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0, 0.45)),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(SphereGeometry(radius: 0.5), _transmissionPhysicalMaterial!),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0.2, 0, -0.15)),
+    );
+    return (scene: scene, camera: _camera());
+  }, preload: loadSmokeMaterials),
   // Issue #134 regression: a negative-scale (mirrored) node must render
   // right-side-out, not inside-out.
   SmokeScene('mirrored_node', () {

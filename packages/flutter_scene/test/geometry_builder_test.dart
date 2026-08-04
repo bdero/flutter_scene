@@ -6,14 +6,15 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Reads vertex `v`'s normal (floats 3..5 of the 12-float unskinned
+/// Reads vertex `v`'s normal (floats 3..5 of the unskinned
 /// vertex layout) out of packed vertex bytes.
 List<double> _normalOf(PackedPrimitive packed, int v) {
   final floats = Float32List.sublistView(packed.vertexBytes);
-  const stride = 12;
+  const stride = kUnskinnedPerVertexSize ~/ 4;
   return [
     floats[v * stride + 3],
     floats[v * stride + 4],

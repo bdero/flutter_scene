@@ -21,6 +21,8 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/advanced_physical_material.dart';
+import 'package:flutter_scene/src/material/physical_material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
@@ -170,8 +172,12 @@ class ResourceRealizer {
 
     final materials = <Future<void>>[];
     for (final resource in document.resources.values) {
-      if (resource is MaterialResource && resource.type == 'fmat') {
-        materials.add(_preloadFmat(resource));
+      if (resource is MaterialResource) {
+        if (resource.type == 'fmat') {
+          materials.add(_preloadFmat(resource));
+        } else if (resource.type == 'physical') {
+          materials.add(_preloadPhysical(resource));
+        }
       }
     }
     await Future.wait(materials);
@@ -321,6 +327,25 @@ class ResourceRealizer {
     }
   }
 
+  Future<void> _preloadPhysical(MaterialResource res) async {
+    try {
+      final material = await PhysicalMaterial.fromDescriptor(
+        _physicalDescriptor(res),
+      );
+      material.name = res.name;
+      _materials[res.id] = tagResourceOrigin(material, document, res.id);
+    } catch (e) {
+      debugPrint(
+        'fscene: failed to realize physical material ${res.id}: $e; using PBR',
+      );
+      _materials[res.id] = tagResourceOrigin(
+        _pbr(res.properties)..name = res.name,
+        document,
+        res.id,
+      );
+    }
+  }
+
   gpu.Texture _placeholderTexture() {
     final texture = gpu.gpuContext.createTexture(
       gpu.StorageMode.hostVisible,
@@ -357,13 +382,51 @@ class ResourceRealizer {
     final vertexBytes = _payloadBytes(vertexId, 'vertex');
     final vertexPayload = document.payload(vertexId)!;
     final layout = vertexPayload.layout;
-    final soa = layout == InterleavedLayoutAdapter.unskinnedSoaLayout;
-    final skinned = layout == 'skinned';
-    // The de-interleaved and interleaved unskinned payloads carry the same
-    // 48 bytes per vertex, just reordered; skinned is 80.
-    final perVertexBytes = skinned
-        ? kSkinnedPerVertexSize
-        : kUnskinnedPerVertexSize;
+    late final bool soa;
+    late final bool skinned;
+    late final bool legacy;
+    late final int perVertexBytes;
+    if (layout == InterleavedLayoutAdapter.unskinnedSoaLayout) {
+      soa = true;
+      skinned = false;
+      legacy = false;
+      perVertexBytes = kUnskinnedPerVertexSize;
+    } else if (layout == InterleavedLayoutAdapter.unskinnedInterleavedLayout) {
+      soa = false;
+      skinned = false;
+      legacy = false;
+      perVertexBytes = kUnskinnedPerVertexSize;
+    } else if (layout == InterleavedLayoutAdapter.skinnedLayout) {
+      soa = false;
+      skinned = true;
+      legacy = false;
+      perVertexBytes = kSkinnedPerVertexSize;
+    } else if (layout == 'unskinned_soa') {
+      soa = true;
+      skinned = false;
+      legacy = true;
+      perVertexBytes = InterleavedLayoutAdapter.legacyUnskinnedVertexBytes;
+    } else if (layout == 'skinned') {
+      soa = false;
+      skinned = true;
+      legacy = true;
+      perVertexBytes = InterleavedLayoutAdapter.legacySkinnedVertexBytes;
+    } else if (layout == 'unskinned' || layout == null) {
+      soa = false;
+      skinned = false;
+      legacy = true;
+      perVertexBytes = InterleavedLayoutAdapter.legacyUnskinnedVertexBytes;
+    } else {
+      throw FsceneFormatException(
+        'Geometry ${res.id} uses unknown vertex layout "$layout"',
+      );
+    }
+    if (vertexBytes.lengthInBytes % perVertexBytes != 0) {
+      throw FsceneFormatException(
+        'Geometry ${res.id} vertex payload has ${vertexBytes.lengthInBytes} '
+        'bytes, which is not divisible by its $perVertexBytes-byte layout',
+      );
+    }
     final vertexCount = vertexBytes.lengthInBytes ~/ perVertexBytes;
     final geometry = skinned ? SkinnedGeometry() : UnskinnedGeometry();
 
@@ -386,7 +449,17 @@ class ResourceRealizer {
       geometry.setLocalBounds(aabb, _circumscribedSphere(aabb));
     }
 
-    if (soa) {
+    if (legacy && soa) {
+      (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
+        InterleavedLayoutAdapter.upgradeLegacyUnskinnedSoa(
+          vertexBytes,
+          vertexCount,
+        ),
+        vertexCount,
+        indices: indexBytes,
+        indexType: indexType,
+      );
+    } else if (soa) {
       // De-interleaved payload: upload each attribute stream straight to its
       // GPU buffer, no realize-time reshuffle.
       (geometry as UnskinnedGeometry).uploadUnskinnedAttributeStreams(
@@ -401,8 +474,19 @@ class ResourceRealizer {
     } else {
       // Interleaved payload (skinned, or a pre-SoA unskinned document): the
       // unskinned path de-interleaves once here.
+      final upgraded = legacy
+          ? skinned
+                ? InterleavedLayoutAdapter.upgradeLegacySkinnedInterleaved(
+                    ByteData.sublistView(vertexBytes),
+                    vertexCount,
+                  )
+                : InterleavedLayoutAdapter.upgradeLegacyUnskinnedInterleaved(
+                    ByteData.sublistView(vertexBytes),
+                    vertexCount,
+                  )
+          : vertexBytes;
       geometry.uploadVertexData(
-        ByteData.sublistView(vertexBytes),
+        ByteData.sublistView(upgraded),
         vertexCount,
         indexBytes,
         indexType: indexType,
@@ -493,6 +577,11 @@ class ResourceRealizer {
       case 'unlit':
         return _unlit(res.properties);
       case 'physicallyBased':
+        return _pbr(res.properties);
+      case 'physical':
+        debugPrint(
+          'fscene: physical material needs the async loader; using core PBR',
+        );
         return _pbr(res.properties);
       case 'fmat':
         // Resolved by preload(); reaching here is the synchronous path.
@@ -587,6 +676,14 @@ class ResourceRealizer {
     if (base != null) m.baseColorFactor = base;
     final baseColorTexture = _textureRef(p, 'baseColorTexture');
     if (baseColorTexture != null) m.baseColorTexture = baseColorTexture;
+    m.baseColorTextureTransform = _textureTransform(
+      p,
+      'baseColorTextureTransform',
+    );
+    m.baseColorTextureTexCoord = _textureTexCoord(
+      p,
+      'baseColorTextureTransform',
+    );
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
     m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     return m;
@@ -604,6 +701,7 @@ class ResourceRealizer {
     if (base != null) m.baseColorFactor = base;
     final emissive = readColor(p, 'emissive');
     if (emissive != null) m.emissiveFactor = emissive;
+    m.emissiveStrength = readDouble(p, 'emissiveStrength', m.emissiveStrength);
     m.metallicFactor = readDouble(p, 'metallic', m.metallicFactor);
     m.roughnessFactor = readDouble(p, 'roughness', m.roughnessFactor);
     m.occlusionStrength = readDouble(
@@ -613,20 +711,172 @@ class ResourceRealizer {
     );
     final baseColorTexture = _textureRef(p, 'baseColorTexture');
     if (baseColorTexture != null) m.baseColorTexture = baseColorTexture;
+    m.baseColorTextureTransform = _textureTransform(
+      p,
+      'baseColorTextureTransform',
+    );
+    m.baseColorTextureTexCoord = _textureTexCoord(
+      p,
+      'baseColorTextureTransform',
+    );
     final metallicRoughnessTexture = _textureRef(p, 'metallicRoughnessTexture');
     if (metallicRoughnessTexture != null) {
       m.metallicRoughnessTexture = metallicRoughnessTexture;
     }
+    m.metallicRoughnessTextureTransform = _textureTransform(
+      p,
+      'metallicRoughnessTextureTransform',
+    );
+    m.metallicRoughnessTextureTexCoord = _textureTexCoord(
+      p,
+      'metallicRoughnessTextureTransform',
+    );
     final normalTexture = _textureRef(p, 'normalTexture');
     if (normalTexture != null) m.normalTexture = normalTexture;
+    m.normalTextureTransform = _textureTransform(p, 'normalTextureTransform');
+    m.normalTextureTexCoord = _textureTexCoord(p, 'normalTextureTransform');
     final occlusionTexture = _textureRef(p, 'occlusionTexture');
     if (occlusionTexture != null) m.occlusionTexture = occlusionTexture;
+    m.occlusionTextureTransform = _textureTransform(
+      p,
+      'occlusionTextureTransform',
+    );
+    m.occlusionTextureTexCoord = _textureTexCoord(
+      p,
+      'occlusionTextureTransform',
+    );
     final emissiveTexture = _textureRef(p, 'emissiveTexture');
     if (emissiveTexture != null) m.emissiveTexture = emissiveTexture;
+    m.emissiveTextureTransform = _textureTransform(
+      p,
+      'emissiveTextureTransform',
+    );
+    m.emissiveTextureTexCoord = _textureTexCoord(p, 'emissiveTextureTransform');
     m.normalScale = readDouble(p, 'normalScale', m.normalScale);
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
     m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     m.alphaCutoff = readDouble(p, 'alphaCutoff', m.alphaCutoff);
     return m;
+  }
+
+  PhysicalMaterialDescriptor _physicalDescriptor(MaterialResource resource) {
+    final p = resource.properties;
+    return PhysicalMaterialDescriptor(
+      name: resource.name,
+      baseColorTexture: _physicalTexture(p, 'baseColorTexture'),
+      baseColor: readColor(p, 'baseColor'),
+      metallicRoughnessTexture: _physicalTexture(p, 'metallicRoughnessTexture'),
+      metallic: readDouble(p, 'metallic', 1.0),
+      roughness: readDouble(p, 'roughness', 1.0),
+      normalTexture: _physicalTexture(p, 'normalTexture'),
+      normalScale: readDouble(p, 'normalScale', 1.0),
+      occlusionTexture: _physicalTexture(p, 'occlusionTexture'),
+      occlusionStrength: readDouble(p, 'occlusionStrength', 1.0),
+      emissiveTexture: _physicalTexture(p, 'emissiveTexture'),
+      emissive: readColor(p, 'emissive'),
+      emissiveStrength: readDouble(p, 'emissiveStrength', 1.0),
+      specularTexture: _physicalTexture(p, 'specularTexture'),
+      specular: readDouble(p, 'specular', 1.0),
+      specularColorTexture: _physicalTexture(p, 'specularColorTexture'),
+      specularColor: readColor(p, 'specularColor'),
+      ior: readDouble(p, 'ior', 1.5),
+      clearcoatTexture: _physicalTexture(p, 'clearcoatTexture'),
+      clearcoat: readDouble(p, 'clearcoat', 0.0),
+      clearcoatRoughnessTexture: _physicalTexture(
+        p,
+        'clearcoatRoughnessTexture',
+      ),
+      clearcoatRoughness: readDouble(p, 'clearcoatRoughness', 0.0),
+      clearcoatNormalTexture: _physicalTexture(p, 'clearcoatNormalTexture'),
+      clearcoatNormalScale: switch (p['clearcoatNormalScale']) {
+        DoubleValue(:final value) => Vector2.all(value),
+        _ => readVec2(p, 'clearcoatNormalScale', Vector2.all(1.0)),
+      },
+      sheenColorTexture: _physicalTexture(p, 'sheenColorTexture'),
+      sheenColor: readColor(p, 'sheenColor'),
+      sheenRoughnessTexture: _physicalTexture(p, 'sheenRoughnessTexture'),
+      sheenRoughness: readDouble(p, 'sheenRoughness', 0.0),
+      transmissionTexture: _physicalTexture(p, 'transmissionTexture'),
+      transmission: readDouble(p, 'transmission', 0.0),
+      diffuseTransmissionTexture: _physicalTexture(
+        p,
+        'diffuseTransmissionTexture',
+      ),
+      diffuseTransmission: readDouble(p, 'diffuseTransmission', 0.0),
+      diffuseTransmissionColorTexture: _physicalTexture(
+        p,
+        'diffuseTransmissionColorTexture',
+      ),
+      diffuseTransmissionColor: readColor(p, 'diffuseTransmissionColor'),
+      thicknessTexture: _physicalTexture(p, 'thicknessTexture'),
+      thickness: readDouble(p, 'thickness', 0.0),
+      attenuationDistance: readDouble(
+        p,
+        'attenuationDistance',
+        double.infinity,
+      ),
+      attenuationColor: readColor(p, 'attenuationColor'),
+      dispersion: readDouble(p, 'dispersion', 0.0),
+      iridescenceTexture: _physicalTexture(p, 'iridescenceTexture'),
+      iridescence: readDouble(p, 'iridescence', 0.0),
+      iridescenceIor: readDouble(p, 'iridescenceIor', 1.3),
+      iridescenceThicknessTexture: _physicalTexture(
+        p,
+        'iridescenceThicknessTexture',
+      ),
+      iridescenceThicknessMinimum: readDouble(
+        p,
+        'iridescenceThicknessMinimum',
+        100.0,
+      ),
+      iridescenceThicknessMaximum: readDouble(
+        p,
+        'iridescenceThicknessMaximum',
+        400.0,
+      ),
+      anisotropyTexture: _physicalTexture(p, 'anisotropyTexture'),
+      anisotropy: readDouble(p, 'anisotropy', 0.0),
+      anisotropyRotation: readDouble(p, 'anisotropyRotation', 0.0),
+      alphaMode: _alphaMode(readString(p, 'alphaMode', 'opaque')),
+      alphaCutoff: readDouble(p, 'alphaCutoff', 0.5),
+      doubleSided: readBool(p, 'doubleSided', false),
+    );
+  }
+
+  PhysicalTexture _physicalTexture(
+    Map<String, PropertyValue> properties,
+    String key,
+  ) {
+    final transformKey = '${key}Transform';
+    final transformValue = properties[transformKey];
+    final texCoord = transformValue is MapValue
+        ? readInt(transformValue.values, 'texCoord', 0)
+        : 0;
+    return PhysicalTexture(
+      source: _textureRef(properties, key),
+      transform: _textureTransform(properties, transformKey),
+      texCoord: texCoord,
+    );
+  }
+
+  TextureTransform _textureTransform(
+    Map<String, PropertyValue> properties,
+    String key,
+  ) {
+    final value = properties[key];
+    if (value is! MapValue) return TextureTransform();
+    final values = value.values;
+    return TextureTransform(
+      offset: readVec2(values, 'offset', Vector2.zero()),
+      scale: readVec2(values, 'scale', Vector2.all(1.0)),
+      rotation: readDouble(values, 'rotation', 0.0),
+    );
+  }
+
+  int _textureTexCoord(Map<String, PropertyValue> properties, String key) {
+    final value = properties[key];
+    return value is MapValue
+        ? readInt(value.values, 'texCoord', 0).clamp(0, 1)
+        : 0;
   }
 }

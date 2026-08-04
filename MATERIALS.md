@@ -274,9 +274,12 @@ fields below mean the same thing everywhere.
 struct VertexInputs {
   vec3 position;        // object space (post-skinning on a skinned mesh)
   vec3 normal;          // object space
+  vec4 tangent;         // object-space direction and bitangent sign
   vec3 world_position;  // world space, after the model/skin transform
   vec3 world_normal;    // world space
+  vec4 world_tangent;   // world-space direction and bitangent sign
   vec2 uv;
+  vec2 uv1;
   vec4 color;
   vec3 camera_position; // read-only, world space
 };
@@ -423,7 +426,7 @@ texture when a single field would do.
 # The engine contract (both paths)
 
 flutter_scene's engine vertex shaders (`UnskinnedVertex` and `SkinnedVertex`)
-emit the same five world-space outputs. The `.fmat` accessors wrap these; a raw
+emit the same standard outputs. The `.fmat` accessors wrap these; a raw
 `ShaderMaterial` declares them directly:
 
 ```glsl
@@ -431,7 +434,10 @@ in vec3 v_position;        // world space
 in vec3 v_normal;          // world space, not necessarily unit length
 in vec3 v_viewvector;      // camera_position - vertex_position
 in vec2 v_texture_coords;
+in vec2 v_texture_coords_1;
 in vec4 v_color;           // per-vertex color, white when the model has none
+in vec3 v_model_scale;
+in vec4 v_tangent;         // world-space tangent and bitangent sign
 ```
 
 The fragment output is `out vec4 frag_color;` at location 0.
@@ -620,8 +626,8 @@ Uniform blocks and textures are set by name on either stage, chosen with
 
 ## The contract
 
-For an unskinned mesh, the engine binds these and your shader declares whatever
-it uses:
+For an unskinned mesh, the engine binds these and your shader declares all of
+the fixed inputs:
 
 ```glsl
 uniform FrameInfo {
@@ -632,7 +638,9 @@ uniform FrameInfo {
 in vec3 position;
 in vec3 normal;
 in vec2 texture_coords;
+in vec2 texture_coords_1;
 in vec4 color;
+in vec4 tangent;
 
 // Instance-rate model matrix columns, bound in the slot after the vertex
 // streams. A non-instanced draw gets a single-element buffer.
@@ -642,9 +650,11 @@ in vec4 model_transform_2;
 in vec4 model_transform_3;
 ```
 
-Your shader writes `gl_Position` and the five outputs the fragment stage reads
-(`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`, `v_color`), plus
-any of your own varyings. A skinned mesh instead takes its model transform,
+Your shader writes `gl_Position` and the standard outputs the fragment stage reads
+(`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`,
+`v_texture_coords_1`, `v_color`, `v_model_scale`, `v_tangent`), plus any of
+your own varyings. A skinned mesh
+instead takes its model transform,
 `enable_skinning`, and `joint_texture_size` in `FrameInfo`, and adds the
 `joints` and `weights` attributes and a `joints_texture` sampler.
 

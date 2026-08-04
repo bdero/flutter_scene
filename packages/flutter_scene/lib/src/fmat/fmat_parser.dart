@@ -461,6 +461,8 @@ class _ValueParser {
         return _parseArray();
       case _Tok.ident:
         _advance();
+        if (t.value == 'true') return true;
+        if (t.value == 'false') return false;
         if (_cur.type == _Tok.lparen) {
           return _parseCall(t.value as String, t.line);
         }
@@ -517,6 +519,7 @@ const _reservedNames = <String>{
   'v_normal',
   'v_viewvector',
   'v_texture_coords',
+  'v_texture_coords_1',
   'v_color',
   'v_ray',
   'Sky',
@@ -559,6 +562,7 @@ FmatMaterial _build(
     'shading_model',
     'blending',
     'culling',
+    'depth_write',
     'parameters',
     'varyings',
     'attributes',
@@ -600,6 +604,11 @@ FmatMaterial _build(
     defaultValue: FmatCulling.back,
     fileName: fileName,
   );
+  final depthWriteValue = tree['depth_write'];
+  if (depthWriteValue != null && depthWriteValue is! bool) {
+    throw FmatException('`depth_write` must be a boolean.', fileName: fileName);
+  }
+  final depthWrite = depthWriteValue as bool? ?? false;
 
   final parameters = _buildParameters(tree['parameters'], fileName);
   final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
@@ -640,10 +649,10 @@ FmatMaterial _build(
   }
 
   // `engine_inputs` lists per-frame engine textures the shader samples:
-  // `scene_color` (the opaque-phase color snapshot) and `scene_depth` (the
-  // opaque linear depth). Lit surface materials only: the samplers and their
-  // gates ride the engine-lighting frame data, which unlit shaders and skies
-  // do not carry.
+  // `scene_color` (the accumulated background), `filtered_scene_color` (its
+  // roughness-filtered atlas), and `scene_depth` (the opaque linear depth).
+  // Lit surface materials only: the samplers and their gates ride the engine-
+  // lighting frame data, which unlit shaders and skies do not carry.
   final engineInputs = <String>[];
   final engineInputsRaw = tree['engine_inputs'];
   if (engineInputsRaw != null) {
@@ -655,16 +664,25 @@ FmatMaterial _build(
     }
     for (final entry in engineInputsRaw) {
       if (entry is _Ident &&
-          (entry.name == 'scene_color' || entry.name == 'scene_depth')) {
+          (entry.name == 'scene_color' ||
+              entry.name == 'filtered_scene_color' ||
+              entry.name == 'scene_depth')) {
         if (!engineInputs.contains(entry.name)) engineInputs.add(entry.name);
       } else {
         throw FmatException(
           'Unknown `engine_inputs` entry; supported: `scene_color`, '
-          '`scene_depth`.',
+          '`filtered_scene_color`, `scene_depth`.',
           fileName: fileName,
           line: entry is _Ident ? entry.line : null,
         );
       }
+    }
+    if (engineInputs.contains('filtered_scene_color') &&
+        !engineInputs.contains('scene_color')) {
+      throw FmatException(
+        '`filtered_scene_color` requires `scene_color`.',
+        fileName: fileName,
+      );
     }
     if (engineInputs.isNotEmpty && domain != FmatDomain.surface) {
       throw FmatException(
@@ -672,10 +690,10 @@ FmatMaterial _build(
         fileName: fileName,
       );
     }
-    if (engineInputs.isNotEmpty && shadingModel != FmatShadingModel.lit) {
+    if (engineInputs.isNotEmpty && shadingModel == FmatShadingModel.unlit) {
       throw FmatException(
-        '`engine_inputs` requires `shading_model: lit` (the samplers ride '
-        'the engine lighting frame data).',
+        '`engine_inputs` requires a lit shading model (the samplers ride the '
+        'engine lighting frame data).',
         fileName: fileName,
       );
     }
@@ -740,6 +758,7 @@ FmatMaterial _build(
     shadingModel: shadingModel,
     blending: blending,
     culling: culling,
+    depthWrite: depthWrite,
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,

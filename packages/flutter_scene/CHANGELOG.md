@@ -4,6 +4,10 @@
 * `ResourceGroup.track` scopes a load to the group's lifetime, so `dispose()` releases the claims it took. Previously `dispose()` only released the progress notifier despite the name.
 * Fixed `ResourceGroup` throwing when it was disposed while a tracked load was still in flight, which is what tearing down a level mid-load does.
 
+* `PhysicalMaterial` and glTF import support every ratified `KHR_materials_*` extension with scene-native property names.
+* Shader build hooks keep only the target platform backends in generated bundles.
+* `KHR_texture_transform` applies independently to every built-in and advanced material texture.
+* Geometry and material textures support both UV0 and UV1, including `textureInfo.texCoord` in both glTF import paths.
 * `ShaderMaterial` owns the vertex stage too. Pass a `vertexShader` (per `MeshVariant`, so skinned and shadow passes can differ) and set uniforms and textures on either stage with `ShaderStage`, so a hand-written shader pair needs no subclassing.
 * Geometry can declare its own pipeline vertex layout with `setVertexLayout`, and `VertexAttributeDescriptor`/`VertexBufferDescriptor`/`VertexLayoutDescriptor` are public.
 * Custom vertex attributes work on skinned meshes.
@@ -32,6 +36,10 @@
 * Reused large transient buffers across changing instance counts.
 * Translucent instanced meshes now sort as one batch, with instances ordered within it.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
+* Fixed anisotropy strength being ignored by environment lighting and using an isotropic visibility term for analytic lights.
+* Fixed anisotropic materials exposing primitive triangles by importing and interpolating authored tangents.
+* Vertex payload layouts include UV1 and tangents under versioned names, while older `.fscene` layouts upgrade when loaded.
+* Fixed runtime glTF normal maps building color-filtered mips, which skewed minified normals and washed out reflective materials.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.
 * Texture resources record what their pixels represent, so mip levels downsample by role (normal maps average as vectors, color in linear light).

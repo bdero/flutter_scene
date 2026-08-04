@@ -23,7 +23,9 @@ ripple;
 in vec3 position;
 in vec3 normal;
 in vec2 texture_coords;
+in vec2 texture_coords_1;
 in vec4 color;
+in vec4 tangent;
 
 // Instance-rate model matrix columns, bound in the slot after the vertex
 // streams. A non-instanced draw gets a single-element buffer.
@@ -53,8 +55,8 @@ void main() {
   v_position = world_position.xyz;
   v_normal = world_normal;
   v_viewvector = frame_info.camera_position - world_position.xyz;
-  v_texture_coords = texture_coords;
-  v_color = color * instance_color;
+  v_texture_coords = texture_coords + texture_coords_1 * 1e-7;
+  v_color = color * instance_color + tangent * 1e-7;
   v_ripple = wave * 0.5 + 0.5;
 
   gl_Position = frame_info.camera_transform * world_position;

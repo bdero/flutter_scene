@@ -26,6 +26,28 @@ struct MaterialInputs {
   float specular;
   // Ambient occlusion in [0, 1]: 1 unoccluded.
   float occlusion;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  // Advanced physical fields. These exist only in physical shader variants,
+  // so standard/unlit materials keep their original interface and cost.
+  vec3 specular_color;
+  float specular_weight;
+  float ior;
+  float clearcoat;
+  float clearcoat_roughness;
+  vec3 clearcoat_normal;
+  vec3 sheen_color;
+  float sheen_roughness;
+  float transmission;
+  vec3 transmission_color;
+  float diffuse_transmission;
+  vec3 diffuse_transmission_color;
+  float anisotropy;
+  vec2 anisotropy_direction;
+  vec2 anisotropy_uv;
+  float iridescence;
+  float iridescence_ior;
+  float iridescence_thickness;
+#endif
 };
 
 // A MaterialInputs with neutral defaults. A Surface() function that leaves a
@@ -41,6 +63,26 @@ MaterialInputs InitMaterialInputs() {
   material.roughness = 1.0;
   material.specular = 1.0;
   material.occlusion = 1.0;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  material.specular_color = vec3(1.0);
+  material.specular_weight = 1.0;
+  material.ior = 1.5;
+  material.clearcoat = 0.0;
+  material.clearcoat_roughness = 0.0;
+  material.clearcoat_normal = material.normal;
+  material.sheen_color = vec3(0.0);
+  material.sheen_roughness = 0.0;
+  material.transmission = 0.0;
+  material.transmission_color = vec3(0.0);
+  material.diffuse_transmission = 0.0;
+  material.diffuse_transmission_color = vec3(1.0);
+  material.anisotropy = 0.0;
+  material.anisotropy_direction = vec2(1.0, 0.0);
+  material.anisotropy_uv = GetUV0();
+  material.iridescence = 0.0;
+  material.iridescence_ior = 1.3;
+  material.iridescence_thickness = 0.0;
+#endif
   return material;
 }
 

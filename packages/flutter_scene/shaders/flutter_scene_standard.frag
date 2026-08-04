@@ -13,12 +13,39 @@ uniform sampler2D metallic_roughness_texture;
 uniform sampler2D normal_texture;
 uniform sampler2D occlusion_texture;
 
+uniform TextureTransforms {
+  vec4 base_color_transform;
+  vec4 base_color_rotation;
+  vec4 metallic_roughness_transform;
+  vec4 metallic_roughness_rotation;
+  vec4 normal_transform;
+  vec4 normal_rotation;
+  vec4 emissive_transform;
+  vec4 emissive_rotation;
+  vec4 occlusion_transform;
+  vec4 occlusion_rotation;
+}
+texture_transforms;
+
+vec2 TransformUv(vec2 uv, vec4 transform, vec4 rotation) {
+  vec2 scaled = uv * transform.zw;
+  return transform.xy +
+         vec2(rotation.x * scaled.x - rotation.y * scaled.y,
+              rotation.y * scaled.x + rotation.x * scaled.y);
+}
+
+vec2 TextureUv(vec4 rotation) { return GetUV(int(rotation.z + 0.5)); }
+
 // Fills the surface description for the standard glTF metallic-roughness
 // material from the FragInfo parameters and the material textures. The shared
 // lighting framework (material_lighting.glsl) consumes it.
 void Surface(inout MaterialInputs material) {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec4 base_color_srgb = texture(base_color_texture, v_texture_coords);
+  vec2 base_color_uv =
+      TransformUv(TextureUv(texture_transforms.base_color_rotation),
+                  texture_transforms.base_color_transform,
+                  texture_transforms.base_color_rotation);
+  vec4 base_color_srgb = texture(base_color_texture, base_color_uv);
   vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
                 frag_info.color.rgb;
   float alpha = base_color_srgb.a * vertex_color.a * frag_info.color.a;
@@ -36,27 +63,43 @@ void Surface(inout MaterialInputs material) {
 
   // Note: PerturbNormal needs the non-normalized view vector
   //       (camera_position - vertex_position).
-  vec3 normal = normalize(v_normal);
+  vec3 normal = GetWorldNormal();
   if (frag_info.has_normal_map > 0.5) {
+    vec2 normal_uv =
+        TransformUv(TextureUv(texture_transforms.normal_rotation),
+                    texture_transforms.normal_transform,
+                    texture_transforms.normal_rotation);
     normal = PerturbNormal(normal_texture, normal, v_viewvector,
-                           v_texture_coords, frag_info.normal_scale);
+                           normal_uv, frag_info.normal_scale);
   }
   material.normal = normal;
 
+  vec2 metallic_roughness_uv = TransformUv(
+      TextureUv(texture_transforms.metallic_roughness_rotation),
+      texture_transforms.metallic_roughness_transform,
+      texture_transforms.metallic_roughness_rotation);
   vec4 metallic_roughness =
-      texture(metallic_roughness_texture, v_texture_coords);
+      texture(metallic_roughness_texture, metallic_roughness_uv);
   material.metallic = clamp(metallic_roughness.b * frag_info.metallic_factor,
                             0.0, 1.0);
   material.roughness =
       clamp(metallic_roughness.g * frag_info.roughness_factor, kMinRoughness,
             1.0);
 
-  float occlusion = texture(occlusion_texture, v_texture_coords).r;
+  vec2 occlusion_uv =
+      TransformUv(TextureUv(texture_transforms.occlusion_rotation),
+                  texture_transforms.occlusion_transform,
+                  texture_transforms.occlusion_rotation);
+  float occlusion = texture(occlusion_texture, occlusion_uv).r;
   material.occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
 
-  material.emissive =
-      SRGBToLinear(texture(emissive_texture, v_texture_coords).rgb) *
-      frag_info.emissive_factor.rgb;
+  vec2 emissive_uv =
+      TransformUv(TextureUv(texture_transforms.emissive_rotation),
+                  texture_transforms.emissive_transform,
+                  texture_transforms.emissive_rotation);
+  material.emissive = SRGBToLinear(texture(emissive_texture, emissive_uv).rgb) *
+                      frag_info.emissive_factor.rgb *
+                      frag_info.emissive_factor.a;
 
   PrepareMaterial(material);
 }

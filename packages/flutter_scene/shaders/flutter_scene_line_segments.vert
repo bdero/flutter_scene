@@ -24,7 +24,10 @@ out vec3 v_position;
 out vec3 v_normal;
 out vec3 v_viewvector;
 out vec2 v_texture_coords;
+out vec2 v_texture_coords_1;
 out vec4 v_color;
+out vec3 v_model_scale;
+out vec4 v_tangent;
 
 void main() {
   vec3 world_start = (frame_info.model_transform * vec4(i_start, 1.0)).xyz;
@@ -58,5 +61,10 @@ void main() {
   v_normal = n;
   // u runs along the segment, v across the ribbon.
   v_texture_coords = vec2(corner.x, corner.y * 0.5 + 0.5);
+  v_texture_coords_1 = v_texture_coords;
   v_color = vec4(1.0);
+  v_model_scale = vec3(length(frame_info.model_transform[0].xyz),
+                       length(frame_info.model_transform[1].xyz),
+                       length(frame_info.model_transform[2].xyz));
+  v_tangent = vec4(0.0);
 }

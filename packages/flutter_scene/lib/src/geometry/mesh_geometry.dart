@@ -36,13 +36,14 @@ enum GeometryStorage {
 /// [GeometryBuilder].
 ///
 /// Callers supply attributes as independent typed arrays (positions,
-/// normals, texture coordinates, colors) and never pack vertex bytes by
+/// normals, texture coordinates, colors, tangents) and never pack vertex bytes by
 /// hand; the arrays are interleaved into the engine vertex layout
 /// internally.
 ///
 /// Pass [GeometryStorage.updatable] as the storage mode to create a
 /// geometry that can be mutated in place. [updatePositions],
-/// [updateNormals], [updateTexCoords], and [updateColors] replace one
+/// [updateNormals], [updateTexCoords], [updateTexCoords1], [updateColors], and
+/// [updateTangents] replace one
 /// attribute when the vertex count is unchanged; [rebuild] replaces
 /// everything and reallocates only when the data outgrows the spare
 /// capacity.
@@ -52,8 +53,8 @@ class MeshGeometry extends UnskinnedGeometry {
   ///
   /// [positions] is required and holds three floats per vertex. The
   /// optional attributes hold, per vertex, three floats for [normals],
-  /// two for [texCoords], and four for [colors]; each must match the
-  /// vertex count implied by [positions] when supplied. Absent
+  /// two for [texCoords] and [texCoords1], and four for [colors] and [tangents];
+  /// each must match the vertex count implied by [positions] when supplied. Absent
   /// attributes fall back to defaults: texture coordinate `(0, 0)` and
   /// color opaque white.
   ///
@@ -85,7 +86,9 @@ class MeshGeometry extends UnskinnedGeometry {
     required Float32List positions,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
     List<int>? indices,
     gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
     Aabb3? bounds,
@@ -134,7 +137,9 @@ class MeshGeometry extends UnskinnedGeometry {
         vertexCount,
         resolvedNormals,
         texCoords,
+        texCoords1,
         colors,
+        tangents,
         indices,
         bufferArena,
       );
@@ -145,7 +150,9 @@ class MeshGeometry extends UnskinnedGeometry {
         vertexCount,
         resolvedNormals,
         texCoords,
+        texCoords1,
         colors,
+        tangents,
       );
       _positionRing = _RingBufferStream(
         InterleavedLayoutAdapter.positionStreamBytes,
@@ -156,7 +163,13 @@ class MeshGeometry extends UnskinnedGeometry {
       _texCoordRing = _RingBufferStream(
         InterleavedLayoutAdapter.texCoordStreamBytes,
       );
+      _texCoord1Ring = _RingBufferStream(
+        InterleavedLayoutAdapter.texCoord1StreamBytes,
+      );
       _colorRing = _RingBufferStream(InterleavedLayoutAdapter.colorStreamBytes);
+      _tangentRing = _RingBufferStream(
+        InterleavedLayoutAdapter.tangentStreamBytes,
+      );
       _liveVertexCount = vertexCount;
       // Indices first, so the attribute upload can retain them for raycasting.
       if (_indexed) _uploadIndices(indices!);
@@ -183,7 +196,9 @@ class MeshGeometry extends UnskinnedGeometry {
       positions: data.positions,
       normals: data.normals,
       texCoords: data.texCoords,
+      texCoords1: data.texCoords1,
       colors: data.colors,
+      tangents: data.tangents,
       indices: data.indices,
       primitiveType: data.primitiveType,
       storage: storage,
@@ -210,7 +225,9 @@ class MeshGeometry extends UnskinnedGeometry {
       positions: data.positions,
       normals: data.normals,
       texCoords: data.texCoords,
+      texCoords1: data.texCoords1,
       colors: data.colors,
+      tangents: data.tangents,
       indices: data.indices,
     );
     for (final entry in data.customAttributes.entries) {
@@ -241,11 +258,13 @@ class MeshGeometry extends UnskinnedGeometry {
   // write-vs-read race). The index buffer stays single-buffered, since
   // topology-stable updates leave it untouched and only the slow rebuild path
   // rewrites it. [_streamViews] holds the currently bound view of each ring,
-  // in slot order (position, normal, texcoord, color).
+  // in slot order (position, normal, texcoord, color, tangent).
   late final _RingBufferStream _positionRing;
   late final _RingBufferStream _normalRing;
   late final _RingBufferStream _texCoordRing;
+  late final _RingBufferStream _texCoord1Ring;
   late final _RingBufferStream _colorRing;
+  late final _RingBufferStream _tangentRing;
   List<gpu.BufferView> _streamViews = const [];
 
   // The interleaved vertex bytes, built lazily from the structure-of-arrays
@@ -270,14 +289,16 @@ class MeshGeometry extends UnskinnedGeometry {
             vertexCount: _liveVertexCount,
             normals: _cpuNormals,
             texCoords: _cpuTexCoords,
+            texCoords1: _cpuTexCoords1,
             colors: _cpuColors,
+            tangents: _cpuTangents,
           ),
       indexBytes: _packedIndexBytes,
       indices32Bit: _packedIndices32Bit,
     );
   }
 
-  /// The de-interleaved (structure-of-arrays) vertex bytes (the four attribute
+  /// The de-interleaved (structure-of-arrays) vertex bytes
   /// streams concatenated) plus the packed index bytes, for re-emitting this
   /// geometry as a `.fscene` payload with the
   /// [InterleavedLayoutAdapter.unskinnedSoaLayout] layout. Built directly from
@@ -292,7 +313,9 @@ class MeshGeometry extends UnskinnedGeometry {
           position: _bytesOf(_cpuPositions),
           normal: _bytesOf(_cpuNormals),
           texCoord: _bytesOf(_cpuTexCoords),
+          texCoord1: _bytesOf(_cpuTexCoords1),
           color: _bytesOf(_cpuColors),
+          tangent: _bytesOf(_cpuTangents),
         ),
       ),
       indexBytes: _packedIndexBytes,
@@ -303,7 +326,9 @@ class MeshGeometry extends UnskinnedGeometry {
   Float32List _cpuPositions = Float32List(0);
   Float32List _cpuNormals = Float32List(0);
   Float32List _cpuTexCoords = Float32List(0);
+  Float32List _cpuTexCoords1 = Float32List(0);
   Float32List _cpuColors = Float32List(0);
+  Float32List _cpuTangents = Float32List(0);
 
   /// The number of vertices currently drawn.
   int get vertexCount => _liveVertexCount;
@@ -380,6 +405,24 @@ class MeshGeometry extends UnskinnedGeometry {
     );
   }
 
+  /// Replaces every secondary texture coordinate.
+  void updateTexCoords1(
+    Float32List texCoords1, {
+    int? dirtyStart,
+    int? dirtyCount,
+  }) {
+    _ensureUpdatable('updateTexCoords1');
+    _checkAttributeLength('texCoords1', texCoords1.length, 2);
+    _cpuTexCoords1 = Float32List.fromList(texCoords1);
+    _writeStream(
+      3,
+      _texCoord1Ring,
+      _cpuTexCoords1,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
+  }
+
   /// Replaces every vertex color, keeping the vertex count unchanged.
   ///
   /// Pass [dirtyStart]/[dirtyCount] to upload only a contiguous span; see
@@ -389,9 +432,29 @@ class MeshGeometry extends UnskinnedGeometry {
     _checkAttributeLength('colors', colors.length, 4);
     _cpuColors = Float32List.fromList(colors);
     _writeStream(
-      3,
+      4,
       _colorRing,
       _cpuColors,
+      dirtyStart: dirtyStart,
+      dirtyCount: dirtyCount,
+    );
+  }
+
+  /// Replaces every vertex tangent, keeping the vertex count unchanged.
+  ///
+  /// Each tangent contains its xyz direction and bitangent sign in w.
+  void updateTangents(
+    Float32List tangents, {
+    int? dirtyStart,
+    int? dirtyCount,
+  }) {
+    _ensureUpdatable('updateTangents');
+    _checkAttributeLength('tangents', tangents.length, 4);
+    _cpuTangents = Float32List.fromList(tangents);
+    _writeStream(
+      5,
+      _tangentRing,
+      _cpuTangents,
       dirtyStart: dirtyStart,
       dirtyCount: dirtyCount,
     );
@@ -410,7 +473,9 @@ class MeshGeometry extends UnskinnedGeometry {
     required Float32List positions,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
     List<int>? indices,
   }) {
     _ensureUpdatable('rebuild');
@@ -442,7 +507,15 @@ class MeshGeometry extends UnskinnedGeometry {
               )
             : null);
 
-    _setCpuStreams(positions, vertexCount, resolvedNormals, texCoords, colors);
+    _setCpuStreams(
+      positions,
+      vertexCount,
+      resolvedNormals,
+      texCoords,
+      texCoords1,
+      colors,
+      tangents,
+    );
     _liveVertexCount = vertexCount;
     // The rings reallocate themselves when the count outgrows their capacity.
     if (_indexed) _uploadIndices(indices!);
@@ -455,7 +528,9 @@ class MeshGeometry extends UnskinnedGeometry {
     int vertexCount,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
     List<int>? indices,
     GeometryBufferArena? bufferArena,
   ) {
@@ -464,7 +539,15 @@ class MeshGeometry extends UnskinnedGeometry {
     // both lazy serialization (interleaved on demand) and raycasting, and they
     // are uploaded straight to per-attribute GPU streams with no interleave.
     if (retainCpuData) {
-      _setCpuStreams(positions, vertexCount, normals, texCoords, colors);
+      _setCpuStreams(
+        positions,
+        vertexCount,
+        normals,
+        texCoords,
+        texCoords1,
+        colors,
+        tangents,
+      );
     }
     ByteData? indexBytes;
     var indexType = gpu.IndexType.int16;
@@ -480,7 +563,9 @@ class MeshGeometry extends UnskinnedGeometry {
       vertexCount: vertexCount,
       normals: retainCpuData ? _cpuNormals : normals,
       texCoords: retainCpuData ? _cpuTexCoords : texCoords,
+      texCoords1: retainCpuData ? _cpuTexCoords1 : texCoords1,
       colors: retainCpuData ? _cpuColors : colors,
+      tangents: retainCpuData ? _cpuTangents : tangents,
       indices: indexBytes,
       indexType: indexType,
       bufferArena: bufferArena,
@@ -493,8 +578,10 @@ class MeshGeometry extends UnskinnedGeometry {
       setRaycastAttributes(
         positions: _cpuPositions,
         texCoords: _cpuTexCoords,
+        texCoords1: _cpuTexCoords1,
         normals: _cpuNormals,
         colors: _cpuColors,
+        tangents: _cpuTangents,
         indices: indexBytes,
       );
     }
@@ -506,14 +593,16 @@ class MeshGeometry extends UnskinnedGeometry {
     }
   }
 
-  // Writes all four attribute streams into their rings and binds them.
+  // Writes all attribute streams into their rings and binds them.
   // Used at construction and on rebuild.
   void _uploadAllStreams() {
     _streamViews = [
       _positionRing.write(_bytesOf(_cpuPositions), _liveVertexCount),
       _normalRing.write(_bytesOf(_cpuNormals), _liveVertexCount),
       _texCoordRing.write(_bytesOf(_cpuTexCoords), _liveVertexCount),
+      _texCoord1Ring.write(_bytesOf(_cpuTexCoords1), _liveVertexCount),
       _colorRing.write(_bytesOf(_cpuColors), _liveVertexCount),
+      _tangentRing.write(_bytesOf(_cpuTangents), _liveVertexCount),
     ];
     setVertexStreams(_streamViews, _liveVertexCount);
     _refreshRaycastData();
@@ -566,8 +655,10 @@ class MeshGeometry extends UnskinnedGeometry {
     setRaycastAttributes(
       positions: _cpuPositions,
       texCoords: _cpuTexCoords,
+      texCoords1: _cpuTexCoords1,
       normals: _cpuNormals,
       colors: _cpuColors,
+      tangents: _cpuTangents,
       indices: _packedIndexBytes == null
           ? null
           : ByteData.sublistView(_packedIndexBytes!),
@@ -619,7 +710,9 @@ class MeshGeometry extends UnskinnedGeometry {
     int vertexCount,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
   ) {
     if (normals != null && normals.length != vertexCount * 3) {
       throw ArgumentError(
@@ -632,9 +725,20 @@ class MeshGeometry extends UnskinnedGeometry {
         '${vertexCount * 2}',
       );
     }
+    if (texCoords1 != null && texCoords1.length != vertexCount * 2) {
+      throw ArgumentError(
+        'texCoords1 has ${texCoords1.length} floats; expected '
+        '${vertexCount * 2}',
+      );
+    }
     if (colors != null && colors.length != vertexCount * 4) {
       throw ArgumentError(
         'colors has ${colors.length} floats; expected ${vertexCount * 4}',
+      );
+    }
+    if (tangents != null && tangents.length != vertexCount * 4) {
+      throw ArgumentError(
+        'tangents has ${tangents.length} floats; expected ${vertexCount * 4}',
       );
     }
     _cpuPositions = Float32List.fromList(positions);
@@ -644,9 +748,15 @@ class MeshGeometry extends UnskinnedGeometry {
     _cpuTexCoords = texCoords != null
         ? Float32List.fromList(texCoords)
         : Float32List(vertexCount * 2);
+    _cpuTexCoords1 = texCoords1 != null
+        ? Float32List.fromList(texCoords1)
+        : Float32List(vertexCount * 2);
     _cpuColors = colors != null
         ? Float32List.fromList(colors)
         : _filledStream(vertexCount, 4, const [1.0, 1.0, 1.0, 1.0]);
+    _cpuTangents = tangents != null
+        ? Float32List.fromList(tangents)
+        : Float32List(vertexCount * 4);
   }
 
   void _recomputeBounds() {
@@ -867,7 +977,7 @@ class _RingBufferStream {
 
 /// Assembles a [MeshGeometry] one vertex and triangle at a time.
 ///
-/// The attribute setters ([normal], [texCoord], [color]) are sticky:
+/// The attribute setters ([normal], [texCoord], [texCoord1], [color]) are sticky:
 /// each value applies to every [addVertex] call that follows until it is
 /// changed. [addVertex] returns the index of the added vertex; when
 /// [deduplicate] is set, a vertex equal to one already added is merged
@@ -896,12 +1006,14 @@ class GeometryBuilder {
   final List<double> _positions = [];
   final List<double> _normals = [];
   final List<double> _texCoords = [];
+  final List<double> _texCoords1 = [];
   final List<double> _colors = [];
   final List<int> _indices = [];
   final Map<String, int> _vertexLookup = {};
 
   Vector3 _normal = Vector3(0.0, 0.0, 1.0);
   Vector2 _texCoord = Vector2.zero();
+  Vector2 _texCoord1 = Vector2.zero();
   Vector4 _color = Vector4(1.0, 1.0, 1.0, 1.0);
   bool _normalsAuthored = false;
 
@@ -926,6 +1038,12 @@ class GeometryBuilder {
   /// call.
   GeometryBuilder texCoord(Vector2 value) {
     _texCoord = value.clone();
+    return this;
+  }
+
+  /// Sets the secondary texture coordinate for subsequent vertices.
+  GeometryBuilder texCoord1(Vector2 value) {
+    _texCoord1 = value.clone();
     return this;
   }
 
@@ -977,6 +1095,7 @@ class GeometryBuilder {
       vertexCount: vertexCount,
       normals: _resolveNormals(),
       texCoords: Float32List.fromList(_texCoords),
+      texCoords1: Float32List.fromList(_texCoords1),
       colors: Float32List.fromList(_colors),
     );
   }
@@ -995,6 +1114,7 @@ class GeometryBuilder {
       positions: Float32List.fromList(_positions),
       normals: _resolveNormals(),
       texCoords: Float32List.fromList(_texCoords),
+      texCoords1: Float32List.fromList(_texCoords1),
       colors: Float32List.fromList(_colors),
       indices: _indices.isEmpty ? null : List.of(_indices),
       storage: storage,
@@ -1024,6 +1144,9 @@ class GeometryBuilder {
     _texCoords
       ..add(_texCoord.x)
       ..add(_texCoord.y);
+    _texCoords1
+      ..add(_texCoord1.x)
+      ..add(_texCoord1.y);
     _colors
       ..add(_color.x)
       ..add(_color.y)
@@ -1035,6 +1158,7 @@ class GeometryBuilder {
     return '${position.x},${position.y},${position.z},'
         '${_normal.x},${_normal.y},${_normal.z},'
         '${_texCoord.x},${_texCoord.y},'
+        '${_texCoord1.x},${_texCoord1.y},'
         '${_color.x},${_color.y},${_color.z},${_color.w}';
   }
 }

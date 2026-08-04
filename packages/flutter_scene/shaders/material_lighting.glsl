@@ -237,18 +237,72 @@ float FetchPunctualIndex(int j) {
   return texture(punctual_index, uv).r;
 }
 
+// Widens a specular lobe to cover unresolved normal variation in one pixel.
+float SpecularAARoughness(vec3 normal, float roughness) {
+  if (frag_info.specular_aa_variance <= 0.0) {
+    return max(roughness, kMinRoughness);
+  }
+  vec3 d_normal_x = dFdx(normal);
+  vec3 d_normal_y = dFdy(normal);
+  float variance = frag_info.specular_aa_variance *
+                   (dot(d_normal_x, d_normal_x) +
+                    dot(d_normal_y, d_normal_y));
+  float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
+  float widened = clamp(roughness * roughness * roughness * roughness + kernel,
+                        0.0, 1.0);
+  return clamp(sqrt(sqrt(widened)), kMinRoughness, 1.0);
+}
+
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+// One light's independent dielectric clearcoat lobe. The complete underlying
+// material is attenuated by the view Fresnel only after every contribution has
+// been accumulated.
+vec3 EvaluateClearcoatLight(vec3 light_vector, vec3 radiance,
+                            vec3 coat_normal, vec3 camera_normal,
+                            float coat_roughness) {
+  float n_dot_l = max(dot(coat_normal, light_vector), 0.0);
+  if (n_dot_l <= 0.0) return vec3(0.0);
+
+  vec3 h = light_vector + camera_normal;
+  float h_len_sq = dot(h, h);
+  if (h_len_sq <= 1e-8) return vec3(0.0);
+  vec3 half_vector = h * inversesqrt(h_len_sq);
+  float n_dot_v = max(dot(coat_normal, camera_normal), 1e-4);
+  float distribution =
+      DistributionGGX(coat_normal, half_vector, coat_roughness);
+  float visibility = VisibilitySmithGGXCorrelated(
+      n_dot_v, n_dot_l, coat_roughness);
+  vec3 fresnel = FresnelSchlick(
+      max(dot(half_vector, camera_normal), 0.0), vec3(0.04));
+  return radiance * n_dot_l * distribution * visibility * fresnel;
+}
+#endif
+
 // One analytic light's Cook-Torrance contribution. `light_vector` points from
 // the surface toward the light (unit length); `radiance` is the light color
 // premultiplied by intensity and any distance/cone attenuation. Returns the
 // linear direct term; the caller multiplies in any shadow visibility. Shared by
 // the directional light and every punctual light so the BRDF lives in one place.
-vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
+vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
+                           vec3 radiance, vec3 normal,
                            vec3 camera_normal, vec3 albedo, float metallic,
                            float roughness, vec3 reflectance, float n_dot_v,
-                           float specular_scale) {
-  float n_dot_l = max(dot(normal, light_vector), 0.0);
+                           float specular_scale, vec3 anisotropic_tangent,
+                           vec3 anisotropic_bitangent) {
+  float signed_n_dot_l = dot(normal, light_vector);
+  float n_dot_l = max(signed_n_dot_l, 0.0);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 transmitted_diffuse = material.diffuse_transmission_color * albedo *
+                             (1.0 / kPi) * radiance *
+                             max(-signed_n_dot_l, 0.0) *
+                             material.diffuse_transmission;
+#endif
   if (n_dot_l <= 0.0) {
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    return transmitted_diffuse;
+#else
     return vec3(0.0);
+#endif
   }
   float n_dot_v_safe = max(n_dot_v, 1e-4);
   // Facing the light through a double-sided surface (a back-lit leaf whose
@@ -267,6 +321,22 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
     float distribution = DistributionGGX(normal, half_vector, roughness);
     float visibility =
         VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    float anisotropy = clamp(material.anisotropy, 0.0, 1.0);
+    if (anisotropy > 1e-4) {
+      float alpha_b = max(roughness * roughness, 0.001);
+      float alpha_t = mix(alpha_b, 1.0, anisotropy * anisotropy);
+      distribution = DistributionGGXAnisotropic(
+          normal, half_vector, anisotropic_tangent,
+          anisotropic_bitangent, alpha_t, alpha_b);
+      visibility = VisibilityGGXAnisotropic(
+          n_dot_l, n_dot_v_safe,
+          dot(anisotropic_tangent, camera_normal),
+          dot(anisotropic_bitangent, camera_normal),
+          dot(anisotropic_tangent, light_vector),
+          dot(anisotropic_bitangent, light_vector), alpha_t, alpha_b);
+    }
+#endif
     specular_fresnel =
         FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
     // `visibility` already folds in 1 / (4 * NoL * NoV).
@@ -274,7 +344,29 @@ vec3 EvaluateAnalyticLight(vec3 light_vector, vec3 radiance, vec3 normal,
   }
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
-  return (diffuse + specular) * radiance * n_dot_l;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  float specular_transmission =
+      clamp(material.transmission, 0.0, 1.0) * (1.0 - metallic);
+  float total_transmission = clamp(
+      material.diffuse_transmission + specular_transmission, 0.0, 1.0);
+  diffuse *= 1.0 - total_transmission;
+#endif
+  vec3 result = (diffuse + specular) * radiance * n_dot_l;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  if (dot(material.sheen_color, material.sheen_color) > 0.0) {
+    vec3 sheen_half = normalize(light_vector + camera_normal);
+    float n_dot_h = max(dot(normal, sheen_half), 0.0);
+    float sheen_distribution = DistributionCharlie(
+        max(material.sheen_roughness, 0.001), n_dot_h);
+    float sheen_visibility = VisibilitySheen(
+        n_dot_l, max(n_dot_v, 1e-4),
+        max(material.sheen_roughness, 0.001));
+    result += material.sheen_color * sheen_distribution * sheen_visibility *
+              radiance * n_dot_l;
+  }
+  result += transmitted_diffuse;
+#endif
+  return result;
 }
 
 // One shadow comparison tap for a spot: places the in-tile `uv` in the spot's
@@ -340,32 +432,23 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float alpha = material.base_color.a;
   vec3 normal = material.normal;
   float metallic = material.metallic;
-  float roughness = material.roughness;
+  float roughness = SpecularAARoughness(normal, material.roughness);
 
-  // Geometric specular antialiasing (Kaplanyan/Tokuyoshi). A
-  // normal map or high-curvature surface carries more normal detail than a
-  // pixel can resolve; the specular lobe turns that sub-pixel variation into
-  // shimmering highlights. Estimate the variation from the screen-space
-  // derivatives of the shading normal and widen the roughness so the lobe is
-  // averaged over the pixel's cone of normals. The condition is on a uniform,
-  // so the derivatives are evaluated under uniform control flow.
-  if (frag_info.specular_aa_variance > 0.0) {
-    vec3 d_normal_x = dFdx(normal);
-    vec3 d_normal_y = dFdy(normal);
-    float variance = frag_info.specular_aa_variance *
-                     (dot(d_normal_x, d_normal_x) + dot(d_normal_y, d_normal_y));
-    float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
-    // Widen in the squared-roughness (alpha) domain, then convert back:
-    // alpha = roughness^2, so roughness^4 is the alpha^2 the kernel adds to.
-    float widened = clamp(roughness * roughness * roughness * roughness + kernel,
-                          0.0, 1.0);
-    roughness = clamp(sqrt(sqrt(widened)), kMinRoughness, 1.0);
-  }
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 coat_normal = normalize(material.clearcoat_normal);
+  float coat_roughness = SpecularAARoughness(
+      coat_normal, material.clearcoat_roughness);
+  float coat_n_dot_v = clamp(abs(dot(coat_normal, normalize(v_viewvector))),
+                             0.0, 0.99);
+  vec3 coat_direct = vec3(0.0);
+  vec3 coat_ibl = vec3(0.0);
+#endif
 
   // Diffuse occlusion: the material's (baked) occlusion modulated by the
   // screen-space ambient occlusion when it is enabled. Occlusion only ever
   // affects indirect lighting, never the analytic direct light below.
   float occlusion = material.occlusion;
+#ifndef FLUTTER_SCENE_SKIP_SSAO
   if (frag_info.ssao_params.x > 0.5) {
     vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
     // TODO(flutter_scene): the occlusion target is stored top-down like the
@@ -377,10 +460,43 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
     occlusion = min(occlusion, texture(ssao_texture, screen_uv).r);
   }
+#endif
 
   vec3 camera_normal = normalize(v_viewvector);
 
-  vec3 reflectance = mix(vec3(0.04), albedo, metallic);
+  vec3 anisotropic_tangent = vec3(1.0, 0.0, 0.0);
+  vec3 anisotropic_bitangent = vec3(0.0, 1.0, 0.0);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 geometric_normal = GetWorldNormal();
+  mat3 tangent_frame = TangentFrame(
+      geometric_normal, -v_viewvector, material.anisotropy_uv);
+  vec3 tangent_candidate =
+      tangent_frame[0] * material.anisotropy_direction.x +
+      tangent_frame[1] * material.anisotropy_direction.y;
+  float tangent_length_squared = dot(tangent_candidate, tangent_candidate);
+  if (tangent_length_squared > 1e-10) {
+    anisotropic_tangent =
+        tangent_candidate * inversesqrt(tangent_length_squared);
+  } else if (abs(geometric_normal.z) < 0.999) {
+    anisotropic_tangent =
+        normalize(cross(vec3(0.0, 0.0, 1.0), geometric_normal));
+  } else {
+    anisotropic_tangent = vec3(1.0, 0.0, 0.0);
+  }
+  anisotropic_bitangent =
+      normalize(cross(geometric_normal, anisotropic_tangent));
+#endif
+
+  vec3 dielectric_reflectance = vec3(0.04);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  float ior_f0 = pow((max(material.ior, 1.0) - 1.0) /
+                         (max(material.ior, 1.0) + 1.0),
+                     2.0);
+  dielectric_reflectance = clamp(
+      vec3(ior_f0) * material.specular_color * material.specular_weight,
+      vec3(0.0), vec3(1.0));
+#endif
+  vec3 reflectance = mix(dielectric_reflectance, albedo, metallic);
 
   // 1 when the surface is facing the camera, 0 when it's perpendicular to the
   // camera.
@@ -393,11 +509,40 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // blotchy brightness aliasing. The reflection direction below still uses the
   // perturbed normal, so surface relief is preserved where it belongs.
   float n_dot_v_energy = max(dot(GetWorldNormal(), camera_normal), 0.0);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  if (material.iridescence > 0.0) {
+    reflectance = mix(
+        reflectance,
+        ThinFilmFresnel(reflectance, material.iridescence_ior,
+                        material.iridescence_thickness, n_dot_v_energy),
+        material.iridescence);
+  }
+#endif
 
   // reflect() needs the incident ray (camera -> surface); camera_normal
   // points surface -> camera, so negate it. Sampling the environment with
   // the un-negated vector would mirror reflections to the opposite side.
   vec3 reflection_normal = reflect(-camera_normal, normal);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  float anisotropy = clamp(material.anisotropy, 0.0, 1.0);
+  vec3 anisotropic_normal =
+      cross(cross(anisotropic_bitangent, camera_normal),
+            anisotropic_bitangent);
+  float anisotropic_normal_length_squared =
+      dot(anisotropic_normal, anisotropic_normal);
+  if (anisotropic_normal_length_squared > 1e-10) {
+    anisotropic_normal *= inversesqrt(anisotropic_normal_length_squared);
+  } else {
+    anisotropic_normal = normal;
+  }
+  float bend = 1.0 - anisotropy * (1.0 - roughness);
+  bend *= bend;
+  bend *= bend;
+  vec3 bent_normal = normalize(mix(anisotropic_normal, normal, bend));
+  reflection_normal = reflect(-camera_normal, bent_normal);
+  reflection_normal = normalize(
+      mix(reflection_normal, bent_normal, roughness * roughness));
+#endif
 
   // Roughness-dependent Fresnel reflectance for the indirect specular lobe.
   vec3 k_S = FresnelSchlickRoughness(n_dot_v_energy, reflectance, roughness);
@@ -408,6 +553,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 env_reflection = environment_transform * reflection_normal;
   vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 0.0),
                         vec3(0.0));
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 transmitted_irradiance = max(
+      EvaluateDiffuseSH(sh_coefficients, -env_normal, 0.0), vec3(0.0));
+#endif
   vec3 prefiltered_color =
       SampleRadianceEnv(prefiltered_radiance, prefiltered_radiance_cube,
                         env_reflection, roughness);
@@ -421,9 +570,18 @@ vec4 EvaluateLighting(MaterialInputs material) {
         SampleRadianceEnv(prefiltered_radiance_b, prefiltered_radiance_cube_b,
                           env_reflection, roughness);
     irradiance = mix(irradiance, irradiance_b, env_blend);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    vec3 transmitted_irradiance_b = max(
+        EvaluateDiffuseSH(sh_coefficients, -env_normal, 1.0), vec3(0.0));
+    transmitted_irradiance = mix(
+        transmitted_irradiance, transmitted_irradiance_b, env_blend);
+#endif
     prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
   }
   irradiance *= frag_info.environment_intensity;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  transmitted_irradiance *= frag_info.environment_intensity;
+#endif
   prefiltered_color *= frag_info.environment_intensity;
 
   // Split-sum DFG terms (Karis '13) from the RGBA16F environment-BRDF LUT
@@ -442,6 +600,13 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 F_avg = reflectance + (1.0 - reflectance) / 21.0;
   vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
   vec3 diffuse_color = albedo * (1.0 - metallic);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  float specular_transmission =
+      clamp(material.transmission, 0.0, 1.0) * (1.0 - metallic);
+  float total_transmission = clamp(
+      material.diffuse_transmission + specular_transmission, 0.0, 1.0);
+  diffuse_color *= 1.0 - total_transmission;
+#endif
   vec3 k_D = diffuse_color * (1.0 - FssEss + FmsEms);
 
   vec3 indirect_specular = FssEss * prefiltered_color * material.specular;
@@ -490,17 +655,49 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ambient =
       (indirect_diffuse * occlusion + indirect_specular * specular_occlusion) *
       ambient_shadow;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  ambient += material.diffuse_transmission_color * albedo *
+             (1.0 - metallic) * material.diffuse_transmission *
+             transmitted_irradiance * occlusion * ambient_shadow;
+  if (material.clearcoat > 0.0) {
+    vec3 coat_reflection = reflect(-camera_normal, coat_normal);
+    vec3 coat_prefiltered = SampleRadianceEnv(
+        prefiltered_radiance, prefiltered_radiance_cube,
+        environment_transform * coat_reflection, coat_roughness);
+    if (env_blend > 0.0) {
+      vec3 coat_prefiltered_b = SampleRadianceEnv(
+          prefiltered_radiance_b, prefiltered_radiance_cube_b,
+          environment_transform * coat_reflection, coat_roughness);
+      coat_prefiltered = mix(coat_prefiltered, coat_prefiltered_b, env_blend);
+    }
+    vec2 coat_ab = texture(
+        brdf_lut, vec2(coat_n_dot_v, min(coat_roughness, 0.99))).rg;
+    coat_ibl = coat_prefiltered *
+               (vec3(0.04) * coat_ab.x + coat_ab.y) *
+               frag_info.environment_intensity;
+  }
+  ambient += material.sheen_color * irradiance *
+             (0.25 + 0.75 * (1.0 - n_dot_v_energy)) *
+             (1.0 - 0.5 * material.sheen_roughness);
+#endif
 
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
   // ambient term). The shadowed first directional light shades here; its shadow
   // visibility multiplies the whole term.
   vec3 direct = vec3(0.0);
   if (frag_info.has_directional_light > 0.5) {
-    direct = EvaluateAnalyticLight(light_vector,
+    direct = EvaluateAnalyticLight(material, light_vector,
                                    frag_info.directional_light_color.rgb, normal,
                                    camera_normal, albedo, metallic, roughness,
-                                   reflectance, n_dot_v, material.specular) *
+                                   reflectance, n_dot_v, material.specular,
+                                   anisotropic_tangent,
+                                   anisotropic_bitangent) *
              shadow;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    coat_direct += EvaluateClearcoatLight(
+        light_vector, frag_info.directional_light_color.rgb, coat_normal,
+        camera_normal, coat_roughness) * shadow;
+#endif
   }
 
   // Additional analytic lights (point, spot, and directional lights past the
@@ -569,9 +766,15 @@ vec4 EvaluateLighting(MaterialInputs material) {
         }
       }
     }
-    direct += EvaluateAnalyticLight(punctual_light_vector, radiance, normal,
-                                    camera_normal, albedo, metallic, roughness,
-                                    reflectance, n_dot_v, material.specular);
+    direct += EvaluateAnalyticLight(
+        material, punctual_light_vector, radiance, normal, camera_normal,
+        albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
+        anisotropic_tangent, anisotropic_bitangent);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    coat_direct += EvaluateClearcoatLight(
+        punctual_light_vector, radiance, coat_normal, camera_normal,
+        coat_roughness);
+#endif
   }
 
   vec3 emissive = material.emissive;
@@ -583,6 +786,16 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float direct_occlusion = mix(
       1.0, occlusion, clamp(frag_info.ssao_lighting.x, 0.0, 1.0));
   vec3 out_color = ambient + direct * direct_occlusion + emissive;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 transmitted_light = material.transmission_color * albedo *
+                           (vec3(1.0) - clamp(FssEss, 0.0, 1.0));
+  out_color += transmitted_light * specular_transmission;
+  float coat_fresnel = FresnelSchlick(
+      coat_n_dot_v, vec3(0.04)).r;
+  float coat_weight = clamp(material.clearcoat, 0.0, 1.0);
+  out_color = out_color * (1.0 - coat_weight * coat_fresnel) +
+              (coat_direct + coat_ibl) * coat_weight;
+#endif
 
   // Sky-colored fog: when active, sample the environment in the view direction
   // (rotated by the same environment_transform, cross-faded like the IBL, and

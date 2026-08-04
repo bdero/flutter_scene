@@ -39,6 +39,7 @@ MeshData _quad() {
       0, 1, 0,
     ]),
     texCoords: Float32List.fromList([0, 0, 1, 0, 1, 1, 0, 1]),
+    texCoords1: Float32List.fromList([0.1, 0.2, 0.9, 0.2, 0.9, 0.8, 0.1, 0.8]),
     indices: [0, 1, 2, 0, 2, 3],
   );
 }
@@ -107,6 +108,10 @@ void main() {
       // Texture coordinates carry through per corner.
       expect(out.texCoords!.sublist(0, 2), [0, 0]);
       expect(out.texCoords!.sublist(10, 12), [0, 1]);
+      expect(out.texCoords1![0], closeTo(0.1, 1e-6));
+      expect(out.texCoords1![1], closeTo(0.2, 1e-6));
+      expect(out.texCoords1![10], closeTo(0.1, 1e-6));
+      expect(out.texCoords1![11], closeTo(0.8, 1e-6));
     });
 
     test('assigns the face normal to every corner', () {
@@ -224,6 +229,9 @@ void main() {
       expect(merged.indices, hasLength(12));
       expect(merged.indices!.sublist(6, 9), [4, 5, 6]);
       expect(merged.positions.length, 24);
+      expect(merged.texCoords1, hasLength(16));
+      expect(merged.texCoords1![8], closeTo(0.1, 1e-6));
+      expect(merged.texCoords1![9], closeTo(0.2, 1e-6));
     });
 
     test('synthesizes indices for unindexed parts', () {

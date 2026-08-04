@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
@@ -5,7 +7,7 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart'
-    show AlphaMode;
+    show AlphaMode, TextureTransform;
 
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -39,6 +41,14 @@ class UnlitMaterial extends Material {
   /// (or a render texture with no completed frame yet) samples a 1×1 white
   /// placeholder so the final color reduces to [baseColorFactor].
   TextureSource? baseColorTexture;
+
+  /// UV transform applied to [baseColorTexture].
+  TextureTransform baseColorTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [baseColorTexture].
+  int baseColorTextureTexCoord = 0;
+
+  static final Float32List _textureTransformScratch = Float32List(8);
 
   /// How the material's alpha is interpreted. [AlphaMode.opaque] ignores
   /// alpha; [AlphaMode.blend] routes the material through the depth-sorted
@@ -77,6 +87,18 @@ class UnlitMaterial extends Material {
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
+    );
+    final transform = _textureTransformScratch
+      ..[0] = baseColorTextureTransform.offset.x
+      ..[1] = baseColorTextureTransform.offset.y
+      ..[2] = baseColorTextureTransform.scale.x
+      ..[3] = baseColorTextureTransform.scale.y
+      ..[4] = math.cos(baseColorTextureTransform.rotation)
+      ..[5] = math.sin(baseColorTextureTransform.rotation)
+      ..[6] = baseColorTextureTexCoord.clamp(0, 1).toDouble();
+    pass.bindUniform(
+      fragmentShader.getUniformSlot('TextureTransform'),
+      transientsBuffer.emplace(ByteData.sublistView(transform)),
     );
     pass.bindTexture(
       fragmentShader.getUniformSlot('base_color_texture'),

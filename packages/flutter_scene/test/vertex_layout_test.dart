@@ -22,7 +22,7 @@ void main() {
       final layout = kUnskinnedInstancedLayout.toGpuLayout();
       expect(layout.buffers, hasLength(2));
 
-      // Slot 0: the interleaved 48-byte vertex stream.
+      // Slot 0 is the interleaved vertex stream.
       final vertex = layout.buffers[0];
       expect(vertex.strideInBytes, kUnskinnedPerVertexSize);
       expect(vertex.stepMode, gpu.VertexStepMode.vertex);
@@ -32,7 +32,9 @@ void main() {
           ('position', gpu.VertexFormat.float32x3, 0),
           ('normal', gpu.VertexFormat.float32x3, 12),
           ('texture_coords', gpu.VertexFormat.float32x2, 24),
-          ('color', gpu.VertexFormat.float32x4, 32),
+          ('texture_coords_1', gpu.VertexFormat.float32x2, 32),
+          ('color', gpu.VertexFormat.float32x4, 40),
+          ('tangent', gpu.VertexFormat.float32x4, 56),
         ],
       );
 
@@ -53,8 +55,8 @@ void main() {
     });
 
     test('vertex attributes match the interleaved packer byte for byte', () {
-      // The packer writes position at floats 0-2, normal 3-5, texcoord 6-7,
-      // and color 8-11 of each 12-float vertex; the canonical layout's slot-0
+      // The packer writes position, normal, both UV sets, color, then tangent. The
+      // canonical layout's slot-0
       // attribute byte offsets and formats must describe exactly that, or the
       // declared layout and the packed bytes would disagree.
       final vertex = kUnskinnedInstancedLayout.toGpuLayout().buffers[0];
@@ -78,7 +80,7 @@ void main() {
       final layout = kUnskinnedPositionOnlyLayout.toGpuLayout();
       expect(layout.buffers, hasLength(2));
 
-      // Slot 0: still the 48-byte interleaved stride, but only position is
+      // Slot 0 keeps the full interleaved stride, but only position is
       // declared, so the input assembler fetches only position per vertex.
       final vertex = layout.buffers[0];
       expect(vertex.strideInBytes, kUnskinnedPerVertexSize);
@@ -118,14 +120,16 @@ void main() {
   group('structure-of-arrays layouts', () {
     test('color layout is one tight buffer per attribute plus instance', () {
       final layout = kUnskinnedSoAColorLayout.toGpuLayout();
-      expect(layout.buffers, hasLength(5));
+      expect(layout.buffers, hasLength(7));
       expect(
         layout.buffers.map((b) => (b.strideInBytes, b.attributes.first.name)),
         [
           (12, 'position'),
           (12, 'normal'),
           (8, 'texture_coords'),
+          (8, 'texture_coords_1'),
           (16, 'color'),
+          (16, 'tangent'),
           (80, 'model_transform_0'),
         ],
       );

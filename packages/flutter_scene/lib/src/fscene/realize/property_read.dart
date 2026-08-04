@@ -32,6 +32,16 @@ bool readBool(Map<String, PropertyValue> props, String key, bool fallback) {
   return v is BoolValue ? v.value : fallback;
 }
 
+/// Reads a [Vector2] property (a copy), or returns a copy of [fallback].
+Vector2 readVec2(
+  Map<String, PropertyValue> props,
+  String key,
+  Vector2 fallback,
+) {
+  final v = props[key];
+  return v is Vec2Value ? v.value.clone() : fallback.clone();
+}
+
 /// Reads a [Vector3] property (a copy), or returns a copy of [fallback].
 Vector3 readVec3(
   Map<String, PropertyValue> props,

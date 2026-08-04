@@ -46,6 +46,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// in vec3 v_normal;          // world space (not necessarily unit)
 /// in vec3 v_viewvector;      // camera_position - vertex_position, world space
 /// in vec2 v_texture_coords;
+/// in vec2 v_texture_coords_1;
 /// in vec4 v_color;           // per-vertex color, white when absent
 /// ```
 ///

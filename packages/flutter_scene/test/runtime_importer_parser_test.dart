@@ -120,6 +120,62 @@ void main() {
       });
     }
   });
+
+  test('primitive packing preserves TEXCOORD_0 and TEXCOORD_1', () {
+    final source = Float32List.fromList([
+      // Positions.
+      0, 0, 0, 0, 1, 0, 1, 0, 0,
+      // Normals.
+      0, 0, 1, 0, 0, 1, 0, 0, 1,
+      // UV0.
+      0, 0, 0.5, 0.5, 1, 1,
+      // UV1.
+      0.25, 0.75, 0.5, 0.25, 0.75, 0.5,
+      // Tangents.
+      1, 0, 0, 1, 0, 1, 0, -1, -1, 0, 0, 1,
+    ]);
+    final views = <GltfBufferView>[
+      GltfBufferView(buffer: 0, byteOffset: 0, byteLength: 36),
+      GltfBufferView(buffer: 0, byteOffset: 36, byteLength: 36),
+      GltfBufferView(buffer: 0, byteOffset: 72, byteLength: 24),
+      GltfBufferView(buffer: 0, byteOffset: 96, byteLength: 24),
+      GltfBufferView(buffer: 0, byteOffset: 120, byteLength: 48),
+    ];
+    GltfAccessor accessor(int view, GltfAccessorType type) => GltfAccessor(
+      componentType: GltfComponentType.float,
+      count: 3,
+      type: type,
+      bufferView: view,
+    );
+    final packed = packGltfPrimitive(
+      primitive: GltfMeshPrimitive(
+        attributes: const {
+          'POSITION': 0,
+          'NORMAL': 1,
+          'TEXCOORD_0': 2,
+          'TEXCOORD_1': 3,
+          'TANGENT': 4,
+        },
+      ),
+      accessors: [
+        accessor(0, GltfAccessorType.vec3),
+        accessor(1, GltfAccessorType.vec3),
+        accessor(2, GltfAccessorType.vec2),
+        accessor(3, GltfAccessorType.vec2),
+        accessor(4, GltfAccessorType.vec4),
+      ],
+      bufferViews: views,
+      bufferData: source.buffer.asUint8List(),
+    );
+
+    final vertices = Float32List.sublistView(packed.vertexBytes);
+    expect(vertices.sublist(6, 10), [0, 0, 0.25, 0.75]);
+    expect(vertices.sublist(18 + 6, 18 + 10), [0.5, 0.5, 0.5, 0.25]);
+    expect(vertices.sublist(36 + 6, 36 + 10), [1, 1, 0.75, 0.5]);
+    expect(vertices.sublist(14, 18), [1, 0, 0, 1]);
+    expect(vertices.sublist(18 + 14, 18 + 18), [0, 1, 0, -1]);
+    expect(vertices.sublist(36 + 14, 36 + 18), [-1, 0, 0, 1]);
+  });
 }
 
 /// Locates the examples/assets_src/ directory in the workspace, regardless of

@@ -43,9 +43,12 @@ void main() {
   VertexInputs vertex;
   vertex.position = position;
   vertex.normal = vec3(0.0);
+  vertex.tangent = vec4(0.0);
   vertex.world_position = model_position.xyz;
   vertex.world_normal = vec3(0.0);
+  vertex.world_tangent = vec4(0.0);
   vertex.uv = vec2(0.0);
+  vertex.uv1 = vec2(0.0);
   vertex.color = vec4(0.0);
   vertex.camera_position = frame_info.camera_position;
   Vertex(vertex);
@@ -57,7 +60,12 @@ void main() {
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vec3(0.0);
   v_texture_coords = vec2(0.0);
+  v_texture_coords_1 = vec2(0.0);
   v_color = vec4(0.0);
+  v_model_scale = vec3(length(model_transform[0].xyz),
+                       length(model_transform[1].xyz),
+                       length(model_transform[2].xyz));
+  v_tangent = vec4(0.0);
 
 #ifdef HAS_MATERIAL_VERTEX
   // Keep the position input and the instance-rate model_transform columns

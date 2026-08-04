@@ -17,6 +17,7 @@ import 'package:example_app/example_animation.dart';
 import 'example_accessibility.dart';
 import 'example_audio.dart';
 import 'example_auto_exposure.dart';
+import 'example_clearcoat.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -36,6 +37,7 @@ import 'example_physics_box3d.dart';
 import 'example_physics_car.dart';
 import 'example_render_target.dart';
 import 'example_settings.dart';
+import 'example_chrome.dart';
 import 'example_shapes.dart';
 import 'example_explosion.dart';
 import 'example_particles.dart';
@@ -107,6 +109,7 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
+  'Stress Tests': () => ExampleSettings()..directionalLightEnabled = false,
   // A cinematic grade for the dark materialize stage: no key light (the
   // effect's own emissives and the environment carry it), bloom for the hot
   // seam and shard glows, and a subtle lens treatment.
@@ -165,6 +168,7 @@ class _MyAppState extends State<MyApp> {
     // is no app-level ticker here.
     examples = {
       'Car': (context) => const ExampleCar(),
+      'Clearcoat': (context) => const ExampleClearcoat(),
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
       'Multiplayer': (context) => const ExampleMultiplayer(),
@@ -286,32 +290,42 @@ class _MyAppState extends State<MyApp> {
               children: [
                 SizedBox.expand(child: examples[selectedExample]!(context)),
                 // Example picker (top-left, overlaid on the scene).
-                SafeArea(
-                  minimum: const EdgeInsets.all(8),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: _ExamplePicker(
-                      examples: examples.keys.toList(growable: false),
-                      selected: selectedExample,
-                      onSelected: (next) {
-                        setState(() {
-                          selectedExample = next;
-                          // Every example runs on its own settings instance;
-                          // examples listed in settingsDefaults start from
-                          // their own defaults instead of the stock ones.
-                          resetExampleSettings(settingsDefaults[next]);
-                        });
-                      },
+                ValueListenableBuilder<bool>(
+                  valueListenable: exampleChromeVisible,
+                  builder: (context, visible, child) =>
+                      Offstage(offstage: !visible, child: child),
+                  child: SafeArea(
+                    minimum: const EdgeInsets.all(8),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: _ExamplePicker(
+                        examples: examples.keys.toList(growable: false),
+                        selected: selectedExample,
+                        onSelected: (next) {
+                          setState(() {
+                            selectedExample = next;
+                            // Every example runs on its own settings instance;
+                            // examples listed in settingsDefaults start from
+                            // their own defaults instead of the stock ones.
+                            resetExampleSettings(settingsDefaults[next]);
+                          });
+                        },
+                      ),
                     ),
                   ),
                 ),
                 // Settings sidebar (top-right): global post-processing
                 // controls applied to whichever example is on screen.
-                const SafeArea(
-                  minimum: EdgeInsets.all(8),
-                  child: Align(
-                    alignment: Alignment.topRight,
-                    child: _SettingsSidebar(),
+                ValueListenableBuilder<bool>(
+                  valueListenable: exampleChromeVisible,
+                  builder: (context, visible, child) =>
+                      Offstage(offstage: !visible, child: child),
+                  child: const SafeArea(
+                    minimum: EdgeInsets.all(8),
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: _SettingsSidebar(),
+                    ),
                   ),
                 ),
               ],

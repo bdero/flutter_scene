@@ -400,6 +400,7 @@ class MeshCodec extends ComponentCodec {
     final properties = <String, PropertyValue>{
       'baseColor': _color(m.baseColorFactor),
       'emissive': _color(m.emissiveFactor),
+      'emissiveStrength': DoubleValue(m.emissiveStrength),
       'metallic': DoubleValue(m.metallicFactor),
       'roughness': DoubleValue(m.roughnessFactor),
       'occlusionStrength': DoubleValue(m.occlusionStrength),
@@ -415,11 +416,23 @@ class MeshCodec extends ComponentCodec {
       m.baseColorTextureSource,
       context,
     );
+    _textureTransformProperty(
+      properties,
+      'baseColorTextureTransform',
+      m.baseColorTextureTransform,
+      m.baseColorTextureTexCoord,
+    );
     _textureProperty(
       properties,
       'metallicRoughnessTexture',
       m.metallicRoughnessTextureSource,
       context,
+    );
+    _textureTransformProperty(
+      properties,
+      'metallicRoughnessTextureTransform',
+      m.metallicRoughnessTextureTransform,
+      m.metallicRoughnessTextureTexCoord,
     );
     _textureProperty(
       properties,
@@ -427,17 +440,35 @@ class MeshCodec extends ComponentCodec {
       m.normalTextureSource,
       context,
     );
+    _textureTransformProperty(
+      properties,
+      'normalTextureTransform',
+      m.normalTextureTransform,
+      m.normalTextureTexCoord,
+    );
     _textureProperty(
       properties,
       'occlusionTexture',
       m.occlusionTextureSource,
       context,
     );
+    _textureTransformProperty(
+      properties,
+      'occlusionTextureTransform',
+      m.occlusionTextureTransform,
+      m.occlusionTextureTexCoord,
+    );
     _textureProperty(
       properties,
       'emissiveTexture',
       m.emissiveTextureSource,
       context,
+    );
+    _textureTransformProperty(
+      properties,
+      'emissiveTextureTransform',
+      m.emissiveTextureTransform,
+      m.emissiveTextureTexCoord,
     );
     return context.document
         .addResource(
@@ -462,6 +493,12 @@ class MeshCodec extends ComponentCodec {
       m.baseColorTextureSource,
       context,
     );
+    _textureTransformProperty(
+      properties,
+      'baseColorTextureTransform',
+      m.baseColorTextureTransform,
+      m.baseColorTextureTexCoord,
+    );
     return context.document
         .addResource(
           MaterialResource(
@@ -474,6 +511,21 @@ class MeshCodec extends ComponentCodec {
   }
 
   ColorValue _color(Vector4 v) => ColorValue(v.x, v.y, v.z, v.w);
+
+  void _textureTransformProperty(
+    Map<String, PropertyValue> properties,
+    String key,
+    TextureTransform transform,
+    int texCoord,
+  ) {
+    if (transform.isIdentity && texCoord == 0) return;
+    properties[key] = MapValue({
+      'offset': Vec2Value(transform.offset.clone()),
+      'scale': Vec2Value(transform.scale.clone()),
+      'rotation': DoubleValue(transform.rotation),
+      'texCoord': IntValue(texCoord.clamp(0, 1)),
+    });
+  }
 
   // [source] is the slot's raw value: a gpu.Texture, a live RenderTexture
   // (serialized from its live state by id), or null.

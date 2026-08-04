@@ -1,6 +1,5 @@
 import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
-import 'package:flutter_gpu_shaders/build.dart';
 import 'package:flutter_scene/build_hooks.dart';
 
 void main(List<String> args) {
@@ -37,11 +36,11 @@ void main(List<String> args) {
       textures: ['assets/ground_grid.png'],
       assetMode: TextureAssetMode.dataAssetsRequired,
     );
-    await buildShaderBundleJson(
+    await buildTargetShaderBundleJson(
       buildInput: config,
       buildOutput: output,
       manifestFileName: 'shaders/example.shaderbundle.json',
-      assetMode: ShaderBundleAssetMode.dataAssetsRequired,
+      assetMode: TargetShaderBundleAssetMode.dataAssetsRequired,
       // Match the engine bundle's GLES dialect (see the flutter_scene hook).
       glesLanguageVersion: 300,
     );

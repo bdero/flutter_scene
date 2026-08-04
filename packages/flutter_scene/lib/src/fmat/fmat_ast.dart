@@ -20,9 +20,13 @@ enum FmatShadingModel {
   /// surface description; the framework produces the lit color.
   lit,
 
+  /// Advanced layered physical lighting. Uses the lit engine bindings and
+  /// enables the physical fields on `MaterialInputs`.
+  physical,
+
   /// No lighting. The material's `Surface()` writes the final color into
   /// `base_color`; the framework outputs it premultiplied. Use for stylized
-  /// or self-lit effects (matches Godot's `unshaded`).
+  /// or self-lit effects.
   unlit,
 }
 
@@ -174,6 +178,7 @@ class FmatMaterial {
     required this.shadingModel,
     required this.blending,
     required this.culling,
+    this.depthWrite = false,
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
@@ -196,6 +201,7 @@ class FmatMaterial {
   final FmatShadingModel shadingModel;
   final FmatBlending blending;
   final FmatCulling culling;
+  final bool depthWrite;
   final List<FmatParameter> parameters;
 
   /// The verbatim contents of the code block (`fragment { }` for a surface

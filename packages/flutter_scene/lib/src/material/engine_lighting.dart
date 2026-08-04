@@ -139,8 +139,9 @@ class EngineLightingUniforms {
     fragInfo[15] = lighting.spotShadowSoftness;
     // scene_inputs [16..19] (more of the unused SH region): gates for the
     // material scene-input samplers (bound only into materials that declare
-    // engine_inputs) and the engine time. The opaque snapshot exists only
-    // while translucent draws encode, so opaque draws read 0 for x.
+    // engine_inputs) and the engine time. The accumulated snapshot exists only
+    // while a screen-reading translucent batch encodes, so earlier draws read
+    // 0 for x.
     fragInfo[16] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
     fragInfo[17] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
     fragInfo[18] = lighting.time;
@@ -157,6 +158,29 @@ class EngineLightingUniforms {
       fragInfo[22] = forward.z;
     }
     fragInfo[23] = lighting.tanHalfFovY;
+    // camera_right/camera_up [24..31]: the remaining camera basis axes used
+    // to project a world-space refraction exit back into scene-color UV.
+    final right = lighting.cameraRight;
+    if (right != null) {
+      fragInfo[24] = right.x;
+      fragInfo[25] = right.y;
+      fragInfo[26] = right.z;
+    }
+    final up = lighting.cameraUp;
+    if (up != null) {
+      fragInfo[28] = up.x;
+      fragInfo[29] = up.y;
+      fragInfo[30] = up.z;
+    }
+    // transmission_info [32..35]: the filtered scene-color atlas is packed
+    // into unused SH storage so the shared uniform block does not grow.
+    final filtered = lighting.filteredSceneColor;
+    fragInfo[32] = filtered != null ? 1.0 : 0.0;
+    fragInfo[33] = lighting.transmissionFilterBandCount.toDouble();
+    if (filtered != null) {
+      fragInfo[34] = filtered.width > 0 ? 1.0 / filtered.width : 0.0;
+      fragInfo[35] = filtered.height > 0 ? 1.0 / filtered.height : 0.0;
+    }
   }
 
   /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
@@ -350,8 +374,9 @@ class EngineLightingUniforms {
     gpu.RenderPass pass,
     gpu.Shader shader,
     Lighting lighting,
-    EnvironmentMap env,
-  ) {
+    EnvironmentMap env, {
+    bool bindSsao = true,
+  }) {
     if (_memoPassIs(pass)) {
       final previous = _texturesMemo[shader];
       if (previous != null &&
@@ -410,11 +435,13 @@ class EngineLightingUniforms {
     // occlusion buffer upsamples smoothly; a white placeholder makes the
     // sample a no-op when occlusion is off. The shader gates it on
     // ssao_params.x regardless.
-    pass.bindTexture(
-      shader.getUniformSlot('ssao_texture'),
-      Material.whitePlaceholder(lighting.ssaoMap),
-      sampler: _clampLinearSampler,
-    );
+    if (bindSsao) {
+      pass.bindTexture(
+        shader.getUniformSlot('ssao_texture'),
+        Material.whitePlaceholder(lighting.ssaoMap),
+        sampler: _clampLinearSampler,
+      );
+    }
   }
 
   /// Binds the material scene-input samplers for a material that declared
@@ -432,6 +459,13 @@ class EngineLightingUniforms {
       pass.bindTexture(
         shader.getUniformSlot('scene_opaque_color'),
         Material.whitePlaceholder(lighting.opaqueSceneColor),
+        sampler: _clampLinearSampler,
+      );
+    }
+    if (sceneInputs.contains(RenderInput.filteredSceneColor)) {
+      pass.bindTexture(
+        shader.getUniformSlot('scene_filtered_color'),
+        Material.whitePlaceholder(lighting.filteredSceneColor),
         sampler: _clampLinearSampler,
       );
     }

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
 
+import '../importer/texture_roles.dart';
+import '../texture/mipmap.dart';
 import '../texture/texture2d.dart';
 import 'gltf_resources.dart';
 
@@ -22,6 +24,7 @@ Future<List<Texture2D>> buildTextures(
   GltfResourceResolver? resolveUri,
 }) async {
   final results = <Texture2D>[];
+  final contents = gltfTextureContents(doc);
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
     final imageIdx = tex.source;
@@ -68,7 +71,7 @@ Future<List<Texture2D>> buildTextures(
     }
 
     try {
-      final texture = await _decodeAndUpload(imageBytes);
+      final texture = await _decodeAndUpload(imageBytes, contents[i]);
       results.add(texture);
     } catch (e, st) {
       debugPrint('Failed to decode glTF image $imageIdx: $e\n$st');
@@ -78,14 +81,14 @@ Future<List<Texture2D>> buildTextures(
   return results;
 }
 
-// TODO(mipmaps): classify each image's content (color vs normal vs data) from
-// how materials reference it, so normal/metallic-roughness maps get linear
-// (renormalized) mips instead of the sRGB-color default.
-Future<Texture2D> _decodeAndUpload(Uint8List bytes) async {
+Future<Texture2D> _decodeAndUpload(
+  Uint8List bytes,
+  TextureContent content,
+) async {
   final codec = await ui.instantiateImageCodec(bytes);
   final frame = await codec.getNextFrame();
   try {
-    return await Texture2D.fromImage(frame.image);
+    return await Texture2D.fromImage(frame.image, content: content);
   } finally {
     frame.image.dispose();
   }

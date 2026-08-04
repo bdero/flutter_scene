@@ -257,6 +257,17 @@ class GltfMaterial {
     this.alphaCutoff = 0.5,
     this.doubleSided = false,
     this.unlit = false,
+    this.anisotropy,
+    this.clearcoat,
+    this.diffuseTransmission,
+    this.dispersion = 0.0,
+    this.emissiveStrength = 1.0,
+    this.ior = 1.5,
+    this.iridescence,
+    this.sheen,
+    this.specular,
+    this.transmission,
+    this.volume,
   });
 
   final String? name;
@@ -269,6 +280,151 @@ class GltfMaterial {
   final double alphaCutoff;
   final bool doubleSided;
   final bool unlit;
+  final GltfMaterialAnisotropy? anisotropy;
+  final GltfMaterialClearcoat? clearcoat;
+  final GltfMaterialDiffuseTransmission? diffuseTransmission;
+  final double dispersion;
+  final double emissiveStrength;
+  final double ior;
+  final GltfMaterialIridescence? iridescence;
+  final GltfMaterialSheen? sheen;
+  final GltfMaterialSpecular? specular;
+  final GltfMaterialTransmission? transmission;
+  final GltfMaterialVolume? volume;
+
+  bool get usesPhysicalExtensions =>
+      anisotropy != null ||
+      clearcoat != null ||
+      diffuseTransmission != null ||
+      dispersion != 0.0 ||
+      emissiveStrength != 1.0 ||
+      ior != 1.5 ||
+      iridescence != null ||
+      sheen != null ||
+      specular != null ||
+      transmission != null ||
+      volume != null;
+
+  bool get requiresPhysicalMaterial =>
+      anisotropy != null ||
+      clearcoat != null ||
+      diffuseTransmission != null ||
+      dispersion != 0.0 ||
+      ior != 1.5 ||
+      iridescence != null ||
+      sheen != null ||
+      specular != null ||
+      transmission != null ||
+      volume != null;
+}
+
+class GltfMaterialAnisotropy {
+  GltfMaterialAnisotropy({
+    this.strength = 0.0,
+    this.rotation = 0.0,
+    this.texture,
+  });
+
+  final double strength;
+  final double rotation;
+  final GltfTextureInfo? texture;
+}
+
+class GltfMaterialClearcoat {
+  GltfMaterialClearcoat({
+    this.factor = 0.0,
+    this.texture,
+    this.roughnessFactor = 0.0,
+    this.roughnessTexture,
+    this.normalTexture,
+  });
+
+  final double factor;
+  final GltfTextureInfo? texture;
+  final double roughnessFactor;
+  final GltfTextureInfo? roughnessTexture;
+  final GltfTextureInfo? normalTexture;
+}
+
+class GltfMaterialDiffuseTransmission {
+  GltfMaterialDiffuseTransmission({
+    this.factor = 0.0,
+    this.texture,
+    this.colorFactor = const [1.0, 1.0, 1.0],
+    this.colorTexture,
+  });
+
+  final double factor;
+  final GltfTextureInfo? texture;
+  final List<double> colorFactor;
+  final GltfTextureInfo? colorTexture;
+}
+
+class GltfMaterialIridescence {
+  GltfMaterialIridescence({
+    this.factor = 0.0,
+    this.texture,
+    this.ior = 1.3,
+    this.thicknessMinimum = 100.0,
+    this.thicknessMaximum = 400.0,
+    this.thicknessTexture,
+  });
+
+  final double factor;
+  final GltfTextureInfo? texture;
+  final double ior;
+  final double thicknessMinimum;
+  final double thicknessMaximum;
+  final GltfTextureInfo? thicknessTexture;
+}
+
+class GltfMaterialSheen {
+  GltfMaterialSheen({
+    this.colorFactor = const [0.0, 0.0, 0.0],
+    this.colorTexture,
+    this.roughnessFactor = 0.0,
+    this.roughnessTexture,
+  });
+
+  final List<double> colorFactor;
+  final GltfTextureInfo? colorTexture;
+  final double roughnessFactor;
+  final GltfTextureInfo? roughnessTexture;
+}
+
+class GltfMaterialSpecular {
+  GltfMaterialSpecular({
+    this.factor = 1.0,
+    this.texture,
+    this.colorFactor = const [1.0, 1.0, 1.0],
+    this.colorTexture,
+  });
+
+  final double factor;
+  final GltfTextureInfo? texture;
+  final List<double> colorFactor;
+  final GltfTextureInfo? colorTexture;
+}
+
+class GltfMaterialTransmission {
+  GltfMaterialTransmission({this.factor = 0.0, this.texture});
+
+  final double factor;
+  final GltfTextureInfo? texture;
+}
+
+class GltfMaterialVolume {
+  GltfMaterialVolume({
+    this.thicknessFactor = 0.0,
+    this.thicknessTexture,
+    this.attenuationDistance = double.infinity,
+    this.attenuationColor = const [1.0, 1.0, 1.0],
+  });
+
+  final double thicknessFactor;
+  final GltfTextureInfo? thicknessTexture;
+  final double attenuationDistance;
+  final List<double> attenuationColor;
 }
 
 class GltfPbrMetallicRoughness {
@@ -293,6 +449,7 @@ class GltfTextureInfo {
     this.texCoord = 0,
     this.scale,
     this.strength,
+    this.transform,
   });
   final int index;
   final int texCoord;
@@ -302,6 +459,22 @@ class GltfTextureInfo {
 
   /// Set on occlusion textures (otherwise null).
   final double? strength;
+
+  final GltfTextureTransform? transform;
+}
+
+class GltfTextureTransform {
+  GltfTextureTransform({
+    this.offset = const [0.0, 0.0],
+    this.rotation = 0.0,
+    this.scale = const [1.0, 1.0],
+    this.texCoord,
+  });
+
+  final List<double> offset;
+  final double rotation;
+  final List<double> scale;
+  final int? texCoord;
 }
 
 class GltfTexture {

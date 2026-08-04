@@ -30,6 +30,7 @@ import '../../../geometry/interleaved_layout.dart';
 import '../../../texture/block_alignment.dart';
 import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';
+import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
 import '../../gltf_light_units.dart';
@@ -481,7 +482,7 @@ LocalId _buildGeometry(
   final String vertexLayout;
   if (packed.isSkinned) {
     vertexBytes = packed.vertexBytes;
-    vertexLayout = 'skinned';
+    vertexLayout = InterleavedLayoutAdapter.skinnedLayout;
   } else {
     vertexBytes = InterleavedLayoutAdapter.concatUnskinnedStreams(
       InterleavedLayoutAdapter.splitUnskinnedAttributes(
@@ -637,6 +638,7 @@ LocalId _buildMaterial(
     _at(material.emissiveFactor, 2, 0.0),
     1.0,
   );
+  properties['emissiveStrength'] = DoubleValue(material.emissiveStrength);
   properties['occlusionStrength'] = DoubleValue(
     material.occlusionTexture?.strength ?? 1.0,
   );
@@ -663,11 +665,144 @@ LocalId _buildMaterial(
     textureIds,
   );
 
+  final anisotropy = material.anisotropy;
+  if (anisotropy != null) {
+    properties['anisotropy'] = DoubleValue(anisotropy.strength);
+    properties['anisotropyRotation'] = DoubleValue(anisotropy.rotation);
+    _addTexture(
+      properties,
+      'anisotropyTexture',
+      anisotropy.texture,
+      textureIds,
+    );
+  }
+  final clearcoat = material.clearcoat;
+  if (clearcoat != null) {
+    properties['clearcoat'] = DoubleValue(clearcoat.factor);
+    properties['clearcoatRoughness'] = DoubleValue(clearcoat.roughnessFactor);
+    _addTexture(properties, 'clearcoatTexture', clearcoat.texture, textureIds);
+    _addTexture(
+      properties,
+      'clearcoatRoughnessTexture',
+      clearcoat.roughnessTexture,
+      textureIds,
+    );
+    _addTexture(
+      properties,
+      'clearcoatNormalTexture',
+      clearcoat.normalTexture,
+      textureIds,
+    );
+    if (clearcoat.normalTexture?.scale != null) {
+      properties['clearcoatNormalScale'] = Vec2Value(
+        Vector2.all(clearcoat.normalTexture!.scale!),
+      );
+    }
+  }
+  final diffuseTransmission = material.diffuseTransmission;
+  if (diffuseTransmission != null) {
+    properties['diffuseTransmission'] = DoubleValue(diffuseTransmission.factor);
+    properties['diffuseTransmissionColor'] = _color3(
+      diffuseTransmission.colorFactor,
+      1.0,
+    );
+    _addTexture(
+      properties,
+      'diffuseTransmissionTexture',
+      diffuseTransmission.texture,
+      textureIds,
+    );
+    _addTexture(
+      properties,
+      'diffuseTransmissionColorTexture',
+      diffuseTransmission.colorTexture,
+      textureIds,
+    );
+  }
+  properties['dispersion'] = DoubleValue(material.dispersion);
+  properties['ior'] = DoubleValue(material.ior);
+  final iridescence = material.iridescence;
+  if (iridescence != null) {
+    properties['iridescence'] = DoubleValue(iridescence.factor);
+    properties['iridescenceIor'] = DoubleValue(iridescence.ior);
+    properties['iridescenceThicknessMinimum'] = DoubleValue(
+      iridescence.thicknessMinimum,
+    );
+    properties['iridescenceThicknessMaximum'] = DoubleValue(
+      iridescence.thicknessMaximum,
+    );
+    _addTexture(
+      properties,
+      'iridescenceTexture',
+      iridescence.texture,
+      textureIds,
+    );
+    _addTexture(
+      properties,
+      'iridescenceThicknessTexture',
+      iridescence.thicknessTexture,
+      textureIds,
+    );
+  }
+  final sheen = material.sheen;
+  if (sheen != null) {
+    properties['sheenColor'] = _color3(sheen.colorFactor, 1.0);
+    properties['sheenRoughness'] = DoubleValue(sheen.roughnessFactor);
+    _addTexture(
+      properties,
+      'sheenColorTexture',
+      sheen.colorTexture,
+      textureIds,
+    );
+    _addTexture(
+      properties,
+      'sheenRoughnessTexture',
+      sheen.roughnessTexture,
+      textureIds,
+    );
+  }
+  final specular = material.specular;
+  if (specular != null) {
+    properties['specular'] = DoubleValue(specular.factor);
+    properties['specularColor'] = _color3(specular.colorFactor, 1.0);
+    _addTexture(properties, 'specularTexture', specular.texture, textureIds);
+    _addTexture(
+      properties,
+      'specularColorTexture',
+      specular.colorTexture,
+      textureIds,
+    );
+  }
+  final transmission = material.transmission;
+  if (transmission != null) {
+    properties['transmission'] = DoubleValue(transmission.factor);
+    _addTexture(
+      properties,
+      'transmissionTexture',
+      transmission.texture,
+      textureIds,
+    );
+  }
+  final volume = material.volume;
+  if (volume != null) {
+    properties['thickness'] = DoubleValue(volume.thicknessFactor);
+    properties['attenuationDistance'] = DoubleValue(volume.attenuationDistance);
+    properties['attenuationColor'] = _color3(volume.attenuationColor, 1.0);
+    _addTexture(
+      properties,
+      'thicknessTexture',
+      volume.thicknessTexture,
+      textureIds,
+    );
+  }
+
   return document
       .addResource(
         MaterialResource(
           document.newId(),
-          type: 'physicallyBased',
+          type: material.requiresPhysicalMaterial
+              ? 'physical'
+              : 'physicallyBased',
           name: material.name ?? '',
           properties: properties,
         ),
@@ -685,43 +820,28 @@ void _addTexture(
   if (info.index < 0 || info.index >= textureIds.length) return;
   final id = textureIds[info.index];
   if (id != null) properties[key] = ResourceRefValue(id);
+  final transform = info.transform;
+  final texCoord = transform?.texCoord ?? info.texCoord;
+  if (transform != null || texCoord != 0) {
+    properties['${key}Transform'] = MapValue({
+      'offset': Vec2Value(
+        Vector2(_at(transform?.offset, 0, 0.0), _at(transform?.offset, 1, 0.0)),
+      ),
+      'scale': Vec2Value(
+        Vector2(_at(transform?.scale, 0, 1.0), _at(transform?.scale, 1, 1.0)),
+      ),
+      'rotation': DoubleValue(transform?.rotation ?? 0.0),
+      'texCoord': IntValue(texCoord),
+    });
+  }
 }
 
-/// The downsample rule for each glTF texture, derived from the material slots
-/// referencing it. A texture shared across slot kinds takes the highest
-/// priority interpretation (normal > color > data); unreferenced textures
-/// default to color. Library-visible for tests; not exported.
-List<TextureContent> gltfTextureContents(GltfDocument doc) {
-  const priority = {
-    TextureContent.data: 0,
-    TextureContent.color: 1,
-    TextureContent.normal: 2,
-  };
-  final contents = List<TextureContent>.filled(
-    doc.textures.length,
-    TextureContent.color,
-  );
-  final marked = List<bool>.filled(doc.textures.length, false);
-  void mark(GltfTextureInfo? info, TextureContent content) {
-    final index = info?.index;
-    if (index == null || index < 0 || index >= contents.length) return;
-    if (marked[index] && priority[contents[index]]! >= priority[content]!) {
-      return;
-    }
-    marked[index] = true;
-    contents[index] = content;
-  }
-
-  for (final material in doc.materials) {
-    final pbr = material.pbrMetallicRoughness;
-    mark(pbr?.baseColorTexture, TextureContent.color);
-    mark(material.emissiveTexture, TextureContent.color);
-    mark(material.normalTexture, TextureContent.normal);
-    mark(pbr?.metallicRoughnessTexture, TextureContent.data);
-    mark(material.occlusionTexture, TextureContent.data);
-  }
-  return contents;
-}
+ColorValue _color3(List<double> values, double alpha) => ColorValue(
+  _at(values, 0, 1.0),
+  _at(values, 1, 1.0),
+  _at(values, 2, 1.0),
+  alpha,
+);
 
 LocalId? _buildTexture(
   SceneDocument document,

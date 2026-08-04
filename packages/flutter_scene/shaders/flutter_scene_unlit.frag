@@ -10,10 +10,17 @@ frag_info;
 
 uniform sampler2D base_color_texture;
 
+uniform TextureTransform {
+  vec4 uv_transform;
+  vec4 uv_rotation;
+}
+texture_transform;
+
 in vec3 v_position;
 in vec3 v_normal;
 in vec3 v_viewvector; // camera_position - vertex_position
 in vec2 v_texture_coords;
+in vec2 v_texture_coords_1;
 in vec4 v_color;
 
 out vec4 frag_color;
@@ -31,7 +38,16 @@ vec3 SRGBToLinear(vec3 color) {
 void main() {
   ApplyLodFade(frag_info.fade);
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec4 base = texture(base_color_texture, v_texture_coords);
+  vec2 source_uv = texture_transform.uv_rotation.z > 0.5
+      ? v_texture_coords_1
+      : v_texture_coords;
+  vec2 scaled = source_uv * texture_transform.uv_transform.zw;
+  vec2 uv = texture_transform.uv_transform.xy +
+            vec2(texture_transform.uv_rotation.x * scaled.x -
+                     texture_transform.uv_rotation.y * scaled.y,
+                 texture_transform.uv_rotation.y * scaled.x +
+                     texture_transform.uv_rotation.x * scaled.y);
+  vec4 base = texture(base_color_texture, uv);
   // Linearize the sRGB-encoded base color so what we write to the
   // floating-point scene-color target is linear; the tone-mapping resolve
   // pass applies display encoding. Output is premultiplied by alpha.

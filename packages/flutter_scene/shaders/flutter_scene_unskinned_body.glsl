@@ -18,7 +18,9 @@ frame_info;
 in vec3 position;
 in vec3 normal;
 in vec2 texture_coords;
+in vec2 texture_coords_1;
 in vec4 color;
+in vec4 tangent;
 
 // Instance-rate model matrix columns (vertex buffer slot 1, advanced once
 // per instance). Non-instanced draws bind a single-element buffer holding
@@ -40,9 +42,18 @@ void main() {
   VertexInputs vertex;
   vertex.position = position;
   vertex.normal = normal;
+  vertex.tangent = tangent;
   vertex.world_position = model_position.xyz;
   vertex.world_normal = mat3(model_transform) * normal;
+  vec3 world_tangent = mat3(model_transform) * tangent.xyz;
+  float tangent_length_squared = dot(world_tangent, world_tangent);
+  float tangent_sign = determinant(mat3(model_transform)) < 0.0
+      ? -tangent.w : tangent.w;
+  vertex.world_tangent = tangent_length_squared > 1e-10
+      ? vec4(world_tangent * inversesqrt(tangent_length_squared), tangent_sign)
+      : vec4(0.0);
   vertex.uv = texture_coords;
+  vertex.uv1 = texture_coords_1;
   vertex.color = color * instance_color;
   vertex.camera_position = frame_info.camera_position;
   Vertex(vertex);
@@ -54,7 +65,12 @@ void main() {
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vertex.world_normal;
   v_texture_coords = vertex.uv;
+  v_texture_coords_1 = vertex.uv1;
   v_color = vertex.color;
+  v_model_scale = vec3(length(model_transform[0].xyz),
+                       length(model_transform[1].xyz),
+                       length(model_transform[2].xyz));
+  v_tangent = vertex.world_tangent;
 
 #ifdef HAS_MATERIAL_VERTEX
   // Reference the mesh inputs behind a runtime-zero (see VertexKeepAlive) so a
@@ -65,7 +81,8 @@ void main() {
   // Compiled only into a .fmat's vertex variants, never the engine's base
   // shaders.
   gl_Position += vertex_keep_alive.keep_alive.x *
-      vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz +
+      vec4(position + normal + vec3(texture_coords + texture_coords_1, 0.0) +
+               color.xyz + tangent.xyz +
                model_transform_0.xyz + model_transform_1.xyz +
                model_transform_2.xyz + model_transform_3.xyz +
                instance_color.xyz,

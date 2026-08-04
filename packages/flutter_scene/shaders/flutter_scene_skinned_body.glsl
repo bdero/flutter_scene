@@ -25,7 +25,9 @@ uniform sampler2D joints_texture;
 in vec3 position;
 in vec3 normal;
 in vec2 texture_coords;
+in vec2 texture_coords_1;
 in vec4 color;
+in vec4 tangent;
 in vec4 joints;
 in vec4 weights;
 
@@ -71,14 +73,24 @@ void main() {
 
   vec4 skinned_position = skin_matrix * vec4(position, 1.0);
   vec3 skinned_normal = mat3(skin_matrix) * normal;
-  vec4 model_position = frame_info.model_transform * skinned_position;
+  mat4 combined_transform = frame_info.model_transform * skin_matrix;
+  vec4 model_position = combined_transform * vec4(position, 1.0);
 
   VertexInputs vertex;
   vertex.position = skinned_position.xyz;
   vertex.normal = skinned_normal;
+  vertex.tangent = vec4(mat3(skin_matrix) * tangent.xyz, tangent.w);
   vertex.world_position = model_position.xyz;
-  vertex.world_normal = mat3(frame_info.model_transform) * skinned_normal;
+  vertex.world_normal = mat3(combined_transform) * normal;
+  vec3 world_tangent = mat3(combined_transform) * tangent.xyz;
+  float tangent_length_squared = dot(world_tangent, world_tangent);
+  float tangent_sign = determinant(mat3(combined_transform)) < 0.0
+      ? -tangent.w : tangent.w;
+  vertex.world_tangent = tangent_length_squared > 1e-10
+      ? vec4(world_tangent * inversesqrt(tangent_length_squared), tangent_sign)
+      : vec4(0.0);
   vertex.uv = texture_coords;
+  vertex.uv1 = texture_coords_1;
   vertex.color = color;
   vertex.camera_position = frame_info.camera_position;
   Vertex(vertex);
@@ -90,14 +102,20 @@ void main() {
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vertex.world_normal;
   v_texture_coords = vertex.uv;
+  v_texture_coords_1 = vertex.uv1;
   v_color = vertex.color;
+  v_model_scale = vec3(length(combined_transform[0].xyz),
+                       length(combined_transform[1].xyz),
+                       length(combined_transform[2].xyz));
+  v_tangent = vertex.world_tangent;
 
 #ifdef HAS_MATERIAL_VERTEX
   // Keep the mesh inputs (including the skin attributes) live behind a
   // runtime-zero (see VertexKeepAlive) so a hook that fully replaces the
   // outputs cannot strip a declared attribute and break shader reflection.
   gl_Position += vertex_keep_alive.keep_alive.x *
-      vec4(position + normal + vec3(texture_coords, 0.0) + color.xyz +
+      vec4(position + normal + vec3(texture_coords + texture_coords_1, 0.0) +
+               color.xyz + tangent.xyz +
                joints.xyz + weights.xyz,
            0.0);
 #ifdef MATERIAL_PARAMS_KEEP_ALIVE

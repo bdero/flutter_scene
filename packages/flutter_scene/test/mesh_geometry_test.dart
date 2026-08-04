@@ -100,14 +100,16 @@ void main() {
         ..addVertex(Vector3(0, 0, 0))
         ..color(Vector4(0, 1, 0, 1))
         ..texCoord(Vector2(0.5, 0.5))
+        ..texCoord1(Vector2(0.25, 0.75))
         ..addVertex(Vector3(1, 0, 0));
 
       final floats = Float32List.sublistView(builder.packVertices());
-      // Vertex 0 color (floats 8..11) is the first sticky color.
-      expect(floats.sublist(8, 12), [1, 0, 0, 1]);
-      // Vertex 1 color and texCoord (floats 6..7) are the later values.
-      expect(floats.sublist(12 + 6, 12 + 8), [0.5, 0.5]);
-      expect(floats.sublist(12 + 8, 12 + 12), [0, 1, 0, 1]);
+      // Vertex 0 color is the first sticky color.
+      expect(floats.sublist(10, 14), [1, 0, 0, 1]);
+      // Vertex 1 carries the later UVs and color.
+      expect(floats.sublist(18 + 6, 18 + 8), [0.5, 0.5]);
+      expect(floats.sublist(18 + 8, 18 + 10), [0.25, 0.75]);
+      expect(floats.sublist(18 + 10, 18 + 14), [0, 1, 0, 1]);
     });
 
     test('packVertices generates normals for an authored triangle', () {

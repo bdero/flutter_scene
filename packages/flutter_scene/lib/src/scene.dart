@@ -1262,9 +1262,9 @@ base class Scene implements SceneGraph {
 
     // Scene inputs requested by materials (Material.sceneInputs). Depth forces
     // a prepass because the material samples it while the scene is drawn, and
-    // opaqueSceneColor splits the scene pass around an opaque color snapshot.
-    // Scenes whose materials request nothing skip both. The same cached
-    // metadata fingerprints static shadow casters.
+    // either scene-color input splits the scene pass around the accumulated
+    // background. Scenes whose materials request nothing skip both. The same
+    // cached metadata fingerprints static shadow casters.
     final structureRevision = renderScene.structureRevision;
     final materialRevision = materialSceneInputsRevision;
     final staticShadowRevision = renderScene.staticShadowRevision;
@@ -1323,9 +1323,9 @@ base class Scene implements SceneGraph {
     final materialInputs = _cachedMaterialInputs;
     final staticShadowSignature = _cachedStaticShadowSignature;
     final hasStaticShadowCasters = _cachedHasStaticShadowCasters;
-    final captureOpaqueColor = materialInputs.contains(
-      RenderInput.opaqueSceneColor,
-    );
+    final captureOpaqueColor =
+        materialInputs.contains(RenderInput.opaqueSceneColor) ||
+        materialInputs.contains(RenderInput.filteredSceneColor);
     final bindSceneDepth = materialInputs.contains(RenderInput.depth);
     if (bindSceneDepth) customInputs.add(RenderInput.depth);
     // Depth of field reconstructs blur from camera depth.

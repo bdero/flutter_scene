@@ -14,6 +14,10 @@ uniform DepthNormalInfo {
   vec4 camera_right;
   // xyz: world-space camera up axis.
   vec4 camera_up;
+  // Offset in xy and scale in zw.
+  vec4 roughness_uv_transform;
+  // Cosine in x, sine in y, and the UV channel in z.
+  vec4 roughness_uv_rotation;
 }
 info;
 
@@ -35,13 +39,20 @@ void main() {
 
   float view_depth = -dot(v_viewvector, info.camera_forward.xyz);
 
-  vec3 n = normalize(v_normal);
+  vec3 n = GetWorldNormal();
   vec3 view_normal = normalize(vec3(dot(n, info.camera_right.xyz),
                                     dot(n, info.camera_up.xyz),
                                     dot(n, info.camera_forward.xyz)));
 
+  vec2 roughness_uv = GetUV(int(info.roughness_uv_rotation.z));
+  roughness_uv *= info.roughness_uv_transform.zw;
+  roughness_uv = mat2(info.roughness_uv_rotation.x,
+                      info.roughness_uv_rotation.y,
+                      -info.roughness_uv_rotation.y,
+                      info.roughness_uv_rotation.x) * roughness_uv;
+  roughness_uv += info.roughness_uv_transform.xy;
   float roughness = clamp(
-      texture(metallic_roughness_texture, v_texture_coords).g *
+      texture(metallic_roughness_texture, roughness_uv).g *
           info.camera_forward.w,
       0.0, 1.0);
 

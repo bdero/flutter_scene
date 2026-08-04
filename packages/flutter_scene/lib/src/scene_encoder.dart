@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -10,6 +11,7 @@ import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -177,6 +179,19 @@ base class _TranslucentRecord {
 /// another consumer appears.
 ui.Size currentSceneEncoderViewport = ui.Size.zero;
 
+/// Computes the view-axis depth used to order deferred scene draws.
+@visibleForTesting
+double sceneSortDepth(
+  Matrix4 worldTransform,
+  Aabb3? localBounds,
+  Vector3 cameraPosition,
+  Vector3 cameraForward,
+) {
+  final localCenter = localBounds?.center ?? Vector3.zero();
+  final worldCenter = worldTransform.transformed3(localCenter);
+  return (worldCenter - cameraPosition).dot(cameraForward);
+}
+
 /// Render pipelines keyed by their (vertex shader, fragment shader, vertex
 /// layout) triple.
 ///
@@ -290,9 +305,7 @@ base class SceneEncoder {
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _cullInstances;
-  // Not final: when the scene pass splits into two GPU passes to snapshot
-  // the opaque color, [flushTranslucent] switches recording to the second
-  // pass.
+  // Not final: screen-reading translucent batches continue in later passes.
   gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
@@ -384,7 +397,7 @@ base class SceneEncoder {
           fade,
           pipeline,
           identityHashCode(pipeline),
-          _depthOf(item.worldTransform),
+          _depthOf(item.worldTransform, geometry),
         ),
       );
       return;
@@ -426,7 +439,7 @@ base class SceneEncoder {
           material,
           fade,
           pipeline,
-          _depthOf(item.worldTransform),
+          _depthOf(item.worldTransform, geometry),
           item.windingFlipped,
           item.lightListOffset,
           item.lightListCount,
@@ -531,17 +544,17 @@ base class SceneEncoder {
     return lod.resolve(size);
   }
 
-  double _depthOf(Matrix4 worldTransform) {
-    final storage = worldTransform.storage;
-    return _depthOfPoint(storage[12], storage[13], storage[14]);
+  double _depthOf(Matrix4 worldTransform, [Geometry? geometry]) {
+    return sceneSortDepth(
+      worldTransform,
+      geometry?.localBounds,
+      _camera.position,
+      _camera.forward,
+    );
   }
 
   double _depthOfPoint(double x, double y, double z) {
-    final camera = _camera.position;
-    final dx = x - camera.x;
-    final dy = y - camera.y;
-    final dz = z - camera.z;
-    return dx * dx + dy * dy + dz * dz;
+    return (Vector3(x, y, z) - _camera.position).dot(_camera.forward);
   }
 
   // Binds [pipeline] unless it is already the bound one. `clearBindings`
@@ -994,12 +1007,51 @@ base class SceneEncoder {
     );
   }
 
-  /// Emits only the translucent phase (see [flush]). When [translucentPass]
-  /// is given, recording switches to it first (the split-pass path: the
-  /// opaque color was resolved between the passes, so translucent materials
-  /// can sample it); the new pass starts with no bound pipeline and needs
-  /// the depth test re-asserted.
-  void flushTranslucent({gpu.RenderPass? translucentPass}) {
+  bool _translucentPrepared = false;
+  int _translucentCursor = 0;
+  int _translucentSortMicros = 0;
+  int _translucentEncodeMicros = 0;
+
+  void _prepareTranslucent() {
+    if (_translucentPrepared) return;
+    final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
+    _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
+    sortWatch?.stop();
+    _translucentSortMicros = sortWatch?.elapsedMicroseconds ?? 0;
+    _translucentPrepared = true;
+  }
+
+  /// Whether a deferred translucent draw remains.
+  bool get hasPendingTranslucent {
+    _prepareTranslucent();
+    return _translucentCursor < _translucentRecords.length;
+  }
+
+  /// Whether the next translucent batch needs the accumulated scene color.
+  bool get nextTranslucentBatchReadsSceneColor {
+    _prepareTranslucent();
+    if (_translucentCursor >= _translucentRecords.length) return false;
+    return _readsSceneColor(_translucentRecords[_translucentCursor].material);
+  }
+
+  /// Whether the next translucent batch needs roughness-filtered scene color.
+  bool get nextTranslucentBatchReadsFilteredSceneColor {
+    _prepareTranslucent();
+    if (_translucentCursor >= _translucentRecords.length) return false;
+    return _translucentRecords[_translucentCursor].material.sceneInputs
+        .contains(RenderInput.filteredSceneColor);
+  }
+
+  /// Emits one translucent batch in global back-to-front order.
+  ///
+  /// A batch ends immediately before the next material that reads scene
+  /// color. This lets the scene pass publish the current accumulated color
+  /// before drawing each screen-reading layer while keeping ordinary
+  /// translucent draws in the same pass as the layer behind them.
+  void flushNextTranslucentBatch({gpu.RenderPass? translucentPass}) {
+    _prepareTranslucent();
+    if (_translucentCursor >= _translucentRecords.length) return;
+
     if (translucentPass != null) {
       _renderPass = translucentPass;
       _boundPipeline = null;
@@ -1007,19 +1059,17 @@ base class SceneEncoder {
       _boundMaterialVertex = null;
       _boundFrameInfoShader = null;
       _boundFrameInfoDepthBias = double.nan;
+      _boundMaterialFade = double.nan;
+      _boundMaterialLightOffset = -1;
+      _boundMaterialLightCount = -1;
       _boundWindingOrder = null;
       _boundPrimitiveType = null;
-      _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+      EngineLightingUniforms.invalidateBindMemo();
     }
-
-    final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
-    _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
-    sortWatch?.stop();
+    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
     final encodeWatch = profileRendering ? (Stopwatch()..start()) : null;
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
-    // Premultiplied source-over blending.
-    // Note: expects premultiplied-alpha output from the fragment stage.
     _renderPass.setColorBlendEquation(
       gpu.ColorBlendEquation(
         colorBlendOperation: gpu.BlendOperation.add,
@@ -1030,7 +1080,10 @@ base class SceneEncoder {
         destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
       ),
     );
-    for (final record in _translucentRecords) {
+
+    do {
+      final record = _translucentRecords[_translucentCursor++];
+      _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       final joints = record.jointsTexture;
@@ -1066,21 +1119,45 @@ base class SceneEncoder {
           record.fade,
         );
       }
-    }
+    } while (_translucentCursor < _translucentRecords.length &&
+        !_readsSceneColor(_translucentRecords[_translucentCursor].material));
     encodeWatch?.stop();
-    if (profileRendering) {
-      _recordProfile(
-        _opaqueSortMicros + sortWatch!.elapsedMicroseconds,
-        _opaqueEncodeMicros + encodeWatch!.elapsedMicroseconds,
-        _encodedDraws,
-        _encodedInstances,
-      );
+    _translucentEncodeMicros += encodeWatch?.elapsedMicroseconds ?? 0;
+
+    if (_translucentCursor == _translucentRecords.length) {
+      if (profileRendering) {
+        _recordProfile(
+          _opaqueSortMicros + _translucentSortMicros,
+          _opaqueEncodeMicros + _translucentEncodeMicros,
+          _encodedDraws,
+          _encodedInstances,
+        );
+      }
+      for (final record in _translucentRecords) {
+        if (_translucentRecordPool.length == _recordPoolLimit) break;
+        record.release();
+        _translucentRecordPool.add(record);
+      }
+      _translucentRecords.clear();
+      _translucentCursor = 0;
+      _translucentPrepared = false;
+      _translucentSortMicros = 0;
+      _translucentEncodeMicros = 0;
     }
-    for (final record in _translucentRecords) {
-      if (_translucentRecordPool.length == _recordPoolLimit) break;
-      record.release();
-      _translucentRecordPool.add(record);
+  }
+
+  /// Emits only the translucent phase (see [flush]).
+  void flushTranslucent({gpu.RenderPass? translucentPass}) {
+    var pass = translucentPass;
+    while (hasPendingTranslucent) {
+      flushNextTranslucentBatch(translucentPass: pass);
+      pass = null;
     }
-    _translucentRecords.clear();
+  }
+
+  static bool _readsSceneColor(Material material) {
+    final inputs = material.sceneInputs;
+    return inputs.contains(RenderInput.opaqueSceneColor) ||
+        inputs.contains(RenderInput.filteredSceneColor);
   }
 }

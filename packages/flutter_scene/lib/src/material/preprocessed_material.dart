@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -7,8 +9,10 @@ import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
+import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/texture/texture2d.dart';
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
@@ -34,14 +38,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   }) : _shadingModel = _parseShadingModel(metadata['shading_model']),
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
+       _depthWrite = metadata['depth_write'] == true,
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
   }
 
-  /// Parses the sidecar's `engine_inputs` list (`scene_color`,
-  /// `scene_depth`) into the [RenderInput]s the material requests.
+  /// Parses the sidecar's `engine_inputs` list into requested render inputs.
   static Set<RenderInput> _parseSceneInputs(Object? value) {
     if (value is! List) return const {};
     final inputs = <RenderInput>{};
@@ -49,6 +53,8 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       switch (entry) {
         case 'scene_color':
           inputs.add(RenderInput.opaqueSceneColor);
+        case 'filtered_scene_color':
+          inputs.add(RenderInput.filteredSceneColor);
         case 'scene_depth':
           inputs.add(RenderInput.depth);
       }
@@ -68,6 +74,31 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
+
+  TextureSource? _depthMaskTexture;
+  TextureTransform _depthMaskTransform = TextureTransform();
+  double _depthMaskCutoff = 0.5;
+  double _depthMaskAlpha = 1.0;
+  int _depthMaskTexCoord = 0;
+
+  /// Configures cutout coverage for the camera-depth and shadow passes.
+  ///
+  /// Call with null [texture] to disable masked depth. The color shader must
+  /// apply the same cutoff to produce matching coverage.
+  @protected
+  void configureDepthAlphaMask({
+    required TextureSource? texture,
+    TextureTransform? transform,
+    int texCoord = 0,
+    double cutoff = 0.5,
+    double alpha = 1.0,
+  }) {
+    _depthMaskTexture = texture;
+    _depthMaskTransform = transform ?? TextureTransform();
+    _depthMaskTexCoord = texCoord.clamp(0, 1);
+    _depthMaskCutoff = cutoff;
+    _depthMaskAlpha = alpha;
+  }
 
   /// The generated vertex shaders for a `vertex { }` material, keyed by the
   /// variant the geometry selects (`'unskinned'`, `'skinned'`, `'depth'`), or
@@ -104,13 +135,13 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     );
   }
 
-  /// Whether the engine runs its lighting ([FmatShadingModel.lit]) or the
-  /// shader's color is output directly ([FmatShadingModel.unlit]).
+  /// The engine shading model used by this material.
   FmatShadingModel get shadingModel => _shadingModel;
 
   FmatShadingModel _shadingModel;
   FmatBlending _blending;
   FmatCulling _culling;
+  bool _depthWrite;
 
   /// Re-reads the render state and parameters from a regenerated [fragmentShader]
   /// and sidecar [metadata] (a hot-reloaded `.fmat`), in place.
@@ -127,6 +158,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _shadingModel = _parseShadingModel(metadata['shading_model']);
     _blending = _parseBlending(metadata['blending']);
     _culling = _parseCulling(metadata['culling']);
+    _depthWrite = metadata['depth_write'] == true;
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
     markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);
@@ -146,7 +178,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     pass.setCullMode(renderCullMode);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
 
-    if (shadingModel == FmatShadingModel.lit) {
+    if (shadingModel != FmatShadingModel.unlit) {
       final env = environment ?? lighting.environmentMap;
       final fragInfo = _fragInfoScratch
         ..fillRange(0, _fragInfoScratch.length, 0);
@@ -164,6 +196,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         fragmentShader,
         lighting,
         env,
+        bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
       );
       if (_sceneInputs.isNotEmpty) {
         EngineLightingUniforms.bindSceneInputTextures(
@@ -203,7 +236,60 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   @override
   @internal
-  gpu.CullMode get renderCullMode => _cullMode(_culling);
+  bool get depthAlphaMasked => _depthMaskTexture != null;
+
+  static final gpu.SamplerOptions _depthMaskSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    mipFilter: gpu.MipFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.repeat,
+    heightAddressMode: gpu.SamplerAddressMode.repeat,
+  );
+
+  @override
+  @internal
+  void bindDepthAlphaMask(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) {
+    final transform = _depthMaskTransform;
+    final rotation = transform.rotation;
+    final values = Float32List(12)
+      ..[0] = _depthMaskCutoff
+      ..[1] = _depthMaskAlpha
+      ..[2] = 1.0
+      ..[4] = transform.offset.x
+      ..[5] = transform.offset.y
+      ..[6] = transform.scale.x
+      ..[7] = transform.scale.y
+      ..[8] = math.cos(rotation)
+      ..[9] = math.sin(rotation)
+      ..[10] = _depthMaskTexCoord.toDouble();
+    pass.bindUniform(
+      shader.getUniformSlot('MaskInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(values)),
+    );
+    final source = _depthMaskTexture;
+    pass.bindTexture(
+      shader.getUniformSlot('mask_texture'),
+      Material.whitePlaceholder(resolveTextureSource(source)),
+      sampler: textureSourceSampler(source) ?? _depthMaskSampler,
+    );
+  }
+
+  @override
+  @internal
+  gpu.CullMode get renderCullMode {
+    if (_culling == FmatCulling.back && doubleSided && isOpaque()) {
+      return gpu.CullMode.none;
+    }
+    return _cullMode(_culling);
+  }
+
+  @override
+  @internal
+  bool get translucentDepthWrite => _depthWrite;
 }
 
 gpu.CullMode _cullMode(FmatCulling culling) => switch (culling) {
@@ -212,8 +298,11 @@ gpu.CullMode _cullMode(FmatCulling culling) => switch (culling) {
   FmatCulling.none => gpu.CullMode.none,
 };
 
-FmatShadingModel _parseShadingModel(Object? value) =>
-    value == 'unlit' ? FmatShadingModel.unlit : FmatShadingModel.lit;
+FmatShadingModel _parseShadingModel(Object? value) => switch (value) {
+  'unlit' => FmatShadingModel.unlit,
+  'physical' => FmatShadingModel.physical,
+  _ => FmatShadingModel.lit,
+};
 
 FmatBlending _parseBlending(Object? value) =>
     value == 'alpha' ? FmatBlending.alpha : FmatBlending.opaque;

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'dart:ui' as ui;
 
@@ -176,7 +177,7 @@ class _DepthPrepassEncoder {
     // normal-writing path also needs the right/up axes to rotate the world
     // normal into view space; the depth-only path uses just forward.
     if (writeNormals) {
-      _depthInfo = Float32List(12)
+      _depthInfo = Float32List(20)
         ..[0] = cameraForward.x
         ..[1] = cameraForward.y
         ..[2] = cameraForward.z
@@ -328,10 +329,24 @@ class _DepthPrepassEncoder {
       // map (a white placeholder when the material has none) supplies the
       // per-pixel roughness in its green channel.
       _depthInfo[3] = item.material.reflectionRoughnessFactor;
+      final roughnessTransform =
+          item.material.reflectionRoughnessTextureTransform;
+      _depthInfo
+        ..[12] = roughnessTransform.offset.x
+        ..[13] = roughnessTransform.offset.y
+        ..[14] = roughnessTransform.scale.x
+        ..[15] = roughnessTransform.scale.y
+        ..[16] = math.cos(roughnessTransform.rotation)
+        ..[17] = math.sin(roughnessTransform.rotation)
+        ..[18] = item.material.reflectionRoughnessTextureTexCoord
+            .clamp(0, 1)
+            .toDouble();
       _renderPass.bindTexture(
         fragmentShader.getUniformSlot('metallic_roughness_texture'),
         Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
-        sampler: _roughnessSampler,
+        sampler:
+            item.material.reflectionRoughnessTextureSampler ??
+            _roughnessSampler,
       );
     }
     _renderPass.bindUniform(

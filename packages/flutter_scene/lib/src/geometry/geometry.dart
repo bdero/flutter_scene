@@ -95,8 +95,9 @@ class _GeometryBufferBlock {
 /// is supplied by a [Material]. Built-in subclasses cover the two
 /// supported vertex layouts:
 ///
-///  * [UnskinnedGeometry] — 48-byte vertices: position, normal, UV, color.
-///  * [SkinnedGeometry] — 80-byte vertices: unskinned + 4 joint indices +
+///  * [UnskinnedGeometry] has 72-byte position, normal, UV0, UV1, color,
+///    tangent data.
+///  * [SkinnedGeometry] has 104-byte unskinned data plus 4 joint indices and
 ///    4 joint weights. Used in conjunction with a [Skin].
 ///
 /// Construct an instance directly and call [uploadVertexData] (or
@@ -132,8 +133,10 @@ abstract class Geometry {
   // geometry (which reads off [_cpuVertices]) or non-readable geometry.
   Float32List? _cpuPositions;
   Float32List? _cpuTexCoords;
+  Float32List? _cpuTexCoords1;
   Float32List? _cpuNormals;
   Float32List? _cpuColors;
+  Float32List? _cpuTangents;
 
   gpu.Shader? _vertexShader;
   String? _vertexShaderName;
@@ -329,7 +332,7 @@ abstract class Geometry {
   /// [indices]) into it in one step.
   ///
   /// The vertices must match this geometry subclass's expected interleaved
-  /// layout (48 bytes per vertex for [UnskinnedGeometry], 80 bytes for
+  /// layout (72 bytes per vertex for [UnskinnedGeometry], 104 bytes for
   /// [SkinnedGeometry]). The subclass may split the interleaved bytes into
   /// several tightly packed streams (see [_vertexStreamBytes]); the streams
   /// and any [indices] are packed back-to-back into one buffer, the streams
@@ -441,14 +444,18 @@ abstract class Geometry {
   void setRaycastAttributes({
     required Float32List positions,
     Float32List? texCoords,
+    Float32List? texCoords1,
     ByteData? indices,
     Float32List? normals,
     Float32List? colors,
+    Float32List? tangents,
   }) {
     _cpuPositions = positions;
     _cpuTexCoords = texCoords;
+    _cpuTexCoords1 = texCoords1;
     _cpuNormals = normals;
     _cpuColors = colors;
+    _cpuTangents = tangents;
     _cpuIndices = indices;
     _cpuVertices = null;
   }
@@ -513,16 +520,20 @@ abstract class Geometry {
     Float32List positions;
     Float32List? normals;
     Float32List? texCoords;
+    Float32List? texCoords1;
     Float32List? colors;
+    Float32List? tangents;
     if (interleaved != null) {
-      // Interleaved unskinned (12 floats) or skinned (20 floats, of which
-      // the leading 12 match the unskinned layout) vertices.
-      final stride = this is SkinnedGeometry ? 20 : 12;
+      final stride = this is SkinnedGeometry
+          ? kSkinnedPerVertexSize ~/ 4
+          : kUnskinnedPerVertexSize ~/ 4;
       final floats = Float32List.sublistView(interleaved);
       positions = Float32List(_vertexCount * 3);
       normals = Float32List(_vertexCount * 3);
       texCoords = Float32List(_vertexCount * 2);
+      texCoords1 = Float32List(_vertexCount * 2);
       colors = Float32List(_vertexCount * 4);
+      tangents = Float32List(_vertexCount * 4);
       for (var v = 0; v < _vertexCount; v++) {
         final base = v * stride;
         positions[v * 3] = floats[base];
@@ -533,19 +544,29 @@ abstract class Geometry {
         normals[v * 3 + 2] = floats[base + 5];
         texCoords[v * 2] = floats[base + 6];
         texCoords[v * 2 + 1] = floats[base + 7];
-        colors[v * 4] = floats[base + 8];
-        colors[v * 4 + 1] = floats[base + 9];
-        colors[v * 4 + 2] = floats[base + 10];
-        colors[v * 4 + 3] = floats[base + 11];
+        texCoords1[v * 2] = floats[base + 8];
+        texCoords1[v * 2 + 1] = floats[base + 9];
+        colors[v * 4] = floats[base + 10];
+        colors[v * 4 + 1] = floats[base + 11];
+        colors[v * 4 + 2] = floats[base + 12];
+        colors[v * 4 + 3] = floats[base + 13];
+        tangents[v * 4] = floats[base + 14];
+        tangents[v * 4 + 1] = floats[base + 15];
+        tangents[v * 4 + 2] = floats[base + 16];
+        tangents[v * 4 + 3] = floats[base + 17];
       }
     } else {
       positions = Float32List.fromList(soaPositions!);
       final n = _cpuNormals;
       final t = _cpuTexCoords;
+      final t1 = _cpuTexCoords1;
       final c = _cpuColors;
+      final tg = _cpuTangents;
       normals = n == null ? null : Float32List.fromList(n);
       texCoords = t == null ? null : Float32List.fromList(t);
+      texCoords1 = t1 == null ? null : Float32List.fromList(t1);
       colors = c == null ? null : Float32List.fromList(c);
+      tangents = tg == null ? null : Float32List.fromList(tg);
     }
 
     List<int>? indices;
@@ -561,7 +582,9 @@ abstract class Geometry {
       vertexCount: _vertexCount,
       normals: normals,
       texCoords: texCoords,
+      texCoords1: texCoords1,
       colors: colors,
+      tangents: tangents,
       indices: indices,
       primitiveType: primitiveType,
       customAttributes: {
@@ -615,7 +638,7 @@ abstract class Geometry {
   bool get _autoScanBoundsOnUpload => true;
 
   /// Scan the position attribute (the first 12 bytes of each vertex,
-  /// shared across the unskinned 48-byte and skinned 80-byte layouts)
+  /// shared across the unskinned and skinned layouts)
   /// to populate [_localBounds] and [_localBoundingSphere].
   void _scanLocalBoundsFromVertices(ByteData vertices, int vertexCount) {
     final stride = vertices.lengthInBytes ~/ vertexCount;
@@ -877,8 +900,7 @@ abstract class Geometry {
       null;
 }
 
-/// Geometry whose vertices use the unskinned 48-byte layout: position
-/// (`vec3`), normal (`vec3`), tex coords (`vec2`), color (`vec4`).
+/// Geometry whose vertices use the unskinned 72-byte layout.
 ///
 /// This is the default vertex format for static (non-animated) meshes
 /// imported from a scene package or glTF.
@@ -910,11 +932,13 @@ class UnskinnedGeometry extends Geometry {
       ByteData.sublistView(streams.position),
       ByteData.sublistView(streams.normal),
       ByteData.sublistView(streams.texCoord),
+      ByteData.sublistView(streams.texCoord1),
       ByteData.sublistView(streams.color),
+      ByteData.sublistView(streams.tangent),
     ];
   }
 
-  /// Uploads the four unskinned attributes from structure-of-arrays lists
+  /// Uploads the unskinned attributes from structure-of-arrays lists
   /// directly into per-attribute streams, with no interleave step.
   ///
   /// This is the efficient path for a structure-of-arrays source (a
@@ -928,7 +952,9 @@ class UnskinnedGeometry extends Geometry {
     required int vertexCount,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
     ByteData? indices,
     gpu.IndexType indexType = gpu.IndexType.int16,
     GeometryBufferArena? bufferArena,
@@ -939,14 +965,18 @@ class UnskinnedGeometry extends Geometry {
       vertexCount: vertexCount,
       normals: normals,
       texCoords: texCoords,
+      texCoords1: texCoords1,
       colors: colors,
+      tangents: tangents,
     );
     _uploadStreams(
       [
         ByteData.sublistView(streams.position),
         ByteData.sublistView(streams.normal),
         ByteData.sublistView(streams.texCoord),
+        ByteData.sublistView(streams.texCoord1),
         ByteData.sublistView(streams.color),
+        ByteData.sublistView(streams.tangent),
       ],
       vertexCount,
       indices,
@@ -957,8 +987,10 @@ class UnskinnedGeometry extends Geometry {
       setRaycastAttributes(
         positions: Float32List.sublistView(streams.position),
         texCoords: Float32List.sublistView(streams.texCoord),
+        texCoords1: Float32List.sublistView(streams.texCoord1),
         normals: Float32List.sublistView(streams.normal),
         colors: Float32List.sublistView(streams.color),
+        tangents: Float32List.sublistView(streams.tangent),
         indices: indices,
       );
     }
@@ -974,7 +1006,7 @@ class UnskinnedGeometry extends Geometry {
   /// into per-attribute GPU buffers, with no repacking.
   ///
   /// This is the realizer's path for a structure-of-arrays `.fscene` vertex
-  /// payload: the payload bytes are sliced into the four streams and uploaded
+  /// payload: the payload bytes are sliced into the streams and uploaded
   /// as-is. Position and texture coordinates are retained (as views into the
   /// payload) for raycasting.
   @internal
@@ -989,7 +1021,9 @@ class UnskinnedGeometry extends Geometry {
         ByteData.sublistView(streams.position),
         ByteData.sublistView(streams.normal),
         ByteData.sublistView(streams.texCoord),
+        ByteData.sublistView(streams.texCoord1),
         ByteData.sublistView(streams.color),
+        ByteData.sublistView(streams.tangent),
       ],
       vertexCount,
       indices,
@@ -999,8 +1033,10 @@ class UnskinnedGeometry extends Geometry {
     setRaycastAttributes(
       positions: Float32List.sublistView(streams.position),
       texCoords: Float32List.sublistView(streams.texCoord),
+      texCoords1: Float32List.sublistView(streams.texCoord1),
       normals: Float32List.sublistView(streams.normal),
       colors: Float32List.sublistView(streams.color),
+      tangents: Float32List.sublistView(streams.tangent),
       indices: indices,
     );
     if (localBounds == null && vertexCount > 0) {
@@ -1068,7 +1104,7 @@ class UnskinnedGeometry extends Geometry {
   }
 }
 
-/// Geometry whose vertices use the skinned 80-byte layout: the
+/// Geometry whose vertices use the skinned 104-byte layout: the
 /// unskinned attributes followed by 4 joint indices and 4 joint weights.
 ///
 /// Used for meshes attached to a [Skin] for skeletal animation. The
@@ -1306,6 +1342,15 @@ const VertexBufferDescriptor _kTexCoordBuffer = VertexBufferDescriptor(
     ),
   ],
 );
+const VertexBufferDescriptor _kTexCoord1Buffer = VertexBufferDescriptor(
+  strideInBytes: 8,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'texture_coords_1',
+      format: gpu.VertexFormat.float32x2,
+    ),
+  ],
+);
 const VertexBufferDescriptor _kColorBuffer = VertexBufferDescriptor(
   strideInBytes: 16,
   attributes: [
@@ -1315,11 +1360,20 @@ const VertexBufferDescriptor _kColorBuffer = VertexBufferDescriptor(
     ),
   ],
 );
+const VertexBufferDescriptor _kTangentBuffer = VertexBufferDescriptor(
+  strideInBytes: 16,
+  attributes: [
+    VertexAttributeDescriptor(
+      name: 'tangent',
+      format: gpu.VertexFormat.float32x4,
+    ),
+  ],
+);
 
 /// The interleaved two-buffer pipeline layout for the unskinned vertex
-/// shader: slot 0 carries the interleaved 48-byte vertex stream (position,
-/// normal, texture coords, color), slot 1 carries the instance-rate model
-/// matrix and linear color multiplier (80 bytes per instance).
+/// shader: slot 0 carries the interleaved 72-byte vertex stream, slot 1 carries
+/// the instance-rate model matrix and linear color multiplier (80 bytes per
+/// instance).
 ///
 /// This is the canonical described layout; its slot-0 stride is
 /// [kUnskinnedPerVertexSize] and its attribute offsets match the bytes
@@ -1345,9 +1399,19 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
           offsetInBytes: 24,
         ),
         VertexAttributeDescriptor(
+          name: 'texture_coords_1',
+          format: gpu.VertexFormat.float32x2,
+          offsetInBytes: 32,
+        ),
+        VertexAttributeDescriptor(
           name: 'color',
           format: gpu.VertexFormat.float32x4,
-          offsetInBytes: 32,
+          offsetInBytes: 40,
+        ),
+        VertexAttributeDescriptor(
+          name: 'tangent',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 56,
         ),
       ],
     ),
@@ -1356,7 +1420,7 @@ final VertexLayoutDescriptor kUnskinnedInstancedLayout = VertexLayoutDescriptor(
 );
 
 /// The interleaved-mode depth-style layout for the unskinned vertex shader:
-/// slot 0 reads only the position attribute from the interleaved 48-byte
+/// slot 0 reads only the position attribute from the interleaved vertex
 /// vertex stream (the other attributes are present in the buffer but not
 /// fetched), slot 1 the instance-rate model matrix. Paired with the
 /// `UnskinnedDepthVertex` shader by the shadow, depth-prepass, and
@@ -1384,8 +1448,8 @@ final VertexLayoutDescriptor kUnskinnedPositionOnlyLayout =
     );
 
 /// The structure-of-arrays color layout for the unskinned vertex shader: one
-/// tightly packed buffer per attribute (position 12, normal 12, texture
-/// coords 8, color 16) plus the instance-rate model matrix. Used for geometry
+/// tightly packed buffer per attribute plus the instance-rate model matrix.
+/// Used for geometry
 /// uploaded through [Geometry.uploadVertexData] or the structure-of-arrays
 /// upload, which store each attribute in its own stream.
 ///
@@ -1400,7 +1464,9 @@ final VertexLayoutDescriptor kUnskinnedSoAColorLayout = VertexLayoutDescriptor(
     _kPositionBuffer,
     _kNormalBuffer,
     _kTexCoordBuffer,
+    _kTexCoord1Buffer,
     _kColorBuffer,
+    _kTangentBuffer,
     _kInstanceDataBuffer,
   ],
 );
@@ -1449,7 +1515,7 @@ void bindUnskinnedFrameInfo(
   );
 }
 
-/// Slot 0 of a skinned mesh: the interleaved 80-byte vertex stream the
+/// Slot 0 of a skinned mesh: the interleaved 104-byte vertex stream the
 /// `SkinnedVertex` shader reads. Offsets match the bytes
 /// [InterleavedLayoutAdapter.packSkinned] emits.
 @internal
@@ -1471,19 +1537,29 @@ const VertexBufferDescriptor kSkinnedVertexBuffer = VertexBufferDescriptor(
       offsetInBytes: 24,
     ),
     VertexAttributeDescriptor(
+      name: 'texture_coords_1',
+      format: gpu.VertexFormat.float32x2,
+      offsetInBytes: 32,
+    ),
+    VertexAttributeDescriptor(
       name: 'color',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 32,
+      offsetInBytes: 40,
+    ),
+    VertexAttributeDescriptor(
+      name: 'tangent',
+      format: gpu.VertexFormat.float32x4,
+      offsetInBytes: 56,
     ),
     VertexAttributeDescriptor(
       name: 'joints',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 48,
+      offsetInBytes: 72,
     ),
     VertexAttributeDescriptor(
       name: 'weights',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 64,
+      offsetInBytes: 88,
     ),
   ],
 );

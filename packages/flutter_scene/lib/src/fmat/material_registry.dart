@@ -9,6 +9,15 @@ import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 const String _indexAssetSuffix = '.index.json';
 const String _indexAssetPrefix = '/flutter_scene/fmat/';
 
+/// Constructs a typed material from one generated `.fmat` entry.
+/// {@category Materials}
+typedef FmatMaterialFactory =
+    PreprocessedMaterial Function({
+      required gpu.Shader fragmentShader,
+      required Map<String, Object?> metadata,
+      Map<String, gpu.Shader>? vertexShaders,
+    });
+
 /// A generated index describing one DataAssets-backed `.fmat` bundle.
 final class FmatMaterialBundleIndex {
   FmatMaterialBundleIndex({
@@ -149,6 +158,7 @@ final class FmatMaterialRegistry {
     String sourcePath, {
     String? package,
     String? bundleName,
+    FmatMaterialFactory? factory,
   }) async {
     final resolution = resolve(
       sourcePath,
@@ -181,11 +191,17 @@ final class FmatMaterialRegistry {
       shaderLibrary,
       index.shaderBundleAssetKey,
     );
-    final material = PreprocessedMaterial(
-      fragmentShader: shader,
-      metadata: metadata,
-      vertexShaders: vertexShaders,
-    );
+    final material =
+        factory?.call(
+          fragmentShader: shader,
+          metadata: metadata,
+          vertexShaders: vertexShaders,
+        ) ??
+        PreprocessedMaterial(
+          fragmentShader: shader,
+          metadata: metadata,
+          vertexShaders: vertexShaders,
+        );
     _fmatSourcePaths[material] = sourcePath;
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
     // from its regenerated sidecar without rebuilding the scene. Debug-only.
@@ -310,12 +326,14 @@ Future<PreprocessedMaterial> loadFmatMaterial(
   String? package,
   String? bundleName,
   AssetBundle? bundle,
+  FmatMaterialFactory? factory,
 }) async {
   final registry = await _registryFor(bundle ?? rootBundle);
   return registry.loadMaterial(
     sourcePath,
     package: package,
     bundleName: bundleName,
+    factory: factory,
   );
 }
 
