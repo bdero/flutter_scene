@@ -15,6 +15,14 @@ void main() {
       toneMapping: ToneMappingMode.linear,
       agxWhite: 6.0,
       agxContrast: 1.0,
+      ambientOcclusionPower: 1.0,
+      ambientOcclusionDetail: 0.0,
+      ambientOcclusionHorizonAngle: 0.02,
+      ambientOcclusionDirectLightAffect: 0.0,
+      ambientOcclusionSampleCount: 8,
+      ambientOcclusionHalfResolution: false,
+      ambientOcclusionDepthMipChain: false,
+      ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.none,
     );
     final b = EnvironmentSettings(
       exposure: 3.0,
@@ -24,6 +32,14 @@ void main() {
       toneMapping: ToneMappingMode.aces,
       agxWhite: 16.0,
       agxContrast: 1.5,
+      ambientOcclusionPower: 2.0,
+      ambientOcclusionDetail: 1.0,
+      ambientOcclusionHorizonAngle: 0.1,
+      ambientOcclusionDirectLightAffect: 0.8,
+      ambientOcclusionSampleCount: 32,
+      ambientOcclusionHalfResolution: true,
+      ambientOcclusionDepthMipChain: true,
+      ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.simple,
     );
 
     final mid = EnvironmentSettings.lerp(a, b, 0.5);
@@ -33,6 +49,17 @@ void main() {
     expect(mid.bloomIntensity, 0.5);
     expect(mid.agxWhite, 11.0);
     expect(mid.agxContrast, 1.25);
+    expect(mid.ambientOcclusionPower, 1.5);
+    expect(mid.ambientOcclusionDetail, 0.5);
+    expect(mid.ambientOcclusionHorizonAngle, closeTo(0.06, 1e-9));
+    expect(mid.ambientOcclusionDirectLightAffect, 0.4);
+    expect(mid.ambientOcclusionSampleCount, 32);
+    expect(mid.ambientOcclusionHalfResolution, isTrue);
+    expect(mid.ambientOcclusionDepthMipChain, isTrue);
+    expect(
+      mid.ambientOcclusionSpecularMode,
+      SpecularAmbientOcclusionMode.simple,
+    );
     // Discrete fields switch to b at t >= 0.5.
     expect(mid.toneMapping, ToneMappingMode.aces);
 

@@ -25,6 +25,10 @@ import 'package:vector_math/vector_math.dart';
 /// notice; a query issued before the first step (or against a collider
 /// added since the last step) will not see that collider.
 ///
+/// TODO(query-layer-mask): the query methods accept `layerMask` but the
+/// backend surface has no per-query group filter yet, so the mask is not
+/// applied; wire it into the shim's query filter.
+///
 /// TODO(shape-cast-hulls): [shapeCast] accepts sphere / box / capsule /
 /// cylinder probes; convex-hull, trimesh, heightfield, and compound
 /// probes are not wired through the backend surface yet.
@@ -661,7 +665,6 @@ class RapierWorld extends PhysicsSimulation {
         includeDynamic: includeDynamic,
         includeTriggers: includeTriggers,
       ),
-      layerMask,
     );
     if (hit == null) return null;
     return _hitFromRaw(hit);
@@ -692,7 +695,6 @@ class RapierWorld extends PhysicsSimulation {
         includeDynamic: includeDynamic,
         includeTriggers: includeTriggers,
       ),
-      layerMask,
     );
     return [for (final hit in hits) _hitFromRaw(hit)];
   }
@@ -718,7 +720,6 @@ class RapierWorld extends PhysicsSimulation {
         includeDynamic: includeDynamic,
         includeTriggers: includeTriggers,
       ),
-      layerMask,
     );
     return [
       for (final handle in handles) SimOverlapHit(colliderHandle: handle),
@@ -753,7 +754,6 @@ class RapierWorld extends PhysicsSimulation {
         includeDynamic: includeDynamic,
         includeTriggers: includeTriggers,
       ),
-      layerMask,
     );
     return [
       for (final handle in handles) SimOverlapHit(colliderHandle: handle),
@@ -794,7 +794,6 @@ class RapierWorld extends PhysicsSimulation {
         dir.z,
         distance,
         flags,
-        layerMask,
       );
     } else if (shape is BoxShape) {
       final r = Quaternion.fromRotation(from.getRotation());
@@ -814,7 +813,6 @@ class RapierWorld extends PhysicsSimulation {
         dir.z,
         distance,
         flags,
-        layerMask,
       );
     } else if (shape is CapsuleShape) {
       final r = Quaternion.fromRotation(from.getRotation());
@@ -833,7 +831,6 @@ class RapierWorld extends PhysicsSimulation {
         dir.z,
         distance,
         flags,
-        layerMask,
       );
     } else if (shape is CylinderShape) {
       final r = Quaternion.fromRotation(from.getRotation());
@@ -852,7 +849,6 @@ class RapierWorld extends PhysicsSimulation {
         dir.z,
         distance,
         flags,
-        layerMask,
       );
     } else {
       // TODO(shape-cast-hulls): convex-hull / trimesh / heightfield /

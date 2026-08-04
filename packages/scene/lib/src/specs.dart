@@ -144,7 +144,9 @@ class PrefabInstanceSpec {
   /// The referenced prefab `.fscene`.
   final AssetRef source;
 
-  /// Whether the instance's content loads eagerly or streams in.
+  /// Whether the instance's content loads eagerly or streams in. Asset-backed
+  /// loaders resolve [source] relative to the declaring document for both
+  /// policies.
   final LoadPolicy load;
 
   /// Per-property overrides applied on top of the prefab.
@@ -487,6 +489,8 @@ class EnvironmentResource extends ResourceSpec {
     this.environmentIntensity = 1.0,
     this.exposure = 1.0,
     this.toneMapping = 'pbrNeutral',
+    this.agxWhite = 16.29,
+    this.agxContrast = 1.25,
     this.radianceCubeSize,
     this.skybox,
     this.skyEnvironment,
@@ -506,6 +510,12 @@ class EnvironmentResource extends ResourceSpec {
 
   /// The tone-mapping operator name.
   String toneMapping;
+
+  /// Linear scene value mapped to display white by AgX.
+  double agxWhite;
+
+  /// Contrast applied by AgX around middle gray.
+  double agxContrast;
 
   /// The reflection/ambient cubemap size, or null for the engine default.
   int? radianceCubeSize;
@@ -732,13 +742,13 @@ class EmptyEnvironment extends EnvironmentSpec {
   const EmptyEnvironment();
 }
 
-/// A reflection-free environment with uniform diffuse irradiance.
+/// A reflection-free environment with uniform diffuse ambient radiance.
 /// {@category Documents}
 class ConstantEnvironment extends EnvironmentSpec {
   /// Creates a uniform diffuse environment with linear RGB [color].
   ConstantEnvironment(Vector3 color) : color = color.clone();
 
-  /// Linear RGB diffuse irradiance.
+  /// Linear RGB radiance received by a white Lambertian surface.
   final Vector3 color;
 }
 

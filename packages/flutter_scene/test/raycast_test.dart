@@ -31,6 +31,7 @@ class _RaycastDataGeometry extends Geometry {
     Matrix4 cameraTransform,
     Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {}
 }
 

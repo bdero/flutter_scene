@@ -187,6 +187,8 @@ class ResourceRealizer {
           environmentIntensity: resource.environmentIntensity,
           exposure: resource.exposure,
           toneMapping: resource.toneMapping,
+          agxWhite: resource.agxWhite,
+          agxContrast: resource.agxContrast,
           radianceCubeSize: resource.radianceCubeSize,
           skybox: resource.skybox,
           skyEnvironment: resource.skyEnvironment,

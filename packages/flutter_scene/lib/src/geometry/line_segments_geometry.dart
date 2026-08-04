@@ -150,6 +150,7 @@ class LineSegmentsGeometry extends Geometry {
     vm.Vector3 cameraPosition, {
     // See [materialVertexVariant]; the override is accepted and ignored.
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     // Slot 0: the shared unit quad (and its indices).
     bindGeometryBuffers(pass);

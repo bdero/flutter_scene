@@ -5,6 +5,7 @@ library;
 
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/ambient_occlusion.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
@@ -71,6 +72,14 @@ class EnvironmentSettings {
     this.ambientOcclusionRadius = 0.33,
     this.ambientOcclusionIntensity = 2.0,
     this.ambientOcclusionBias = 0.07,
+    this.ambientOcclusionPower = 1.5,
+    this.ambientOcclusionDetail = 0.5,
+    this.ambientOcclusionHorizonAngle = 0.06,
+    this.ambientOcclusionDirectLightAffect = 0.0,
+    this.ambientOcclusionSampleCount = 16,
+    this.ambientOcclusionHalfResolution = true,
+    this.ambientOcclusionDepthMipChain = false,
+    this.ambientOcclusionSpecularMode = SpecularAmbientOcclusionMode.none,
   }) : lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
        gain = gain ?? Vector3.all(1.0);
@@ -124,6 +133,14 @@ class EnvironmentSettings {
   double ambientOcclusionRadius;
   double ambientOcclusionIntensity;
   double ambientOcclusionBias;
+  double ambientOcclusionPower;
+  double ambientOcclusionDetail;
+  double ambientOcclusionHorizonAngle;
+  double ambientOcclusionDirectLightAffect;
+  int ambientOcclusionSampleCount;
+  bool ambientOcclusionHalfResolution;
+  bool ambientOcclusionDepthMipChain;
+  SpecularAmbientOcclusionMode ambientOcclusionSpecularMode;
 
   /// Reads the current look of [scene] into a snapshot. The IBL/sky references
   /// are shared (not deep-copied); the scalar look is captured by value.
@@ -169,11 +186,19 @@ class EnvironmentSettings {
       ambientOcclusionRadius: ao.radius,
       ambientOcclusionIntensity: ao.intensity,
       ambientOcclusionBias: ao.bias,
+      ambientOcclusionPower: ao.power,
+      ambientOcclusionDetail: ao.detail,
+      ambientOcclusionHorizonAngle: ao.horizonAngle,
+      ambientOcclusionDirectLightAffect: ao.directLightAffect,
+      ambientOcclusionSampleCount: ao.sampleCount,
+      ambientOcclusionHalfResolution: ao.halfResolution,
+      ambientOcclusionDepthMipChain: ao.depthMipChain,
+      ambientOcclusionSpecularMode: ao.specularMode,
     );
   }
 
-  /// Applies this snapshot to [scene], mutating its live look fields.
-  void applyTo(Scene scene) {
+  /// Applies the environment, sky, exposure, and tone mapping to [scene].
+  void applyLookTo(Scene scene) {
     // A sky-lit look has no static [environment]; its sky bakes the scene
     // environment over the next frames. Keep the previously baked environment
     // until then, so re-applying a sky-lit look (an editor edit, or the volume
@@ -189,6 +214,11 @@ class EnvironmentSettings {
     scene.agxContrast = agxContrast;
     scene.environmentIntensity = environmentIntensity;
     scene.exposure = exposure;
+  }
+
+  /// Applies this snapshot to [scene], mutating its live look fields.
+  void applyTo(Scene scene) {
+    applyLookTo(scene);
 
     final cg = scene.postProcess.colorGrading;
     cg
@@ -228,7 +258,15 @@ class EnvironmentSettings {
       ..enabled = ambientOcclusionEnabled
       ..radius = ambientOcclusionRadius
       ..intensity = ambientOcclusionIntensity
-      ..bias = ambientOcclusionBias;
+      ..bias = ambientOcclusionBias
+      ..power = ambientOcclusionPower
+      ..detail = ambientOcclusionDetail
+      ..horizonAngle = ambientOcclusionHorizonAngle
+      ..directLightAffect = ambientOcclusionDirectLightAffect
+      ..sampleCount = ambientOcclusionSampleCount
+      ..halfResolution = ambientOcclusionHalfResolution
+      ..depthMipChain = ambientOcclusionDepthMipChain
+      ..specularMode = ambientOcclusionSpecularMode;
   }
 
   /// Interpolates from [a] to [b] by [t] (0 = [a], 1 = [b]). See the class doc
@@ -295,6 +333,30 @@ class EnvironmentSettings {
         b.ambientOcclusionBias,
         t,
       ),
+      ambientOcclusionPower: _lerp(
+        a.ambientOcclusionPower,
+        b.ambientOcclusionPower,
+        t,
+      ),
+      ambientOcclusionDetail: _lerp(
+        a.ambientOcclusionDetail,
+        b.ambientOcclusionDetail,
+        t,
+      ),
+      ambientOcclusionHorizonAngle: _lerp(
+        a.ambientOcclusionHorizonAngle,
+        b.ambientOcclusionHorizonAngle,
+        t,
+      ),
+      ambientOcclusionDirectLightAffect: _lerp(
+        a.ambientOcclusionDirectLightAffect,
+        b.ambientOcclusionDirectLightAffect,
+        t,
+      ),
+      ambientOcclusionSampleCount: d.ambientOcclusionSampleCount,
+      ambientOcclusionHalfResolution: d.ambientOcclusionHalfResolution,
+      ambientOcclusionDepthMipChain: d.ambientOcclusionDepthMipChain,
+      ambientOcclusionSpecularMode: d.ambientOcclusionSpecularMode,
     );
   }
 }

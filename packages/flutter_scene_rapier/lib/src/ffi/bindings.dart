@@ -191,7 +191,6 @@ external int worldRestore(
     Float,
     Uint8,
     Uint8,
-    Uint32,
     Pointer<FsrHit>,
   )
 >(symbol: 'fsr_world_raycast')
@@ -206,7 +205,6 @@ external int worldRaycast(
   double maxDistance,
   int solid,
   int filterFlags,
-  int layerMask,
   Pointer<FsrHit> out,
 );
 
@@ -222,7 +220,6 @@ external int worldRaycast(
     Float,
     Uint8,
     Uint8,
-    Uint32,
   )
 >(symbol: 'fsr_world_raycast_all')
 external int worldRaycastAll(
@@ -236,12 +233,11 @@ external int worldRaycastAll(
   double maxDistance,
   int solid,
   int filterFlags,
-  int layerMask,
 );
 
-@Native<
-  Size Function(Pointer<NativeWorld>, Float, Float, Float, Float, Uint8, Uint32)
->(symbol: 'fsr_world_overlap_sphere')
+@Native<Size Function(Pointer<NativeWorld>, Float, Float, Float, Float, Uint8)>(
+  symbol: 'fsr_world_overlap_sphere',
+)
 external int worldOverlapSphere(
   Pointer<NativeWorld> world,
   double cx,
@@ -249,7 +245,6 @@ external int worldOverlapSphere(
   double cz,
   double radius,
   int filterFlags,
-  int layerMask,
 );
 
 @Native<
@@ -266,7 +261,6 @@ external int worldOverlapSphere(
     Float,
     Float,
     Uint8,
-    Uint32,
   )
 >(symbol: 'fsr_world_overlap_box')
 external int worldOverlapBox(
@@ -282,7 +276,6 @@ external int worldOverlapBox(
   double qz,
   double qw,
   int filterFlags,
-  int layerMask,
 );
 
 @Native<
@@ -297,7 +290,6 @@ external int worldOverlapBox(
     Float,
     Float,
     Uint8,
-    Uint32,
     Pointer<FsrHit>,
   )
 >(symbol: 'fsr_world_shape_cast_sphere')
@@ -312,7 +304,6 @@ external int worldShapeCastSphere(
   double dz,
   double distance,
   int filterFlags,
-  int layerMask,
   Pointer<FsrHit> out,
 );
 
@@ -334,7 +325,6 @@ external int worldShapeCastSphere(
     Float,
     Float, // distance
     Uint8,
-    Uint32,
     Pointer<FsrHit>,
   )
 >(symbol: 'fsr_world_shape_cast_box')
@@ -355,7 +345,6 @@ external int worldShapeCastBox(
   double dz,
   double distance,
   int filterFlags,
-  int layerMask,
   Pointer<FsrHit> out,
 );
 
@@ -376,7 +365,6 @@ external int worldShapeCastBox(
     Float,
     Float, // distance
     Uint8,
-    Uint32,
     Pointer<FsrHit>,
   )
 >(symbol: 'fsr_world_shape_cast_capsule')
@@ -396,7 +384,6 @@ external int worldShapeCastCapsule(
   double dz,
   double distance,
   int filterFlags,
-  int layerMask,
   Pointer<FsrHit> out,
 );
 
@@ -417,7 +404,6 @@ external int worldShapeCastCapsule(
     Float,
     Float, // distance
     Uint8,
-    Uint32,
     Pointer<FsrHit>,
   )
 >(symbol: 'fsr_world_shape_cast_cylinder')
@@ -437,7 +423,6 @@ external int worldShapeCastCylinder(
   double dz,
   double distance,
   int filterFlags,
-  int layerMask,
   Pointer<FsrHit> out,
 );
 

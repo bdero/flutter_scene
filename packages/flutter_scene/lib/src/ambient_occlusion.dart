@@ -13,6 +13,10 @@
 /// prepass. It takes only a depth buffer (the per-pixel normal is reconstructed
 /// from depth), so it fits a forward renderer with no normal buffer, and runs
 /// as full-screen fragment passes with no compute.
+///
+/// The depth hierarchy and sampling follow McGuire et al., "Scalable Ambient
+/// Obscurance" (2012),
+/// https://research.nvidia.com/publication/scalable-ambient-obscurance.
 /// {@category Rendering}
 class AmbientOcclusionSettings {
   /// Whether ambient occlusion runs. Off by default. When false the scene
@@ -24,8 +28,9 @@ class AmbientOcclusionSettings {
   /// contact creases.
   double radius = 0.33;
 
-  /// Scalar applied to the averaged obscurance before it is converted to
-  /// visibility. `0.0` removes screen-space occlusion.
+  /// Nonnegative scalar applied to averaged obscurance before conversion to
+  /// visibility. `0.0` removes screen-space occlusion. Output obscurance
+  /// saturates at `0.98` before [power] is applied.
   double intensity = 2.0;
 
   /// Contrast power applied to the final visibility. Values above `1.0`

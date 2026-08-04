@@ -383,10 +383,14 @@ class MeshCodec extends ComponentCodec {
             context.document.newId(),
             type: 'fmat',
             asset: AssetRef(sourcePath),
-            properties: serializeFmatParameterOverrides(
-              m.parameters.assignedValues,
-              resolveTexture: (texture) => _serializeTexture(texture, context),
-            ),
+            properties: {
+              ...serializeFmatParameterOverrides(
+                m.parameters.assignedValues,
+                resolveTexture: (texture) =>
+                    _serializeTexture(texture, context),
+              ),
+              if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+            },
           ),
         )
         .id;

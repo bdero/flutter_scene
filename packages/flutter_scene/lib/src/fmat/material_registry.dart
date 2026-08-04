@@ -269,6 +269,8 @@ final class FmatMaterialRegistry {
   }
 
   Future<gpu.ShaderLibrary> _loadShaderLibrary(String assetKey) async {
+    // TODO(fmat-hot-reload): retain the owning AssetBundle for byte-backed
+    // libraries and reinitialize their live shaders after a bundle edit.
     final library = identical(_bundle, rootBundle)
         ? await gpu.loadShaderLibraryAsync(assetKey)
         : await gpu.loadShaderLibraryFromBytesAsync(

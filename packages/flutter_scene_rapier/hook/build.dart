@@ -32,7 +32,6 @@ import 'package:flutter_scene_rapier/src/prebuilt_binaries.dart';
 import 'package:hooks/hooks.dart';
 
 const _nativeLibraryName = 'flutter_scene_rapier_native';
-const _nativeAbiVersion = 2;
 const _buildFromSourceEnv = 'FLUTTER_SCENE_RAPIER_BUILD_FROM_SOURCE';
 const _baseUrlOverrideEnv = 'FLUTTER_SCENE_RAPIER_PREBUILT_BASE_URL';
 
@@ -84,10 +83,11 @@ Future<Uri> _resolveLibrary(
     output.dependencies.add(manifestFile.uri);
     final manifest = NativeBinaryManifest.fromFile(manifestFile)!;
     final entry = manifest.binaries[triple];
-    if (manifest.abiVersion == _nativeAbiVersion && entry != null) {
+    if (entry != null) {
       return _downloadPrebuilt(input, code, manifest, entry, triple);
     }
-    // Missing or incompatible prebuilts fall through to a source build.
+    // No prebuilt for this triple (exotic arch / custom embedder): fall
+    // through to a source build below.
   }
 
   // Source build: depend on the native sources so edits trigger a rebuild.

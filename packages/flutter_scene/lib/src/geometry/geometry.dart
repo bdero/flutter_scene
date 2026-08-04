@@ -691,10 +691,6 @@ abstract class Geometry {
   /// nodes carries the correct skeleton for every draw.
   void setJointsTexture(gpu.Texture? texture, int width) {}
 
-  /// Depth bias for the current draw, set by the active render encoder.
-  @internal
-  double depthBias = 0.0;
-
   /// Binds vertex/index buffers and per-frame uniforms onto [pass] in
   /// preparation for a draw call.
   ///
@@ -708,6 +704,7 @@ abstract class Geometry {
   /// generated vertex variant). The per-frame uniforms (`FrameInfo`, the joints
   /// texture) must be bound against that shader's slots, since a variant can
   /// place its uniform blocks at different binding points.
+  /// [depthBias] offsets this draw toward [cameraPosition] in world units.
   void bind(
     gpu.RenderPass pass,
     TransientWriter transientsBuffer,
@@ -715,6 +712,7 @@ abstract class Geometry {
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   });
 
   /// Emits this geometry's draw call after [bind] has prepared the render pass.
@@ -1052,6 +1050,7 @@ class UnskinnedGeometry extends Geometry {
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     bindGeometryBuffers(pass);
 
@@ -1124,6 +1123,7 @@ class SkinnedGeometry extends Geometry {
     vm.Matrix4 cameraTransform,
     vm.Vector3 cameraPosition, {
     gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
   }) {
     if (_jointsTexture == null) {
       throw Exception('Joints texture must be set for skinned geometry.');

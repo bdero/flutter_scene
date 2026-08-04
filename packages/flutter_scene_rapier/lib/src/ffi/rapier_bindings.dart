@@ -407,7 +407,6 @@ abstract class RapierBindings {
     double dz,
     double maxDistance,
     int flags,
-    int layerMask,
   );
   List<RawHit> raycastAll(
     double ox,
@@ -418,7 +417,6 @@ abstract class RapierBindings {
     double dz,
     double maxDistance,
     int flags,
-    int layerMask,
   );
   List<int> overlapSphere(
     double cx,
@@ -426,7 +424,6 @@ abstract class RapierBindings {
     double cz,
     double radius,
     int flags,
-    int layerMask,
   );
   List<int> overlapBox(
     double cx,
@@ -440,7 +437,6 @@ abstract class RapierBindings {
     double qz,
     double qw,
     int flags,
-    int layerMask,
   );
   RawHit? shapeCastSphere(
     double ox,
@@ -452,7 +448,6 @@ abstract class RapierBindings {
     double dz,
     double distance,
     int flags,
-    int layerMask,
   );
   RawHit? shapeCastBox(
     double ox,
@@ -470,7 +465,6 @@ abstract class RapierBindings {
     double dz,
     double distance,
     int flags,
-    int layerMask,
   );
   RawHit? shapeCastCapsule(
     double ox,
@@ -487,7 +481,6 @@ abstract class RapierBindings {
     double dz,
     double distance,
     int flags,
-    int layerMask,
   );
   RawHit? shapeCastCylinder(
     double ox,
@@ -504,7 +497,6 @@ abstract class RapierBindings {
     double dz,
     double distance,
     int flags,
-    int layerMask,
   );
 
   // Collision events captured during the last step.

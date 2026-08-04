@@ -259,49 +259,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     }
     return (scene: scene, camera: _camera());
   }),
-  // Full-resolution AO over broad sloped surfaces and contact edges. The
-  // screen-axis banding regression is most visible on the pale back wall.
-  SmokeScene('ambient_occlusion', () {
-    final scene = Scene();
-    _configureAmbientOcclusion(scene);
-    final material = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
-      ..metallicFactor = 0.0
-      ..roughnessFactor = 0.9
-      ..vertexColorWeight = 0.0;
-    scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 3.0, depth: 3.0), material))
-        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, -0.8, 0)),
-    );
-    scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 3.0, depth: 2.0), material))
-        ..localTransform =
-            vm.Matrix4.translation(vm.Vector3(0, 0.7, -1.6)) *
-            vm.Matrix4.rotationX(math.pi * 0.5),
-    );
-    for (var i = -1; i <= 1; i++) {
-      scene.add(
-        Node(
-            mesh: Mesh(
-              CuboidGeometry(vm.Vector3(0.65, 0.65 + i.abs() * 0.25, 0.65)),
-              material,
-            ),
-          )
-          ..localTransform =
-              vm.Matrix4.translation(vm.Vector3(i * 0.85, -0.45, -0.25)) *
-              vm.Matrix4.rotationY(i * 0.25),
-      );
-    }
-    return (
-      scene: scene,
-      camera: PerspectiveCamera(
-        position: vm.Vector3(3.6, 2.4, 5.0),
-        target: vm.Vector3(0, -0.05, -0.4),
-      ),
-    );
-  }),
-  // AO contact continues across a surface that exits both horizontal edges.
-  // This catches viewport-boundary brightness ramps and discontinuities.
+  // AO over broad surfaces with contact continuing through both horizontal
+  // edges. This catches screen-axis bands and viewport-edge discontinuities.
   SmokeScene('ambient_occlusion_edge', () {
     final scene = Scene();
     _configureAmbientOcclusion(scene);

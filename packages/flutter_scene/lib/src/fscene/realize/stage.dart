@@ -100,6 +100,8 @@ Future<void> realizeStage(
     environmentIntensity: look?.environmentIntensity ?? 1.0,
     exposure: look?.exposure ?? 1.0,
     toneMapping: look?.toneMapping ?? 'pbrNeutral',
+    agxWhite: look?.agxWhite ?? 16.29,
+    agxContrast: look?.agxContrast ?? 1.25,
     radianceCubeSize: look?.radianceCubeSize,
     skybox: look?.skybox,
     skyEnvironment: look?.skyEnvironment,
@@ -107,7 +109,7 @@ Future<void> realizeStage(
     environmentLoader: environmentLoader,
     payloadLookup: payloadLookup,
   );
-  _applyStageLook(settings, scene);
+  settings.applyLookTo(scene);
 
   // Spatial environment-volume components blend over the stage as the global
   // base. Capture the just-applied stage look as that base so the components
@@ -117,19 +119,6 @@ Future<void> realizeStage(
   // by the document, so a realize clears it.
   scene.baseEnvironment = EnvironmentSettings.fromScene(scene);
   scene.environmentVolumes.clear();
-}
-
-void _applyStageLook(EnvironmentSettings settings, Scene scene) {
-  if (settings.environment != null || settings.skyEnvironment == null) {
-    scene.environment = settings.environment;
-  }
-  scene
-    ..skybox = settings.skybox
-    ..skyEnvironment = settings.skyEnvironment
-    ..sunLight = settings.sunLight
-    ..toneMapping = settings.toneMapping
-    ..environmentIntensity = settings.environmentIntensity
-    ..exposure = settings.exposure;
 }
 
 /// Realizes a look (the fields an [EnvironmentResource] or a volume carries)
@@ -146,6 +135,8 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   required double environmentIntensity,
   required double exposure,
   required String toneMapping,
+  double agxWhite = 16.29,
+  double agxContrast = 1.25,
   int? radianceCubeSize,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
@@ -157,6 +148,8 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
     environmentIntensity: environmentIntensity,
     exposure: exposure,
     toneMapping: _toneMapping(toneMapping),
+    agxWhite: agxWhite,
+    agxContrast: agxContrast,
   );
 
   final realized = <String, SkySource?>{};
@@ -394,6 +387,8 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.environmentIntensity = scene.environmentIntensity;
   resource.exposure = scene.exposure;
   resource.toneMapping = scene.toneMapping.name;
+  resource.agxWhite = scene.agxWhite;
+  resource.agxContrast = scene.agxContrast;
 
   final skyEnvironment = scene.skyEnvironment;
   if (skyEnvironment == null) {

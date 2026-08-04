@@ -32,6 +32,7 @@ import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
+import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
 
@@ -422,13 +423,17 @@ ComponentSpec _meshComponent(List<(LocalId, LocalId)> pairs) {
 }
 
 ComponentSpec? _lightComponent(GltfPunctualLight light) {
+  // The extension carries no shadow metadata, so imported lights keep shadow
+  // rendering disabled unless the authored scene overrides the component.
   final properties = <String, PropertyValue>{
     'color': Vec3Value(light.color.clone()),
-    'intensity': DoubleValue(light.intensity),
+    'intensity': DoubleValue(gltfLightIntensity(light)),
   };
   switch (light.type) {
     case 'directional':
-      properties['direction'] = Vec3Value(Vector3(0, 0, -1));
+      properties
+        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
+        ..['castsShadow'] = const BoolValue(false);
       return ComponentSpec('directionalLight', properties: properties);
     case 'point':
       properties['range'] = DoubleValue(light.range ?? 0);
@@ -438,7 +443,8 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
         ..['direction'] = Vec3Value(Vector3(0, 0, -1))
         ..['range'] = DoubleValue(light.range ?? 0)
         ..['innerConeAngle'] = DoubleValue(light.innerConeAngle)
-        ..['outerConeAngle'] = DoubleValue(light.outerConeAngle);
+        ..['outerConeAngle'] = DoubleValue(light.outerConeAngle)
+        ..['castsShadow'] = const BoolValue(false);
       return ComponentSpec('spotLight', properties: properties);
   }
   return null;

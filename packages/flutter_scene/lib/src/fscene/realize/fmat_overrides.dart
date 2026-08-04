@@ -23,6 +23,7 @@ void applyFmatParameterOverrides(
 }) {
   for (final entry in properties.entries) {
     final name = entry.key;
+    if (name == 'depthBias') continue;
     try {
       switch (entry.value) {
         case BoolValue(:final value):

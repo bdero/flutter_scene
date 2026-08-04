@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
+import 'package:flutter_scene/src/importer/gltf_light_units.dart';
 
 import '../animation.dart';
 import '../components/component.dart';
@@ -334,26 +335,25 @@ void _populateNode({
 // for an unsupported type. glTF lights emit along the node's local -Z axis, so
 // directional and spot lights take that as their local direction (the node
 // transform, and the scene-root handedness flip, then aim them in world space).
-//
-// TODO(lighting): glTF point/spot intensity is candela and directional is lux;
-// flutter_scene uses an artistic multiplier, so the value is carried through
-// unconverted. Map photometric units to the engine's exposure if physical
-// intensities are needed.
 Component? _buildLightComponent(GltfPunctualLight light) {
+  // The extension carries no shadow metadata, so imported lights do not add
+  // shadow passes implicitly.
+  final intensity = gltfLightIntensity(light);
   switch (light.type) {
     case 'directional':
       return DirectionalLightComponent(
         DirectionalLight(
           direction: Vector3(0.0, 0.0, -1.0),
           color: light.color.clone(),
-          intensity: light.intensity,
+          intensity: intensity,
+          castsShadow: false,
         ),
       );
     case 'point':
       return PointLightComponent(
         PointLight(
           color: light.color.clone(),
-          intensity: light.intensity,
+          intensity: intensity,
           range: light.range ?? 0.0,
         ),
       );
@@ -362,10 +362,11 @@ Component? _buildLightComponent(GltfPunctualLight light) {
         SpotLight(
           direction: Vector3(0.0, 0.0, -1.0),
           color: light.color.clone(),
-          intensity: light.intensity,
+          intensity: intensity,
           range: light.range ?? 0.0,
           innerConeAngle: light.innerConeAngle,
           outerConeAngle: light.outerConeAngle,
+          castsShadow: false,
         ),
       );
     default:

@@ -201,6 +201,7 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
 }
 
 /// Loads a shader bundle directly from [bytes].
+// TODO(shader-byte-reload): register byte-backed shaders with a reload source.
 Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async =>
     ShaderLibrary._loadFromBytes(bytes);
 

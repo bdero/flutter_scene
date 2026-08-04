@@ -194,6 +194,8 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     environmentIntensity: e.environmentIntensity,
     exposure: e.exposure,
     toneMapping: e.toneMapping,
+    agxWhite: e.agxWhite,
+    agxContrast: e.agxContrast,
     radianceCubeSize: e.radianceCubeSize,
     skybox: e.skybox,
     skyEnvironment: e.skyEnvironment,

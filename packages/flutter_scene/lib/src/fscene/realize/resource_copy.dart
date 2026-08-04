@@ -103,6 +103,8 @@ LocalId copyResourceInto(
           environmentIntensity: res.environmentIntensity,
           exposure: res.exposure,
           toneMapping: res.toneMapping,
+          agxWhite: res.agxWhite,
+          agxContrast: res.agxContrast,
           radianceCubeSize: res.radianceCubeSize,
           skybox: res.skybox,
           skyEnvironment: res.skyEnvironment,
