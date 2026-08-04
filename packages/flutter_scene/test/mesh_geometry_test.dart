@@ -101,6 +101,7 @@ void main() {
         ..color(Vector4(0, 1, 0, 1))
         ..texCoord(Vector2(0.5, 0.5))
         ..texCoord1(Vector2(0.25, 0.75))
+        ..tangent(Vector4(1, 0, 0, -1))
         ..addVertex(Vector3(1, 0, 0));
 
       final floats = Float32List.sublistView(builder.packVertices());
@@ -110,6 +111,8 @@ void main() {
       expect(floats.sublist(18 + 6, 18 + 8), [0.5, 0.5]);
       expect(floats.sublist(18 + 8, 18 + 10), [0.25, 0.75]);
       expect(floats.sublist(18 + 10, 18 + 14), [0, 1, 0, 1]);
+      expect(floats.sublist(14, 18), [0, 0, 0, 0]);
+      expect(floats.sublist(18 + 14, 18 + 18), [1, 0, 0, -1]);
     });
 
     test('packVertices generates normals for an authored triangle', () {

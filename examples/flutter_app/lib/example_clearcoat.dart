@@ -252,7 +252,12 @@ class _ExampleClearcoatState extends State<ExampleClearcoat> {
   @override
   Widget build(BuildContext context) {
     if (_error case final error?) {
-      return Center(child: Text('Could not load clearcoat example\n$error'));
+      return Center(
+        child: Text(
+          'Could not load clearcoat example\n'
+          'Run tool/fetch_clearcoat_assets.sh, then restart the app.\n$error',
+        ),
+      );
     }
     if (!_loaded) {
       return const Center(child: CircularProgressIndicator());

@@ -1042,6 +1042,29 @@ base class SceneEncoder {
         .contains(RenderInput.filteredSceneColor);
   }
 
+  /// Number of pending translucent draws that read accumulated scene color.
+  int get pendingSceneColorReaderCount {
+    _prepareTranslucent();
+    var count = 0;
+    for (var i = _translucentCursor; i < _translucentRecords.length; i++) {
+      if (_readsSceneColor(_translucentRecords[i].material)) count++;
+    }
+    return count;
+  }
+
+  /// Whether any pending translucent draw needs filtered scene color.
+  bool get pendingTranslucentReadsFilteredSceneColor {
+    _prepareTranslucent();
+    for (var i = _translucentCursor; i < _translucentRecords.length; i++) {
+      if (_translucentRecords[i].material.sceneInputs.contains(
+        RenderInput.filteredSceneColor,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Emits one translucent batch in global back-to-front order.
   ///
   /// A batch ends immediately before the next material that reads scene

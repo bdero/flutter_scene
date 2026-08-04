@@ -292,19 +292,6 @@ class GltfMaterial {
   final GltfMaterialTransmission? transmission;
   final GltfMaterialVolume? volume;
 
-  bool get usesPhysicalExtensions =>
-      anisotropy != null ||
-      clearcoat != null ||
-      diffuseTransmission != null ||
-      dispersion != 0.0 ||
-      emissiveStrength != 1.0 ||
-      ior != 1.5 ||
-      iridescence != null ||
-      sheen != null ||
-      specular != null ||
-      transmission != null ||
-      volume != null;
-
   bool get requiresPhysicalMaterial =>
       anisotropy != null ||
       clearcoat != null ||

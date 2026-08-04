@@ -239,8 +239,10 @@ float FetchPunctualIndex(int j) {
 
 // Widens a specular lobe to cover unresolved normal variation in one pixel.
 float SpecularAARoughness(vec3 normal, float roughness) {
+  // This toggle is a frame uniform, so the derivatives remain under uniform
+  // control flow.
   if (frag_info.specular_aa_variance <= 0.0) {
-    return max(roughness, kMinRoughness);
+    return roughness;
   }
   vec3 d_normal_x = dFdx(normal);
   vec3 d_normal_y = dFdy(normal);
@@ -292,7 +294,7 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
   float signed_n_dot_l = dot(normal, light_vector);
   float n_dot_l = max(signed_n_dot_l, 0.0);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  vec3 transmitted_diffuse = material.diffuse_transmission_color * albedo *
+  vec3 transmitted_diffuse = material.diffuse_transmission_color *
                              (1.0 / kPi) * radiance *
                              max(-signed_n_dot_l, 0.0) *
                              material.diffuse_transmission;
@@ -656,8 +658,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
       (indirect_diffuse * occlusion + indirect_specular * specular_occlusion) *
       ambient_shadow;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  ambient += material.diffuse_transmission_color * albedo *
-             (1.0 - metallic) * material.diffuse_transmission *
+  ambient += material.diffuse_transmission_color * (1.0 - metallic) *
+             material.diffuse_transmission *
              transmitted_irradiance * occlusion * ambient_shadow;
   if (material.clearcoat > 0.0) {
     vec3 coat_reflection = reflect(-camera_normal, coat_normal);
@@ -678,7 +680,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
   }
   ambient += material.sheen_color * irradiance *
              (0.25 + 0.75 * (1.0 - n_dot_v_energy)) *
-             (1.0 - 0.5 * material.sheen_roughness);
+             (1.0 - 0.5 * material.sheen_roughness) * occlusion *
+             ambient_shadow;
 #endif
 
   // Analytic directional light (Cook-Torrance, layered on top of the IBL

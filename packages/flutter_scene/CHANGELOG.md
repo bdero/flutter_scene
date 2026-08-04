@@ -35,10 +35,11 @@
 * Skipped per-instance culling when an entire batch is inside every active plane.
 * Reused large transient buffers across changing instance counts.
 * Translucent instanced meshes now sort as one batch, with instances ordered within it.
+* Translucent draws sort back to front by view-axis depth through their geometry bounds center.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed anisotropy strength being ignored by environment lighting and using an isotropic visibility term for analytic lights.
 * Fixed anisotropic materials exposing primitive triangles by importing and interpolating authored tangents.
-* Vertex payload layouts include UV1 and tangents under versioned names, while older `.fscene` layouts upgrade when loaded.
+* Vertex payload layouts include UV1 and tangents under versioned names, growing unskinned payloads by 50% and skinned payloads by 30%; older `.fscene` layouts upgrade when loaded.
 * Fixed runtime glTF normal maps building color-filtered mips, which skewed minified normals and washed out reflective materials.
 * Fixed uncompressed `.fsceneb` textures uploading without mipmaps, so a cooked scene is mipmapped whether or not `compressTextures` is set.
 * Fixed cooked `.fsceneb` and `.fstex` textures sampling without anisotropic filtering, which blurred them at grazing angles.
