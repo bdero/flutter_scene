@@ -2749,7 +2749,7 @@ base class Scene implements SceneGraph {
       );
     }
 
-    final image = swapchainColor.asImage();
+    final image = gpu.gpuHost.textureToImage(swapchainColor);
     final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
     final paint = ui.Paint()
       ..filterQuality = view.filterQuality ?? filterQuality;
