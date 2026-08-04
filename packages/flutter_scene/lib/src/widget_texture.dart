@@ -587,10 +587,11 @@ class _RenderWidgetTexture extends RenderProxyBox {
     }
   }
 
-  // Whether gpu.Texture.fromImage can wrap captures on this backend. Cleared
-  // by the first failed wrap (the web backend, software rendering) so later
-  // captures skip straight to the readback fallback.
-  bool _wrapSupported = true;
+  // Whether captures can be wrapped rather than read back. Seeded from the
+  // backend's capability and cleared by the first image that cannot be wrapped
+  // anyway (a deferred image, or software rendering), so later captures skip
+  // straight to the readback fallback.
+  bool _wrapSupported = gpu.gpuHost.capabilities.imageToTexture;
 
   Future<void> _pumpCapture() async {
     if (_captureInFlight) return;
@@ -609,11 +610,10 @@ class _RenderWidgetTexture extends RenderProxyBox {
           try {
             gpu.Texture? wrapped;
             if (_wrapSupported) {
-              try {
-                wrapped = gpu.Texture.fromImage(gpu.gpuContext, image);
-              } on Exception {
-                // The image is not backed by a wrappable GPU texture on this
-                // backend; read back and upload from here on.
+              wrapped = gpu.gpuHost.imageToTexture(image);
+              if (wrapped == null) {
+                // Not backed by a wrappable GPU texture; read back and upload
+                // from here on.
                 _wrapSupported = false;
               }
             }
