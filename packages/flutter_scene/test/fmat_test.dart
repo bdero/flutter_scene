@@ -84,7 +84,21 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(m.shadingModel, FmatShadingModel.lit);
       expect(m.blending, FmatBlending.opaque);
       expect(m.culling, FmatCulling.back);
+      expect(m.depthWrite, isFalse);
       expect(m.parameters, isEmpty);
+    });
+
+    test('parses translucent depth writes into the sidecar', () {
+      final m = parseFmat('''
+material {
+  name: "Glass",
+  blending: alpha,
+  depth_write: true,
+}
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(m.depthWrite, isTrue);
+      expect(buildSidecar(m)['depth_write'], isTrue);
     });
 
     test('parses engine_inputs and rejects invalid combinations', () {
@@ -93,17 +107,29 @@ material {
   name: "Water",
   shading_model: lit,
   blending: alpha,
-  engine_inputs: [scene_color, scene_depth],
+  engine_inputs: [scene_color, filtered_scene_color, scene_depth],
 }
 fragment { void Surface(inout MaterialInputs material) {} }
 ''');
-      expect(m.engineInputs, ['scene_color', 'scene_depth']);
+      expect(m.engineInputs, [
+        'scene_color',
+        'filtered_scene_color',
+        'scene_depth',
+      ]);
       final sidecar = buildSidecar(m);
-      expect(sidecar['engine_inputs'], ['scene_color', 'scene_depth']);
+      expect(sidecar['engine_inputs'], [
+        'scene_color',
+        'filtered_scene_color',
+        'scene_depth',
+      ]);
       final glsl = emitFragmentGlsl(m);
       expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
       expect(glsl, contains('uniform sampler2D scene_depth;'));
+      expect(glsl, contains('uniform sampler2D scene_filtered_color;'));
       expect(glsl, contains('vec3 GetSceneColor(vec2 uv_offset)'));
+      expect(glsl, contains('vec3 GetSceneColorFiltered('));
+      expect(glsl, contains('vec3 SampleTransmissionBand('));
+      expect(glsl, contains('TransmissionWeight0'));
       expect(glsl, contains('float GetSceneDepth(vec2 uv_offset)'));
 
       // Unknown entries are rejected.
@@ -121,8 +147,32 @@ fragment { void Surface(inout MaterialInputs material) {} }
 material { name: "X", shading_model: unlit, engine_inputs: [scene_color] }
 fragment { void Surface(inout MaterialInputs material) {} }
 '''),
-        _throwsFmat('requires `shading_model: lit`'),
+        _throwsFmat('requires a lit shading model'),
       );
+      expect(
+        () => parseFmat('''
+material { name: "X", engine_inputs: [filtered_scene_color] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('requires `scene_color`'),
+      );
+    });
+
+    test('physical materials enable layered inputs and engine textures', () {
+      final material = parseFmat('''
+material {
+  name: "Physical",
+  shading_model: physical,
+  engine_inputs: [scene_color],
+}
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(material.shadingModel, FmatShadingModel.physical);
+      final glsl = emitFragmentGlsl(material);
+      expect(glsl, contains('#define FLUTTER_SCENE_PHYSICAL_MATERIAL'));
+      expect(glsl, contains('#include <material_lighting.glsl>'));
+      expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
+      expect(buildSidecar(material)['shading_model'], 'physical');
     });
 
     test('materials without engine_inputs get no scene-input samplers', () {
@@ -133,6 +183,7 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(m.engineInputs, isEmpty);
       final glsl = emitFragmentGlsl(m);
       expect(glsl, isNot(contains('scene_opaque_color')));
+      expect(glsl, isNot(contains('scene_filtered_color')));
       expect(glsl, isNot(contains('uniform sampler2D scene_depth;')));
       expect(buildSidecar(m).containsKey('engine_inputs'), isFalse);
     });

@@ -364,9 +364,8 @@ class GeometryResource extends ResourceSpec {
          'descriptor',
        );
 
-  /// The binary chunk holding this geometry's interleaved vertex buffer, or
-  /// null when [procedural] is set. The vertex `layout` (`unskinned` /
-  /// `skinned`) lives on the referenced payload.
+  /// The binary chunk holding this geometry's vertex buffer, or null when
+  /// [procedural] is set. Its layout lives on the referenced payload.
   final LocalId? vertices;
 
   /// The binary chunk holding this geometry's index buffer, or null for a
@@ -661,8 +660,7 @@ class PayloadSpec {
   /// How the bytes are interpreted.
   final PayloadEncoding encoding;
 
-  /// For [PayloadEncoding.vertexBuffer], the vertex layout (`unskinned` /
-  /// `skinned`); otherwise null.
+  /// For [PayloadEncoding.vertexBuffer], the vertex layout; otherwise null.
   final String? layout;
 
   /// For [PayloadEncoding.image], the pixel format (`rgba8`, ...); otherwise

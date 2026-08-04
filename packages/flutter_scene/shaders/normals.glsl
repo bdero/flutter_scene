@@ -37,8 +37,20 @@ mat3 CotangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
   return mat3(T * invmax, B * invmax, normal);
 }
 
+mat3 TangentFrame(vec3 normal, vec3 view_vector, vec2 uv) {
+  vec4 authored = GetWorldTangent();
+  vec3 tangent = authored.xyz - normal * dot(normal, authored.xyz);
+  float tangent_length_squared = dot(tangent, tangent);
+  if (tangent_length_squared <= 1e-10 || abs(authored.w) < 0.5) {
+    return CotangentFrame(normal, view_vector, uv);
+  }
+  tangent *= inversesqrt(tangent_length_squared);
+  vec3 bitangent = normalize(cross(normal, tangent)) * sign(authored.w);
+  return mat3(tangent, bitangent, normal);
+}
+
 vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, vec3 view_vector,
-                   vec2 texcoord, float scale) {
+                   vec2 texcoord, vec2 scale) {
   vec3 map = texture(normal_tex, texcoord).xyz;
   map = map * 255. / 127. - 128. / 127.;
   // map.z = sqrt(1. - dot(map.xy, map.xy));
@@ -46,6 +58,12 @@ vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, vec3 view_vector,
   // glTF normalScale: attenuate the tangent-plane (xy) components, leaving z, so
   // a scale below 1 flattens the perturbation toward the geometric normal.
   map.xy *= scale;
-  mat3 TBN = CotangentFrame(normal, -view_vector, texcoord);
+  mat3 TBN = TangentFrame(normal, -view_vector, texcoord);
   return normalize(TBN * map).xyz;
+}
+
+vec3 PerturbNormal(sampler2D normal_tex, vec3 normal, vec3 view_vector,
+                   vec2 texcoord, float scale) {
+  return PerturbNormal(normal_tex, normal, view_vector, texcoord,
+                       vec2(scale));
 }

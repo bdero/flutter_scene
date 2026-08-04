@@ -76,7 +76,10 @@ export 'src/material/hdr_decoder.dart'
 export 'src/material/material.dart' show Material;
 export 'src/material/material_parameters.dart' show MaterialParameters;
 export 'src/material/physically_based_material.dart'
-    show AlphaMode, PhysicallyBasedMaterial;
+    show AlphaMode, PhysicallyBasedMaterial, TextureTransform;
+export 'src/material/physical_material.dart'
+    show PhysicalMaterialDescriptor, PhysicalTexture;
+export 'src/material/advanced_physical_material.dart' show PhysicalMaterial;
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
 export 'src/material/shader_material.dart' show ShaderMaterial;
@@ -84,7 +87,11 @@ export 'src/material/shader_stage.dart' show MeshVariant, ShaderStage;
 export 'src/material/sprite_material.dart' show SpriteBlendMode, SpriteMaterial;
 export 'src/material/unlit_material.dart' show UnlitMaterial;
 export 'src/fmat/material_registry.dart'
-    show FmatMaterialRegistry, loadFmatMaterial, loadFmatSky;
+    show
+        FmatMaterialFactory,
+        FmatMaterialRegistry,
+        loadFmatMaterial,
+        loadFmatSky;
 export 'src/importer/scene_registry.dart'
     show
         SceneRegistry,

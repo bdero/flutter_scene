@@ -6,7 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:data_assets/data_assets.dart';
-import 'package:flutter_scene/src/importer/src/fscene_emitter/fscene_emitter.dart';
+import 'package:flutter_scene/src/importer/texture_roles.dart';
 import 'package:flutter_scene/src/importer/src/gltf/types.dart';
 import 'package:flutter_scene/src/texture/build_textures.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
@@ -137,7 +137,7 @@ void main() {
     }
   });
 
-  test('emitter derives texture roles from glTF material slots', () {
+  test('glTF import derives texture roles from material slots', () {
     final doc = GltfDocument(
       textures: [for (var i = 0; i < 5; i++) GltfTexture(source: i)],
       materials: [

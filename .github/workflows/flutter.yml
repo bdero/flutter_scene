@@ -24,7 +24,7 @@ jobs:
       - name: Resolve workspace dependencies
         run: flutter pub get
       - name: Enable asset building
-        run: flutter config --enable-native-assets
+        run: flutter config --enable-native-assets --enable-dart-data-assets
       - name: Lint analysis
         run: dart analyze packages examples
       - name: Dart format
@@ -48,7 +48,7 @@ jobs:
       - name: Resolve workspace dependencies
         run: flutter pub get
       - name: Enable asset building
-        run: flutter config --enable-native-assets
+        run: flutter config --enable-native-assets --enable-dart-data-assets
       - name: Run tests
         working-directory: ${{ matrix.package }}
         run: flutter test --enable-impeller

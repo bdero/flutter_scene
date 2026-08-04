@@ -3,7 +3,7 @@
 // Skinned geometry is stored interleaved, so its payload equals the packer's
 // bytes directly; unskinned geometry is stored de-interleaved (structure of
 // arrays), so its payload equals the packer's interleaved bytes split into the
-// four attribute streams and concatenated. This is the project's proven
+// six attribute streams and concatenated. This is the project's proven
 // import-verification method (compare bytes against the known-good packer
 // rather than eyeballing renders).
 //
@@ -150,7 +150,10 @@ void main() {
           final vertexPayload = document.payload(geometry.vertices!)!;
           final indexPayload = document.payload(geometry.indices!)!;
           if (packed.isSkinned) {
-            expect(vertexPayload.layout, 'skinned');
+            expect(
+              vertexPayload.layout,
+              InterleavedLayoutAdapter.skinnedLayout,
+            );
             expect(
               vertexPayload.bytes,
               equals(packed.vertexBytes),

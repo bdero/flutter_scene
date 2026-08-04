@@ -1,0 +1,169 @@
+material {
+  name: "PhysicalTransmission",
+  shading_model: physical,
+  blending: alpha,
+  culling: back,
+  depth_write: true,
+  engine_inputs: [scene_color, filtered_scene_color],
+  parameters: [
+    { type: vec4, name: base_color_factor, default: [1, 1, 1, 1] },
+    { type: float, name: metallic_factor, default: 1 },
+    { type: float, name: roughness_factor, default: 1 },
+    { type: float, name: normal_scale, default: 1 },
+    { type: float, name: occlusion_strength, default: 1 },
+    { type: int, name: alpha_mode, default: 0 },
+    { type: float, name: alpha_cutoff, default: 0.5 },
+    { type: vec3, name: emissive_factor, default: [0, 0, 0] },
+    { type: float, name: emissive_strength, default: 1 },
+    { type: float, name: specular_factor, default: 1 },
+    { type: vec3, name: specular_color_factor, default: [1, 1, 1] },
+    { type: float, name: ior, default: 1.5 },
+    { type: float, name: clearcoat, default: 0 },
+    { type: float, name: clearcoat_roughness, default: 0 },
+    { type: vec2, name: clearcoat_normal_scale, default: [1, 1] },
+    { type: vec3, name: sheen_color, default: [0, 0, 0] },
+    { type: float, name: sheen_roughness, default: 0 },
+    { type: float, name: transmission, default: 0 },
+    { type: float, name: diffuse_transmission, default: 0 },
+    { type: vec3, name: diffuse_transmission_color, default: [1, 1, 1] },
+    { type: float, name: thickness, default: 0 },
+    { type: vec3, name: attenuation_color, default: [1, 1, 1] },
+    { type: float, name: attenuation_distance, default: 1000000000.0 },
+    { type: float, name: dispersion, default: 0 },
+    { type: float, name: iridescence, default: 0 },
+    { type: float, name: iridescence_ior, default: 1.3 },
+    { type: float, name: iridescence_thickness_minimum, default: 100 },
+    { type: float, name: iridescence_thickness_maximum, default: 400 },
+    { type: float, name: anisotropy, default: 0 },
+    { type: float, name: anisotropy_rotation, default: 0 },
+    { type: int, name: transmission_texture_kind, default: 0 },
+    { type: vec4, name: base_color_uv_transform, default: [0, 0, 1, 1] },
+    { type: float, name: base_color_uv_rotation, default: 0 },
+    { type: int, name: base_color_uv_set, default: 0 },
+    { type: vec4, name: metallic_roughness_uv_transform, default: [0, 0, 1, 1] },
+    { type: float, name: metallic_roughness_uv_rotation, default: 0 },
+    { type: int, name: metallic_roughness_uv_set, default: 0 },
+    { type: vec4, name: normal_uv_transform, default: [0, 0, 1, 1] },
+    { type: float, name: normal_uv_rotation, default: 0 },
+    { type: int, name: normal_uv_set, default: 0 },
+    { type: vec4, name: emissive_uv_transform, default: [0, 0, 1, 1] },
+    { type: float, name: emissive_uv_rotation, default: 0 },
+    { type: int, name: emissive_uv_set, default: 0 },
+    { type: vec4, name: transmission_data_uv_transform, default: [0, 0, 1, 1] },
+    { type: float, name: transmission_data_uv_rotation, default: 0 },
+    { type: int, name: transmission_data_uv_set, default: 0 },
+    { type: sampler2d, name: base_color_texture, hint: default_white },
+    { type: sampler2d, name: metallic_roughness_texture, hint: default_white },
+    { type: sampler2d, name: normal_texture, hint: default_normal },
+    { type: sampler2d, name: emissive_texture, hint: default_white },
+    { type: sampler2d, name: transmission_data_texture, hint: default_white },
+  ],
+}
+
+fragment {
+  vec2 PhysicalUv(vec2 uv, vec4 transform, float rotation) {
+    vec2 scaled = uv * transform.zw;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    return transform.xy + vec2(c * scaled.x - s * scaled.y,
+                               s * scaled.x + c * scaled.y);
+  }
+
+  vec3 VolumeTransmissionRay(vec3 normal, float thickness, float ior) {
+    vec3 ray = refract(-GetViewDirection(), normal,
+                       1.0 / max(ior, 1.0));
+    return normalize(ray) * thickness * GetModelScale();
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec2 base_uv = PhysicalUv(GetUV(material_params.base_color_uv_set),
+                              material_params.base_color_uv_transform,
+                              material_params.base_color_uv_rotation);
+    vec2 mr_uv = PhysicalUv(
+        GetUV(material_params.metallic_roughness_uv_set),
+        material_params.metallic_roughness_uv_transform,
+        material_params.metallic_roughness_uv_rotation);
+    vec2 normal_uv = PhysicalUv(GetUV(material_params.normal_uv_set),
+                                material_params.normal_uv_transform,
+                                material_params.normal_uv_rotation);
+    vec2 emissive_uv = PhysicalUv(GetUV(material_params.emissive_uv_set),
+                                  material_params.emissive_uv_transform,
+                                  material_params.emissive_uv_rotation);
+    vec2 data_uv = PhysicalUv(
+        GetUV(material_params.transmission_data_uv_set),
+        material_params.transmission_data_uv_transform,
+        material_params.transmission_data_uv_rotation);
+
+    vec4 base = texture(base_color_texture, base_uv);
+    vec4 vertex_color = GetVertexColor();
+    material.base_color = vec4(
+        SRGBToLinear(base.rgb) * vertex_color.rgb *
+            material_params.base_color_factor.rgb,
+        base.a * vertex_color.a * material_params.base_color_factor.a);
+    vec4 mr = texture(metallic_roughness_texture, mr_uv);
+    material.metallic = clamp(mr.b * material_params.metallic_factor, 0.0, 1.0);
+    material.roughness = clamp(mr.g * material_params.roughness_factor,
+                               kMinRoughness, 1.0);
+    material.normal = PerturbNormal(normal_texture, GetWorldNormal(),
+                                    v_viewvector, normal_uv,
+                                    material_params.normal_scale);
+    material.emissive = material_params.emissive_factor *
+                        material_params.emissive_strength *
+                        SRGBToLinear(texture(emissive_texture,
+                                             emissive_uv).rgb);
+    material.specular_weight = material_params.specular_factor;
+    material.specular_color = material_params.specular_color_factor;
+    material.ior = material_params.ior;
+    material.clearcoat = material_params.clearcoat;
+    material.clearcoat_roughness = material_params.clearcoat_roughness;
+    material.clearcoat_normal = GetWorldNormal();
+    material.sheen_color = material_params.sheen_color;
+    material.sheen_roughness = material_params.sheen_roughness;
+    material.diffuse_transmission = material_params.diffuse_transmission;
+    material.diffuse_transmission_color =
+        material_params.diffuse_transmission_color;
+    material.anisotropy = clamp(material_params.anisotropy, 0.0, 1.0);
+    material.anisotropy_direction =
+        vec2(cos(material_params.anisotropy_rotation),
+             sin(material_params.anisotropy_rotation));
+    material.iridescence = material_params.iridescence;
+    material.iridescence_ior = material_params.iridescence_ior;
+    material.iridescence_thickness =
+        material_params.iridescence_thickness_maximum;
+
+    vec4 data = texture(transmission_data_texture, data_uv);
+    float transmission = material_params.transmission;
+    float thickness = material_params.thickness;
+    if (material_params.transmission_texture_kind == 1) transmission *= data.r;
+    if (material_params.transmission_texture_kind == 2) thickness *= data.g;
+
+    float ior = max(material_params.ior, 1.0);
+    float half_spread = (ior - 1.0) * 0.025 * material_params.dispersion;
+    vec3 iors = vec3(max(ior - half_spread, 1.0), ior,
+                     ior + half_spread);
+    vec3 ray_r = VolumeTransmissionRay(material.normal, thickness, iors.r);
+    vec3 ray_g = VolumeTransmissionRay(material.normal, thickness, iors.g);
+    vec3 ray_b = VolumeTransmissionRay(material.normal, thickness, iors.b);
+    vec2 screen_uv = GetScreenUv();
+    vec2 offset_r = ProjectWorldOffsetToScreenUv(ray_r) - screen_uv;
+    vec2 offset_g = ProjectWorldOffsetToScreenUv(ray_g) - screen_uv;
+    vec2 offset_b = ProjectWorldOffsetToScreenUv(ray_b) - screen_uv;
+    vec3 transmitted;
+    transmitted.r = GetSceneColorFiltered(
+        offset_r, material.roughness, iors.r).r;
+    transmitted.g = GetSceneColorFiltered(
+        offset_g, material.roughness, iors.g).g;
+    transmitted.b = GetSceneColorFiltered(
+        offset_b, material.roughness, iors.b).b;
+
+    float attenuation_distance = max(material_params.attenuation_distance,
+                                     1e-4);
+    vec3 attenuation = pow(
+        max(material_params.attenuation_color, vec3(1e-4)),
+        vec3(length(ray_r), length(ray_g), length(ray_b)) /
+            attenuation_distance);
+    material.transmission = transmission;
+    material.transmission_color = transmitted * attenuation;
+    PrepareMaterial(material);
+  }
+}

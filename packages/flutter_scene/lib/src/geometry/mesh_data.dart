@@ -140,7 +140,9 @@ class MeshData {
     required this.vertexCount,
     this.normals,
     this.texCoords,
+    this.texCoords1,
     this.colors,
+    this.tangents,
     this.indices,
     this.primitiveType = gpu.PrimitiveType.triangle,
     this.customAttributes = const {},
@@ -155,7 +157,9 @@ class MeshData {
     required Float32List positions,
     Float32List? normals,
     Float32List? texCoords,
+    Float32List? texCoords1,
     Float32List? colors,
+    Float32List? tangents,
     List<int>? indices,
     gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle,
     Map<String, MeshAttributeData> customAttributes = const {},
@@ -181,7 +185,9 @@ class MeshData {
       vertexCount: vertexCount,
       normals: resolvedNormals,
       texCoords: texCoords,
+      texCoords1: texCoords1,
       colors: colors,
+      tangents: tangents,
       indices: indices,
       primitiveType: primitiveType,
       customAttributes: customAttributes,
@@ -201,8 +207,14 @@ class MeshData {
   /// Texture coordinates (two floats each), or null to default to `(0, 0)`.
   final Float32List? texCoords;
 
+  /// Secondary texture coordinates, or null to default to `(0, 0)`.
+  final Float32List? texCoords1;
+
   /// Vertex colors (four floats each), or null to default to opaque white.
   final Float32List? colors;
+
+  /// Vertex tangents (four floats each), or null to derive tangent space.
+  final Float32List? tangents;
 
   /// Triangle (or line/point) indices, or null for a non-indexed mesh.
   final List<int>? indices;
@@ -252,13 +264,19 @@ class MeshData {
     final outCount = count * 3;
 
     final srcTexCoords = texCoords;
+    final srcTexCoords1 = texCoords1;
     final srcColors = colors;
+    final srcTangents = tangents;
     final outPositions = Float32List(outCount * 3);
     final outNormals = Float32List(outCount * 3);
     final outTexCoords = srcTexCoords == null
         ? null
         : Float32List(outCount * 2);
+    final outTexCoords1 = srcTexCoords1 == null
+        ? null
+        : Float32List(outCount * 2);
     final outColors = srcColors == null ? null : Float32List(outCount * 4);
+    final outTangents = srcTangents == null ? null : Float32List(outCount * 4);
     final outCustom = <String, MeshAttributeData>{
       for (final entry in customAttributes.entries)
         entry.key: MeshAttributeData(
@@ -351,9 +369,18 @@ class MeshData {
           outTexCoords[v * 2] = srcTexCoords![src * 2];
           outTexCoords[v * 2 + 1] = srcTexCoords[src * 2 + 1];
         }
+        if (outTexCoords1 != null) {
+          outTexCoords1[v * 2] = srcTexCoords1![src * 2];
+          outTexCoords1[v * 2 + 1] = srcTexCoords1[src * 2 + 1];
+        }
         if (outColors != null) {
           for (var i = 0; i < 4; i++) {
             outColors[v * 4 + i] = srcColors![src * 4 + i];
+          }
+        }
+        if (outTangents != null) {
+          for (var i = 0; i < 4; i++) {
+            outTangents[v * 4 + i] = srcTangents![src * 4 + i];
           }
         }
         for (final entry in customAttributes.entries) {
@@ -401,7 +428,9 @@ class MeshData {
       vertexCount: outCount,
       normals: outNormals,
       texCoords: outTexCoords,
+      texCoords1: outTexCoords1,
       colors: outColors,
+      tangents: outTangents,
       primitiveType: gpu.PrimitiveType.triangle,
       customAttributes: outCustom,
     );
@@ -536,7 +565,9 @@ class MeshData {
       if (part.primitiveType != first.primitiveType ||
           (part.normals == null) != (first.normals == null) ||
           (part.texCoords == null) != (first.texCoords == null) ||
-          (part.colors == null) != (first.colors == null)) {
+          (part.texCoords1 == null) != (first.texCoords1 == null) ||
+          (part.colors == null) != (first.colors == null) ||
+          (part.tangents == null) != (first.tangents == null)) {
         throw ArgumentError(
           'merge requires matching primitive types and attribute sets',
         );
@@ -567,7 +598,13 @@ class MeshData {
     final texCoords = first.texCoords == null
         ? null
         : Float32List(vertexCount * 2);
+    final texCoords1 = first.texCoords1 == null
+        ? null
+        : Float32List(vertexCount * 2);
     final colors = first.colors == null ? null : Float32List(vertexCount * 4);
+    final tangents = first.tangents == null
+        ? null
+        : Float32List(vertexCount * 4);
     final custom = <String, MeshAttributeData>{
       for (final entry in first.customAttributes.entries)
         entry.key: MeshAttributeData(
@@ -595,10 +632,20 @@ class MeshData {
         vertexBase * 2 + part.texCoords!.length,
         part.texCoords!,
       );
+      texCoords1?.setRange(
+        vertexBase * 2,
+        vertexBase * 2 + part.texCoords1!.length,
+        part.texCoords1!,
+      );
       colors?.setRange(
         vertexBase * 4,
         vertexBase * 4 + part.colors!.length,
         part.colors!,
+      );
+      tangents?.setRange(
+        vertexBase * 4,
+        vertexBase * 4 + part.tangents!.length,
+        part.tangents!,
       );
       for (final entry in part.customAttributes.entries) {
         final components = entry.value.components;
@@ -624,7 +671,9 @@ class MeshData {
       vertexCount: vertexCount,
       normals: normals,
       texCoords: texCoords,
+      texCoords1: texCoords1,
       colors: colors,
+      tangents: tangents,
       indices: indices,
       primitiveType: first.primitiveType,
       customAttributes: custom,

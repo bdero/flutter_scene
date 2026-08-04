@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
@@ -24,6 +26,31 @@ enum AlphaMode {
   /// Alpha-blended: drawn in the depth-sorted translucent pass with
   /// source-over blending.
   blend,
+}
+
+/// A texture-coordinate transform applied before sampling a material slot.
+///
+/// The transform follows glTF's `KHR_texture_transform` order. [scale] is
+/// applied first, followed by [rotation] around the origin and [offset].
+/// {@category Materials}
+class TextureTransform {
+  /// Creates a texture transform, identity when all arguments are omitted.
+  TextureTransform({Vector2? offset, Vector2? scale, this.rotation = 0.0})
+    : offset = offset ?? Vector2.zero(),
+      scale = scale ?? Vector2.all(1.0);
+
+  /// Translation in UV coordinates.
+  Vector2 offset;
+
+  /// Per-axis UV scale.
+  Vector2 scale;
+
+  /// Counter-clockwise rotation in radians.
+  double rotation;
+
+  /// Whether this transform leaves UV coordinates unchanged.
+  bool get isIdentity =>
+      offset == Vector2.zero() && scale == Vector2.all(1.0) && rotation == 0.0;
 }
 
 /// A glTF-style metallic-roughness physically based material with
@@ -82,6 +109,12 @@ class PhysicallyBasedMaterial extends Material {
   /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
   TextureSource? baseColorTexture;
 
+  /// UV transform applied to [baseColorTexture].
+  TextureTransform baseColorTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [baseColorTexture].
+  int baseColorTextureTexCoord = 0;
+
   /// Linear RGBA tint multiplied with [baseColorTexture]. Alpha controls
   /// translucency: values below `1` push the material into the depth-
   /// sorted translucent pass.
@@ -98,6 +131,12 @@ class PhysicallyBasedMaterial extends Material {
   /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
   TextureSource? metallicRoughnessTexture;
 
+  /// UV transform applied to [metallicRoughnessTexture].
+  TextureTransform metallicRoughnessTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [metallicRoughnessTexture].
+  int metallicRoughnessTextureTexCoord = 0;
+
   /// Scalar multiplier applied to the metallic channel. `0` is fully
   /// dielectric, `1` is fully metallic.
   double metallicFactor = 1.0;
@@ -111,6 +150,12 @@ class PhysicallyBasedMaterial extends Material {
   /// Accepts a [Texture2D] (usually with [TextureContent.normal]) or a
   /// `RenderTexture` (sampled live).
   TextureSource? normalTexture;
+
+  /// UV transform applied to [normalTexture].
+  TextureTransform normalTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [normalTexture].
+  int normalTextureTexCoord = 0;
 
   /// Strength of [normalTexture]'s perturbation. `1` is the unmodified
   /// map.
@@ -126,11 +171,26 @@ class PhysicallyBasedMaterial extends Material {
   /// `Vector4.zero()` disables emission.
   Vector4 emissiveFactor = Vector4.zero();
 
+  /// Multiplier for emissive radiance. Values above `1` produce HDR emission.
+  double emissiveStrength = 1.0;
+
+  /// UV transform applied to [emissiveTexture].
+  TextureTransform emissiveTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [emissiveTexture].
+  int emissiveTextureTexCoord = 0;
+
   /// Optional ambient-occlusion texture (R channel). Defaults to white
   /// when null.
   ///
   /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
   TextureSource? occlusionTexture;
+
+  /// UV transform applied to [occlusionTexture].
+  TextureTransform occlusionTextureTransform = TextureTransform();
+
+  /// Texture-coordinate channel used by [occlusionTexture].
+  int occlusionTextureTexCoord = 0;
 
   /// Strength of [occlusionTexture]'s effect. `0` ignores the map; `1`
   /// applies it fully.
@@ -203,7 +263,7 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[4] = emissiveFactor.r;
     fragInfo[5] = emissiveFactor.g;
     fragInfo[6] = emissiveFactor.b;
-    fragInfo[7] = emissiveFactor.a;
+    fragInfo[7] = emissiveStrength;
     fragInfo[120] = vertexColorWeight;
     fragInfo[121] = metallicFactor;
     fragInfo[122] = roughnessFactor;
@@ -222,6 +282,42 @@ class PhysicallyBasedMaterial extends Material {
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(_fragInfoBytes),
+    );
+
+    final textureTransforms = _textureTransformsScratch;
+    _packTextureTransform(
+      textureTransforms,
+      0,
+      baseColorTextureTransform,
+      baseColorTextureTexCoord,
+    );
+    _packTextureTransform(
+      textureTransforms,
+      8,
+      metallicRoughnessTextureTransform,
+      metallicRoughnessTextureTexCoord,
+    );
+    _packTextureTransform(
+      textureTransforms,
+      16,
+      normalTextureTransform,
+      normalTextureTexCoord,
+    );
+    _packTextureTransform(
+      textureTransforms,
+      24,
+      emissiveTextureTransform,
+      emissiveTextureTexCoord,
+    );
+    _packTextureTransform(
+      textureTransforms,
+      32,
+      occlusionTextureTransform,
+      occlusionTextureTexCoord,
+    );
+    pass.bindUniform(
+      fragmentShader.getUniformSlot('TextureTransforms'),
+      transientsBuffer.emplace(ByteData.sublistView(textureTransforms)),
     );
 
     _bindSlot(pass, 'base_color_texture', baseColorTexture);
@@ -251,6 +347,24 @@ class PhysicallyBasedMaterial extends Material {
     EngineLightingUniforms.fragInfoFloatCount,
   );
   static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
+
+  static final Float32List _textureTransformsScratch = Float32List(40);
+
+  static void _packTextureTransform(
+    Float32List target,
+    int offset,
+    TextureTransform transform,
+    int texCoord,
+  ) {
+    target[offset] = transform.offset.x;
+    target[offset + 1] = transform.offset.y;
+    target[offset + 2] = transform.scale.x;
+    target[offset + 3] = transform.scale.y;
+    target[offset + 4] = math.cos(transform.rotation);
+    target[offset + 5] = math.sin(transform.rotation);
+    target[offset + 6] = texCoord.clamp(0, 1).toDouble();
+    target[offset + 7] = 0.0;
+  }
 
   static final gpu.SamplerOptions _repeatSampler = gpu.SamplerOptions(
     widthAddressMode: gpu.SamplerAddressMode.repeat,
@@ -282,6 +396,18 @@ class PhysicallyBasedMaterial extends Material {
       resolveTextureSource(metallicRoughnessTexture);
 
   @override
+  TextureTransform get reflectionRoughnessTextureTransform =>
+      metallicRoughnessTextureTransform;
+
+  @override
+  int get reflectionRoughnessTextureTexCoord =>
+      metallicRoughnessTextureTexCoord;
+
+  @override
+  gpu.SamplerOptions? get reflectionRoughnessTextureSampler =>
+      textureSourceSampler(metallicRoughnessTexture);
+
+  @override
   double get reflectionRoughnessFactor => roughnessFactor;
 
   @override
@@ -295,10 +421,16 @@ class PhysicallyBasedMaterial extends Material {
   ) {
     // Mirrors the coverage the color pass tests in Surface():
     // texture.a * weighted vertex-color alpha * baseColorFactor alpha.
-    final params = Float32List(4)
+    final params = Float32List(12)
       ..[0] = alphaCutoff
       ..[1] = baseColorFactor.a
       ..[2] = vertexColorWeight;
+    _packTextureTransform(
+      params,
+      4,
+      baseColorTextureTransform,
+      baseColorTextureTexCoord,
+    );
     pass.bindUniform(
       shader.getUniformSlot('MaskInfo'),
       transientsBuffer.emplace(ByteData.sublistView(params)),

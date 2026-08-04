@@ -307,6 +307,14 @@ abstract class Material {
   gpu.CullMode get renderCullMode =>
       (!doubleSided || !isOpaque()) ? gpu.CullMode.backFace : gpu.CullMode.none;
 
+  /// Whether this translucent material writes the nearest fragment depth.
+  ///
+  /// Most alpha-blended surfaces leave this off. Refractive surfaces can turn
+  /// it on so nearer glass wins within one draw even when its triangles are not
+  /// ordered back-to-front.
+  @internal
+  bool get translucentDepthWrite => false;
+
   /// Whether geometry rendered with this material is fully opaque.
   ///
   /// The renderer uses this to split draws into the opaque and
@@ -320,8 +328,9 @@ abstract class Material {
   /// Per-frame engine inputs this material samples, produced only when a
   /// visible material asks for them: [RenderInput.depth] binds the linear
   /// scene depth of the opaque geometry (forcing the depth prepass), and
-  /// [RenderInput.opaqueSceneColor] binds a snapshot of the scene color
-  /// taken after the opaque phase (splitting the scene pass in two).
+  /// [RenderInput.opaqueSceneColor] binds the accumulated scene color behind
+  /// the current draw (splitting the scene pass around screen-reading layers),
+  /// and [RenderInput.filteredSceneColor] adds its roughness-filtered atlas.
   /// Together they enable refraction, depth-fade absorption, shoreline
   /// foam, and soft-particle style effects on translucent surfaces. The
   /// base material requests nothing; a `.fmat` material declares these with
@@ -335,6 +344,21 @@ abstract class Material {
   /// material overrides this.
   @internal
   gpu.Texture? get reflectionRoughnessTexture => null;
+
+  /// The UV transform applied to [reflectionRoughnessTexture] in the depth
+  /// prepass.
+  @internal
+  TextureTransform get reflectionRoughnessTextureTransform =>
+      TextureTransform();
+
+  /// The UV channel sampled by [reflectionRoughnessTexture] in the depth
+  /// prepass.
+  @internal
+  int get reflectionRoughnessTextureTexCoord => 0;
+
+  /// The sampler used by [reflectionRoughnessTexture] in the depth prepass.
+  @internal
+  gpu.SamplerOptions? get reflectionRoughnessTextureSampler => null;
 
   /// The roughness multiplier applied to [reflectionRoughnessTexture] in the
   /// depth prepass (the material's roughness factor).

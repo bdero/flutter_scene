@@ -20,8 +20,8 @@ uniform FragInfo {
   // texels.
   vec4 spot_shadow_params;
   // Material scene inputs (more of the unused SH region; see
-  // Material.sceneInputs). x: the opaque scene-color snapshot is bound this
-  // draw (scene_opaque_color sampler, emitted only into materials that
+  // Material.sceneInputs). x: the accumulated scene-color snapshot is bound
+  // this draw (scene_opaque_color sampler, emitted only into materials that
   // declare engine_inputs). y: the opaque linear-depth texture is bound
   // (scene_depth sampler, same). z: engine time in seconds, for material
   // animation (GetTime()). w: tan of the half horizontal field of view
@@ -34,9 +34,13 @@ uniform FragInfo {
   // (dot(-v_viewvector, camera_forward.xyz)) and difference it against the
   // scene_depth sample. w: tan of the half vertical field of view.
   vec4 camera_forward;
-  vec4 diffuse_sh4;
-  vec4 diffuse_sh5;
-  vec4 diffuse_sh6;
+  // Remaining camera basis axes for projecting world-space offsets back to
+  // screen UV. The w components are reserved.
+  vec4 camera_right;
+  vec4 camera_up;
+  // Rough-transmission atlas. x: available. y: valid band count. zw:
+  // reciprocal atlas dimensions.
+  vec4 transmission_info;
   vec4 diffuse_sh7;
   vec4 diffuse_sh8;
   // Directional light: xyz = direction the light travels (toward the scene),
@@ -143,7 +147,9 @@ uniform samplerCube prefiltered_radiance_cube_b;
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.
+#ifndef FLUTTER_SCENE_SKIP_SSAO
 uniform sampler2D ssao_texture;
+#endif
 // The additional analytic lights (point, spot, and directional lights past the
 // first) as an RGBA32F data texture: one light per row, four texels wide. Read
 // by computed UV (not a dynamically-indexed uniform array, which GLSL ES 1.00
@@ -169,6 +175,22 @@ float GetTime() { return frag_info.scene_inputs.z; }
 // (the scene_opaque_color / scene_depth samplers emitted into materials that
 // declare engine_inputs).
 vec2 GetScreenUv() { return gl_FragCoord.xy * frag_info.ssao_params.zw; }
+
+// Projects a world-space offset from this fragment back into scene-color UV.
+// A zero/non-perspective field of view leaves the sample at this fragment.
+vec2 ProjectWorldOffsetToScreenUv(vec3 world_offset) {
+  if (frag_info.scene_inputs.w <= 0.0 || frag_info.camera_forward.w <= 0.0) {
+    return GetScreenUv();
+  }
+  vec3 from_camera = -v_viewvector + world_offset;
+  float view_z = dot(from_camera, frag_info.camera_forward.xyz);
+  if (view_z <= 1e-5) return GetScreenUv();
+  float view_x = dot(from_camera, frag_info.camera_right.xyz);
+  float view_y = dot(from_camera, frag_info.camera_up.xyz);
+  return vec2(0.5 + 0.5 * view_x / (view_z * frag_info.scene_inputs.w),
+              0.5 - 0.5 * view_y /
+                        (view_z * frag_info.camera_forward.w));
+}
 
 // This fragment's planar view-space depth (world units along the camera
 // forward axis), comparable against the opaque scene depth.

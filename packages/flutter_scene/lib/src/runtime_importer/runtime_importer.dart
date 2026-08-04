@@ -12,6 +12,7 @@ import '../components/materials_variants_component.dart';
 import '../components/point_light_component.dart';
 import '../components/spot_light_component.dart';
 import '../light.dart';
+import '../material/material.dart';
 import '../material/unlit_material.dart';
 import '../mesh.dart';
 import '../node.dart';
@@ -147,6 +148,9 @@ Future<Node> _buildScene(
     bufferData,
     resolveUri: resolveUri,
   );
+  final materials = await Future.wait([
+    for (final material in doc.materials) buildMaterial(material, textures),
+  ]);
 
   // Pre-allocate engine Node placeholders 1:1 with glTF nodes so children
   // can refer to them by index regardless of the order we visit them in.
@@ -164,7 +168,7 @@ Future<Node> _buildScene(
       doc: doc,
       packed: packed,
       engineNodes: engineNodes,
-      textures: textures,
+      materials: materials,
       variantBindings: variantBindings,
     );
   }
@@ -245,7 +249,7 @@ void _populateNode({
   required GltfDocument doc,
   required List<List<_PackedPrimitiveVariants?>> packed,
   required List<Node> engineNodes,
-  required List<Texture2D> textures,
+  required List<Material> materials,
   required List<MaterialsVariantBinding> variantBindings,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
@@ -286,7 +290,7 @@ void _populateNode({
           : packedVariants.skinned;
       final geometry = geometryFromPacked(packedPrimitive);
       final material = p.material != null
-          ? buildMaterial(doc.materials[p.material!], textures)
+          ? materials[p.material!]
           : UnlitMaterial();
       final primitive = MeshPrimitive(geometry, material);
       if (p.variantMappings.isNotEmpty) {
@@ -303,7 +307,7 @@ void _populateNode({
                 if (entry.value >= 0 && entry.value < doc.materials.length)
                   entry.key: entry.value == p.material
                       ? material
-                      : buildMaterial(doc.materials[entry.value], textures),
+                      : materials[entry.value],
             },
           ),
         );

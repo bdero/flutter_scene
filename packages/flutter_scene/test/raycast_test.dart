@@ -14,6 +14,8 @@ import 'package:flutter_scene/scene.dart' hide Material;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/raycast.dart'
     show PackedTriangleHit, intersectPackedTriangles, intersectSoATriangles;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart'
     as gpu
@@ -74,17 +76,28 @@ Node _quadNode({String name = 'quad', Matrix4? transform}) => Node(
 Ray _rayTo(Vector3 origin, Vector3 target) =>
     Ray.originDirection(origin, target - origin);
 
-/// Hand-packs vertices into the unskinned 48-byte engine layout:
-/// position(3) normal(3) uv(2) color(4) floats per vertex.
+/// Hand-packs position and UV0 into the unskinned engine layout.
 ByteData _packUnskinned(List<double> positions, List<double> uvs) {
   final vertexCount = positions.length ~/ 3;
-  final bytes = ByteData(vertexCount * 48);
+  final bytes = ByteData(vertexCount * kUnskinnedPerVertexSize);
   for (var v = 0; v < vertexCount; v++) {
     for (var c = 0; c < 3; c++) {
-      bytes.setFloat32(v * 48 + c * 4, positions[v * 3 + c], Endian.little);
+      bytes.setFloat32(
+        v * kUnskinnedPerVertexSize + c * 4,
+        positions[v * 3 + c],
+        Endian.little,
+      );
     }
-    bytes.setFloat32(v * 48 + 24, uvs[v * 2], Endian.little);
-    bytes.setFloat32(v * 48 + 28, uvs[v * 2 + 1], Endian.little);
+    bytes.setFloat32(
+      v * kUnskinnedPerVertexSize + 24,
+      uvs[v * 2],
+      Endian.little,
+    );
+    bytes.setFloat32(
+      v * kUnskinnedPerVertexSize + 28,
+      uvs[v * 2 + 1],
+      Endian.little,
+    );
   }
   return bytes;
 }
@@ -109,7 +122,7 @@ void main() {
       final hits = <PackedTriangleHit>[];
       intersectPackedTriangles(
         vertices: vertices,
-        stride: 48,
+        stride: kUnskinnedPerVertexSize,
         indices: indices,
         indexType: gpu.IndexType.int16,
         indexCount: 6,

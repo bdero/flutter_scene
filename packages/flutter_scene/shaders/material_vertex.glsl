@@ -19,12 +19,15 @@ struct VertexInputs {
   // skinned and unskinned variants).
   vec3 position;
   vec3 normal;
+  vec4 tangent;
   // World-space position and normal, after the model (and skin) transform.
   // Writing world_position is how a material displaces geometry; the engine
   // projects it to clip space after Vertex() returns.
   vec3 world_position;
   vec3 world_normal;
+  vec4 world_tangent;
   vec2 uv;
+  vec2 uv1;
   vec4 color;
   // Read-only frame data the engine fills in before calling Vertex(). The
   // world-space camera position is available in every variant.
@@ -40,7 +43,10 @@ out vec3 v_position; // world-space position
 out vec3 v_normal; // world-space normal, not normalized
 out vec3 v_viewvector; // camera_position - vertex_position (world space)
 out vec2 v_texture_coords;
+out vec2 v_texture_coords_1;
 out vec4 v_color;
+out vec3 v_model_scale;
+out vec4 v_tangent;
 
 #ifndef HAS_MATERIAL_VERTEX
 // The default hook: leave every vertex unchanged.

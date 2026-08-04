@@ -19,14 +19,35 @@ void main() {
         vertexCount: 2,
         normals: Float32List.fromList([0, 1, 0, 1, 0, 0]),
         texCoords: Float32List.fromList([0.5, 0.25, 0.75, 0.125]),
+        texCoords1: Float32List.fromList([0.25, 0.5, 0.75, 0.125]),
         colors: Float32List.fromList([1, 0, 0, 1, 0, 1, 0, 0.5]),
+        tangents: Float32List.fromList([1, 0, 0, 1, 0, 1, 0, -1]),
       );
       final floats = Float32List.sublistView(bytes);
       expect(floats, hasLength(2 * InterleavedLayoutAdapter.floatsPerVertex));
       // Vertex 0.
-      expect(floats.sublist(0, 12), [1, 2, 3, 0, 1, 0, 0.5, 0.25, 1, 0, 0, 1]);
+      expect(floats.sublist(0, 18), [
+        1,
+        2,
+        3,
+        0,
+        1,
+        0,
+        0.5,
+        0.25,
+        0.25,
+        0.5,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+      ]);
       // Vertex 1.
-      expect(floats.sublist(12, 24), [
+      expect(floats.sublist(18, 36), [
         4,
         5,
         6,
@@ -35,10 +56,16 @@ void main() {
         0,
         0.75,
         0.125,
+        0.75,
+        0.125,
         0,
         1,
         0,
         0.5,
+        0,
+        1,
+        0,
+        -1,
       ]);
     });
 
@@ -48,9 +75,9 @@ void main() {
         vertexCount: 1,
       );
       final floats = Float32List.sublistView(bytes);
-      // Position, default normal (0,0,1), default uv (0,0), default
-      // color opaque white.
-      expect(floats, [1, 2, 3, 0, 0, 1, 0, 0, 1, 1, 1, 1]);
+      // Position, default normal (0,0,1), default UVs (0,0), default
+      // color opaque white and zero tangent.
+      expect(floats, [1, 2, 3, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]);
     });
 
     test('throws when an attribute length mismatches the vertex count', () {
@@ -66,14 +93,16 @@ void main() {
   });
 
   group('splitUnskinnedAttributes', () {
-    test('separates the interleaved buffer into four per-attribute streams', () {
+    test('separates the interleaved buffer into six attribute streams', () {
       // Two vertices, all attributes distinct and exactly float-representable.
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
         positions: Float32List.fromList([1, 2, 3, 4, 5, 6]),
         vertexCount: 2,
         normals: Float32List.fromList([7, 8, 9, 10, 11, 12]),
         texCoords: Float32List.fromList([13, 14, 15, 16]),
-        colors: Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]),
+        texCoords1: Float32List.fromList([17, 18, 19, 20]),
+        colors: Float32List.fromList([21, 22, 23, 24, 25, 26, 27, 28]),
+        tangents: Float32List.fromList([29, 30, 31, 32, 33, 34, 35, 36]),
       );
       final streams = InterleavedLayoutAdapter.splitUnskinnedAttributes(
         ByteData.sublistView(interleaved),
@@ -83,24 +112,33 @@ void main() {
       expect(Float32List.sublistView(streams.position), [1, 2, 3, 4, 5, 6]);
       expect(Float32List.sublistView(streams.normal), [7, 8, 9, 10, 11, 12]);
       expect(Float32List.sublistView(streams.texCoord), [13, 14, 15, 16]);
+      expect(Float32List.sublistView(streams.texCoord1), [17, 18, 19, 20]);
       expect(Float32List.sublistView(streams.color), [
-        17,
-        18,
-        19,
-        20,
         21,
         22,
         23,
         24,
+        25,
+        26,
+        27,
+        28,
+      ]);
+      expect(Float32List.sublistView(streams.tangent), [
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
       ]);
     });
 
     test('throws when the interleaved buffer is too short', () {
       expect(
-        () => InterleavedLayoutAdapter.splitUnskinnedAttributes(
-          ByteData(48),
-          2, // needs 96 bytes
-        ),
+        () =>
+            InterleavedLayoutAdapter.splitUnskinnedAttributes(ByteData(56), 2),
         throwsArgumentError,
       );
     });
@@ -116,19 +154,23 @@ void main() {
       // Defaults: normal (0,0,1), texcoord (0,0), color opaque white.
       expect(Float32List.sublistView(streams.normal), [0, 0, 1]);
       expect(Float32List.sublistView(streams.texCoord), [0, 0]);
+      expect(Float32List.sublistView(streams.texCoord1), [0, 0]);
       expect(Float32List.sublistView(streams.color), [1, 1, 1, 1]);
+      expect(Float32List.sublistView(streams.tangent), [0, 0, 0, 0]);
     });
 
     test('round-trips through split back to the same per-attribute bytes', () {
       final positions = Float32List.fromList([1, 2, 3, 4, 5, 6]);
       final normals = Float32List.fromList([7, 8, 9, 10, 11, 12]);
       final texCoords = Float32List.fromList([13, 14, 15, 16]);
-      final colors = Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]);
+      final texCoords1 = Float32List.fromList([17, 18, 19, 20]);
+      final colors = Float32List.fromList([21, 22, 23, 24, 25, 26, 27, 28]);
       final direct = InterleavedLayoutAdapter.unskinnedAttributeStreams(
         positions: positions,
         vertexCount: 2,
         normals: normals,
         texCoords: texCoords,
+        texCoords1: texCoords1,
         colors: colors,
       );
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
@@ -136,6 +178,7 @@ void main() {
         vertexCount: 2,
         normals: normals,
         texCoords: texCoords,
+        texCoords1: texCoords1,
         colors: colors,
       );
       final viaSplit = InterleavedLayoutAdapter.splitUnskinnedAttributes(
@@ -145,40 +188,46 @@ void main() {
       expect(direct.position, viaSplit.position);
       expect(direct.normal, viaSplit.normal);
       expect(direct.texCoord, viaSplit.texCoord);
+      expect(direct.texCoord1, viaSplit.texCoord1);
       expect(direct.color, viaSplit.color);
+      expect(direct.tangent, viaSplit.tangent);
     });
   });
 
   group('concat/slice structure-of-arrays payload', () {
-    test('concat then slice round-trips the four streams', () {
+    test('concat then slice round-trips the six streams', () {
       final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
         positions: Float32List.fromList([1, 2, 3, 4, 5, 6]),
         vertexCount: 2,
         normals: Float32List.fromList([7, 8, 9, 10, 11, 12]),
         texCoords: Float32List.fromList([13, 14, 15, 16]),
-        colors: Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]),
+        texCoords1: Float32List.fromList([17, 18, 19, 20]),
+        colors: Float32List.fromList([21, 22, 23, 24, 25, 26, 27, 28]),
       );
       final payload = InterleavedLayoutAdapter.concatUnskinnedStreams(streams);
-      // Same total size as the interleaved buffer (48 bytes per vertex).
-      expect(payload, hasLength(2 * 48));
+      expect(payload, hasLength(2 * 72));
 
       final sliced = InterleavedLayoutAdapter.sliceUnskinnedStreams(payload, 2);
       expect(sliced.position, streams.position);
       expect(sliced.normal, streams.normal);
       expect(sliced.texCoord, streams.texCoord);
+      expect(sliced.texCoord1, streams.texCoord1);
       expect(sliced.color, streams.color);
+      expect(sliced.tangent, streams.tangent);
     });
 
     test('the SoA payload equals the split of the interleaved buffer', () {
       final positions = Float32List.fromList([1, 2, 3, 4, 5, 6]);
       final normals = Float32List.fromList([7, 8, 9, 10, 11, 12]);
       final texCoords = Float32List.fromList([13, 14, 15, 16]);
-      final colors = Float32List.fromList([17, 18, 19, 20, 21, 22, 23, 24]);
+      final texCoords1 = Float32List.fromList([17, 18, 19, 20]);
+      final colors = Float32List.fromList([21, 22, 23, 24, 25, 26, 27, 28]);
       final interleaved = InterleavedLayoutAdapter.packUnskinned(
         positions: positions,
         vertexCount: 2,
         normals: normals,
         texCoords: texCoords,
+        texCoords1: texCoords1,
         colors: colors,
       );
       final fromInterleaved = InterleavedLayoutAdapter.concatUnskinnedStreams(
@@ -193,10 +242,161 @@ void main() {
           vertexCount: 2,
           normals: normals,
           texCoords: texCoords,
+          texCoords1: texCoords1,
           colors: colors,
         ),
       );
       expect(fromInterleaved, fromArrays);
+    });
+  });
+
+  group('legacy payload upgrades', () {
+    test('uses distinct names for layouts with UV1 and tangents', () {
+      expect(
+        InterleavedLayoutAdapter.unskinnedSoaLayout,
+        isNot('unskinned_soa'),
+      );
+      expect(
+        InterleavedLayoutAdapter.unskinnedInterleavedLayout,
+        isNot('unskinned'),
+      );
+      expect(InterleavedLayoutAdapter.skinnedLayout, isNot('skinned'));
+    });
+
+    test('upgrades an interleaved unskinned vertex', () {
+      final legacy = Float32List.fromList([
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+      ]);
+      final upgraded =
+          InterleavedLayoutAdapter.upgradeLegacyUnskinnedInterleaved(
+            ByteData.sublistView(legacy),
+            1,
+          );
+      expect(Float32List.sublistView(upgraded), [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        0,
+        0,
+        9,
+        10,
+        11,
+        12,
+        0,
+        0,
+        0,
+        0,
+      ]);
+    });
+
+    test('upgrades an interleaved skinned vertex', () {
+      final legacy = Float32List.fromList([
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+      ]);
+      final upgraded = InterleavedLayoutAdapter.upgradeLegacySkinnedInterleaved(
+        ByteData.sublistView(legacy),
+        1,
+      );
+      expect(Float32List.sublistView(upgraded), [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        0,
+        0,
+        9,
+        10,
+        11,
+        12,
+        0,
+        0,
+        0,
+        0,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+      ]);
+    });
+
+    test('upgrades a structure-of-arrays unskinned vertex', () {
+      final legacy = Float32List.fromList([
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+      ]).buffer.asUint8List();
+      final streams = InterleavedLayoutAdapter.upgradeLegacyUnskinnedSoa(
+        legacy,
+        1,
+      );
+      expect(Float32List.sublistView(streams.position), [1, 2, 3]);
+      expect(Float32List.sublistView(streams.normal), [4, 5, 6]);
+      expect(Float32List.sublistView(streams.texCoord), [7, 8]);
+      expect(Float32List.sublistView(streams.texCoord1), [0, 0]);
+      expect(Float32List.sublistView(streams.color), [9, 10, 11, 12]);
+      expect(Float32List.sublistView(streams.tangent), [0, 0, 0, 0]);
+    });
+
+    test('rejects a mismatched legacy payload length', () {
+      expect(
+        () => InterleavedLayoutAdapter.upgradeLegacyUnskinnedSoa(
+          Uint8List(47),
+          1,
+        ),
+        throwsArgumentError,
+      );
     });
   });
 

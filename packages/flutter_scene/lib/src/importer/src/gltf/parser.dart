@@ -192,6 +192,23 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
   }
   final emissive = j['emissiveFactor'];
   final extensions = j['extensions'] as Map?;
+  final anisotropy = _extension(extensions, 'KHR_materials_anisotropy');
+  final clearcoat = _extension(extensions, 'KHR_materials_clearcoat');
+  final diffuseTransmission = _extension(
+    extensions,
+    'KHR_materials_diffuse_transmission',
+  );
+  final dispersion = _extension(extensions, 'KHR_materials_dispersion');
+  final emissiveStrength = _extension(
+    extensions,
+    'KHR_materials_emissive_strength',
+  );
+  final ior = _extension(extensions, 'KHR_materials_ior');
+  final iridescence = _extension(extensions, 'KHR_materials_iridescence');
+  final sheen = _extension(extensions, 'KHR_materials_sheen');
+  final specular = _extension(extensions, 'KHR_materials_specular');
+  final transmission = _extension(extensions, 'KHR_materials_transmission');
+  final volume = _extension(extensions, 'KHR_materials_volume');
   return GltfMaterial(
     name: j['name'] as String?,
     pbrMetallicRoughness: pbr,
@@ -205,17 +222,161 @@ GltfMaterial _parseMaterial(Map<String, Object?> j) {
     alphaCutoff: ((j['alphaCutoff'] as num?) ?? 0.5).toDouble(),
     doubleSided: (j['doubleSided'] as bool?) ?? false,
     unlit: extensions?.containsKey('KHR_materials_unlit') ?? false,
+    anisotropy: anisotropy == null
+        ? null
+        : GltfMaterialAnisotropy(
+            strength: _double(anisotropy, 'anisotropyStrength', 0.0),
+            rotation: _double(anisotropy, 'anisotropyRotation', 0.0),
+            texture: _parseTextureInfo(anisotropy['anisotropyTexture']),
+          ),
+    clearcoat: clearcoat == null
+        ? null
+        : GltfMaterialClearcoat(
+            factor: _double(clearcoat, 'clearcoatFactor', 0.0),
+            texture: _parseTextureInfo(clearcoat['clearcoatTexture']),
+            roughnessFactor: _double(
+              clearcoat,
+              'clearcoatRoughnessFactor',
+              0.0,
+            ),
+            roughnessTexture: _parseTextureInfo(
+              clearcoat['clearcoatRoughnessTexture'],
+            ),
+            normalTexture: _parseTextureInfo(
+              clearcoat['clearcoatNormalTexture'],
+            ),
+          ),
+    diffuseTransmission: diffuseTransmission == null
+        ? null
+        : GltfMaterialDiffuseTransmission(
+            factor: _double(
+              diffuseTransmission,
+              'diffuseTransmissionFactor',
+              0.0,
+            ),
+            texture: _parseTextureInfo(
+              diffuseTransmission['diffuseTransmissionTexture'],
+            ),
+            colorFactor: _vector(
+              diffuseTransmission,
+              'diffuseTransmissionColorFactor',
+              const [1.0, 1.0, 1.0],
+            ),
+            colorTexture: _parseTextureInfo(
+              diffuseTransmission['diffuseTransmissionColorTexture'],
+            ),
+          ),
+    dispersion: _double(dispersion, 'dispersion', 0.0),
+    emissiveStrength: _double(emissiveStrength, 'emissiveStrength', 1.0),
+    ior: _double(ior, 'ior', 1.5),
+    iridescence: iridescence == null
+        ? null
+        : GltfMaterialIridescence(
+            factor: _double(iridescence, 'iridescenceFactor', 0.0),
+            texture: _parseTextureInfo(iridescence['iridescenceTexture']),
+            ior: _double(iridescence, 'iridescenceIor', 1.3),
+            thicknessMinimum: _double(
+              iridescence,
+              'iridescenceThicknessMinimum',
+              100.0,
+            ),
+            thicknessMaximum: _double(
+              iridescence,
+              'iridescenceThicknessMaximum',
+              400.0,
+            ),
+            thicknessTexture: _parseTextureInfo(
+              iridescence['iridescenceThicknessTexture'],
+            ),
+          ),
+    sheen: sheen == null
+        ? null
+        : GltfMaterialSheen(
+            colorFactor: _vector(sheen, 'sheenColorFactor', const [
+              0.0,
+              0.0,
+              0.0,
+            ]),
+            colorTexture: _parseTextureInfo(sheen['sheenColorTexture']),
+            roughnessFactor: _double(sheen, 'sheenRoughnessFactor', 0.0),
+            roughnessTexture: _parseTextureInfo(sheen['sheenRoughnessTexture']),
+          ),
+    specular: specular == null
+        ? null
+        : GltfMaterialSpecular(
+            factor: _double(specular, 'specularFactor', 1.0),
+            texture: _parseTextureInfo(specular['specularTexture']),
+            colorFactor: _vector(specular, 'specularColorFactor', const [
+              1.0,
+              1.0,
+              1.0,
+            ]),
+            colorTexture: _parseTextureInfo(specular['specularColorTexture']),
+          ),
+    transmission: transmission == null
+        ? null
+        : GltfMaterialTransmission(
+            factor: _double(transmission, 'transmissionFactor', 0.0),
+            texture: _parseTextureInfo(transmission['transmissionTexture']),
+          ),
+    volume: volume == null
+        ? null
+        : GltfMaterialVolume(
+            thicknessFactor: _double(volume, 'thicknessFactor', 0.0),
+            thicknessTexture: _parseTextureInfo(volume['thicknessTexture']),
+            attenuationDistance: _double(
+              volume,
+              'attenuationDistance',
+              double.infinity,
+            ),
+            attenuationColor: _vector(volume, 'attenuationColor', const [
+              1.0,
+              1.0,
+              1.0,
+            ]),
+          ),
   );
+}
+
+Map<String, Object?>? _extension(Map? extensions, String name) {
+  final value = extensions?[name];
+  return value is Map ? value.cast<String, Object?>() : null;
+}
+
+double _double(Map<String, Object?>? values, String key, double fallback) =>
+    (values?[key] as num?)?.toDouble() ?? fallback;
+
+List<double> _vector(
+  Map<String, Object?> values,
+  String key,
+  List<double> fallback,
+) {
+  final value = values[key];
+  return value is List
+      ? value.cast<num>().map((e) => e.toDouble()).toList(growable: false)
+      : fallback;
 }
 
 GltfTextureInfo? _parseTextureInfo(Object? j) {
   if (j is! Map) return null;
   final m = j as Map<String, Object?>;
+  final transform = _extension(
+    m['extensions'] as Map?,
+    'KHR_texture_transform',
+  );
   return GltfTextureInfo(
     index: m['index'] as int,
     texCoord: (m['texCoord'] as int?) ?? 0,
     scale: (m['scale'] as num?)?.toDouble(),
     strength: (m['strength'] as num?)?.toDouble(),
+    transform: transform == null
+        ? null
+        : GltfTextureTransform(
+            offset: _vector(transform, 'offset', const [0.0, 0.0]),
+            rotation: _double(transform, 'rotation', 0.0),
+            scale: _vector(transform, 'scale', const [1.0, 1.0]),
+            texCoord: transform['texCoord'] as int?,
+          ),
   );
 }
 

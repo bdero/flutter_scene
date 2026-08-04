@@ -35,7 +35,9 @@ dependencies:
   # Extracts the .tar.gz of reference DICOM slices for the DICOM Volume example.
   archive: ^4.0.0
   path_provider: ^2.1.0
+  native_mouse_cursor: ^1.2.1
   vector_math: ^2.1.4
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_lints: ^5.0.0
@@ -47,6 +49,7 @@ flutter:
 
   assets:
     - assets/little_paris_eiffel_tower.png
+    - assets/clearcoat/
     # Generated test tones for the Audio example.
     - assets/sounds/
     # Imported scenes are registered as DataAssets by buildScenes (loaded via

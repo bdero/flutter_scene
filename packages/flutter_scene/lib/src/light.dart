@@ -622,8 +622,12 @@ class Lighting {
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
+    this.filteredSceneColor,
+    this.transmissionFilterBandCount = 0,
     this.cameraPosition,
     this.cameraForward,
+    this.cameraRight,
+    this.cameraUp,
     this.tanHalfFovX = 0.0,
     this.tanHalfFovY = 0.0,
     this.time = 0.0,
@@ -730,18 +734,29 @@ class Lighting {
   /// material asked for it. Same texture the SSAO/SSR passes consume.
   final gpu.Texture? sceneDepthLinear;
 
-  /// The scene color snapshot taken between the opaque and translucent
-  /// phases, for materials that declare `RenderInput.opaqueSceneColor`
-  /// (refraction). Null during the opaque phase and when unrequested; the
-  /// scene pass sets it before translucent draws encode.
+  /// The accumulated scene color behind the current screen-reading draw, for
+  /// materials that declare `RenderInput.opaqueSceneColor` (refraction). Null
+  /// before the first snapshot and when unrequested.
   gpu.Texture? opaqueSceneColor;
 
-  /// Camera world position and normalized forward direction for this view,
+  /// Compact roughness-filtered atlas of [opaqueSceneColor]. Null unless the
+  /// current material requests [RenderInput.filteredSceneColor].
+  gpu.Texture? filteredSceneColor;
+
+  /// Number of valid roughness bands in [filteredSceneColor].
+  int transmissionFilterBandCount;
+
+  /// Camera world position and normalized basis directions for this view,
   /// letting a material compute its fragment's planar view depth
   /// (`dot(worldPos - cameraPosition, cameraForward)`) to compare against
   /// [sceneDepthLinear]. Null when no material requests scene inputs.
   final Vector3? cameraPosition;
   final Vector3? cameraForward;
+
+  /// Normalized world-space right/up axes used to project refracted volume
+  /// exits back into the scene-color image.
+  final Vector3? cameraRight;
+  final Vector3? cameraUp;
 
   /// Tangents of the half field of view (x and y), letting a material
   /// project world positions to screen UV (screen-space marches). Zero

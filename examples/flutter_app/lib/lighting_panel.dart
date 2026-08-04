@@ -245,6 +245,7 @@ class LabeledSlider extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.valueText,
   });
 
   final String label;
@@ -252,6 +253,7 @@ class LabeledSlider extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double>? onChanged;
+  final String? valueText;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +270,7 @@ class LabeledSlider extends StatelessWidget {
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
               Text(
-                value.toStringAsFixed(2),
+                valueText ?? value.toStringAsFixed(2),
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],

@@ -3,12 +3,12 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:data_assets/data_assets.dart';
-import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/importer/build_cache.dart';
 
 import 'fmat.dart';
+import 'target_shader_bundle.dart';
 
 /// Controls how [buildMaterials] exposes generated `.fmat` shader assets.
 enum MaterialAssetMode {
@@ -225,7 +225,7 @@ Future<void> buildMaterials({
   // fixed). Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always compile.
   final stampBuffer = StringBuffer(
     'rev=$buildCacheRevision fmat package=${buildInput.packageName} '
-    'bundle=$bundleName',
+    'bundle=$bundleName target=${shaderBundleTargetKey(buildInput)}',
   );
   for (final materialPath in materialPaths) {
     final hash = contentHash(
@@ -354,7 +354,7 @@ Future<void> buildMaterials({
     try {
       // Compile, with flutter_scene's shaders/ on the include path so the
       // generated shaders' framework `#include`s resolve directly (no copies).
-      await buildShaderBundleJson(
+      await buildTargetShaderBundleJson(
         buildInput: buildInput,
         buildOutput: buildOutput,
         manifestFileName: manifestRelativePath,

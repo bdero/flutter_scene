@@ -22,8 +22,8 @@ class PackedPrimitive {
     required this.isSkinned,
   });
 
-  /// Packed vertex buffer in the engine's vertex layout (48 bytes per
-  /// unskinned vertex, 80 per skinned).
+  /// Packed vertex buffer in the engine's vertex layout (72 bytes per
+  /// unskinned vertex, 104 per skinned).
   final Uint8List vertexBytes;
 
   /// Number of vertices in [vertexBytes].
@@ -46,9 +46,10 @@ class PackedPrimitive {
 ///
 /// The vertex layout matches `shaders/flutter_scene_(un)skinned.vert`:
 ///
-/// - Unskinned (48 bytes/vertex): position(3 f32), normal(3 f32),
-///   texture_coords(2 f32), color(4 f32).
-/// - Skinned (80 bytes/vertex): unskinned + joints(4 f32) +
+/// - Unskinned (72 bytes/vertex): position(3 f32), normal(3 f32),
+///   texture_coords(2 f32), texture_coords_1(2 f32), color(4 f32),
+///   tangent(4 f32).
+/// - Skinned (104 bytes/vertex): unskinned + joints(4 f32) +
 ///   weights(4 f32).
 ///
 /// When the primitive omits the NORMAL attribute, glTF requires the
@@ -105,8 +106,24 @@ PackedPrimitive packGltfPrimitive({
     bufferData,
     vertexCount,
   );
+  final texCoords1 = _readOptionalVec2(
+    'TEXCOORD_1',
+    primitive,
+    accessors,
+    bufferViews,
+    bufferData,
+    vertexCount,
+  );
   final colors = _readOptionalColor(
     'COLOR_0',
+    primitive,
+    accessors,
+    bufferViews,
+    bufferData,
+    vertexCount,
+  );
+  final tangents = _readOptionalVec4(
+    'TANGENT',
     primitive,
     accessors,
     bufferViews,
@@ -216,12 +233,18 @@ PackedPrimitive packGltfPrimitive({
     out[o + 5] = normals[k * 3 + 2];
     out[o + 6] = texCoords[s * 2 + 0];
     out[o + 7] = texCoords[s * 2 + 1];
-    out[o + 8] = colors[s * 4 + 0];
-    out[o + 9] = colors[s * 4 + 1];
-    out[o + 10] = colors[s * 4 + 2];
-    out[o + 11] = colors[s * 4 + 3];
+    out[o + 8] = texCoords1[s * 2 + 0];
+    out[o + 9] = texCoords1[s * 2 + 1];
+    out[o + 10] = colors[s * 4 + 0];
+    out[o + 11] = colors[s * 4 + 1];
+    out[o + 12] = colors[s * 4 + 2];
+    out[o + 13] = colors[s * 4 + 3];
+    out[o + 14] = tangents[s * 4 + 0];
+    out[o + 15] = tangents[s * 4 + 1];
+    out[o + 16] = tangents[s * 4 + 2];
+    out[o + 17] = tangents[s * 4 + 3];
     if (hasJoints) {
-      final j = o + 12;
+      final j = o + 18;
       out[j + 0] = joints![s * 4 + 0];
       out[j + 1] = joints[s * 4 + 1];
       out[j + 2] = joints[s * 4 + 2];
@@ -288,6 +311,19 @@ Float32List _readVec4(
     bufferViews[accessor.bufferView!],
     bufferData,
   );
+}
+
+Float32List _readOptionalVec4(
+  String name,
+  GltfMeshPrimitive primitive,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData,
+  int vertexCount,
+) {
+  final idx = primitive.attributes[name];
+  if (idx == null) return Float32List(vertexCount * 4);
+  return _readVec4(idx, accessors, bufferViews, bufferData);
 }
 
 Float32List _readOptionalVec2(
