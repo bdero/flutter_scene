@@ -127,6 +127,39 @@ class GpuPipelineState {
     blend: clearBlend ? null : (blend ?? this.blend),
   );
 
+  /// Which fields differ from [previous].
+  ///
+  /// A null [previous] means nothing is known about the pass, so every field
+  /// counts as changed.
+  GpuPipelineStateDelta diffFrom(GpuPipelineState? previous) {
+    if (previous == null) return const GpuPipelineStateDelta.everything();
+    return GpuPipelineStateDelta(
+      cullMode: previous.cullMode != cullMode,
+      windingOrder: previous.windingOrder != windingOrder,
+      primitiveType: previous.primitiveType != primitiveType,
+      depthWriteEnable: previous.depthWriteEnable != depthWriteEnable,
+      depthCompareOperation:
+          previous.depthCompareOperation != depthCompareOperation,
+      blend: previous.blend != blend,
+    );
+  }
+
+  /// Issues only the calls [delta] marks as changed.
+  void applyDeltaTo(gpu.RenderPass pass, GpuPipelineStateDelta delta) {
+    if (delta.cullMode) pass.setCullMode(cullMode);
+    if (delta.windingOrder) pass.setWindingOrder(windingOrder);
+    if (delta.primitiveType) pass.setPrimitiveType(primitiveType);
+    if (delta.depthWriteEnable) pass.setDepthWriteEnable(depthWriteEnable);
+    if (delta.depthCompareOperation) {
+      pass.setDepthCompareOperation(depthCompareOperation);
+    }
+    if (delta.blend) {
+      final blend = this.blend;
+      pass.setColorBlendEnable(blend != null);
+      if (blend != null) pass.setColorBlendEquation(blend.toGpu());
+    }
+  }
+
   /// Replays this state onto [pass].
   ///
   /// Backends that bake state into a pipeline object ignore this and use the
@@ -169,4 +202,99 @@ class GpuPipelineState {
       'GpuPipelineState(cull: ${cullMode.name}, winding: ${windingOrder.name}, '
       'primitive: ${primitiveType.name}, depthWrite: $depthWriteEnable, '
       'depthCompare: ${depthCompareOperation.name}, blend: $blend)';
+}
+
+/// Which fields of a [GpuPipelineState] differ from another.
+///
+/// Separated from applying them so the decision is pure data, testable without
+/// a render pass, and reusable by a backend that wants to know whether a state
+/// change forces a new pipeline object rather than a new call.
+class GpuPipelineStateDelta {
+  const GpuPipelineStateDelta({
+    this.cullMode = false,
+    this.windingOrder = false,
+    this.primitiveType = false,
+    this.depthWriteEnable = false,
+    this.depthCompareOperation = false,
+    this.blend = false,
+  });
+
+  /// Everything differs, which is the case against an unknown pass.
+  const GpuPipelineStateDelta.everything()
+    : cullMode = true,
+      windingOrder = true,
+      primitiveType = true,
+      depthWriteEnable = true,
+      depthCompareOperation = true,
+      blend = true;
+
+  final bool cullMode;
+  final bool windingOrder;
+  final bool primitiveType;
+  final bool depthWriteEnable;
+  final bool depthCompareOperation;
+  final bool blend;
+
+  /// Nothing changed, so no calls are needed.
+  bool get isEmpty =>
+      !cullMode &&
+      !windingOrder &&
+      !primitiveType &&
+      !depthWriteEnable &&
+      !depthCompareOperation &&
+      !blend;
+
+  /// How many fields changed, for diagnostics and benchmarks.
+  int get length =>
+      (cullMode ? 1 : 0) +
+      (windingOrder ? 1 : 0) +
+      (primitiveType ? 1 : 0) +
+      (depthWriteEnable ? 1 : 0) +
+      (depthCompareOperation ? 1 : 0) +
+      (blend ? 1 : 0);
+
+  @override
+  String toString() => 'GpuPipelineStateDelta($length changed)';
+}
+
+/// Tracks the state a pass is currently in, so only changes are re-issued.
+///
+/// Flutter GPU keeps this state on the pass, so re-issuing an unchanged setter
+/// is wasted work. A backend that bakes state into pipeline objects instead
+/// reads [current] to key its cache.
+///
+/// Anything that sets state on the pass without going through [apply] must be
+/// followed by [invalidate], or the next apply will skip a call that is
+/// actually needed.
+class GpuPipelineStateTracker {
+  GpuPipelineState? _current;
+
+  /// The state the pass is believed to be in, or null when unknown.
+  GpuPipelineState? get current => _current;
+
+  /// Total setter calls issued, for benchmarking the memo's effectiveness.
+  int get callsIssued => _callsIssued;
+  int _callsIssued = 0;
+
+  /// What [next] would change, without changing anything.
+  GpuPipelineStateDelta deltaFor(GpuPipelineState next) =>
+      next.diffFrom(_current);
+
+  /// Issues only the calls needed to put [pass] into [next].
+  void apply(gpu.RenderPass pass, GpuPipelineState next) {
+    final delta = deltaFor(next);
+    if (delta.isEmpty) return;
+    next.applyDeltaTo(pass, delta);
+    _callsIssued += delta.length;
+    _current = next;
+  }
+
+  /// Forgets what the pass is in, after something else set state on it.
+  void invalidate() => _current = null;
+
+  /// Forgets the state and the call count, when starting a new pass.
+  void reset() {
+    _current = null;
+    _callsIssued = 0;
+  }
 }
