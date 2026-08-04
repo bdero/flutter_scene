@@ -38,6 +38,7 @@ import 'example_render_target.dart';
 import 'example_settings.dart';
 import 'example_shapes.dart';
 import 'example_explosion.dart';
+import 'example_external_texture.dart';
 import 'example_particles.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
@@ -187,6 +188,7 @@ class _MyAppState extends State<MyApp> {
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
+      'External Texture': (context) => const ExampleExternalTexture(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(
