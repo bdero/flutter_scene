@@ -47,6 +47,8 @@ out vec4 frag_color;
 const float kPi = 3.14159265359;
 const float kNumericEpsilon = 0.0001;
 
+#include <interleaved_gradient_noise.glsl>
+
 // Reconstructs a view-space position from a depth-buffer UV. Camera space
 // places the eye at the origin looking down +Z (the convention the depth
 // prepass writes), so the stored planar depth is the view-space Z and the
@@ -110,11 +112,6 @@ vec3 ReconstructNormal(vec2 uv, vec3 center) {
   return dot(normal, center) > 0.0 ? -normal : normal;
 }
 
-float InterleavedGradientNoise(vec2 pixel) {
-  return fract(52.9829189 * fract(dot(floor(pixel),
-                                      vec2(0.06711056, 0.00583715))));
-}
-
 float SampleObscurance(vec3 normal, vec3 delta, float falloff_scale,
                        float horizon) {
   float distance2 = dot(delta, delta);
@@ -174,9 +171,11 @@ void main() {
     float sample_radius = (float(i) + 0.5) / float(sample_count);
     float theta = sample_radius * spiral_turns * 2.0 * kPi + rotation;
     float pixel_radius = sample_radius * screen_radius;
-    if (pixel_radius < 1.0) {
-      continue;
-    }
+    // Fade subpixel support continuously instead of dropping taps as the
+    // projected kernel shrinks. The one-pixel floor keeps depth taps distinct
+    // enough for nearest sampling while the support removes their influence.
+    float sample_support = smoothstep(0.0, 1.0, pixel_radius);
+    pixel_radius = max(1.0, pixel_radius);
     vec2 offset = vec2(cos(theta), sin(theta)) * pixel_radius;
     vec2 sample_uv = v_uv + offset * ssao.viewport.zw;
 
@@ -196,7 +195,8 @@ void main() {
         max(0.0, -v.z) * (-1.0 / max(radius, kNumericEpsilon)) + 2.0,
         0.0, 1.0);
     float weight = 0.6 * reduce + 0.4;
-    sum += SampleObscurance(normal, v, falloff_scale, horizon) * weight;
+    sum += SampleObscurance(normal, v, falloff_scale, horizon) * weight *
+        sample_support;
     weight_sum += weight;
   }
 
@@ -219,6 +219,8 @@ void main() {
       falloff_scale * 4.0, horizon);
 
   float wide_obscurance = weight_sum > 0.0 ? sum / weight_sum : 0.0;
+  // Both terms are means. `detail` is therefore the additive strength of the
+  // four-neighbour mean before `intensity` scales their combined obscurance.
   float obscurance = wide_obscurance + detail * detail_sum * 0.25;
   obscurance = min(intensity * obscurance, 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);

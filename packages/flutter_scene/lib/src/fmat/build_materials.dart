@@ -97,6 +97,7 @@ const _frameworkShaderFiles = <String>[
   'material_lighting.glsl',
   // The vertex-stage includes a material's generated vertex variants pull in.
   'material_vertex.glsl',
+  'depth_bias.glsl',
   'flutter_scene_unskinned_body.glsl',
   'flutter_scene_skinned_body.glsl',
   'flutter_scene_unskinned_depth_body.glsl',

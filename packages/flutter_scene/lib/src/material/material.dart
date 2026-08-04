@@ -185,8 +185,13 @@ abstract class Material {
   bool doubleSided = false;
 
   /// World-space offset toward the camera used for coplanar surface details.
-  /// Zero leaves the draw position unchanged. Positive values keep an overlay
-  /// in front of its supporting surface without modifying its node transform.
+  /// Positive values keep an overlay in front of its supporting surface
+  /// without modifying its node transform. Zero and negative values leave the
+  /// draw position unchanged. A fixed world offset provides fewer depth-buffer
+  /// units as camera distance grows, so distant coplanar surfaces may need a
+  /// larger value.
+  // TODO(depth-bias-distance): add a distance or slope-scaled mode for decals
+  // that must remain separated across a large depth range.
   double depthBias = 0.0;
 
   /// Per-draw level-of-detail cross-fade coverage, set by the encoder right

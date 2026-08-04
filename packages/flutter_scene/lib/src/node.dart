@@ -18,21 +18,39 @@ import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 void _visitMutable<T>(List<T> items, void Function(T item) visit) {
-  final visited = HashSet<T>.identity();
+  HashSet<T>? visited;
   var index = 0;
   while (index < items.length) {
     final item = items[index];
-    if (!visited.add(item)) {
+    final tracked = visited;
+    if (tracked != null && tracked.contains(item)) {
       index++;
       continue;
     }
     visit(item);
-    final currentIndex = items.indexWhere(
-      (candidate) => identical(candidate, item),
-    );
-    if (currentIndex >= 0) {
-      index = currentIndex + 1;
+
+    // The unmutated path stays linear and allocation-free. Supported mutation
+    // creates identity tracking for the remaining traversal.
+    if (index < items.length && identical(items[index], item)) {
+      tracked?.add(item);
+      index++;
+      continue;
     }
+
+    if (tracked == null) {
+      final currentIndex = items.indexWhere(
+        (candidate) => identical(candidate, item),
+      );
+      final prefixEnd = currentIndex < 0
+          ? (index < items.length ? index : items.length)
+          : currentIndex + 1;
+      visited = HashSet<T>.identity()
+        ..addAll(items.take(prefixEnd))
+        ..add(item);
+    } else {
+      tracked.add(item);
+    }
+    index = 0;
   }
 }
 

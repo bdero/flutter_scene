@@ -20,15 +20,7 @@ uniform FrameInfo {
 }
 frame_info;
 
-vec3 ApplyDepthBias(vec3 world_position) {
-  vec3 to_camera = frame_info.camera_position - world_position;
-  float distance_squared = dot(to_camera, to_camera);
-  if (frame_info.depth_bias <= 0.0 || distance_squared <= 1e-12) {
-    return world_position;
-  }
-  return world_position +
-      to_camera * min(frame_info.depth_bias * inversesqrt(distance_squared), 1.0);
-}
+#include <depth_bias.glsl>
 
 in vec3 position;
 
@@ -59,7 +51,8 @@ void main() {
   Vertex(vertex);
 
   v_position = vertex.world_position;
-  vec3 draw_position = ApplyDepthBias(vertex.world_position);
+  vec3 draw_position = ApplyDepthBias(
+      vertex.world_position, frame_info.camera_position, frame_info.depth_bias);
   gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vec3(0.0);
