@@ -187,7 +187,7 @@ PhysicalTexture _physicalTexture(
 ) => PhysicalTexture(
   source: _resolveTexture(info, textures),
   transform: _textureTransform(info),
-  texCoord: info?.transform?.texCoord ?? info?.texCoord ?? 0,
+  texCoord: _textureTexCoord(info),
 );
 
 TextureTransform _textureTransform(GltfTextureInfo? info) {

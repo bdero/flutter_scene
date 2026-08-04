@@ -8,6 +8,8 @@ import 'package:hooks/hooks.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 
 /// Shader backends stored in a Flutter GPU shader bundle.
+// TODO(shader-bundle): add desktop OpenGL selection when Flutter GPU exposes
+// that target.
 enum ShaderBundleBackend { metalIos, metalDesktop, openglEs, vulkan }
 
 /// Controls DataAsset registration for a target-specific shader bundle.

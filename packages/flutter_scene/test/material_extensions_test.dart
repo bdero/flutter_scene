@@ -270,4 +270,22 @@ void main() {
     expect(descriptor.attenuationColor, Vector4.all(1.0));
     expect(descriptor.doubleSided, isTrue);
   });
+
+  test('runtime physical textures clamp unsupported UV channels', () {
+    final material = parseGltfJson(<String, Object?>{
+      'materials': [
+        <String, Object?>{
+          'extensions': <String, Object?>{
+            'KHR_materials_clearcoat': <String, Object?>{
+              'clearcoatFactor': 1.0,
+              'clearcoatTexture': <String, Object?>{'index': 0, 'texCoord': 7},
+            },
+          },
+        },
+      ],
+    }).materials.single;
+
+    final descriptor = physicalMaterialDescriptor(material, const []);
+    expect(descriptor.clearcoatTexture.texCoord, 1);
+  });
 }

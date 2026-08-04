@@ -33,6 +33,20 @@ void main() {
     );
   });
 
+  test('physical feature textures preserve high-impact inputs first', () {
+    final source = File(
+      'lib/src/material/advanced_physical_material.dart',
+    ).readAsStringSync();
+    final emissive = source.indexOf('(1, d.emissiveTexture)');
+    final occlusion = source.indexOf('(2, d.occlusionTexture)');
+    final specular = source.indexOf('(3, d.specularTexture)');
+
+    expect(emissive, greaterThan(0));
+    expect(occlusion, greaterThan(emissive));
+    expect(specular, greaterThan(occlusion));
+    expect(source, contains('math.max(d.attenuationDistance, 0.0001)'));
+  });
+
   test('opaque physical shader exposes advanced properties', () {
     final compiled = _compile('physical_opaque');
     final names = compiled.material.parameters.map((p) => p.name).toSet();
@@ -115,6 +129,15 @@ void main() {
     expect(source, contains('SpecularAARoughness(\n      coat_normal'));
     expect(source, contains('vec3(0.04) * coat_ab.x + coat_ab.y'));
     expect(source, contains('material.transmission_color * albedo *'));
+    expect(
+      source,
+      isNot(contains('material.diffuse_transmission_color * albedo *')),
+    );
+    expect(
+      source,
+      contains('(1.0 - 0.5 * material.sheen_roughness) * occlusion *'),
+    );
+    expect(source, contains('return roughness;'));
     expect(
       source,
       isNot(contains('mix(out_color, material.transmission_color')),

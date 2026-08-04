@@ -41,6 +41,12 @@ void main() {
     expect(transmissionFilterBandCount(1, 128), 0);
   });
 
+  test('scene color snapshot passes are bounded', () {
+    expect(sceneColorSnapshotPassCount(0), 0);
+    expect(sceneColorSnapshotPassCount(3), 3);
+    expect(sceneColorSnapshotPassCount(100), 8);
+  });
+
   test('rough transmission atlas offsets match odd-sized bands', () {
     expect(transmissionFilterBandOffset(1671, 1), 0);
     expect(transmissionFilterBandOffset(1671, 2), 835);

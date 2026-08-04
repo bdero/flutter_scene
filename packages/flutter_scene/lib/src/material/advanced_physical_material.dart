@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
@@ -30,7 +29,16 @@ final class _PhysicalAssets {
 }
 
 Future<_PhysicalAssets> _loadPhysicalAssets() =>
-    _physicalAssetsFuture ??= _loadPhysicalAssetsUncached();
+    _physicalAssetsFuture ??= _loadPhysicalAssetsAndResetOnFailure();
+
+Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
+  try {
+    return await _loadPhysicalAssetsUncached();
+  } catch (_) {
+    _physicalAssetsFuture = null;
+    rethrow;
+  }
+}
 
 Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
   var bundleKey = _legacyBundleKey;
@@ -154,7 +162,9 @@ class PhysicalMaterial extends PreprocessedMaterial {
       ..setVec3('attenuation_color', d.attenuationColor.xyz)
       ..setFloat(
         'attenuation_distance',
-        d.attenuationDistance.isFinite ? d.attenuationDistance : 1.0e20,
+        d.attenuationDistance.isFinite
+            ? math.max(d.attenuationDistance, 0.0001)
+            : 1.0e20,
       )
       ..setFloat('dispersion', d.dispersion)
       ..setFloat('iridescence', d.iridescence)
@@ -180,12 +190,12 @@ class PhysicalMaterial extends PreprocessedMaterial {
 
   void _bindFeatureTextures(PhysicalMaterialDescriptor d) {
     final features = <(int, PhysicalTexture)>[
-      (3, d.specularTexture),
-      (4, d.specularColorTexture),
+      (1, d.emissiveTexture),
+      (2, d.occlusionTexture),
       if (d.clearcoat > 0.0) ...[
+        (7, d.clearcoatNormalTexture),
         (5, d.clearcoatTexture),
         (6, d.clearcoatRoughnessTexture),
-        (7, d.clearcoatNormalTexture),
       ],
       if (d.sheenColor.xyz.length2 > 0.0) ...[
         (8, d.sheenColorTexture),
@@ -197,11 +207,11 @@ class PhysicalMaterial extends PreprocessedMaterial {
       ],
       if (d.anisotropy != 0.0) (12, d.anisotropyTexture),
       if (d.diffuseTransmission > 0.0) ...[
-        (13, d.diffuseTransmissionTexture),
         (14, d.diffuseTransmissionColorTexture),
+        (13, d.diffuseTransmissionTexture),
       ],
-      (2, d.occlusionTexture),
-      (1, d.emissiveTexture),
+      (4, d.specularColorTexture),
+      (3, d.specularTexture),
     ].where((entry) => entry.$2.source != null).toList();
     if (features.length > 3) {
       debugPrint(
@@ -330,8 +340,7 @@ class PhysicalMaterial extends PreprocessedMaterial {
       parameters.setFloat('clearcoat_roughness', value.clamp(0.0, 1.0));
 
   /// Updates the sheen color.
-  set sheenColor(Color value) =>
-      parameters.setVec3('sheen_color', Vector3(value.r, value.g, value.b));
+  set sheenColor(Vector3 value) => parameters.setVec3('sheen_color', value);
 
   /// Updates sheen perceptual roughness.
   set sheenRoughness(double value) =>

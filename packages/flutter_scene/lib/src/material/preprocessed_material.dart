@@ -191,6 +191,8 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         fragmentShader.getUniformSlot('FragInfo'),
         transientsBuffer.emplace(_fragInfoBytes),
       );
+      // TODO(material-permutations): add an SSAO sampler to filtered scene
+      // color permutations without exceeding the backend sampler limit.
       EngineLightingUniforms.bindEngineTextures(
         pass,
         fragmentShader,
@@ -281,6 +283,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   @internal
   gpu.CullMode get renderCullMode {
+    // Translucent double-sided surfaces keep one face per draw so depth
+    // sorting remains stable.
+    // TODO(translucent-sorting): emit and sort front/back surface draws
+    // independently, then disable culling for double-sided materials.
     if (_culling == FmatCulling.back && doubleSided && isOpaque()) {
       return gpu.CullMode.none;
     }

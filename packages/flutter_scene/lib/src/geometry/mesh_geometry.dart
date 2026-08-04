@@ -977,11 +977,11 @@ class _RingBufferStream {
 
 /// Assembles a [MeshGeometry] one vertex and triangle at a time.
 ///
-/// The attribute setters ([normal], [texCoord], [texCoord1], [color]) are sticky:
-/// each value applies to every [addVertex] call that follows until it is
-/// changed. [addVertex] returns the index of the added vertex; when
-/// [deduplicate] is set, a vertex equal to one already added is merged
-/// and the existing index is returned instead.
+/// The attribute setters ([normal], [texCoord], [texCoord1], [color], and
+/// [tangent]) are sticky. Each value applies to every [addVertex] call that
+/// follows until it is changed. [addVertex] returns the index of the added
+/// vertex. When [deduplicate] is set, a vertex equal to one already added is
+/// merged and the existing index is returned instead.
 ///
 /// ```dart
 /// final geometry = (GeometryBuilder()
@@ -1008,6 +1008,7 @@ class GeometryBuilder {
   final List<double> _texCoords = [];
   final List<double> _texCoords1 = [];
   final List<double> _colors = [];
+  final List<double> _tangents = [];
   final List<int> _indices = [];
   final Map<String, int> _vertexLookup = {};
 
@@ -1015,6 +1016,7 @@ class GeometryBuilder {
   Vector2 _texCoord = Vector2.zero();
   Vector2 _texCoord1 = Vector2.zero();
   Vector4 _color = Vector4(1.0, 1.0, 1.0, 1.0);
+  Vector4 _tangent = Vector4.zero();
   bool _normalsAuthored = false;
 
   /// The number of vertices added so far.
@@ -1050,6 +1052,12 @@ class GeometryBuilder {
   /// Sets the color applied to vertices added after this call.
   GeometryBuilder color(Vector4 value) {
     _color = value.clone();
+    return this;
+  }
+
+  /// Sets the tangent applied to vertices added after this call.
+  GeometryBuilder tangent(Vector4 value) {
+    _tangent = value.clone();
     return this;
   }
 
@@ -1097,6 +1105,7 @@ class GeometryBuilder {
       texCoords: Float32List.fromList(_texCoords),
       texCoords1: Float32List.fromList(_texCoords1),
       colors: Float32List.fromList(_colors),
+      tangents: Float32List.fromList(_tangents),
     );
   }
 
@@ -1116,6 +1125,7 @@ class GeometryBuilder {
       texCoords: Float32List.fromList(_texCoords),
       texCoords1: Float32List.fromList(_texCoords1),
       colors: Float32List.fromList(_colors),
+      tangents: Float32List.fromList(_tangents),
       indices: _indices.isEmpty ? null : List.of(_indices),
       storage: storage,
       bufferArena: bufferArena,
@@ -1152,6 +1162,11 @@ class GeometryBuilder {
       ..add(_color.y)
       ..add(_color.z)
       ..add(_color.w);
+    _tangents
+      ..add(_tangent.x)
+      ..add(_tangent.y)
+      ..add(_tangent.z)
+      ..add(_tangent.w);
   }
 
   String _vertexKey(Vector3 position) {
@@ -1159,6 +1174,7 @@ class GeometryBuilder {
         '${_normal.x},${_normal.y},${_normal.z},'
         '${_texCoord.x},${_texCoord.y},'
         '${_texCoord1.x},${_texCoord1.y},'
-        '${_color.x},${_color.y},${_color.z},${_color.w}';
+        '${_color.x},${_color.y},${_color.z},${_color.w},'
+        '${_tangent.x},${_tangent.y},${_tangent.z},${_tangent.w}';
   }
 }
