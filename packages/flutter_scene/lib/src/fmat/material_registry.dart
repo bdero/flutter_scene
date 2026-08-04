@@ -268,8 +268,12 @@ final class FmatMaterialRegistry {
     return manifest.listAssets();
   }
 
-  static Future<gpu.ShaderLibrary> _loadShaderLibrary(String assetKey) async {
-    final library = await gpu.loadShaderLibraryAsync(assetKey);
+  Future<gpu.ShaderLibrary> _loadShaderLibrary(String assetKey) async {
+    final library = identical(_bundle, rootBundle)
+        ? await gpu.loadShaderLibraryAsync(assetKey)
+        : await gpu.loadShaderLibraryFromBytesAsync(
+            await _bundle.load(assetKey),
+          );
     if (library == null) {
       throw StateError('Could not load shader bundle asset "$assetKey".');
     }

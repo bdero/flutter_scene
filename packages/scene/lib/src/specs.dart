@@ -92,8 +92,8 @@ class PropertyOverride {
   /// The node in the referenced prefab whose property is overridden.
   final LocalId target;
 
-  /// A dotted property path, for example `components.mesh.material` or
-  /// `transform.trs.t`.
+  /// A dotted property path, for example `components.mesh.material`,
+  /// `components.mesh.primitives.0.material`, or `transform.trs.t`.
   final String path;
 
   /// The overriding value (absolute, not a relative delta).

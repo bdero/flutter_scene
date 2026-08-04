@@ -129,6 +129,61 @@ void main() {
     expect((wheel.transform as TrsTransform).translation, Vector3(5, 0, 0));
   });
 
+  test('applies an override inside a component list and map', () {
+    final prefab = SceneDocument();
+    final original = prefab.addResource(
+      MaterialResource(prefab.newId(), type: 'physicallyBased'),
+    );
+    final geometry = prefab.addResource(
+      GeometryResource(
+        prefab.newId(),
+        procedural: CuboidGeometrySpec(extents: Vector3.all(1)),
+      ),
+    );
+    final meshNode = prefab.createNode(
+      name: 'mesh',
+      root: true,
+      components: [
+        ComponentSpec(
+          'mesh',
+          properties: {
+            'primitives': ListValue([
+              MapValue({
+                'geometry': ResourceRefValue(geometry.id),
+                'material': ResourceRefValue(original.id),
+              }),
+            ]),
+          },
+        ),
+      ],
+    );
+    final host = SceneDocument();
+    final replacement = host.addResource(
+      MaterialResource(host.newId(), type: 'unlit'),
+    );
+    host.createNode(root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('mesh.fscene'),
+      overrides: [
+        PropertyOverride(
+          target: meshNode.id,
+          path: 'components.mesh.primitives.0.material',
+          value: ResourceRefValue(replacement.id),
+        ),
+      ],
+    );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final mesh = composed.rootNodes.single.components.single;
+    final primitives = mesh.properties['primitives'] as ListValue;
+    final primitive = primitives.values.single as MapValue;
+    expect(
+      (primitive.values['material'] as ResourceRefValue).id,
+      replacement.id,
+    );
+    final geometryId = (primitive.values['geometry'] as ResourceRefValue).id;
+    expect(composed.resource(geometryId), isA<GeometryResource>());
+  });
+
   test('removes a prefab node', () {
     final prefab = _prefab();
     final wheelId = prefab.rootNodes.single.children.single;

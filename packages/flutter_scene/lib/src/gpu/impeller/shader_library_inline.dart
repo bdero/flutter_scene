@@ -22,6 +22,13 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
   return Future.value(ShaderLibrary.fromAsset(assetName));
 }
 
+/// Loads a shader bundle directly from [bytes].
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) {
+  // TODO(shader-bytes): drop the ignore once fromBytes reaches stable Flutter.
+  // ignore: undefined_method
+  return Future.value(ShaderLibrary.fromBytes(bytes));
+}
+
 /// Async shader-bundle reinitialize. On native this wraps flutter_gpu's
 /// synchronous in-place `ShaderLibrary.reinitialize`; the web backend
 /// re-fetches and recompiles asynchronously, so await this before evicting

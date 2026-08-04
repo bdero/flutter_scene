@@ -50,6 +50,10 @@ base class ShaderLibrary {
   /// Load and compile a `.shaderbundle` asset.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
     final data = await rootBundle.load(assetName);
+    return _loadFromBytes(data, assetName: assetName);
+  }
+
+  static ShaderLibrary _loadFromBytes(ByteData data, {String? assetName}) {
     final bytes = data.buffer.asUint8List(
       data.offsetInBytes,
       data.lengthInBytes,
@@ -62,10 +66,12 @@ base class ShaderLibrary {
       if (name == null || backend == null) continue;
       final shader = _buildFromBackend(backend);
       shaders[name] = shader;
-      _shadersByAsset.putIfAbsent(assetName, () => []).add((
-        name: name,
-        shader: WeakReference(shader),
-      ));
+      if (assetName != null) {
+        _shadersByAsset.putIfAbsent(assetName, () => []).add((
+          name: name,
+          shader: WeakReference(shader),
+        ));
+      }
     }
     return ShaderLibrary._(shaders);
   }
@@ -193,6 +199,10 @@ base class ShaderLibrary {
 Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
   return ShaderLibrary._loadFromAsset(assetName);
 }
+
+/// Loads a shader bundle directly from [bytes].
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async =>
+    ShaderLibrary._loadFromBytes(bytes);
 
 /// Re-fetches a `.shaderbundle` asset and recompiles every live shader that
 /// was loaded from it, in place (shader identities are preserved, so
