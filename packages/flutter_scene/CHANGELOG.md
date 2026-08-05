@@ -36,6 +36,7 @@
 * Reused large transient buffers across changing instance counts.
 * Translucent instanced meshes now sort as one batch, with instances ordered within it.
 * Translucent draws sort back to front by view-axis depth through their geometry bounds center.
+* Double-sided lit materials reverse geometric normals on back-facing fragments.
 * Fixed instanced meshes losing their lighting, shadow, and fog bindings on GLES, which drew them (and any mesh sharing their pipeline) black.
 * Fixed anisotropy strength being ignored by environment lighting and using an isotropic visibility term for analytic lights.
 * Fixed anisotropic materials exposing primitive triangles by importing and interpolating authored tangents.

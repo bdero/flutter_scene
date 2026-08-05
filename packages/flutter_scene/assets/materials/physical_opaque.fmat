@@ -65,14 +65,6 @@ material {
 }
 
 fragment {
-  vec2 PhysicalUv(vec2 uv, vec4 transform, float rotation) {
-    vec2 scaled = uv * transform.zw;
-    float c = cos(rotation);
-    float s = sin(rotation);
-    return transform.xy + vec2(c * scaled.x - s * scaled.y,
-                               s * scaled.x + c * scaled.y);
-  }
-
   void ApplyFeature(inout MaterialInputs material, int feature, vec4 sampled,
                     vec2 uv) {
     if (feature == 1) {
@@ -117,16 +109,18 @@ fragment {
   }
 
   void Surface(inout MaterialInputs material) {
-    vec2 base_uv = PhysicalUv(GetUV(material_params.base_color_uv_set),
-                              material_params.base_color_uv_transform,
-                              material_params.base_color_uv_rotation);
-    vec2 mr_uv = PhysicalUv(
+    vec2 base_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.base_color_uv_set),
+        material_params.base_color_uv_transform,
+        material_params.base_color_uv_rotation);
+    vec2 mr_uv = ApplyMaterialUvTransform(
         GetUV(material_params.metallic_roughness_uv_set),
         material_params.metallic_roughness_uv_transform,
         material_params.metallic_roughness_uv_rotation);
-    vec2 normal_uv = PhysicalUv(GetUV(material_params.normal_uv_set),
-                                material_params.normal_uv_transform,
-                                material_params.normal_uv_rotation);
+    vec2 normal_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.normal_uv_set),
+        material_params.normal_uv_transform,
+        material_params.normal_uv_rotation);
 
     vec4 base = texture(base_color_texture, base_uv);
     vec4 vertex_color = GetVertexColor();
@@ -170,15 +164,15 @@ fragment {
     material.iridescence_thickness =
         material_params.iridescence_thickness_maximum;
 
-    vec2 feature_a_uv = PhysicalUv(
+    vec2 feature_a_uv = ApplyMaterialUvTransform(
         GetUV(material_params.feature_a_uv_set),
         material_params.feature_a_uv_transform,
         material_params.feature_a_uv_rotation);
-    vec2 feature_b_uv = PhysicalUv(
+    vec2 feature_b_uv = ApplyMaterialUvTransform(
         GetUV(material_params.feature_b_uv_set),
         material_params.feature_b_uv_transform,
         material_params.feature_b_uv_rotation);
-    vec2 feature_c_uv = PhysicalUv(
+    vec2 feature_c_uv = ApplyMaterialUvTransform(
         GetUV(material_params.feature_c_uv_set),
         material_params.feature_c_uv_transform,
         material_params.feature_c_uv_rotation);

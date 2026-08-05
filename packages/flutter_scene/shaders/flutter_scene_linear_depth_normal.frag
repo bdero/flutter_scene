@@ -17,6 +17,7 @@
 // in, matching the lookAt view matrix (+X right, +Y up, +Z forward).
 
 #include <material_varyings.glsl>
+#include <material_inputs.glsl>
 
 uniform DepthNormalInfo {
   // xyz: normalized world-space camera forward (eye into the scene).
@@ -61,13 +62,8 @@ void main() {
                                     dot(n, info.camera_up.xyz),
                                     dot(n, info.camera_forward.xyz)));
 
-  vec2 roughness_uv = GetUV(int(info.roughness_uv_rotation.z));
-  roughness_uv *= info.roughness_uv_transform.zw;
-  roughness_uv = mat2(info.roughness_uv_rotation.x,
-                      info.roughness_uv_rotation.y,
-                      -info.roughness_uv_rotation.y,
-                      info.roughness_uv_rotation.x) * roughness_uv;
-  roughness_uv += info.roughness_uv_transform.xy;
+  vec2 roughness_uv = MaterialTextureUv(info.roughness_uv_transform,
+                                        info.roughness_uv_rotation);
   float roughness = clamp(
       texture(metallic_roughness_texture, roughness_uv).g *
           info.camera_forward.w,

@@ -4,10 +4,30 @@
 // lighting" contract: a material populates these fields and the shared
 // framework owns the BRDF, IBL, shadows, and output encoding.
 //
-// This file declares only the struct and its helpers and has no dependencies.
+// This file depends on the accessors from material_varyings.glsl.
 // material_lighting.glsl (which consumes a MaterialInputs) additionally
-// requires the FragInfo block, the standard world-space varyings, the IBL
-// samplers, and pbr.glsl / texture.glsl to be declared before it is included.
+// requires the FragInfo block, the IBL samplers, and pbr.glsl/texture.glsl to
+// be declared before it is included.
+
+// Applies offset/scale plus a cosine/sine rotation pair to texture coordinates.
+vec2 ApplyMaterialUvTransform(vec2 uv, vec4 transform, vec2 rotation) {
+  vec2 scaled = uv * transform.zw;
+  return transform.xy +
+         vec2(rotation.x * scaled.x - rotation.y * scaled.y,
+              rotation.y * scaled.x + rotation.x * scaled.y);
+}
+
+// Applies a texture transform whose rotation is stored as an angle.
+vec2 ApplyMaterialUvTransform(vec2 uv, vec4 transform, float rotation) {
+  return ApplyMaterialUvTransform(
+      uv, transform, vec2(cos(rotation), sin(rotation)));
+}
+
+// Selects the packed UV channel and applies its texture transform.
+vec2 MaterialTextureUv(vec4 transform, vec4 rotation) {
+  vec2 uv = GetUV(int(rotation.z + 0.5));
+  return ApplyMaterialUvTransform(uv, transform, rotation.xy);
+}
 
 struct MaterialInputs {
   // Linear-space base color in rgb; straight (non-premultiplied) alpha in a.

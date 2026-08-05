@@ -61,14 +61,6 @@ material {
 }
 
 fragment {
-  vec2 PhysicalUv(vec2 uv, vec4 transform, float rotation) {
-    vec2 scaled = uv * transform.zw;
-    float c = cos(rotation);
-    float s = sin(rotation);
-    return transform.xy + vec2(c * scaled.x - s * scaled.y,
-                               s * scaled.x + c * scaled.y);
-  }
-
   vec3 VolumeTransmissionRay(vec3 normal, float thickness, float ior) {
     vec3 ray = refract(-GetViewDirection(), normal,
                        1.0 / max(ior, 1.0));
@@ -76,20 +68,23 @@ fragment {
   }
 
   void Surface(inout MaterialInputs material) {
-    vec2 base_uv = PhysicalUv(GetUV(material_params.base_color_uv_set),
-                              material_params.base_color_uv_transform,
-                              material_params.base_color_uv_rotation);
-    vec2 mr_uv = PhysicalUv(
+    vec2 base_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.base_color_uv_set),
+        material_params.base_color_uv_transform,
+        material_params.base_color_uv_rotation);
+    vec2 mr_uv = ApplyMaterialUvTransform(
         GetUV(material_params.metallic_roughness_uv_set),
         material_params.metallic_roughness_uv_transform,
         material_params.metallic_roughness_uv_rotation);
-    vec2 normal_uv = PhysicalUv(GetUV(material_params.normal_uv_set),
-                                material_params.normal_uv_transform,
-                                material_params.normal_uv_rotation);
-    vec2 emissive_uv = PhysicalUv(GetUV(material_params.emissive_uv_set),
-                                  material_params.emissive_uv_transform,
-                                  material_params.emissive_uv_rotation);
-    vec2 data_uv = PhysicalUv(
+    vec2 normal_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.normal_uv_set),
+        material_params.normal_uv_transform,
+        material_params.normal_uv_rotation);
+    vec2 emissive_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.emissive_uv_set),
+        material_params.emissive_uv_transform,
+        material_params.emissive_uv_rotation);
+    vec2 data_uv = ApplyMaterialUvTransform(
         GetUV(material_params.transmission_data_uv_set),
         material_params.transmission_data_uv_transform,
         material_params.transmission_data_uv_rotation);

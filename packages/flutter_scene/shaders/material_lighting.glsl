@@ -307,13 +307,10 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
 #endif
   }
   float n_dot_v_safe = max(n_dot_v, 1e-4);
-  // Facing the light through a double-sided surface (a back-lit leaf whose
-  // normal faces the sun), light_vector nears -camera_normal, so the unnormalized
-  // half vector nears zero and normalize() returns a NaN that becomes a black
-  // specular hole a later gather pass spreads. There is no specular highlight at
-  // that light-opposite-view geometry (it is retroreflection), so drop the
-  // specular when the half vector degenerates. Fresnel then falls back to the
-  // base reflectance for the diffuse energy split.
+  // GetWorldNormal already faces the visible side, so back-side light exits
+  // above. Strong normal-map perturbations can still let light_vector approach
+  // -camera_normal while n_dot_l remains positive. Avoid normalizing that
+  // degenerate half vector and introducing a NaN.
   vec3 h = light_vector + camera_normal;
   float h_len_sq = dot(h, h);
   vec3 specular = vec3(0.0);
@@ -359,10 +356,10 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
     vec3 sheen_half = normalize(light_vector + camera_normal);
     float n_dot_h = max(dot(normal, sheen_half), 0.0);
     float sheen_distribution = DistributionCharlie(
-        max(material.sheen_roughness, 0.001), n_dot_h);
+        max(material.sheen_roughness, kMinRoughness), n_dot_h);
     float sheen_visibility = VisibilitySheen(
         n_dot_l, max(n_dot_v, 1e-4),
-        max(material.sheen_roughness, 0.001));
+        max(material.sheen_roughness, kMinRoughness));
     result += material.sheen_color * sheen_distribution * sheen_visibility *
               radiance * n_dot_l;
   }
@@ -537,6 +534,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
   } else {
     anisotropic_normal = normal;
   }
+  // Tighten the lookup toward the anisotropy direction for smooth, strongly
+  // anisotropic surfaces while rough surfaces return toward the normal.
+  // TODO(anisotropic-ibl): prefilter radiance for anisotropic GGX instead of
+  // bending an isotropic lookup direction.
   float bend = 1.0 - anisotropy * (1.0 - roughness);
   bend *= bend;
   bend *= bend;
@@ -678,6 +679,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
                (vec3(0.04) * coat_ab.x + coat_ab.y) *
                frag_info.environment_intensity;
   }
+  // TODO(sheen-ibl): replace this diffuse-scaled ambient term with a
+  // preintegrated Charlie environment lobe and directional-albedo compensation.
   ambient += material.sheen_color * irradiance *
              (0.25 + 0.75 * (1.0 - n_dot_v_energy)) *
              (1.0 - 0.5 * material.sheen_roughness) * occlusion *

@@ -93,8 +93,7 @@ void main() {
       contains('frag_info.scene_inputs.x < 0.5) return vec3(0.0)'),
     );
     expect(compiled.glsl, contains('texture(emissive_texture'));
-    expect(compiled.glsl, contains('SampleTransmissionBand'));
-    expect(compiled.glsl, contains('roughness * clamp(ior * 2.0 - 2.0'));
+    expect(compiled.glsl, contains('#include <filtered_scene_color.glsl>'));
     expect(compiled.glsl, contains('refract(-GetViewDirection()'));
     expect(compiled.glsl, contains('ProjectWorldOffsetToScreenUv'));
     expect(compiled.glsl, contains('thickness * GetModelScale()'));
@@ -116,8 +115,39 @@ void main() {
     );
   });
 
+  test('material texture transforms share channel selection and UV math', () {
+    final inputs = File('shaders/material_inputs.glsl').readAsStringSync();
+    final standard = File(
+      'shaders/flutter_scene_standard.frag',
+    ).readAsStringSync();
+    final unlit = File('shaders/flutter_scene_unlit.frag').readAsStringSync();
+    final depthNormal = File(
+      'shaders/flutter_scene_linear_depth_normal.frag',
+    ).readAsStringSync();
+
+    expect(inputs, contains('vec2 MaterialTextureUv('));
+    expect(inputs, contains('int(rotation.z + 0.5)'));
+    expect(standard, contains('MaterialTextureUv('));
+    expect(unlit, contains('MaterialTextureUv('));
+    expect(depthNormal, contains('MaterialTextureUv('));
+    expect(standard, isNot(contains('vec2 TransformUv(')));
+  });
+
+  test('filtered scene color lives in a reviewable shader include', () {
+    final filtered = File(
+      'shaders/filtered_scene_color.glsl',
+    ).readAsStringSync();
+
+    expect(filtered, contains('uniform sampler2D scene_filtered_color;'));
+    expect(filtered, contains('vec3 SampleTransmissionBand('));
+    expect(filtered, contains('vec3 GetSceneColorFiltered('));
+    expect(filtered, contains('TransmissionWeight0'));
+    expect(filtered, contains('roughness * clamp(ior * 2.0 - 2.0'));
+  });
+
   test('shared lighting composes clearcoat after the underlying material', () {
     final source = File('shaders/material_lighting.glsl').readAsStringSync();
+    final pbr = File('shaders/pbr.glsl').readAsStringSync();
     final transmission = source.indexOf(
       'out_color += transmitted_light * specular_transmission',
     );
@@ -138,6 +168,8 @@ void main() {
       contains('(1.0 - 0.5 * material.sheen_roughness) * occlusion *'),
     );
     expect(source, contains('return roughness;'));
+    expect(source, contains('max(material.sheen_roughness, kMinRoughness)'));
+    expect(pbr, contains('kMinRoughness * kMinRoughness'));
     expect(
       source,
       isNot(contains('mix(out_color, material.transmission_color')),

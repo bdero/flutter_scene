@@ -90,7 +90,10 @@ float GeometrySmith(vec3 normal, vec3 camera_normal, vec3 light_normal,
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
 // Estevez/Kulla Charlie sheen distribution and fitted visibility.
 float DistributionCharlie(float roughness, float n_dot_h) {
-  float alpha = max(roughness * roughness, 1e-6);
+  // Keep the reciprocal exponent inside mediump range on mobile fragment
+  // stages.
+  float alpha = max(roughness * roughness,
+                    kMinRoughness * kMinRoughness);
   float inv_alpha = 1.0 / alpha;
   float sin2 = max(1.0 - n_dot_h * n_dot_h, 0.0);
   return (2.0 + inv_alpha) * pow(sin2, inv_alpha * 0.5) /
@@ -116,7 +119,8 @@ float _SheenLambda(float cosine, float alpha) {
 }
 
 float VisibilitySheen(float n_dot_l, float n_dot_v, float roughness) {
-  float alpha = max(roughness * roughness, 1e-6);
+  float alpha = max(roughness * roughness,
+                    kMinRoughness * kMinRoughness);
   float denominator =
       (1.0 + _SheenLambda(n_dot_v, alpha) +
        _SheenLambda(n_dot_l, alpha)) *
@@ -150,6 +154,8 @@ float VisibilityGGXAnisotropic(float n_dot_l, float n_dot_v,
 }
 
 // Compact thin-film approximation. Thickness is nanometres.
+// TODO(iridescence): replace the three RGB phase samples with spectral
+// integration and display-response conversion.
 vec3 ThinFilmFresnel(vec3 base_f0, float film_ior, float thickness,
                      float n_dot_v) {
   float optical_path = 2.0 * max(film_ior, 1.0) * thickness *

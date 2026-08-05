@@ -7,6 +7,7 @@
 // texture-coordinate and vertex-color varyings the mask needs.
 
 #include <material_varyings.glsl>
+#include <material_inputs.glsl>
 #include <depth_mask.glsl>
 
 uniform DepthInfo {
