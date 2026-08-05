@@ -7,6 +7,7 @@
 // needs the texture-coordinate and vertex-color varyings.
 
 #include <material_varyings.glsl>
+#include <material_inputs.glsl>
 #include <depth_mask.glsl>
 
 void main() {

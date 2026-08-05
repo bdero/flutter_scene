@@ -125,11 +125,9 @@ fragment { void Surface(inout MaterialInputs material) {} }
       final glsl = emitFragmentGlsl(m);
       expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
       expect(glsl, contains('uniform sampler2D scene_depth;'));
-      expect(glsl, contains('uniform sampler2D scene_filtered_color;'));
       expect(glsl, contains('vec3 GetSceneColor(vec2 uv_offset)'));
-      expect(glsl, contains('vec3 GetSceneColorFiltered('));
-      expect(glsl, contains('vec3 SampleTransmissionBand('));
-      expect(glsl, contains('TransmissionWeight0'));
+      expect(glsl, contains('#include <filtered_scene_color.glsl>'));
+      expect(glsl, isNot(contains('TransmissionWeight0')));
       expect(glsl, contains('float GetSceneDepth(vec2 uv_offset)'));
 
       // Unknown entries are rejected.

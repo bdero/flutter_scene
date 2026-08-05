@@ -20,13 +20,7 @@ uniform sampler2D mask_texture;
 
 // Discards the fragment when its masked alpha falls below the cutoff.
 void ApplyDepthAlphaMask() {
-  vec2 source_uv = GetUV(int(mask_info.uv_rotation.z + 0.5));
-  vec2 scaled = source_uv * mask_info.uv_transform.zw;
-  vec2 uv = mask_info.uv_transform.xy +
-            vec2(mask_info.uv_rotation.x * scaled.x -
-                     mask_info.uv_rotation.y * scaled.y,
-                 mask_info.uv_rotation.y * scaled.x +
-                     mask_info.uv_rotation.x * scaled.y);
+  vec2 uv = MaterialTextureUv(mask_info.uv_transform, mask_info.uv_rotation);
   float alpha = texture(mask_texture, uv).a *
                 mix(1.0, v_color.a, mask_info.params.z) * mask_info.params.y;
   if (alpha < mask_info.params.x) {

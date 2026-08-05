@@ -95,6 +95,7 @@ const _frameworkShaderFiles = <String>[
   'material_inputs.glsl',
   'material_engine_lighting.glsl',
   'material_lighting.glsl',
+  'filtered_scene_color.glsl',
   // The vertex-stage includes a material's generated vertex variants pull in.
   'material_vertex.glsl',
   'depth_bias.glsl',
