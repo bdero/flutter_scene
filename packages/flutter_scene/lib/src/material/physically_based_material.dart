@@ -10,7 +10,6 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
-import 'package:flutter_scene/src/shaders.dart';
 
 /// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
 /// matching glTF's `alphaMode`.
@@ -226,15 +225,6 @@ class PhysicallyBasedMaterial extends Material {
   /// normals cannot over-roughen a surface. Default `0.2`.
   double specularAntiAliasingThreshold = 0.2;
 
-  gpu.Shader? _shadowFragmentShader;
-
-  @override
-  gpu.Shader fragmentShaderForLighting(Lighting lighting) {
-    if (lighting.shadowMap == null) return fragmentShader;
-    return _shadowFragmentShader ??=
-        baseShaderLibrary['StandardShadowFragment']!;
-  }
-
   @override
   void bind(
     gpu.RenderPass pass,
@@ -242,7 +232,6 @@ class PhysicallyBasedMaterial extends Material {
     Lighting lighting,
   ) {
     super.bind(pass, transientsBuffer, lighting);
-    final shader = fragmentShaderForLighting(lighting);
 
     final EnvironmentMap env = environment ?? lighting.environmentMap;
 
@@ -291,7 +280,7 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[162] = lightListCount.toDouble();
     fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
-      shader.getUniformSlot("FragInfo"),
+      fragmentShader.getUniformSlot("FragInfo"),
       transientsBuffer.emplace(_fragInfoBytes),
     );
 
@@ -327,32 +316,31 @@ class PhysicallyBasedMaterial extends Material {
       occlusionTextureTexCoord,
     );
     pass.bindUniform(
-      shader.getUniformSlot('TextureTransforms'),
+      fragmentShader.getUniformSlot('TextureTransforms'),
       transientsBuffer.emplace(ByteData.sublistView(textureTransforms)),
     );
 
-    _bindSlot(pass, shader, 'base_color_texture', baseColorTexture);
-    _bindSlot(pass, shader, 'emissive_texture', emissiveTexture);
-    _bindSlot(
-      pass,
-      shader,
-      'metallic_roughness_texture',
-      metallicRoughnessTexture,
-    );
-    _bindSlot(pass, shader, 'normal_texture', normalTexture, normal: true);
-    _bindSlot(pass, shader, 'occlusion_texture', occlusionTexture);
+    _bindSlot(pass, 'base_color_texture', baseColorTexture);
+    _bindSlot(pass, 'emissive_texture', emissiveTexture);
+    _bindSlot(pass, 'metallic_roughness_texture', metallicRoughnessTexture);
+    _bindSlot(pass, 'normal_texture', normalTexture, normal: true);
+    _bindSlot(pass, 'occlusion_texture', occlusionTexture);
     // Image-based-lighting atlas, BRDF LUT, and shadow map. Shared with
     // PreprocessedMaterial: the sampler choices (radiance repeat/clamp, LUT
     // clamp/clamp, shadow nearest/clamp) and the white shadow placeholder
     // live in EngineLightingUniforms.
     EngineLightingUniforms.bindEngineTextures(
       pass,
-      shader,
+      fragmentShader,
       lighting,
       env,
-      bindShadows: lighting.shadowMap != null,
     );
-    EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
+    EngineLightingUniforms.bindFog(
+      pass,
+      fragmentShader,
+      transientsBuffer,
+      lighting,
+    );
   }
 
   static final Float32List _fragInfoScratch = Float32List(
@@ -389,14 +377,13 @@ class PhysicallyBasedMaterial extends Material {
   // material's repeat default.
   void _bindSlot(
     gpu.RenderPass pass,
-    gpu.Shader shader,
     String name,
     TextureSource? source, {
     bool normal = false,
   }) {
     final resolved = resolveTextureSource(source);
     pass.bindTexture(
-      shader.getUniformSlot(name),
+      fragmentShader.getUniformSlot(name),
       normal
           ? Material.normalPlaceholder(resolved)
           : Material.whitePlaceholder(resolved),

@@ -11,30 +11,21 @@ FmatCompilation _compile(String name) {
 }
 
 void main() {
-  test('standard materials select compact and shadow shader variants', () {
+  test('standard materials retain their shadow sampler layout', () {
     final manifest =
         jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
             as Map<String, dynamic>;
-    final compact = File(
-      'shaders/flutter_scene_standard_no_shadows.frag',
-    ).readAsStringSync();
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
-    final material = File(
-      'lib/src/material/physically_based_material.dart',
+    final uniforms = File(
+      'shaders/material_engine_lighting.glsl',
     ).readAsStringSync();
 
     expect(
       manifest['StandardFragment']['file'],
-      'shaders/flutter_scene_standard_no_shadows.frag',
-    );
-    expect(
-      manifest['StandardShadowFragment']['file'],
       'shaders/flutter_scene_standard.frag',
     );
-    expect(compact, contains('#define FLUTTER_SCENE_SKIP_SHADOWS'));
     expect(lighting, contains('#ifndef FLUTTER_SCENE_SKIP_SHADOWS'));
-    expect(material, contains('lighting.shadowMap == null'));
-    expect(material, contains("baseShaderLibrary['StandardShadowFragment']"));
+    expect(uniforms, contains('uniform sampler2D shadow_map;'));
   });
 
   test('advanced materials build and select shadow shader variants', () {

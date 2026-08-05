@@ -29,10 +29,6 @@
   },
   "StandardFragment": {
     "type": "fragment",
-    "file": "shaders/flutter_scene_standard_no_shadows.frag"
-  },
-  "StandardShadowFragment": {
-    "type": "fragment",
     "file": "shaders/flutter_scene_standard.frag"
   },
   "DepthOnlyFragment": {
