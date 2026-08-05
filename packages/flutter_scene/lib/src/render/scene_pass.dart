@@ -33,12 +33,6 @@ import 'package:flutter_scene/src/shaders.dart';
 /// reads whatever the last pass produced.
 const String kSceneColorBlackboardKey = 'scene_color';
 
-/// Render-graph blackboard key for the latest scene-input color snapshot.
-///
-/// [ScenePass] publishes it only when a visible material declares
-/// `RenderInput.opaqueSceneColor` (see `Material.sceneInputs`).
-const String kOpaqueSceneColorBlackboardKey = 'opaque_scene_color';
-
 const int _maxTransmissionFilterBands = 8;
 const int _maxSceneColorSnapshotPasses = 8;
 bool _reportedSceneColorPassCap = false;
@@ -477,7 +471,6 @@ class ScenePass extends RenderGraphPass {
       snapshotPass++;
     }
 
-    context.blackboard.set(kOpaqueSceneColorBlackboardKey, currentColor);
     context.blackboard.set(kSceneColorBlackboardKey, currentColor);
     flushWatch?.stop();
     if (profileRendering) {
