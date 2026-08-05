@@ -384,7 +384,7 @@ base class SceneEncoder {
     final pipeline = resolvePipeline(
       material.materialVertexShader(geometry.materialVertexVariant) ??
           geometry.vertexShader,
-      material.fragmentShader,
+      material.fragmentShaderForLighting(_lighting),
       vertexLayout: geometry.instancedVertexLayout,
     );
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 // ignore: implementation_imports
@@ -10,6 +11,47 @@ FmatCompilation _compile(String name) {
 }
 
 void main() {
+  test('standard materials select compact and shadow shader variants', () {
+    final manifest =
+        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final compact = File(
+      'shaders/flutter_scene_standard_no_shadows.frag',
+    ).readAsStringSync();
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    final material = File(
+      'lib/src/material/physically_based_material.dart',
+    ).readAsStringSync();
+
+    expect(
+      manifest['StandardFragment']['file'],
+      'shaders/flutter_scene_standard_no_shadows.frag',
+    );
+    expect(
+      manifest['StandardShadowFragment']['file'],
+      'shaders/flutter_scene_standard.frag',
+    );
+    expect(compact, contains('#define FLUTTER_SCENE_SKIP_SHADOWS'));
+    expect(lighting, contains('#ifndef FLUTTER_SCENE_SKIP_SHADOWS'));
+    expect(material, contains('lighting.shadowMap == null'));
+    expect(material, contains("baseShaderLibrary['StandardShadowFragment']"));
+  });
+
+  test('advanced materials build and select shadow shader variants', () {
+    final builder = File(
+      'lib/src/fmat/build_materials.dart',
+    ).readAsStringSync();
+    final material = File(
+      'lib/src/material/advanced_physical_material.dart',
+    ).readAsStringSync();
+
+    expect(builder, contains('generateShadowVariants: true'));
+    expect(builder, contains("'\${entryName}Shadow'"));
+    expect(builder, contains('#define FLUTTER_SCENE_SKIP_SHADOWS'));
+    expect(material, contains("assets.library['\${entry}Shadow']"));
+    expect(material, contains('setShadowFragmentShader(shadowShader)'));
+  });
+
   test('lit materials reverse normals on back-facing fragments', () {
     final varyings = File('shaders/material_varyings.glsl').readAsStringSync();
     final standard = File(

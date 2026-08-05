@@ -250,6 +250,10 @@ abstract class Material {
     _fragmentShader = null;
   }
 
+  /// Selects this material's fragment shader for the frame lighting state.
+  @internal
+  gpu.Shader fragmentShaderForLighting(Lighting lighting) => fragmentShader;
+
   /// The vertex shader this material supplies for a geometry's [variant]
   /// (`'unskinned'` / `'skinned'` for the color pass, `'depth'` for the
   /// position-only depth/shadow pass; see [Geometry.materialVertexVariant]),

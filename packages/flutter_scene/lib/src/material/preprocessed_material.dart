@@ -63,6 +63,19 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   }
 
   Set<RenderInput> _sceneInputs;
+  gpu.Shader? _shadowFragmentShader;
+
+  /// Sets the fragment shader used when a shadow atlas is active.
+  @internal
+  void setShadowFragmentShader(gpu.Shader shader) {
+    _shadowFragmentShader = shader;
+  }
+
+  @override
+  gpu.Shader fragmentShaderForLighting(Lighting lighting) =>
+      lighting.shadowMap == null
+      ? fragmentShader
+      : (_shadowFragmentShader ?? fragmentShader);
 
   static final Float32List _fragInfoScratch = Float32List(
     EngineLightingUniforms.fragInfoFloatCount,
@@ -177,6 +190,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   ) {
     pass.setCullMode(renderCullMode);
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+    final shader = fragmentShaderForLighting(lighting);
 
     if (shadingModel != FmatShadingModel.unlit) {
       final env = environment ?? lighting.environmentMap;
@@ -188,22 +202,23 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       fragInfo[162] = lightListCount.toDouble();
       fragInfo[163] = lightListOffset.toDouble();
       pass.bindUniform(
-        fragmentShader.getUniformSlot('FragInfo'),
+        shader.getUniformSlot('FragInfo'),
         transientsBuffer.emplace(_fragInfoBytes),
       );
       // TODO(material-permutations): add an SSAO sampler to filtered scene
       // color permutations without exceeding the backend sampler limit.
       EngineLightingUniforms.bindEngineTextures(
         pass,
-        fragmentShader,
+        shader,
         lighting,
         env,
         bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
+        bindShadows: lighting.shadowMap != null,
       );
       if (_sceneInputs.isNotEmpty) {
         EngineLightingUniforms.bindSceneInputTextures(
           pass,
-          fragmentShader,
+          shader,
           lighting,
           _sceneInputs,
         );
@@ -211,15 +226,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       // Lit `.fmat` shaders include the lighting framework (and thus fog.glsl),
       // so they carry the FogInfo block. Unlit `.fmat` shaders do not; fog on
       // those is a TODO(fog): give the unlit `.fmat` template the fog block.
-      EngineLightingUniforms.bindFog(
-        pass,
-        fragmentShader,
-        transientsBuffer,
-        lighting,
-      );
+      EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
     }
 
-    parameters.bind(pass, fragmentShader, transientsBuffer);
+    parameters.bind(pass, shader, transientsBuffer);
     // Bind the fragment keep-alive block (name matches kFragmentKeepAliveBlock
     // in the emitter) to zero. The generated fragment references every
     // declared parameter resource through it (the MaterialParams block and
@@ -227,7 +237,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // declares it whenever the material has any parameter.
     if (parameters.hasAnyParameters) {
       pass.bindUniform(
-        fragmentShader.getUniformSlot('FragmentKeepAlive'),
+        shader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }

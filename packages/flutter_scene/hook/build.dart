@@ -2,6 +2,8 @@ import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/build_hooks.dart';
+import 'package:flutter_scene/src/fmat/build_materials.dart'
+    show buildBundledPhysicalMaterials;
 
 void main(List<String> args) async {
   await build(args, (config, output) async {
@@ -24,15 +26,9 @@ void main(List<String> args) async {
       // floor at OpenGL ES 3.0.
       glesLanguageVersion: 300,
     );
-    await buildMaterials(
+    await buildBundledPhysicalMaterials(
       buildInput: config,
       buildOutput: output,
-      materials: const [
-        'assets/materials/physical_opaque.fmat',
-        'assets/materials/physical_transmission.fmat',
-      ],
-      bundleName: 'physical',
-      assetMode: MaterialAssetMode.dataAssetsIfAvailable,
     );
   });
 }
