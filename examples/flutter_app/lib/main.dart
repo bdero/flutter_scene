@@ -17,7 +17,6 @@ import 'package:example_app/example_animation.dart';
 import 'example_accessibility.dart';
 import 'example_audio.dart';
 import 'example_auto_exposure.dart';
-import 'example_clearcoat.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -168,7 +167,6 @@ class _MyAppState extends State<MyApp> {
     // is no app-level ticker here.
     examples = {
       'Car': (context) => const ExampleCar(),
-      'Clearcoat': (context) => const ExampleClearcoat(),
       'Animation': (context) => const ExampleAnimation(),
       'Flutter Logo': (context) => const ExampleLogo(),
       'Multiplayer': (context) => const ExampleMultiplayer(),
