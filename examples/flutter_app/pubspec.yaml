@@ -49,7 +49,6 @@ flutter:
 
   assets:
     - assets/little_paris_eiffel_tower.png
-    - assets/clearcoat/
     # Generated test tones for the Audio example.
     - assets/sounds/
     # Imported scenes are registered as DataAssets by buildScenes (loaded via
