@@ -234,11 +234,12 @@ class FmatMaterial {
   final List<FmatAttribute> attributes;
 
   /// Per-frame engine inputs the shader samples (`engine_inputs:` in the
-  /// material block): `scene_color` (the opaque-phase color snapshot, for
-  /// refraction) and `scene_depth` (the opaque linear depth, for depth-fade
-  /// and shoreline effects). The emitter declares the matching samplers and
-  /// accessors only when listed, and the engine produces the textures only
-  /// when a visible material asks. Lit surface materials only.
+  /// material block): `scene_color` (the composed color behind the draw),
+  /// `filtered_scene_color` (its roughness-filtered atlas), and `scene_depth`
+  /// (the opaque linear depth). Filtered color requires `scene_color`. The
+  /// emitter declares matching samplers and accessors only when listed, and
+  /// the engine produces textures only when a visible material asks. Lit
+  /// surface materials only.
   final List<String> engineInputs;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
