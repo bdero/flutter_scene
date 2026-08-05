@@ -376,6 +376,7 @@ class EngineLightingUniforms {
     Lighting lighting,
     EnvironmentMap env, {
     bool bindSsao = true,
+    bool bindShadows = true,
   }) {
     if (_memoPassIs(pass)) {
       final previous = _texturesMemo[shader];
@@ -392,15 +393,17 @@ class EngineLightingUniforms {
       Material.getBrdfLutTexture(),
       sampler: _clampLinearSampler,
     );
-    pass.bindTexture(
-      shader.getUniformSlot('shadow_map'),
-      Material.whitePlaceholder(lighting.shadowMap),
-      // The atlas is fp32. GLES devices may support rendering/sampling float
-      // textures without GL_OES_texture_float_linear, making linear filtering
-      // incomplete. The shader already performs PCF explicitly, so nearest is
-      // the portable choice.
-      sampler: _nearestSampler,
-    );
+    if (bindShadows) {
+      pass.bindTexture(
+        shader.getUniformSlot('shadow_map'),
+        Material.whitePlaceholder(lighting.shadowMap),
+        // The atlas is fp32. GLES devices may support rendering/sampling float
+        // textures without GL_OES_texture_float_linear, making linear filtering
+        // incomplete. The shader already performs PCF explicitly, so nearest is
+        // the portable choice.
+        sampler: _nearestSampler,
+      );
+    }
     // Diffuse irradiance SH coefficients, point-sampled (each texel is one
     // coefficient). During a cross-fade [Lighting.diffuseShTexture] carries a
     // 9x2 composite holding both environments' rows; otherwise the primary's

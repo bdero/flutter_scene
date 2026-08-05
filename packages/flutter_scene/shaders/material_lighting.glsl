@@ -40,9 +40,8 @@ vec3 EvaluateDiffuseSH(sampler2D coefficients, vec3 n, float row) {
              (0.546274 * (n.x * n.x - n.y * n.y));
 }
 
-// One rotated Poisson-disk PCF tap into a cascade's atlas tile. Factored out
-// so the kernel can be unrolled with inline literals at the call site (see the
-// note in SampleCascade); the compiler inlines this.
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+// One rotated Poisson-disk PCF tap into a cascade's atlas tile.
 float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
                 float inv_count, float receiver_depth) {
   vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
@@ -72,6 +71,34 @@ vec3 BiasDirectionalShadowPosition(vec3 world_pos, vec3 n) {
   float normal_offset =
       frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
   return world_pos + n * normal_offset;
+}
+
+vec2 PoissonShadowTap(int i) {
+  if (i == 0) return vec2(-0.94201624, -0.39906216);
+  if (i == 1) return vec2(0.94558609, -0.76890725);
+  if (i == 2) return vec2(-0.09418410, -0.92938870);
+  if (i == 3) return vec2(0.34495938, 0.29387760);
+  if (i == 4) return vec2(-0.91588581, 0.45771432);
+  if (i == 5) return vec2(-0.81544232, -0.87912464);
+  if (i == 6) return vec2(-0.38277543, 0.27676845);
+  if (i == 7) return vec2(0.97484398, 0.75648379);
+  if (i == 8) return vec2(0.44323325, -0.97511554);
+  if (i == 9) return vec2(0.53742981, -0.47373420);
+  if (i == 10) return vec2(-0.26496911, -0.41893023);
+  if (i == 11) return vec2(0.79197514, 0.19090188);
+  if (i == 12) return vec2(-0.24188840, 0.99706507);
+  if (i == 13) return vec2(-0.81409955, 0.91437590);
+  if (i == 14) return vec2(0.19984126, 0.78641367);
+  if (i == 15) return vec2(0.14383161, -0.14100790);
+  return vec2(0.0);
+}
+
+vec2 FixedShadowTap(int i) {
+  if (i < 3) return vec2(float(i) - 1.0, -1.0);
+  if (i < 6) return vec2(float(i - 3) * 0.5 - 0.5, -0.5);
+  if (i < 11) return vec2(float(i - 6) * 0.5 - 1.0, 0.0);
+  if (i < 14) return vec2(float(i - 11) * 0.5 - 0.5, 0.5);
+  return vec2(float(i - 14) - 1.0, 1.0);
 }
 
 // Samples one cascade's tile of the shadow atlas strip. `biased_world_pos` is
@@ -108,28 +135,11 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
 
   // The Poisson positions are selected when fixed_filter is 0, the stable grid
   // positions when it is 1. The latter preserves the same 17-tap pattern.
-  const vec2 poisson_taps[17] = vec2[17](
-      vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
-      vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
-      vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
-      vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379),
-      vec2(0.44323325, -0.97511554), vec2(0.53742981, -0.47373420),
-      vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
-      vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590),
-      vec2(0.19984126, 0.78641367), vec2(0.14383161, -0.14100790),
-      vec2(0.0));
-  const vec2 fixed_taps[17] = vec2[17](
-      vec2(-1.0, -1.0), vec2(0.0, -1.0), vec2(1.0, -1.0),
-      vec2(-0.5, -0.5), vec2(0.0, -0.5), vec2(0.5, -0.5),
-      vec2(-1.0, 0.0), vec2(-0.5, 0.0), vec2(0.0, 0.0),
-      vec2(0.5, 0.0), vec2(1.0, 0.0), vec2(-0.5, 0.5),
-      vec2(0.0, 0.5), vec2(0.5, 0.5), vec2(-1.0, 1.0),
-      vec2(0.0, 1.0), vec2(1.0, 1.0));
   int sample_count = fixed_filter > 0.5 ? 17 : 16;
   float lit = 0.0;
   for (int i = 0; i < 17; i++) {
     if (i >= sample_count) break;
-    vec2 tap = mix(poisson_taps[i], fixed_taps[i], fixed_filter);
+    vec2 tap = mix(PoissonShadowTap(i), FixedShadowTap(i), fixed_filter);
     lit += ShadowTap(tap, ca, sa, radius, uv, cascade, inv_count,
                      receiver_depth);
   }
@@ -189,6 +199,7 @@ float SampleShadow(vec3 world_pos, vec3 n) {
   return result;
 }
 #undef _TRY_CASCADE
+#endif
 
 // Empirical specular occlusion derived from the diffuse occlusion factor,
 // the view angle, and roughness (Lagarde and de Rousiers 2014, "Physically
@@ -363,6 +374,7 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
   return result;
 }
 
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
 // One shadow comparison tap for a spot: places the in-tile `uv` in the spot's
 // atlas tile (`tile` of `total`, stored top-down so V is flipped) and returns 1
 // lit / 0 shadowed. `uv` is clamped into the tile so the kernel never reads a
@@ -416,6 +428,7 @@ float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
   }
   return lit / float(SPOT_PCF_RING + 1);
 }
+#endif
 
 // Lights a surface described by `material` and returns the final fragment
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
@@ -637,11 +650,14 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // definition, so it is treated as fully shadowed (facing = 0) without a
   // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
   // and would otherwise stripe the back face with acne.
-  float shadow =
+  float shadow = 1.0;
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+  shadow =
       (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
        facing > 0.0)
           ? SampleShadow(v_position, GetWorldNormal())
           : 1.0;
+#endif
   float sun_visibility = facing * shadow;
 
   // When shadow_ambient_strength (radiance_blend.y) is non-zero, the sun's
@@ -761,10 +777,12 @@ vec4 EvaluateLighting(MaterialInputs material) {
         radiance *= cone * cone;
         // Spot shadow, when this spot has a slot in the shared atlas. Gate on
         // the geometric normal (the shadow is a geometric property).
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
         if (l3.y > -0.5 && frag_info.spot_shadow_params.x > 0.5) {
           radiance *= SampleSpotShadow(
               light_row, int(l3.y + 0.5), v_position, GetWorldNormal());
         }
+#endif
       }
     }
     direct += EvaluateAnalyticLight(

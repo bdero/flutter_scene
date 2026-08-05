@@ -151,6 +151,40 @@ Future<void> buildMaterials({
   String bundleName = 'materials',
   String discoveryRoot = 'assets/',
   MaterialAssetMode assetMode = MaterialAssetMode.dataAssetsIfAvailable,
+}) => _buildMaterials(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  materials: materials,
+  bundleName: bundleName,
+  discoveryRoot: discoveryRoot,
+  assetMode: assetMode,
+);
+
+/// Builds flutter_scene's bundled physical material shaders.
+Future<void> buildBundledPhysicalMaterials({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+}) => _buildMaterials(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  materials: const [
+    'assets/materials/physical_opaque.fmat',
+    'assets/materials/physical_transmission.fmat',
+  ],
+  bundleName: 'physical',
+  discoveryRoot: 'assets/',
+  assetMode: MaterialAssetMode.dataAssetsIfAvailable,
+  generateShadowVariants: true,
+);
+
+Future<void> _buildMaterials({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  List<String>? materials,
+  required String bundleName,
+  required String discoveryRoot,
+  required MaterialAssetMode assetMode,
+  bool generateShadowVariants = false,
 }) async {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == MaterialAssetMode.dataAssetsRequired &&
@@ -226,7 +260,8 @@ Future<void> buildMaterials({
   // fixed). Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always compile.
   final stampBuffer = StringBuffer(
     'rev=$buildCacheRevision fmat package=${buildInput.packageName} '
-    'bundle=$bundleName target=${shaderBundleTargetKey(buildInput)}',
+    'bundle=$bundleName shadows=$generateShadowVariants '
+    'target=${shaderBundleTargetKey(buildInput)}',
   );
   for (final materialPath in materialPaths) {
     final hash = contentHash(
@@ -301,10 +336,19 @@ Future<void> buildMaterials({
         );
       }
 
+      final hasShadowVariant =
+          generateShadowVariants &&
+          compiled.material.shadingModel != FmatShadingModel.unlit;
       final fragFileName = '$entryName.frag';
+      final fragmentGlsl = hasShadowVariant
+          ? compiled.glsl.replaceFirst(
+              '\n',
+              '\n#define FLUTTER_SCENE_SKIP_SHADOWS\n',
+            )
+          : compiled.glsl;
       File(
         generatedDir.uri.resolve(fragFileName).toFilePath(),
-      ).writeAsStringSync(compiled.glsl);
+      ).writeAsStringSync(fragmentGlsl);
 
       manifest[entryName] = <String, Object?>{
         'type': 'fragment',
@@ -313,6 +357,17 @@ Future<void> buildMaterials({
         // there, not relative to the manifest.
         'file': 'build/fmat/$bundleName/$fragFileName',
       };
+      if (hasShadowVariant) {
+        final shadowEntryName = '${entryName}Shadow';
+        final shadowFileName = '$shadowEntryName.frag';
+        File(
+          generatedDir.uri.resolve(shadowFileName).toFilePath(),
+        ).writeAsStringSync(compiled.glsl);
+        manifest[shadowEntryName] = <String, Object?>{
+          'type': 'fragment',
+          'file': 'build/fmat/$bundleName/$shadowFileName',
+        };
+      }
 
       // A material with a `vertex { }` block also contributes one vertex shader
       // per mesh-type/pass variant, compiled into the same bundle and selected

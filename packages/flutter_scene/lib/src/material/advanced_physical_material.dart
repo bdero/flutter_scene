@@ -80,11 +80,17 @@ class PhysicalMaterial extends PreprocessedMaterial {
     if (shader == null) {
       throw StateError('Physical shader entry "$entry" is missing.');
     }
+    final shadowShader = assets.library['${entry}Shadow'];
+    if (shadowShader == null) {
+      throw StateError(
+        'Physical shadow shader entry "${entry}Shadow" is missing.',
+      );
+    }
     final metadata = (assets.metadata[entry] as Map).cast<String, Object?>();
     final material = PhysicalMaterial._(
       fragmentShader: shader,
       metadata: metadata,
-    );
+    )..setShadowFragmentShader(shadowShader);
     material.name = descriptor.name;
     material.doubleSided = descriptor.doubleSided;
     material._supportsTransmission = transmissive;
