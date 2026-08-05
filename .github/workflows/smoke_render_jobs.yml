@@ -130,7 +130,7 @@ jobs:
         include:
           - backend: gles
             expected_backend: opengles
-            emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+            emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
           - backend: vulkan
             expected_backend: vulkan
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
