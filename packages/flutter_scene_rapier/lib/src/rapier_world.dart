@@ -1069,7 +1069,9 @@ class _BodyRecord {
 class _WorldSnapshot {
   _WorldSnapshot(this.nativeSnapshot, this.bodyHandles);
 
-  static const _magic = 0x46535253; // FSRS
+  // Snapshot envelope marker: "FSRS" (Flutter Scene Rapier Snapshot).
+  // Encoded little-endian, so its bytes read as "SRSF".
+  static const _magic = 0x46535253;
   static const _version = 1;
   static const _headerBytes = 12;
 
