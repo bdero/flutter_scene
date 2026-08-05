@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/stream/stream.dart' show unloadSubtree;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/importer/scene_registry.dart';
@@ -309,6 +313,66 @@ void main() {
   });
 
   group('scene templates', () {
+    test('does not retain a claim when realization throws', () async {
+      clearSceneTemplateCache();
+      const key = 'packages/app/flutter_scene/scene/assets/throwing.fsceneb';
+      final document = SceneDocument();
+      document.addNode(
+        NodeSpec(
+          id: const LocalId(3, 3),
+          name: 'throwing-root',
+          components: [ComponentSpec('throwing')],
+        ),
+        root: true,
+      );
+      final bundle = _BytesAssetBundle({key: writeFsceneb(document)});
+      final registry = await SceneRegistry.load(assetKeys: const [key]);
+      final codecs = FsceneComponentRegistry()..register(_ThrowingCodec());
+
+      try {
+        await expectLater(
+          registry.loadScene(
+            'assets/throwing',
+            bundle: bundle,
+            registry: codecs,
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(await releaseScene('assets/throwing', bundle: bundle), isFalse);
+        expect(sceneTemplateCacheCount(), 0);
+      } finally {
+        clearSceneTemplateCache();
+      }
+    });
+
+    test('release during another load keeps the shared template', () async {
+      clearSceneTemplateCache();
+      const key = 'packages/app/flutter_scene/scene/assets/pending.fsceneb';
+      final document = SceneDocument();
+      document.addNode(
+        NodeSpec(id: const LocalId(3, 4), name: 'pending-root'),
+        root: true,
+      );
+      final bundle = _DeferredSceneBundle(key);
+      final registry = await SceneRegistry.load(assetKeys: const [key]);
+
+      try {
+        final first = registry.loadScene('assets/pending', bundle: bundle);
+        await bundle.waitUntilSceneRead();
+        final second = registry.loadScene('assets/pending', bundle: bundle);
+
+        expect(await releaseScene('assets/pending', bundle: bundle), isFalse);
+        bundle.completeScene(writeFsceneb(document));
+        await Future.wait([first, second]);
+
+        expect(sceneTemplateCacheCount(), 1);
+        expect(await releaseScene('assets/pending', bundle: bundle), isTrue);
+      } finally {
+        clearSceneTemplateCache();
+      }
+    });
+
     test('repeat loads share the cached template', () async {
       const key = 'packages/app/flutter_scene/scene/assets/shared.fsceneb';
       final doc = SceneDocument();
@@ -377,11 +441,53 @@ final class _BytesAssetBundle extends CachingAssetBundle {
 
   @override
   Future<ByteData> load(String key) async {
+    if (key == 'AssetManifest.bin') {
+      final manifest = <String, Object>{
+        for (final asset in assets.keys) asset: <Object>[],
+      };
+      return const StandardMessageCodec().encodeMessage(manifest)!;
+    }
     final bytes = assets[key];
     if (bytes == null) {
       throw StateError('Missing test asset: $key');
     }
     loadCounts[key] = (loadCounts[key] ?? 0) + 1;
     return ByteData.sublistView(bytes);
+  }
+}
+
+final class _ThrowingCodec extends ComponentCodec {
+  @override
+  String get type => 'throwing';
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    throw StateError('intentional realization failure');
+  }
+}
+
+final class _DeferredSceneBundle extends CachingAssetBundle {
+  _DeferredSceneBundle(this.sceneKey);
+
+  final String sceneKey;
+  final _sceneRead = Completer<void>();
+  final _sceneBytes = Completer<ByteData>();
+
+  Future<void> waitUntilSceneRead() => _sceneRead.future;
+
+  void completeScene(Uint8List bytes) {
+    _sceneBytes.complete(ByteData.sublistView(bytes));
+  }
+
+  @override
+  Future<ByteData> load(String key) async {
+    if (key == 'AssetManifest.bin') {
+      return const StandardMessageCodec().encodeMessage({
+        sceneKey: <Object>[],
+      })!;
+    }
+    if (key != sceneKey) throw StateError('Unknown test asset: $key');
+    _sceneRead.complete();
+    return _sceneBytes.future;
   }
 }
