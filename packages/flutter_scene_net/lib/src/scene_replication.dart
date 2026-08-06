@@ -6,16 +6,23 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' hide Colors;
 
 import 'network_transform.dart';
+import 'predicted_transform.dart';
 import 'transform_replica.dart';
 
 /// Builds the scene subtree representing [replica] at spawn time.
 typedef ReplicaNodeBuilder = Node Function(Replica replica);
 
+/// Supplies the client-side prediction controller for an owned [replica], or
+/// null to interpolate it like any other entity.
+typedef LocalPredictionBuilder = PredictedController? Function(Replica replica);
+
 /// Binds a replication client to a scene graph.
 ///
-/// Spawned replicas become nodes under [root] through per-type builders;
-/// [TransformReplica]s additionally get a [NetworkTransformComponent] so
-/// their poses render interpolated. Despawns detach the node.
+/// Spawned replicas become nodes under [root] through per-type builders.
+/// [TransformReplica]s get a [NetworkTransformComponent] that renders their
+/// pose interpolated in the past; the entity this client owns is instead
+/// driven by a [PredictedTransformComponent] when a `localPrediction` step is
+/// supplied, so local input renders instantly. Despawns detach the node.
 final class SceneReplication {
   SceneReplication({
     required ReplicaRegistry registry,
@@ -23,9 +30,11 @@ final class SceneReplication {
     required this.root,
     required Map<String, ReplicaNodeBuilder> builders,
     this.interpolationDelay = const Duration(milliseconds: 100),
+    LocalPredictionBuilder? localPrediction,
     void Function(Replica replica, Node node)? onSpawn,
     void Function(Replica replica, Node node)? onDespawn,
   }) : _builders = builders,
+       _localPrediction = localPrediction,
        _onSpawn = onSpawn,
        _onDespawn = onDespawn {
     client = ReplicationClient(
@@ -43,6 +52,7 @@ final class SceneReplication {
 
   final Map<String, ReplicaNodeBuilder> _builders;
   final Duration interpolationDelay;
+  final LocalPredictionBuilder? _localPrediction;
   final void Function(Replica, Node)? _onSpawn;
   final void Function(Replica, Node)? _onDespawn;
   late final ReplicationClient client;
@@ -70,8 +80,20 @@ final class SceneReplication {
         replica.rotationQuaternion,
         Vector3(1, 1, 1),
       );
+      // Predict the entity this client owns so its input renders instantly;
+      // interpolate everything else in the past for smoothness.
+      final controller = replica.owner == localPeerId
+          ? _localPrediction?.call(replica)
+          : null;
       node.addComponent(
-        NetworkTransformComponent(replica, delay: interpolationDelay),
+        controller != null
+            ? PredictedTransformComponent(
+                replica,
+                controller: controller,
+                client: client,
+                tickRate: session.tickRate,
+              )
+            : NetworkTransformComponent(replica, delay: interpolationDelay),
       );
     }
     root.add(node);

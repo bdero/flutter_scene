@@ -8,6 +8,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'example_overlay.dart';
+import 'example_panel.dart';
 import 'net/multiplayer_game.dart';
 
 /// Multiplayer arena. Host a game in-app (desktop/mobile) and join it from
@@ -33,6 +35,14 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
   SceneReplication? _replication;
   String? _status;
   Timer? _hud;
+
+  /// Artificial round-trip latency injected on the hosted (loopback)
+  /// connection, so prediction is demonstrable on one machine.
+  int _simLatencyMs = 0;
+
+  /// Whether the local player is predicted (instant input) or interpolated
+  /// like a remote (renders in the past). Toggle to feel the difference.
+  bool _predict = true;
 
   @override
   void initState() {
@@ -108,6 +118,13 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
         session: session,
         root: arena,
         builders: {'net.player': _playerNode, 'net.pellet': _pelletNode},
+        // Predict the local player from its own input so movement is instant,
+        // running the same integration the server does and reconciling by
+        // replaying unacked inputs; remote players stay interpolated. When
+        // prediction is off the local player interpolates too, so it visibly
+        // lags input under latency.
+        localPrediction: (replica) =>
+            _predict ? _PlayerController(_pressed) : null,
       );
       session.done.whenComplete(() {
         if (mounted && _replication != null) _leave();
@@ -124,7 +141,18 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
       port: gamePort,
     );
     _host = host;
-    await _start(host.connectLocal);
+    await _start(() async {
+      final connection = await host.connectLocal();
+      if (_simLatencyMs == 0) return connection;
+      return SimulatorConnection(
+        connection,
+        SimulatedConditions(
+          latency: Duration(milliseconds: _simLatencyMs ~/ 2),
+          jitter: const Duration(milliseconds: 10),
+          unreliableLoss: 0.02,
+        ),
+      );
+    });
   }
 
   Future<void> _joinGame() async {
@@ -151,39 +179,6 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
     super.dispose();
   }
 
-  void _onTick(Duration elapsed, double deltaSeconds) {
-    final replication = _replication;
-    if (replication == null) return;
-    double axis(
-      LogicalKeyboardKey minus,
-      LogicalKeyboardKey plus,
-      LogicalKeyboardKey minusAlt,
-      LogicalKeyboardKey plusAlt,
-    ) {
-      var value = 0.0;
-      if (_pressed.contains(minus) || _pressed.contains(minusAlt)) value -= 1;
-      if (_pressed.contains(plus) || _pressed.contains(plusAlt)) value += 1;
-      return value;
-    }
-
-    replication.owned<NetPlayer>()?.input.value = (
-      axis(
-        LogicalKeyboardKey.keyA,
-        LogicalKeyboardKey.keyD,
-        LogicalKeyboardKey.arrowLeft,
-        LogicalKeyboardKey.arrowRight,
-      ),
-      0.0,
-      axis(
-        LogicalKeyboardKey.keyW,
-        LogicalKeyboardKey.keyS,
-        LogicalKeyboardKey.arrowUp,
-        LogicalKeyboardKey.arrowDown,
-      ),
-    );
-    replication.flush();
-  }
-
   @override
   Widget build(BuildContext context) {
     final connected = _replication != null;
@@ -198,7 +193,6 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
           },
           child: SceneView(
             scene,
-            onTick: _onTick,
             cameraBuilder: (elapsed) => PerspectiveCamera(
               position: vm.Vector3(0, 22, 18),
               target: vm.Vector3(0, 0, 0),
@@ -206,52 +200,133 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
           ),
         ),
         if (!connected)
-          Center(
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('Multiplayer arena'),
-                    const SizedBox(height: 12),
-                    if (SceneHost.isSupported)
-                      FilledButton(
-                        onPressed: _hostGame,
-                        child: const Text('Host on this device'),
-                      ),
-                    if (!SceneHost.isSupported)
-                      const Text('Hosting needs a desktop or mobile build.'),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: 260,
-                      child: TextField(
-                        controller: _address,
-                        decoration: const InputDecoration(
-                          labelText: 'host address',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
+          ExampleStatusCard(
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.white),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Multiplayer arena',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: _joinGame,
-                      child: const Text('Join'),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Host on this device, then move with WASD or arrows. Add '
+                    'simulated latency and toggle prediction to feel the '
+                    'difference, predicted input stays instant and reconciles, '
+                    'while an interpolated local player lags by the round trip. '
+                    'For two clients, open a second copy and Join the address '
+                    'the host shows.',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      height: 1.35,
                     ),
-                    if (_status != null) ...[
-                      const SizedBox(height: 8),
-                      Text(_status!, style: const TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Text(
+                        'Local prediction',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      Switch(
+                        value: _predict,
+                        onChanged: (v) => setState(() => _predict = v),
+                      ),
                     ],
+                  ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Sim latency',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                      const Spacer(),
+                      for (final ms in const [0, 100, 250])
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: OutlinedButton(
+                            onPressed: () => setState(() => _simLatencyMs = ms),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: _simLatencyMs == ms
+                                  ? Colors.white24
+                                  : null,
+                              side: BorderSide(
+                                color: _simLatencyMs == ms
+                                    ? Colors.white
+                                    : Colors.white38,
+                              ),
+                              minimumSize: const Size(0, 32),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                            ),
+                            child: Text(ms == 0 ? 'off' : '${ms}ms'),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  if (SceneHost.isSupported)
+                    FilledButton(
+                      onPressed: _hostGame,
+                      child: const Text('Host on this device'),
+                    ),
+                  if (!SceneHost.isSupported)
+                    const Text(
+                      'Hosting needs a desktop or mobile build.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _address,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: Colors.white,
+                    decoration: const InputDecoration(
+                      labelText: 'host address',
+                      labelStyle: TextStyle(color: Colors.white70),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white38),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: _joinGame,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                    ),
+                    child: const Text('Join'),
+                  ),
+                  if (_status != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _status!,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           )
         else
-          Positioned(
-            left: 12,
-            top: 12,
+          ExampleOverlay.topCenter(
             child: DefaultTextStyle(
               style: const TextStyle(color: Colors.white, fontSize: 13),
               child: Container(
@@ -272,7 +347,12 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
                       ),
                     Text(
                       'rtt ${_replication!.session.clock.rttMillis.toStringAsFixed(0)}ms'
-                      ', move with WASD/arrows',
+                      '${_simLatencyMs > 0 ? ' (+$_simLatencyMs sim)' : ''}'
+                      '  ${_predict ? 'predicted' : 'interpolated'}',
+                    ),
+                    const Text(
+                      'move with WASD or arrows',
+                      style: TextStyle(color: Colors.white70, fontSize: 11),
                     ),
                     for (final player
                         in _replication!.replicas.whereType<NetPlayer>())
@@ -291,6 +371,65 @@ class _ExampleMultiplayerState extends State<ExampleMultiplayer> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Samples keyboard movement and integrates it, the same integration the
+/// server runs, so the local player is predicted and reconciled.
+class _PlayerController implements PredictedController {
+  _PlayerController(this._pressed);
+
+  final Set<LogicalKeyboardKey> _pressed;
+
+  double _axis(
+    LogicalKeyboardKey minus,
+    LogicalKeyboardKey plus,
+    LogicalKeyboardKey minusAlt,
+    LogicalKeyboardKey plusAlt,
+  ) {
+    var value = 0.0;
+    if (_pressed.contains(minus) || _pressed.contains(minusAlt)) value -= 1;
+    if (_pressed.contains(plus) || _pressed.contains(plusAlt)) value += 1;
+    return value;
+  }
+
+  @override
+  Uint8List sampleInput() {
+    // Screen-right is world -X under the fixed overhead camera, so negate the
+    // strafe axis to keep A left and D right.
+    final strafe = -_axis(
+      LogicalKeyboardKey.keyA,
+      LogicalKeyboardKey.keyD,
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowRight,
+    );
+    final forward = _axis(
+      LogicalKeyboardKey.keyW,
+      LogicalKeyboardKey.keyS,
+      LogicalKeyboardKey.arrowUp,
+      LogicalKeyboardKey.arrowDown,
+    );
+    return encodePlayerInput(strafe, forward);
+  }
+
+  @override
+  (vm.Vector3, vm.Quaternion) step(
+    vm.Vector3 position,
+    vm.Quaternion rotation,
+    Uint8List input,
+    double dt,
+  ) {
+    final (dx, dz) = decodePlayerInput(input);
+    final (p, r) = advancePlayer(
+      (position.x, position.y, position.z),
+      (rotation.x, rotation.y, rotation.z, rotation.w),
+      (dx, 0.0, dz),
+      dt,
+    );
+    return (
+      vm.Vector3(p.$1, p.$2, p.$3),
+      vm.Quaternion(r.$1, r.$2, r.$3, r.$4),
     );
   }
 }
