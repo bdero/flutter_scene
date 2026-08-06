@@ -35,8 +35,3 @@ pubspec_overrides.yaml
 # Fetched splat capture for the Gaussian Splats example (see
 # examples/flutter_app/tool/fetch_splat_asset.sh).
 examples/assets_src/*.splat
-
-# Fetched material-demo textures (see
-# examples/flutter_app/tool/fetch_clearcoat_assets.sh).
-examples/flutter_app/assets/clearcoat/*
-!examples/flutter_app/assets/clearcoat/README.md

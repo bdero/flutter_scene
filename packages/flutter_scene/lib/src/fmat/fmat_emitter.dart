@@ -72,9 +72,15 @@ void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
 }
 
 /// Emits the fragment shader GLSL for [material].
-String emitFragmentGlsl(FmatMaterial material) {
+///
+/// [defines] are written after the generated-file banner and before framework
+/// includes.
+String emitFragmentGlsl(
+  FmatMaterial material, {
+  Iterable<String> defines = const [],
+}) {
   if (material.domain == FmatDomain.sky) {
-    return _emitSkyGlsl(material);
+    return _emitSkyGlsl(material, defines: defines);
   }
   final sb = StringBuffer();
   final lit = material.shadingModel != FmatShadingModel.unlit;
@@ -83,6 +89,9 @@ String emitFragmentGlsl(FmatMaterial material) {
     '// Generated from a .fmat material by flutter_scene. '
     'Do not edit.',
   );
+  for (final define in defines) {
+    sb.writeln('#define $define');
+  }
   if (material.shadingModel == FmatShadingModel.physical) {
     sb.writeln('#define FLUTTER_SCENE_PHYSICAL_MATERIAL');
   }
@@ -381,9 +390,15 @@ String _emitVertexVariant(
 /// The engine's sky vertex shader supplies the world view direction as
 /// `v_ray`; the generated `main()` calls the author's `Sky()` and outputs
 /// linear HDR radiance with premultiplied alpha.
-String _emitSkyGlsl(FmatMaterial material) {
+String _emitSkyGlsl(
+  FmatMaterial material, {
+  required Iterable<String> defines,
+}) {
   final sb = StringBuffer();
   sb.writeln('// Generated from a .fmat sky by flutter_scene. Do not edit.');
+  for (final define in defines) {
+    sb.writeln('#define $define');
+  }
   sb.writeln('#include <pbr.glsl>');
   sb.writeln('#include <texture.glsl>');
   sb.writeln();

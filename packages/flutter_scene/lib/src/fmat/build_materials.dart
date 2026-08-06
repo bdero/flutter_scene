@@ -339,33 +339,21 @@ Future<void> _buildMaterials({
       final hasShadowVariant =
           generateShadowVariants &&
           compiled.material.shadingModel != FmatShadingModel.unlit;
-      final fragFileName = '$entryName.frag';
-      final fragmentGlsl = hasShadowVariant
-          ? compiled.glsl.replaceFirst(
-              '\n',
-              '\n#define FLUTTER_SCENE_SKIP_SHADOWS\n',
-            )
-          : compiled.glsl;
-      File(
-        generatedDir.uri.resolve(fragFileName).toFilePath(),
-      ).writeAsStringSync(fragmentGlsl);
-
-      manifest[entryName] = <String, Object?>{
-        'type': 'fragment',
-        // impellerc resolves a bundle entry's `file` relative to the package
-        // root (its working directory), so reference the generated shader from
-        // there, not relative to the manifest.
-        'file': 'build/fmat/$bundleName/$fragFileName',
-      };
-      if (hasShadowVariant) {
-        final shadowEntryName = '${entryName}Shadow';
-        final shadowFileName = '$shadowEntryName.frag';
+      final fragmentVariants = emitFragmentShaderVariants(
+        compiled,
+        generateShadowVariant: hasShadowVariant,
+      );
+      for (final variant in fragmentVariants.entries) {
+        final variantEntryName = variant.key;
+        final fragFileName = '$variantEntryName.frag';
         File(
-          generatedDir.uri.resolve(shadowFileName).toFilePath(),
-        ).writeAsStringSync(compiled.glsl);
-        manifest[shadowEntryName] = <String, Object?>{
+          generatedDir.uri.resolve(fragFileName).toFilePath(),
+        ).writeAsStringSync(variant.value);
+        manifest[variantEntryName] = <String, Object?>{
           'type': 'fragment',
-          'file': 'build/fmat/$bundleName/$shadowFileName',
+          // impellerc resolves a bundle entry's `file` relative to the package
+          // root, so reference it from there instead of from the manifest.
+          'file': 'build/fmat/$bundleName/$fragFileName',
         };
       }
 
@@ -505,6 +493,26 @@ Future<void> _buildMaterials({
     materialPaths: materialPaths,
     frameworkShaders: frameworkShaders,
   );
+}
+
+/// Emits the fragment entries contributed by [compiled].
+Map<String, String> emitFragmentShaderVariants(
+  FmatCompilation compiled, {
+  required bool generateShadowVariant,
+}) {
+  final entryName = compiled.material.name;
+  if (!generateShadowVariant) {
+    return {entryName: compiled.glsl};
+  }
+  // The unsuffixed entry is the no-shadow fast path. The Shadow entry keeps
+  // the complete sampler layout used when the scene binds a shadow atlas.
+  return {
+    entryName: emitFragmentGlsl(
+      compiled.material,
+      defines: const ['FLUTTER_SCENE_SKIP_SHADOWS'],
+    ),
+    '${entryName}Shadow': compiled.glsl,
+  };
 }
 
 bool _sameBytes(List<int> a, List<int> b) {
