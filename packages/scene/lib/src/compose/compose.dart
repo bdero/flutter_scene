@@ -247,10 +247,14 @@ void _expandInstance(
   }
   for (final node in prefab.nodes.values) {
     if (node.id == singleRoot) {
-      // Merge the prefab root into the instance node, keeping the instance's
-      // own transform, name, and layers (its placement in the host). An
-      // unnamed instance inherits the prefab root's name.
+      // Merge the prefab root into the instance node. The instance transform
+      // places the prefab in the host, outside the prefab root's own local
+      // transform. Keep the instance name and layers. An unnamed instance
+      // inherits the prefab root's name.
       if (instance.name.isEmpty) instance.name = node.name;
+      instance.transform = MatrixTransform(
+        instance.transform.toMatrix4() * node.transform.toMatrix4(),
+      );
       instance.components.addAll([
         for (final c in node.components) _remapComponent(c, remapId),
       ]);
