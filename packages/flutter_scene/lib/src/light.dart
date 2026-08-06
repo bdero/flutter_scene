@@ -734,9 +734,8 @@ class Lighting {
   /// material asked for it. Same texture the SSAO/SSR passes consume.
   final gpu.Texture? sceneDepthLinear;
 
-  /// The accumulated scene color behind the current screen-reading draw, for
-  /// materials that declare `RenderInput.opaqueSceneColor` (refraction). Null
-  /// before the first snapshot and when unrequested.
+  /// An immutable copy of the opaque scene color for materials that declare
+  /// `RenderInput.opaqueSceneColor` (refraction). Null when unrequested.
   gpu.Texture? opaqueSceneColor;
 
   /// Compact roughness-filtered atlas of [opaqueSceneColor]. Null unless the

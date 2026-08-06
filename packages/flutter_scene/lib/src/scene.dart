@@ -116,9 +116,7 @@ enum AntiAliasingMode {
 /// {@category Scene graph}
 base class Scene implements SceneGraph {
   int _renderMetadataStructureRevision = -1;
-  int _renderMetadataMaterialRevision = -1;
   int _renderMetadataStaticShadowRevision = -1;
-  Set<RenderInput> _cachedMaterialInputs = const {};
   int _cachedStaticShadowSignature = 0;
   bool _cachedHasStaticShadowCasters = false;
 
@@ -1259,39 +1257,32 @@ base class Scene implements SceneGraph {
     }
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
-    // Scene inputs requested by materials (Material.sceneInputs). Depth forces
-    // a prepass because the material samples it while the scene is drawn, and
-    // either scene-color input splits the scene pass around the accumulated
-    // background. Scenes whose materials request nothing skip both. The same
-    // cached metadata fingerprints static shadow casters.
+    // Collect material inputs only from this view's frustum candidates. This
+    // avoids allocating depth and scene-color capture resources for effects
+    // that exist elsewhere in a large scene. Opaque occlusion remains a GPU
+    // depth-test concern because an AABB cannot prove a mesh is hidden.
+    // TODO(occlusion-culling): use a previous-frame hierarchical depth buffer
+    // to reject fully hidden render items and scene-input requests.
+    final materialInputs = renderScene.collectMaterialInputs(
+      camera.getFrustum(pixelSize),
+      layerMask: view.layerMask,
+      additionalPlanes: view.cullingPlanes,
+      includeOffscreen: _warmUpIncludeOffscreen,
+    );
+
+    // The retained metadata below fingerprints static shadow casters.
     final structureRevision = renderScene.structureRevision;
-    final materialRevision = materialSceneInputsRevision;
     final staticShadowRevision = renderScene.staticShadowRevision;
-    final refreshMaterialInputs =
-        _renderMetadataStructureRevision != structureRevision ||
-        _renderMetadataMaterialRevision != materialRevision;
     final refreshStaticShadows =
         _renderMetadataStructureRevision != structureRevision ||
         _renderMetadataStaticShadowRevision != staticShadowRevision;
-    if (refreshMaterialInputs || refreshStaticShadows) {
-      final materialInputs = refreshMaterialInputs
-          ? <RenderInput>{}
-          : _cachedMaterialInputs;
+    if (refreshStaticShadows) {
       var staticShadowSignature = _cachedStaticShadowSignature;
       var hasStaticShadowCasters = _cachedHasStaticShadowCasters;
-      if (refreshStaticShadows) {
-        staticShadowSignature = 0;
-        hasStaticShadowCasters = false;
-      }
+      staticShadowSignature = 0;
+      hasStaticShadowCasters = false;
       for (final item in renderScene.items) {
-        if (refreshMaterialInputs) {
-          final inputs = item.material.sceneInputs;
-          if (inputs.isNotEmpty) materialInputs.addAll(inputs);
-        }
-        if (refreshStaticShadows &&
-            item.shadowStatic &&
-            item.castsShadows &&
-            item.visible) {
+        if (item.shadowStatic && item.castsShadows && item.visible) {
           hasStaticShadowCasters = true;
           final t = item.worldTransform.storage;
           staticShadowSignature =
@@ -1308,18 +1299,11 @@ base class Scene implements SceneGraph {
                   t[14].hashCode * 13);
         }
       }
-      if (refreshMaterialInputs) {
-        _cachedMaterialInputs = materialInputs;
-        _renderMetadataMaterialRevision = materialRevision;
-      }
-      if (refreshStaticShadows) {
-        _cachedStaticShadowSignature = staticShadowSignature;
-        _cachedHasStaticShadowCasters = hasStaticShadowCasters;
-        _renderMetadataStaticShadowRevision = staticShadowRevision;
-      }
+      _cachedStaticShadowSignature = staticShadowSignature;
+      _cachedHasStaticShadowCasters = hasStaticShadowCasters;
+      _renderMetadataStaticShadowRevision = staticShadowRevision;
       _renderMetadataStructureRevision = structureRevision;
     }
-    final materialInputs = _cachedMaterialInputs;
     final staticShadowSignature = _cachedStaticShadowSignature;
     final hasStaticShadowCasters = _cachedHasStaticShadowCasters;
     final captureOpaqueColor =
