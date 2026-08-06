@@ -1,10 +1,11 @@
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter/foundation.dart' show internal;
 
 import '../texture/texture2d.dart';
 import 'physically_based_material.dart';
 
 /// One texture input on a [PhysicalMaterialDescriptor].
-/// {@category Materials}
+@internal
 class PhysicalTexture {
   /// Creates a texture input with optional UV selection and transform.
   PhysicalTexture({this.source, TextureTransform? transform, this.texCoord = 0})
@@ -20,10 +21,10 @@ class PhysicalTexture {
   final int texCoord;
 }
 
-/// Scene-native description of an advanced physically based material.
+/// Normalized scene-native properties for a physically based material.
 ///
 /// Importers normalize file-format extensions into these property names.
-/// {@category Materials}
+@internal
 class PhysicalMaterialDescriptor {
   /// Creates a physical material description.
   PhysicalMaterialDescriptor({

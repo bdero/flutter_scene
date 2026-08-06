@@ -161,14 +161,13 @@ abstract class Material {
     return _defaultEnvironmentMap ??= EnvironmentMap.studio();
   }
 
-  /// Builds the BRDF lookup texture used by the PBR fragment shader's
-  /// split-sum specular IBL (see [buildBrdfLutTexture]).
+  /// Builds the BRDF lookup texture and loads the physical shader variants.
   ///
   /// Called by the [Scene] constructor; rendering is gated on the returned
   /// [Future] completing. The texture is built once and reused.
-  static Future<void> initializeStaticResources() {
+  static Future<void> initializeStaticResources() async {
     _brdfLutTexture ??= buildBrdfLutTexture();
-    return Future<void>.value();
+    await PhysicallyBasedMaterial.initializeStaticResources();
   }
 
   /// The name of this material, used for identification.
