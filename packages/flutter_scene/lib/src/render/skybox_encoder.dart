@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
@@ -77,9 +77,8 @@ void encodeSkybox(
   renderPass.setPrimitiveType(gpu.PrimitiveType.triangle);
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
 
-  // Vertex SkyboxFrameInfo: the world view ray is reconstructed from the
-  // inverse of the exact view-projection the scene geometry uses, rotated by
-  // the environment transform. Shared by every sky source.
+  // Reconstruct the world view ray from inverse projection and camera
+  // rotation, then apply the environment transform.
   _bindFrameInfo(
     renderPass,
     transientsBuffer,
@@ -121,8 +120,7 @@ void _bindFrameInfo(
   Camera camera,
   ui.Size dimensions,
 ) {
-  final inverseViewProjection = camera.getViewTransform(dimensions).clone()
-    ..invert();
+  final inverseViewProjection = skyboxInverseViewProjection(camera, dimensions);
   bindSkyboxFrameInfo(
     renderPass,
     transientsBuffer,
@@ -131,6 +129,21 @@ void _bindFrameInfo(
     camera.position,
     environmentTransform,
   );
+}
+
+/// Builds the skybox transform without camera translation.
+///
+/// A skybox depends only on camera orientation. Removing translation before
+/// inversion avoids subtracting two large float32 world positions in the
+/// vertex shader.
+@visibleForTesting
+Matrix4 skyboxInverseViewProjection(Camera camera, ui.Size dimensions) {
+  final viewRotation = camera.getViewMatrix()..setTranslationRaw(0.0, 0.0, 0.0);
+  final projection = camera.projection.getProjectionMatrix(
+    dimensions.width / dimensions.height,
+  );
+  final viewProjection = projection * viewRotation;
+  return viewProjection..invert();
 }
 
 /// Binds the sky vertex shader's `SkyboxFrameInfo` from an explicit

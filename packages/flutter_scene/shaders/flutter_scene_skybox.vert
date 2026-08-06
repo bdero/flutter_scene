@@ -2,13 +2,11 @@
 // of NDC positions covering the screen (see skybox_encoder.dart).
 //
 // Reconstructs the world-space view direction for each pixel by unprojecting
-// the far-plane point through the inverse of the camera's view-projection,
-// then subtracting the camera position. Using the exact inverse of the
-// matrix the scene geometry is drawn with keeps the sky aligned with the
-// geometry on every backend (whatever Y orientation the backend applies to
-// gl_Position is applied identically here). The direction is rotated by
-// environment_transform so it matches the rotated image-based-lighting
-// lookups in the standard material.
+// the far-plane point through the inverse projection and camera rotation.
+// Translation is removed on the CPU because a skybox depends only on camera
+// orientation. This avoids float32 cancellation at large world coordinates.
+// The direction is rotated by environment_transform so it matches the
+// rotated image-based-lighting lookups in the standard material.
 uniform SkyboxFrameInfo {
   mat4 inverse_view_projection;
   // A mat4 carrying the 3x3 environment rotation (mat3 has awkward std140
@@ -32,7 +30,7 @@ void main() {
   // geometry at that pixel would occupy, with no orientation flip needed.
   vec4 world =
       frame_info.inverse_view_projection * vec4(position, 1.0, 1.0);
-  vec3 ray = world.xyz / world.w - frame_info.camera_position.xyz;
+  vec3 ray = world.xyz / world.w;
   v_ray = mat3(frame_info.environment_transform) * ray;
   // Sit at the far plane so geometry (depth-tested lessEqual against the
   // cleared far value) always draws in front.
