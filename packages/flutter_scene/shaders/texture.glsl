@@ -3,7 +3,7 @@
 /// See also: https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 ///
 
-const vec2 kInvAtan = vec2(0.1591, 0.3183);
+const vec2 kInvAtan = vec2(0.15915494309189535, 0.3183098861837907);
 
 vec2 SphericalToEquirectangular(vec3 direction) {
   // asin is only defined on [-1, 1]; a reflection/normal vector that is a hair
