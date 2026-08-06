@@ -229,73 +229,79 @@ final class SceneRegistry {
     }
 
     final pending = _sceneTemplates[key] ??= loadTemplate();
+    // This provisional claim keeps a template resident while this caller is
+    // still realizing an instance. It becomes the caller's lease only when a
+    // root is successfully returned below.
     _sceneTemplateHolders.update(key, (n) => n + 1, ifAbsent: () => 1);
-    _SceneTemplate template;
     try {
-      template = await pending;
-    } catch (_) {
-      // Don't cache a failed load; the next call retries.
-      _sceneTemplates.remove(key);
-      _sceneTemplateHolders.remove(key);
-      rethrow;
-    }
+      final template = await pending;
 
-    final root = await realizeSceneAsync(
-      template.document,
-      registry: registry,
-      bundle: assetBundle,
-      resources: template.resources,
-    );
-    if (applyStageTo != null) {
-      await realizeStage(template.document, applyStageTo, bundle: assetBundle);
-    }
-
-    // Patch the live graph in place when the scene's `.fsceneb` (or one of
-    // the prefab `.fsceneb`s it is composed from) changes (debug only; a
-    // no-op registration in release). The dependency set is shared with the
-    // coordinator and refreshed on each reload. The closure must hold the
-    // root (and the stage scene) weakly: the registration owns the closure,
-    // so a strong capture would keep every discarded instance alive forever,
-    // accumulating registrations that re-patch dead graphs on each reload.
-    var current = template.document;
-    final dependencies = {...template.dependencies};
-    final weakRoot = WeakReference(root);
-    final weakStageScene = applyStageTo == null
-        ? null
-        : WeakReference(applyStageTo);
-    if (onReload != null) _reloadCallbacks[root] = onReload;
-    HotReloadCoordinator.instance.registerScene(
-      root,
-      assetKey: key,
-      dependencies: dependencies,
-      bundle: assetBundle,
-      onReload: () async {
-        final liveRoot = weakRoot.target;
-        if (liveRoot == null) return;
-        // The cached template no longer matches the edited assets; drop it
-        // so future loads re-read them.
-        _sceneTemplates.remove(key);
-        final seen = <String>{key};
-        final next = await readComposed(seen);
-        dependencies
-          ..clear()
-          ..addAll(seen);
-        final diff = await reloadScene(
-          liveRoot,
-          current,
-          next,
-          registry: registry,
+      final root = await realizeSceneAsync(
+        template.document,
+        registry: registry,
+        bundle: assetBundle,
+        resources: template.resources,
+      );
+      if (applyStageTo != null) {
+        await realizeStage(
+          template.document,
+          applyStageTo,
           bundle: assetBundle,
         );
-        current = next;
-        final stageScene = weakStageScene?.target;
-        if (diff.stageChanged && stageScene != null) {
-          await realizeStage(next, stageScene, bundle: assetBundle);
-        }
-        _reloadCallbacks[liveRoot]?.call(liveRoot);
-      },
-    );
-    return root;
+      }
+
+      // Patch the live graph in place when the scene's `.fsceneb` (or one of
+      // the prefab `.fsceneb`s it is composed from) changes (debug only; a
+      // no-op registration in release). The dependency set is shared with the
+      // coordinator and refreshed on each reload. The closure must hold the
+      // root (and the stage scene) weakly: the registration owns the closure,
+      // so a strong capture would keep every discarded instance alive forever,
+      // accumulating registrations that re-patch dead graphs on each reload.
+      var current = template.document;
+      final dependencies = {...template.dependencies};
+      final weakRoot = WeakReference(root);
+      final weakStageScene = applyStageTo == null
+          ? null
+          : WeakReference(applyStageTo);
+      if (onReload != null) _reloadCallbacks[root] = onReload;
+      HotReloadCoordinator.instance.registerScene(
+        root,
+        assetKey: key,
+        dependencies: dependencies,
+        bundle: assetBundle,
+        onReload: () async {
+          final liveRoot = weakRoot.target;
+          if (liveRoot == null) return;
+          // The cached template no longer matches the edited assets; drop it
+          // so future loads re-read them.
+          _sceneTemplates.remove(key);
+          final seen = <String>{key};
+          final next = await readComposed(seen);
+          dependencies
+            ..clear()
+            ..addAll(seen);
+          final diff = await reloadScene(
+            liveRoot,
+            current,
+            next,
+            registry: registry,
+            bundle: assetBundle,
+          );
+          current = next;
+          final stageScene = weakStageScene?.target;
+          if (diff.stageChanged && stageScene != null) {
+            await realizeStage(next, stageScene, bundle: assetBundle);
+          }
+          _reloadCallbacks[liveRoot]?.call(liveRoot);
+        },
+      );
+      return root;
+    } catch (_) {
+      // The caller has no Node to pair with releaseScene after a failed
+      // template load, realization, stage application, or registration.
+      _releaseSceneTemplateClaim(key);
+      rethrow;
+    }
   }
 
   /// Streams a lazy placeholder [node]'s prefab content under it, resolving
@@ -516,6 +522,18 @@ Future<void> loadSceneSubtree(
   );
 }
 
+// Releases one claim, dropping the cached template only when it was the last.
+bool _releaseSceneTemplateClaim(String key) {
+  final holders = _sceneTemplateHolders[key];
+  if (holders == null) return false;
+  if (holders > 1) {
+    _sceneTemplateHolders[key] = holders - 1;
+    return false;
+  }
+  _sceneTemplateHolders.remove(key);
+  return _sceneTemplates.remove(key) != null;
+}
+
 /// Releases one claim on the template [loadScene] built for [sourcePath],
 /// dropping it from the shared cache when no claims remain.
 ///
@@ -535,14 +553,7 @@ Future<bool> releaseScene(
 }) async {
   final registry = await SceneRegistry.load(bundle: bundle);
   final key = registry.resolveKey(sourcePath, package: package);
-  final holders = _sceneTemplateHolders[key];
-  if (holders == null) return false;
-  if (holders > 1) {
-    _sceneTemplateHolders[key] = holders - 1;
-    return false;
-  }
-  _sceneTemplateHolders.remove(key);
-  return _sceneTemplates.remove(key) != null;
+  return _releaseSceneTemplateClaim(key);
 }
 
 /// Drops every cached scene template, whatever their outstanding claims.
