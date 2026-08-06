@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_gpu_shaders/environment.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fmat/build_materials.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +11,41 @@ import 'package:flutter_test/flutter_test.dart';
 FmatCompilation _compile(String name) {
   final path = 'assets/materials/$name.fmat';
   return compileFmat(File(path).readAsStringSync(), fileName: path);
+}
+
+bool _hasNamedResource(Object? value, String name) {
+  if (value is Map) {
+    if (value['name'] == name) return true;
+    return value.values.any((entry) => _hasNamedResource(entry, name));
+  }
+  if (value is List) {
+    return value.any((entry) => _hasNamedResource(entry, name));
+  }
+  return false;
+}
+
+Future<Object?> _compileReflection(
+  Uri impellerc,
+  Directory temp,
+  String entry,
+  String source,
+) async {
+  final input = File.fromUri(temp.uri.resolve('$entry.frag'))
+    ..writeAsStringSync(source);
+  final reflection = File.fromUri(temp.uri.resolve('$entry.json'));
+  final result = await Process.run(impellerc.toFilePath(), [
+    '--opengl-es',
+    '--input-type=frag',
+    '--input=${input.path}',
+    '--sl=${temp.uri.resolve('$entry.glsl').toFilePath()}',
+    '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
+    '--reflection-json=${reflection.path}',
+    '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
+    '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
+    '--gles-language-version=300',
+  ]);
+  expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  return jsonDecode(reflection.readAsStringSync());
 }
 
 void main() {
@@ -35,19 +73,36 @@ void main() {
     );
   });
 
-  test('advanced materials build and select shadow shader variants', () {
-    final builder = File(
-      'lib/src/fmat/build_materials.dart',
-    ).readAsStringSync();
-    final material = File(
-      'lib/src/material/advanced_physical_material.dart',
-    ).readAsStringSync();
-
-    expect(builder, contains('generateShadowVariants: true'));
-    expect(builder, contains("'\${entryName}Shadow'"));
-    expect(builder, contains('#define FLUTTER_SCENE_SKIP_SHADOWS'));
-    expect(material, contains("assets.library['\${entry}Shadow']"));
-    expect(material, contains('setShadowFragmentShader(shadowShader)'));
+  test('physical materials compile matching shadow sampler layouts', () async {
+    final compiled = _compile('physical_opaque');
+    final variants = emitFragmentShaderVariants(
+      compiled,
+      generateShadowVariant: true,
+    );
+    expect(
+      variants.keys,
+      unorderedEquals({'PhysicalOpaque', 'PhysicalOpaqueShadow'}),
+    );
+    final temp = Directory.systemTemp.createTempSync('physical_variants');
+    try {
+      final impellerc = await findImpellerC();
+      final base = await _compileReflection(
+        impellerc,
+        temp,
+        'PhysicalOpaque',
+        variants['PhysicalOpaque']!,
+      );
+      final shadow = await _compileReflection(
+        impellerc,
+        temp,
+        'PhysicalOpaqueShadow',
+        variants['PhysicalOpaqueShadow']!,
+      );
+      expect(_hasNamedResource(base, 'shadow_map'), isFalse);
+      expect(_hasNamedResource(shadow, 'shadow_map'), isTrue);
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
   });
 
   test('lit materials reverse normals on back-facing fragments', () {
@@ -75,7 +130,7 @@ void main() {
 
   test('physical feature textures preserve high-impact inputs first', () {
     final source = File(
-      'lib/src/material/advanced_physical_material.dart',
+      'lib/src/material/physical_material_variant.dart',
     ).readAsStringSync();
     final emissive = source.indexOf('(1, d.emissiveTexture)');
     final occlusion = source.indexOf('(2, d.occlusionTexture)');

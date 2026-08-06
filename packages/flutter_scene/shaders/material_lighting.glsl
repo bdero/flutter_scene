@@ -135,6 +135,9 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
 
   // The Poisson positions are selected when fixed_filter is 0, the stable grid
   // positions when it is 1. The latter preserves the same 17-tap pattern.
+  //
+  // TODO(flutter_scene): use file-scope const arrays once impellerc/SPIRV-Cross
+  // emits valid ES 1.00 array constructors for them.
   int sample_count = fixed_filter > 0.5 ? 17 : 16;
   float lit = 0.0;
   for (int i = 0; i < 17; i++) {
