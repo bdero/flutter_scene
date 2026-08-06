@@ -305,7 +305,7 @@ base class SceneEncoder {
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _cullInstances;
-  // Not final: screen-reading translucent batches continue in later passes.
+  // Not final because opaque and translucent draws can use separate passes.
   gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
@@ -878,9 +878,8 @@ base class SceneEncoder {
     flushTranslucent();
   }
 
-  /// Emits only the opaque phase (see [flush]). Used with
-  /// [flushTranslucent] when the scene pass splits the frame into two GPU
-  /// passes to snapshot the opaque color between them.
+  /// Emits only the opaque phase (see [flush]). Used with [flushTranslucent]
+  /// when the scene pass snapshots the opaque color between them.
   void flushOpaque() {
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
@@ -1027,7 +1026,16 @@ base class SceneEncoder {
     return _translucentCursor < _translucentRecords.length;
   }
 
-  /// Whether the next translucent batch needs the accumulated scene color.
+  /// Whether a pending translucent draw samples scene color.
+  bool get hasPendingSceneColorReaders {
+    _prepareTranslucent();
+    for (var i = _translucentCursor; i < _translucentRecords.length; i++) {
+      if (_readsSceneColor(_translucentRecords[i].material)) return true;
+    }
+    return false;
+  }
+
+  /// Whether the next translucent batch needs opaque scene color.
   bool get nextTranslucentBatchReadsSceneColor {
     _prepareTranslucent();
     if (_translucentCursor >= _translucentRecords.length) return false;
@@ -1042,7 +1050,7 @@ base class SceneEncoder {
         .contains(RenderInput.filteredSceneColor);
   }
 
-  /// Number of pending translucent draws that read accumulated scene color.
+  /// Number of pending translucent draws that read opaque scene color.
   int get pendingSceneColorReaderCount {
     _prepareTranslucent();
     var count = 0;
@@ -1068,9 +1076,8 @@ base class SceneEncoder {
   /// Emits one translucent batch in global back-to-front order.
   ///
   /// A batch ends immediately before the next material that reads scene
-  /// color. This lets the scene pass publish the current accumulated color
-  /// before drawing each screen-reading layer while keeping ordinary
-  /// translucent draws in the same pass as the layer behind them.
+  /// color. Batching preserves global back-to-front order while letting the
+  /// scene pass replace the render target between batches when needed.
   void flushNextTranslucentBatch({gpu.RenderPass? translucentPass}) {
     _prepareTranslucent();
     if (_translucentCursor >= _translucentRecords.length) return;

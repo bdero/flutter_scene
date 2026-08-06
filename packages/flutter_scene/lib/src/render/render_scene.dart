@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 
@@ -588,5 +589,34 @@ class RenderScene {
     for (final item in _alwaysVisible) {
       visit(item);
     }
+  }
+
+  /// Collects material inputs requested by this view's frustum candidates.
+  Set<RenderInput> collectMaterialInputs(
+    Frustum frustum, {
+    int layerMask = kRenderLayerAll,
+    List<Plane> additionalPlanes = const [],
+    bool includeOffscreen = false,
+  }) {
+    final inputs = <RenderInput>{};
+    void collect(RenderItem item) {
+      if (!item.visible || (item.layers & layerMask) == 0) return;
+      inputs.addAll(item.material.sceneInputs);
+      final lod = item.lod;
+      if (lod != null) {
+        for (final level in lod.levels) {
+          inputs.addAll(level.material.sceneInputs);
+        }
+      }
+    }
+
+    if (includeOffscreen) {
+      for (final item in items) {
+        collect(item);
+      }
+    } else {
+      cull(frustum, collect, additionalPlanes: additionalPlanes);
+    }
+    return inputs;
   }
 }

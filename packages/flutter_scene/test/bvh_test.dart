@@ -34,6 +34,15 @@ class _StubMaterial extends Material {
   }
 }
 
+class _InputMaterial extends _StubMaterial {
+  _InputMaterial(this.inputs);
+
+  final Set<RenderInput> inputs;
+
+  @override
+  Set<RenderInput> get sceneInputs => inputs;
+}
+
 RenderItem _renderItem() =>
     RenderItem(geometry: _StubGeometry(), material: _StubMaterial());
 
@@ -188,6 +197,29 @@ void main() {
       expect(hits.contains(unbounded), isTrue);
       expect(hits.contains(optedOut), isTrue);
       expect(hits.contains(bounded), isFalse);
+    });
+
+    test('material inputs include only visible frustum candidates', () {
+      final scene = RenderScene();
+      final visible = _itemAt(0)
+        ..visible = true
+        ..material = _InputMaterial(const {RenderInput.opaqueSceneColor});
+      final offscreen = _itemAt(1000)
+        ..visible = true
+        ..material = _InputMaterial(const {RenderInput.depth});
+      final hidden = _itemAt(0)
+        ..visible = false
+        ..material = _InputMaterial(const {RenderInput.filteredSceneColor});
+      scene.add(visible);
+      scene.add(offscreen);
+      scene.add(hidden);
+      scene.rebuildIfDirty();
+
+      final inputs = scene.collectMaterialInputs(
+        Frustum.matrix(makeOrthographicMatrix(-5, 5, -5, 5, -5, 5)),
+      );
+
+      expect(inputs, const {RenderInput.opaqueSceneColor});
     });
   });
 }
