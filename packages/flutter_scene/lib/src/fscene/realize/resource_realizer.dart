@@ -21,7 +21,6 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/material.dart';
-import 'package:flutter_scene/src/material/advanced_physical_material.dart';
 import 'package:flutter_scene/src/material/physical_material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
@@ -329,7 +328,7 @@ class ResourceRealizer {
 
   Future<void> _preloadPhysical(MaterialResource res) async {
     try {
-      final material = await PhysicalMaterial.fromDescriptor(
+      final material = await PhysicallyBasedMaterial.fromDescriptor(
         _physicalDescriptor(res),
       );
       material.name = res.name;

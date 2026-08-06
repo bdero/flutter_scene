@@ -2,7 +2,6 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../material/material.dart';
-import '../material/advanced_physical_material.dart';
 import '../material/physical_material.dart';
 import '../material/physically_based_material.dart';
 import '../material/unlit_material.dart';
@@ -32,58 +31,9 @@ Future<Material> buildMaterial(
     m.doubleSided = gm.doubleSided;
     return m;
   }
-  if (gm.requiresPhysicalMaterial) {
-    return PhysicalMaterial.fromDescriptor(
-      physicalMaterialDescriptor(gm, textures),
-    );
-  }
-  final m = PhysicallyBasedMaterial();
-  m.name = gm.name ?? '';
-  final pbr = gm.pbrMetallicRoughness;
-  if (pbr != null) {
-    m.baseColorFactor = _vec4(pbr.baseColorFactor);
-    m.metallicFactor = pbr.metallicFactor;
-    m.roughnessFactor = pbr.roughnessFactor;
-    m.baseColorTexture = _resolveTexture(pbr.baseColorTexture, textures);
-    m.baseColorTextureTransform = _textureTransform(pbr.baseColorTexture);
-    m.baseColorTextureTexCoord = _textureTexCoord(pbr.baseColorTexture);
-    m.metallicRoughnessTexture = _resolveTexture(
-      pbr.metallicRoughnessTexture,
-      textures,
-    );
-    m.metallicRoughnessTextureTransform = _textureTransform(
-      pbr.metallicRoughnessTexture,
-    );
-    m.metallicRoughnessTextureTexCoord = _textureTexCoord(
-      pbr.metallicRoughnessTexture,
-    );
-  }
-  m.normalTexture = _resolveTexture(gm.normalTexture, textures);
-  m.normalTextureTransform = _textureTransform(gm.normalTexture);
-  m.normalTextureTexCoord = _textureTexCoord(gm.normalTexture);
-  if (gm.normalTexture?.scale != null) {
-    m.normalScale = gm.normalTexture!.scale!;
-  }
-  m.occlusionTexture = _resolveTexture(gm.occlusionTexture, textures);
-  m.occlusionTextureTransform = _textureTransform(gm.occlusionTexture);
-  m.occlusionTextureTexCoord = _textureTexCoord(gm.occlusionTexture);
-  if (gm.occlusionTexture?.strength != null) {
-    m.occlusionStrength = gm.occlusionTexture!.strength!;
-  }
-  m.emissiveTexture = _resolveTexture(gm.emissiveTexture, textures);
-  m.emissiveTextureTransform = _textureTransform(gm.emissiveTexture);
-  m.emissiveTextureTexCoord = _textureTexCoord(gm.emissiveTexture);
-  m.emissiveFactor = Vector4(
-    gm.emissiveFactor.isNotEmpty ? gm.emissiveFactor[0] : 0.0,
-    gm.emissiveFactor.length > 1 ? gm.emissiveFactor[1] : 0.0,
-    gm.emissiveFactor.length > 2 ? gm.emissiveFactor[2] : 0.0,
-    1.0,
+  return PhysicallyBasedMaterial.fromDescriptor(
+    physicalMaterialDescriptor(gm, textures),
   );
-  m.emissiveStrength = gm.emissiveStrength;
-  m.alphaMode = _alphaMode(gm.alphaMode);
-  m.alphaCutoff = gm.alphaCutoff;
-  m.doubleSided = gm.doubleSided;
-  return m;
 }
 
 /// Normalizes a glTF material into scene-native physical properties.

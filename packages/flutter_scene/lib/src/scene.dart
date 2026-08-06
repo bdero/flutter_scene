@@ -130,9 +130,8 @@ base class Scene implements SceneGraph {
   static Future<void>? _initializeStaticResources;
   static bool _readyToRender = false;
 
-  /// Whether the engine's shared static resources (the base shader library and
-  /// the material BRDF lookup table) have finished loading, so any scene can
-  /// render this frame.
+  /// Whether the engine's shared shader libraries and material lookup
+  /// resources have finished loading, so any scene can render this frame.
   ///
   /// Rendering is gated on this: a `SceneView` shows its loading widget, and a
   /// direct [render] call is skipped, until it is `true`. Await

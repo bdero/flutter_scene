@@ -120,8 +120,8 @@ GaussianSplats _splatCloud() {
 /// synchronous [SmokeScene] setup closures can build a [PreprocessedMaterial].
 gpu.ShaderLibrary? _materialsLibrary;
 Map<String, Object?>? _materialsMetadata;
-PhysicalMaterial? _layeredPhysicalMaterial;
-PhysicalMaterial? _transmissionPhysicalMaterial;
+PhysicallyBasedMaterial? _layeredPhysicalMaterial;
+PhysicallyBasedMaterial? _transmissionPhysicalMaterial;
 
 /// Loads the `buildMaterials` output (bundle plus parameter sidecar) once. Call
 /// before pumping a scene that uses a custom material.
@@ -140,35 +140,29 @@ Future<void> loadSmokeMaterials() async {
     'packages/smoke_render/flutter_gpu_shaders/shaderbundles/'
     'smoke.shaderbundle',
   );
-  _layeredPhysicalMaterial = await PhysicalMaterial.fromDescriptor(
-    PhysicalMaterialDescriptor(
-      baseColor: vm.Vector4(0.45, 0.08, 0.03, 1.0),
-      metallic: 0.1,
-      roughness: 0.45,
-      clearcoat: 0.9,
-      clearcoatRoughness: 0.12,
-      sheenColor: vm.Vector4(0.35, 0.08, 0.03, 1.0),
-      sheenRoughness: 0.35,
-      anisotropy: 0.55,
-      anisotropyRotation: 0.4,
-      iridescence: 0.35,
-      iridescenceThicknessMinimum: 180.0,
-      iridescenceThicknessMaximum: 360.0,
-    ),
-  );
-  _transmissionPhysicalMaterial = await PhysicalMaterial.fromDescriptor(
-    PhysicalMaterialDescriptor(
-      baseColor: vm.Vector4(0.72, 0.92, 1.0, 1.0),
-      metallic: 0.0,
-      roughness: 0.08,
-      transmission: 0.78,
-      ior: 1.45,
-      thickness: 0.7,
-      attenuationColor: vm.Vector4(0.55, 0.85, 1.0, 1.0),
-      attenuationDistance: 2.5,
-      dispersion: 0.25,
-    ),
-  );
+  _layeredPhysicalMaterial = PhysicallyBasedMaterial()
+    ..baseColorFactor = vm.Vector4(0.45, 0.08, 0.03, 1.0)
+    ..metallicFactor = 0.1
+    ..roughnessFactor = 0.45
+    ..clearcoat = 0.9
+    ..clearcoatRoughness = 0.12
+    ..sheenColor = vm.Vector4(0.35, 0.08, 0.03, 1.0)
+    ..sheenRoughness = 0.35
+    ..anisotropy = 0.55
+    ..anisotropyRotation = 0.4
+    ..iridescence = 0.35
+    ..iridescenceThicknessMinimum = 180.0
+    ..iridescenceThicknessMaximum = 360.0;
+  _transmissionPhysicalMaterial = PhysicallyBasedMaterial()
+    ..baseColorFactor = vm.Vector4(0.72, 0.92, 1.0, 1.0)
+    ..metallicFactor = 0.0
+    ..roughnessFactor = 0.08
+    ..transmission = 0.78
+    ..ior = 1.45
+    ..thickness = 0.7
+    ..attenuationColor = vm.Vector4(0.55, 0.85, 1.0, 1.0)
+    ..attenuationDistance = 2.5
+    ..dispersion = 0.25;
 }
 
 /// The hand-written shader pair pre-loaded by [loadSmokeMaterials], so the

@@ -397,6 +397,7 @@ class MeshCodec extends ComponentCodec {
   }
 
   LocalId? _serializePbr(PhysicallyBasedMaterial m, SerializeContext context) {
+    final physical = m.hasPhysicalConfiguration;
     final properties = <String, PropertyValue>{
       'baseColor': _color(m.baseColorFactor),
       'emissive': _color(m.emissiveFactor),
@@ -409,6 +410,33 @@ class MeshCodec extends ComponentCodec {
       'alphaMode': StringValue(m.alphaMode.name),
       'alphaCutoff': DoubleValue(m.alphaCutoff),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+      if (physical) ...{
+        'specular': DoubleValue(m.specular),
+        'specularColor': _color(m.specularColor),
+        'ior': DoubleValue(m.ior),
+        'clearcoat': DoubleValue(m.clearcoat),
+        'clearcoatRoughness': DoubleValue(m.clearcoatRoughness),
+        'clearcoatNormalScale': Vec2Value(m.clearcoatNormalScale.clone()),
+        'sheenColor': _color(m.sheenColor),
+        'sheenRoughness': DoubleValue(m.sheenRoughness),
+        'transmission': DoubleValue(m.transmission),
+        'diffuseTransmission': DoubleValue(m.diffuseTransmission),
+        'diffuseTransmissionColor': _color(m.diffuseTransmissionColor),
+        'thickness': DoubleValue(m.thickness),
+        'attenuationDistance': DoubleValue(m.attenuationDistance),
+        'attenuationColor': _color(m.attenuationColor),
+        'dispersion': DoubleValue(m.dispersion),
+        'iridescence': DoubleValue(m.iridescence),
+        'iridescenceIor': DoubleValue(m.iridescenceIor),
+        'iridescenceThicknessMinimum': DoubleValue(
+          m.iridescenceThicknessMinimum,
+        ),
+        'iridescenceThicknessMaximum': DoubleValue(
+          m.iridescenceThicknessMaximum,
+        ),
+        'anisotropy': DoubleValue(m.anisotropy),
+        'anisotropyRotation': DoubleValue(m.anisotropyRotation),
+      },
     };
     _textureProperty(
       properties,
@@ -470,15 +498,147 @@ class MeshCodec extends ComponentCodec {
       m.emissiveTextureTransform,
       m.emissiveTextureTexCoord,
     );
+    if (physical) {
+      _physicalTextureProperty(
+        properties,
+        'specularTexture',
+        m.specularTexture,
+        m.specularTextureTransform,
+        m.specularTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'specularColorTexture',
+        m.specularColorTexture,
+        m.specularColorTextureTransform,
+        m.specularColorTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'clearcoatTexture',
+        m.clearcoatTexture,
+        m.clearcoatTextureTransform,
+        m.clearcoatTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'clearcoatRoughnessTexture',
+        m.clearcoatRoughnessTexture,
+        m.clearcoatRoughnessTextureTransform,
+        m.clearcoatRoughnessTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'clearcoatNormalTexture',
+        m.clearcoatNormalTexture,
+        m.clearcoatNormalTextureTransform,
+        m.clearcoatNormalTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'sheenColorTexture',
+        m.sheenColorTexture,
+        m.sheenColorTextureTransform,
+        m.sheenColorTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'sheenRoughnessTexture',
+        m.sheenRoughnessTexture,
+        m.sheenRoughnessTextureTransform,
+        m.sheenRoughnessTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'transmissionTexture',
+        m.transmissionTexture,
+        m.transmissionTextureTransform,
+        m.transmissionTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'diffuseTransmissionTexture',
+        m.diffuseTransmissionTexture,
+        m.diffuseTransmissionTextureTransform,
+        m.diffuseTransmissionTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'diffuseTransmissionColorTexture',
+        m.diffuseTransmissionColorTexture,
+        m.diffuseTransmissionColorTextureTransform,
+        m.diffuseTransmissionColorTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'thicknessTexture',
+        m.thicknessTexture,
+        m.thicknessTextureTransform,
+        m.thicknessTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'iridescenceTexture',
+        m.iridescenceTexture,
+        m.iridescenceTextureTransform,
+        m.iridescenceTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'iridescenceThicknessTexture',
+        m.iridescenceThicknessTexture,
+        m.iridescenceThicknessTextureTransform,
+        m.iridescenceThicknessTextureTexCoord,
+        context,
+      );
+      _physicalTextureProperty(
+        properties,
+        'anisotropyTexture',
+        m.anisotropyTexture,
+        m.anisotropyTextureTransform,
+        m.anisotropyTextureTexCoord,
+        context,
+      );
+    }
     return context.document
         .addResource(
           MaterialResource(
             context.document.newId(),
-            type: 'physicallyBased',
+            type: physical ? 'physical' : 'physicallyBased',
+            name: m.name,
             properties: properties,
           ),
         )
         .id;
+  }
+
+  void _physicalTextureProperty(
+    Map<String, PropertyValue> properties,
+    String key,
+    Object? source,
+    TextureTransform transform,
+    int texCoord,
+    SerializeContext context,
+  ) {
+    _textureProperty(properties, key, source, context);
+    _textureTransformProperty(
+      properties,
+      '${key}Transform',
+      transform,
+      texCoord,
+    );
   }
 
   LocalId? _serializeUnlit(UnlitMaterial m, SerializeContext context) {

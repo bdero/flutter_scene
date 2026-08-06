@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, internal;
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
@@ -20,6 +20,7 @@ const _legacySidecarKey =
     'packages/flutter_scene/build/shaderbundles/physical.fmat.json';
 
 Future<_PhysicalAssets>? _physicalAssetsFuture;
+_PhysicalAssets? _physicalAssets;
 
 final class _PhysicalAssets {
   const _PhysicalAssets(this.library, this.metadata);
@@ -29,13 +30,16 @@ final class _PhysicalAssets {
 }
 
 Future<_PhysicalAssets> _loadPhysicalAssets() =>
-    _physicalAssetsFuture ??= _loadPhysicalAssetsAndResetOnFailure();
+    _physicalAssetsFuture ??= _loadPhysicalAssetsAndResetOnFailure().then(
+      (assets) => _physicalAssets = assets,
+    );
 
 Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
   try {
     return await _loadPhysicalAssetsUncached();
   } catch (_) {
     _physicalAssetsFuture = null;
+    _physicalAssets = null;
     rethrow;
   }
 }
@@ -60,22 +64,33 @@ Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
   return _PhysicalAssets(library, (sidecar as Map).cast<String, Object?>());
 }
 
-/// Advanced layered PBR material with scene-native property names.
-///
-/// Use [fromDescriptor] for imported data or construct a
-/// [PhysicalMaterialDescriptor] directly. Importers map KHR extensions into
-/// the same fields, so direct scene authoring never uses format-specific names.
-/// {@category Materials}
-class PhysicalMaterial extends PreprocessedMaterial {
-  PhysicalMaterial._({required super.fragmentShader, required super.metadata});
+/// Loads the internal shader variants used by physically based materials.
+@internal
+Future<void> initializePhysicalMaterialResources() async {
+  await _loadPhysicalAssets();
+}
 
-  /// Creates and loads a physical material from [descriptor].
-  static Future<PhysicalMaterial> fromDescriptor(
+/// A prepared internal shader variant for [PhysicallyBasedMaterial].
+@internal
+class PhysicalMaterialVariant extends PreprocessedMaterial {
+  PhysicalMaterialVariant._({
+    required super.fragmentShader,
+    required super.metadata,
+  });
+
+  /// Creates a prepared variant from already-loaded static resources.
+  static PhysicalMaterialVariant fromDescriptor(
     PhysicalMaterialDescriptor descriptor,
-  ) async {
+  ) {
     final transmissive = descriptor.transmission > 0.0;
     final entry = transmissive ? 'PhysicalTransmission' : 'PhysicalOpaque';
-    final assets = await _loadPhysicalAssets();
+    final assets = _physicalAssets;
+    if (assets == null) {
+      throw StateError(
+        'Physical material resources are not ready. Await '
+        'Scene.initializeStaticResources() before preparing materials.',
+      );
+    }
     final shader = assets.library[entry];
     if (shader == null) {
       throw StateError('Physical shader entry "$entry" is missing.');
@@ -87,14 +102,12 @@ class PhysicalMaterial extends PreprocessedMaterial {
       );
     }
     final metadata = (assets.metadata[entry] as Map).cast<String, Object?>();
-    final material = PhysicalMaterial._(
+    final material = PhysicalMaterialVariant._(
       fragmentShader: shader,
       metadata: metadata,
     )..setShadowFragmentShader(shadowShader);
     material.name = descriptor.name;
     material.doubleSided = descriptor.doubleSided;
-    material._supportsTransmission = transmissive;
-    material._alphaMode = descriptor.alphaMode;
     material._reflectionRoughnessTexture = descriptor.metallicRoughnessTexture;
     material._reflectionRoughnessFactor = descriptor.roughness;
     material._isOpaque =
@@ -115,8 +128,6 @@ class PhysicalMaterial extends PreprocessedMaterial {
   }
 
   bool _isOpaque = true;
-  bool _supportsTransmission = false;
-  AlphaMode _alphaMode = AlphaMode.opaque;
   PhysicalTexture _reflectionRoughnessTexture = PhysicalTexture();
   double _reflectionRoughnessFactor = 1.0;
 
@@ -221,7 +232,7 @@ class PhysicalMaterial extends PreprocessedMaterial {
     ].where((entry) => entry.$2.source != null).toList();
     if (features.length > 3) {
       debugPrint(
-        'PhysicalMaterial "$name" has ${features.length} material texture '
+        'PhysicallyBasedMaterial "$name" has ${features.length} material texture '
         'inputs; this shader permutation samples the first three. '
         'TODO(material-permutations): cook a texture-mask-specific shader '
         'per imported material to remove the three-input limit.',
@@ -265,7 +276,7 @@ class PhysicalMaterial extends PreprocessedMaterial {
     if (d.thicknessTexture.source != null &&
         d.transmissionTexture.source != null) {
       debugPrint(
-        'PhysicalMaterial "$name" uses separate transmission and thickness '
+        'PhysicallyBasedMaterial "$name" uses separate transmission and thickness '
         'textures; thickness takes the shared data slot. '
         'TODO(material-permutations): cook a two-data-texture transmission '
         'variant.',
@@ -295,116 +306,4 @@ class PhysicalMaterial extends PreprocessedMaterial {
       ..setFloat('${name}_uv_rotation', transform.rotation)
       ..setInt('${name}_uv_set', texture.texCoord.clamp(0, 1));
   }
-
-  /// Updates the clearcoat weight.
-  set clearcoat(double value) =>
-      parameters.setFloat('clearcoat', value.clamp(0.0, 1.0));
-
-  /// Updates the linear base color and alpha.
-  set baseColor(Vector4 value) {
-    parameters.setVec4('base_color_factor', value);
-    _isOpaque =
-        !_supportsTransmission &&
-        _alphaMode != AlphaMode.blend &&
-        value.a >= 1.0;
-  }
-
-  /// Updates metalness.
-  set metallic(double value) =>
-      parameters.setFloat('metallic_factor', value.clamp(0.0, 1.0));
-
-  /// Updates perceptual roughness.
-  set roughness(double value) => parameters.setFloat(
-    'roughness_factor',
-    _reflectionRoughnessFactor = value.clamp(0.0, 1.0),
-  );
-
-  /// Updates the normal-map strength.
-  set normalScale(double value) => parameters.setFloat('normal_scale', value);
-
-  /// Updates ambient-occlusion strength.
-  set occlusionStrength(double value) =>
-      parameters.setFloat('occlusion_strength', value.clamp(0.0, 1.0));
-
-  /// Updates the linear emissive color.
-  set emissive(Vector3 value) => parameters.setVec3('emissive_factor', value);
-
-  /// Updates emissive radiance strength.
-  set emissiveStrength(double value) =>
-      parameters.setFloat('emissive_strength', math.max(value, 0.0));
-
-  /// Updates dielectric specular weight.
-  set specular(double value) =>
-      parameters.setFloat('specular_factor', value.clamp(0.0, 1.0));
-
-  /// Updates the linear dielectric specular color.
-  set specularColor(Vector3 value) =>
-      parameters.setVec3('specular_color_factor', value);
-
-  /// Updates clearcoat perceptual roughness.
-  set clearcoatRoughness(double value) =>
-      parameters.setFloat('clearcoat_roughness', value.clamp(0.0, 1.0));
-
-  /// Updates the sheen color.
-  set sheenColor(Vector3 value) => parameters.setVec3('sheen_color', value);
-
-  /// Updates sheen perceptual roughness.
-  set sheenRoughness(double value) =>
-      parameters.setFloat('sheen_roughness', value.clamp(0.0, 1.0));
-
-  /// Updates specular transmission.
-  set transmission(double value) {
-    if (!_supportsTransmission) {
-      throw StateError(
-        'This material was created without transmission scene inputs. '
-        'Create it from a descriptor whose transmission is greater than zero.',
-      );
-    }
-    parameters.setFloat('transmission', value.clamp(0.0, 1.0));
-  }
-
-  /// Updates diffuse transmission.
-  set diffuseTransmission(double value) =>
-      parameters.setFloat('diffuse_transmission', value.clamp(0.0, 1.0));
-
-  /// Updates the linear diffuse-transmission color.
-  set diffuseTransmissionColor(Vector3 value) =>
-      parameters.setVec3('diffuse_transmission_color', value);
-
-  /// Updates volume thickness in scene units.
-  set thickness(double value) =>
-      parameters.setFloat('thickness', math.max(value, 0.0));
-
-  /// Updates the distance at which volume attenuation reaches its color.
-  set attenuationDistance(double value) => parameters.setFloat(
-    'attenuation_distance',
-    value.isFinite ? math.max(value, 0.0001) : 1.0e20,
-  );
-
-  /// Updates the linear volume attenuation color.
-  set attenuationColor(Vector3 value) =>
-      parameters.setVec3('attenuation_color', value);
-
-  /// Updates chromatic transmission spread.
-  set dispersion(double value) =>
-      parameters.setFloat('dispersion', math.max(value, 0.0));
-
-  /// Updates the iridescent-film weight.
-  set iridescence(double value) =>
-      parameters.setFloat('iridescence', value.clamp(0.0, 1.0));
-
-  /// Updates the iridescent-film index of refraction.
-  set iridescenceIor(double value) =>
-      parameters.setFloat('iridescence_ior', math.max(value, 1.0));
-
-  /// Updates anisotropic reflection strength.
-  set anisotropy(double value) =>
-      parameters.setFloat('anisotropy', value.clamp(0.0, 1.0));
-
-  /// Updates anisotropy direction rotation in radians.
-  set anisotropyRotation(double value) =>
-      parameters.setFloat('anisotropy_rotation', value);
-
-  /// Updates the material index of refraction.
-  set ior(double value) => parameters.setFloat('ior', math.max(value, 1.0));
 }
