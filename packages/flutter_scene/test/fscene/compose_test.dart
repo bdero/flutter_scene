@@ -69,6 +69,31 @@ void main() {
     expect(composed.resource(materialId), isA<MaterialResource>());
   });
 
+  test('composes a single-root prefab transform after instance placement', () {
+    final prefab = _prefab();
+    prefab.rootNodes.single.transform = TrsTransform(
+      translation: Vector3(1, 2, 3),
+      rotation: Quaternion.axisAngle(Vector3(1, 0, 0), 0.5),
+      scale: Vector3.all(0.016),
+    );
+    final host = SceneDocument();
+    final instance = host.createNode(
+      name: 'placed',
+      root: true,
+      transform: TrsTransform(translation: Vector3(5, 0, 0)),
+    )..instance = PrefabInstanceSpec(source: const AssetRef('p'));
+    final expected =
+        instance.transform.toMatrix4() *
+        prefab.rootNodes.single.transform.toMatrix4();
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+
+    expect(
+      composed.rootNodes.single.transform.toMatrix4().storage,
+      expected.storage,
+    );
+  });
+
   test('two instances of one prefab get distinct node ids', () {
     final host = SceneDocument();
     host.createNode(name: 'a', root: true).instance = PrefabInstanceSpec(
