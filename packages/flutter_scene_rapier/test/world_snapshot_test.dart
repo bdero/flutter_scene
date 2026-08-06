@@ -22,7 +22,9 @@ void main() {
     );
 
     // Capture the world at rest, then let the body fall for a second.
-    final snapshot = world.snapshot();
+    // Snapshot membership metadata travels with the bytes, not a Dart object
+    // identity, so rollback callers may copy or serialize the snapshot.
+    final snapshot = Uint8List.fromList(world.snapshot());
     expect(snapshot, isNotEmpty);
 
     for (var i = 0; i < 60; i++) {
@@ -99,6 +101,56 @@ void main() {
     await RapierWorld.ensureInitialized();
     final world = RapierWorld();
     expect(world.restore(Uint8List.fromList([1, 2, 3])), isFalse);
+    world.dispose();
+  });
+
+  test('restore rejects a snapshot after a body is created', () async {
+    await RapierWorld.ensureInitialized();
+    final world = RapierWorld();
+
+    world.createBody(
+      target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+    final snapshot = world.snapshot();
+    final createdAfterSnapshot = world.createBody(
+      target: SimplePoseTarget(translation: Vector3(1, 10, 0)),
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+
+    expect(world.restore(snapshot), isFalse);
+
+    // The native world was not rewound, so the newly-created Dart body
+    // remains valid for subsequent simulation.
+    world.step(1 / 60);
+    expect(world.readBodyPose(createdAfterSnapshot).$1.y, lessThan(10));
+    world.dispose();
+  });
+
+  test('restore rejects a snapshot after a body is destroyed', () async {
+    await RapierWorld.ensureInitialized();
+    final world = RapierWorld();
+
+    final body = world.createBody(
+      target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+    final snapshot = world.snapshot();
+    world.destroyBody(body);
+
+    expect(world.restore(snapshot), isFalse);
+
+    // The destroyed body is not silently resurrected in native state.
+    final replacement = world.createBody(
+      target: SimplePoseTarget(translation: Vector3(1, 10, 0)),
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+    world.step(1 / 60);
+    expect(world.readBodyPose(replacement).$1.y, lessThan(10));
     world.dispose();
   });
 }
