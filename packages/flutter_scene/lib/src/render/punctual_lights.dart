@@ -310,7 +310,11 @@ class PunctualLightBuffer {
       floats[base + 7] = light.range > 0.0 ? 1.0 / light.range : 0.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.1);
       cullables.add(
-        CullableLight(row, lightInfluenceBounds(position, light.range)),
+        CullableLight(
+          row,
+          lightInfluenceBounds(position, light.range),
+          worldPosition: position,
+        ),
       );
       row++;
     }
@@ -342,7 +346,11 @@ class PunctualLightBuffer {
       floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.1);
       cullables.add(
-        CullableLight(row, lightInfluenceBounds(position, light.range)),
+        CullableLight(
+          row,
+          lightInfluenceBounds(position, light.range),
+          worldPosition: position,
+        ),
       );
       row++;
     }
