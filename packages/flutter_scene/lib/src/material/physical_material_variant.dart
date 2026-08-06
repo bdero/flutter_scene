@@ -76,7 +76,11 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   PhysicalMaterialVariant._({
     required super.fragmentShader,
     required super.metadata,
+    required this.transmissive,
   });
+
+  /// Whether this variant samples the captured scene color.
+  final bool transmissive;
 
   /// Creates a prepared variant from already-loaded static resources.
   static PhysicalMaterialVariant fromDescriptor(
@@ -105,26 +109,37 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
     final material = PhysicalMaterialVariant._(
       fragmentShader: shader,
       metadata: metadata,
+      transmissive: transmissive,
     )..setShadowFragmentShader(shadowShader);
-    material.name = descriptor.name;
-    material.doubleSided = descriptor.doubleSided;
-    material._reflectionRoughnessTexture = descriptor.metallicRoughnessTexture;
-    material._reflectionRoughnessFactor = descriptor.roughness;
-    material._isOpaque =
+    material.updateDescriptor(descriptor);
+    return material;
+  }
+
+  /// Updates parameters without rebuilding the shader-backed material.
+  void updateDescriptor(PhysicalMaterialDescriptor descriptor) {
+    if ((descriptor.transmission > 0.0) != transmissive) {
+      throw ArgumentError(
+        'A physical material variant cannot change its transmission layout.',
+      );
+    }
+    name = descriptor.name;
+    doubleSided = descriptor.doubleSided;
+    _reflectionRoughnessTexture = descriptor.metallicRoughnessTexture;
+    _reflectionRoughnessFactor = descriptor.roughness;
+    _isOpaque =
         !transmissive &&
         descriptor.alphaMode != AlphaMode.blend &&
         descriptor.baseColor.a >= 1.0;
-    material._apply(descriptor, transmissive: transmissive);
-    if (descriptor.alphaMode == AlphaMode.mask) {
-      material.configureDepthAlphaMask(
-        texture: descriptor.baseColorTexture.source,
-        transform: descriptor.baseColorTexture.transform,
-        texCoord: descriptor.baseColorTexture.texCoord,
-        cutoff: descriptor.alphaCutoff,
-        alpha: descriptor.baseColor.a,
-      );
-    }
-    return material;
+    _apply(descriptor);
+    configureDepthAlphaMask(
+      texture: descriptor.alphaMode == AlphaMode.mask
+          ? descriptor.baseColorTexture.source
+          : null,
+      transform: descriptor.baseColorTexture.transform,
+      texCoord: descriptor.baseColorTexture.texCoord,
+      cutoff: descriptor.alphaCutoff,
+      alpha: descriptor.baseColor.a,
+    );
   }
 
   bool _isOpaque = true;
@@ -153,7 +168,7 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   @override
   bool isOpaque() => _isOpaque;
 
-  void _apply(PhysicalMaterialDescriptor d, {required bool transmissive}) {
+  void _apply(PhysicalMaterialDescriptor d) {
     parameters
       ..setVec4('base_color_factor', d.baseColor)
       ..setFloat('metallic_factor', d.metallic)
@@ -245,34 +260,28 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
       ..setInt('feature_a', first?.$1 ?? 0)
       ..setInt('feature_b', second?.$1 ?? 0)
       ..setInt('feature_c', third?.$1 ?? 0);
-    if (first != null) _setTexture('feature_texture_a', first.$2);
-    if (second != null) _setTexture('feature_texture_b', second.$2);
-    if (third != null) _setTexture('feature_texture_c', third.$2);
+    _setTexture('feature_texture_a', first?.$2 ?? PhysicalTexture());
+    _setTexture('feature_texture_b', second?.$2 ?? PhysicalTexture());
+    _setTexture('feature_texture_c', third?.$2 ?? PhysicalTexture());
     _setTransform('feature_a', first?.$2 ?? PhysicalTexture());
     _setTransform('feature_b', second?.$2 ?? PhysicalTexture());
     _setTransform('feature_c', third?.$2 ?? PhysicalTexture());
   }
 
   void _bindTransmissionTexture(PhysicalMaterialDescriptor d) {
-    final source = d.thicknessTexture.source ?? d.transmissionTexture.source;
+    final texture = d.thicknessTexture.source != null
+        ? d.thicknessTexture
+        : d.transmissionTexture;
     parameters.setInt(
       'transmission_texture_kind',
-      d.thicknessTexture.source != null ? 2 : 1,
+      d.thicknessTexture.source != null
+          ? 2
+          : d.transmissionTexture.source != null
+          ? 1
+          : 0,
     );
-    if (source != null) {
-      _setTexture(
-        'transmission_data_texture',
-        d.thicknessTexture.source != null
-            ? d.thicknessTexture
-            : d.transmissionTexture,
-      );
-      _setTransform(
-        'transmission_data',
-        d.thicknessTexture.source != null
-            ? d.thicknessTexture
-            : d.transmissionTexture,
-      );
-    }
+    _setTexture('transmission_data_texture', texture);
+    _setTransform('transmission_data', texture);
     if (d.thicknessTexture.source != null &&
         d.transmissionTexture.source != null) {
       debugPrint(
@@ -287,7 +296,10 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   void _setTexture(String name, PhysicalTexture texture) {
     final source = texture.source;
     final sampled = source?.sampledTexture;
-    if (source == null || sampled == null) return;
+    if (source == null || sampled == null) {
+      parameters.clearTexture(name);
+      return;
+    }
     parameters.setTexture(name, sampled, sampler: source.sampledSampler);
   }
 

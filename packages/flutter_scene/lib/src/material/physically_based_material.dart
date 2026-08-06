@@ -641,9 +641,6 @@ class PhysicallyBasedMaterial extends Material {
   double _transmission = 0.0;
   set transmission(double value) {
     final next = value.clamp(0.0, 1.0);
-    if ((_transmission > 0.0) != (next > 0.0)) {
-      markMaterialSceneInputsChanged();
-    }
     _transmission = next;
     _markMaterialDataDirty(variant: true);
   }
@@ -914,13 +911,17 @@ class PhysicallyBasedMaterial extends Material {
   static const int _anisotropyFeature = 1 << 6;
 
   int _variantKey = 0;
-  bool _variantDirty = true;
   bool _materialDataDirty = true;
   PhysicalMaterialVariant? _preparedVariant;
 
   void _markMaterialDataDirty({bool variant = false}) {
     _materialDataDirty = true;
-    _variantDirty = _variantDirty || variant;
+    if (!variant) return;
+    final previousTransmission = _usesTransmissionVariant;
+    _variantKey = _computeVariantKey();
+    if (previousTransmission != _usesTransmissionVariant) {
+      markMaterialSceneInputsChanged();
+    }
   }
 
   int _computeVariantKey() {
@@ -987,18 +988,19 @@ class PhysicallyBasedMaterial extends Material {
       (_variantKey & _transmissionFeature) != 0;
 
   void _ensurePreparedVariant() {
-    if (_variantDirty) {
-      final previousTransmission = _usesTransmissionVariant;
-      _variantKey = _computeVariantKey();
-      _variantDirty = false;
-      if (previousTransmission != _usesTransmissionVariant) {
-        markMaterialSceneInputsChanged();
-      }
-    }
     if (!_materialDataDirty) return;
-    _preparedVariant = _usesPhysicalVariant
-        ? PhysicalMaterialVariant.fromDescriptor(_toDescriptor())
-        : null;
+    if (!_usesPhysicalVariant) {
+      _preparedVariant = null;
+      _materialDataDirty = false;
+      return;
+    }
+    final descriptor = _toDescriptor();
+    final prepared = _preparedVariant;
+    if (prepared == null || prepared.transmissive != _usesTransmissionVariant) {
+      _preparedVariant = PhysicalMaterialVariant.fromDescriptor(descriptor);
+    } else {
+      prepared.updateDescriptor(descriptor);
+    }
     _materialDataDirty = false;
   }
 
@@ -1182,7 +1184,7 @@ class PhysicallyBasedMaterial extends Material {
     _alphaMode = descriptor.alphaMode;
     _alphaCutoff = descriptor.alphaCutoff;
     doubleSided = descriptor.doubleSided;
-    _variantDirty = true;
+    _variantKey = _computeVariantKey();
     _materialDataDirty = true;
   }
 
