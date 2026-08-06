@@ -1,7 +1,7 @@
 // Covers assignLightsToItems: ranged lights reach only the items their
 // influence AABB overlaps (scattered through the BVH), infinite-influence
 // lights reach every item, unbounded items receive every light, and each
-// item's list is capped at maxPerItem with the excess flagged.
+// item's list keeps the closest lights when capped at maxPerItem.
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -126,18 +126,65 @@ void main() {
     expect(result.overflowed, isFalse);
   });
 
-  test('a per-item list is capped at maxPerItem and flags overflow', () {
+  test('a per-item list keeps the nearest lights when it overflows', () {
     final item = _itemAt(0);
     final items = [item];
-    // Five infinite lights, cap of 3.
+    CullableLight local(int index, double x) => CullableLight(
+      index,
+      lightInfluenceBounds(Vector3(x, 0, 0), 20),
+      worldPosition: Vector3(x, 0, 0),
+    );
     final result = assignLightsToItems(
       items: items,
       bvh: Bvh.build(items),
-      lights: [for (var i = 0; i < 5; i++) CullableLight(i, null)],
+      lights: [local(0, 9), local(1, 3), local(2, 1), local(3, 2), local(4, 5)],
       maxPerItem: 3,
     );
     expect(item.lightListCount, 3);
-    expect(result.indices, [0, 1, 2]);
+    expect(result.indices, [2, 3, 1]);
+    expect(result.overflowed, isTrue);
+  });
+
+  test('directional lights sort ahead of local lights on overflow', () {
+    final item = _itemAt(0);
+    final items = [item];
+    final result = assignLightsToItems(
+      items: items,
+      bvh: Bvh.build(items),
+      lights: [
+        CullableLight(
+          0,
+          lightInfluenceBounds(Vector3(4, 0, 0), 10),
+          worldPosition: Vector3(4, 0, 0),
+        ),
+        const CullableLight(1, null),
+        CullableLight(
+          2,
+          lightInfluenceBounds(Vector3(1, 0, 0), 10),
+          worldPosition: Vector3(1, 0, 0),
+        ),
+      ],
+      maxPerItem: 2,
+    );
+
+    expect(result.indices, [1, 2]);
+    expect(result.overflowed, isTrue);
+  });
+
+  test('infinite-range local lights are still ranked by distance', () {
+    final item = _itemAt(0);
+    final items = [item];
+    final result = assignLightsToItems(
+      items: items,
+      bvh: Bvh.build(items),
+      lights: [
+        CullableLight(3, null, worldPosition: Vector3(10, 0, 0)),
+        CullableLight(4, null, worldPosition: Vector3(1, 0, 0)),
+      ],
+      maxPerItem: 1,
+    );
+
+    expect(result.indices, [4]);
     expect(result.overflowed, isTrue);
   });
 
