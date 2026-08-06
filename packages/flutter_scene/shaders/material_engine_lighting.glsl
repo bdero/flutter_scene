@@ -130,7 +130,9 @@ uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
 // when RadianceLayoutInfo.cube_layout is set; no pole distortion).
 uniform samplerCube prefiltered_radiance_cube;
 uniform sampler2D brdf_lut;
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
 uniform sampler2D shadow_map;
+#endif
 // Diffuse irradiance SH coefficients, coefficient i at texel i (RGB). Sampled
 // instead of read from a uniform so a sky's coefficients, computed on the GPU,
 // need no read-back (the diffuse_sh* uniform fields above are unused). Rows
