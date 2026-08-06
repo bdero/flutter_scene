@@ -1,4 +1,6 @@
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/material/material.dart' as material_internal;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -26,16 +28,22 @@ void main() {
   });
 
   test('transmission updates opacity and cached render requirements', () {
+    final revision = material_internal.materialSceneInputsRevision;
     final material = PhysicallyBasedMaterial()..transmission = 0.75;
 
     expect(material.isOpaque(), isFalse);
     expect(material.sceneInputs, hasLength(2));
     expect(material.translucentDepthWrite, isTrue);
+    expect(material_internal.materialSceneInputsRevision, revision + 1);
+
+    material.transmission = 0.5;
+    expect(material_internal.materialSceneInputsRevision, revision + 1);
 
     material.transmission = 0.0;
 
     expect(material.isOpaque(), isTrue);
     expect(material.sceneInputs, isEmpty);
     expect(material.translucentDepthWrite, isFalse);
+    expect(material_internal.materialSceneInputsRevision, revision + 2);
   });
 }

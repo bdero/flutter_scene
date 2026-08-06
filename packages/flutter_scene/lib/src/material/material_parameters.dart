@@ -378,6 +378,19 @@ class MaterialParameters {
     slot.sampler = sampler;
   }
 
+  /// Restores a sampler to its declared placeholder.
+  @internal
+  void clearTexture(String name) {
+    final slot = _samplers[name];
+    if (slot == null) {
+      throw ArgumentError('Unknown sampler parameter "$name".');
+    }
+    _overridden.remove(name);
+    _assigned.remove(name);
+    slot.texture = null;
+    slot.sampler = null;
+  }
+
   /// Dynamic, type-checked assignment. Dispatches on the parameter's declared
   /// type and throws if [value]'s runtime type does not match.
   void operator []=(String name, Object value) {

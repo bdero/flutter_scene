@@ -4,7 +4,8 @@
 * `ResourceGroup.track` scopes a load to the group's lifetime, so `dispose()` releases the claims it took. Previously `dispose()` only released the progress notifier despite the name.
 * Fixed `ResourceGroup` throwing when it was disposed while a tracked load was still in flight, which is what tearing down a level mid-load does.
 
-* `PhysicalMaterial` and glTF import support every ratified `KHR_materials_*` extension with scene-native property names.
+* `PhysicallyBasedMaterial` and glTF import support every ratified `KHR_materials_*` extension with scene-native property names.
+* Scene startup loads the shared physical-material shader bundle so every `PhysicallyBasedMaterial` property remains synchronous.
 * Shader build hooks keep only the target platform backends in generated bundles.
 * `KHR_texture_transform` applies independently to every built-in and advanced material texture.
 * Geometry and material textures support both UV0 and UV1, including `textureInfo.texCoord` in both glTF import paths.
