@@ -1,0 +1,195 @@
+# Renders the deterministic smoke scenes on Apple GPUs and uploads the frames to
+# Argos for visual diffing. Covers the two backends GitHub Actions cannot reach
+# (Metal on macOS and on the iOS simulator); linux, android, web, and windows
+# stay in .github/workflows/smoke_render_jobs.yml.
+#
+# Requires two environment variable groups in the Codemagic UI, `argos` holding
+# ARGOS_TOKEN and `discord` holding DISCORD_WEBHOOK_URL, both marked secure.
+
+definitions:
+  environment: &smoke_environment
+    flutter: master
+    groups:
+      - argos
+      - discord
+    vars:
+      FLUTTER_DART_DATA_ASSETS: "true"
+
+  cache: &smoke_cache
+    cache_paths:
+      - ~/.pub-cache
+
+  triggering: &smoke_triggering
+    events:
+      - push
+      - pull_request
+    branch_patterns:
+      # A push to master (a merge) refreshes the Argos baseline.
+      - pattern: master
+        include: true
+        source: true
+      # `source` applies only to pull requests, so this second entry is what
+      # matches a PR by its target branch rather than by its head branch.
+      - pattern: master
+        include: true
+        source: false
+    cancel_previous_builds: true
+
+  scripts:
+    - &script_versions
+      name: Flutter and engine revision
+      script: flutter --version
+
+    - &script_pub_get
+      name: Resolve the workspace
+      script: flutter pub get
+
+    - &script_argos_upload
+      name: Upload to Argos
+      script: |
+        cd "$CM_BUILD_DIR/examples/smoke_render"
+
+        # Never upload an empty or partial build. A failed render must not
+        # overwrite the Argos baseline, see
+        # notes/ci/argos_visual_baseline_tracking.md.
+        if ! find build/smoke -type f -name '*.png' 2>/dev/null | grep -q .; then
+          echo "No smoke screenshots found; skipping Argos upload."
+          exit 0
+        fi
+
+        # Argos auto-detects GitHub Actions but not this provider, so the build
+        # metadata is mapped by hand.
+        export ARGOS_BRANCH="$CM_BRANCH"
+        export ARGOS_COMMIT="$(git rev-parse HEAD)"
+        if [ "$CM_PULL_REQUEST" = "true" ]; then
+          export ARGOS_PR_NUMBER="$CM_PULL_REQUEST_NUMBER"
+          export ARGOS_PR_BASE_BRANCH="$CM_PULL_REQUEST_DEST"
+        fi
+
+        out=$(npx --yes @argos-ci/cli upload build/smoke \
+          --build-name "$SMOKE_BUILD_NAME" 2>&1) || true
+        echo "$out"
+        printf '%s' "$out" \
+          | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' \
+          | head -1 > "$CM_BUILD_DIR/smoke-argos-url" || true
+      ignore_failure: true
+
+    - &script_render_gate
+      name: Fail the build if the render failed
+      script: |
+        status=$(cat "$CM_BUILD_DIR/smoke-status" 2>/dev/null || echo 1)
+        if [ "$status" -ne 0 ]; then
+          echo "flutter drive exited $status"
+          exit "$status"
+        fi
+
+  publishing: &smoke_publishing
+    scripts:
+      - name: Notify Discord on failure
+        script: |
+          status=$(cat "$CM_BUILD_DIR/smoke-status" 2>/dev/null || echo 1)
+          [ "$status" -eq 0 ] && exit 0
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          url=$(cat "$CM_BUILD_DIR/smoke-argos-url" 2>/dev/null || true)
+          content="Smoke render failed ($SMOKE_BUILD_NAME, Flutter master). Build: $CM_BUILD_URL"
+          [ -n "$url" ] && content="$content  |  Argos: $url"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$content\"}" "$DISCORD_WEBHOOK_URL" || true
+        ignore_failure: true
+
+workflows:
+  smoke-macos:
+    name: Smoke render (macOS, Metal)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      <<: *smoke_environment
+      vars:
+        FLUTTER_DART_DATA_ASSETS: "true"
+        SMOKE_BUILD_NAME: macos
+    cache: *smoke_cache
+    triggering: *smoke_triggering
+    scripts:
+      - *script_versions
+      - name: Enable the macOS desktop target
+        script: >
+          flutter config --enable-macos-desktop --enable-native-assets
+          --enable-dart-data-assets
+      - *script_pub_get
+      - name: Render smoke scenes
+        # The exit code is recorded rather than propagated so the Argos upload
+        # still runs. A failed sanity gate is exactly when the frames are wanted
+        # for visual triage, and the driver writes them on failure.
+        script: |
+          cd "$CM_BUILD_DIR/examples/smoke_render"
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/smoke_test.dart \
+            -d macos --enable-impeller --enable-flutter-gpu
+          echo $? > "$CM_BUILD_DIR/smoke-status"
+        ignore_failure: true
+      - *script_argos_upload
+      - *script_render_gate
+    artifacts:
+      - examples/smoke_render/build/smoke/*.png
+    publishing: *smoke_publishing
+
+  smoke-ios:
+    name: Smoke render (iOS simulator, Metal)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      <<: *smoke_environment
+      xcode: latest
+      vars:
+        FLUTTER_DART_DATA_ASSETS: "true"
+        SMOKE_BUILD_NAME: ios
+        SMOKE_SIM_DEVICE: iPhone 17 Pro
+    cache: *smoke_cache
+    triggering: *smoke_triggering
+    scripts:
+      - *script_versions
+      - name: Generate the iOS project
+        # examples/smoke_render commits every platform except ios/, so the
+        # simulator target is scaffolded per build. The project name is explicit
+        # because a bare create inherits the workspace root's `name: _`.
+        script: |
+          cd "$CM_BUILD_DIR/examples/smoke_render"
+          flutter create . --platforms=ios --org dev.bdero \
+            --project-name smoke_render || true
+          # The tail-end gatherSdkPackageDependencies crash only fails a
+          # redundant lockfile step, so success is judged by the project itself.
+          test -d ios/Runner.xcodeproj
+      - name: Enable native and data assets
+        script: flutter config --enable-native-assets --enable-dart-data-assets
+      - *script_pub_get
+      - name: Boot the simulator
+        script: |
+          udid=$(xcrun simctl list devices available \
+            | sed -n "s/.*${SMOKE_SIM_DEVICE} (\([0-9A-F-]\{36\}\)).*/\1/p" \
+            | head -1)
+          if [ -z "$udid" ]; then
+            echo "$SMOKE_SIM_DEVICE is unavailable; falling back to any iPhone."
+            udid=$(xcrun simctl list devices available \
+              | sed -n 's/.*iPhone.* (\([0-9A-F-]\{36\}\)).*/\1/p' | head -1)
+          fi
+          test -n "$udid"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          echo "$udid" > "$CM_BUILD_DIR/smoke-sim-udid"
+      - name: Render smoke scenes
+        # See the macOS workflow for why the exit code is recorded, not raised.
+        script: |
+          cd "$CM_BUILD_DIR/examples/smoke_render"
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/smoke_test.dart \
+            -d "$(cat "$CM_BUILD_DIR/smoke-sim-udid")" \
+            --enable-impeller --enable-flutter-gpu
+          echo $? > "$CM_BUILD_DIR/smoke-status"
+        ignore_failure: true
+      - *script_argos_upload
+      - *script_render_gate
+    artifacts:
+      - examples/smoke_render/build/smoke/*.png
+    publishing: *smoke_publishing
