@@ -192,13 +192,6 @@ base class Node implements SceneGraph {
   // alongside _worldTransform and invalidated by the same dirty flag.
   bool _windingFlipped = false;
 
-  /// When true, this node's own transform is treated as a coordinate-system
-  /// convention rather than a geometry mirror, and excluded from
-  /// [windingFlipped]. The importers set this on the synthesized scene root
-  /// that flips glTF's handedness (`scale(1, 1, -1)`), so that flip does not
-  /// reverse cull winding the way a real mirror node should.
-  bool excludeFromWindingParity = false;
-
   /// The skin attached to this node, used for skeletal animation. Set by
   /// importers (both the scene importer and the runtime glTF/GLB loader).
   Skin? skin;
@@ -231,8 +224,7 @@ base class Node implements SceneGraph {
   Matrix4 get globalTransform {
     if (!_worldTransformDirty) return _worldTransform;
     final parent = _parent;
-    final selfFlip =
-        !excludeFromWindingParity && _localTransform.determinant() < 0;
+    final selfFlip = _localTransform.determinant() < 0;
     if (parent == null) {
       _worldTransform.setFrom(_localTransform);
       _windingFlipped = selfFlip;
@@ -886,10 +878,6 @@ base class Node implements SceneGraph {
     );
     result.isJoint = isJoint;
     result._localTransformTrs = _localTransformTrs?.clone();
-    // Preserve the coordinate-convention flag so a cloned scene root's
-    // handedness flip is still excluded from winding parity (otherwise the
-    // clone renders with reversed cull winding: see-through, inverted geometry).
-    result.excludeFromWindingParity = excludeFromWindingParity;
     result._animations.addAll(_animations);
     // Components opt into cloning through [Component.cloneFor]; mesh
     // components are excluded because the mesh is already cloned through the

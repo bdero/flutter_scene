@@ -166,6 +166,7 @@ void main() {
       ],
       bufferViews: views,
       bufferData: source.buffer.asUint8List(),
+      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
     );
 
     final vertices = Float32List.sublistView(packed.vertexBytes);

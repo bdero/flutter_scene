@@ -40,10 +40,10 @@ Future<void> loadSubtree(
   }
   if (node.children.isNotEmpty) return; // already loaded
 
-  // Expand the instance in isolation, in engine space (no handedness mirror)
-  // and at identity: the placeholder already carries the placement, and the
+  // Expand the instance in isolation at identity. The placeholder already
+  // carries the placement, and the
   // realized content inherits the placeholder's frame from its ancestors.
-  final host = SceneDocument(stage: StageMetadata(handedness: Handedness.left));
+  final host = SceneDocument();
   host.addNode(NodeSpec(id: host.newId(), instance: _eager(spec)), root: true);
   final composed = await composeSceneAsync(host, load: load);
   final realized = await realizeSceneAsync(

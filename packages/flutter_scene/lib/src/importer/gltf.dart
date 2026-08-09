@@ -7,6 +7,7 @@
 library;
 
 export 'src/gltf/accessor.dart';
+export 'src/gltf/coordinate_policy.dart';
 export 'src/gltf/glb.dart';
 export 'src/gltf/parser.dart';
 export 'src/gltf/primitive_packer.dart';

@@ -76,7 +76,7 @@ class InstancedMeshComponent extends Component {
     if (worldTransformVersion != _worldTransformVersion) {
       item.worldTransform.setFrom(worldTransform);
     }
-    item.windingFlipped = node.windingFlipped;
+    item.refreshWinding(node.windingFlipped);
     item.shadowStatic = node.shadowStatic;
     item.castsShadows = node.castsShadows;
     item.instanceTransforms = instancedMesh.instances;

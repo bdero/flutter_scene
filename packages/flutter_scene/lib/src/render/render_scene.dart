@@ -61,10 +61,23 @@ class RenderItem {
   /// not intersect (`layers & layerMask == 0`).
   int layers = kRenderLayerAll;
 
-  /// Whether the owning node's transform reverses triangle winding (a mirror
-  /// up the chain). Refreshed each frame; the encoder flips cull winding when
-  /// set so mirrored nodes don't render inside-out.
-  bool windingFlipped = false;
+  /// Whether the owning node's world transform reverses triangle winding.
+  bool nodeWindingFlipped = false;
+
+  /// Whether this item's base geometry needs reversed native winding.
+  bool get windingFlipped => windingFor(geometry);
+
+  /// Combines node-transform parity with the geometry's source convention.
+  @internal
+  void refreshWinding(bool value) => nodeWindingFlipped = value;
+
+  /// Returns the winding parity for [drawnGeometry].
+  ///
+  /// A selected level of detail can use a different source convention from
+  /// the item's base geometry.
+  @internal
+  bool windingFor(Geometry drawnGeometry) =>
+      nodeWindingFlipped != drawnGeometry.sourceWindingFlipped;
 
   /// Mirrors the owning node's `shadowStatic` promise, refreshed each frame.
   /// Static casters render into cached shadow tiles; dynamic casters render

@@ -481,29 +481,4 @@ void main() {
     expect(placeholder.instance!.load, LoadPolicy.lazy);
     expect(placeholder.instance!.source.key, 'streamed');
   });
-
-  test('inserts a mirror adapter for an opposite-handedness prefab', () {
-    final prefab = _prefab();
-    prefab.stage.handedness = Handedness.right;
-
-    final host = SceneDocument(); // left-handed by default
-    host.createNode(name: 'inst', root: true).instance = PrefabInstanceSpec(
-      source: const AssetRef('p'),
-    );
-
-    final composed = composeScene(host, resolve: _resolveTo(prefab));
-    final instance = composed.rootNodes.single;
-    expect(instance.name, 'inst');
-    // The prefab root is not merged; an adapter sits between them.
-    final adapter = composed.node(instance.children.single)!;
-    expect(adapter.excludeFromWindingParity, isTrue);
-    final matrix = adapter.transform.toMatrix4();
-    expect(matrix.entry(2, 2), -1.0);
-    final body = composed.node(adapter.children.single)!;
-    expect(body.name, 'body');
-
-    // The adapter flag survives the JSON round trip.
-    final restored = readFscene(writeFscene(composed));
-    expect(restored.node(adapter.id)!.excludeFromWindingParity, isTrue);
-  });
 }

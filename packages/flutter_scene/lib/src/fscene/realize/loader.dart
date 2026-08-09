@@ -10,8 +10,8 @@ import 'package:flutter_scene/src/node.dart';
 /// Parses and realizes a `.fscene` document from [source] text into a live
 /// node graph (synchronously).
 ///
-/// The returned root carries the document's handedness (see [realizeScene]);
-/// add it to a scene. Realizing meshes builds GPU geometry and materials, so
+/// The returned root and document data use native scene coordinates. Add the
+/// root to a scene. Realizing meshes builds GPU geometry and materials, so
 /// call this after the engine's static resources are ready. A document that
 /// references external image assets or `fmat` materials needs [loadFsceneAsset]
 /// (or [realizeSceneAsync]); the synchronous path uses placeholders for those.

@@ -95,7 +95,6 @@ export 'package:scene/scene.dart'
         FmatSkySpec,
         GeometryResource,
         GradientSkySpec,
-        Handedness,
         IcosphereGeometrySpec,
         LoadPolicy,
         MaterialResource,
@@ -121,7 +120,6 @@ export 'package:scene/scene.dart'
         TextureResource,
         TorusGeometrySpec,
         TransformSpec,
-        TrsTransform,
-        UpAxis;
+        TrsTransform;
 export 'src/fscene/stream/stream.dart'
     show loadSubtree, unloadSubtree, isLazySubtree, isSubtreeLoaded;

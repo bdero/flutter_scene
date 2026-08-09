@@ -9,6 +9,8 @@ import 'package:file_selector/file_selector.dart';
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/inline_assets.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -218,8 +220,13 @@ Future<void> saveFscene(EditorController controller, String path) async {
 /// Throws an [IOException] on read failure and a [FormatException] on bad JSON.
 Future<EditorController> openFscene(String path) async {
   final source = await File(path).readAsString();
-  return EditorController.fromFscene(
-    source,
+  final document = readFscene(source);
+  final payloadAsset = resolveExternalPayloadAsset(document, File(path).uri);
+  if (payloadAsset != null) {
+    inlineExternalPayloadAsset(document, payloadAsset);
+  }
+  return EditorController.fromImportedScene(
+    document,
     baseDirectory: File(path).parent.path,
   );
 }

@@ -1,10 +1,7 @@
 {
-  "fscene": 1,
+  "fscene": 2,
   "documentId": "X0YSK0FWY14EKA1VG12HZRWRTM",
   "stage": {
-    "upAxis": "y",
-    "handedness": "left",
-    "unitsPerMeter": 1.0,
     "environment": {
       "type": "studio"
     },

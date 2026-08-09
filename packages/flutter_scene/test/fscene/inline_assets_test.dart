@@ -29,6 +29,30 @@ void main() {
 
   Uri sceneUri() => File('${tempDir.path}/scene.fscene').uri;
 
+  test('attaches bytes from a binary payload sidecar', () {
+    final source = SceneDocument();
+    final payload = source.addPayload(
+      PayloadSpec(
+        source.newId(),
+        encoding: PayloadEncoding.vertexBuffer,
+        layout: 'unskinned',
+        length: 4,
+        bytes: Uint8List.fromList([1, 2, 3, 4]),
+      ),
+    );
+    const key = 'scene.payloads.fsceneb';
+    File('${tempDir.path}/$key').writeAsBytesSync(writeFsceneb(source));
+
+    final manifest = readFscene(writeFscene(source))..payloadSource = key;
+    final asset = resolveExternalPayloadAsset(manifest, sceneUri());
+    expect(asset?.key, key);
+    expect(manifest.payload(payload.id)?.bytes, isNull);
+
+    inlineExternalPayloadAsset(manifest, asset!);
+    expect(manifest.payload(payload.id)?.bytes, [1, 2, 3, 4]);
+    expect(() => writeFsceneb(manifest), returnsNormally);
+  });
+
   test('resolves and embeds an external texture as an rgba8 payload', () {
     final key = writeImage('wood.png', 4, 2);
     final document = SceneDocument();

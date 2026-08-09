@@ -12,7 +12,7 @@ import 'package:scene/src/specs.dart';
 
 /// The current `.fscene` format version this build reads and writes.
 /// {@category Serialization}
-const int currentFsceneVersion = 1;
+const int currentFsceneVersion = 2;
 
 /// The format feature flags this build understands. A document that lists a
 /// feature outside this set in its `featuresRequired` is refused.
@@ -108,7 +108,11 @@ Map<String, dynamic> migrateFscene(
   List<FsceneMigration>? migrations,
 }) {
   final steps = migrations ?? _builtInMigrations;
-  var version = json['fscene'] as int? ?? currentFsceneVersion;
+  final encodedVersion = json['fscene'];
+  if (encodedVersion is! int) {
+    throw const FsceneVersionException('Document has no format version');
+  }
+  var version = encodedVersion;
   if (version > currentFsceneVersion) {
     throw FsceneVersionException(
       'Document version $version is newer than supported $currentFsceneVersion',
@@ -146,6 +150,7 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
     json['featuresRequired'] = doc.featuresRequired.toList()..sort();
   }
   if (doc.generator != null) json['generator'] = doc.generator;
+  if (doc.payloadSource != null) json['payloadSource'] = doc.payloadSource;
   json['stage'] = encodeStage(doc.stage, idKey);
   if (doc.resources.isNotEmpty) {
     json['resources'] = _encodeIdMap(
@@ -238,9 +243,6 @@ Map<String, dynamic> encodeStage(
   StageMetadata s, [
   String Function(LocalId) idKey = _tokenIdKey,
 ]) => {
-  'upAxis': s.upAxis.name,
-  'handedness': s.handedness.name,
-  'unitsPerMeter': s.unitsPerMeter,
   if (s.environmentRef != null) 'environmentRef': idKey(s.environmentRef!),
   if (s.antiAliasingMode != 'auto') 'antiAliasing': s.antiAliasingMode,
   if (s.renderScale != 1.0) 'renderScale': s.renderScale,
@@ -441,7 +443,6 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.layers != 1) 'layers': n.layers,
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
-    if (n.excludeFromWindingParity) 'excludeWindingParity': true,
     if (!n.visible) 'visible': false,
   };
 }
@@ -597,6 +598,7 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
   );
   doc.formatVersion = version;
   doc.generator = json['generator'] as String?;
+  doc.payloadSource = json['payloadSource'] as String?;
   doc.featuresUsed.addAll(
     (json['featuresUsed'] as List?)?.cast<String>() ?? const [],
   );
@@ -653,7 +655,6 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
   instance: json['instance'] != null
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
-  excludeFromWindingParity: json['excludeWindingParity'] as bool? ?? false,
   visible: json['visible'] as bool? ?? true,
 );
 
@@ -927,11 +928,6 @@ PayloadSpec _decodePayload(LocalId id, Map<String, dynamic> json) =>
     );
 
 StageMetadata _decodeStage(Map<String, dynamic> json) => StageMetadata(
-  upAxis: UpAxis.values.byName(json['upAxis'] as String? ?? 'y'),
-  handedness: Handedness.values.byName(
-    json['handedness'] as String? ?? 'right',
-  ),
-  unitsPerMeter: _d(json['unitsPerMeter'] ?? 1.0),
   antiAliasingMode: json['antiAliasing'] as String? ?? 'auto',
   renderScale: _d(json['renderScale'] ?? 1.0),
   filterQuality: json['filterQuality'] as String? ?? 'medium',

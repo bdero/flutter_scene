@@ -108,6 +108,7 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
       accessors: doc.accessors,
       bufferViews: doc.bufferViews,
       bufferData: input.bufferData,
+      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       includeSkinning: includeSkinning,
     );
     final carriesSkinning =
@@ -183,6 +184,7 @@ Future<Node> _buildScene(
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
         engineNodes: engineNodes,
+        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
   ];
   for (int i = 0; i < doc.nodes.length; i++) {
@@ -194,13 +196,13 @@ Future<Node> _buildScene(
 
   // Pick the default scene (or the first one, or empty).
   final sceneIndex = doc.scene ?? (doc.scenes.isNotEmpty ? 0 : null);
-  // Apply a Z-axis flip on the scene root to convert from glTF's right-handed
-  // coordinate system to flutter_scene's expected convention, matching the
-  // handedness mirror the scene realizer applies for right-handed documents.
+  // Keep source data untouched and convert once at the imported boundary.
+  // Packed geometry carries its source winding so the renderer can combine
+  // it with this mirror without rewriting indices or vertex data.
   final root = Node(
     name: 'root',
     localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-  )..excludeFromWindingParity = true;
+  );
   if (doc.materialsVariants.isNotEmpty) {
     root.addComponent(
       MaterialsVariantsComponent.internal(
@@ -227,6 +229,7 @@ Future<Node> _buildScene(
         bufferViews: doc.bufferViews,
         bufferData: bufferData,
         engineNodes: engineNodes,
+        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       ),
     );
   }
@@ -253,17 +256,22 @@ void _populateNode({
   required List<MaterialsVariantBinding> variantBindings,
 }) {
   engineNode.name = resolveGltfNodeName(gltfNode.name, index);
+  const coordinatePolicy = GltfCoordinatePolicy.runtimeBoundary;
   final matrix = gltfNode.matrix;
   if (matrix != null) {
-    engineNode.localTransform = matrix.clone();
+    engineNode.localTransform = coordinatePolicy.convertTransform(matrix);
   } else {
     // Keep the authored TRS. Recovering it from the composed matrix puts
     // a mirrored bone's negative scale on the wrong axis, which breaks
     // animation blending.
     engineNode.setLocalTransformTrs(
       DecomposedTransform(
-        translation: gltfNode.translation?.clone() ?? Vector3.zero(),
-        rotation: gltfNode.rotation?.clone() ?? Quaternion.identity(),
+        translation: coordinatePolicy.convertPosition(
+          gltfNode.translation ?? Vector3.zero(),
+        ),
+        rotation: coordinatePolicy.convertRotation(
+          gltfNode.rotation ?? Quaternion.identity(),
+        ),
         scale: gltfNode.scale?.clone() ?? Vector3(1.0, 1.0, 1.0),
       ),
     );
@@ -337,8 +345,8 @@ void _populateNode({
 
 // Builds the engine light component for a KHR_lights_punctual light, or null
 // for an unsupported type. glTF lights emit along the node's local -Z axis, so
-// directional and spot lights take that as their local direction (the node
-// transform, and the scene-root handedness flip, then aim them in world space).
+// directional and spot lights take that as their local direction. The node
+// transform and imported boundary then aim them in native world space.
 Component? _buildLightComponent(GltfPunctualLight light) {
   // The extension carries no shadow metadata, so imported lights do not add
   // shadow passes implicitly.

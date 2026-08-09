@@ -1,5 +1,5 @@
 // Covers the glTF -> .fscene importer. The load-bearing check is byte parity
-// against packGltfPrimitive (the same packer the runtime GLB importer uses).
+// against the shared packer in native-baking mode.
 // Skinned geometry is stored interleaved, so its payload equals the packer's
 // bytes directly; unskinned geometry is stored de-interleaved (structure of
 // arrays), so its payload equals the packer's interleaved bytes split into the
@@ -70,7 +70,7 @@ void main() {
       expect(directional.type, 'directionalLight');
       expect(
         (directional.properties['direction'] as Vec3Value).value,
-        Vector3(0, 0, -1),
+        Vector3(0, 0, 1),
       );
       expect(
         (directional.properties['castsShadow'] as BoolValue).value,
@@ -131,6 +131,7 @@ void main() {
                   accessors: doc.accessors,
                   bufferViews: doc.bufferViews,
                   bufferData: container.binaryChunk,
+                  coordinatePolicy: GltfCoordinatePolicy.bakeNative,
                   includeSkinning: includeSkinning,
                 ),
               );
@@ -231,7 +232,7 @@ void main() {
       );
     });
 
-    test('declares right-handed glTF coordinates and a generator', () {
+    test('emits a native-space document and a generator', () {
       final path = _resolve('examples/assets_src/fcar.glb');
       if (!File(path).existsSync()) {
         // ignore: avoid_print
@@ -239,8 +240,7 @@ void main() {
         return;
       }
       final document = importGlbToSceneDocument(File(path).readAsBytesSync());
-      expect(document.stage.handedness, Handedness.right);
-      expect(document.stage.upAxis, UpAxis.y);
+      expect(document.formatVersion, currentFsceneVersion);
       expect(document.generator, isNotNull);
       expect(document.roots, isNotEmpty);
     });
@@ -350,10 +350,10 @@ void main() {
             // BoundsSpec vectors store float32; quantize the baker's doubles.
             expect(bounds!.min.x, _f32(union.minX));
             expect(bounds.min.y, _f32(union.minY));
-            expect(bounds.min.z, _f32(union.minZ));
+            expect(bounds.min.z, _f32(-union.maxZ));
             expect(bounds.max.x, _f32(union.maxX));
             expect(bounds.max.y, _f32(union.maxY));
-            expect(bounds.max.z, _f32(union.maxZ));
+            expect(bounds.max.z, _f32(-union.minZ));
             checked++;
           }
         }
@@ -427,12 +427,12 @@ void main() {
         if (min == null || max == null) continue;
         final bounds = geometries[i].bounds;
         expect(bounds, isNotNull);
-        expect(bounds!.min.x, min[0]);
-        expect(bounds.min.y, min[1]);
-        expect(bounds.min.z, min[2]);
-        expect(bounds.max.x, max[0]);
-        expect(bounds.max.y, max[1]);
-        expect(bounds.max.z, max[2]);
+        expect(bounds!.min.x, _f32(min[0]));
+        expect(bounds.min.y, _f32(min[1]));
+        expect(bounds.min.z, _f32(-max[2]));
+        expect(bounds.max.x, _f32(max[0]));
+        expect(bounds.max.y, _f32(max[1]));
+        expect(bounds.max.z, _f32(-min[2]));
         checked++;
       }
       expect(checked, greaterThan(0));

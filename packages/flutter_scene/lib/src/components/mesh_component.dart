@@ -176,7 +176,7 @@ class MeshComponent extends Component {
       item.frustumCulled = frustumCulled;
       item.layers = layers;
       if (transformChanged) item.worldTransform.setFrom(worldTransform);
-      item.windingFlipped = windingFlipped;
+      item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
       item.castsShadows = node.castsShadows;
       item.highlightColor = highlightColor;

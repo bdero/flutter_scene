@@ -26,6 +26,60 @@ import '../texture/mipmap.dart';
 /// resolved to a file on disk.
 typedef ExternalImageAsset = ({String key, File file});
 
+/// A binary scene that supplies bytes for a textual scene's payload manifest.
+typedef ExternalPayloadAsset = ({String key, File file});
+
+/// Resolves the optional payload sidecar referenced by [document].
+ExternalPayloadAsset? resolveExternalPayloadAsset(
+  SceneDocument document,
+  Uri sceneSourceUri,
+) {
+  final key = document.payloadSource;
+  if (key == null) return null;
+  final file = _resolveAssetFile(sceneSourceUri.resolve('.'), key);
+  if (file == null) {
+    stderr.writeln(
+      'flutter_scene: payload source "$key" referenced by the scene was not '
+      'found on disk',
+    );
+    return null;
+  }
+  return (key: key, file: file);
+}
+
+/// Attaches payload bytes from [asset] to matching manifest entries.
+void inlineExternalPayloadAsset(
+  SceneDocument document,
+  ExternalPayloadAsset asset,
+) {
+  final source = readFsceneb(asset.file.readAsBytesSync());
+  for (final entry in document.payloads.entries) {
+    if (entry.value.bytes != null) continue;
+    final supplied = source.payloads[entry.key];
+    final bytes = supplied?.bytes;
+    if (supplied == null || bytes == null) {
+      throw FscenebFormatException(
+        'Payload source ${asset.key} has no bytes for ${entry.key}',
+      );
+    }
+    if (!_samePayloadDescriptor(entry.value, supplied)) {
+      throw FscenebFormatException(
+        'Payload source ${asset.key} has incompatible metadata for '
+        '${entry.key}',
+      );
+    }
+    entry.value.bytes = bytes;
+  }
+}
+
+bool _samePayloadDescriptor(PayloadSpec a, PayloadSpec b) =>
+    a.encoding == b.encoding &&
+    a.layout == b.layout &&
+    a.format == b.format &&
+    a.width == b.width &&
+    a.height == b.height &&
+    a.length == b.length;
+
 /// The distinct external image files [document] references, resolved relative to
 /// the scene file at [sceneSourceUri].
 ///

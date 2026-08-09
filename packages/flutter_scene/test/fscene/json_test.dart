@@ -14,6 +14,7 @@ SceneDocument _sampleDocument() {
     allocator: IdAllocator(session: 7),
   );
   doc.generator = 'test';
+  doc.payloadSource = 'payloads/sample.fsceneb';
   doc.featuresRequired.add('skinning');
   final stageEnv = doc.addResource(
     EnvironmentResource(
@@ -98,6 +99,7 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
   expect(b.documentId, a.documentId);
   expect(b.formatVersion, a.formatVersion);
   expect(b.generator, a.generator);
+  expect(b.payloadSource, a.payloadSource);
   expect(b.featuresRequired, a.featuresRequired);
   expect(b.stage.environmentRef, a.stage.environmentRef);
   final envA = a.resources[a.stage.environmentRef!]! as EnvironmentResource;
@@ -243,19 +245,26 @@ void main() {
     test('refuses a newer-than-supported version', () {
       final text = writeFscene(
         _sampleDocument(),
-      ).replaceFirst('"fscene": 1', '"fscene": 999');
+      ).replaceFirst('"fscene": 2', '"fscene": 999');
       expect(() => readFscene(text), throwsA(isA<FsceneVersionException>()));
     });
 
     test('runs the migration chain to the current version', () {
-      // A version-0 document plus a single v0 -> v1 migration step.
-      final v1Text = writeFscene(_sampleDocument());
-      final v0Text = v1Text.replaceFirst('"fscene": 1', '"fscene": 0');
-      // Without a migration, version 0 cannot load.
+      final currentText = writeFscene(_sampleDocument());
+      final v0Text = currentText.replaceFirst('"fscene": 2', '"fscene": 0');
       expect(() => readFscene(v0Text), throwsA(isA<FsceneVersionException>()));
-      // With one, it migrates and loads.
-      final migrated = readFscene(v0Text, migrations: [(json) => json]);
+      final migrated = readFscene(
+        v0Text,
+        migrations: [(json) => json, (json) => json],
+      );
       expect(migrated.formatVersion, currentFsceneVersion);
+    });
+
+    test('refuses version 1 without a coordinate migration', () {
+      final text = writeFscene(
+        _sampleDocument(),
+      ).replaceFirst('"fscene": 2', '"fscene": 1');
+      expect(() => readFscene(text), throwsA(isA<FsceneVersionException>()));
     });
 
     test('refuses an unsupported required feature', () {

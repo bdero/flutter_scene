@@ -61,19 +61,15 @@ void main() {
   });
 
   group('clone', () {
-    test('preserves excludeFromWindingParity so the scene-root flip does not '
-        'invert winding', () {
-      // A synthesized scene root: handedness flip excluded from winding
-      // parity (as the importers set it).
+    test('preserves mirrored transform winding', () {
       final root = Node(
         localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-      )..excludeFromWindingParity = true;
+      );
       root.add(Node());
-      expect(root.windingFlipped, isFalse);
+      expect(root.windingFlipped, isTrue);
 
       final clone = root.clone();
-      expect(clone.excludeFromWindingParity, isTrue);
-      expect(clone.windingFlipped, isFalse);
+      expect(clone.windingFlipped, isTrue);
     });
   });
 }

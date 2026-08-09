@@ -71,7 +71,6 @@ Future<SceneDiff> reloadScene(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..excludeFromWindingParity = spec.excludeFromWindingParity
         ..visible = spec.visible,
       id,
     );
@@ -98,7 +97,6 @@ Future<SceneDiff> reloadScene(
     final spec = newDocument.nodes[change.id]!;
     if (change.transform) {
       applyTransformSpec(node, spec.transform);
-      node.excludeFromWindingParity = spec.excludeFromWindingParity;
     }
     if (change.name) node.name = spec.name;
     if (change.layers) node.layers = spec.layers;

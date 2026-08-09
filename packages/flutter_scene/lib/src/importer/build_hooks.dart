@@ -185,11 +185,13 @@ void buildScenes({
     // conversion below when the cache is stale.
     SceneDocument? fsceneDocument;
     List<ExternalImageAsset> imageAssets = const [];
+    ExternalPayloadAsset? payloadAsset;
     if (extension == '.fscene') {
       fsceneDocument = readFscene(
         File(sourceUri.toFilePath()).readAsStringSync(),
       );
       imageAssets = resolveExternalImageAssets(fsceneDocument, sourceUri);
+      payloadAsset = resolveExternalPayloadAsset(fsceneDocument, sourceUri);
     }
 
     // Skip the work when the source and settings are unchanged since the
@@ -202,12 +204,16 @@ void buildScenes({
     // Fold each referenced image's content hash into the stamp, so editing an
     // embedded image (not just the scene text) invalidates the cache and
     // rebuilds the dependent `.fsceneb`.
-    final assetStamp =
-        (imageAssets
-                .map((a) => '${a.key}=${contentHash(a.file.readAsBytesSync())}')
-                .toList()
-              ..sort())
-            .join(',');
+    final assetHashes = imageAssets
+        .map((a) => '${a.key}=${contentHash(a.file.readAsBytesSync())}')
+        .toList();
+    if (payloadAsset != null) {
+      assetHashes.add(
+        '${payloadAsset.key}='
+        '${contentHash(payloadAsset.file.readAsBytesSync())}',
+      );
+    }
+    final assetStamp = (assetHashes..sort()).join(',');
     final stamp =
         'rev=$buildCacheRevision scene compress=$compressTextures '
         'kind=$extension src=$sourceHash assets=[$assetStamp]';
@@ -233,6 +239,9 @@ void buildScenes({
           compressTextures: compressTextures,
           alignForCompression: alignForCompression,
         );
+        if (payloadAsset != null) {
+          inlineExternalPayloadAsset(fsceneDocument, payloadAsset);
+        }
         File(
           outputSceneUri.toFilePath(),
         ).writeAsBytesSync(writeFsceneb(fsceneDocument));
@@ -246,6 +255,9 @@ void buildScenes({
     // scene's hot reload.
     for (final asset in imageAssets) {
       buildOutput.dependencies.add(asset.file.uri);
+    }
+    if (payloadAsset != null) {
+      buildOutput.dependencies.add(payloadAsset.file.uri);
     }
 
     if (emitDataAssets) {

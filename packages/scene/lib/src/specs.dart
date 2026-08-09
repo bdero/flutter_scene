@@ -184,7 +184,6 @@ class NodeSpec {
     this.layers = 1,
     this.skin,
     this.instance,
-    this.excludeFromWindingParity = false,
     this.visible = true,
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
@@ -213,12 +212,6 @@ class NodeSpec {
 
   /// Non-null when this node is a prefab instance.
   PrefabInstanceSpec? instance;
-
-  /// Whether this node's mirror transform is excluded from winding-parity
-  /// tracking. Set on handedness-adapter nodes (a `scale(1, 1, -1)` that
-  /// converts between authoring spaces rather than mirroring content), so
-  /// the renderer does not flip triangle winding under it.
-  bool excludeFromWindingParity;
 
   /// Whether this node (and so its subtree) renders. Hidden nodes still
   /// realize and tick; only drawing is skipped.
@@ -681,35 +674,6 @@ class PayloadSpec {
   Uint8List? bytes;
 }
 
-/// The up axis convention a document was authored in.
-/// {@category Documents}
-enum UpAxis {
-  /// X is up.
-  x,
-
-  /// Y is up (the glTF convention).
-  y,
-
-  /// Z is up.
-  z,
-}
-
-/// The chirality of the coordinate system a document's positions and geometry
-/// are expressed in. Drives the scene-root mirror the realizer applies, kept
-/// as metadata rather than a literal node transform.
-/// {@category Documents}
-enum Handedness {
-  /// The engine's native, left-handed space (`+Z` into the screen). Content
-  /// authored in code or an editor against the runtime is already in this
-  /// space, so the realizer applies no mirror. This is the default.
-  left,
-
-  /// Right-handed (the glTF convention, `+Z` out of the screen). The importer
-  /// declares this; the realizer mirrors `scale(1, 1, -1)` to convert it to
-  /// the engine's space.
-  right,
-}
-
 /// The image-based-lighting environment for a scene.
 /// {@category Documents}
 sealed class EnvironmentSpec {
@@ -981,29 +945,20 @@ class RenderViewSpec {
   final String? filterQuality;
 }
 
-/// Scene-wide, non-spatial render settings (lights and cameras are per-node
-/// components, not stage data).
+/// Scene-wide, non-spatial render settings.
+///
+/// Every document uses the native left-handed coordinate system with +Y up,
+/// +Z forward, and meters as world units. Lights and cameras are per-node
+/// components.
 /// {@category Documents}
 class StageMetadata {
   /// Creates stage metadata with the documented defaults.
   StageMetadata({
-    this.upAxis = UpAxis.y,
-    this.handedness = Handedness.left,
-    this.unitsPerMeter = 1.0,
     this.environmentRef,
     this.antiAliasingMode = 'auto',
     this.renderScale = 1.0,
     this.filterQuality = 'medium',
   });
-
-  /// The authored up axis.
-  UpAxis upAxis;
-
-  /// The authored handedness.
-  Handedness handedness;
-
-  /// World units per meter.
-  double unitsPerMeter;
 
   /// The anti-aliasing mode name (`none`, `msaa`, `fxaa`, `auto`), the
   /// scene-wide default views inherit.
