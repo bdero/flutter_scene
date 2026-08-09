@@ -104,53 +104,96 @@ void main() {
     world.dispose();
   });
 
-  test('restore rejects a snapshot after a body is created', () async {
+  test('restore rejects a bare native snapshot', () async {
     await RapierWorld.ensureInitialized();
     final world = RapierWorld();
-
-    world.createBody(
-      target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
-      type: BodyType.dynamic_,
-      additionalMass: 1,
-    );
-    final snapshot = world.snapshot();
-    final createdAfterSnapshot = world.createBody(
-      target: SimplePoseTarget(translation: Vector3(1, 10, 0)),
-      type: BodyType.dynamic_,
-      additionalMass: 1,
-    );
-
-    expect(world.restore(snapshot), isFalse);
-
-    // The native world was not rewound, so the newly-created Dart body
-    // remains valid for subsequent simulation.
-    world.step(1 / 60);
-    expect(world.readBodyPose(createdAfterSnapshot).$1.y, lessThan(10));
+    // Snapshots carry a membership envelope, so payloads written before it
+    // existed are not restorable.
+    final envelope = world.snapshot();
+    expect(world.restore(Uint8List.sublistView(envelope, 12)), isFalse);
     world.dispose();
   });
 
-  test('restore rejects a snapshot after a body is destroyed', () async {
+  test('restore drops bodies created after the snapshot', () async {
+    await RapierWorld.ensureInitialized();
+    final world = RapierWorld();
+
+    final kept = SimplePoseTarget(translation: Vector3(0, 10, 0));
+    world.createBody(target: kept, type: BodyType.dynamic_, additionalMass: 1);
+    final snapshot = world.snapshot();
+
+    final rewound = SimplePoseTarget(translation: Vector3(1, 10, 0));
+    world.createBody(
+      target: rewound,
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+
+    expect(world.restore(snapshot), isTrue);
+
+    // The restore rewound the world past the second body, so only the body
+    // the snapshot captured is still driven.
+    world.step(1 / 60);
+    world.interpolatePoses(1);
+    expect(kept.worldTranslation.y, lessThan(10));
+    expect(rewound.worldTranslation.y, closeTo(10, 1e-9));
+    world.dispose();
+  });
+
+  test('restore removes bodies destroyed after the snapshot', () async {
     await RapierWorld.ensureInitialized();
     final world = RapierWorld();
 
     final body = world.createBody(
       target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
-      type: BodyType.dynamic_,
-      additionalMass: 1,
+      type: BodyType.fixed,
+      additionalMass: 0,
     );
+    world.createColliders(body, const SphereShape(radius: 1));
+    world.step(1 / 60);
+    expect(world.overlapSphere(Vector3(0, 10, 0), 0.5), isNotEmpty);
+
     final snapshot = world.snapshot();
     world.destroyBody(body);
+    world.step(1 / 60);
+    expect(world.overlapSphere(Vector3(0, 10, 0), 0.5), isEmpty);
 
-    expect(world.restore(snapshot), isFalse);
+    // Restoring brings the body back natively, but nothing owns its pose
+    // any more, so it does not survive the reconcile as a ghost.
+    expect(world.restore(snapshot), isTrue);
+    world.step(1 / 60);
+    expect(world.overlapSphere(Vector3(0, 10, 0), 0.5), isEmpty);
+    world.dispose();
+  });
 
-    // The destroyed body is not silently resurrected in native state.
-    final replacement = world.createBody(
-      target: SimplePoseTarget(translation: Vector3(1, 10, 0)),
+  test('handles survive the envelope past the 32-bit lane', () async {
+    await RapierWorld.ensureInitialized();
+    final world = RapierWorld();
+
+    // Recycling an arena slot bumps its generation, which lives in the
+    // handle's high 32 bits.
+    final first = world.createBody(
+      target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
       type: BodyType.dynamic_,
       additionalMass: 1,
     );
+    world.destroyBody(first);
+    final recycled = world.createBody(
+      target: SimplePoseTarget(translation: Vector3(0, 10, 0)),
+      type: BodyType.dynamic_,
+      additionalMass: 1,
+    );
+    expect(recycled, greaterThan(0xFFFFFFFF));
+
+    // A membership-preserving restore round-trips that handle.
+    final snapshot = world.snapshot();
+    for (var i = 0; i < 60; i++) {
+      world.step(1 / 60);
+    }
+    expect(world.restore(snapshot), isTrue);
     world.step(1 / 60);
-    expect(world.readBodyPose(replacement).$1.y, lessThan(10));
+    world.interpolatePoses(1);
+    expect(world.readBodyPose(recycled).$1.y, closeTo(10, 0.01));
     world.dispose();
   });
 }
