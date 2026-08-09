@@ -13,6 +13,8 @@
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
   <a title="Test" href="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml?query=event%3Apush+branch%3Amaster"><img src="https://github.com/bdero/flutter_scene/actions/workflows/flutter.yml/badge.svg?branch=master&event=push"/></a>
+  <a title="Codemagic build status" href="https://codemagic.io/app/6a758ce0a34611cf3c8db6ae/smoke-macos/latest_build"><img src="https://api.codemagic.io/apps/6a758ce0a34611cf3c8db6ae/smoke-macos/status_badge.svg"/></a>
+  <a title="Covered by Argos Visual Testing" href="https://app.argos-ci.com/x/flutter_scene"><img src="https://argos-ci.com/badge.svg" alt="Covered by Argos Visual Testing"/></a>
   <a title="Discord" href="https://discord.gg/BfGKrcheRj"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white"/></a>
 </p>
 
@@ -146,6 +148,14 @@ On the web, no flags are needed; it works under both the CanvasKit and Skwasm re
 ### **Q:** How does web support work?
 
 Impeller and Flutter GPU aren't available on the web, so `flutter_scene` ships a built-in WebGL2 backend (a drop-in for `flutter_gpu`) and renders through it there. It works under both the CanvasKit and Skwasm web renderers, with no extra flags or configuration.
+
+## Sponsors
+
+Scene's development infrastructure is supported by:
+
+- [Codemagic](https://codemagic.io) - macOS CI on Apple silicon hardware
+
+Interested in supporting Scene's development? Reach out: x@bdero.me
 
 ## Repository
 
