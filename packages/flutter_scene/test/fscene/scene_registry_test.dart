@@ -346,6 +346,49 @@ void main() {
       }
     });
 
+    test('a failed load leaves nothing cached for the next one', () async {
+      clearSceneTemplateCache();
+      const key = 'packages/app/flutter_scene/scene/assets/retry.fsceneb';
+      Uint8List named(String name) {
+        final doc = SceneDocument();
+        doc.addNode(NodeSpec(id: const LocalId(3, 5), name: name), root: true);
+        return writeFsceneb(doc);
+      }
+
+      final bundle = _BytesAssetBundle({key: named('one')});
+      final registry = await SceneRegistry.load(assetKeys: const [key]);
+
+      try {
+        final root = await registry.loadScene('assets/retry', bundle: bundle);
+        expect(root.getChildByName('one'), isNotNull);
+
+        // A hot reload drops the cached template while the first load still
+        // holds its claim, so the next load rebuilds it under that claim.
+        bundle.assets[key] = named('two');
+        HotReloadCoordinator.instance.onReassemble();
+        await _settle(() => root.getChildByName('two') != null);
+        expect(sceneTemplateCacheCount(), 0);
+
+        bundle.failLoads = true;
+        Object? error;
+        try {
+          await registry.loadScene('assets/retry', bundle: bundle);
+        } catch (e) {
+          error = e;
+        }
+        expect(error, isA<StateError>());
+        expect(sceneTemplateCacheCount(), 0);
+
+        // The read succeeds again, so the next load retries rather than
+        // replaying the cached failure.
+        bundle.failLoads = false;
+        final fresh = await registry.loadScene('assets/retry', bundle: bundle);
+        expect(fresh.getChildByName('two'), isNotNull);
+      } finally {
+        clearSceneTemplateCache();
+      }
+    });
+
     test('release during another load keeps the shared template', () async {
       clearSceneTemplateCache();
       const key = 'packages/app/flutter_scene/scene/assets/pending.fsceneb';
@@ -439,6 +482,10 @@ final class _BytesAssetBundle extends CachingAssetBundle {
   /// Successful [load] calls per key.
   final Map<String, int> loadCounts = {};
 
+  /// Fails every scene read while set, standing in for a transient asset
+  /// read error.
+  bool failLoads = false;
+
   @override
   Future<ByteData> load(String key) async {
     if (key == 'AssetManifest.bin') {
@@ -447,6 +494,7 @@ final class _BytesAssetBundle extends CachingAssetBundle {
       };
       return const StandardMessageCodec().encodeMessage(manifest)!;
     }
+    if (failLoads) throw StateError('Asset read failed: $key');
     final bytes = assets[key];
     if (bytes == null) {
       throw StateError('Missing test asset: $key');
