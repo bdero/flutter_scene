@@ -229,13 +229,22 @@ final class SceneRegistry {
     }
 
     final pending = _sceneTemplates[key] ??= loadTemplate();
-    // This provisional claim keeps a template resident while this caller is
-    // still realizing an instance. It becomes the caller's lease only when a
-    // root is successfully returned below.
+    // Claimed before the await so a concurrent release cannot evict the
+    // shared pending template while this caller is still realizing.
     _sceneTemplateHolders.update(key, (n) => n + 1, ifAbsent: () => 1);
-    try {
-      final template = await pending;
 
+    final _SceneTemplate template;
+    try {
+      template = await pending;
+    } catch (_) {
+      // Don't leave a failed load cached; the next call retries. A later
+      // load may already have replaced it, so only drop this one.
+      if (identical(_sceneTemplates[key], pending)) _sceneTemplates.remove(key);
+      _releaseSceneTemplateClaim(key);
+      rethrow;
+    }
+
+    try {
       final root = await realizeSceneAsync(
         template.document,
         registry: registry,
@@ -298,7 +307,7 @@ final class SceneRegistry {
       return root;
     } catch (_) {
       // The caller has no Node to pair with releaseScene after a failed
-      // template load, realization, stage application, or registration.
+      // realization, stage application, or registration.
       _releaseSceneTemplateClaim(key);
       rethrow;
     }

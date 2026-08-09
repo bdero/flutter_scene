@@ -3,6 +3,7 @@
 * GPU memory can be inspected and released. `takeMemoryReport()` reports what the engine's shared caches are pinning, `releaseTexture`/`releaseScene` give a claim back, and `clearTextureCache`/`clearSceneTemplateCache` drop everything.
 * `ResourceGroup.track` scopes a load to the group's lifetime, so `dispose()` releases the claims it took. Previously `dispose()` only released the progress notifier despite the name.
 * Fixed `ResourceGroup` throwing when it was disposed while a tracked load was still in flight, which is what tearing down a level mid-load does.
+* Fixed `loadScene` keeping a scene template claim when it threw after the template loaded, so a caller that got no `Node` no longer has to issue a compensating `releaseScene`.
 
 * `PhysicallyBasedMaterial` and glTF import support every ratified `KHR_materials_*` extension with scene-native property names.
 * Scene startup loads the shared physical-material shader bundle so every `PhysicallyBasedMaterial` property remains synchronous.
