@@ -39,23 +39,6 @@ void main() {
     expect(mirroredChild.windingFlipped, isFalse); // own flip cancels parent's
   });
 
-  test('a node excluded from winding parity does not contribute its flip', () {
-    // Mirrors the importers' coordinate-convention root (the glTF -> scene
-    // Z flip): determinant -1, but it must not reverse winding.
-    final root = _node(_scale(1, 1, -1))..excludeFromWindingParity = true;
-    expect(root.windingFlipped, isFalse);
-
-    // A normal node under the excluded root renders with normal winding.
-    final child = _node(Matrix4.identity());
-    root.add(child);
-    expect(child.windingFlipped, isFalse);
-
-    // A genuinely mirrored node under it is still flipped.
-    final mirrored = _node(_scale(-1, 1, 1));
-    root.add(mirrored);
-    expect(mirrored.windingFlipped, isTrue);
-  });
-
   test('winding parity updates when a transform changes', () {
     final node = _node(Matrix4.identity());
     expect(node.windingFlipped, isFalse);

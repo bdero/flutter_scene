@@ -43,10 +43,8 @@ FsceneComponentRegistry defaultComponentRegistry() {
 
 /// Realizes [document] into a live [Node] graph.
 ///
-/// Returns a synthesized root node that carries the handedness convention
-/// from the document's stage (a `scale(1, 1, -1)` mirror with winding parity
-/// excluded for a right-handed document, matching the model importers); the
-/// document's own root nodes are its children. Components are built through
+/// Returns a synthesized native-space root whose children are the document's
+/// root nodes. Components are built through
 /// [registry] (the built-ins by default); a component whose type has no codec
 /// is skipped with a debug warning.
 ///
@@ -110,7 +108,6 @@ Node _realizeWith(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..excludeFromWindingParity = spec.excludeFromWindingParity
         ..visible = spec.visible,
       spec.id,
     );
@@ -159,10 +156,7 @@ Node _realizeWith(
   // into mesh primitives) runs once every component exists.
   context.runAfterRealize();
 
-  final root = Node(
-    name: 'root',
-    localTransform: _handednessTransform(document),
-  )..excludeFromWindingParity = true;
+  final root = Node(name: 'root');
   for (final rootId in document.roots) {
     final node = nodes[rootId];
     if (node == null) {
@@ -179,17 +173,11 @@ Node _realizeWith(
   return root;
 }
 
-Matrix4 _handednessTransform(SceneDocument document) =>
-    document.stage.handedness == Handedness.right
-    ? Matrix4.diagonal3Values(1.0, 1.0, -1.0)
-    : Matrix4.identity();
-
 /// Serializes the live [Node] graph rooted at [root] into a new
 /// [SceneDocument].
 ///
 /// [root] is treated as the synthesized realization root (as returned by
-/// [realizeScene]): its handedness is read back into the stage, and its
-/// children become the document's root nodes. Nodes realized from a document
+/// [realizeScene]) and its children become the document's root nodes. Nodes realized from a document
 /// keep their identity-tag ids, so a load/edit/save cycle is rename-proof and
 /// diff-friendly; untagged (hand-built) nodes mint fresh ids. Skins, the
 /// root's parsed animations, and lazy prefab placeholders serialize too; a
@@ -200,9 +188,6 @@ Matrix4 _handednessTransform(SceneDocument document) =>
 SceneDocument serializeScene(Node root, {FsceneComponentRegistry? registry}) {
   final reg = registry ?? defaultComponentRegistry();
   final document = SceneDocument();
-  document.stage.handedness = root.localTransform.determinant() < 0
-      ? Handedness.right
-      : Handedness.left;
   final context = SerializeContext(document);
 
   // First pass: assign every node its id, reusing realize-time identity tags
@@ -271,7 +256,6 @@ NodeSpec _serializeNode(
     layers: node.layers,
     skin: _serializeSkin(node.skin, document, context, ids),
     instance: lazyInstance,
-    excludeFromWindingParity: node.excludeFromWindingParity,
     visible: node.visible,
   );
   document.addNode(spec);

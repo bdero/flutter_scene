@@ -173,6 +173,14 @@ void main() {
       expect(cachedShadow.packedWorldData, same(packed));
       expect(cachedShadow.packedWindingFlipped, same(winding));
       expect(cachedShadow.indices, isNull);
+
+      final alternateWinding = instanceDataBatchFor(
+        item,
+        indices: item.visibleInstanceIndices,
+        windingFlipped: true,
+      );
+      expect(alternateWinding.packedWorldData, isNull);
+      expect(alternateWinding.nodeWindingFlipped, isTrue);
     });
   });
 }

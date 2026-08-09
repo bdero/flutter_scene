@@ -3,15 +3,16 @@ import 'dart:typed_data';
 
 import '../../constants.dart';
 import 'accessor.dart';
+import 'coordinate_policy.dart';
 import 'types.dart';
 
 /// Pure-data result of packing a glTF mesh primitive into
 /// flutter_scene's vertex layout.
 ///
-/// Shared by the runtime GLB importer and the offline scene emitter
-/// so a model packs identically whichever path imported it. Backend-
-/// neutral: [indices32Bit] is reported as a flag, and each caller maps
-/// it to its own index-type representation.
+/// Shared by the runtime GLB importer and the offline scene emitter so layout,
+/// attribute defaults, and index handling stay identical. The selected
+/// coordinate policy controls whether spatial values remain in source space
+/// or are baked into native scene space.
 class PackedPrimitive {
   PackedPrimitive({
     required this.vertexBytes,
@@ -20,6 +21,7 @@ class PackedPrimitive {
     required this.indexCount,
     required this.indices32Bit,
     required this.isSkinned,
+    required this.sourceWindingFlipped,
   });
 
   /// Packed vertex buffer in the engine's vertex layout (72 bytes per
@@ -40,6 +42,9 @@ class PackedPrimitive {
 
   /// Whether the vertex layout includes joints and weights.
   final bool isSkinned;
+
+  /// Whether the packed source convention reverses native winding.
+  final bool sourceWindingFlipped;
 }
 
 /// Packs a glTF mesh primitive into the engine's vertex/index layout.
@@ -66,6 +71,7 @@ PackedPrimitive packGltfPrimitive({
   required List<GltfAccessor> accessors,
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
+  required GltfCoordinatePolicy coordinatePolicy,
   bool includeSkinning = true,
 }) {
   final positionIdx = primitive.attributes['POSITION'];
@@ -256,6 +262,17 @@ PackedPrimitive packGltfPrimitive({
     }
   }
 
+  // Runtime import stops above with an exact source copy. Offline import pays
+  // for a separate conversion pass so serialized geometry is native.
+  if (coordinatePolicy.bakesNative) {
+    for (var o = 0; o < out.length; o += stride) {
+      out[o + 2] = -out[o + 2];
+      out[o + 5] = -out[o + 5];
+      out[o + 16] = -out[o + 16];
+      out[o + 17] = -out[o + 17];
+    }
+  }
+
   // The engine wants 16- or 32-bit indices. Pass 32-bit through; narrow
   // everything else to 16-bit.
   final Uint8List indexBytes;
@@ -282,6 +299,7 @@ PackedPrimitive packGltfPrimitive({
     indexCount: outIndexList.length,
     indices32Bit: outIndices32Bit,
     isSkinned: hasJoints,
+    sourceWindingFlipped: coordinatePolicy.sourceWindingFlipped,
   );
 }
 

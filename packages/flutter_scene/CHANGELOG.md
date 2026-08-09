@@ -1,5 +1,8 @@
 ## 0.21.0
 
+* Breaking change, `.fscene` version 2 uses one native coordinate system and offline glTF import bakes source coordinates into it.
+* Runtime glTF import keeps source buffers unchanged and resolves coordinate winding in the renderer.
+* Text scenes can reference a binary payload sidecar with `payloadSource`.
 * GPU memory can be inspected and released. `takeMemoryReport()` reports what the engine's shared caches are pinning, `releaseTexture`/`releaseScene` give a claim back, and `clearTextureCache`/`clearSceneTemplateCache` drop everything.
 * `ResourceGroup.track` scopes a load to the group's lifetime, so `dispose()` releases the claims it took. Previously `dispose()` only released the progress notifier despite the name.
 * Fixed `ResourceGroup` throwing when it was disposed while a tracked load was still in flight, which is what tearing down a level mid-load does.

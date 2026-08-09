@@ -56,6 +56,7 @@ void main() {
         GltfBufferView(buffer: 0, byteLength: 6, byteOffset: 36),
       ],
       bufferData: buffer,
+      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
     );
 
     expect(packed.vertexCount, 3);
@@ -109,6 +110,7 @@ void main() {
         GltfBufferView(buffer: 0, byteLength: 12, byteOffset: 48),
       ],
       bufferData: buffer,
+      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
     );
 
     // 2 triangles -> 6 unique vertices after de-indexing.
@@ -175,6 +177,7 @@ void main() {
         GltfBufferView(buffer: 0, byteLength: 6, byteOffset: 72),
       ],
       bufferData: buffer,
+      coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
     );
 
     for (var v = 0; v < 3; v++) {

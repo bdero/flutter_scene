@@ -24,7 +24,7 @@ class SceneDocument {
        stage = stage ?? StageMetadata();
 
   /// The coarse format version this document targets.
-  int formatVersion = 1;
+  int formatVersion = 2;
 
   /// The document's global id, minted once at creation.
   final DocumentId documentId;
@@ -39,6 +39,10 @@ class SceneDocument {
 
   /// A human-readable producer string (for example the importer version).
   String? generator;
+
+  /// A relative `.fsceneb` asset that supplies bytes for manifest-only
+  /// [payloads]. Editors and build tools resolve it beside the `.fscene` file.
+  String? payloadSource;
 
   /// Scene-wide, non-spatial render settings.
   StageMetadata stage;

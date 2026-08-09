@@ -233,7 +233,6 @@ NodeSpec _copyNode(NodeSpec n, _Remap remap) => NodeSpec(
   layers: n.layers,
   skin: n.skin == null ? null : remap(n.skin!),
   instance: n.instance == null ? null : _copyInstance(n.instance!, remap),
-  excludeFromWindingParity: n.excludeFromWindingParity,
   visible: n.visible,
 );
 

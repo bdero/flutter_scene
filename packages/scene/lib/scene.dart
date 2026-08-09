@@ -26,7 +26,6 @@ export 'src/specs.dart'
         FmatSkySpec,
         GeometryResource,
         GradientSkySpec,
-        Handedness,
         IcosphereGeometrySpec,
         LoadPolicy,
         MaterialResource,
@@ -53,8 +52,7 @@ export 'src/specs.dart'
         TextureResource,
         TorusGeometrySpec,
         TransformSpec,
-        TrsTransform,
-        UpAxis;
+        TrsTransform;
 export 'src/scene_document.dart' show SceneDocument;
 export 'src/property_value.dart'
     show

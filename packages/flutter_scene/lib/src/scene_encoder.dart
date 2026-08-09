@@ -31,6 +31,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     gpu.RenderPipeline pipeline,
     this.pipelineKey,
     this.depth,
+    this.windingFlipped,
   ) : _item = item,
       _geometry = geometry,
       _material = material,
@@ -54,6 +55,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   gpu.RenderPipeline get pipeline => _pipeline!;
   late int pipelineKey;
   late double depth;
+  late bool windingFlipped;
 
   void reset(
     RenderItem item,
@@ -63,6 +65,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     gpu.RenderPipeline pipeline,
     int pipelineKey,
     double depth,
+    bool windingFlipped,
   ) {
     _item = item;
     _geometry = geometry;
@@ -71,6 +74,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     _pipeline = pipeline;
     this.pipelineKey = pipelineKey;
     this.depth = depth;
+    this.windingFlipped = windingFlipped;
   }
 
   int get geometryKey => identityHashCode(geometry);
@@ -398,6 +402,7 @@ base class SceneEncoder {
           pipeline,
           identityHashCode(pipeline),
           _depthOf(item.worldTransform, geometry),
+          item.windingFor(geometry),
         ),
       );
       return;
@@ -423,7 +428,7 @@ base class SceneEncoder {
                   (bounds.min.y + bounds.max.y) * 0.5,
                   (bounds.min.z + bounds.max.z) * 0.5,
                 ),
-          item.windingFlipped,
+          item.windingFor(geometry),
           item.lightListOffset,
           item.lightListCount,
           item.jointsTexture,
@@ -440,7 +445,7 @@ base class SceneEncoder {
           fade,
           pipeline,
           _depthOf(item.worldTransform, geometry),
-          item.windingFlipped,
+          item.windingFor(geometry),
           item.lightListOffset,
           item.lightListCount,
           item.jointsTexture,
@@ -458,6 +463,7 @@ base class SceneEncoder {
     gpu.RenderPipeline pipeline,
     int pipelineKey,
     double depth,
+    bool windingFlipped,
   ) {
     if (_opaqueRecordPool.isEmpty) {
       return _OpaqueRecord(
@@ -468,10 +474,19 @@ base class SceneEncoder {
         pipeline,
         pipelineKey,
         depth,
+        windingFlipped,
       );
     }
-    return _opaqueRecordPool.removeLast()
-      ..reset(item, geometry, material, fade, pipeline, pipelineKey, depth);
+    return _opaqueRecordPool.removeLast()..reset(
+      item,
+      geometry,
+      material,
+      fade,
+      pipeline,
+      pipelineKey,
+      depth,
+      windingFlipped,
+    );
   }
 
   _TranslucentRecord _obtainTranslucentRecord(
@@ -917,7 +932,11 @@ base class SceneEncoder {
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _opaqueRecords[batchIndex].item;
           batches.add(
-            instanceDataBatchFor(item, indices: item.visibleInstanceIndices),
+            instanceDataBatchFor(
+              item,
+              indices: item.visibleInstanceIndices,
+              windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
+            ),
           );
         }
         _encodeInstancedBatches(
@@ -940,12 +959,17 @@ base class SceneEncoder {
           record.material,
           instances,
           item.instanceColors!,
-          item.windingFlipped,
+          record.windingFlipped,
           record.fade,
           instanceWindingFlipped: item.instanceWindingFlipped,
           instanceIndices: item.visibleInstanceIndices,
-          packedWorldData: item.instanceWorldData,
-          packedWorldWindingFlipped: item.instanceWorldWindingFlipped,
+          packedWorldData: record.windingFlipped == item.windingFlipped
+              ? item.instanceWorldData
+              : null,
+          packedWorldWindingFlipped:
+              record.windingFlipped == item.windingFlipped
+              ? item.instanceWorldWindingFlipped
+              : null,
         );
       } else {
         _encode(
@@ -953,7 +977,7 @@ base class SceneEncoder {
           item.worldTransform,
           record.geometry,
           record.material,
-          item.windingFlipped,
+          record.windingFlipped,
           record.fade,
         );
       }
@@ -1136,8 +1160,13 @@ base class SceneEncoder {
           sortBackToFrontFrom: record.item.sortTransparentInstances
               ? _camera.position
               : null,
-          packedWorldData: record.item.instanceWorldData,
-          packedWorldWindingFlipped: record.item.instanceWorldWindingFlipped,
+          packedWorldData: record.windingFlipped == record.item.windingFlipped
+              ? record.item.instanceWorldData
+              : null,
+          packedWorldWindingFlipped:
+              record.windingFlipped == record.item.windingFlipped
+              ? record.item.instanceWorldWindingFlipped
+              : null,
         );
       } else {
         _encode(

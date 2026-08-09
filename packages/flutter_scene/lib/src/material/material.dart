@@ -49,8 +49,8 @@ gpu.SamplerOptions? textureSourceSampler(TextureSource? source) =>
 /// lighting). Custom subclasses can be implemented by overriding
 /// [bind] and supplying their own fragment shader.
 ///
-/// The default [bind] enables back-face culling with counter-clockwise
-/// winding, matching the [glTF coordinate convention](https://github.com/KhronosGroup/glTF/tree/main/specification/2.0#coordinate-system-and-units).
+/// The default [bind] enables back-face culling with native counter-clockwise
+/// winding.
 /// {@category Materials}
 abstract class Material {
   static gpu.Texture? _whitePlaceholderTexture;

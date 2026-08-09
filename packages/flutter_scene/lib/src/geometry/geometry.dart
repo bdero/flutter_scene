@@ -150,6 +150,13 @@ abstract class Geometry {
   /// styled lines are built as triangle geometry instead.
   gpu.PrimitiveType primitiveType = gpu.PrimitiveType.triangle;
 
+  /// Whether source triangles use the opposite of native scene winding.
+  ///
+  /// Runtime glTF geometry keeps its source vertices unchanged and sets this
+  /// flag. Native and offline-imported geometry leave it false.
+  @internal
+  bool sourceWindingFlipped = false;
+
   vm.Aabb3? _localBounds;
   vm.Sphere? _localBoundingSphere;
   int _localBoundsVersion = 0;

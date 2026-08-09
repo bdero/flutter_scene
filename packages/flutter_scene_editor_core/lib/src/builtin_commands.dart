@@ -1046,9 +1046,6 @@ final removeResource = CommandEntry(
 // ---------------------------------------------------------------------------
 
 StageMetadata _copyStage(StageMetadata s) => StageMetadata(
-  upAxis: s.upAxis,
-  handedness: s.handedness,
-  unitsPerMeter: s.unitsPerMeter,
   antiAliasingMode: s.antiAliasingMode,
   renderScale: s.renderScale,
   filterQuality: s.filterQuality,

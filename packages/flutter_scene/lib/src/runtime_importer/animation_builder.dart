@@ -17,6 +17,7 @@ Animation buildAnimation({
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
   required List<Node> engineNodes,
+  required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final channels = <AnimationChannel>[];
   for (final channel in gltfAnimation.channels) {
@@ -36,7 +37,7 @@ Animation buildAnimation({
     final inputView = bufferViews[inputAccessor.bufferView!];
     final outputView = bufferViews[outputAccessor.bufferView!];
     final times = readAccessorAsFloat32(inputAccessor, inputView, bufferData);
-    final values = readAccessorAsFloat32(
+    final sourceValues = readAccessorAsFloat32(
       outputAccessor,
       outputView,
       bufferData,
@@ -45,25 +46,33 @@ Animation buildAnimation({
     AnimationProperty property;
     PropertyResolver resolver;
     final isCubic = sampler.interpolation == 'CUBICSPLINE';
+    final values = coordinatePolicy.convertAnimationValues(
+      selectGltfKeyframeValues(
+        sourceValues,
+        componentCount: channel.targetPath == 'rotation' ? 4 : 3,
+        cubicSpline: isCubic,
+      ),
+      targetPath: channel.targetPath,
+    );
 
     switch (channel.targetPath) {
       case 'translation':
         property = AnimationProperty.translation;
         resolver = PropertyResolver.makeTranslationTimeline(
           times.toList(),
-          _readVec3List(values, isCubic),
+          _readVec3List(values),
         );
       case 'rotation':
         property = AnimationProperty.rotation;
         resolver = PropertyResolver.makeRotationTimeline(
           times.toList(),
-          _readQuatList(values, isCubic),
+          _readQuatList(values),
         );
       case 'scale':
         property = AnimationProperty.scale;
         resolver = PropertyResolver.makeScaleTimeline(
           times.toList(),
-          _readVec3List(values, isCubic),
+          _readVec3List(values),
         );
       case 'weights':
         // Morph target weights — not supported by flutter_scene yet.
@@ -85,38 +94,18 @@ Animation buildAnimation({
   return Animation(name: gltfAnimation.name ?? '', channels: channels);
 }
 
-List<Vector3> _readVec3List(Float32List values, bool isCubic) {
-  // CUBICSPLINE has 3 vec3s per keyframe (in-tangent, value, out-tangent).
-  // We only consume the value; tangents are discarded.
-  final stride = isCubic ? 9 : 3;
-  final valueOffset = isCubic ? 3 : 0;
+List<Vector3> _readVec3List(Float32List values) {
   final out = <Vector3>[];
-  for (int i = 0; i + stride <= values.length; i += stride) {
-    out.add(
-      Vector3(
-        values[i + valueOffset],
-        values[i + valueOffset + 1],
-        values[i + valueOffset + 2],
-      ),
-    );
+  for (int i = 0; i + 3 <= values.length; i += 3) {
+    out.add(Vector3(values[i], values[i + 1], values[i + 2]));
   }
   return out;
 }
 
-List<Quaternion> _readQuatList(Float32List values, bool isCubic) {
-  // CUBICSPLINE has 3 vec4s per keyframe.
-  final stride = isCubic ? 12 : 4;
-  final valueOffset = isCubic ? 4 : 0;
+List<Quaternion> _readQuatList(Float32List values) {
   final out = <Quaternion>[];
-  for (int i = 0; i + stride <= values.length; i += stride) {
-    out.add(
-      Quaternion(
-        values[i + valueOffset],
-        values[i + valueOffset + 1],
-        values[i + valueOffset + 2],
-        values[i + valueOffset + 3],
-      ),
-    );
+  for (int i = 0; i + 4 <= values.length; i += 4) {
+    out.add(Quaternion(values[i], values[i + 1], values[i + 2], values[i + 3]));
   }
   return out;
 }

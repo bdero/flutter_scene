@@ -58,17 +58,21 @@ int depthBatchEnd(List<RenderItem> records, int start) {
 InstanceDataBatch instanceDataBatchFor(
   RenderItem item, {
   required List<int>? indices,
+  bool? windingFlipped,
 }) {
+  final resolvedWinding = windingFlipped ?? item.windingFlipped;
   final instances = item.instanceTransforms;
   if (instances == null) {
     return InstanceDataBatch.single(
       nodeTransform: item.worldTransform,
-      nodeWindingFlipped: item.windingFlipped,
+      nodeWindingFlipped: resolvedWinding,
     );
   }
   final packedWorldData = item.instanceWorldData;
   final packedWinding = item.instanceWorldWindingFlipped;
-  if (packedWorldData != null && packedWinding != null) {
+  if (resolvedWinding == item.windingFlipped &&
+      packedWorldData != null &&
+      packedWinding != null) {
     return InstanceDataBatch.cached(
       packedWorldData: packedWorldData,
       packedWindingFlipped: packedWinding,
@@ -79,7 +83,7 @@ InstanceDataBatch instanceDataBatchFor(
     nodeTransform: item.worldTransform,
     instances: instances,
     colors: item.instanceColors!,
-    nodeWindingFlipped: item.windingFlipped,
+    nodeWindingFlipped: resolvedWinding,
     instanceWindingFlipped: item.instanceWindingFlipped,
     indices: indices,
   );

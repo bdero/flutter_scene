@@ -184,11 +184,6 @@ void _expandInstance(
   final prefab = _compose(resolve(spec.source), resolve, visiting);
   visiting.remove(sourceKey);
 
-  // A prefab authored in the opposite handedness gets a mirror adapter node
-  // between the instance and the prefab content (so it realizes correctly in
-  // the host's space); the adapter suppresses the single-root merge.
-  final needsAdapter = prefab.stage.handedness != out.stage.handedness;
-
   // Deterministic remapping: nodes, skins, and animations derive their id
   // from (instance id, prefab id), so the same node keeps the same id across
   // recomposes and a prefab edit hot-reloads as a fine-grained patch.
@@ -197,9 +192,7 @@ void _expandInstance(
   // uploads its GPU resources once). A single-root prefab merges its root
   // into the instance node (so the instance node "is" the prefab root, which
   // is what overrides and added/removed components target).
-  final singleRoot = !needsAdapter && prefab.roots.length == 1
-      ? prefab.roots.single
-      : null;
+  final singleRoot = prefab.roots.length == 1 ? prefab.roots.single : null;
   final remap = <LocalId, LocalId>{};
   for (final id in prefab.nodes.keys) {
     remap[id] = id == singleRoot ? instance.id : _instanceId(instance.id, id);
@@ -273,17 +266,7 @@ void _expandInstance(
       );
     }
   }
-  if (needsAdapter) {
-    final adapter = NodeSpec(
-      id: _instanceId(instance.id, const LocalId(0, 0), domain: 1),
-      name: 'handedness',
-      transform: MatrixTransform(Matrix4.diagonal3Values(1.0, 1.0, -1.0)),
-      children: [for (final r in prefab.roots) remapId(r)],
-      excludeFromWindingParity: true,
-    );
-    out.addNode(adapter);
-    instance.children.add(adapter.id);
-  } else if (singleRoot == null) {
+  if (singleRoot == null) {
     instance.children.addAll([for (final r in prefab.roots) remapId(r)]);
   }
 
@@ -293,7 +276,7 @@ void _expandInstance(
 /// Derives the composed id of a per-instance entity (node, skin, animation)
 /// from the instance node's id plus the entity's id in the prefab. Stable
 /// across recomposes; distinct per instance. [domain] separates synthesized
-/// ids (the handedness adapter) from remapped prefab ids.
+/// ids from remapped prefab ids.
 LocalId _instanceId(LocalId instance, LocalId target, {int domain = 0}) =>
     _hashedId([
       instance.session,
@@ -528,7 +511,6 @@ NodeSpec _remapNode(
   layers: node.layers,
   skin: node.skin == null ? null : remap(node.skin!),
   instance: keepInstance ? node.instance : null,
-  excludeFromWindingParity: node.excludeFromWindingParity,
   visible: node.visible,
 );
 
@@ -642,9 +624,6 @@ AnimationSpec _remapAnimation(
 );
 
 StageMetadata _copyStage(StageMetadata s) => StageMetadata(
-  upAxis: s.upAxis,
-  handedness: s.handedness,
-  unitsPerMeter: s.unitsPerMeter,
   antiAliasingMode: s.antiAliasingMode,
   renderScale: s.renderScale,
   filterQuality: s.filterQuality,

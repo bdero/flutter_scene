@@ -1,6 +1,6 @@
 // Covers .fscene realization: building a live Node graph from a document and
 // serializing one back. These exercise the GPU-free parts (node graph,
-// transforms, layers, light/camera components, handedness, and the component
+// transforms, layers, light/camera components, and the component
 // codec registry); mesh/resource realization is a separate, GPU-bound step.
 
 import 'package:flutter_scene/src/components/camera_component.dart';
@@ -35,9 +35,8 @@ class _TagCodec extends ComponentCodec {
 }
 
 // Builds: world (root) -> { sun (directionalLight), eye (camera), pivot }.
-SceneDocument _sampleScene({Handedness handedness = Handedness.right}) {
+SceneDocument _sampleScene() {
   final doc = SceneDocument();
-  doc.stage.handedness = handedness;
 
   final world = doc.createNode(name: 'world', root: true);
   final sun = doc.createNode(
@@ -71,7 +70,7 @@ void main() {
     test('builds the node graph with components and layers', () {
       final root = realizeScene(_sampleScene());
       expect(root.name, 'root');
-      expect(root.excludeFromWindingParity, isTrue);
+      expect(root.localTransform, Matrix4.identity());
       expect(root.children, hasLength(1));
 
       final world = root.children.single;
@@ -92,21 +91,6 @@ void main() {
       expect(pivot.getComponents<Component>(), isEmpty);
     });
 
-    test('a right-handed stage flips the synthesized root', () {
-      expect(
-        realizeScene(
-          _sampleScene(handedness: Handedness.right),
-        ).localTransform.determinant(),
-        lessThan(0),
-      );
-      expect(
-        realizeScene(
-          _sampleScene(handedness: Handedness.left),
-        ).localTransform.determinant(),
-        greaterThan(0),
-      );
-    });
-
     test('skips a component with no registered codec', () {
       final doc = SceneDocument();
       doc.createNode(
@@ -124,7 +108,6 @@ void main() {
       final doc = _sampleScene();
       final back = serializeScene(realizeScene(doc));
 
-      expect(back.stage.handedness, doc.stage.handedness);
       expect(back.rootNodes, hasLength(1));
 
       final world = back.rootNodes.single;

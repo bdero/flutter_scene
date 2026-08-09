@@ -2,10 +2,8 @@
 /// binary package.
 ///
 /// Builds a [SceneDocument] from a parsed glTF document, then packages it as
-/// a `.fsceneb` container. Geometry is packed with the shared
-/// [packGltfPrimitive], so a primitive's vertex/index payload bytes are
-/// identical to the runtime GLB importer's (validated by byte-comparison
-/// tests).
+/// a `.fsceneb` container. Geometry uses the runtime importer's shared packer
+/// with native coordinate baking enabled.
 ///
 /// Pure Dart (no `dart:ui` / Flutter GPU), so it runs in the build-hook
 /// isolate. Ids are derived deterministically from the binary chunk, so
@@ -33,6 +31,7 @@ import '../../../texture/mipmap.dart';
 import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
+import '../gltf/coordinate_policy.dart';
 import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
@@ -55,8 +54,7 @@ Uint8List emitFsceneb(
 
 /// Builds an `.fscene` [SceneDocument] from a parsed glTF document.
 ///
-/// The document is declared right-handed ([Handedness.right]); the realizer
-/// applies the glTF-to-engine mirror, so no per-node winding flip is baked in.
+/// Spatial data is converted to native scene coordinates during emission.
 ///
 /// When [compressTextures] is set, images are stored as mipped, supercompressed
 /// KTX2 block payloads (`format: 'ktx2'`) instead of raw `rgba8`, shrinking the
@@ -79,9 +77,6 @@ SceneDocument buildSceneDocument(
     documentId: DocumentId.generate(Random(_seedFrom(bufferData))),
     allocator: IdAllocator(session: _kImporterIdSession),
   );
-  document.stage
-    ..upAxis = UpAxis.y
-    ..handedness = Handedness.right;
   document.generator = 'flutter_scene glTF importer';
 
   // Pre-mint a stable id per glTF node so child/joint/animation-target
@@ -181,7 +176,14 @@ SceneDocument buildSceneDocument(
   // payload chunk).
   final skinIds = [
     for (final skin in doc.skins)
-      _buildSkin(document, skin, doc, bufferData, nodeIds),
+      _buildSkin(
+        document,
+        skin,
+        doc,
+        bufferData,
+        nodeIds,
+        GltfCoordinatePolicy.bakeNative,
+      ),
   ];
 
   // Nodes.
@@ -243,7 +245,14 @@ SceneDocument buildSceneDocument(
 
   // Animations (one keyframe timeline/value payload per channel).
   for (final animation in doc.animations) {
-    _buildAnimation(document, animation, doc, bufferData, nodeIds);
+    _buildAnimation(
+      document,
+      animation,
+      doc,
+      bufferData,
+      nodeIds,
+      GltfCoordinatePolicy.bakeNative,
+    );
   }
 
   return document;
@@ -255,14 +264,17 @@ LocalId _buildSkin(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
+  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final Float32List matrices;
   if (skin.inverseBindMatrices != null) {
     final accessor = doc.accessors[skin.inverseBindMatrices!];
-    matrices = readAccessorAsFloat32(
-      accessor,
-      doc.bufferViews[accessor.bufferView!],
-      bufferData,
+    matrices = coordinatePolicy.convertMatrices(
+      readAccessorAsFloat32(
+        accessor,
+        doc.bufferViews[accessor.bufferView!],
+        bufferData,
+      ),
     );
   } else {
     // Spec default: identity per joint, column-major.
@@ -298,6 +310,7 @@ void _buildAnimation(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
+  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final channels = <AnimationChannelSpec>[];
   for (final channel in animation.channels) {
@@ -328,10 +341,13 @@ void _buildAnimation(
       bufferData,
     );
     final componentCount = property == AnimationProperty.rotation ? 4 : 3;
-    final keyframes = _stripCubicTangents(
-      values,
-      componentCount,
-      sampler.interpolation == 'CUBICSPLINE',
+    final keyframes = coordinatePolicy.convertAnimationValues(
+      selectGltfKeyframeValues(
+        values,
+        componentCount: componentCount,
+        cubicSpline: sampler.interpolation == 'CUBICSPLINE',
+      ),
+      targetPath: channel.targetPath,
     );
 
     channels.add(
@@ -356,26 +372,6 @@ void _buildAnimation(
       channels: channels,
     ),
   );
-}
-
-// Reduces a CUBICSPLINE sampler's [in-tangent, value, out-tangent] groups to
-// just the keyframe values, so the stored timeline is plain LINEAR keyframes
-// (the runtime treats both paths' values the same way). Non-cubic data is
-// copied through.
-Float32List _stripCubicTangents(
-  Float32List values,
-  int componentCount,
-  bool isCubic,
-) {
-  if (!isCubic) return Float32List.fromList(values);
-  final stride = componentCount * 3;
-  final out = <double>[];
-  for (var i = 0; i + stride <= values.length; i += stride) {
-    for (var c = 0; c < componentCount; c++) {
-      out.add(values[i + componentCount + c]);
-    }
-  }
-  return Float32List.fromList(out);
 }
 
 LocalId _floatPayload(
@@ -433,7 +429,7 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
   switch (light.type) {
     case 'directional':
       properties
-        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
+        ..['direction'] = Vec3Value(Vector3(0, 0, 1))
         ..['castsShadow'] = const BoolValue(false);
       return ComponentSpec('directionalLight', properties: properties);
     case 'point':
@@ -441,7 +437,7 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
       return ComponentSpec('pointLight', properties: properties);
     case 'spot':
       properties
-        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
+        ..['direction'] = Vec3Value(Vector3(0, 0, 1))
         ..['range'] = DoubleValue(light.range ?? 0)
         ..['innerConeAngle'] = DoubleValue(light.innerConeAngle)
         ..['outerConeAngle'] = DoubleValue(light.outerConeAngle)
@@ -452,10 +448,13 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
 }
 
 TransformSpec _transform(GltfNode node) {
-  if (node.matrix != null) return MatrixTransform(node.matrix!.clone());
+  const policy = GltfCoordinatePolicy.bakeNative;
+  if (node.matrix != null) {
+    return MatrixTransform(policy.convertTransform(node.matrix!));
+  }
   return TrsTransform(
-    translation: (node.translation ?? Vector3.zero()).clone(),
-    rotation: (node.rotation ?? Quaternion.identity()).clone(),
+    translation: policy.convertPosition(node.translation ?? Vector3.zero()),
+    rotation: policy.convertRotation(node.rotation ?? Quaternion.identity()),
     scale: (node.scale ?? Vector3(1, 1, 1)).clone(),
   );
 }
@@ -473,6 +472,7 @@ LocalId _buildGeometry(
     accessors: doc.accessors,
     bufferViews: doc.bufferViews,
     bufferData: bufferData,
+    coordinatePolicy: GltfCoordinatePolicy.bakeNative,
     includeSkinning: includeSkinning,
   );
   // Unskinned geometry is stored de-interleaved (structure of arrays) so the
@@ -571,8 +571,8 @@ BoundsSpec? _primitiveBounds(
   }
   if (box.isEmpty) return null;
   return BoundsSpec(
-    min: Vector3(box.minX, box.minY, box.minZ),
-    max: Vector3(box.maxX, box.maxY, box.maxZ),
+    min: Vector3(box.minX, box.minY, -box.maxZ),
+    max: Vector3(box.maxX, box.maxY, -box.minZ),
   );
 }
 
@@ -584,8 +584,8 @@ BoundsSpec? _restBounds(GltfMeshPrimitive primitive, GltfDocument doc) {
   final max = accessor.max;
   if (min != null && min.length >= 3 && max != null && max.length >= 3) {
     return BoundsSpec(
-      min: Vector3(min[0], min[1], min[2]),
-      max: Vector3(max[0], max[1], max[2]),
+      min: Vector3(min[0], min[1], -max[2]),
+      max: Vector3(max[0], max[1], -min[2]),
     );
   }
   // No spec-provided bounds; the realizer scans positions on upload.

@@ -195,13 +195,12 @@ void main() {
       expect(doc.usedSessions(), containsAll(<int>{11, 22}));
     });
 
-    test('a fresh document has no stage environment and v1 format', () {
+    test('a fresh document has no stage environment and current format', () {
       final doc = SceneDocument();
-      expect(doc.formatVersion, 1);
+      expect(doc.formatVersion, currentFsceneVersion);
       // The look lives in a referenced environment resource; a fresh document
       // has none (the realizer defaults to a studio look).
       expect(doc.stage.environmentRef, isNull);
-      expect(doc.stage.upAxis, UpAxis.y);
     });
   });
 }

@@ -14,8 +14,8 @@ typedef GltfUriResolver = Uint8List? Function(String uri);
 /// Converts a single-file glTF binary (`.glb`) to an `.fscene` [SceneDocument]
 /// entirely in memory.
 ///
-/// The document declares right-handed coordinates; realize it with
-/// `realizeScene` (or write it with `writeFscene` / `writeFsceneb`). Uses no
+/// The document contains native scene coordinates. Realize it with
+/// `realizeScene` (or write it with `writeFscene`/`writeFsceneb`). Uses no
 /// `dart:io`, so it runs at runtime on any platform.
 SceneDocument importGlbToSceneDocument(
   Uint8List glbBytes, {
