@@ -44,14 +44,26 @@ definitions:
       name: Resolve the workspace
       script: flutter pub get
 
+    - &script_list_frames
+      name: List rendered frames
+      # The driver writes the frames on the host, so this is the evidence the
+      # render produced something. iOS needs it because the app's stdout (the
+      # per-scene SMOKE stat lines) is not forwarded through the simulator.
+      script: |
+        cd "$CM_BUILD_DIR/examples/smoke_render"
+        ls -l build/smoke 2>/dev/null || echo "build/smoke does not exist"
+        echo "frames: $(find build/smoke -type f -name '*.png' 2>/dev/null | wc -l | tr -d ' ')"
+
     - &script_argos_upload
       name: Upload to Argos
       script: |
         cd "$CM_BUILD_DIR/examples/smoke_render"
+        echo 0 > "$CM_BUILD_DIR/smoke-argos-status"
 
         # Never upload an empty or partial build. A failed render must not
         # overwrite the Argos baseline, see
-        # notes/ci/argos_visual_baseline_tracking.md.
+        # notes/ci/argos_visual_baseline_tracking.md. The render gate is what
+        # fails the build in that case, so skipping here is not a pass.
         if ! find build/smoke -type f -name '*.png' 2>/dev/null | grep -q .; then
           echo "No smoke screenshots found; skipping Argos upload."
           exit 0
@@ -66,13 +78,22 @@ definitions:
           export ARGOS_PR_BASE_BRANCH="$CM_PULL_REQUEST_DEST"
         fi
 
-        out=$(npx --yes @argos-ci/cli upload build/smoke \
-          --build-name "$SMOKE_BUILD_NAME" 2>&1) || true
-        echo "$out"
-        printf '%s' "$out" \
-          | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' \
+        log="$CM_BUILD_DIR/smoke-argos.log"
+        status=0
+        npx --yes @argos-ci/cli upload build/smoke \
+          --build-name "$SMOKE_BUILD_NAME" > "$log" 2>&1 || status=$?
+        cat "$log"
+        grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' "$log" \
           | head -1 > "$CM_BUILD_DIR/smoke-argos-url" || true
-      ignore_failure: true
+
+        # An upload that errors (quota, a bad token, a network fault) leaves the
+        # shard with no visual diff at all, so it fails the build rather than
+        # passing silently.
+        echo "$status" > "$CM_BUILD_DIR/smoke-argos-status"
+        if [ "$status" -ne 0 ]; then
+          echo "Argos upload exited $status"
+          exit "$status"
+        fi
 
     - &script_render_gate
       name: Fail the build if the render failed
@@ -87,11 +108,18 @@ definitions:
     scripts:
       - name: Notify Discord on failure
         script: |
-          status=$(cat "$CM_BUILD_DIR/smoke-status" 2>/dev/null || echo 1)
-          [ "$status" -eq 0 ] && exit 0
+          render=$(cat "$CM_BUILD_DIR/smoke-status" 2>/dev/null || echo 1)
+          argos=$(cat "$CM_BUILD_DIR/smoke-argos-status" 2>/dev/null || echo 1)
+          reason=""
+          [ "$render" -ne 0 ] && reason="render exited $render"
+          if [ "$argos" -ne 0 ]; then
+            [ -n "$reason" ] && reason="$reason, "
+            reason="${reason}Argos upload exited $argos"
+          fi
+          [ -z "$reason" ] && exit 0
           [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
           url=$(cat "$CM_BUILD_DIR/smoke-argos-url" 2>/dev/null || true)
-          content="Smoke render failed ($SMOKE_BUILD_NAME, Flutter master). Build: $CM_BUILD_URL"
+          content="Smoke render failed ($SMOKE_BUILD_NAME, Flutter master; $reason). Build: $CM_BUILD_URL"
           [ -n "$url" ] && content="$content  |  Argos: $url"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$content\"}" "$DISCORD_WEBHOOK_URL" || true
@@ -128,6 +156,7 @@ workflows:
             -d macos --enable-impeller --enable-flutter-gpu
           echo $? > "$CM_BUILD_DIR/smoke-status"
         ignore_failure: true
+      - *script_list_frames
       - *script_argos_upload
       - *script_render_gate
     artifacts:
@@ -188,6 +217,7 @@ workflows:
             --enable-impeller --enable-flutter-gpu
           echo $? > "$CM_BUILD_DIR/smoke-status"
         ignore_failure: true
+      - *script_list_frames
       - *script_argos_upload
       - *script_render_gate
     artifacts:
