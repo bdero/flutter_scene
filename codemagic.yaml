@@ -69,6 +69,14 @@ definitions:
           exit 0
         fi
 
+        # A build with no token cannot upload, which is the expected shape of a
+        # pull request from a fork. Skip rather than fail so a contributor's PR
+        # is not red for a credential they were never going to have.
+        if [ -z "$ARGOS_TOKEN" ]; then
+          echo "No ARGOS_TOKEN in this build; skipping Argos upload."
+          exit 0
+        fi
+
         # Argos auto-detects GitHub Actions but not this provider, so the build
         # metadata is mapped by hand.
         export ARGOS_BRANCH="$CM_BRANCH"
