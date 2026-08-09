@@ -64,19 +64,38 @@ class RapierWorld extends PhysicsSimulation {
   Uint8List snapshot() =>
       _WorldSnapshot.encode(_bindings.snapshot(), _bodies.keys);
 
+  /// Restores the world from a [snapshot], returning false if the bytes
+  /// could not be decoded.
+  ///
+  /// Restoring rewinds the world to the body set the snapshot captured, so
+  /// bodies created since are gone and bodies destroyed since come back.
+  /// Their pose targets do not rewind with them, so the registry is
+  /// reconciled to match. A body created after the snapshot stops being
+  /// driven, and one destroyed after it is removed again rather than left
+  /// simulating with no owner. Recreate what the rollback needs with
+  /// [createBody]; the handles are new.
   @override
   bool restore(Uint8List snapshot) {
     final decoded = _WorldSnapshot.decode(snapshot);
-    if (decoded == null || !_hasSameBodies(decoded.bodyHandles)) return false;
-    return _bindings.restore(decoded.nativeSnapshot);
+    if (decoded == null) return false;
+    if (!_bindings.restore(decoded.nativeSnapshot)) return false;
+    _reconcileBodies(decoded.bodyHandles);
+    return true;
   }
 
-  // A native snapshot preserves handle values, but it cannot restore the
-  // Dart-side pose targets that own those handles. Reject structural changes
-  // before asking native code to restore, so both sides stay in lockstep.
-  bool _hasSameBodies(Set<int> snapshotHandles) {
-    if (_bodies.length != snapshotHandles.length) return false;
-    return _bodies.keys.every(snapshotHandles.contains);
+  // Drops records the restore invalidated, and removes bodies it brought
+  // back that no longer have a record, so the native world and the registry
+  // describe the same set.
+  //
+  // TODO(restore-reconcile-handles): colliders, joints, and anchor bodies
+  // rewind natively with no equivalent bookkeeping, so handles the app holds
+  // for those can dangle. Track them the way bodies are tracked, or hand the
+  // caller the rewound handles so it can re-adopt them.
+  void _reconcileBodies(Set<int> snapshotHandles) {
+    _bodies.removeWhere((handle, _) => !snapshotHandles.contains(handle));
+    for (final handle in snapshotHandles) {
+      if (!_bodies.containsKey(handle)) _bindings.destroyBody(handle);
+    }
   }
 
   final StreamController<SimCollisionEvent> _events =
@@ -1069,18 +1088,24 @@ class _BodyRecord {
 class _WorldSnapshot {
   _WorldSnapshot(this.nativeSnapshot, this.bodyHandles);
 
-  // Snapshot envelope marker: "FSRS" (Flutter Scene Rapier Snapshot).
-  // Encoded little-endian, so its bytes read as "SRSF".
-  static const _magic = 0x46535253;
+  // Header is 'F' 'S' 'R' 'S' then a version and a handle count, each a
+  // little-endian u32. The handle table and the native snapshot follow.
+  static const _magic = 0x53525346;
   static const _version = 1;
   static const _headerBytes = 12;
+  static const _handleBytes = 8;
+
+  // Handles are the shim's packed u64s. dart2js has no int64 and its bitwise
+  // operators are 32-bit, so each one is stored as two u32 lanes split
+  // arithmetically, matching how the wasm bindings read a handle field.
+  static const _lane = 0x100000000;
 
   final Uint8List nativeSnapshot;
   final Set<int> bodyHandles;
 
   static Uint8List encode(Uint8List nativeSnapshot, Iterable<int> handles) {
     final bodyHandles = handles.toList()..sort();
-    final payloadOffset = _headerBytes + bodyHandles.length * 8;
+    final payloadOffset = _headerBytes + bodyHandles.length * _handleBytes;
     final bytes = Uint8List(payloadOffset + nativeSnapshot.length);
     final data = ByteData.sublistView(bytes);
     data
@@ -1088,7 +1113,10 @@ class _WorldSnapshot {
       ..setUint32(4, _version, Endian.little)
       ..setUint32(8, bodyHandles.length, Endian.little);
     for (var i = 0; i < bodyHandles.length; i++) {
-      data.setUint64(_headerBytes + i * 8, bodyHandles[i], Endian.little);
+      final offset = _headerBytes + i * _handleBytes;
+      data
+        ..setUint32(offset, bodyHandles[i] % _lane, Endian.little)
+        ..setUint32(offset + 4, bodyHandles[i] ~/ _lane, Endian.little);
     }
     bytes.setRange(payloadOffset, bytes.length, nativeSnapshot);
     return bytes;
@@ -1102,13 +1130,15 @@ class _WorldSnapshot {
       return null;
     }
     final count = data.getUint32(8, Endian.little);
-    if (count > (bytes.length - _headerBytes) ~/ 8) return null;
-    final payloadOffset = _headerBytes + count * 8;
+    if (count > (bytes.length - _headerBytes) ~/ _handleBytes) return null;
+    final payloadOffset = _headerBytes + count * _handleBytes;
     final handles = <int>{};
     for (var i = 0; i < count; i++) {
-      if (!handles.add(data.getUint64(_headerBytes + i * 8, Endian.little))) {
-        return null;
-      }
+      final offset = _headerBytes + i * _handleBytes;
+      final handle =
+          data.getUint32(offset, Endian.little) +
+          data.getUint32(offset + 4, Endian.little) * _lane;
+      if (!handles.add(handle)) return null;
     }
     return _WorldSnapshot(Uint8List.sublistView(bytes, payloadOffset), handles);
   }

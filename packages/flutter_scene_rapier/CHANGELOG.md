@@ -1,3 +1,9 @@
+## 0.5.0
+
+* BREAKING: `RapierWorld.snapshot` wraps the native payload in an envelope carrying the body set it captured, so snapshots taken by 0.4.0 no longer restore.
+* `RapierWorld.restore` reconciles its body registry against the restored world. A body created after the snapshot stops being driven, and one destroyed after it is removed rather than left simulating with no pose target.
+* No native changes; reuses the 0.4.0 prebuilt binaries and wasm.
+
 ## 0.4.0
 
 * Requires the scene 0.1.1 physics contract.
