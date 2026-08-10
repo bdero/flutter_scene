@@ -168,21 +168,31 @@ jobs:
           CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p smoke
+          mkdir -p smoke staging
           # The response spells it "artefacts"; keep both spellings so a rename
           # upstream does not silently yield zero frames.
           jq -r '(.build.artefacts // .build.artifacts // [])[] | "\(.name)\t\(.url)"' \
             build.json > artefacts.tsv
           cat artefacts.tsv
+
+          # Codemagic collects every artifact path into one zip per build rather
+          # than exposing the files individually, so unpack whatever arrives and
+          # find the frames by name instead of trusting the layout.
+          i=0
           while IFS=$'\t' read -r name url; do
-            [ -z "$url" ] && continue
+            [ -z "${url:-}" ] && continue
+            i=$((i + 1))
+            curl -sSL -H "x-auth-token: $CODEMAGIC_API_TOKEN" \
+              -o "staging/$i-$name" "$url"
             case "$name" in
-              *.png) dest="smoke/$name" ;;
-              smoke-status.txt) dest="smoke-status.txt" ;;
-              *) continue ;;
+              *.zip) unzip -q -o "staging/$i-$name" -d staging ;;
             esac
-            curl -sSL -H "x-auth-token: $CODEMAGIC_API_TOKEN" -o "$dest" "$url"
           done < artefacts.tsv
+
+          find staging -type f -name '*.png' -exec cp {} smoke/ \;
+          status_file=$(find staging -type f -name 'smoke-status.txt' | head -1)
+          [ -n "$status_file" ] && cp "$status_file" smoke-status.txt
+
           count=$(find smoke -type f -name '*.png' | wc -l | tr -d ' ')
           echo "frames: $count"
           echo "count=$count" >> "$GITHUB_OUTPUT"
@@ -226,7 +236,11 @@ jobs:
             echo "Codemagic build ended as ${{ steps.wait.outputs.status }}"
             exit 1
           fi
-          render=$(cat smoke-status.txt 2>/dev/null || echo 1)
+          if [ ! -f smoke-status.txt ]; then
+            echo "The build produced no status file, so it died before rendering."
+            exit 1
+          fi
+          render=$(cat smoke-status.txt)
           if [ "$render" -ne 0 ]; then
             echo "flutter drive exited $render"
             exit 1
