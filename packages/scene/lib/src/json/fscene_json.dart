@@ -51,6 +51,16 @@ Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
       'source glTF.',
     );
   }
+  final nodesValue = json['nodes'];
+  if (nodesValue is Map &&
+      nodesValue.values.any(
+        (node) => node is Map && node.containsKey('excludeWindingParity'),
+      )) {
+    throw const FsceneVersionException(
+      'Version 1 documents using excludeWindingParity cannot be migrated. '
+      'Re-import the source glTF.',
+    );
+  }
   stage
     ..remove('upAxis')
     ..remove('unitsPerMeter')

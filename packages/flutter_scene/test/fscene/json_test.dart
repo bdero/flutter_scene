@@ -1,6 +1,7 @@
 // Covers the .fscene JSON encoding: canonical write, tolerant (JSONC) read,
 // round-trip fidelity, the version/migration framework, and feature gating.
 
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:scene/scene.dart';
@@ -372,6 +373,30 @@ void main() {
           );
       expect(
         () => readFscene(text),
+        throwsA(
+          isA<FsceneVersionException>().having(
+            (error) => error.message,
+            'message',
+            contains('Re-import the source glTF'),
+          ),
+        ),
+      );
+    });
+
+    test('refuses a version 1 winding-parity exclusion with guidance', () {
+      final json = jsonDecode(writeFscene(_sampleDocument())) as Map;
+      json['fscene'] = 1;
+      final stage = json['stage'] as Map;
+      stage
+        ..['handedness'] = 'left'
+        ..['unitsPerMeter'] = 1.0
+        ..['upAxis'] = 'y';
+      final nodes = json['nodes'] as Map;
+      final node = nodes.values.first as Map;
+      node['excludeWindingParity'] = true;
+
+      expect(
+        () => readFscene(jsonEncode(json)),
         throwsA(
           isA<FsceneVersionException>().having(
             (error) => error.message,

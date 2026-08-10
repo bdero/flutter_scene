@@ -12,7 +12,9 @@ import 'package:flutter_scene/src/node.dart';
 /// and unregisters it when the node leaves the scene.
 ///
 /// Light travels along the owning node's local +Z axis. The node's world-space
-/// rotation aims the light; its translation and scale have no effect.
+/// rotation aims the light; its translation and scale have no effect. The
+/// default constructor checks [DirectionalLight.direction] only when the
+/// component is created. Later mutations of that field remain ignored.
 /// {@category Scene graph}
 class DirectionalLightComponent extends Component {
   /// Creates a component that lights the scene with [light].
@@ -32,6 +34,13 @@ class DirectionalLightComponent extends Component {
     : _usesLightDirection = false,
       _localDirection = localDirection.clone();
 
+  DirectionalLightComponent._copy(
+    this.light, {
+    required bool usesLightDirection,
+    Vector3? localDirection,
+  }) : _usesLightDirection = usesLightDirection,
+       _localDirection = localDirection?.clone();
+
   /// Creates the component backing the scene-level light convenience.
   ///
   /// Unlike an authored component, this reads [DirectionalLight.direction]
@@ -49,9 +58,10 @@ class DirectionalLightComponent extends Component {
 
   static bool _hasDefaultDirection(DirectionalLight light) {
     final direction = light.direction;
-    return (direction.x + 0.3).abs() < 1e-6 &&
-        (direction.y + 1.0).abs() < 1e-6 &&
-        (direction.z + 0.2).abs() < 1e-6;
+    final expected = DirectionalLight.defaultDirection;
+    return (direction.x - expected.x).abs() < 1e-6 &&
+        (direction.y - expected.y).abs() < 1e-6 &&
+        (direction.z - expected.z).abs() < 1e-6;
   }
 
   @override
@@ -87,8 +97,10 @@ class DirectionalLightComponent extends Component {
       return DirectionalLightComponent.fromLightDirection(light);
     }
     final localDirection = _localDirection;
-    return localDirection == null
-        ? DirectionalLightComponent(light)
-        : DirectionalLightComponent.aimed(light, localDirection);
+    return DirectionalLightComponent._copy(
+      light,
+      usesLightDirection: false,
+      localDirection: localDirection,
+    );
   }
 }

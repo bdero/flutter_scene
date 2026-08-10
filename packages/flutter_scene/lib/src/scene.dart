@@ -8,8 +8,7 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart'
-    show Frustum, Matrix3, Matrix4, Plane, Ray;
+import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
 import 'ambient_occlusion.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
@@ -109,85 +108,6 @@ enum AntiAliasingMode {
   auto,
 }
 
-class _MaterialInputCache {
-  int structureRevision = -1;
-  int materialRevision = -1;
-  int candidateRevision = -1;
-  int layerMask = 0;
-  bool includeOffscreen = false;
-  Matrix4? viewTransform;
-  List<double> planeValues = const [];
-  Set<RenderInput> inputs = const {};
-
-  bool matches({
-    required int structureRevision,
-    required int materialRevision,
-    required int candidateRevision,
-    required int layerMask,
-    required bool includeOffscreen,
-    required Matrix4 viewTransform,
-    required List<Plane> planes,
-  }) {
-    if (this.structureRevision != structureRevision ||
-        this.materialRevision != materialRevision ||
-        this.candidateRevision != candidateRevision ||
-        this.layerMask != layerMask ||
-        this.includeOffscreen != includeOffscreen) {
-      return false;
-    }
-    if (!includeOffscreen) {
-      final cachedTransform = this.viewTransform;
-      if (cachedTransform == null) return false;
-      final a = cachedTransform.storage;
-      final b = viewTransform.storage;
-      for (var i = 0; i < 16; i++) {
-        if (a[i] != b[i]) return false;
-      }
-      if (planeValues.length != planes.length * 4) return false;
-      for (var i = 0; i < planes.length; i++) {
-        final normal = planes[i].normal;
-        final offset = i * 4;
-        if (planeValues[offset] != normal.x ||
-            planeValues[offset + 1] != normal.y ||
-            planeValues[offset + 2] != normal.z ||
-            planeValues[offset + 3] != planes[i].constant) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  void update({
-    required int structureRevision,
-    required int materialRevision,
-    required int candidateRevision,
-    required int layerMask,
-    required bool includeOffscreen,
-    required Matrix4 viewTransform,
-    required List<Plane> planes,
-    required Set<RenderInput> inputs,
-  }) {
-    this.structureRevision = structureRevision;
-    this.materialRevision = materialRevision;
-    this.candidateRevision = candidateRevision;
-    this.layerMask = layerMask;
-    this.includeOffscreen = includeOffscreen;
-    this.viewTransform = includeOffscreen ? null : viewTransform.clone();
-    planeValues = includeOffscreen
-        ? const []
-        : [
-            for (final plane in planes) ...[
-              plane.normal.x,
-              plane.normal.y,
-              plane.normal.z,
-              plane.constant,
-            ],
-          ];
-    this.inputs = inputs;
-  }
-}
-
 /// Represents a 3D scene, which is a collection of nodes that can be rendered onto the screen.
 ///
 /// `Scene` manages the scene graph and handles rendering operations.
@@ -196,11 +116,12 @@ class _MaterialInputCache {
 /// {@category Scene graph}
 base class Scene implements SceneGraph {
   int _renderMetadataStructureRevision = -1;
+  int _materialInputStructureRevision = -1;
+  int _materialInputMaterialRevision = -1;
   int _renderMetadataStaticShadowRevision = -1;
+  Set<RenderInput> _cachedWholeSceneMaterialInputs = const {};
   int _cachedStaticShadowSignature = 0;
   bool _cachedHasStaticShadowCasters = false;
-  final Expando<_MaterialInputCache> _materialInputCaches = Expando();
-  RenderView? _singleRenderView;
 
   Scene() {
     initializeStaticResources();
@@ -952,9 +873,12 @@ base class Scene implements SceneGraph {
     ui.Rect? viewport,
     double? pixelRatio,
   }) {
-    final view = _singleRenderView ??= RenderView(camera: camera);
-    view.camera = camera;
-    renderViews([view], canvas, region: viewport, pixelRatio: pixelRatio);
+    renderViews(
+      [RenderView(camera: camera)],
+      canvas,
+      region: viewport,
+      pixelRatio: pixelRatio,
+    );
   }
 
   /// Compiles the render pipelines and uploads the GPU resources this scene
@@ -1335,47 +1259,29 @@ base class Scene implements SceneGraph {
     }
     if (wantGodRays) customInputs.addAll(_godRaysPass.inputs);
 
-    // Collect material inputs only from this view's frustum candidates. Cache
-    // the summary while the scene, materials, and view frustum are unchanged.
-    // A visibility transition may acquire or release transient attachments,
-    // trading pool churn for avoiding offscreen depth and color captures.
-    // Opaque occlusion remains a GPU depth-test concern because an AABB cannot
-    // prove a mesh is hidden.
+    // Most scenes request no material scene inputs. Cache that whole-scene
+    // answer across movement, then cull per view only when at least one
+    // material can need an attachment. Opaque occlusion remains a GPU
+    // depth-test concern because an AABB cannot prove a mesh is hidden.
     // TODO(occlusion-culling): use a previous-frame hierarchical depth buffer
     // to reject fully hidden render items and scene-input requests.
     final structureRevision = renderScene.structureRevision;
     final materialRevision = materialSceneInputsRevision;
-    final candidateRevision = renderScene.materialCandidateRevision;
-    final viewTransform = camera.getViewTransform(pixelSize);
-    final materialInputCache = _materialInputCaches[view] ??=
-        _MaterialInputCache();
-    if (!materialInputCache.matches(
-      structureRevision: structureRevision,
-      materialRevision: materialRevision,
-      candidateRevision: candidateRevision,
-      layerMask: view.layerMask,
-      includeOffscreen: _warmUpIncludeOffscreen,
-      viewTransform: viewTransform,
-      planes: view.cullingPlanes,
-    )) {
-      final inputs = renderScene.collectMaterialInputs(
-        Frustum.matrix(viewTransform),
-        layerMask: view.layerMask,
-        additionalPlanes: view.cullingPlanes,
-        includeOffscreen: _warmUpIncludeOffscreen,
-      );
-      materialInputCache.update(
-        structureRevision: structureRevision,
-        materialRevision: materialRevision,
-        candidateRevision: candidateRevision,
-        layerMask: view.layerMask,
-        includeOffscreen: _warmUpIncludeOffscreen,
-        viewTransform: viewTransform,
-        planes: view.cullingPlanes,
-        inputs: inputs,
-      );
+    if (_materialInputStructureRevision != structureRevision ||
+        _materialInputMaterialRevision != materialRevision) {
+      _cachedWholeSceneMaterialInputs = renderScene.collectAllMaterialInputs();
+      _materialInputStructureRevision = structureRevision;
+      _materialInputMaterialRevision = materialRevision;
     }
-    final materialInputs = materialInputCache.inputs;
+    final wholeSceneMaterialInputs = _cachedWholeSceneMaterialInputs;
+    final materialInputs = wholeSceneMaterialInputs.isEmpty
+        ? wholeSceneMaterialInputs
+        : renderScene.collectMaterialInputs(
+            camera.getFrustum(pixelSize),
+            layerMask: view.layerMask,
+            additionalPlanes: view.cullingPlanes,
+            includeOffscreen: _warmUpIncludeOffscreen,
+          );
 
     // The retained metadata below fingerprints static shadow casters.
     final staticShadowRevision = renderScene.staticShadowRevision;

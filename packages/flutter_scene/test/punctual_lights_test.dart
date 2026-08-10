@@ -58,6 +58,14 @@ void main() {
       );
     });
 
+    test('cloning does not revalidate a mounted directional component', () {
+      final light = DirectionalLight();
+      final node = Node()..addComponent(DirectionalLightComponent(light));
+      light.direction.setValues(-1, -1, 0);
+
+      expect(() => node.clone(), returnsNormally);
+    });
+
     test('packs a point light into row 0 with premultiplied color', () {
       final (floats, count) = PunctualLightBuffer.packLights(
         directionals: const [],
