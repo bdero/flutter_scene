@@ -103,6 +103,19 @@ void main() {
     expect(materialSceneInputsRevision, beforeEquivalentChange);
   });
 
+  test('whole-scene material inputs are independent of movement', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    root.add(Node(mesh: Mesh(_StubGeometry(), _InputMaterial())));
+
+    final structureRevision = renderScene.structureRevision;
+    expect(renderScene.collectAllMaterialInputs(), {RenderInput.depth});
+
+    renderScene.markBvhBoundsDirty();
+    expect(renderScene.structureRevision, structureRevision);
+    expect(renderScene.collectAllMaterialInputs(), {RenderInput.depth});
+  });
+
   test('removing a mounted mesh node drops its render items', () {
     final renderScene = RenderScene();
     final root = Node()..debugMountInto(renderScene);

@@ -171,7 +171,6 @@ class MeshComponent extends Component {
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
           (item.castsShadows || node.castsShadows);
-      final materialCandidateChanged = !item.visible || item.layers != layers;
       item.visible = true;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
@@ -184,9 +183,6 @@ class MeshComponent extends Component {
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
       if (staticShadowChanged) renderScene?.markStaticShadowDirty();
-      if (materialCandidateChanged) {
-        renderScene?.markMaterialCandidatesDirty();
-      }
 
       final boundsVersion = item.geometry.localBoundsVersion;
       final geometryBoundsChanged = _boundsVersions[index] != boundsVersion;
@@ -216,9 +212,6 @@ class MeshComponent extends Component {
     for (final item in _renderItems) {
       if (item.visible && item.shadowStatic && item.castsShadows) {
         node.internalRenderScene?.markStaticShadowDirty();
-      }
-      if (item.visible) {
-        node.internalRenderScene?.markMaterialCandidatesDirty();
       }
       item.visible = false;
     }

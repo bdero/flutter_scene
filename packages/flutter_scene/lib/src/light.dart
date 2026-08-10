@@ -61,6 +61,9 @@ enum DirectionalShadowFilter {
 /// render with a perspective projection.
 /// {@category Lighting and environment}
 class DirectionalLight {
+  /// Default world-space travel direction for scene-level lights.
+  static Vector3 get defaultDirection => Vector3(-0.3, -1.0, -0.2);
+
   /// Creates a [DirectionalLight].
   ///
   /// [direction] is the direction the light travels in world space (from
@@ -84,7 +87,7 @@ class DirectionalLight {
     this.shadowAmbientStrength = 0.0,
     this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
     this.shadowCasterFaces = ShadowCasterFaces.front,
-  }) : direction = direction ?? Vector3(-0.3, -1.0, -0.2),
+  }) : direction = direction ?? defaultDirection,
        color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// The direction the light travels, in world space (from the light
