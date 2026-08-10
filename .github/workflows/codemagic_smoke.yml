@@ -1,0 +1,233 @@
+name: codemagic smoke render
+
+# Drives the macOS and iOS smoke shards, which run on Codemagic because GitHub's
+# macOS runners give the harness no virtual display. Codemagic only renders and
+# publishes frames; every credential and the decision to run at all stay here.
+#
+# Why pull_request_target: starting a Codemagic build needs an API token, and
+# GitHub withholds secrets from fork pull_request runs. pull_request_target runs
+# in this repository's context with secrets available, which is only safe
+# because nothing below executes contributor code. It moves refs, calls an API,
+# and downloads images. Contributor source runs on Codemagic, where the
+# `Assert the build holds no credentials` step fails the build if a secret ever
+# appears.
+#
+# Fork pull requests need the `safe to test` label, standing in for the Actions
+# approval button, which does not apply to pull_request_target. Pull requests
+# from this repository run without it.
+
+on:
+  push:
+    branches: [master]
+  pull_request_target:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: codemagic-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  ARGOS_PROJECT: scene/flutter_scene
+
+jobs:
+  prepare:
+    name: Prepare the build ref
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository ||
+      contains(github.event.pull_request.labels.*.name, 'safe to test')
+    outputs:
+      branch: ${{ steps.ref.outputs.branch }}
+      temp_branch: ${{ steps.ref.outputs.temp_branch }}
+      argos_branch: ${{ steps.ref.outputs.argos_branch }}
+      argos_commit: ${{ steps.ref.outputs.argos_commit }}
+    steps:
+      # Always the base repository's code. Never the pull request's.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the ref to build
+        id: ref
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # master already exists on the remote, so Codemagic can build it.
+            echo "branch=master" >> "$GITHUB_OUTPUT"
+            echo "temp_branch=" >> "$GITHUB_OUTPUT"
+            echo "argos_branch=master" >> "$GITHUB_OUTPUT"
+            echo "argos_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Codemagic's API starts a build from a branch name in the connected
+          # repository, and it cannot see a fork's branch. Mirror the pull
+          # request head to a short-lived branch here so it has something to
+          # resolve, and force codemagic.yaml back to the base version so the
+          # build script is always ours.
+          temp="codemagic-pr-${PR_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "pull/${PR_NUMBER}/head:${temp}"
+          git checkout "$temp"
+          git checkout "$GITHUB_SHA" -- codemagic.yaml
+          git commit -q -m "Pin the build config to the base revision" \
+            -- codemagic.yaml || true
+          git push -f origin "$temp"
+
+          echo "branch=$temp" >> "$GITHUB_OUTPUT"
+          echo "temp_branch=$temp" >> "$GITHUB_OUTPUT"
+          echo "argos_branch=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "argos_commit=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+  render:
+    name: ${{ matrix.build_name }} (Flutter master)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workflow_id: smoke-macos
+            build_name: macos
+          - workflow_id: smoke-ios
+            build_name: ios
+    steps:
+      - name: Start the Codemagic build
+        id: start
+        env:
+          CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+          CODEMAGIC_APP_ID: ${{ secrets.CODEMAGIC_APP_ID }}
+        run: |
+          set -euo pipefail
+          body=$(jq -nc \
+            --arg appId "$CODEMAGIC_APP_ID" \
+            --arg workflowId "${{ matrix.workflow_id }}" \
+            --arg branch "${{ needs.prepare.outputs.branch }}" \
+            '{appId: $appId, workflowId: $workflowId, branch: $branch}')
+          out=$(curl -sS -X POST https://api.codemagic.io/builds \
+            -H "Content-Type: application/json" \
+            -H "x-auth-token: $CODEMAGIC_API_TOKEN" \
+            --data "$body")
+          echo "$out"
+          id=$(printf '%s' "$out" | jq -r '.buildId // empty')
+          if [ -z "$id" ]; then
+            echo "Codemagic did not return a build id."
+            exit 1
+          fi
+          echo "build_id=$id" >> "$GITHUB_OUTPUT"
+          echo "Started https://codemagic.io/app/$CODEMAGIC_APP_ID/build/$id"
+
+      - name: Wait for the build
+        id: wait
+        env:
+          CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+          BUILD_ID: ${{ steps.start.outputs.build_id }}
+        run: |
+          set -euo pipefail
+          # The job timeout is the real deadline; this cap only stops an
+          # unbounded poll if Codemagic stops answering.
+          for _ in $(seq 1 180); do
+            sleep 20
+            out=$(curl -sS "https://api.codemagic.io/builds/$BUILD_ID" \
+              -H "x-auth-token: $CODEMAGIC_API_TOKEN") || continue
+            # finishedAt is the terminal signal. The status vocabulary is not
+            # documented, so it is compared only after the build has ended.
+            finished=$(printf '%s' "$out" | jq -r '.build.finishedAt // empty')
+            status=$(printf '%s' "$out" | jq -r '.build.status // "unknown"')
+            if [ -n "$finished" ]; then
+              echo "Codemagic build $BUILD_ID ended with status $status"
+              printf '%s' "$out" > build.json
+              echo "status=$status" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "status $status, still waiting"
+          done
+          echo "Codemagic build $BUILD_ID never reported a finish."
+          exit 1
+
+      - name: Download the frames
+        id: frames
+        env:
+          CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p smoke
+          # The response spells it "artefacts"; keep both spellings so a rename
+          # upstream does not silently yield zero frames.
+          jq -r '(.build.artefacts // .build.artifacts // [])[] | "\(.name)\t\(.url)"' \
+            build.json > artefacts.tsv
+          cat artefacts.tsv
+          while IFS=$'\t' read -r name url; do
+            [ -z "$url" ] && continue
+            case "$name" in
+              *.png) dest="smoke/$name" ;;
+              smoke-status.txt) dest="smoke-status.txt" ;;
+              *) continue ;;
+            esac
+            curl -sSL -H "x-auth-token: $CODEMAGIC_API_TOKEN" -o "$dest" "$url"
+          done < artefacts.tsv
+          count=$(find smoke -type f -name '*.png' | wc -l | tr -d ' ')
+          echo "frames: $count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Argos
+        id: argos
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+          ARGOS_BRANCH: ${{ needs.prepare.outputs.argos_branch }}
+          ARGOS_COMMIT: ${{ needs.prepare.outputs.argos_commit }}
+          ARGOS_PR_NUMBER: ${{ github.event.pull_request.number }}
+          ARGOS_PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # Never upload an empty or partial build; a failed render must not
+          # overwrite the baseline. See notes/ci/argos_visual_baseline_tracking.md.
+          if [ "${{ steps.frames.outputs.count }}" -eq 0 ]; then
+            echo "No frames came back; skipping Argos upload."
+            exit 0
+          fi
+          status=0
+          npx --yes @argos-ci/cli upload smoke \
+            --project "$ARGOS_PROJECT" \
+            --build-name "${{ matrix.build_name }}" > argos.log 2>&1 || status=$?
+          cat argos.log
+          grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' argos.log \
+            | head -1 >> "$GITHUB_STEP_SUMMARY" || true
+          exit "$status"
+
+      - name: Report the render result
+        # Last so the frames reach Argos first. A failed render is exactly when
+        # they are wanted for visual triage.
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.wait.outputs.status }}" != "finished" ] \
+             && [ "${{ steps.wait.outputs.status }}" != "success" ]; then
+            echo "Codemagic build ended as ${{ steps.wait.outputs.status }}"
+            exit 1
+          fi
+          render=$(cat smoke-status.txt 2>/dev/null || echo 1)
+          if [ "$render" -ne 0 ]; then
+            echo "flutter drive exited $render"
+            exit 1
+          fi
+          echo "Rendered ${{ steps.frames.outputs.count }} frames."
+
+  cleanup:
+    name: Delete the temporary ref
+    needs: [prepare, render]
+    if: always() && needs.prepare.outputs.temp_branch != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: git push origin --delete "${{ needs.prepare.outputs.temp_branch }}" || true
