@@ -407,6 +407,22 @@ void main() {
       );
     });
 
+    test('migrates an explicit false winding-parity exclusion', () {
+      final json = jsonDecode(writeFscene(_sampleDocument())) as Map;
+      json['fscene'] = 1;
+      final stage = json['stage'] as Map;
+      stage
+        ..['handedness'] = 'left'
+        ..['unitsPerMeter'] = 1.0
+        ..['upAxis'] = 'y';
+      final nodes = json['nodes'] as Map;
+      final node = nodes.values.first as Map;
+      node['excludeWindingParity'] = false;
+
+      final document = readFscene(jsonEncode(json));
+      expect(document.formatVersion, currentFsceneVersion);
+    });
+
     test('refuses a document without a format version', () {
       final text = writeFscene(
         _sampleDocument(),

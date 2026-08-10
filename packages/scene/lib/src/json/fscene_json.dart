@@ -54,7 +54,7 @@ Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
   final nodesValue = json['nodes'];
   if (nodesValue is Map &&
       nodesValue.values.any(
-        (node) => node is Map && node.containsKey('excludeWindingParity'),
+        (node) => node is Map && node['excludeWindingParity'] == true,
       )) {
     throw const FsceneVersionException(
       'Version 1 documents using excludeWindingParity cannot be migrated. '
