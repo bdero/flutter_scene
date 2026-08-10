@@ -4,31 +4,34 @@ name: codemagic smoke render
 # macOS runners give the harness no virtual display. Codemagic only renders and
 # publishes frames; every credential and the decision to run at all stay here.
 #
-# Why pull_request_target: starting a Codemagic build needs an API token, and
-# GitHub withholds secrets from fork pull_request runs. pull_request_target runs
-# in this repository's context with secrets available, which is only safe
-# because nothing below executes contributor code. It moves refs, calls an API,
-# and downloads images. Contributor source runs on Codemagic, where the
-# `Assert the build holds no credentials` step fails the build if a secret ever
+# Why workflow_run: starting a Codemagic build needs an API token, and GitHub
+# withholds secrets from fork pull_request runs. A workflow_run job executes in
+# this repository's context with secrets available, which is only safe because
+# nothing below runs contributor code. It moves refs, calls an API, and
+# downloads images. Contributor source runs on Codemagic, where the
+# `Assert the build holds no credentials` step fails the build if a secret
 # appears.
 #
-# Fork pull requests need the `safe to test` label, standing in for the Actions
-# approval button, which does not apply to pull_request_target. Pull requests
-# from this repository run without it.
+# Hanging off Flutter CI rather than triggering directly is what keeps this to a
+# single gate. Flutter CI is a pull_request workflow, so on a fork it does not
+# start until the Actions approval button is pressed, and this cannot start
+# until it finishes. Approving once covers every shard.
 
 on:
   push:
     branches: [master]
-  pull_request_target:
-    branches: [master]
-    types: [opened, synchronize, reopened, labeled]
+  workflow_run:
+    workflows: ["Flutter CI"]
+    types: [completed]
 
 concurrency:
-  group: codemagic-smoke-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: >-
+    codemagic-smoke-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: write
+  pull-requests: read
 
 env:
   ARGOS_PROJECT: scene/flutter_scene
@@ -39,13 +42,14 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository ||
-      contains(github.event.pull_request.labels.*.name, 'safe to test')
+      github.event.workflow_run.event == 'pull_request'
     outputs:
       branch: ${{ steps.ref.outputs.branch }}
       temp_branch: ${{ steps.ref.outputs.temp_branch }}
       argos_branch: ${{ steps.ref.outputs.argos_branch }}
       argos_commit: ${{ steps.ref.outputs.argos_commit }}
+      pr_number: ${{ steps.ref.outputs.pr_number }}
+      base_ref: ${{ steps.ref.outputs.base_ref }}
     steps:
       # Always the base repository's code. Never the pull request's.
       - uses: actions/checkout@v7
@@ -55,9 +59,9 @@ jobs:
       - name: Resolve the ref to build
         id: ref
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
@@ -70,15 +74,31 @@ jobs:
             exit 0
           fi
 
+          # workflow_run carries the head commit but not the pull request, and
+          # its `pull_requests` array is empty for forks, so the number is
+          # looked up from the commit.
+          num=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" \
+            --jq 'map(select(.state=="open"))[0].number // empty' || true)
+          if [ -z "$num" ]; then
+            num=$(gh pr list --state open --json number,headRefOid \
+              --jq "map(select(.headRefOid==\"$HEAD_SHA\"))[0].number // empty" || true)
+          fi
+          if [ -z "$num" ]; then
+            echo "No open pull request for $HEAD_SHA; nothing to render."
+            exit 1
+          fi
+          base=$(gh pr view "$num" --json baseRefName --jq .baseRefName)
+          echo "Resolved pull request #$num into $base"
+
           # Codemagic's API starts a build from a branch name in the connected
           # repository, and it cannot see a fork's branch. Mirror the pull
           # request head to a short-lived branch here so it has something to
           # resolve, and force codemagic.yaml back to the base version so the
           # build script is always ours.
-          temp="codemagic-pr-${PR_NUMBER}"
+          temp="codemagic-pr-${num}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "pull/${PR_NUMBER}/head:${temp}"
+          git fetch origin "pull/${num}/head:${temp}"
           git checkout "$temp"
           git checkout "$GITHUB_SHA" -- codemagic.yaml
           git commit -q -m "Pin the build config to the base revision" \
@@ -87,8 +107,10 @@ jobs:
 
           echo "branch=$temp" >> "$GITHUB_OUTPUT"
           echo "temp_branch=$temp" >> "$GITHUB_OUTPUT"
-          echo "argos_branch=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
-          echo "argos_commit=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "argos_branch=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "argos_commit=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$num" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$base" >> "$GITHUB_OUTPUT"
 
   render:
     name: ${{ matrix.build_name }} (Flutter master)
@@ -198,8 +220,8 @@ jobs:
           ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
           ARGOS_BRANCH: ${{ needs.prepare.outputs.argos_branch }}
           ARGOS_COMMIT: ${{ needs.prepare.outputs.argos_commit }}
-          ARGOS_PR_NUMBER: ${{ github.event.pull_request.number }}
-          ARGOS_PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          ARGOS_PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
+          ARGOS_PR_BASE_BRANCH: ${{ needs.prepare.outputs.base_ref }}
         run: |
           set -euo pipefail
           # Never upload an empty or partial build; a failed render must not
