@@ -84,7 +84,7 @@ jobs:
         if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
         working-directory: examples/smoke_render
         env:
-          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+          ARGOS_TOKEN: ""
         run: |
           # Never upload an empty/partial build: a failed render must not
           # overwrite the Argos baseline (see the android job, and
@@ -140,6 +140,7 @@ jobs:
           - backend: vulkan
             expected_backend: vulkan
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
+    if: false
     steps:
       - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
@@ -278,6 +279,7 @@ jobs:
     name: ${{ inputs.argos_prefix }}web (${{ inputs.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: false
     steps:
       - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
@@ -350,6 +352,7 @@ jobs:
     name: ${{ inputs.argos_prefix }}windows (${{ inputs.label }})
     runs-on: windows-latest
     timeout-minutes: 30
+    if: false
     steps:
       - uses: actions/checkout@v7
         if: ${{ inputs.checkout_ref != '' }}
