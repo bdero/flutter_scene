@@ -67,7 +67,7 @@ class RenderItem {
   /// Whether this item's base geometry needs reversed native winding.
   bool get windingFlipped => windingFor(geometry);
 
-  /// Combines node-transform parity with the geometry's source convention.
+  /// Stores the owning node's transform parity.
   @internal
   void refreshWinding(bool value) => nodeWindingFlipped = value;
 
@@ -535,12 +535,21 @@ class RenderScene {
   Bvh _bvh = Bvh.build([]);
   int _structureRevision = 0;
   int _staticShadowRevision = 0;
+  int _materialCandidateRevision = 0;
 
   /// Changes when render items are added or removed.
   int get structureRevision => _structureRevision;
 
   /// Changes when a retained static shadow caster changes.
   int get staticShadowRevision => _staticShadowRevision;
+
+  /// Changes when view-culling candidates or their visibility/layers change.
+  int get materialCandidateRevision => _materialCandidateRevision;
+
+  /// Invalidates cached per-view material-input summaries.
+  void markMaterialCandidatesDirty() {
+    _materialCandidateRevision++;
+  }
 
   /// Invalidates the cached static-caster fingerprint.
   void markStaticShadowDirty() {
@@ -565,6 +574,7 @@ class RenderScene {
     item.sceneSlot = items.length;
     items.add(item);
     _structureRevision++;
+    _materialCandidateRevision++;
     _structureDirty = true;
   }
 
@@ -578,6 +588,7 @@ class RenderScene {
     }
     item.sceneSlot = -1;
     _structureRevision++;
+    _materialCandidateRevision++;
     _structureDirty = true;
   }
 
@@ -586,12 +597,14 @@ class RenderScene {
   /// bounded or unbounded).
   void markBvhStructureDirty() {
     _structureDirty = true;
+    _materialCandidateRevision++;
   }
 
   /// Flags the BVH for a refit. Called when a bounded item moved but the
   /// item set and membership are unchanged.
   void markBvhBoundsDirty() {
     _boundsDirty = true;
+    _materialCandidateRevision++;
   }
 
   /// Brings the spatial structure up to date with the current items.

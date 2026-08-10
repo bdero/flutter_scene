@@ -26,7 +26,7 @@ environment:
 
 dependencies:
   box3d: ^0.1.0
-  scene: ^0.1.0
+  scene: ^0.2.0
   vector_math: ^2.1.4
 
 dev_dependencies:

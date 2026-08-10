@@ -32,7 +32,7 @@ environment:
 
 dependencies:
   code_assets: ^1.2.1
-  scene: ^0.1.0
+  scene: ^0.2.0
   # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0
   collection: ^1.19.0
@@ -68,4 +68,3 @@ flutter:
     # A bundled sample environment, loadable via EnvironmentMap.fromAssets.
     # (The zero-config default is the procedural EnvironmentMap.studio().)
     - assets/royal_esplanade.png
-    - screenshots/flutter_scene_logo.png

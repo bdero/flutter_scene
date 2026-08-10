@@ -182,6 +182,9 @@ base class _TranslucentRecord {
 const int _transmissionCoverageColumns = 32;
 const int _transmissionCoverageRows = 32;
 
+/// Maximum accumulated scene-color batches emitted in one frame.
+const int maxSceneColorCaptureBatches = 8;
+
 base class _ScreenCoverage {
   _ScreenCoverage(this.viewport);
 
@@ -284,6 +287,7 @@ int sceneColorCaptureBatchCount(
     }
     if (cursor == records.length) break;
     batches++;
+    if (batches == maxSceneColorCaptureBatches) break;
     cursor = _sceneColorBatchEnd(
       records,
       cursor,
@@ -1321,6 +1325,19 @@ base class SceneEncoder {
     _prepareTranslucent();
     final end = _nextSceneColorBatchEnd();
     for (var i = _translucentCursor; i < end; i++) {
+      if (_translucentRecords[i].material.sceneInputs.contains(
+        RenderInput.filteredSceneColor,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether any pending translucent draw needs filtered scene color.
+  bool get pendingTranslucentReadsFilteredSceneColor {
+    _prepareTranslucent();
+    for (var i = _translucentCursor; i < _translucentRecords.length; i++) {
       if (_translucentRecords[i].material.sceneInputs.contains(
         RenderInput.filteredSceneColor,
       )) {

@@ -488,6 +488,7 @@ class EnvironmentResource extends ResourceSpec {
     this.skybox,
     this.skyEnvironment,
     EnvironmentEffectsSpec? effects,
+    this.overridesEffects = true,
   }) : effects = effects ?? EnvironmentEffectsSpec();
 
   /// A human-readable label shown in the editor (not load-bearing).
@@ -525,6 +526,11 @@ class EnvironmentResource extends ResourceSpec {
 
   /// Blendable rendering and post-processing settings for this look.
   EnvironmentEffectsSpec effects;
+
+  /// Whether [effects] replace the live scene's current effect settings.
+  ///
+  /// Version 1 documents without authored effects leave them unchanged.
+  bool overridesEffects;
 }
 
 /// Rendering and post-processing settings carried by an environment resource.

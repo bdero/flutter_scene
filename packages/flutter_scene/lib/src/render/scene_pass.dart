@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -33,6 +34,7 @@ import 'package:flutter_scene/src/shaders.dart';
 const String kSceneColorBlackboardKey = 'scene_color';
 
 const int _maxTransmissionFilterBands = 8;
+bool _reportedSceneColorPassCap = false;
 
 /// Number of half-resolution rough-transmission bands for a viewport.
 int transmissionFilterBandCount(int width, int height) {
@@ -367,12 +369,26 @@ class ScenePass extends RenderGraphPass {
     var nextColor = alternateColor!;
     gpu.Texture? transmissionAtlas;
     List<gpu.Texture>? transmissionMips;
+    var captureBatch = 0;
     while (encoder.hasPendingTranslucent) {
       assert(encoder.nextTranslucentBatchReadsSceneColor);
+      final shareFinalSnapshot =
+          captureBatch == maxSceneColorCaptureBatches - 1 &&
+          encoder.pendingSceneColorReaderCount > 1;
+      if (shareFinalSnapshot && !_reportedSceneColorPassCap) {
+        _reportedSceneColorPassCap = true;
+        debugPrint(
+          'Scene color readers exceeded $maxSceneColorCaptureBatches '
+          'overlap-safe batches. Remaining layers share the final snapshot.',
+        );
+      }
       lighting.opaqueSceneColor = currentColor;
       lighting.filteredSceneColor = null;
       lighting.transmissionFilterBandCount = 0;
-      if (encoder.nextSceneColorBatchReadsFilteredSceneColor) {
+      final readsFilteredSceneColor = shareFinalSnapshot
+          ? encoder.pendingTranslucentReadsFilteredSceneColor
+          : encoder.nextSceneColorBatchReadsFilteredSceneColor;
+      if (readsFilteredSceneColor) {
         final bands = transmissionFilterBandCount(width, height);
         if (bands > 0) {
           transmissionAtlas ??= context.texturePool.acquire(
@@ -426,12 +442,19 @@ class ScenePass extends RenderGraphPass {
         translucentTarget,
       );
       _encodeCopy(translucentPass, currentColor);
-      encoder.flushNextSceneColorBatch(translucentPass: translucentPass);
+      if (shareFinalSnapshot) {
+        // TODO(transmission-batching): replace the shared tail with a bounded
+        // per-pixel resolve that preserves every overlapping layer.
+        encoder.flushTranslucent(translucentPass: translucentPass);
+      } else {
+        encoder.flushNextSceneColorBatch(translucentPass: translucentPass);
+      }
       rendererSubmissions.submit(translucentCommands);
 
       final completedColor = nextColor;
       nextColor = currentColor;
       currentColor = completedColor;
+      captureBatch++;
     }
 
     context.blackboard.set(kSceneColorBlackboardKey, currentColor);

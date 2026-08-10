@@ -138,7 +138,8 @@ void _bindFrameInfo(
 /// vertex shader.
 @visibleForTesting
 Matrix4 skyboxInverseViewProjection(Camera camera, ui.Size dimensions) {
-  final viewRotation = camera.getViewMatrix()..setTranslationRaw(0.0, 0.0, 0.0);
+  final viewRotation = camera.getViewMatrix().clone()
+    ..setTranslationRaw(0.0, 0.0, 0.0);
   final projection = camera.projection.getProjectionMatrix(
     dimensions.width / dimensions.height,
   );

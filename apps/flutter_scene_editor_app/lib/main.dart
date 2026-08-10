@@ -482,7 +482,7 @@ class _StartScreen extends StatelessWidget {
               children: [
                 Center(
                   child: Image.asset(
-                    'packages/flutter_scene/screenshots/flutter_scene_logo.png',
+                    'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
                     width: 104,
                     height: 104,
                     cacheWidth: 208,

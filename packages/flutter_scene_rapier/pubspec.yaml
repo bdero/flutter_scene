@@ -32,7 +32,7 @@ dependencies:
     sdk: flutter
   hooks: ^2.0.0
   # The engine-agnostic physics contract this package implements.
-  scene: ^0.1.1
+  scene: ^0.2.0
   vector_math: ^2.1.4
 
 dev_dependencies:

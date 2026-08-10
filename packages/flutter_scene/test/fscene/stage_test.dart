@@ -113,6 +113,33 @@ void main() {
     expect(scene.autoExposure.enabled, isTrue);
   });
 
+  test(
+    'a stage without authored effects preserves live effect settings',
+    () async {
+      late final Scene scene;
+      try {
+        scene = Scene();
+      } catch (_) {
+        return;
+      }
+      scene.postProcess.bloom
+        ..enabled = true
+        ..intensity = 1.75;
+      final document = _envDocument((environment) {
+        environment
+          ..environment = const EmptyEnvironment()
+          ..exposure = 2
+          ..overridesEffects = false;
+      });
+
+      await realizeStage(document, scene);
+
+      expect(scene.exposure, 2);
+      expect(scene.postProcess.bloom.enabled, isTrue);
+      expect(scene.postProcess.bloom.intensity, 1.75);
+    },
+  );
+
   group('stage environment-resource sky JSON', () {
     test('skybox and sky environment round-trip', () {
       final restored = readFscene(writeFscene(_skyDocument()));

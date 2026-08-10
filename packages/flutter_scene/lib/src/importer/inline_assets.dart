@@ -38,11 +38,9 @@ ExternalPayloadAsset? resolveExternalPayloadAsset(
   if (key == null) return null;
   final file = _resolveAssetFile(sceneSourceUri.resolve('.'), key);
   if (file == null) {
-    stderr.writeln(
-      'flutter_scene: payload source "$key" referenced by the scene was not '
-      'found on disk',
+    throw FscenebFormatException(
+      'Payload source "$key" referenced by the scene was not found on disk',
     );
-    return null;
   }
   return (key: key, file: file);
 }

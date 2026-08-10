@@ -38,6 +38,26 @@ DirectionalLightComponent _directional(DirectionalLight light) {
 
 void main() {
   group('PunctualLightBuffer.packLights', () {
+    test('aimed directional component normalizes its local direction', () {
+      final node = Node();
+      final component = DirectionalLightComponent.aimed(
+        DirectionalLight(),
+        Vector3(0, 0, 4),
+      );
+      node.addComponent(component);
+
+      expect(component.worldDirection, Vector3(0, 0, 1));
+    });
+
+    test('default directional component rejects a custom light direction', () {
+      expect(
+        () => DirectionalLightComponent(
+          DirectionalLight(direction: Vector3(1, 0, 0)),
+        ),
+        throwsAssertionError,
+      );
+    });
+
     test('packs a point light into row 0 with premultiplied color', () {
       final (floats, count) = PunctualLightBuffer.packLights(
         directionals: const [],

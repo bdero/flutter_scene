@@ -90,8 +90,9 @@ class DirectionalLight {
   /// The direction the light travels, in world space (from the light
   /// toward the scene). Need not be unit length.
   ///
-  /// This aims the scene-level [Scene.directionalLight] convenience. A
-  /// [DirectionalLightComponent] is instead aimed by its node's rotation.
+  /// This aims the scene-level [Scene.directionalLight] convenience. The
+  /// default [DirectionalLightComponent] ignores it and uses its node's local
+  /// +Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
   Vector3 direction;
 
   /// Linear RGB color of the light.

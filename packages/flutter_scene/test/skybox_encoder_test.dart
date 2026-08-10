@@ -32,4 +32,32 @@ void main() {
       expect(distant.storage[i], closeTo(origin.storage[i], 1e-6));
     }
   });
+
+  test('skybox transform does not mutate a camera-owned view matrix', () {
+    final camera = _CachedCamera();
+    final before = camera.view.clone();
+
+    skyboxInverseViewProjection(camera, const ui.Size(800, 600));
+
+    expect(camera.view.storage, before.storage);
+  });
+}
+
+class _CachedCamera extends Camera {
+  final Matrix4 view = Matrix4.translationValues(2, 3, 4);
+
+  @override
+  Vector3 get position => Vector3(2, 3, 4);
+
+  @override
+  Vector3 get forward => Vector3(0, 0, 1);
+
+  @override
+  Vector3 get up => Vector3(0, 1, 0);
+
+  @override
+  CameraProjection get projection => PerspectiveProjection();
+
+  @override
+  Matrix4 getViewMatrix() => view;
 }

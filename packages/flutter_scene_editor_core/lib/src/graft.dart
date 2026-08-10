@@ -201,6 +201,7 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     skybox: e.skybox,
     skyEnvironment: e.skyEnvironment,
     effects: EnvironmentEffectsSpec.copy(e.effects),
+    overridesEffects: e.overridesEffects,
   ),
 };
 

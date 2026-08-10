@@ -94,6 +94,42 @@ void main() {
     );
   });
 
+  test(
+    'root TRS override preserves transformed instance rotation and scale',
+    () {
+      final prefab = _prefab();
+      final prefabRoot = prefab.rootNodes.single;
+      final host = SceneDocument();
+      final instance =
+          host.createNode(
+              name: 'placed',
+              root: true,
+              transform: TrsTransform(
+                translation: Vector3(5, 6, 7),
+                rotation: Quaternion.axisAngle(Vector3(0, 1, 0), 1.0),
+                scale: Vector3.all(2),
+              ),
+            )
+            ..instance = PrefabInstanceSpec(
+              source: const AssetRef('p'),
+              overrides: [
+                PropertyOverride(
+                  target: prefabRoot.id,
+                  path: 'transform.trs.t',
+                  value: Vec3Value(Vector3.all(9)),
+                ),
+              ],
+            );
+
+      final composed = composeScene(host, resolve: _resolveTo(prefab));
+      final transform = composed.rootNodes.single.transform as TrsTransform;
+
+      expect(transform.translation, Vector3.all(9));
+      expect(transform.rotation, (instance.transform as TrsTransform).rotation);
+      expect(transform.scale, Vector3.all(2));
+    },
+  );
+
   test('two instances of one prefab get distinct node ids', () {
     final host = SceneDocument();
     host.createNode(name: 'a', root: true).instance = PrefabInstanceSpec(
