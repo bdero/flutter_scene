@@ -68,10 +68,7 @@ void main() {
       final spot = nodes['Cone']!.components.single;
 
       expect(directional.type, 'directionalLight');
-      expect(
-        (directional.properties['direction'] as Vec3Value).value,
-        Vector3(0, 0, 1),
-      );
+      expect(directional.properties, isNot(contains('direction')));
       expect(
         (directional.properties['castsShadow'] as BoolValue).value,
         isFalse,

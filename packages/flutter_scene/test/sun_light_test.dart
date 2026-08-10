@@ -53,6 +53,7 @@ void main() {
     final sun = _FakeSun(Vector3(0, 1, 0), Vector3(1, 1, 1), 3.0);
     final binding = SunLight(
       sun,
+      priority: 5,
       cacheStaticShadows: false,
       shadowFilter: DirectionalShadowFilter.fixedPcf,
       shadowMaxDistance: 80.0,
@@ -61,6 +62,7 @@ void main() {
     );
 
     final light = binding.resolve();
+    expect(light.priority, 5);
     expect(light.cacheStaticShadows, isFalse);
     expect(light.shadowFilter, DirectionalShadowFilter.fixedPcf);
     expect(light.shadowMaxDistance, 80.0);

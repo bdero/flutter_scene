@@ -211,7 +211,7 @@ void main() {
         skybox: SkyboxSpec(PhysicalSkySpec(turbidity: 6.0), intensity: 2.0),
         skyEnvironment: SkyEnvironmentSpec(
           GradientSkySpec(),
-          castShadows: true,
+          sunLight: SunLightSpec(),
         ),
       ),
     );
@@ -230,6 +230,6 @@ void main() {
     expect(env.radianceCubeSize, 1024);
     expect((env.skybox!.source as PhysicalSkySpec).turbidity, 6.0);
     expect(env.skybox!.intensity, 2.0);
-    expect(env.skyEnvironment!.castShadows, isTrue);
+    expect(env.skyEnvironment!.sunLight!.castsShadow, isTrue);
   });
 }

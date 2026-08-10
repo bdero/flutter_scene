@@ -112,6 +112,7 @@ export 'package:scene/scene.dart'
         ResourceSpec,
         SkinSpec,
         SkyEnvironmentSpec,
+        SunLightSpec,
         SkySourceSpec,
         SkyboxSpec,
         SphereGeometrySpec,

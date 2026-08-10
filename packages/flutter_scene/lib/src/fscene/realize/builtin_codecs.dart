@@ -723,9 +723,8 @@ class MeshCodec extends ComponentCodec {
   }
 }
 
-/// Codec for [DirectionalLightComponent]: serializes the light's parameters,
-/// including its local direction (the node transform orients it at render
-/// time).
+/// Codec for [DirectionalLightComponent]. The owning node's rotation aims the
+/// light along native local +Z.
 class DirectionalLightCodec extends ComponentCodec {
   @override
   String get type => 'directionalLight';
@@ -734,14 +733,6 @@ class DirectionalLightCodec extends ComponentCodec {
   // existing key order (byte-stable round-trips). Defaults are the single source
   // for realize's fallbacks.
   static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
-      'direction',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(-0.3, -1.0, -0.2)),
-      doc: 'Light direction in the node\'s local space.',
-      read: (c) =>
-          Vec3Value((c as DirectionalLightComponent).light.direction.clone()),
-    ),
     ComponentPropertyDef(
       'color',
       ComponentPropertyKind.vec3,
@@ -760,12 +751,27 @@ class DirectionalLightCodec extends ComponentCodec {
           DoubleValue((c as DirectionalLightComponent).light.intensity),
     ),
     ComponentPropertyDef(
+      'priority',
+      ComponentPropertyKind.integer,
+      const IntValue(0),
+      doc: 'Priority for primary directional-light features.',
+      read: (c) => IntValue((c as DirectionalLightComponent).light.priority),
+    ),
+    ComponentPropertyDef(
       'castsShadow',
       ComponentPropertyKind.boolean,
       const BoolValue(false),
       doc: 'Whether this light renders a shadow map.',
       read: (c) =>
           BoolValue((c as DirectionalLightComponent).light.castsShadow),
+    ),
+    ComponentPropertyDef(
+      'cacheStaticShadows',
+      ComponentPropertyKind.boolean,
+      const BoolValue(true),
+      doc: 'Whether static shadow casters are cached between frames.',
+      read: (c) =>
+          BoolValue((c as DirectionalLightComponent).light.cacheStaticShadows),
     ),
     ComponentPropertyDef(
       'shadowFadeRange',
@@ -839,6 +845,36 @@ class DirectionalLightCodec extends ComponentCodec {
       read: (c) =>
           DoubleValue((c as DirectionalLightComponent).light.shadowNormalBias),
     ),
+    ComponentPropertyDef(
+      'shadowAmbientStrength',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'How strongly shadows darken image-based ambient lighting.',
+      min: 0,
+      max: 1,
+      read: (c) => DoubleValue(
+        (c as DirectionalLightComponent).light.shadowAmbientStrength,
+      ),
+    ),
+    ComponentPropertyDef(
+      'shadowFilter',
+      ComponentPropertyKind.string,
+      const StringValue('rotatedPoisson'),
+      doc: 'Shadow-map sampling pattern.',
+      options: const ['rotatedPoisson', 'fixedPcf'],
+      read: (c) =>
+          StringValue((c as DirectionalLightComponent).light.shadowFilter.name),
+    ),
+    ComponentPropertyDef(
+      'shadowCasterFaces',
+      ComponentPropertyKind.string,
+      const StringValue('front'),
+      doc: 'Caster faces rendered into the shadow map.',
+      options: const ['front', 'back', 'both'],
+      read: (c) => StringValue(
+        (c as DirectionalLightComponent).light.shadowCasterFaces.name,
+      ),
+    ),
   ];
 
   @override
@@ -852,10 +888,15 @@ class DirectionalLightCodec extends ComponentCodec {
     final p = spec.properties;
     return DirectionalLightComponent(
       DirectionalLight(
-        direction: readVec3(p, 'direction', vec3Default('direction')),
         color: readVec3(p, 'color', vec3Default('color')),
         intensity: readDouble(p, 'intensity', numberDefault('intensity')),
+        priority: readInt(p, 'priority', intDefault('priority')),
         castsShadow: readBool(p, 'castsShadow', boolDefault('castsShadow')),
+        cacheStaticShadows: readBool(
+          p,
+          'cacheStaticShadows',
+          boolDefault('cacheStaticShadows'),
+        ),
         shadowFadeRange: readDouble(
           p,
           'shadowFadeRange',
@@ -895,6 +936,21 @@ class DirectionalLightCodec extends ComponentCodec {
           p,
           'shadowNormalBias',
           numberDefault('shadowNormalBias'),
+        ),
+        shadowAmbientStrength: readDouble(
+          p,
+          'shadowAmbientStrength',
+          numberDefault('shadowAmbientStrength'),
+        ),
+        shadowFilter: DirectionalShadowFilter.values.byName(
+          readString(p, 'shadowFilter', stringDefault('shadowFilter')),
+        ),
+        shadowCasterFaces: ShadowCasterFaces.values.byName(
+          readString(
+            p,
+            'shadowCasterFaces',
+            stringDefault('shadowCasterFaces'),
+          ),
         ),
       ),
     );

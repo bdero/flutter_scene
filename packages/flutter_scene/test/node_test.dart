@@ -58,6 +58,29 @@ void main() {
         Matrix4.translation(Vector3(0.0, 5.0, 0.0)),
       );
     });
+
+    test('globalTransform setter solves through a transformed parent', () {
+      final parentTransform =
+          Matrix4.diagonal3Values(1, 1, -1) *
+          Matrix4.compose(
+            Vector3(3, -2, 7),
+            Quaternion.axisAngle(Vector3(1, 0, 0), 0.7),
+            Vector3.all(0.016),
+          );
+      final parentNode = Node(localTransform: parentTransform.clone());
+      final childNode = Node();
+      parentNode.add(childNode);
+      final desiredGlobal = Matrix4.compose(
+        Vector3(4, 5, 6),
+        Quaternion.axisAngle(Vector3(0, 1, 0), 0.35),
+        Vector3(1, 2, 3),
+      );
+
+      childNode.globalTransform = desiredGlobal;
+
+      _expectMatrixNear(childNode.globalTransform, desiredGlobal);
+      _expectMatrixNear(parentNode.globalTransform, parentTransform);
+    });
   });
 
   group('clone', () {
@@ -72,4 +95,10 @@ void main() {
       expect(clone.windingFlipped, isTrue);
     });
   });
+}
+
+void _expectMatrixNear(Matrix4 actual, Matrix4 expected) {
+  for (var i = 0; i < 16; i++) {
+    expect(actual.storage[i], closeTo(expected.storage[i], 1e-5));
+  }
 }

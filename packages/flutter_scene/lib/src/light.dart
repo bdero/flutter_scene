@@ -70,6 +70,7 @@ class DirectionalLight {
     Vector3? direction,
     Vector3? color,
     this.intensity = 3.0,
+    this.priority = 0,
     this.castsShadow = false,
     this.cacheStaticShadows = true,
     this.shadowFadeRange = 2.0,
@@ -88,6 +89,9 @@ class DirectionalLight {
 
   /// The direction the light travels, in world space (from the light
   /// toward the scene). Need not be unit length.
+  ///
+  /// This aims the scene-level [Scene.directionalLight] convenience. A
+  /// [DirectionalLightComponent] is instead aimed by its node's rotation.
   Vector3 direction;
 
   /// Linear RGB color of the light.
@@ -95,6 +99,13 @@ class DirectionalLight {
 
   /// Scalar multiplier applied to [color].
   double intensity;
+
+  /// Selects the primary directional light when a render feature supports
+  /// only one, such as cascaded shadows. Higher values win. Equal priorities
+  /// fall back to the strongest light.
+  ///
+  /// Additional directional lights still contribute direct lighting.
+  int priority;
 
   /// Whether this light casts shadows (adds a shadow-map pass).
   bool castsShadow;

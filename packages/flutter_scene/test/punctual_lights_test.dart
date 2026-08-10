@@ -1,13 +1,13 @@
 // Covers PunctualLightBuffer.packLights: the data-texture texel layout (which
 // must match FetchPunctualTexel's column reads in material_lighting.glsl), the
 // color-times-intensity premultiply, the inverse-range encoding, the spot cone
-// scale/offset, and that the first directional light is skipped (it is shaded
-// with shadows by the FragInfo path, so only the extras are packed here).
+// scale/offset, and that the selected primary directional light is skipped.
 
 import 'dart:math' as math;
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -118,27 +118,23 @@ void main() {
       expect(floats[12], closeTo(-cosOuter * scale, 1e-6));
     });
 
-    test('skips the first directional light and packs the rest as type 0', () {
+    test('skips the selected directional light and packs the rest', () {
+      final first = _directional(DirectionalLight());
+      final primary = _directional(
+        DirectionalLight(color: Vector3(1.0, 1.0, 1.0), intensity: 3.0),
+      );
       final (floats, count) = PunctualLightBuffer.packLights(
-        directionals: [
-          _directional(DirectionalLight()), // shaded by the FragInfo path
-          _directional(
-            DirectionalLight(
-              direction: Vector3(0.0, 0.0, -1.0),
-              color: Vector3(1.0, 1.0, 1.0),
-              intensity: 3.0,
-            ),
-          ),
-        ],
+        directionals: [first, primary],
+        primaryDirectional: primary,
         points: const [],
         spots: const [],
       );
       expect(count, 1);
-      // Type 0 (directional), color premultiplied, travel direction in texel 2.
+      // The non-primary first light is retained as an additional directional.
       expect(floats[3], 0.0);
       expect(floats[4], closeTo(3.0, 1e-6));
       expect(floats[8], closeTo(0.0, 1e-6));
-      expect(floats[10], closeTo(-1.0, 1e-6));
+      expect(floats[10], closeTo(1.0, 1e-6));
     });
 
     test('a lone directional light packs nothing', () {
@@ -161,6 +157,40 @@ void main() {
       expect(floats[3], 1.0);
       expect(floats[_floatsPerLight + 3], 2.0);
       expect(floats[_floatsPerLight + 1], 5.0);
+    });
+  });
+
+  group('directional-light selection', () {
+    test('priority wins over strength', () {
+      final strong = _directional(DirectionalLight(intensity: 100));
+      final preferred = _directional(
+        DirectionalLight(intensity: 1, priority: 2),
+      );
+      final renderScene = RenderScene()
+        ..addDirectionalLight(strong)
+        ..addDirectionalLight(preferred);
+
+      expect(renderScene.primaryDirectionalLight, same(preferred));
+    });
+
+    test('strength breaks equal-priority ties', () {
+      final dim = _directional(DirectionalLight(intensity: 1));
+      final bright = _directional(DirectionalLight(intensity: 3));
+      final renderScene = RenderScene()
+        ..addDirectionalLight(dim)
+        ..addDirectionalLight(bright);
+
+      expect(renderScene.primaryDirectionalLight, same(bright));
+    });
+
+    test('node rotation aims native local forward', () {
+      final node = Node(localTransform: Matrix4.rotationY(math.pi / 2));
+      final component = DirectionalLightComponent(DirectionalLight());
+      node.addComponent(component);
+
+      expect(component.worldDirection.x, closeTo(1, 1e-6));
+      expect(component.worldDirection.y, closeTo(0, 1e-6));
+      expect(component.worldDirection.z, closeTo(0, 1e-6));
     });
   });
 }

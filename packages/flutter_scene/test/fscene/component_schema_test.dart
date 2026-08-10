@@ -90,4 +90,21 @@ void main() {
       expect(def.defaultValue, isNull); // required, no default
     }
   });
+
+  test('directional light is rotation-aimed and preserves shadow controls', () {
+    final directional = registry.codecFor('directionalLight')!;
+    final names = directional.propertySchema.map((d) => d.name).toSet();
+
+    expect(names, isNot(contains('direction')));
+    expect(
+      names,
+      containsAll({
+        'priority',
+        'cacheStaticShadows',
+        'shadowAmbientStrength',
+        'shadowFilter',
+        'shadowCasterFaces',
+      }),
+    );
+  });
 }

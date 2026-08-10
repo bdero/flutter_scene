@@ -23,6 +23,11 @@ void main() {
       ambientOcclusionHalfResolution: false,
       ambientOcclusionDepthMipChain: false,
       ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.none,
+      screenSpaceReflectionsIntensity: 0.0,
+      fogDensity: 0.0,
+      godRaysIntensity: 0.0,
+      depthOfFieldFocusDistance: 2.0,
+      autoExposureCompensation: -1.0,
     );
     final b = EnvironmentSettings(
       exposure: 3.0,
@@ -40,6 +45,16 @@ void main() {
       ambientOcclusionHalfResolution: true,
       ambientOcclusionDepthMipChain: true,
       ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.simple,
+      screenSpaceReflectionsEnabled: true,
+      screenSpaceReflectionsIntensity: 2.0,
+      fogEnabled: true,
+      fogDensity: 0.2,
+      godRaysEnabled: true,
+      godRaysIntensity: 2.0,
+      depthOfFieldEnabled: true,
+      depthOfFieldFocusDistance: 10.0,
+      autoExposureEnabled: true,
+      autoExposureCompensation: 1.0,
     );
 
     final mid = EnvironmentSettings.lerp(a, b, 0.5);
@@ -56,6 +71,16 @@ void main() {
     expect(mid.ambientOcclusionSampleCount, 32);
     expect(mid.ambientOcclusionHalfResolution, isTrue);
     expect(mid.ambientOcclusionDepthMipChain, isTrue);
+    expect(mid.screenSpaceReflectionsEnabled, isTrue);
+    expect(mid.screenSpaceReflectionsIntensity, 1.0);
+    expect(mid.fogEnabled, isTrue);
+    expect(mid.fogDensity, 0.1);
+    expect(mid.godRaysEnabled, isTrue);
+    expect(mid.godRaysIntensity, 1.0);
+    expect(mid.depthOfFieldEnabled, isTrue);
+    expect(mid.depthOfFieldFocusDistance, 6.0);
+    expect(mid.autoExposureEnabled, isTrue);
+    expect(mid.autoExposureCompensation, 0.0);
     expect(
       mid.ambientOcclusionSpecularMode,
       SpecularAmbientOcclusionMode.simple,

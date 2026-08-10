@@ -578,11 +578,13 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         toneMapping: r.toneMapping,
         agxWhite: r.agxWhite,
         agxContrast: r.agxContrast,
+        environmentRotationY: r.environmentRotationY,
         radianceCubeSize: r.radianceCubeSize,
         skybox: r.skybox == null ? null : _copySkybox(r.skybox!),
         skyEnvironment: r.skyEnvironment == null
             ? null
             : _copySkyEnvironment(r.skyEnvironment!),
+        effects: EnvironmentEffectsSpec.copy(r.effects),
       ),
     };
 
@@ -640,8 +642,26 @@ SkyEnvironmentSpec _copySkyEnvironment(SkyEnvironmentSpec s) =>
       intervalSeconds: s.intervalSeconds,
       faceResolution: s.faceResolution,
       equirectWidth: s.equirectWidth,
-      castShadows: s.castShadows,
+      sunLight: s.sunLight == null ? null : _copySunLight(s.sunLight!),
     );
+
+SunLightSpec _copySunLight(SunLightSpec s) => SunLightSpec(
+  castsShadow: s.castsShadow,
+  intensityScale: s.intensityScale,
+  priority: s.priority,
+  cacheStaticShadows: s.cacheStaticShadows,
+  shadowSoftness: s.shadowSoftness,
+  shadowMaxDistance: s.shadowMaxDistance,
+  shadowCascadeCount: s.shadowCascadeCount,
+  shadowMapResolution: s.shadowMapResolution,
+  shadowDepthBias: s.shadowDepthBias,
+  shadowNormalBias: s.shadowNormalBias,
+  shadowFadeRange: s.shadowFadeRange,
+  shadowCascadeSplitLambda: s.shadowCascadeSplitLambda,
+  shadowAmbientStrength: s.shadowAmbientStrength,
+  shadowFilter: s.shadowFilter,
+  shadowCasterFaces: s.shadowCasterFaces,
+);
 
 SkySourceSpec _copySkySource(SkySourceSpec source) => switch (source) {
   EnvironmentSkySpec(:final blurriness) => EnvironmentSkySpec(

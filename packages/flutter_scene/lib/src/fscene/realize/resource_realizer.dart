@@ -113,6 +113,36 @@ class ResourceRealizer {
   Material material(LocalId id) =>
       _materials[id] ??= tagResourceOrigin(_buildMaterial(id), document, id);
 
+  /// Rebuilds one material while retaining already loaded texture resources.
+  ///
+  /// Editors use this after changing a material descriptor. Re-running
+  /// [preload] would decode every texture in the document even though the
+  /// changed material normally references the same textures.
+  Future<Material> reloadMaterial(LocalId id) async {
+    final resource = document.resource(id);
+    if (resource is! MaterialResource) {
+      throw FsceneFormatException('Resource $id is not a material');
+    }
+    for (final value in resource.properties.values) {
+      if (value case ResourceRefValue(:final id)) {
+        final textureResource = document.resource(id);
+        if (textureResource is TextureResource && !_textures.containsKey(id)) {
+          await _preloadTexture(textureResource);
+        }
+      }
+    }
+    _materials.remove(id);
+    switch (resource.type) {
+      case 'fmat':
+        await _preloadFmat(resource);
+      case 'physical':
+        await _preloadPhysical(resource);
+      default:
+        _materials[id] = tagResourceOrigin(_buildMaterial(id), document, id);
+    }
+    return _materials[id]!;
+  }
+
   /// The live texture for resource [id], realized and memoized on first use.
   gpu.Texture texture(LocalId id) => _textures[id] ??= tagResourceOrigin(
     _buildTextureOrPlaceholder(id),
@@ -194,9 +224,11 @@ class ResourceRealizer {
           toneMapping: resource.toneMapping,
           agxWhite: resource.agxWhite,
           agxContrast: resource.agxContrast,
+          environmentRotationY: resource.environmentRotationY,
           radianceCubeSize: resource.radianceCubeSize,
           skybox: resource.skybox,
           skyEnvironment: resource.skyEnvironment,
+          effects: resource.effects,
           bundle: bundle,
           environmentLoader: environmentLoader,
           payloadLookup: document.payload,

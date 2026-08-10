@@ -146,6 +146,8 @@ SceneDocument importGltfToSceneDocument(
     samplers: doc.samplers,
     skins: doc.skins,
     animations: doc.animations,
+    lights: doc.lights,
+    materialsVariants: doc.materialsVariants,
   );
   return (doc: normalized, bufferData: blob.toBytes());
 }

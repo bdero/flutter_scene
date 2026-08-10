@@ -57,6 +57,18 @@ Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
     ..localTransform = vm.Matrix4.rotationY(0.6) * vm.Matrix4.rotationX(0.3);
 }
 
+Node _directionalLightNode(vm.Vector3 direction, DirectionalLight light) =>
+    Node(
+      localTransform: vm.Matrix4.compose(
+        vm.Vector3.zero(),
+        vm.Quaternion.fromTwoVectors(
+          vm.Vector3(0, 0, 1),
+          direction.normalized(),
+        ),
+        vm.Vector3.all(1),
+      ),
+    )..addComponent(DirectionalLightComponent(light));
+
 void _configureAmbientOcclusion(Scene scene) {
   scene.ambientOcclusion
     ..enabled = true
@@ -375,11 +387,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       vm.Vector3(0.5, 0.5, 0.5),
     ).extractMeshData();
     scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(direction: vm.Vector3(-0.4, -1.0, -0.35)),
-        ),
-      ),
+      _directionalLightNode(vm.Vector3(-0.4, -1.0, -0.35), DirectionalLight()),
     );
     // Non-instanced receiver, drawn from the same pipeline as the instances.
     scene.add(
@@ -429,14 +437,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('directional_shadow', () {
     final scene = Scene();
     scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(
-            direction: vm.Vector3(-0.4, -1.0, -0.35),
-            castsShadow: true,
-            shadowMaxDistance: 20.0,
-          ),
-        ),
+      _directionalLightNode(
+        vm.Vector3(-0.4, -1.0, -0.35),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
       ),
     );
     // Ground plane (receiver), centered at the origin in the XZ plane.
@@ -517,14 +520,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..parameters.setFloat('amplitude', 0.3);
     final scene = Scene();
     scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(
-            direction: vm.Vector3(-0.4, -1.0, -0.35),
-            castsShadow: true,
-            shadowMaxDistance: 20.0,
-          ),
-        ),
+      _directionalLightNode(
+        vm.Vector3(-0.4, -1.0, -0.35),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
       ),
     );
     // Ground receiver, to catch the rippled shadow.
@@ -586,11 +584,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       // env-sampling fog path is exercised too.
       ..skyColorInfluence = 0.7;
     scene.add(
-      Node()..addComponent(
-        DirectionalLightComponent(
-          DirectionalLight(direction: vm.Vector3(-0.5, -0.4, -0.75)),
-        ),
-      ),
+      _directionalLightNode(vm.Vector3(-0.5, -0.4, -0.75), DirectionalLight()),
     );
     // A near cuboid (lightly fogged) and a far one (heavily fogged toward the
     // fog color), so the fog gradient is a clear visual-diff signal while the

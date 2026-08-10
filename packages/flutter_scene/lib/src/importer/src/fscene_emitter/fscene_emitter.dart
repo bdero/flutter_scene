@@ -428,9 +428,7 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
   };
   switch (light.type) {
     case 'directional':
-      properties
-        ..['direction'] = Vec3Value(Vector3(0, 0, 1))
-        ..['castsShadow'] = const BoolValue(false);
+      properties['castsShadow'] = const BoolValue(false);
       return ComponentSpec('directionalLight', properties: properties);
     case 'point':
       properties['range'] = DoubleValue(light.range ?? 0);

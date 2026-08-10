@@ -1,11 +1,68 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/components/directional_light_component.dart';
+import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
+import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 void main() {
   group('glTF coordinate policy', () {
+    test(
+      'runtime and offline directional lights resolve the same direction',
+      () async {
+        final bytes = Uint8List.fromList(
+          utf8.encode(
+            jsonEncode({
+              'asset': {'version': '2.0'},
+              'extensionsUsed': ['KHR_lights_punctual'],
+              'extensions': {
+                'KHR_lights_punctual': {
+                  'lights': [
+                    {'type': 'directional'},
+                  ],
+                },
+              },
+              'scenes': [
+                {
+                  'nodes': [0],
+                },
+              ],
+              'scene': 0,
+              'nodes': [
+                {
+                  'rotation': [0.0, 0.38268343, 0.0, 0.92387953],
+                  'extensions': {
+                    'KHR_lights_punctual': {'light': 0},
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+
+        final runtime = await importGltf(
+          bytes,
+          resolveUri: (_) async => Uint8List(0),
+        );
+        final offline = realizeScene(
+          importGltfToSceneDocument(bytes, resolveUri: (_) => null),
+        );
+        final runtimeLight = runtime.children.single
+            .getComponent<DirectionalLightComponent>()!;
+        final offlineLight = offline.children.single
+            .getComponent<DirectionalLightComponent>()!;
+
+        _expectVectorNear(
+          runtimeLight.worldDirection,
+          offlineLight.worldDirection,
+        );
+      },
+    );
+
     test('runtime packing leaves vertex bytes untouched', () {
       final source = _pack(GltfCoordinatePolicy.runtimeBoundary);
       final vertices = Float32List.sublistView(source.vertexBytes);

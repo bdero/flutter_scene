@@ -59,15 +59,11 @@ class _ExamplePhysicsBox3dState extends State<ExamplePhysicsBox3d> {
   @override
   void initState() {
     super.initState();
-    scene.root.addComponent(
-      DirectionalLightComponent(
-        DirectionalLight(
-          direction: vm.Vector3(-0.6, -1.0, -0.45),
-          intensity: 3.0,
-          castsShadow: true,
-          shadowMaxDistance: 40.0,
-        ),
-      ),
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(-0.6, -1.0, -0.45),
+      intensity: 3.0,
+      castsShadow: true,
+      shadowMaxDistance: 40.0,
     );
     scene.environmentIntensity = 0.6;
 

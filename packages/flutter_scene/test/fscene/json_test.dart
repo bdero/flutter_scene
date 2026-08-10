@@ -123,6 +123,68 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
 }
 
 void main() {
+  test('environment rendering effects round-trip', () {
+    final document = SceneDocument();
+    final environment = document.addResource(
+      EnvironmentResource(
+        document.newId(),
+        environmentRotationY: 1.25,
+        effects: EnvironmentEffectsSpec(
+          colorGradingEnabled: true,
+          saturation: 1.4,
+          lift: Vector3(0.1, 0.2, 0.3),
+          bloomEnabled: true,
+          bloomIntensity: 1.7,
+          vignetteEnabled: true,
+          chromaticAberrationEnabled: true,
+          filmGrainEnabled: true,
+          ambientOcclusionEnabled: true,
+          ambientOcclusionSampleCount: 32,
+          ambientOcclusionSpecularMode: 'simple',
+          screenSpaceReflectionsEnabled: true,
+          screenSpaceReflectionsResolutionScale: 0.5,
+          fogEnabled: true,
+          fogMode: 'linear',
+          fogColor: Vector3(0.2, 0.3, 0.4),
+          godRaysEnabled: true,
+          godRaysStepCount: 48,
+          depthOfFieldEnabled: true,
+          depthOfFieldQuality: 'high',
+          autoExposureEnabled: true,
+          autoExposureCompensation: 1.5,
+        ),
+      ),
+    );
+    document.stage.environmentRef = environment.id;
+
+    final decoded = readFscene(writeFscene(document));
+    final result = decoded.resource(environment.id)! as EnvironmentResource;
+    final effects = result.effects;
+    expect(result.environmentRotationY, 1.25);
+    expect(effects.colorGradingEnabled, isTrue);
+    expect(effects.saturation, 1.4);
+    expect(effects.lift, Vector3(0.1, 0.2, 0.3));
+    expect(effects.bloomEnabled, isTrue);
+    expect(effects.bloomIntensity, 1.7);
+    expect(effects.vignetteEnabled, isTrue);
+    expect(effects.chromaticAberrationEnabled, isTrue);
+    expect(effects.filmGrainEnabled, isTrue);
+    expect(effects.ambientOcclusionEnabled, isTrue);
+    expect(effects.ambientOcclusionSampleCount, 32);
+    expect(effects.ambientOcclusionSpecularMode, 'simple');
+    expect(effects.screenSpaceReflectionsEnabled, isTrue);
+    expect(effects.screenSpaceReflectionsResolutionScale, 0.5);
+    expect(effects.fogEnabled, isTrue);
+    expect(effects.fogMode, 'linear');
+    expect(effects.fogColor, Vector3(0.2, 0.3, 0.4));
+    expect(effects.godRaysEnabled, isTrue);
+    expect(effects.godRaysStepCount, 48);
+    expect(effects.depthOfFieldEnabled, isTrue);
+    expect(effects.depthOfFieldQuality, 'high');
+    expect(effects.autoExposureEnabled, isTrue);
+    expect(effects.autoExposureCompensation, 1.5);
+  });
+
   test('constant diffuse environment round-trips', () {
     final document = SceneDocument();
     final environment = document.addResource(

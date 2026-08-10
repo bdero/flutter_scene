@@ -6,6 +6,8 @@ library;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/ambient_occlusion.dart';
+import 'package:flutter_scene/src/depth_of_field.dart';
+import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
@@ -41,6 +43,7 @@ class EnvironmentSettings {
   /// or [EnvironmentSettings.lerp] instead of this directly.
   EnvironmentSettings({
     this.environment,
+    Matrix3? environmentTransform,
     this.skybox,
     this.skyEnvironment,
     this.sunLight,
@@ -82,12 +85,65 @@ class EnvironmentSettings {
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = SpecularAmbientOcclusionMode.none,
-  }) : lift = lift ?? Vector3.zero(),
+    this.screenSpaceReflectionsEnabled = false,
+    this.screenSpaceReflectionsIntensity = 1.0,
+    this.screenSpaceReflectionsMaxDistance = 24.4,
+    this.screenSpaceReflectionsThickness = 0.46,
+    this.screenSpaceReflectionsStride = 9.0,
+    this.screenSpaceReflectionsMaxSteps = 90,
+    this.screenSpaceReflectionsBlur = 0.3,
+    this.screenSpaceReflectionsDistanceFadeStart = 0.0,
+    this.screenSpaceReflectionsResolutionScale = 1.0,
+    this.fogEnabled = false,
+    this.fogMode = FogMode.exponential,
+    Vector3? fogColor,
+    this.fogSkyColorInfluence = 0.0,
+    this.fogDensity = 0.02,
+    this.fogStart = 0.0,
+    this.fogEnd = 200.0,
+    this.fogMaxOpacity = 1.0,
+    this.fogCutoffDistance = 0.0,
+    this.fogHeight = 0.0,
+    this.fogHeightFalloff = 0.0,
+    this.fogSunInScatter = 0.0,
+    this.fogSunInScatterExponent = 8.0,
+    this.godRaysEnabled = false,
+    this.godRaysIntensity = 1.0,
+    this.godRaysDensity = 0.5,
+    this.godRaysAnisotropy = 0.7,
+    this.godRaysStepCount = 24,
+    this.godRaysMaxDistance = 200.0,
+    this.godRaysJitter = 1.0,
+    Vector3? godRaysColor,
+    this.depthOfFieldEnabled = false,
+    this.depthOfFieldFocusDistance = 10.0,
+    this.depthOfFieldFStop = 2.8,
+    this.depthOfFieldFocalLength = 0.0,
+    this.depthOfFieldSensorHeight = 0.024,
+    this.depthOfFieldBlurScale = 1.0,
+    this.depthOfFieldMaxForegroundBlur = 24.0,
+    this.depthOfFieldMaxBackgroundBlur = 32.0,
+    this.depthOfFieldBladeCount = 0,
+    this.depthOfFieldBladeRotation = 0.0,
+    this.depthOfFieldBladeCurvature = 0.0,
+    this.depthOfFieldQuality = DepthOfFieldQuality.medium,
+    this.autoExposureEnabled = false,
+    this.autoExposureStrength = 0.55,
+    this.autoExposureCompensation = 0.0,
+    this.autoExposureMinEv = -1.0,
+    this.autoExposureMaxEv = 1.3,
+    this.autoExposureSpeedUp = 3.0,
+    this.autoExposureSpeedDown = 1.0,
+  }) : environmentTransform = environmentTransform ?? Matrix3.identity(),
+       lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
-       gain = gain ?? Vector3.all(1.0);
+       gain = gain ?? Vector3.all(1.0),
+       fogColor = fogColor ?? Vector3(0.6, 0.7, 0.8),
+       godRaysColor = godRaysColor ?? Vector3.all(1.0);
 
   // Image-based lighting and sky (discrete: switched, not blended).
   EnvironmentMap? environment;
+  Matrix3 environmentTransform;
   Skybox? skybox;
   SkyEnvironment? skyEnvironment;
   SunLight? sunLight;
@@ -144,6 +200,65 @@ class EnvironmentSettings {
   bool ambientOcclusionDepthMipChain;
   SpecularAmbientOcclusionMode ambientOcclusionSpecularMode;
 
+  // Screen-space reflections.
+  bool screenSpaceReflectionsEnabled;
+  double screenSpaceReflectionsIntensity;
+  double screenSpaceReflectionsMaxDistance;
+  double screenSpaceReflectionsThickness;
+  double screenSpaceReflectionsStride;
+  int screenSpaceReflectionsMaxSteps;
+  double screenSpaceReflectionsBlur;
+  double screenSpaceReflectionsDistanceFadeStart;
+  double screenSpaceReflectionsResolutionScale;
+
+  // Fog.
+  bool fogEnabled;
+  FogMode fogMode;
+  Vector3 fogColor;
+  double fogSkyColorInfluence;
+  double fogDensity;
+  double fogStart;
+  double fogEnd;
+  double fogMaxOpacity;
+  double fogCutoffDistance;
+  double fogHeight;
+  double fogHeightFalloff;
+  double fogSunInScatter;
+  double fogSunInScatterExponent;
+
+  // God rays.
+  bool godRaysEnabled;
+  double godRaysIntensity;
+  double godRaysDensity;
+  double godRaysAnisotropy;
+  int godRaysStepCount;
+  double godRaysMaxDistance;
+  double godRaysJitter;
+  Vector3 godRaysColor;
+
+  // Depth of field.
+  bool depthOfFieldEnabled;
+  double depthOfFieldFocusDistance;
+  double depthOfFieldFStop;
+  double depthOfFieldFocalLength;
+  double depthOfFieldSensorHeight;
+  double depthOfFieldBlurScale;
+  double depthOfFieldMaxForegroundBlur;
+  double depthOfFieldMaxBackgroundBlur;
+  int depthOfFieldBladeCount;
+  double depthOfFieldBladeRotation;
+  double depthOfFieldBladeCurvature;
+  DepthOfFieldQuality depthOfFieldQuality;
+
+  // Automatic exposure.
+  bool autoExposureEnabled;
+  double autoExposureStrength;
+  double autoExposureCompensation;
+  double autoExposureMinEv;
+  double autoExposureMaxEv;
+  double autoExposureSpeedUp;
+  double autoExposureSpeedDown;
+
   /// Reads the current look of [scene] into a snapshot. The IBL/sky references
   /// are shared (not deep-copied); the scalar look is captured by value.
   factory EnvironmentSettings.fromScene(Scene scene) {
@@ -153,8 +268,14 @@ class EnvironmentSettings {
     final ca = scene.postProcess.chromaticAberration;
     final grain = scene.postProcess.filmGrain;
     final ao = scene.ambientOcclusion;
+    final ssr = scene.screenSpaceReflections;
+    final fog = scene.fog;
+    final rays = scene.godRays;
+    final dof = scene.depthOfField;
+    final auto = scene.autoExposure;
     return EnvironmentSettings(
       environment: scene.environment,
+      environmentTransform: scene.environmentTransform.clone(),
       skybox: scene.skybox,
       skyEnvironment: scene.skyEnvironment,
       sunLight: scene.sunLight,
@@ -196,6 +317,55 @@ class EnvironmentSettings {
       ambientOcclusionHalfResolution: ao.halfResolution,
       ambientOcclusionDepthMipChain: ao.depthMipChain,
       ambientOcclusionSpecularMode: ao.specularMode,
+      screenSpaceReflectionsEnabled: ssr.enabled,
+      screenSpaceReflectionsIntensity: ssr.intensity,
+      screenSpaceReflectionsMaxDistance: ssr.maxDistance,
+      screenSpaceReflectionsThickness: ssr.thickness,
+      screenSpaceReflectionsStride: ssr.stride,
+      screenSpaceReflectionsMaxSteps: ssr.maxSteps,
+      screenSpaceReflectionsBlur: ssr.blur,
+      screenSpaceReflectionsDistanceFadeStart: ssr.distanceFadeStart,
+      screenSpaceReflectionsResolutionScale: ssr.resolutionScale,
+      fogEnabled: fog.enabled,
+      fogMode: fog.mode,
+      fogColor: fog.color.clone(),
+      fogSkyColorInfluence: fog.skyColorInfluence,
+      fogDensity: fog.density,
+      fogStart: fog.start,
+      fogEnd: fog.end,
+      fogMaxOpacity: fog.maxOpacity,
+      fogCutoffDistance: fog.cutoffDistance,
+      fogHeight: fog.height,
+      fogHeightFalloff: fog.heightFalloff,
+      fogSunInScatter: fog.sunInScatter,
+      fogSunInScatterExponent: fog.sunInScatterExponent,
+      godRaysEnabled: rays.enabled,
+      godRaysIntensity: rays.intensity,
+      godRaysDensity: rays.density,
+      godRaysAnisotropy: rays.anisotropy,
+      godRaysStepCount: rays.stepCount,
+      godRaysMaxDistance: rays.maxDistance,
+      godRaysJitter: rays.jitter,
+      godRaysColor: rays.color.clone(),
+      depthOfFieldEnabled: dof.enabled,
+      depthOfFieldFocusDistance: dof.focusDistance,
+      depthOfFieldFStop: dof.fStop,
+      depthOfFieldFocalLength: dof.focalLength,
+      depthOfFieldSensorHeight: dof.sensorHeight,
+      depthOfFieldBlurScale: dof.blurScale,
+      depthOfFieldMaxForegroundBlur: dof.maxForegroundBlur,
+      depthOfFieldMaxBackgroundBlur: dof.maxBackgroundBlur,
+      depthOfFieldBladeCount: dof.bladeCount,
+      depthOfFieldBladeRotation: dof.bladeRotation,
+      depthOfFieldBladeCurvature: dof.bladeCurvature,
+      depthOfFieldQuality: dof.quality,
+      autoExposureEnabled: auto.enabled,
+      autoExposureStrength: auto.strength,
+      autoExposureCompensation: auto.compensation,
+      autoExposureMinEv: auto.minEv,
+      autoExposureMaxEv: auto.maxEv,
+      autoExposureSpeedUp: auto.speedUp,
+      autoExposureSpeedDown: auto.speedDown,
     );
   }
 
@@ -215,6 +385,7 @@ class EnvironmentSettings {
     scene.agxWhite = agxWhite;
     scene.agxContrast = agxContrast;
     scene.environmentIntensity = environmentIntensity;
+    scene.environmentTransform.setFrom(environmentTransform);
     scene.exposure = exposure;
   }
 
@@ -269,6 +440,65 @@ class EnvironmentSettings {
       ..halfResolution = ambientOcclusionHalfResolution
       ..depthMipChain = ambientOcclusionDepthMipChain
       ..specularMode = ambientOcclusionSpecularMode;
+
+    scene.screenSpaceReflections
+      ..enabled = screenSpaceReflectionsEnabled
+      ..intensity = screenSpaceReflectionsIntensity
+      ..maxDistance = screenSpaceReflectionsMaxDistance
+      ..thickness = screenSpaceReflectionsThickness
+      ..stride = screenSpaceReflectionsStride
+      ..maxSteps = screenSpaceReflectionsMaxSteps
+      ..blur = screenSpaceReflectionsBlur
+      ..distanceFadeStart = screenSpaceReflectionsDistanceFadeStart
+      ..resolutionScale = screenSpaceReflectionsResolutionScale;
+
+    scene.fog
+      ..enabled = fogEnabled
+      ..mode = fogMode
+      ..color.setFrom(fogColor)
+      ..skyColorInfluence = fogSkyColorInfluence
+      ..density = fogDensity
+      ..start = fogStart
+      ..end = fogEnd
+      ..maxOpacity = fogMaxOpacity
+      ..cutoffDistance = fogCutoffDistance
+      ..height = fogHeight
+      ..heightFalloff = fogHeightFalloff
+      ..sunInScatter = fogSunInScatter
+      ..sunInScatterExponent = fogSunInScatterExponent;
+
+    scene.godRays
+      ..enabled = godRaysEnabled
+      ..intensity = godRaysIntensity
+      ..density = godRaysDensity
+      ..anisotropy = godRaysAnisotropy
+      ..stepCount = godRaysStepCount
+      ..maxDistance = godRaysMaxDistance
+      ..jitter = godRaysJitter
+      ..color.setFrom(godRaysColor);
+
+    scene.depthOfField
+      ..enabled = depthOfFieldEnabled
+      ..focusDistance = depthOfFieldFocusDistance
+      ..fStop = depthOfFieldFStop
+      ..focalLength = depthOfFieldFocalLength
+      ..sensorHeight = depthOfFieldSensorHeight
+      ..blurScale = depthOfFieldBlurScale
+      ..maxForegroundBlur = depthOfFieldMaxForegroundBlur
+      ..maxBackgroundBlur = depthOfFieldMaxBackgroundBlur
+      ..bladeCount = depthOfFieldBladeCount
+      ..bladeRotation = depthOfFieldBladeRotation
+      ..bladeCurvature = depthOfFieldBladeCurvature
+      ..quality = depthOfFieldQuality;
+
+    scene.autoExposure
+      ..enabled = autoExposureEnabled
+      ..strength = autoExposureStrength
+      ..compensation = autoExposureCompensation
+      ..minEv = autoExposureMinEv
+      ..maxEv = autoExposureMaxEv
+      ..speedUp = autoExposureSpeedUp
+      ..speedDown = autoExposureSpeedDown;
   }
 
   /// Interpolates from [a] to [b] by [t] (0 = [a], 1 = [b]). See the class doc
@@ -282,6 +512,7 @@ class EnvironmentSettings {
     EnvironmentSettings d = pickB ? b : a;
     return EnvironmentSettings(
       environment: d.environment,
+      environmentTransform: d.environmentTransform.clone(),
       skybox: d.skybox,
       skyEnvironment: d.skyEnvironment,
       sunLight: d.sunLight,
@@ -359,6 +590,139 @@ class EnvironmentSettings {
       ambientOcclusionHalfResolution: d.ambientOcclusionHalfResolution,
       ambientOcclusionDepthMipChain: d.ambientOcclusionDepthMipChain,
       ambientOcclusionSpecularMode: d.ambientOcclusionSpecularMode,
+      screenSpaceReflectionsEnabled: d.screenSpaceReflectionsEnabled,
+      screenSpaceReflectionsIntensity: _lerp(
+        a.screenSpaceReflectionsIntensity,
+        b.screenSpaceReflectionsIntensity,
+        t,
+      ),
+      screenSpaceReflectionsMaxDistance: _lerp(
+        a.screenSpaceReflectionsMaxDistance,
+        b.screenSpaceReflectionsMaxDistance,
+        t,
+      ),
+      screenSpaceReflectionsThickness: _lerp(
+        a.screenSpaceReflectionsThickness,
+        b.screenSpaceReflectionsThickness,
+        t,
+      ),
+      screenSpaceReflectionsStride: _lerp(
+        a.screenSpaceReflectionsStride,
+        b.screenSpaceReflectionsStride,
+        t,
+      ),
+      screenSpaceReflectionsMaxSteps: d.screenSpaceReflectionsMaxSteps,
+      screenSpaceReflectionsBlur: _lerp(
+        a.screenSpaceReflectionsBlur,
+        b.screenSpaceReflectionsBlur,
+        t,
+      ),
+      screenSpaceReflectionsDistanceFadeStart: _lerp(
+        a.screenSpaceReflectionsDistanceFadeStart,
+        b.screenSpaceReflectionsDistanceFadeStart,
+        t,
+      ),
+      screenSpaceReflectionsResolutionScale: _lerp(
+        a.screenSpaceReflectionsResolutionScale,
+        b.screenSpaceReflectionsResolutionScale,
+        t,
+      ),
+      fogEnabled: d.fogEnabled,
+      fogMode: d.fogMode,
+      fogColor: _lerpVec3(a.fogColor, b.fogColor, t),
+      fogSkyColorInfluence: _lerp(
+        a.fogSkyColorInfluence,
+        b.fogSkyColorInfluence,
+        t,
+      ),
+      fogDensity: _lerp(a.fogDensity, b.fogDensity, t),
+      fogStart: _lerp(a.fogStart, b.fogStart, t),
+      fogEnd: _lerp(a.fogEnd, b.fogEnd, t),
+      fogMaxOpacity: _lerp(a.fogMaxOpacity, b.fogMaxOpacity, t),
+      fogCutoffDistance: _lerp(a.fogCutoffDistance, b.fogCutoffDistance, t),
+      fogHeight: _lerp(a.fogHeight, b.fogHeight, t),
+      fogHeightFalloff: _lerp(a.fogHeightFalloff, b.fogHeightFalloff, t),
+      fogSunInScatter: _lerp(a.fogSunInScatter, b.fogSunInScatter, t),
+      fogSunInScatterExponent: _lerp(
+        a.fogSunInScatterExponent,
+        b.fogSunInScatterExponent,
+        t,
+      ),
+      godRaysEnabled: d.godRaysEnabled,
+      godRaysIntensity: _lerp(a.godRaysIntensity, b.godRaysIntensity, t),
+      godRaysDensity: _lerp(a.godRaysDensity, b.godRaysDensity, t),
+      godRaysAnisotropy: _lerp(a.godRaysAnisotropy, b.godRaysAnisotropy, t),
+      godRaysStepCount: d.godRaysStepCount,
+      godRaysMaxDistance: _lerp(a.godRaysMaxDistance, b.godRaysMaxDistance, t),
+      godRaysJitter: _lerp(a.godRaysJitter, b.godRaysJitter, t),
+      godRaysColor: _lerpVec3(a.godRaysColor, b.godRaysColor, t),
+      depthOfFieldEnabled: d.depthOfFieldEnabled,
+      depthOfFieldFocusDistance: _lerp(
+        a.depthOfFieldFocusDistance,
+        b.depthOfFieldFocusDistance,
+        t,
+      ),
+      depthOfFieldFStop: _lerp(a.depthOfFieldFStop, b.depthOfFieldFStop, t),
+      depthOfFieldFocalLength: _lerp(
+        a.depthOfFieldFocalLength,
+        b.depthOfFieldFocalLength,
+        t,
+      ),
+      depthOfFieldSensorHeight: _lerp(
+        a.depthOfFieldSensorHeight,
+        b.depthOfFieldSensorHeight,
+        t,
+      ),
+      depthOfFieldBlurScale: _lerp(
+        a.depthOfFieldBlurScale,
+        b.depthOfFieldBlurScale,
+        t,
+      ),
+      depthOfFieldMaxForegroundBlur: _lerp(
+        a.depthOfFieldMaxForegroundBlur,
+        b.depthOfFieldMaxForegroundBlur,
+        t,
+      ),
+      depthOfFieldMaxBackgroundBlur: _lerp(
+        a.depthOfFieldMaxBackgroundBlur,
+        b.depthOfFieldMaxBackgroundBlur,
+        t,
+      ),
+      depthOfFieldBladeCount: d.depthOfFieldBladeCount,
+      depthOfFieldBladeRotation: _lerp(
+        a.depthOfFieldBladeRotation,
+        b.depthOfFieldBladeRotation,
+        t,
+      ),
+      depthOfFieldBladeCurvature: _lerp(
+        a.depthOfFieldBladeCurvature,
+        b.depthOfFieldBladeCurvature,
+        t,
+      ),
+      depthOfFieldQuality: d.depthOfFieldQuality,
+      autoExposureEnabled: d.autoExposureEnabled,
+      autoExposureStrength: _lerp(
+        a.autoExposureStrength,
+        b.autoExposureStrength,
+        t,
+      ),
+      autoExposureCompensation: _lerp(
+        a.autoExposureCompensation,
+        b.autoExposureCompensation,
+        t,
+      ),
+      autoExposureMinEv: _lerp(a.autoExposureMinEv, b.autoExposureMinEv, t),
+      autoExposureMaxEv: _lerp(a.autoExposureMaxEv, b.autoExposureMaxEv, t),
+      autoExposureSpeedUp: _lerp(
+        a.autoExposureSpeedUp,
+        b.autoExposureSpeedUp,
+        t,
+      ),
+      autoExposureSpeedDown: _lerp(
+        a.autoExposureSpeedDown,
+        b.autoExposureSpeedDown,
+        t,
+      ),
     );
   }
 }
