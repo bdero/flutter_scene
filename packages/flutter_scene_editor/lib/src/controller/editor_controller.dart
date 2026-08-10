@@ -26,7 +26,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show CachingAssetBundle;
 import 'package:flutter_scene/scene.dart';
-import 'package:scene/scene.dart';
+import 'package:scene/scene.dart' hide NodeChange;
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
@@ -71,6 +71,8 @@ class EditorController extends ChangeNotifier {
   }
 
   final Map<LocalId, Node> _liveById = {};
+  ResourceRealizer? _resourceRealizer;
+  Node? _realizedRoot;
   // Maps every live node (including those realized from inside a prefab) to the
   // source-document node that owns it (itself for a source node, the enclosing
   // instance root for a prefab-internal node), so a viewport click on a prefab
@@ -103,45 +105,19 @@ class EditorController extends ChangeNotifier {
   /// null when [id] is not prefab content.
   PrefabMemberOrigin? memberOrigin(LocalId id) => _memberOrigins[id];
 
-  /// Whether [id] can be edited: a real source node, or a prefab member backed
-  /// by an override origin. A composed-only node with no origin (the synthesized
-  /// handedness adapter compose inserts between an instance and a prefab of the
-  /// opposite handedness) is internal machinery and is not editable.
+  /// Whether [id] can be edited as a source node or prefab member.
   bool isEditableNode(LocalId id) =>
       document.nodes.containsKey(id) || _memberOrigins.containsKey(id);
-
-  // A composed node that is neither a source node nor a prefab member: the
-  // handedness adapter. Hidden from the outliner so the user sees the actual
-  // prefab content, and never editable.
-  bool _isSyntheticComposedNode(LocalId id) =>
-      _composed != null &&
-      !document.nodes.containsKey(id) &&
-      !_memberOrigins.containsKey(id);
 
   /// The node to show for [id] in the display tree.
   NodeSpec? displayNode(LocalId id) => displayDocument.nodes[id];
 
   /// The root node ids of the display tree.
-  List<LocalId> displayRoots() => _splicedChildren(displayDocument.roots);
+  List<LocalId> displayRoots() => displayDocument.roots;
 
   /// The child node ids of [id] in the display tree.
   List<LocalId> displayChildren(LocalId id) =>
-      _splicedChildren(displayDocument.nodes[id]?.children ?? const []);
-
-  // Replaces any synthetic compose node in [ids] with its own children, so the
-  // handedness adapter is invisible and its prefab content appears in its place.
-  List<LocalId> _splicedChildren(List<LocalId> ids) {
-    if (_composed == null || !ids.any(_isSyntheticComposedNode)) return ids;
-    final out = <LocalId>[];
-    for (final id in ids) {
-      if (_isSyntheticComposedNode(id)) {
-        out.addAll(_splicedChildren(displayDocument.nodes[id]?.children ?? []));
-      } else {
-        out.add(id);
-      }
-    }
-    return out;
-  }
+      displayDocument.nodes[id]?.children ?? const [];
 
   /// The message of the most recent command failure, for the UI to surface.
   /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
@@ -166,12 +142,8 @@ class EditorController extends ChangeNotifier {
       baseDirectory,
       componentRegistry ?? defaultComponentRegistry(),
     );
-    // Keep prefab-internal nodes (which live only in the composed document)
-    // selectable across edits, not just source nodes; but not synthetic compose
-    // machinery (the handedness adapter), which is not editable.
-    session.selectionValidId = (id) =>
-        controller.displayDocument.nodes.containsKey(id) &&
-        !controller._isSyntheticComposedNode(id);
+    // Keep prefab-internal nodes selectable across source edits.
+    session.selectionValidId = controller.displayDocument.nodes.containsKey;
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
     return controller;
@@ -237,7 +209,7 @@ class EditorController extends ChangeNotifier {
         skybox: SkyboxSpec(PhysicalSkySpec()),
         skyEnvironment: SkyEnvironmentSpec(
           PhysicalSkySpec(),
-          castShadows: true,
+          sunLight: SunLightSpec(),
         ),
       ),
     );
@@ -350,6 +322,9 @@ class EditorController extends ChangeNotifier {
   /// the next [loadPrefabDocument] call. Call this after applying overrides
   /// back to the source file so the inspector reflects the updated content.
   void clearPrefabCache(String key) => _prefabCache.remove(key);
+
+  /// Resolves a scene asset key to an absolute local path when possible.
+  String? resolveAssetPath(String key) => _resolveFilePath(key, baseDirectory);
 
   /// Runs the command named [name] with [params], reflects the resulting
   /// transaction onto the live scene, and notifies listeners. Returns the
@@ -996,6 +971,17 @@ class EditorController extends ChangeNotifier {
       );
       return;
     }
+    // Creating an unreferenced resource has no live-scene effect. Primitive
+    // creation builds its geometry and material before attaching either to a
+    // node, so realizing the entire existing scene here is pure waste.
+    if (transaction.records.every(
+      (r) =>
+          r.slot == ChangeSlot.poolResource &&
+          r.oldValue is ResourceChange &&
+          (r.oldValue as ResourceChange).value == null,
+    )) {
+      return;
+    }
     // An environment-resource edit re-resolves only the affected environments
     // in place, avoiding the full re-realize (which clears the scene, so a
     // committed slider would flash the old look before snapping to the new).
@@ -1023,6 +1009,9 @@ class EditorController extends ChangeNotifier {
       );
       return;
     }
+    if (_reflectRemovedNodes(transaction)) return;
+    if (_reflectAddedNode(transaction)) return;
+    if (_reflectComponents(transaction)) return;
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -1044,19 +1033,15 @@ class EditorController extends ChangeNotifier {
   // would leave the render item pointing at the old object until the next full
   // re-realize. Mutating in place keeps the render item's material live.
   Future<void> _reflectMaterials(Set<LocalId> ids) async {
-    final realizer = ResourceRealizer(
-      document,
-      textureLoader: _loadAssetTexture,
-    );
-    // TODO(material-reflect-textures): preload re-decodes every texture in the
-    // document, not just the changed materials' own textures. Cheap for the
-    // common factor edit (no textures), but scope it to the changed materials'
-    // dependencies for texture-heavy scenes.
-    await realizer.preload(includeEnvironments: false);
+    final realizer = _composed == null ? _resourceRealizer : null;
+    if (realizer == null) {
+      await _realizeAll();
+      return;
+    }
     final rebuilt = <LocalId, Material>{};
     for (final id in ids) {
       if (document.resource(id) is MaterialResource) {
-        rebuilt[id] = realizer.material(id);
+        rebuilt[id] = await realizer.reloadMaterial(id);
       }
     }
     if (rebuilt.isEmpty) return;
@@ -1075,6 +1060,131 @@ class EditorController extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  // Adds the empty node produced by createNode directly to the retained live
+  // graph. More complex structural edits still use the full realization path.
+  bool _reflectAddedNode(Transaction transaction) {
+    if (_composed != null || _realizedRoot == null) return false;
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.poolNode &&
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots,
+    )) {
+      return false;
+    }
+    final additions = transaction.records.where(
+      (record) =>
+          record.slot == ChangeSlot.poolNode &&
+          record.oldValue is NodeChange &&
+          (record.oldValue as NodeChange).value == null &&
+          document.nodes.containsKey(record.targetId),
+    );
+    if (additions.length != 1) return false;
+    final id = additions.single.targetId;
+    final spec = document.nodes[id]!;
+    if (spec.components.isNotEmpty ||
+        spec.children.isNotEmpty ||
+        spec.skin != null ||
+        spec.instance != null) {
+      return false;
+    }
+    LocalId? parentId;
+    for (final entry in document.nodes.entries) {
+      if (entry.value.children.contains(id)) {
+        parentId = entry.key;
+        break;
+      }
+    }
+    final parent = parentId == null ? _realizedRoot : _liveById[parentId];
+    if (parent == null) return false;
+    final live = tagNodeId(
+      Node(name: spec.name)
+        ..layers = spec.layers
+        ..visible = spec.visible,
+      id,
+    );
+    applyTransformSpec(live, spec.transform);
+    parent.add(live);
+    _liveById[id] = live;
+    _sourceIdByLive[live] = id;
+    return true;
+  }
+
+  // Removes live nodes for a structural deletion, including undoing a freshly
+  // created node. The document records already identify the entire removed
+  // subtree, so no unrelated node or resource needs to be rebuilt.
+  bool _reflectRemovedNodes(Transaction transaction) {
+    if (_composed != null || _realizedRoot == null) return false;
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.poolNode &&
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots,
+    )) {
+      return false;
+    }
+    final removed = <LocalId, Node>{};
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.poolNode ||
+          document.nodes.containsKey(record.targetId)) {
+        continue;
+      }
+      final live = _liveById[record.targetId];
+      if (live != null) removed[record.targetId] = live;
+    }
+    if (removed.isEmpty) return false;
+    final removedNodes = removed.values.toSet();
+    for (final live in removed.values) {
+      final parent = live.parent;
+      if (parent != null && !removedNodes.contains(parent)) {
+        parent.remove(live);
+      }
+    }
+    for (final entry in removed.entries) {
+      _liveById.remove(entry.key);
+      _sourceIdByLive.remove(entry.value);
+    }
+    return true;
+  }
+
+  // Replaces components only on the nodes whose component lists changed.
+  // Component codecs are synchronous once the retained resource realizer has
+  // loaded the document, so this avoids rebuilding unrelated nodes/resources.
+  bool _reflectComponents(Transaction transaction) {
+    if (_composed != null || _resourceRealizer == null) return false;
+    if (!transaction.records.every(
+      (record) => record.slot == ChangeSlot.components,
+    )) {
+      return false;
+    }
+    final ids = transaction.records.map((record) => record.targetId).toSet();
+    final context = RealizeContext(document, resources: _resourceRealizer)
+      ..resolveNode = (id) => _liveById[id];
+    final replacements = <Node, List<Component>>{};
+    for (final id in ids) {
+      final spec = document.nodes[id];
+      final live = _liveById[id];
+      if (spec == null || live == null) return false;
+      final components = <Component>[];
+      for (final componentSpec in spec.components) {
+        final component = _componentRegistry.realize(componentSpec, context);
+        if (component == null) return false;
+        components.add(component);
+      }
+      replacements[live] = components;
+    }
+    for (final entry in replacements.entries) {
+      for (final component in entry.key.getComponents<Component>().toList()) {
+        entry.key.removeComponent(component);
+      }
+      for (final component in entry.value) {
+        entry.key.addComponent(component);
+      }
+    }
+    context.runAfterRealize();
+    return true;
   }
 
   // Copies the renderable fields of the freshly realized [from] onto the live
@@ -1152,9 +1262,13 @@ class EditorController extends ChangeNotifier {
             environmentIntensity: resource.environmentIntensity,
             exposure: resource.exposure,
             toneMapping: resource.toneMapping,
+            agxWhite: resource.agxWhite,
+            agxContrast: resource.agxContrast,
+            environmentRotationY: resource.environmentRotationY,
             radianceCubeSize: resource.radianceCubeSize,
             skybox: resource.skybox,
             skyEnvironment: resource.skyEnvironment,
+            effects: resource.effects,
             environmentLoader: _loadAssetEnvironment,
           );
         }
@@ -1205,6 +1319,10 @@ class EditorController extends ChangeNotifier {
     environmentIntensity: resource.environmentIntensity,
     exposure: resource.exposure,
     toneMapping: resource.toneMapping,
+    agxWhite: resource.agxWhite,
+    agxContrast: resource.agxContrast,
+    environmentRotationY: resource.environmentRotationY,
+    effects: resource.effects,
     skybox: resource.skybox,
     skyEnvironment: resource.skyEnvironment,
   );
@@ -1274,6 +1392,8 @@ class EditorController extends ChangeNotifier {
     );
     scene.removeAll();
     scene.add(root);
+    _resourceRealizer = realizer;
+    _realizedRoot = root;
     // Apply the document's scene-wide settings (environment/lighting, exposure,
     // tone mapping, anti-aliasing) to the live scene.
     await realizeStage(

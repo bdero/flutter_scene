@@ -28,7 +28,10 @@ export 'src/io/scene_io.dart'
         pickOpenPath,
         saveFscene;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
+export 'src/settings/editor_settings.dart'
+    show EditorSettings, EditorSettingsStore;
 export 'src/shell/editor_shell.dart' show EditorShell;
-export 'src/shell/editor_theme.dart' show editorDarkTheme;
+export 'src/shell/editor_theme.dart'
+    show EditorThemeScope, editorDarkTheme, editorForuiDarkTheme;
 export 'src/viewport/viewport_camera_handle.dart' show ViewportCameraHandle;
 export 'src/viewport/viewport_panel.dart' show ViewportPanel;

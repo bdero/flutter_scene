@@ -17,12 +17,35 @@ import '../controller/editor_controller.dart';
 ///   reorder/unparent. Prefab-internal rows are not drag-reorderable (their
 ///   structure is owned by the prefab); they are marked and editable in place.
 ///
-/// TODO(virtualize-outliner): replace with a two_dimensional_scrollables
-/// TreeView backed by a stable-id node model for scenes with 1000+ nodes.
-class OutlinerPanel extends StatelessWidget {
+class OutlinerPanel extends StatefulWidget {
   const OutlinerPanel({super.key, required this.controller});
 
   final EditorController controller;
+
+  @override
+  State<OutlinerPanel> createState() => _OutlinerPanelState();
+}
+
+class _OutlinerPanelState extends State<OutlinerPanel> {
+  final Set<LocalId> _collapsed = {};
+
+  EditorController get controller => widget.controller;
+
+  @override
+  void didUpdateWidget(OutlinerPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) _collapsed.clear();
+  }
+
+  void _setExpanded(LocalId id, bool expanded) {
+    setState(() {
+      if (expanded) {
+        _collapsed.remove(id);
+      } else {
+        _collapsed.add(id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +53,11 @@ class OutlinerPanel extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         final roots = controller.displayRoots();
+        final entries = _visibleEntries(
+          controller,
+          roots: roots,
+          collapsed: _collapsed,
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -41,17 +69,45 @@ class OutlinerPanel extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     )
-                  : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: buildContainer(
-                          controller,
-                          parentId: null,
-                          childIds: roots,
-                          depth: 0,
-                          draggable: true,
-                        ),
-                      ),
+                  : ListView.builder(
+                      itemCount: entries.length,
+                      scrollCacheExtent: const ScrollCacheExtent.pixels(400),
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        return switch (entry) {
+                          _VisibleInsertion(
+                            :final container,
+                            :final beforeId,
+                            :final depth,
+                          ) =>
+                            _InsertionLine(
+                              key: ValueKey(
+                                'insert:${container?.toToken() ?? 'root'}:'
+                                '${beforeId?.toToken() ?? 'end'}',
+                              ),
+                              controller: controller,
+                              container: container,
+                              beforeId: beforeId,
+                              depth: depth,
+                            ),
+                          _VisibleNode(
+                            :final node,
+                            :final depth,
+                            :final draggable,
+                            :final expanded,
+                          ) =>
+                            _OutlinerNode(
+                              key: ValueKey(node.id.toToken()),
+                              node: node,
+                              controller: controller,
+                              depth: depth,
+                              draggable: draggable,
+                              expanded: expanded,
+                              onExpandedChanged: (value) =>
+                                  _setExpanded(node.id, value),
+                            ),
+                        };
+                      },
                     ),
             ),
           ],
@@ -61,51 +117,87 @@ class OutlinerPanel extends StatelessWidget {
   }
 }
 
-/// Builds the rows of one container. When [draggable], rows carry drag handles
-/// and insertion lines (plain scene content); prefab-internal containers pass
-/// [draggable] false (their order is fixed by the prefab).
-List<Widget> buildContainer(
+sealed class _VisibleEntry {
+  const _VisibleEntry();
+}
+
+class _VisibleNode extends _VisibleEntry {
+  const _VisibleNode({
+    required this.node,
+    required this.depth,
+    required this.draggable,
+    required this.expanded,
+  });
+
+  final NodeSpec node;
+  final int depth;
+  final bool draggable;
+  final bool expanded;
+}
+
+class _VisibleInsertion extends _VisibleEntry {
+  const _VisibleInsertion({
+    required this.container,
+    required this.beforeId,
+    required this.depth,
+  });
+
+  final LocalId? container;
+  final LocalId? beforeId;
+  final int depth;
+}
+
+List<_VisibleEntry> _visibleEntries(
   EditorController controller, {
-  required LocalId? parentId,
-  required List<LocalId> childIds,
-  required int depth,
-  required bool draggable,
+  required List<LocalId> roots,
+  required Set<LocalId> collapsed,
 }) {
-  final rows = <Widget>[];
-  for (final id in childIds) {
-    final node = controller.displayNode(id);
-    if (node == null) continue;
-    if (draggable) {
-      rows.add(
-        _InsertionLine(
-          controller: controller,
-          container: parentId,
-          beforeId: id,
+  final entries = <_VisibleEntry>[];
+
+  void addContainer(
+    LocalId? parentId,
+    List<LocalId> childIds,
+    int depth,
+    bool draggable,
+  ) {
+    for (final id in childIds) {
+      final node = controller.displayNode(id);
+      if (node == null) continue;
+      if (draggable) {
+        entries.add(
+          _VisibleInsertion(container: parentId, beforeId: id, depth: depth),
+        );
+      }
+      final children = controller.displayChildren(id);
+      final expanded = !collapsed.contains(id);
+      entries.add(
+        _VisibleNode(
+          node: node,
           depth: depth,
+          draggable: draggable,
+          expanded: expanded,
         ),
       );
+      if (expanded && children.isNotEmpty) {
+        final isMember = controller.isPrefabMember(id);
+        final isInstance = controller.document.nodes[id]?.instance != null;
+        addContainer(
+          id,
+          children,
+          depth + 1,
+          draggable && !isInstance && !isMember,
+        );
+      }
     }
-    rows.add(
-      _OutlinerNode(
-        key: ValueKey(id.toToken()),
-        node: node,
-        controller: controller,
-        depth: depth,
-        draggable: draggable,
-      ),
-    );
+    if (draggable) {
+      entries.add(
+        _VisibleInsertion(container: parentId, beforeId: null, depth: depth),
+      );
+    }
   }
-  if (draggable) {
-    rows.add(
-      _InsertionLine(
-        controller: controller,
-        container: parentId,
-        beforeId: null,
-        depth: depth,
-      ),
-    );
-  }
-  return rows;
+
+  addContainer(null, roots, 0, true);
+  return entries;
 }
 
 /// The flattened, depth-first order of the display tree, for Shift+click range
@@ -155,6 +247,7 @@ void _handleTap(EditorController c, LocalId id) {
 /// when [beforeId] is null), covering reordering and unparenting.
 class _InsertionLine extends StatefulWidget {
   const _InsertionLine({
+    super.key,
     required this.controller,
     required this.container,
     required this.beforeId,
@@ -235,19 +328,22 @@ class _OutlinerNode extends StatefulWidget {
     required this.controller,
     required this.depth,
     required this.draggable,
+    required this.expanded,
+    required this.onExpandedChanged,
   });
 
   final NodeSpec node;
   final EditorController controller;
   final int depth;
   final bool draggable;
+  final bool expanded;
+  final ValueChanged<bool> onExpandedChanged;
 
   @override
   State<_OutlinerNode> createState() => _OutlinerNodeState();
 }
 
 class _OutlinerNodeState extends State<_OutlinerNode> {
-  bool _expanded = true;
   bool _dragTarget = false;
 
   @override
@@ -261,9 +357,6 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
     // The source document still carries the instance marker (the composed node
     // does not), so detect a prefab instance node there.
     final isInstance = ctrl.document.nodes[node.id]?.instance != null;
-    // Children of a plain node are draggable; once inside a prefab they are not.
-    final childrenDraggable = widget.draggable && !isInstance && !isMember;
-
     final accent = Theme.of(context).colorScheme.primary;
     final prefabTint = Theme.of(context).colorScheme.tertiary;
     final rowColor = _dragTarget
@@ -286,9 +379,11 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
             width: 16,
             child: hasChildren
                 ? GestureDetector(
-                    onTap: () => setState(() => _expanded = !_expanded),
+                    onTap: () => widget.onExpandedChanged(!widget.expanded),
                     child: Icon(
-                      _expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                      widget.expanded
+                          ? Icons.arrow_drop_down
+                          : Icons.arrow_right,
                       size: 16,
                     ),
                   )
@@ -374,7 +469,7 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       onLeave: (_) => setState(() => _dragTarget = false),
       onMove: (_) => setState(() => _dragTarget = true),
       builder: (context, candidate, rejected) {
-        if (isMember) return rowContent;
+        if (!widget.draggable || isMember) return rowContent;
         return Draggable<LocalId>(
           data: node.id,
           feedback: Material(
@@ -392,19 +487,6 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       },
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        row,
-        if (_expanded && hasChildren)
-          ...buildContainer(
-            ctrl,
-            parentId: node.id,
-            childIds: childIds,
-            depth: widget.depth + 1,
-            draggable: childrenDraggable,
-          ),
-      ],
-    );
+    return row;
   }
 }

@@ -16,6 +16,23 @@ DockLayout _twoColumn() {
 }
 
 void main() {
+  test('default editor layout matches the three-column workspace', () {
+    final layout = defaultEditorDockLayout();
+    final root = layout.root as DockSplit;
+
+    expect(root.axis, Axis.horizontal);
+    expect(root.weights[0], closeTo(0.20993533355494798, 1e-12));
+    expect(root.weights[1], closeTo(0.5575395295519655, 1e-12));
+    expect(root.weights[2], closeTo(0.23252513689308651, 1e-12));
+
+    final left = root.children[0] as DockSplit;
+    expect(left.axis, Axis.vertical);
+    expect((left.children[0] as DockTabs).panels, ['outliner']);
+    expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
+    expect((root.children[1] as DockTabs).panels, ['viewport']);
+    expect((root.children[2] as DockTabs).panels, ['inspector']);
+  });
+
   test('json round-trips', () {
     final layout = _twoColumn();
     final restored = DockLayout.fromJsonString(layout.toJsonString());

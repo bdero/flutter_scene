@@ -1,20 +1,108 @@
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
-/// The editor's dark theme.
-///
-/// Blue-seeded so the whole shell (panels, tabs, selection, gizmo-adjacent
-/// chrome) reads as one palette, with compact density for desktop pointer
-/// input.
-ThemeData editorDarkTheme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF3B82F6),
-    brightness: Brightness.dark,
+const _ink = Color(0xFF15191D);
+const _graphite = Color(0xFF1B2025);
+const _raised = Color(0xFF22282E);
+const _line = Color(0xFF343B43);
+const _text = Color(0xFFD4D9DE);
+const _mutedText = Color(0xFF9099A2);
+const _signal = Color(0xFF44B3E7);
+
+/// Axis colors shared by transform controls and gizmos.
+const editorAxisColors = [
+  Color(0xFFE05252),
+  Color(0xFF58B95B),
+  Color(0xFF4E86DE),
+];
+
+final FThemeData editorForuiDarkTheme = _buildForuiTheme();
+
+FThemeData _buildForuiTheme() {
+  final colors = FColors.neutralDark.copyWith(
+    background: _ink,
+    foreground: _text,
+    primary: _signal,
+    primaryForeground: _ink,
+    secondary: _raised,
+    secondaryForeground: _text,
+    muted: _graphite,
+    mutedForeground: _mutedText,
+    card: _graphite,
+    border: _line,
   );
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
+  final typography = FTypography.inherit(
+    colors: colors,
+    touch: false,
+  ).scale(sizeScalar: 0.88);
+  final style =
+      FStyle.inherit(
+        colors: colors,
+        typography: typography,
+        touch: false,
+      ).copyWith(
+        borderRadius: const FBorderRadius(
+          xs2: BorderRadius.all(Radius.circular(2)),
+          xs: BorderRadius.all(Radius.circular(3)),
+          sm: BorderRadius.all(Radius.circular(4)),
+          md: BorderRadius.all(Radius.circular(5)),
+          lg: BorderRadius.all(Radius.circular(6)),
+          xl: BorderRadius.all(Radius.circular(8)),
+          xl2: BorderRadius.all(Radius.circular(10)),
+          xl3: BorderRadius.all(Radius.circular(12)),
+        ),
+        sizes: const FSizes(
+          field: (xs: 24, sm: 32, md: 36, lg: 40),
+          item: 26,
+          tile: 34,
+          calendar: 28,
+        ),
+        pagePadding: const EdgeInsetsDelta.value(
+          EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        ),
+        shadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      );
+  return FThemeData(
+    debugLabel: 'Flutter Scene Editor Dark',
+    colors: colors,
+    typography: typography,
+    style: style,
+    touch: false,
+  );
+}
+
+/// Provides the editor's Forui theme and overlay services.
+class EditorThemeScope extends StatelessWidget {
+  const EditorThemeScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return FTheme(
+      data: editorForuiDarkTheme,
+      child: FToaster(child: FTooltipGroup(child: child)),
+    );
+  }
+}
+
+/// The editor's compact dark Material compatibility theme.
+///
+/// Existing shell and viewport widgets keep using Material while controls move
+/// behind the editor's Forui-backed component layer.
+ThemeData editorDarkTheme() {
+  return editorForuiDarkTheme.toApproximateMaterialTheme().copyWith(
     visualDensity: VisualDensity.compact,
     splashFactory: InkSparkle.splashFactory,
+    scaffoldBackgroundColor: _ink,
+    canvasColor: _graphite,
+    dividerColor: _line,
     tooltipTheme: const TooltipThemeData(
       waitDuration: Duration(milliseconds: 500),
     ),

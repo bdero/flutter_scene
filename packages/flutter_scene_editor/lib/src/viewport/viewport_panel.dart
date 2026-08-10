@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
+import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
 import 'transform_gizmo.dart';
@@ -43,7 +46,14 @@ class ViewportPanel extends StatefulWidget {
 }
 
 class _ViewportPanelState extends State<ViewportPanel> {
+  static const double _primaryDragThreshold = 4;
+
   final _camera = OrbitCamera(radius: 10.0, elevation: 0.3);
+  final _freeLook = FreeLookCamera();
+  final _freeLookPointer = InfiniteDragController(
+    axis: InfiniteDragAxis.both,
+    edgeMargin: 24,
+  );
   final _gizmo = GizmoController();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
@@ -52,7 +62,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final _focusNode = FocusNode(debugLabel: 'editorViewport');
 
   bool _draggingGizmo = false;
+  bool _freeLookActive = false;
   bool _showFps = false;
+  TransformSpace _transformSpace = TransformSpace.global;
+  _PendingSelection? _pendingSelection;
 
   // The pointer's last position over this viewport, kept for starting a
   // modal transform at the right anchor.
@@ -66,6 +79,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final vm.Vector3 _startT = vm.Vector3.zero();
   final vm.Quaternion _startR = vm.Quaternion.identity();
   final vm.Vector3 _startS = vm.Vector3(1, 1, 1);
+  final vm.Matrix4 _startLocal = vm.Matrix4.identity();
+  final vm.Matrix4 _startGlobal = vm.Matrix4.identity();
+  final vm.Matrix4 _parentGlobalInverse = vm.Matrix4.identity();
+  List<vm.Vector3> _activeTransformAxes = transformSpaceAxes(
+    TransformSpace.global,
+    vm.Matrix4.identity(),
+  );
 
   Size _viewSize = Size.zero;
 
@@ -104,6 +124,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _viewEpoch.dispose();
     _fps.dispose();
     _focusNode.dispose();
+    _freeLookPointer.dispose();
     super.dispose();
   }
 
@@ -116,6 +137,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
       final inst = 1.0 / deltaSeconds;
       final prev = _fps.value;
       _fps.value = prev == 0 ? inst : prev * 0.9 + inst * 0.1;
+    }
+    if (_freeLookActive && _freeLook.move(deltaSeconds)) {
+      _syncOrbitToFreeLook();
+      _bumpView();
     }
   }
 
@@ -134,6 +159,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
       return;
     }
+    if (event.buttons & kSecondaryMouseButton != 0) {
+      _startFreeLook(event);
+      return;
+    }
+    if (event.buttons & kPrimaryMouseButton == 0) return;
     final primary = _ctrl.selection.primary;
     if (primary != null) {
       final live = _ctrl.liveNode(primary);
@@ -141,21 +171,44 @@ class _ViewportPanelState extends State<ViewportPanel> {
         final grabbed = _gizmo.grab(
           event.localPosition,
           live.globalTransform.getTranslation(),
+          _axesFor(live),
           _camera.camera,
           viewSize,
         );
         if (grabbed) {
           _draggingGizmo = true;
-          // Decompose the node's local transform so each mode can rebuild it.
-          live.localTransform.decompose(_startT, _startR, _startS);
+          _captureTransformStart(live);
           return;
         }
       }
     }
-    _performRaycast(event.localPosition, viewSize);
+    _pendingSelection = _PendingSelection(
+      pointer: event.pointer,
+      origin: event.localPosition,
+      viewSize: viewSize,
+    );
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    if (_freeLookActive) {
+      unawaited(
+        _freeLookPointer
+            .updateOffset(
+              globalPosition: event.position,
+              delta: event.delta,
+              viewportSize: MediaQuery.sizeOf(context),
+            )
+            .then(_applyFreeLookDelta),
+      );
+      return;
+    }
+    final pending = _pendingSelection;
+    if (pending != null &&
+        pending.pointer == event.pointer &&
+        (event.localPosition - pending.origin).distance >=
+            _primaryDragThreshold) {
+      _pendingSelection = null;
+    }
     if (!_draggingGizmo) return;
     final primary = _ctrl.selection.primary;
     if (primary == null) return;
@@ -173,32 +226,53 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
-    if (!_draggingGizmo) return;
+    if (_freeLookActive && event.buttons & kSecondaryMouseButton == 0) {
+      _endFreeLook();
+      return;
+    }
+    if (!_draggingGizmo) {
+      final pending = _pendingSelection;
+      _pendingSelection = null;
+      if (pending != null && pending.pointer == event.pointer) {
+        _performRaycast(event.localPosition, pending.viewSize);
+      }
+      return;
+    }
     final primary = _ctrl.selection.primary;
     if (primary != null) {
+      final local = _previewMatrix();
+      final translation = vm.Vector3.zero();
+      final rotation = vm.Quaternion.identity();
+      final scale = vm.Vector3.zero();
+      local.decompose(translation, rotation, scale);
       switch (_gizmo.mode) {
         case GizmoMode.translate:
           if (_gizmo.translation.length2 > 1e-10) {
-            final t = _startT + _gizmo.translation;
             _ctrl.setNodeTransformRouted(
               primary,
-              translation: {'x': t.x, 'y': t.y, 'z': t.z},
+              translation: _vectorMap(translation),
             );
           }
         case GizmoMode.rotate:
           if (_gizmo.angle.abs() > 1e-5) {
-            final r = _rotatedStart();
             _ctrl.setNodeTransformRouted(
               primary,
-              rotation: {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w},
+              rotation: _quaternionMap(rotation),
+              scale: _transformSpace == TransformSpace.global
+                  ? _vectorMap(scale)
+                  : null,
             );
           }
         case GizmoMode.scale:
-          final s = _scaledStart();
-          if ((s - _startS).length2 > 1e-10) {
+          if ((scale - _startS).length2 > 1e-10) {
             _ctrl.setNodeTransformRouted(
               primary,
-              scale: {'x': s.x, 'y': s.y, 'z': s.z},
+              scale: _vectorMap(scale),
+              rotation:
+                  _transformSpace == TransformSpace.global &&
+                      _gizmo.activeAxis != axisUniform
+                  ? _quaternionMap(rotation)
+                  : null,
             );
           }
       }
@@ -207,30 +281,168 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _draggingGizmo = false;
   }
 
-  vm.Quaternion _rotatedStart() =>
-      (vm.Quaternion.axisAngle(_gizmo.axisVec, _gizmo.angle) * _startR)
-        ..normalize();
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (_freeLookActive) _endFreeLook();
+    if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
+    if (_draggingGizmo) {
+      final primary = _ctrl.selection.primary;
+      if (primary != null) {
+        _ctrl.previewLocalTransform(primary, _startLocal.clone());
+      }
+      _gizmo.end();
+      _draggingGizmo = false;
+      _bumpView();
+    }
+  }
 
-  vm.Vector3 _scaledStart() => vm.Vector3(
-    _startS.x * _gizmo.scale.x,
-    _startS.y * _gizmo.scale.y,
-    _startS.z * _gizmo.scale.z,
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (!_freeLookActive || event is! PointerScrollEvent) return;
+    _freeLook.adjustSpeed(event.scrollDelta.dy);
+    _bumpView();
+  }
+
+  void _startFreeLook(PointerDownEvent event) {
+    if (_freeLookActive) return;
+    _pendingSelection = null;
+    _freeLook.syncTo(_camera.camera);
+    _camera.orthographic = false;
+    setState(() => _freeLookActive = true);
+    unawaited(
+      _freeLookPointer.start(
+        event.position,
+        viewportSize: MediaQuery.sizeOf(context),
+        onLockedDelta: _applyFreeLookDelta,
+      ),
+    );
+    _bumpView();
+  }
+
+  void _applyFreeLookDelta(Offset delta) {
+    if (!_freeLookActive || delta == Offset.zero) return;
+    _freeLook.look(delta);
+    _syncOrbitToFreeLook();
+    _bumpView();
+  }
+
+  void _syncOrbitToFreeLook() {
+    _camera.azimuth = _freeLook.yaw;
+    _camera.elevation = -_freeLook.pitch;
+    _camera.target = _freeLook.position + _freeLook.forward * _camera.radius;
+    _camera.orthographic = false;
+  }
+
+  void _endFreeLook() {
+    if (!_freeLookActive) return;
+    _freeLook.releaseKeys();
+    _syncOrbitToFreeLook();
+    unawaited(_freeLookPointer.end());
+    if (mounted) setState(() => _freeLookActive = false);
+    _bumpView();
+  }
+
+  List<vm.Vector3> _axesFor(Node live) =>
+      transformSpaceAxes(_transformSpace, live.globalTransform);
+
+  void _captureTransformStart(Node live) {
+    _startLocal.setFrom(live.localTransform);
+    _startGlobal.setFrom(live.globalTransform);
+    live.localTransform.decompose(_startT, _startR, _startS);
+    final parent = live.parent;
+    if (parent == null) {
+      _parentGlobalInverse.setIdentity();
+    } else {
+      _parentGlobalInverse.copyInverse(parent.globalTransform);
+    }
+    _activeTransformAxes = transformSpaceAxes(_transformSpace, _startGlobal);
+  }
+
+  vm.Matrix4 _globalToLocal(vm.Matrix4 global) =>
+      globalToLocalTransform(global, _parentGlobalInverse);
+
+  vm.Matrix4 _translatedLocal(vm.Vector3 globalDelta) {
+    final global = _startGlobal.clone();
+    global.setTranslation(_startGlobal.getTranslation() + globalDelta);
+    return _globalToLocal(global);
+  }
+
+  vm.Matrix4 _rotatedLocal(vm.Vector3 globalAxis, double angle) {
+    final origin = _startGlobal.getTranslation();
+    final rotation = vm.Matrix4.compose(
+      vm.Vector3.zero(),
+      vm.Quaternion.axisAngle(globalAxis, angle),
+      vm.Vector3.all(1),
+    );
+    final global =
+        vm.Matrix4.translation(origin) *
+        rotation *
+        vm.Matrix4.translation(-origin) *
+        _startGlobal;
+    return _globalToLocal(global);
+  }
+
+  vm.Matrix4 _rotatedInLocalSpace(int axis, double angle) {
+    final localAngle = localAxisRotationAngle(angle, _startGlobal);
+    final rotation =
+        _startR *
+        vm.Quaternion.axisAngle(vm.Vector3.zero()..[axis] = 1, localAngle);
+    rotation.normalize();
+    return vm.Matrix4.compose(_startT, rotation, _startS);
+  }
+
+  vm.Matrix4 _scaledGlobalLocal(vm.Vector3 globalAxis, double factor) {
+    final scale = vm.Matrix4.identity();
+    for (var row = 0; row < 3; row++) {
+      for (var column = 0; column < 3; column++) {
+        scale.setEntry(
+          row,
+          column,
+          (row == column ? 1.0 : 0.0) +
+              (factor - 1) * globalAxis[row] * globalAxis[column],
+        );
+      }
+    }
+    final origin = _startGlobal.getTranslation();
+    final global =
+        vm.Matrix4.translation(origin) *
+        scale *
+        vm.Matrix4.translation(-origin) *
+        _startGlobal;
+    return _globalToLocal(global);
+  }
+
+  vm.Matrix4 _scaledLocal(vm.Vector3 scale) => vm.Matrix4.compose(
+    _startT,
+    _startR,
+    vm.Vector3(_startS.x * scale.x, _startS.y * scale.y, _startS.z * scale.z),
   );
 
-  // The previewed local transform for the active drag, built from the start
-  // components plus the gizmo's accumulated delta for the current mode.
   vm.Matrix4 _previewMatrix() {
-    final t = _gizmo.mode == GizmoMode.translate
-        ? _startT + _gizmo.translation
-        : _startT;
-    final r = _gizmo.mode == GizmoMode.rotate ? _rotatedStart() : _startR;
-    final s = _gizmo.mode == GizmoMode.scale ? _scaledStart() : _startS;
-    return vm.Matrix4.compose(t, r, s);
+    switch (_gizmo.mode) {
+      case GizmoMode.translate:
+        return _translatedLocal(_gizmo.translation);
+      case GizmoMode.rotate:
+        if (_transformSpace == TransformSpace.local) {
+          return _rotatedInLocalSpace(_gizmo.activeAxis!, _gizmo.angle);
+        }
+        return _rotatedLocal(_gizmo.axisVec, _gizmo.angle);
+      case GizmoMode.scale:
+        final axis = _gizmo.activeAxis;
+        if (_transformSpace == TransformSpace.local || axis == axisUniform) {
+          return _scaledLocal(_gizmo.scale);
+        }
+        return _scaledGlobalLocal(_gizmo.axisVec, _gizmo.scale[axis!]);
+    }
   }
 
   void _setMode(GizmoMode mode) {
     if (_gizmo.mode == mode) return;
     _gizmo.mode = mode;
+    _bumpView();
+  }
+
+  void _setTransformSpace(TransformSpace space) {
+    if (_transformSpace == space) return;
+    setState(() => _transformSpace = space);
     _bumpView();
   }
 
@@ -241,7 +453,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (primary == null) return;
     final live = _ctrl.liveNode(primary);
     if (live == null) return;
-    live.localTransform.decompose(_startT, _startR, _startS);
+    _captureTransformStart(live);
     final origin = live.globalTransform.getTranslation();
     _modal = _ModalTransform(
       op: op,
@@ -272,22 +484,35 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     switch (modal.op) {
       case _ModalOp.translate:
-        final t = _startT + _modalTranslation(modal);
-        _ctrl.setNodeTransformRouted(
-          primary,
-          translation: {'x': t.x, 'y': t.y, 'z': t.z},
-        );
+        final local = _modalMatrix(modal);
+        final t = local.getTranslation();
+        _ctrl.setNodeTransformRouted(primary, translation: _vectorMap(t));
       case _ModalOp.rotate:
-        final r = _modalRotation(modal);
+        final local = _modalMatrix(modal);
+        final t = vm.Vector3.zero();
+        final r = vm.Quaternion.identity();
+        final s = vm.Vector3.zero();
+        local.decompose(t, r, s);
         _ctrl.setNodeTransformRouted(
           primary,
-          rotation: {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w},
+          rotation: _quaternionMap(r),
+          scale: _transformSpace == TransformSpace.global
+              ? _vectorMap(s)
+              : null,
         );
       case _ModalOp.scale:
-        final s = _modalScaleVec(modal);
+        final local = _modalMatrix(modal);
+        final t = vm.Vector3.zero();
+        final r = vm.Quaternion.identity();
+        final s = vm.Vector3.zero();
+        local.decompose(t, r, s);
         _ctrl.setNodeTransformRouted(
           primary,
-          scale: {'x': s.x, 'y': s.y, 'z': s.z},
+          scale: _vectorMap(s),
+          rotation:
+              _transformSpace == TransformSpace.global && modal.axis != null
+              ? _quaternionMap(r)
+              : null,
         );
     }
     _modal = null;
@@ -298,27 +523,50 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final modal = _modal;
     final primary = _ctrl.selection.primary;
     if (modal != null && primary != null) {
-      _ctrl.previewLocalTransform(
-        primary,
-        vm.Matrix4.compose(_startT, _startR, _startS),
-      );
+      _ctrl.previewLocalTransform(primary, _startLocal.clone());
     }
     _modal = null;
     _bumpView();
   }
 
   vm.Matrix4 _modalMatrix(_ModalTransform modal) {
-    final t = modal.op == _ModalOp.translate
-        ? _startT + _modalTranslation(modal)
-        : _startT;
-    final r = modal.op == _ModalOp.rotate ? _modalRotation(modal) : _startR;
-    final s = modal.op == _ModalOp.scale ? _modalScaleVec(modal) : _startS;
-    return vm.Matrix4.compose(t, r, s);
+    switch (modal.op) {
+      case _ModalOp.translate:
+        return _translatedLocal(_modalTranslation(modal));
+      case _ModalOp.rotate:
+        if (_transformSpace == TransformSpace.local && modal.axis != null) {
+          return _rotatedInLocalSpace(modal.axis!, _modalRotationAngle(modal));
+        }
+        return _rotatedLocal(
+          _modalRotationAxis(modal),
+          _modalRotationAngle(modal),
+        );
+      case _ModalOp.scale:
+        final factors = _modalScaleFactors(modal);
+        final axis = modal.axis;
+        if (_transformSpace == TransformSpace.local || axis == null) {
+          return _scaledLocal(factors);
+        }
+        return _scaledGlobalLocal(_activeTransformAxes[axis], factors[axis]);
+    }
   }
 
-  /// Pixels-to-world factor at the modal object's depth (or the orthographic
+  Map<String, Object> _vectorMap(vm.Vector3 value) => {
+    'x': value.x,
+    'y': value.y,
+    'z': value.z,
+  };
+
+  Map<String, Object> _quaternionMap(vm.Quaternion value) => {
+    'x': value.x,
+    'y': value.y,
+    'z': value.z,
+    'w': value.w,
+  };
+
+  /// Pixels-to-global-units factor at the modal object's depth (or orthographic
   /// view scale), for camera-plane translation.
-  double _worldPerPixel(_ModalTransform modal) {
+  double _globalUnitsPerPixel(_ModalTransform modal) {
     if (_viewSize.height <= 0) return 0;
     // Matches the orbit camera's 45 degree vertical field of view and its
     // orthographic height coupling.
@@ -333,8 +581,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final axis = modal.axis;
     if (axis != null) {
       // Project mouse movement onto the axis's screen direction, scaled by
-      // how many pixels one world unit of that axis spans.
-      final axisDir = vm.Vector3.zero()..[axis] = 1.0;
+      // how many pixels one global unit of that axis spans.
+      final axisDir = _activeTransformAxes[axis];
       final s0 = _camera.camera.worldToScreen(modal.origin, _viewSize);
       final s1 = _camera.camera.worldToScreen(
         modal.origin + axisDir,
@@ -348,40 +596,37 @@ class _ViewportPanelState extends State<ViewportPanel> {
       final t = (deltaPx.dx * axisPx.dx + deltaPx.dy * axisPx.dy) / len2;
       return axisDir * t;
     }
-    final wpp = _worldPerPixel(modal);
-    return _camera.rightVector * (deltaPx.dx * wpp) +
-        _camera.upVector * (-deltaPx.dy * wpp);
+    final unitsPerPixel = _globalUnitsPerPixel(modal);
+    return _camera.rightVector * (deltaPx.dx * unitsPerPixel) +
+        _camera.upVector * (-deltaPx.dy * unitsPerPixel);
   }
 
-  vm.Quaternion _modalRotation(_ModalTransform modal) {
+  double _modalRotationAngle(_ModalTransform modal) {
     double angleOf(Offset p) =>
         atan2(p.dy - modal.pivotScreen.dy, p.dx - modal.pivotScreen.dx);
     // Positive when the mouse circles clockwise on screen (y grows down).
     final screenAngle = angleOf(modal.pointer) - angleOf(modal.startPointer);
-    final axis = modal.axis == null
-        ? _camera.forwardVector
-        : (vm.Vector3.zero()..[modal.axis!] = 1.0);
-    // Make the object follow the mouse regardless of which way the axis
-    // faces the camera. The scene-root Z flip mirrors handedness, so the
-    // screen-facing branch takes the negated angle.
-    final angle = axis.dot(_camera.forwardVector) >= 0
-        ? -screenAngle
-        : screenAngle;
-    return (vm.Quaternion.axisAngle(axis, angle) * _startR)..normalize();
+    final axis = _modalRotationAxis(modal);
+    // Make the object follow the mouse regardless of which way the axis faces.
+    return axis.dot(_camera.forwardVector) >= 0 ? -screenAngle : screenAngle;
   }
 
-  vm.Vector3 _modalScaleVec(_ModalTransform modal) {
+  vm.Vector3 _modalRotationAxis(_ModalTransform modal) => modal.axis == null
+      ? _camera.forwardVector
+      : _activeTransformAxes[modal.axis!];
+
+  vm.Vector3 _modalScaleFactors(_ModalTransform modal) {
     final base = (modal.startPointer - modal.pivotScreen).distance.clamp(
       5.0,
       double.infinity,
     );
     final factor = (modal.pointer - modal.pivotScreen).distance / base;
     final axis = modal.axis;
-    if (axis == null) return _startS * factor;
+    if (axis == null) return vm.Vector3.all(factor);
     return vm.Vector3(
-      _startS.x * (axis == 0 ? factor : 1),
-      _startS.y * (axis == 1 ? factor : 1),
-      _startS.z * (axis == 2 ? factor : 1),
+      axis == 0 ? factor : 1,
+      axis == 1 ? factor : 1,
+      axis == 2 ? factor : 1,
     );
   }
 
@@ -390,7 +635,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   Offset? _modalAxisScreenDir(_ModalTransform modal) {
     final axis = modal.axis;
     if (axis == null) return null;
-    final axisDir = vm.Vector3.zero()..[axis] = 1.0;
+    final axisDir = _activeTransformAxes[axis];
     final s0 = _camera.camera.worldToScreen(modal.origin, _viewSize);
     final s1 = _camera.camera.worldToScreen(modal.origin + axisDir, _viewSize);
     if (s0 == null || s1 == null) return null;
@@ -405,10 +650,59 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _ModalOp.scale => 'Scale',
     };
     final axis = modal.axis;
-    return axis == null ? op : '$op ${'XYZ'[axis]}';
+    final label = axis == null ? op : '$op ${'XYZ'[axis]}';
+    final space = _transformSpace == TransformSpace.global ? 'Global' : 'Local';
+    return '$label  $space';
+  }
+
+  bool _frameSelection() {
+    vm.Aabb3? selectionBounds;
+    for (final id in _ctrl.selection.ids) {
+      final node = _ctrl.liveNode(id);
+      if (node == null) continue;
+      final bounds = node.combinedWorldBounds ?? _translationHull(node);
+      if (bounds == null) continue;
+      if (selectionBounds == null) {
+        selectionBounds = vm.Aabb3.copy(bounds);
+      } else {
+        selectionBounds.hull(bounds);
+      }
+    }
+    if (selectionBounds == null) return false;
+    final aspect = _viewSize.height > 0
+        ? _viewSize.width / _viewSize.height
+        : 1.0;
+    _camera.frame(selectionBounds, aspectRatio: aspect);
+    _bumpView();
+    return true;
+  }
+
+  vm.Aabb3? _translationHull(Node root) {
+    // TODO(frame-selection): use posed bounds when skinned nodes expose them.
+    vm.Aabb3? result;
+    for (final node in root.meshNodes) {
+      final point = node.globalTransform.getTranslation();
+      if (result == null) {
+        result = vm.Aabb3.minMax(point.clone(), point.clone());
+      } else {
+        result.hullPoint(point);
+      }
+    }
+    if (result != null) return result;
+    final point = root.globalTransform.getTranslation();
+    return vm.Aabb3.minMax(point.clone(), point.clone());
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (_freeLookActive) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        _endFreeLook();
+        return KeyEventResult.handled;
+      }
+      final result = _freeLook.onKeyEvent(event);
+      return result == KeyEventResult.ignored ? KeyEventResult.handled : result;
+    }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     // Ignored with modifiers so app shortcuts still work.
     final keys = HardwareKeyboard.instance;
@@ -437,6 +731,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
       return KeyEventResult.handled;
     }
     switch (event.logicalKey) {
+      case LogicalKeyboardKey.keyF:
+        return _frameSelection()
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
       case LogicalKeyboardKey.keyG:
         _startModal(_ModalOp.translate);
         return KeyEventResult.handled;
@@ -475,6 +773,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         final size = constraints.biggest;
         _viewSize = size;
         return MouseRegion(
+          cursor: _freeLookActive ? SystemMouseCursors.none : MouseCursor.defer,
           onEnter: (event) {
             _mousePos = event.localPosition;
             // Focus follows the mouse into the viewport so G/R/S work on
@@ -501,22 +800,36 @@ class _ViewportPanelState extends State<ViewportPanel> {
                     final live = primary != null
                         ? _ctrl.liveNode(primary)
                         : null;
-                    final cam = _camera.camera;
+                    final cam = _freeLookActive
+                        ? _freeLook.camera
+                        : _camera.camera;
                     return Stack(
                       fit: StackFit.expand,
                       children: [
                         Focus(
                           focusNode: _focusNode,
                           onKeyEvent: _onKey,
+                          onFocusChange: (focused) {
+                            if (!focused) {
+                              if (_freeLookActive) _endFreeLook();
+                              _freeLook.releaseKeys();
+                            }
+                          },
                           child: OrbitCameraController(
                             camera: _camera,
-                            isLocked: () => _draggingGizmo || _modal != null,
+                            dragThreshold: _primaryDragThreshold,
+                            isLocked: () =>
+                                _draggingGizmo ||
+                                _modal != null ||
+                                _freeLookActive,
                             onChanged: _bumpView,
                             child: Listener(
                               behavior: HitTestBehavior.opaque,
                               onPointerDown: (e) => _onPointerDown(e, size),
                               onPointerMove: _onPointerMove,
                               onPointerUp: _onPointerUp,
+                              onPointerCancel: _onPointerCancel,
+                              onPointerSignal: _onPointerSignal,
                               child: SceneView(
                                 _ctrl.scene,
                                 camera: cam,
@@ -548,6 +861,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               painter: TransformGizmoPainter(
                                 origin: live.globalTransform.getTranslation(),
                                 mode: _gizmo.mode,
+                                axes: _draggingGizmo || _modal != null
+                                    ? _activeTransformAxes
+                                    : _axesFor(live),
                                 camera: cam,
                                 activeAxis: _gizmo.activeAxis,
                               ),
@@ -579,6 +895,35 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                 size: size,
                               ),
                             ),
+                        if (_freeLookActive)
+                          Positioned(
+                            top: 8,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.7),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    'FLY  ${_freeLook.speed.toStringAsFixed(2)}  '
+                                    'WASD/QE  Shift boost  Release RMB',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         if (_modal case final modal?)
                           Positioned(
                             bottom: 8,
@@ -614,6 +959,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
                     _ViewportSettingsButton(
                       showFps: _showFps,
                       onToggleFps: (value) => setState(() => _showFps = value),
+                      transformSpace: _transformSpace,
+                      onTransformSpaceChanged: _setTransformSpace,
                     ),
                     const SizedBox(height: 4),
                     AnimatedBuilder(
@@ -658,7 +1005,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 }
 
-/// Translate/rotate/scale mode selector (also bound to W/E/R).
+/// Translate/rotate/scale mode selector.
 class _GizmoModeBar extends StatelessWidget {
   const _GizmoModeBar({required this.mode, required this.onChanged});
   final GizmoMode mode;
@@ -724,11 +1071,23 @@ class _InfoBadge extends StatelessWidget {
   }
 }
 
+class _PendingSelection {
+  const _PendingSelection({
+    required this.pointer,
+    required this.origin,
+    required this.viewSize,
+  });
+
+  final int pointer;
+  final Offset origin;
+  final Size viewSize;
+}
+
 /// The kind of keyboard-driven transform in progress.
 enum _ModalOp { translate, rotate, scale }
 
 /// State of an in-progress G/R/S transform. The mouse drives the delta from
-/// [startPointer]; [axis] constrains it to a world axis when set.
+/// [startPointer]; [axis] constrains it to a transform-space axis when set.
 class _ModalTransform {
   _ModalTransform({
     required this.op,
@@ -739,7 +1098,7 @@ class _ModalTransform {
 
   final _ModalOp op;
 
-  /// The selected node's world-space origin when the transform started.
+  /// The selected node's global-space origin when the transform started.
   final vm.Vector3 origin;
 
   final Offset startPointer;
@@ -747,7 +1106,7 @@ class _ModalTransform {
   /// The origin's screen position, the pivot for rotate/scale mouse math.
   final Offset pivotScreen;
 
-  /// Constrained world axis (0 = X, 1 = Y, 2 = Z), null when free.
+  /// Constrained transform-space axis, null when free.
   int? axis;
 
   Offset pointer = Offset.zero;
@@ -790,10 +1149,14 @@ class _ViewportSettingsButton extends StatelessWidget {
   const _ViewportSettingsButton({
     required this.showFps,
     required this.onToggleFps,
+    required this.transformSpace,
+    required this.onTransformSpaceChanged,
   });
 
   final bool showFps;
   final ValueChanged<bool> onToggleFps;
+  final TransformSpace transformSpace;
+  final ValueChanged<TransformSpace> onTransformSpaceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -802,6 +1165,24 @@ class _ViewportSettingsButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       onSelected: (action) => action(),
       itemBuilder: (_) => [
+        const PopupMenuItem<VoidCallback>(
+          enabled: false,
+          height: 28,
+          child: Text('Transform space', style: TextStyle(fontSize: 11)),
+        ),
+        CheckedPopupMenuItem(
+          value: () => onTransformSpaceChanged(TransformSpace.global),
+          checked: transformSpace == TransformSpace.global,
+          height: 32,
+          child: const Text('Global', style: TextStyle(fontSize: 12)),
+        ),
+        CheckedPopupMenuItem(
+          value: () => onTransformSpaceChanged(TransformSpace.local),
+          checked: transformSpace == TransformSpace.local,
+          height: 32,
+          child: const Text('Local', style: TextStyle(fontSize: 12)),
+        ),
+        const PopupMenuDivider(height: 8),
         CheckedPopupMenuItem(
           value: () => onToggleFps(!showFps),
           checked: showFps,

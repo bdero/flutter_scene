@@ -1,17 +1,19 @@
-// ignore: implementation_imports
+import 'dart:math' as math;
+
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
-// ignore: implementation_imports
-// ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
-import 'package:flutter/material.dart';
-import 'package:vector_math/vector_math.dart' show Quaternion, Vector3;
+import 'package:flutter/material.dart' hide Matrix4;
+import 'package:forui/forui.dart';
+import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
+import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
+import '../inspector/reference_picker.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
 
@@ -27,22 +29,24 @@ class InspectorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) {
-        final primary = controller.selection.primary;
-        final node = primary != null ? controller.displayNode(primary) : null;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: node == null
-                  ? StageSection(controller: controller)
-                  : _NodeInspector(node: node, controller: controller),
-            ),
-          ],
-        );
-      },
+    return InspectorTextScope(
+      child: ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) {
+          final primary = controller.selection.primary;
+          final node = primary != null ? controller.displayNode(primary) : null;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: node == null
+                    ? StageSection(controller: controller)
+                    : _NodeInspector(node: node, controller: controller),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -159,6 +163,22 @@ class _TransformEditor extends StatelessWidget {
     final t = trs?.translation;
     final r = trs?.rotation;
     final s = trs?.scale;
+    final translation = t ?? Vector3.zero();
+    final rotation = r ?? Quaternion.identity();
+    final scale = s ?? Vector3.all(1);
+    final live = controller.liveNode(node.id);
+    final worldOrigin = live?.globalTransform.getTranslation();
+    final geometryCenter = live?.combinedWorldBounds?.center;
+
+    Vector3 vector(Map<String, Object> value) => Vector3(
+      (value['x']! as num).toDouble(),
+      (value['y']! as num).toDouble(),
+      (value['z']! as num).toDouble(),
+    );
+
+    void preview(Vector3 t, Quaternion r, Vector3 s) {
+      controller.previewLocalTransform(node.id, Matrix4.compose(t, r, s));
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -168,6 +188,9 @@ class _TransformEditor extends StatelessWidget {
           x: t?.x ?? 0,
           y: t?.y ?? 0,
           z: t?.z ?? 0,
+          scrubStep: 0.01,
+          snapStep: 1,
+          onPreview: (v) => preview(vector(v), rotation, scale),
           onSubmit: (v) =>
               controller.setNodeTransformRouted(node.id, translation: v),
         ),
@@ -176,6 +199,9 @@ class _TransformEditor extends StatelessWidget {
           x: s?.x ?? 1,
           y: s?.y ?? 1,
           z: s?.z ?? 1,
+          scrubStep: 0.01,
+          snapStep: 0.1,
+          onPreview: (v) => preview(translation, rotation, vector(v)),
           onSubmit: (v) => controller.setNodeTransformRouted(node.id, scale: v),
         ),
         // Rotation as XYZ Euler degrees.
@@ -189,14 +215,15 @@ class _TransformEditor extends StatelessWidget {
               x: euler.x,
               y: euler.y,
               z: euler.z,
+              scrubStep: 0.1,
+              snapStep: 1,
+              onPreview: (v) => preview(
+                translation,
+                eulerXyzDegreesToQuaternion(vector(v)),
+                scale,
+              ),
               onSubmit: (v) {
-                final q = eulerXyzDegreesToQuaternion(
-                  Vector3(
-                    (v['x']! as num).toDouble(),
-                    (v['y']! as num).toDouble(),
-                    (v['z']! as num).toDouble(),
-                  ),
-                );
+                final q = eulerXyzDegreesToQuaternion(vector(v));
                 controller.setNodeTransformRouted(
                   node.id,
                   rotation: {'x': q.x, 'y': q.y, 'z': q.z, 'w': q.w},
@@ -205,7 +232,57 @@ class _TransformEditor extends StatelessWidget {
             );
           },
         ),
+        if (worldOrigin != null)
+          _ReadOnlyVec3Row(label: 'World origin', value: worldOrigin),
+        if (geometryCenter != null)
+          _ReadOnlyVec3Row(label: 'Geometry center', value: geometryCenter),
       ],
+    );
+  }
+}
+
+class _ReadOnlyVec3Row extends StatelessWidget {
+  const _ReadOnlyVec3Row({required this.label, required this.value});
+
+  final String label;
+  final Vector3 value;
+
+  @override
+  Widget build(BuildContext context) {
+    String number(double value) => value.toStringAsFixed(3);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '${number(value.x)}, ${number(value.y)}, ${number(value.z)}',
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontSize: 11,
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -297,6 +374,7 @@ class _ComponentEditor extends StatelessWidget {
       children: [
         for (final def in schema)
           _SchemaPropertyRow(
+            componentType: component.type,
             def: def,
             value: component.properties[def.name] ?? def.defaultValue,
             controller: controller,
@@ -317,12 +395,14 @@ class _ComponentEditor extends StatelessWidget {
 /// [value] (the current value or the schema default, possibly null).
 class _SchemaPropertyRow extends StatelessWidget {
   const _SchemaPropertyRow({
+    required this.componentType,
     required this.def,
     required this.value,
     required this.controller,
     required this.onChanged,
   });
 
+  final String componentType;
   final ComponentPropertyDef def;
   final PropertyValue? value;
   final EditorController controller;
@@ -335,6 +415,29 @@ class _SchemaPropertyRow extends StatelessWidget {
     return fallback;
   }
 
+  ({double min, double max, double step, int digits}) _directionalRange(
+    String name,
+    double current,
+  ) => switch (name) {
+    'intensity' => (min: 0, max: 20, step: 0.05, digits: 2),
+    'priority' => (min: -10, max: 10, step: 1, digits: 0),
+    'shadowFadeRange' => (min: 0, max: 100, step: 0.1, digits: 2),
+    'shadowSoftness' => (min: 0, max: 2, step: 0.01, digits: 3),
+    'shadowCascadeCount' => (min: 1, max: 4, step: 1, digits: 0),
+    'shadowMaxDistance' => (min: 0, max: 2000, step: 1, digits: 1),
+    'shadowCascadeSplitLambda' => (min: 0, max: 1, step: 0.01, digits: 3),
+    'shadowMapResolution' => (min: 128, max: 4096, step: 128, digits: 0),
+    'shadowDepthBias' ||
+    'shadowNormalBias' => (min: 0, max: 0.2, step: 0.001, digits: 4),
+    'shadowAmbientStrength' => (min: 0, max: 1, step: 0.01, digits: 3),
+    _ => (
+      min: def.min ?? math.min(0, current),
+      max: def.max ?? math.max(1, current.abs() * 4),
+      step: 0.01,
+      digits: 3,
+    ),
+  };
+
   @override
   Widget build(BuildContext context) {
     final label = def.name;
@@ -346,12 +449,42 @@ class _SchemaPropertyRow extends StatelessWidget {
           onChanged: onChanged,
         );
       case ComponentPropertyKind.integer:
+        if (componentType == 'directionalLight') {
+          final current = _double(0);
+          final range = _directionalRange(label, current);
+          return SliderNumberField(
+            label: label,
+            value: current,
+            min: range.min,
+            max: range.max,
+            scrubStep: range.step,
+            snapStep: range.step,
+            fractionDigits: range.digits,
+            onPreview: (_) {},
+            onCommit: (value) => onChanged(value.round()),
+          );
+        }
         return _IntRow(
           label: label,
           value: value is IntValue ? (value as IntValue).value : 0,
           onSubmit: onChanged,
         );
       case ComponentPropertyKind.number:
+        if (componentType == 'directionalLight') {
+          final current = _double(0);
+          final range = _directionalRange(label, current);
+          return SliderNumberField(
+            label: label,
+            value: current,
+            min: range.min,
+            max: range.max,
+            scrubStep: range.step,
+            snapStep: range.step,
+            fractionDigits: range.digits,
+            onPreview: (_) {},
+            onCommit: onChanged,
+          );
+        }
         return _DoubleRow(label: label, value: _double(0), onSubmit: onChanged);
       case ComponentPropertyKind.string:
         if (def.options != null) {
@@ -369,6 +502,19 @@ class _SchemaPropertyRow extends StatelessWidget {
         );
       case ComponentPropertyKind.vec3:
         final v = value is Vec3Value ? (value as Vec3Value).value : null;
+        if (componentType == 'directionalLight' && label == 'color') {
+          return ColorEditor(
+            channelBuilder: sliderColorChannel,
+            label: label,
+            r: v?.x ?? 1,
+            g: v?.y ?? 1,
+            b: v?.z ?? 1,
+            a: 1,
+            showAlpha: false,
+            onPreview: (_, _, _, _) {},
+            onCommit: (r, g, b, _) => onChanged({'x': r, 'y': g, 'z': b}),
+          );
+        }
         return Vec3Field(
           label: label,
           x: v?.x ?? 0,
@@ -550,7 +696,7 @@ class _PrefabBanner extends StatelessWidget {
           Icon(Icons.link, size: 12, color: scheme.tertiary),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(
+            child: InspectorDescriptionText(
               isMember
                   ? 'Prefab content from $source. Edits are saved as overrides.'
                   : 'Prefab instance of $source.',
@@ -708,10 +854,14 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      margin: const EdgeInsets.only(bottom: 5, top: 2),
+      padding: const EdgeInsets.fromLTRB(7, 4, 2, 4),
       decoration: BoxDecoration(
         border: Border(
+          left: BorderSide(
+            color: Theme.of(context).colorScheme.primary,
+            width: 2,
+          ),
           bottom: BorderSide(
             color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
           ),
@@ -724,8 +874,9 @@ class _SectionHeader extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.15,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ),
@@ -827,18 +978,16 @@ class _EnumRow extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: DropdownButton<String>(
-              value: current,
-              isDense: true,
-              isExpanded: true,
-              style: const TextStyle(fontSize: 11),
-              items: [
-                for (final option in options)
-                  DropdownMenuItem(value: option, child: Text(option)),
-              ],
-              onChanged: (v) {
-                if (v != null) onChanged(v);
-              },
+            child: FSelect<String>(
+              items: {for (final option in options) option: option},
+              control: FSelectControl.lifted(
+                value: current,
+                onChange: (v) {
+                  if (v != null) onChanged(v);
+                },
+              ),
+              size: FTextFieldSizeVariant.sm,
+              expands: true,
             ),
           ),
         ],
@@ -960,7 +1109,9 @@ class _ResourceRefRow extends StatelessWidget {
   }
 
   Future<void> _importTexture() async {
-    final path = await pickImagePath();
+    final path = await pickImagePath(
+      initialDirectory: controller.baseDirectory,
+    );
     if (path == null) return;
     final id = await importTextureResource(controller, path);
     if (id != null) onChanged({'\$resource': id.toToken()});
@@ -994,25 +1145,13 @@ class _ResourceRefRow extends StatelessWidget {
                     '(no ${resourceKind ?? 'resource'} resources)',
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   )
-                : DropdownButton<LocalId>(
-                    value: ids.contains(value) ? value : null,
-                    isDense: true,
-                    isExpanded: true,
-                    hint: const Text('Pick…', style: TextStyle(fontSize: 11)),
-                    style: const TextStyle(fontSize: 11),
-                    items: [
-                      for (final id in ids)
-                        DropdownMenuItem(
-                          value: id,
-                          child: Text(
-                            _label(id),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                : ReferencePicker(
+                    entries: [
+                      for (final id in ids) (id: id, label: _label(id)),
                     ],
-                    onChanged: (id) {
-                      if (id != null) onChanged({'\$resource': id.toToken()});
-                    },
+                    value: value,
+                    emptyLabel: '(no ${resourceKind ?? 'resource'} resources)',
+                    onChanged: (id) => onChanged({'\$resource': id.toToken()}),
                   ),
           ),
           if (canCreate)
@@ -1065,7 +1204,7 @@ class _VolumeEnvironmentEditor extends StatelessWidget {
             controller: controller,
             environment: res,
             volumeNodeId: nodeId,
-            allowHdrImport: true,
+            allowEnvironmentImport: true,
           ),
           const Divider(),
           SkySection(
@@ -1073,6 +1212,17 @@ class _VolumeEnvironmentEditor extends StatelessWidget {
             environment: res,
             volumeNodeId: nodeId,
           ),
+          const Divider(),
+          const Text(
+            'Color management',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          ColorManagementControls(
+            controller: controller,
+            environment: res,
+            volumeNodeId: nodeId,
+          ),
+          EnvironmentEffectsControls(controller: controller, environment: res),
         ],
       ),
     );
@@ -1109,25 +1259,17 @@ class _NodeRefRow extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: DropdownButton<LocalId>(
-              value: nodes.any((n) => n.id == value) ? value : null,
-              isDense: true,
-              isExpanded: true,
-              hint: const Text('Pick…', style: TextStyle(fontSize: 11)),
-              style: const TextStyle(fontSize: 11),
-              items: [
-                for (final n in nodes)
-                  DropdownMenuItem(
-                    value: n.id,
-                    child: Text(
-                      n.name.isEmpty ? n.id.toToken() : n.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+            child: ReferencePicker(
+              entries: [
+                for (final node in nodes)
+                  (
+                    id: node.id,
+                    label: node.name.isEmpty ? node.id.toToken() : node.name,
                   ),
               ],
-              onChanged: (id) {
-                if (id != null) onChanged({'\$node': id.toToken()});
-              },
+              value: value,
+              emptyLabel: '(no nodes)',
+              onChanged: (id) => onChanged({'\$node': id.toToken()}),
             ),
           ),
         ],
@@ -1190,7 +1332,7 @@ class _MiniNumberState extends State<_MiniNumber> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 22,
+      height: 32,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1200,23 +1342,15 @@ class _MiniNumberState extends State<_MiniNumber> {
           ),
           const SizedBox(width: 2),
           Expanded(
-            child: TextField(
-              controller: _ctrl,
+            child: FTextField(
+              control: FTextFieldControl.managed(controller: _ctrl),
               focusNode: _focus,
+              size: FTextFieldSizeVariant.sm,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
                 signed: true,
               ),
-              style: const TextStyle(fontSize: 10),
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 2,
-                ),
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _commit(),
+              onSubmit: (_) => _commit(),
             ),
           ),
         ],
@@ -1290,22 +1424,11 @@ class _StringRowState extends State<_StringRow> {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: SizedBox(
-              height: 24,
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focus,
-                style: const TextStyle(fontSize: 11),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _commit(),
-              ),
+            child: FTextField(
+              control: FTextFieldControl.managed(controller: _ctrl),
+              focusNode: _focus,
+              size: FTextFieldSizeVariant.sm,
+              onSubmit: (_) => _commit(),
             ),
           ),
         ],
@@ -1339,14 +1462,7 @@ class _BoolRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          SizedBox(
-            height: 20,
-            child: Switch(
-              value: value,
-              onChanged: onChanged,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
+          InspectorToggleSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -1420,25 +1536,12 @@ class _IntRowState extends State<_IntRow> {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: SizedBox(
-              height: 24,
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focus,
-                keyboardType: const TextInputType.numberWithOptions(
-                  signed: true,
-                ),
-                style: const TextStyle(fontSize: 11),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _commit(),
-              ),
+            child: FTextField(
+              control: FTextFieldControl.managed(controller: _ctrl),
+              focusNode: _focus,
+              size: FTextFieldSizeVariant.sm,
+              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              onSubmit: (_) => _commit(),
             ),
           ),
         ],
@@ -1514,26 +1617,15 @@ class _DoubleRowState extends State<_DoubleRow> {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: SizedBox(
-              height: 24,
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focus,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                  signed: true,
-                ),
-                style: const TextStyle(fontSize: 11),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _commit(),
+            child: FTextField(
+              control: FTextFieldControl.managed(controller: _ctrl),
+              focusNode: _focus,
+              size: FTextFieldSizeVariant.sm,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+                signed: true,
               ),
+              onSubmit: (_) => _commit(),
             ),
           ),
         ],

@@ -117,7 +117,7 @@ class MaterialSection extends StatelessWidget {
         if (fields.isEmpty)
           const Padding(
             padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Text(
+            child: InspectorDescriptionText(
               'This material type has no editable properties here.',
               style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
             ),
@@ -160,7 +160,9 @@ class MaterialSection extends StatelessWidget {
       trailing: TextButton(
         style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
         onPressed: () async {
-          final path = await pickImagePath();
+          final path = await pickImagePath(
+            initialDirectory: controller.baseDirectory,
+          );
           if (path != null) {
             await importMaterialTexture(controller, materialId, slot, path);
           }
@@ -197,12 +199,11 @@ class MaterialSection extends StatelessWidget {
         );
       case _Kind.boolean:
         final current = value is BoolValue && value.value;
-        return SwitchListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: Text(field.label, style: const TextStyle(fontSize: 13)),
+        return InspectorSwitch(
+          label: field.label,
           value: current,
           onChanged: (v) => _set(field.key, v),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         );
       case _Kind.choice:
         final current = value is StringValue

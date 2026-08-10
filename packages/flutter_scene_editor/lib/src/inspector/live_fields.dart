@@ -4,6 +4,339 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
+
+/// Keeps inspector labels and values on one line unless a child opts out.
+class InspectorTextScope extends StatelessWidget {
+  const InspectorTextScope({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => DefaultTextStyle.merge(
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.ellipsis,
+    child: child,
+  );
+}
+
+/// Inspector copy that may wrap because it explains a property or state.
+class InspectorDescriptionText extends StatelessWidget {
+  const InspectorDescriptionText(this.data, {super.key, this.style});
+
+  final String data;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final inherited = DefaultTextStyle.of(context);
+    return DefaultTextStyle(
+      style: inherited.style,
+      textAlign: inherited.textAlign,
+      softWrap: true,
+      overflow: TextOverflow.visible,
+      maxLines: null,
+      textWidthBasis: inherited.textWidthBasis,
+      textHeightBehavior: inherited.textHeightBehavior,
+      child: Text(data, style: style),
+    );
+  }
+}
+
+/// A compact Forui slider that maps an arbitrary numeric range to the
+/// normalized value used by [FSlider].
+class InspectorSlider extends StatelessWidget {
+  const InspectorSlider({
+    super.key,
+    required this.value,
+    this.min = 0,
+    this.max = 1,
+    required this.onChanged,
+    this.onChangeEnd,
+  }) : assert(max > min);
+
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
+
+  double _fromUnit(double value) => min + value * (max - min);
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    return FSlider(
+      control: FSliderControl.liftedContinuous(
+        value: FSliderValue(max: unit),
+        onChange: (value) => onChanged(_fromUnit(value.max)),
+      ),
+      tooltipBuilder: (_, value) =>
+          Text(_fromUnit(value).toStringAsFixed(max >= 100 ? 0 : 2)),
+      semanticValueFormatterCallback: (value) =>
+          _fromUnit(value).toStringAsFixed(2),
+      onEnd: onChangeEnd == null
+          ? null
+          : (value) => onChangeEnd!(_fromUnit(value.max)),
+    );
+  }
+}
+
+/// A compact inspector row backed by Forui's switch implementation.
+class InspectorSwitch extends StatelessWidget {
+  const InspectorSwitch({
+    super.key,
+    required this.label,
+    this.description,
+    required this.value,
+    required this.onChanged,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final String label;
+  final String? description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
+                if (description case final description?)
+                  InspectorDescriptionText(
+                    description,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          InspectorToggleSwitch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+/// A compact desktop toggle built on Forui's interaction layer.
+class InspectorToggleSwitch extends StatelessWidget {
+  const InspectorToggleSwitch({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return FTappable(
+      selected: value,
+      semanticsButton: false,
+      semanticsChecked: value,
+      semanticsLabel: value ? 'On' : 'Off',
+      onPress: () => onChanged(!value),
+      builder: (context, variants, _) {
+        final colors = context.theme.colors;
+        final interactive =
+            variants.contains(FTappableVariant.hovered) ||
+            variants.contains(FTappableVariant.focused) ||
+            variants.contains(FTappableVariant.pressed);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          width: 44,
+          height: 22,
+          decoration: BoxDecoration(
+            color: value
+                ? colors.primary.withValues(alpha: 0.16)
+                : colors.secondary,
+            border: Border.all(
+              color: value || interactive ? colors.primary : colors.border,
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                height: double.infinity,
+                color: value ? colors.primary : colors.border,
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    value ? 'ON' : 'OFF',
+                    style: TextStyle(
+                      color: value ? colors.primary : colors.mutedForeground,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One titled section in an [InspectorAccordion].
+class InspectorAccordionItem {
+  const InspectorAccordionItem({required this.title, required this.child});
+
+  final Widget title;
+  final Widget child;
+}
+
+/// A desktop inspector accordion with persistent expansion state.
+class InspectorAccordion extends StatefulWidget {
+  const InspectorAccordion({
+    super.key,
+    required this.children,
+    this.initiallyExpanded = const {},
+    this.identity,
+  });
+
+  final List<InspectorAccordionItem> children;
+  final Set<int> initiallyExpanded;
+
+  /// Resets expansion when the inspected object changes.
+  final Object? identity;
+
+  @override
+  State<InspectorAccordion> createState() => _InspectorAccordionState();
+}
+
+class _InspectorAccordionState extends State<InspectorAccordion> {
+  late Set<int> _expanded = Set.of(widget.initiallyExpanded);
+
+  @override
+  void didUpdateWidget(InspectorAccordion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identity != widget.identity) {
+      _expanded = Set.of(widget.initiallyExpanded);
+    } else {
+      _expanded.removeWhere((index) => index >= widget.children.length);
+    }
+  }
+
+  void _toggle(int index) => setState(() {
+    if (!_expanded.remove(index)) _expanded.add(index);
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final (index, item) in widget.children.indexed)
+        _InspectorAccordionSection(
+          title: item.title,
+          expanded: _expanded.contains(index),
+          onToggle: () => _toggle(index),
+          child: item.child,
+        ),
+    ],
+  );
+}
+
+class _InspectorAccordionSection extends StatelessWidget {
+  const _InspectorAccordionSection({
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+    required this.child,
+  });
+
+  final Widget title;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FTappable(
+          selected: expanded,
+          semanticsExpanded: expanded,
+          onPress: onToggle,
+          builder: (context, variants, _) {
+            final highlighted =
+                variants.contains(FTappableVariant.hovered) ||
+                variants.contains(FTappableVariant.pressed);
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              color: highlighted
+                  ? colors.secondary.withValues(alpha: 0.7)
+                  : Colors.transparent,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DefaultTextStyle.merge(
+                      style: TextStyle(
+                        color: colors.foreground,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      child: title,
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 140),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 16,
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  child: child,
+                )
+              : const SizedBox.shrink(),
+        ),
+        ColoredBox(color: colors.border, child: const SizedBox(height: 1)),
+      ],
+    );
+  }
+}
 
 /// A slider that calls [onPreview] on every change (live, no undo step) and
 /// [onCommit] once when the drag ends (one undo step).
@@ -35,24 +368,35 @@ class _LiveSliderState extends State<LiveSlider> {
   @override
   Widget build(BuildContext context) {
     final value = (_dragging ?? widget.value).clamp(widget.min, widget.max);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(widget.label, style: const TextStyle(fontSize: 13)),
-      subtitle: Slider(
-        value: value,
-        min: widget.min,
-        max: widget.max,
-        onChanged: (v) {
-          setState(() => _dragging = v);
-          widget.onPreview(v);
-        },
-        onChangeEnd: (v) {
-          setState(() => _dragging = null);
-          widget.onCommit(v);
-        },
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(widget.label, style: const TextStyle(fontSize: 13)),
+              ),
+              Text(value.toStringAsFixed(2)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          InspectorSlider(
+            value: value,
+            min: widget.min,
+            max: widget.max,
+            onChanged: (v) {
+              setState(() => _dragging = v);
+              widget.onPreview(v);
+            },
+            onChangeEnd: (v) {
+              setState(() => _dragging = null);
+              widget.onCommit(v);
+            },
+          ),
+        ],
       ),
-      trailing: Text(value.toStringAsFixed(2)),
     );
   }
 }
@@ -60,6 +404,16 @@ class _LiveSliderState extends State<LiveSlider> {
 /// An inline, expandable linear-RGBA color editor with both RGBA and HSV
 /// sliders (kept in sync). [onPreview] fires live while dragging; [onCommit]
 /// fires once on release.
+typedef ColorChannelBuilder =
+    Widget Function({
+      required String label,
+      required double value,
+      required double min,
+      required double max,
+      required ValueChanged<double> onPreview,
+      required ValueChanged<double> onCommit,
+    });
+
 class ColorEditor extends StatefulWidget {
   const ColorEditor({
     super.key,
@@ -72,6 +426,7 @@ class ColorEditor extends StatefulWidget {
     required this.onCommit,
     this.channelMax = 1.0,
     this.showAlpha = true,
+    this.channelBuilder,
   });
 
   final String label;
@@ -88,6 +443,9 @@ class ColorEditor extends StatefulWidget {
 
   /// Whether to show the alpha slider. Off for opaque colors (a sky tint).
   final bool showAlpha;
+
+  /// Optional compact numeric editor used instead of a read-only value.
+  final ColorChannelBuilder? channelBuilder;
 
   @override
   State<ColorEditor> createState() => _ColorEditorState();
@@ -130,6 +488,29 @@ class _ColorEditorState extends State<ColorEditor> {
     double max,
     ValueChanged<double> set,
   ) {
+    final builder = widget.channelBuilder;
+    if (builder != null) {
+      return builder(
+        label: name,
+        value: value,
+        min: 0,
+        max: max,
+        onPreview: (value) {
+          setState(() {
+            _editing = true;
+            set(value);
+          });
+          _preview();
+        },
+        onCommit: (value) {
+          setState(() {
+            _editing = false;
+            set(value);
+          });
+          _commit();
+        },
+      );
+    }
     return Row(
       children: [
         SizedBox(
@@ -137,7 +518,7 @@ class _ColorEditorState extends State<ColorEditor> {
           child: Text(name, style: const TextStyle(fontSize: 12)),
         ),
         Expanded(
-          child: Slider(
+          child: InspectorSlider(
             value: value.clamp(0.0, max),
             max: max,
             onChanged: (v) {

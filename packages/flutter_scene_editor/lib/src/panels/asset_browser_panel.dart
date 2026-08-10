@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
+import '../assets/environment_thumbnail.dart';
 import '../io/scene_io.dart';
 
 /// The asset browser panel.
@@ -37,6 +38,8 @@ class AssetBrowserPanel extends StatefulWidget {
 
 class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   List<FileAsset> _files = const [];
+  final Set<String> _expandedDirectories = {};
+  _AssetViewMode _viewMode = _AssetViewMode.list;
   bool _scanning = false;
   String _query = '';
   String? _scannedDir;
@@ -47,6 +50,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   void initState() {
     super.initState();
     _ctrl.addListener(_onDocChanged);
+    _ctrl.history.addListener(_onHistoryChanged);
     _rescan();
   }
 
@@ -55,7 +59,9 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     super.didUpdateWidget(old);
     if (old.controller != widget.controller) {
       old.controller.removeListener(_onDocChanged);
+      old.controller.history.removeListener(_onHistoryChanged);
       _ctrl.addListener(_onDocChanged);
+      _ctrl.history.addListener(_onHistoryChanged);
       _rescan();
     }
   }
@@ -63,18 +69,18 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   @override
   void dispose() {
     _ctrl.removeListener(_onDocChanged);
+    _ctrl.history.removeListener(_onHistoryChanged);
     super.dispose();
   }
 
   void _onDocChanged() {
-    // The embedded-resource section reflects the document; rebuild it. Re-scan
-    // the filesystem only when the project directory itself changed (a new
-    // scene was opened), since a file walk per edit would be wasteful.
     if (_ctrl.baseDirectory != _scannedDir) {
       _rescan();
-    } else if (mounted) {
-      setState(() {});
     }
+  }
+
+  void _onHistoryChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _rescan() async {
@@ -89,6 +95,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     if (!mounted) return;
     setState(() {
       _files = files;
+      _expandedDirectories.addAll(_directoryPaths(files));
       _scanning = false;
     });
   }
@@ -96,23 +103,26 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   @override
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase();
-    bool matches(String s) => q.isEmpty || s.toLowerCase().contains(q);
+    bool matches(FileAsset asset) =>
+        q.isEmpty || asset.relativePath.toLowerCase().contains(q);
 
-    final models = _files
-        .where((f) => f.kind == FileAssetKind.model && matches(f.name))
+    final visibleFiles = _files.where(matches).toList();
+
+    final models = visibleFiles
+        .where((f) => f.kind == FileAssetKind.model)
         .toList();
-    final scenes = _files
-        .where((f) => f.kind == FileAssetKind.scene && matches(f.name))
+    final scenes = visibleFiles
+        .where((f) => f.kind == FileAssetKind.scene)
         .toList();
-    final hdrs = _files
-        .where((f) => f.kind == FileAssetKind.hdr && matches(f.name))
+    final environmentImages = visibleFiles
+        .where((f) => f.kind == FileAssetKind.environmentImage)
         .toList();
-    final images = _files
-        .where((f) => f.kind == FileAssetKind.image && matches(f.name))
+    final images = visibleFiles
+        .where((f) => f.kind == FileAssetKind.image)
         .toList();
     final embedded = embeddedResources(
       _ctrl.document,
-    ).where((r) => matches(r.label)).toList();
+    ).where((r) => q.isEmpty || r.label.toLowerCase().contains(q)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -136,10 +146,18 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               children: [
-                _fileSection(context, 'Models', models),
-                _fileSection(context, 'Scenes', scenes),
-                _fileSection(context, 'Environments (HDR)', hdrs),
-                _fileSection(context, 'Images', images),
+                if (_viewMode == _AssetViewMode.list)
+                  _fileTree(context, visibleFiles, searching: q.isNotEmpty)
+                else ...[
+                  _fileSection(context, 'Models', models),
+                  _fileSection(context, 'Scenes', scenes),
+                  _fileSection(
+                    context,
+                    'Environment images',
+                    environmentImages,
+                  ),
+                  _fileSection(context, 'Images', images),
+                ],
                 _embeddedSection(context, embedded),
               ],
             ),
@@ -175,6 +193,19 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
               ),
             ),
           ),
+          const SizedBox(width: 4),
+          _viewButton(
+            context,
+            mode: _AssetViewMode.list,
+            icon: Icons.view_list_outlined,
+            tooltip: 'List view',
+          ),
+          _viewButton(
+            context,
+            mode: _AssetViewMode.thumbnails,
+            icon: Icons.grid_view_outlined,
+            tooltip: 'Thumbnail view',
+          ),
           IconButton(
             tooltip: 'Rescan',
             visualDensity: VisualDensity.compact,
@@ -192,6 +223,98 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     );
   }
 
+  Widget _viewButton(
+    BuildContext context, {
+    required _AssetViewMode mode,
+    required IconData icon,
+    required String tooltip,
+  }) {
+    final selected = _viewMode == mode;
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: () => setState(() => _viewMode = mode),
+        borderRadius: BorderRadius.circular(3),
+        child: Container(
+          width: 26,
+          height: 24,
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.16)
+                : Colors.transparent,
+            border: Border.all(
+              color: selected ? scheme.primary : Colors.transparent,
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Icon(
+            icon,
+            size: 15,
+            color: selected ? scheme.primary : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fileTree(
+    BuildContext context,
+    List<FileAsset> files, {
+    required bool searching,
+  }) {
+    if (files.isEmpty) return const SizedBox.shrink();
+    final root = _buildAssetTree(files);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _header(context, 'Project files  (${files.length})'),
+        for (final directory in root.sortedDirectories)
+          _directoryBranch(context, directory, depth: 0, searching: searching),
+        for (final file in root.sortedFiles)
+          _FileListRow(asset: file, depth: 0, onAct: _actOn),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _directoryBranch(
+    BuildContext context,
+    _AssetDirectory directory, {
+    required int depth,
+    required bool searching,
+  }) {
+    final expanded = searching || _expandedDirectories.contains(directory.path);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _DirectoryRow(
+          name: directory.name,
+          depth: depth,
+          expanded: expanded,
+          onPressed: () => setState(() {
+            if (expanded && !searching) {
+              _expandedDirectories.remove(directory.path);
+            } else {
+              _expandedDirectories.add(directory.path);
+            }
+          }),
+        ),
+        if (expanded) ...[
+          for (final child in directory.sortedDirectories)
+            _directoryBranch(
+              context,
+              child,
+              depth: depth + 1,
+              searching: searching,
+            ),
+          for (final file in directory.sortedFiles)
+            _FileListRow(asset: file, depth: depth + 1, onAct: _actOn),
+        ],
+      ],
+    );
+  }
+
   Widget _fileSection(
     BuildContext context,
     String title,
@@ -205,7 +328,9 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: [for (final f in items) _FileTile(asset: f, onAct: _actOn)],
+          children: [
+            for (final f in items) _FileThumbnailTile(asset: f, onAct: _actOn),
+          ],
         ),
         const SizedBox(height: 8),
       ],
@@ -293,7 +418,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         }
       case FileAssetKind.scene:
         await _instantiatePrefab(asset.path);
-      case FileAssetKind.hdr:
+      case FileAssetKind.environmentImage:
         await importEnvironmentMap(_ctrl, asset.path);
       case FileAssetKind.image:
         // Assigning an image to a material slot is done from the material
@@ -350,6 +475,60 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   }
 }
 
+enum _AssetViewMode { list, thumbnails }
+
+class _AssetDirectory {
+  _AssetDirectory({required this.name, required this.path});
+
+  final String name;
+  final String path;
+  final Map<String, _AssetDirectory> directories = {};
+  final List<FileAsset> files = [];
+
+  List<_AssetDirectory> get sortedDirectories {
+    final result = directories.values.toList();
+    result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return result;
+  }
+
+  List<FileAsset> get sortedFiles {
+    final result = files.toList();
+    result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return result;
+  }
+}
+
+_AssetDirectory _buildAssetTree(List<FileAsset> files) {
+  final root = _AssetDirectory(name: '', path: '');
+  for (final asset in files) {
+    final parts = asset.relativePath.split(RegExp(r'[/\\]'));
+    var directory = root;
+    var path = '';
+    for (final part in parts.take(parts.length - 1)) {
+      path = path.isEmpty ? part : '$path/$part';
+      directory = directory.directories.putIfAbsent(
+        part,
+        () => _AssetDirectory(name: part, path: path),
+      );
+    }
+    directory.files.add(asset);
+  }
+  return root;
+}
+
+Set<String> _directoryPaths(List<FileAsset> files) {
+  final result = <String>{};
+  for (final asset in files) {
+    final parts = asset.relativePath.split(RegExp(r'[/\\]'));
+    var path = '';
+    for (final part in parts.take(parts.length - 1)) {
+      path = path.isEmpty ? part : '$path/$part';
+      result.add(path);
+    }
+  }
+  return result;
+}
+
 IconData _embeddedIcon(EmbeddedResourceKind kind) => switch (kind) {
   EmbeddedResourceKind.material => Icons.brush_outlined,
   EmbeddedResourceKind.geometry => Icons.category_outlined,
@@ -361,14 +540,111 @@ IconData _embeddedIcon(EmbeddedResourceKind kind) => switch (kind) {
 IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.model => Icons.view_in_ar_outlined,
   FileAssetKind.scene => Icons.account_tree_outlined,
-  FileAssetKind.hdr => Icons.light_mode_outlined,
+  FileAssetKind.environmentImage => Icons.light_mode_outlined,
   FileAssetKind.image => Icons.image_outlined,
 };
 
-/// A single project-file tile: a thumbnail (a real preview for images, an icon
-/// otherwise) plus the file name, acting on tap.
-class _FileTile extends StatelessWidget {
-  const _FileTile({required this.asset, required this.onAct});
+/// A collapsible project directory row.
+class _DirectoryRow extends StatelessWidget {
+  const _DirectoryRow({
+    required this.name,
+    required this.depth,
+    required this.expanded,
+    required this.onPressed,
+  });
+
+  final String name;
+  final int depth;
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onPressed,
+      child: SizedBox(
+        height: 26,
+        child: Padding(
+          padding: EdgeInsets.only(left: depth * 14.0 + 2, right: 4),
+          child: Row(
+            children: [
+              Icon(
+                expanded ? Icons.expand_more : Icons.chevron_right,
+                size: 15,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                expanded ? Icons.folder_open_outlined : Icons.folder_outlined,
+                size: 16,
+                color: scheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FileListRow extends StatelessWidget {
+  const _FileListRow({
+    required this.asset,
+    required this.depth,
+    required this.onAct,
+  });
+
+  final FileAsset asset;
+  final int depth;
+  final Future<void> Function(FileAsset) onAct;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: asset.relativePath,
+      waitDuration: const Duration(milliseconds: 600),
+      child: InkWell(
+        onTap: () => onAct(asset),
+        child: SizedBox(
+          height: 26,
+          child: Padding(
+            padding: EdgeInsets.only(left: depth * 14.0 + 19, right: 4),
+            child: Row(
+              children: [
+                Icon(_fileIcon(asset.kind), size: 15, color: scheme.primary),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    asset.name,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FileThumbnailTile extends StatelessWidget {
+  const _FileThumbnailTile({required this.asset, required this.onAct});
 
   final FileAsset asset;
   final Future<void> Function(FileAsset) onAct;
@@ -396,7 +672,9 @@ class _FileTile extends StatelessWidget {
                   border: Border.all(color: scheme.outlineVariant),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: asset.kind == FileAssetKind.image
+                child: asset.kind == FileAssetKind.environmentImage
+                    ? EnvironmentThumbnail(path: asset.path)
+                    : asset.kind == FileAssetKind.image
                     ? Image.file(
                         File(asset.path),
                         fit: BoxFit.cover,

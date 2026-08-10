@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
 import '../io/glb_import_options.dart';
@@ -31,35 +32,6 @@ List<String> get _panelIds => _panelTitles.keys.toList();
 /// Extra viewports are created at runtime with ids like `viewport2` and are
 /// admitted through layout persistence as dynamic panels.
 final RegExp _extraViewportPattern = RegExp(r'^viewport\d+$');
-
-/// The out-of-box arrangement, viewport left, outliner over inspector right,
-/// tabbed assets/history strip along the bottom.
-DockLayout _defaultDockLayout() {
-  return DockLayout(
-    DockSplit(
-      Axis.vertical,
-      [
-        DockSplit(
-          Axis.horizontal,
-          [
-            DockTabs(['viewport']),
-            DockSplit(
-              Axis.vertical,
-              [
-                DockTabs(['outliner']),
-                DockTabs(['inspector']),
-              ],
-              [0.5, 0.5],
-            ),
-          ],
-          [0.72, 0.28],
-        ),
-        DockTabs(['assets', 'history']),
-      ],
-      [0.74, 0.26],
-    ),
-  );
-}
 
 /// Intent for undo (Cmd+Z).
 class UndoIntent extends Intent {
@@ -139,6 +111,12 @@ class EditorShell extends StatefulWidget {
     this.onMenuBarDragStart,
     this.currentPath,
     this.onDocumentPathChanged,
+    this.recentScenePaths = const [],
+    this.onRemoveRecentScene,
+    this.onClearRecentScenes,
+    this.namedLayouts = const {},
+    this.onSaveNamedLayout,
+    this.onDeleteNamedLayout,
   });
 
   final EditorController controller;
@@ -179,6 +157,18 @@ class EditorShell extends StatefulWidget {
   /// New/Open/Save As), so the host's record stays true.
   final ValueChanged<String?>? onDocumentPathChanged;
 
+  /// Most recently opened or saved scenes, newest first.
+  final List<String> recentScenePaths;
+
+  final ValueChanged<String>? onRemoveRecentScene;
+  final VoidCallback? onClearRecentScenes;
+
+  /// User-named dock layout snapshots.
+  final Map<String, String> namedLayouts;
+
+  final void Function(String name, String layout)? onSaveNamedLayout;
+  final ValueChanged<String>? onDeleteNamedLayout;
+
   @override
   State<EditorShell> createState() => _EditorShellState();
 }
@@ -186,19 +176,24 @@ class EditorShell extends StatefulWidget {
 class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   bool _paletteOpen = false;
   late String? _currentPath = widget.currentPath;
+  final FileDialogHistory _dialogHistory = FileDialogHistory();
   // Whether a "source changed on disk" banner is currently shown, so a window
   // refocus does not stack duplicate banners.
   bool _changeBannerShown = false;
 
-  late final DockLayout _dockLayout =
+  late DockLayout _dockLayout =
       DockLayout.tryParse(
         widget.dockLayoutJson,
         knownPanels: _panelIds,
         isDynamic: _extraViewportPattern.hasMatch,
       ) ??
-      _defaultDockLayout();
+      defaultEditorDockLayout();
 
   EditorController get _ctrl => widget.controller;
+
+  String? get _sceneDialogDirectory => _currentPath == null
+      ? _ctrl.baseDirectory
+      : File(_currentPath!).parent.path;
 
   /// Runtime-created viewports present anywhere in the layout, in stable
   /// (numeric) order.
@@ -241,6 +236,212 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       }
     });
     widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
+  }
+
+  void _applyDockLayout(String? source) {
+    final replacement = source == null
+        ? defaultEditorDockLayout()
+        : DockLayout.tryParse(
+                source,
+                knownPanels: _panelIds,
+                isDynamic: _extraViewportPattern.hasMatch,
+              ) ??
+              defaultEditorDockLayout();
+    setState(() => _dockLayout = replacement);
+    widget.onDockLayoutChanged?.call(replacement.toJsonString());
+  }
+
+  Future<void> _saveCurrentLayoutAs() async {
+    final controller = TextEditingController();
+    final name = await showFDialog<String>(
+      context: context,
+      builder: (context, style, animation) => FDialog(
+        animation: animation,
+        builder: (context, style) => Padding(
+          padding: const EdgeInsets.all(18),
+          child: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Save Layout',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 14),
+                FTextField(
+                  control: FTextFieldControl.managed(controller: controller),
+                  autofocus: true,
+                  hint: 'Layout name',
+                  onSubmit: (_) {
+                    final value = controller.text.trim();
+                    if (value.isNotEmpty) Navigator.pop(context, value);
+                  },
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    FButton(
+                      variant: .outline,
+                      size: .xs,
+                      mainAxisSize: .min,
+                      onPress: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    FButton(
+                      size: .xs,
+                      mainAxisSize: .min,
+                      onPress: () {
+                        final value = controller.text.trim();
+                        if (value.isNotEmpty) Navigator.pop(context, value);
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+    if (name == null || !mounted) return;
+    final existing = widget.namedLayouts.keys.cast<String?>().firstWhere(
+      (candidate) => candidate!.toLowerCase() == name.toLowerCase(),
+      orElse: () => null,
+    );
+    if (existing != null) {
+      final overwrite = await _confirmLayoutOverwrite(existing);
+      if (!overwrite || !mounted) return;
+    }
+    widget.onSaveNamedLayout?.call(name, _dockLayout.toJsonString());
+  }
+
+  Future<bool> _confirmLayoutOverwrite(String name) async {
+    return await showFDialog<bool>(
+          context: context,
+          builder: (context, style, animation) => FDialog(
+            animation: animation,
+            builder: (context, style) => Padding(
+              padding: const EdgeInsets.all(18),
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Overwrite Layout?',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('Replace the saved layout “$name”?'),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FButton(
+                          variant: .outline,
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: () => Navigator.pop(context, false),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FButton(
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: () => Navigator.pop(context, true),
+                          child: const Text('Overwrite'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _manageLayouts() async {
+    await showFDialog<void>(
+      context: context,
+      builder: (context, style, animation) => FDialog(
+        animation: animation,
+        constraints: const BoxConstraints(minWidth: 520, maxWidth: 560),
+        builder: (context, style) => Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Manage Layouts',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              if (widget.namedLayouts.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('No named layouts have been saved.'),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final entry in widget.namedLayouts.entries)
+                        _LayoutManagerRow(
+                          name: entry.key,
+                          onApply: () {
+                            Navigator.pop(context);
+                            _applyDockLayout(entry.value);
+                          },
+                          onOverwrite: () async {
+                            final overwrite = await _confirmLayoutOverwrite(
+                              entry.key,
+                            );
+                            if (overwrite) {
+                              widget.onSaveNamedLayout?.call(
+                                entry.key,
+                                _dockLayout.toJsonString(),
+                              );
+                            }
+                          },
+                          onDelete: () {
+                            widget.onDeleteNamedLayout?.call(entry.key);
+                            Navigator.pop(context);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FButton(
+                  variant: .outline,
+                  size: .xs,
+                  mainAxisSize: .min,
+                  onPress: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -438,6 +639,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   currentPath: _currentPath,
                   onNew: _newScene,
                   onOpen: _open,
+                  recentScenePaths: widget.recentScenePaths,
+                  onOpenRecentScene: _openPath,
+                  onRemoveRecentScene: widget.onRemoveRecentScene,
+                  onClearRecentScenes: widget.onClearRecentScenes,
                   onImportGlb: _importGlb,
                   onReimportGlb: _reimportGlb,
                   onSave: _save,
@@ -455,6 +660,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
                   onNewViewport: _newViewport,
+                  namedLayouts: widget.namedLayouts,
+                  onApplyLayout: _applyDockLayout,
+                  onSaveCurrentLayout: _saveCurrentLayoutAs,
+                  onManageLayouts: _manageLayouts,
                   leadingInset: widget.menuBarLeadingInset,
                   onDragStart: widget.onMenuBarDragStart,
                 ),
@@ -550,8 +759,12 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<void> _open() async {
-    final path = await pickOpenPath();
+    final path = await pickOpenPath(initialDirectory: _sceneDialogDirectory);
     if (path == null) return;
+    await _openPath(path);
+  }
+
+  Future<void> _openPath(String path) async {
     try {
       final ctrl = await openFscene(path);
       widget.onControllerReplaced(ctrl);
@@ -559,7 +772,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         _setPath(path);
         _paletteOpen = false;
       });
-    } on IOException catch (e) {
+    } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -569,7 +782,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<void> _importGlb() async {
-    final path = await pickModelPath();
+    final path = await pickModelPath(initialDirectory: _sceneDialogDirectory);
     if (path == null || !mounted) return;
     await _importModelFromBrowser(path);
   }
@@ -636,20 +849,24 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       await _saveAs();
       return;
     }
-    await _writeTo(path);
+    final saved = await _writeTo(path);
+    if (saved) _setPath(path);
   }
 
   Future<void> _saveAs() async {
     final suggested = _currentPath == null
         ? 'scene.fscene'
         : _currentPath!.split(Platform.pathSeparator).last;
-    final path = await pickSavePath(suggestedName: suggested);
+    final path = await pickSavePath(
+      suggestedName: suggested,
+      initialDirectory: _sceneDialogDirectory,
+    );
     if (path == null) return;
-    await _writeTo(path);
-    if (mounted) setState(() => _setPath(path));
+    final saved = await _writeTo(path);
+    if (saved && mounted) setState(() => _setPath(path));
   }
 
-  Future<void> _writeTo(String path) async {
+  Future<bool> _writeTo(String path) async {
     try {
       await saveFscene(_ctrl, path);
       // A new scene had no base directory; after saving it lives next to the
@@ -663,12 +880,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
           ),
         );
       }
+      return true;
     } on IOException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
+      return false;
     }
   }
 
@@ -689,7 +908,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   // Adds a sub-scene as a prefab instance node. The source is stored relative
   // to the open scene's directory when possible (portable), absolute otherwise.
   Future<void> _addPrefabInstance() async {
-    final path = await pickOpenPath();
+    final path = await pickOpenPath(
+      initialDirectory: _dialogHistory.prefabInitialDirectory(
+        _sceneDialogDirectory,
+      ),
+    );
     if (path == null) return;
     final base = _ctrl.baseDirectory;
     final source = (base != null && path.startsWith('$base/'))
@@ -704,6 +927,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         'prefabAsset': source,
         'name': name,
       });
+      _dialogHistory.rememberPrefab(path);
       _ctrl.selection.selectOnly(tx.records.first.targetId);
     } catch (e) {
       // Realizing the instance failed (for example the prefab could not be
@@ -765,12 +989,66 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 // Menu bar.
 // ---------------------------------------------------------------------------
 
+class _LayoutManagerRow extends StatelessWidget {
+  const _LayoutManagerRow({
+    required this.name,
+    required this.onApply,
+    required this.onOverwrite,
+    required this.onDelete,
+  });
+
+  final String name;
+  final VoidCallback onApply;
+  final VoidCallback onOverwrite;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: onApply,
+              style: TextButton.styleFrom(alignment: Alignment.centerLeft),
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+          FButton(
+            variant: .ghost,
+            size: .xs,
+            mainAxisSize: .min,
+            onPress: onOverwrite,
+            child: const Text('Overwrite'),
+          ),
+          FButton.icon(
+            variant: .ghost,
+            size: .xs,
+            onPress: onDelete,
+            child: const Icon(Icons.close, size: 14),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EditorMenuBar extends StatelessWidget {
   const _EditorMenuBar({
     required this.controller,
     required this.currentPath,
     required this.onNew,
     required this.onOpen,
+    required this.recentScenePaths,
+    required this.onOpenRecentScene,
+    required this.onRemoveRecentScene,
+    required this.onClearRecentScenes,
     required this.onImportGlb,
     required this.onReimportGlb,
     required this.onSave,
@@ -788,6 +1066,10 @@ class _EditorMenuBar extends StatelessWidget {
     required this.isPanelVisible,
     required this.onTogglePanel,
     required this.onNewViewport,
+    required this.namedLayouts,
+    required this.onApplyLayout,
+    required this.onSaveCurrentLayout,
+    required this.onManageLayouts,
     required this.leadingInset,
     this.onDragStart,
   });
@@ -796,6 +1078,10 @@ class _EditorMenuBar extends StatelessWidget {
   final String? currentPath;
   final VoidCallback onNew;
   final VoidCallback onOpen;
+  final List<String> recentScenePaths;
+  final ValueChanged<String> onOpenRecentScene;
+  final ValueChanged<String>? onRemoveRecentScene;
+  final VoidCallback? onClearRecentScenes;
   final VoidCallback onImportGlb;
   final VoidCallback onReimportGlb;
   final VoidCallback onSave;
@@ -813,6 +1099,10 @@ class _EditorMenuBar extends StatelessWidget {
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
   final VoidCallback onNewViewport;
+  final Map<String, String> namedLayouts;
+  final ValueChanged<String?> onApplyLayout;
+  final VoidCallback onSaveCurrentLayout;
+  final VoidCallback onManageLayouts;
   final double leadingInset;
   final VoidCallback? onDragStart;
 
@@ -835,6 +1125,13 @@ class _EditorMenuBar extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(width: leadingInset),
+            Image.asset(
+              'packages/flutter_scene/screenshots/flutter_scene_logo.png',
+              width: 18,
+              height: 18,
+              cacheWidth: 36,
+            ),
+            const SizedBox(width: 6),
             Text(
               currentPath != null
                   ? 'Scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
@@ -847,6 +1144,29 @@ class _EditorMenuBar extends StatelessWidget {
               items: [
                 _MenuItem(label: 'New', onTap: onNew),
                 _MenuItem(label: 'Open…', onTap: onOpen),
+                _MenuItem(
+                  label: 'Open Recent',
+                  children: recentScenePaths.isEmpty
+                      ? const [_MenuItem(label: 'No Recent Scenes')]
+                      : [
+                          for (final path in recentScenePaths)
+                            _MenuItem(
+                              label: path.split(Platform.pathSeparator).last,
+                              detail: File(path).existsSync()
+                                  ? File(path).parent.path
+                                  : 'Missing  ${File(path).parent.path}',
+                              onTap: () => onOpenRecentScene(path),
+                              onRemove: onRemoveRecentScene == null
+                                  ? null
+                                  : () => onRemoveRecentScene!(path),
+                            ),
+                          const _MenuItem.divider(),
+                          _MenuItem(
+                            label: 'Clear Recent Scenes',
+                            onTap: onClearRecentScenes,
+                          ),
+                        ],
+                ),
                 _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
                 _MenuItem(
                   label: 'Re-import glTF…',
@@ -899,6 +1219,26 @@ class _EditorMenuBar extends StatelessWidget {
               label: 'View',
               itemsBuilder: () => [
                 _MenuItem(label: 'New Viewport', onTap: onNewViewport),
+                _MenuItem(
+                  label: 'Layouts',
+                  children: [
+                    _MenuItem(
+                      label: 'Reset to Default Layout',
+                      onTap: () => onApplyLayout(null),
+                    ),
+                    for (final entry in namedLayouts.entries)
+                      _MenuItem(
+                        label: entry.key,
+                        onTap: () => onApplyLayout(entry.value),
+                      ),
+                    const _MenuItem.divider(),
+                    _MenuItem(
+                      label: 'Save Current Layout As…',
+                      onTap: onSaveCurrentLayout,
+                    ),
+                    _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
+                  ],
+                ),
                 for (final entry in _panelTitles.entries)
                   _MenuItem(
                     label: entry.value,
@@ -916,15 +1256,36 @@ class _EditorMenuBar extends StatelessWidget {
 }
 
 class _MenuItem {
-  const _MenuItem({required this.label, this.onTap, this.checked});
+  const _MenuItem({
+    required this.label,
+    this.detail,
+    this.onTap,
+    this.onRemove,
+    this.checked,
+    this.children,
+  }) : divider = false;
+
+  const _MenuItem.divider()
+    : label = '',
+      detail = null,
+      onTap = null,
+      onRemove = null,
+      checked = null,
+      children = null,
+      divider = true;
+
   final String label;
+  final String? detail;
   final VoidCallback? onTap;
+  final VoidCallback? onRemove;
 
   /// Non-null renders a leading checkmark slot (checked or empty).
   final bool? checked;
+  final List<_MenuItem>? children;
+  final bool divider;
 }
 
-class _Menu extends StatelessWidget {
+class _Menu extends StatefulWidget {
   const _Menu({required this.label, this.items, this.itemsBuilder})
     : assert((items == null) != (itemsBuilder == null));
 
@@ -936,37 +1297,113 @@ class _Menu extends StatelessWidget {
   final List<_MenuItem> Function()? itemsBuilder;
 
   @override
+  State<_Menu> createState() => _MenuState();
+}
+
+class _MenuState extends State<_Menu> {
+  static const _menuStyle = MenuStyle(
+    padding: WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+    ),
+    visualDensity: VisualDensity.compact,
+  );
+
+  static const _itemStyle = ButtonStyle(
+    minimumSize: WidgetStatePropertyAll(Size(0, 26)),
+    padding: WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    ),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+  );
+
+  @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<VoidCallback?>(
-      tooltip: '',
-      padding: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Text(label, style: const TextStyle(fontSize: 11)),
+    return MenuAnchor(
+      style: _menuStyle,
+      menuChildren: _buildMenuItems(widget.items ?? widget.itemsBuilder!()),
+      builder: (context, controller, child) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (controller.isOpen) {
+            controller.close();
+            return;
+          }
+          // Refresh deferred menu state before the overlay is built.
+          setState(() {});
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) controller.open();
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
+        ),
       ),
-      itemBuilder: (_) => [
-        for (final item in items ?? itemsBuilder!())
-          PopupMenuItem<VoidCallback?>(
-            value: item.onTap,
-            enabled: item.onTap != null,
-            height: 28,
-            child: Row(
-              children: [
-                if (item.checked != null)
-                  SizedBox(
-                    width: 20,
-                    child: item.checked!
-                        ? const Icon(Icons.check, size: 14)
-                        : null,
-                  ),
-                Text(item.label, style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          ),
-      ],
-      onSelected: (cb) => cb?.call(),
     );
   }
+
+  List<Widget> _buildMenuItems(List<_MenuItem> source) => [
+    for (final item in source)
+      if (item.divider)
+        const Divider(height: 1)
+      else if (item.children != null)
+        SubmenuButton(
+          style: _itemStyle,
+          menuChildren: _buildMenuItems(item.children!),
+          child: Text(item.label, style: const TextStyle(fontSize: 12)),
+        )
+      else
+        MenuItemButton(
+          style: _itemStyle,
+          onPressed: item.onTap,
+          leadingIcon: item.checked == null
+              ? null
+              : SizedBox(
+                  width: 16,
+                  child: item.checked!
+                      ? const Icon(Icons.check, size: 14)
+                      : null,
+                ),
+          child: item.detail == null && item.onRemove == null
+              ? Text(item.label, style: const TextStyle(fontSize: 12))
+              : SizedBox(
+                  width: 360,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            if (item.detail != null)
+                              Text(
+                                item.detail!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (item.onRemove != null)
+                        IconButton(
+                          tooltip: 'Remove from recent scenes',
+                          onPressed: item.onRemove,
+                          icon: const Icon(Icons.close, size: 14),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+  ];
 }
 
 class _MenuButton extends StatelessWidget {

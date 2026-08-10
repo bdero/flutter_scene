@@ -1,5 +1,5 @@
 /// The project asset index: a background scan of the open scene's directory for
-/// referenceable files (models, images, HDRs, scenes), plus an enumeration of
+/// referenceable files (models, images, environment images, scenes), plus an
 /// the document's embedded pool resources with their reverse-dependency counts.
 ///
 /// This is the data behind the asset browser. It is deliberately read-only over
@@ -17,7 +17,7 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 
 /// The kind of an on-disk project asset, picked by file extension.
-enum FileAssetKind { model, image, hdr, scene }
+enum FileAssetKind { model, image, environmentImage, scene }
 
 /// A file under the project directory the browser can act on.
 @immutable
@@ -74,7 +74,7 @@ class EmbeddedResource {
 /// Extensions classified into [FileAssetKind]s.
 const _modelExt = {'.glb', '.gltf', '.fsceneb'};
 const _imageExt = {'.png', '.jpg', '.jpeg', '.webp'};
-const _hdrExt = {'.hdr', '.exr'};
+const _environmentImageExt = {'.hdr', '.exr'};
 const _sceneExt = {'.fscene'};
 
 FileAssetKind? _classify(String name) {
@@ -83,7 +83,9 @@ FileAssetKind? _classify(String name) {
   final ext = name.substring(dot).toLowerCase();
   if (_modelExt.contains(ext)) return FileAssetKind.model;
   if (_imageExt.contains(ext)) return FileAssetKind.image;
-  if (_hdrExt.contains(ext)) return FileAssetKind.hdr;
+  if (_environmentImageExt.contains(ext)) {
+    return FileAssetKind.environmentImage;
+  }
   if (_sceneExt.contains(ext)) return FileAssetKind.scene;
   return null;
 }
