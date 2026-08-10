@@ -18,7 +18,12 @@ name: codemagic smoke render
 
 on:
   push:
-    branches: [master]
+    # TODO(codemagic-smoke): drop bdero/codemagic-orchestrated before merging.
+    # pull_request_target runs the workflow file from the base branch, so this
+    # cannot be exercised from a pull request until it is on master. A push
+    # event runs the file from the pushed commit, which is the only way to test
+    # it beforehand.
+    branches: [master, bdero/codemagic-orchestrated]
   pull_request_target:
     branches: [master]
     types: [opened, synchronize, reopened, labeled]
@@ -61,10 +66,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
-            # master already exists on the remote, so Codemagic can build it.
-            echo "branch=master" >> "$GITHUB_OUTPUT"
+            # The pushed branch already exists on the remote, so Codemagic can
+            # resolve it and no mirror is needed.
+            echo "branch=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "temp_branch=" >> "$GITHUB_OUTPUT"
-            echo "argos_branch=master" >> "$GITHUB_OUTPUT"
+            echo "argos_branch=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
             echo "argos_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -197,6 +203,10 @@ jobs:
             echo "No frames came back; skipping Argos upload."
             exit 0
           fi
+          # On a push there is no pull request, and an empty value reads
+          # differently from an absent one.
+          if [ -z "$ARGOS_PR_NUMBER" ]; then unset ARGOS_PR_NUMBER; fi
+          if [ -z "$ARGOS_PR_BASE_BRANCH" ]; then unset ARGOS_PR_BASE_BRANCH; fi
           status=0
           npx --yes @argos-ci/cli upload smoke \
             --project "$ARGOS_PROJECT" \
