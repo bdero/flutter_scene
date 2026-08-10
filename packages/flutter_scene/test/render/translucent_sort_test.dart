@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 // ignore: implementation_imports
 import 'package:flutter_scene/src/scene_encoder.dart';
 // ignore: implementation_imports
@@ -41,10 +43,62 @@ void main() {
     expect(transmissionFilterBandCount(1, 128), 0);
   });
 
-  test('translucent readers share one opaque scene snapshot', () {
-    expect(sceneColorSnapshotPassCount(0), 0);
-    expect(sceneColorSnapshotPassCount(3), 1);
-    expect(sceneColorSnapshotPassCount(100), 1);
+  test('overlapping scene-color readers use accumulated snapshots', () {
+    expect(
+      sceneColorCaptureBatchCount([
+        for (var i = 0; i < 3; i++)
+          (
+            bounds: const Rect.fromLTWH(100, 100, 200, 200),
+            readsSceneColor: true,
+          ),
+      ], const Size(1000, 1000)),
+      3,
+    );
+  });
+
+  test('disjoint scene-color readers share one snapshot', () {
+    expect(
+      sceneColorCaptureBatchCount(const [
+        (bounds: Rect.fromLTWH(50, 100, 100, 100), readsSceneColor: true),
+        (bounds: Rect.fromLTWH(450, 100, 100, 100), readsSceneColor: true),
+        (bounds: Rect.fromLTWH(850, 100, 100, 100), readsSceneColor: true),
+      ], const Size(1000, 1000)),
+      1,
+    );
+  });
+
+  test('many disjoint readers keep capture cost constant', () {
+    expect(
+      sceneColorCaptureBatchCount([
+        for (var i = 0; i < 8; i++)
+          (
+            bounds: Rect.fromLTWH(48.0 + i * 248.0, 100, 64, 120),
+            readsSceneColor: true,
+          ),
+      ], const Size(2048, 1024)),
+      1,
+    );
+  });
+
+  test('reader captures overlapping ordinary translucency', () {
+    expect(
+      sceneColorCaptureBatchCount(const [
+        (bounds: Rect.fromLTWH(50, 100, 100, 100), readsSceneColor: true),
+        (bounds: Rect.fromLTWH(700, 100, 100, 100), readsSceneColor: false),
+        (bounds: Rect.fromLTWH(720, 100, 100, 100), readsSceneColor: true),
+      ], const Size(1000, 1000)),
+      2,
+    );
+  });
+
+  test('ordinary translucency does not create scene-color captures', () {
+    expect(
+      sceneColorCaptureBatchCount(const [
+        (bounds: Rect.fromLTWH(100, 100, 200, 200), readsSceneColor: false),
+        (bounds: Rect.fromLTWH(200, 200, 200, 200), readsSceneColor: false),
+      ], const Size(1000, 1000)),
+      0,
+    );
   });
 
   test('rough transmission atlas offsets match odd-sized bands', () {
