@@ -58,16 +58,7 @@ Node _cuboid(vm.Vector4 baseColor, double metallic, double roughness) {
 }
 
 Node _directionalLightNode(vm.Vector3 direction, DirectionalLight light) =>
-    Node(
-      localTransform: vm.Matrix4.compose(
-        vm.Vector3.zero(),
-        vm.Quaternion.fromTwoVectors(
-          vm.Vector3(0, 0, 1),
-          direction.normalized(),
-        ),
-        vm.Vector3.all(1),
-      ),
-    )..addComponent(DirectionalLightComponent(light));
+    Node()..addComponent(DirectionalLightComponent.aimed(light, direction));
 
 void _configureAmbientOcclusion(Scene scene) {
   scene.ambientOcclusion

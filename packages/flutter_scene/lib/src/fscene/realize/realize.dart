@@ -177,14 +177,14 @@ Node _realizeWith(
 /// [SceneDocument].
 ///
 /// [root] is treated as the synthesized realization root (as returned by
-/// [realizeScene]) and its children become the document's root nodes. Nodes realized from a document
-/// keep their identity-tag ids, so a load/edit/save cycle is rename-proof and
-/// diff-friendly; untagged (hand-built) nodes mint fresh ids. Skins, the
-/// root's parsed animations, and lazy prefab placeholders serialize too; a
-/// loaded lazy subtree serializes as its placeholder (the streamed content
-/// belongs to the referenced prefab, not this document). Components are
-/// serialized through [registry] (the built-ins by default); a component no
-/// codec claims is skipped with a debug warning.
+/// [realizeScene]) and its children become the document's root nodes. Nodes
+/// realized from a document keep their identity-tag ids, so a load/edit/save
+/// cycle is rename-proof and diff-friendly; untagged (hand-built) nodes mint
+/// fresh ids. Skins, the root's parsed animations, and lazy prefab placeholders
+/// serialize too; a loaded lazy subtree serializes as its placeholder (the
+/// streamed content belongs to the referenced prefab, not this document).
+/// Components are serialized through [registry] (the built-ins by default); a
+/// component no codec claims is skipped with a debug warning.
 SceneDocument serializeScene(Node root, {FsceneComponentRegistry? registry}) {
   final reg = registry ?? defaultComponentRegistry();
   final document = SceneDocument();

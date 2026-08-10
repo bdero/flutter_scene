@@ -1126,7 +1126,7 @@ class _EditorMenuBar extends StatelessWidget {
           children: [
             SizedBox(width: leadingInset),
             Image.asset(
-              'packages/flutter_scene/screenshots/flutter_scene_logo.png',
+              'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
               width: 18,
               height: 18,
               cacheWidth: 36,

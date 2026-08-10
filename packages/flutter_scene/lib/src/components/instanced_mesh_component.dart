@@ -53,6 +53,8 @@ class InstancedMeshComponent extends Component {
   void refreshRenderItem() {
     final item = _renderItem;
     if (item == null) return;
+    final materialCandidateChanged =
+        !item.visible || item.layers != node.layers;
     item.visible = true;
     final frustumCulled = node.frustumCulled;
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
@@ -105,6 +107,9 @@ class InstancedMeshComponent extends Component {
     // BVH membership and needs a rebuild; a plain move only needs a
     // refit.
     final renderScene = node.internalRenderScene;
+    if (materialCandidateChanged) {
+      renderScene?.markMaterialCandidatesDirty();
+    }
     if (frustumCulledChanged || wasBounded != isBounded) {
       renderScene?.markBvhStructureDirty();
     } else if (boundsChanged && item.frustumCulled) {
@@ -123,6 +128,9 @@ class InstancedMeshComponent extends Component {
     if (item == null) return;
     if (item.visible && item.shadowStatic && item.castsShadows) {
       node.internalRenderScene?.markStaticShadowDirty();
+    }
+    if (item.visible) {
+      node.internalRenderScene?.markMaterialCandidatesDirty();
     }
     item.visible = false;
   }

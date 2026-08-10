@@ -53,6 +53,21 @@ void main() {
     expect(() => writeFsceneb(manifest), returnsNormally);
   });
 
+  test('a declared missing payload sidecar fails immediately', () {
+    final document = SceneDocument()..payloadSource = 'missing.fsceneb';
+
+    expect(
+      () => resolveExternalPayloadAsset(document, sceneUri()),
+      throwsA(
+        isA<FscenebFormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('missing.fsceneb'),
+        ),
+      ),
+    );
+  });
+
   test('resolves and embeds an external texture as an rgba8 payload', () {
     final key = writeImage('wood.png', 4, 2);
     final document = SceneDocument();

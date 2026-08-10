@@ -245,9 +245,12 @@ void _expandInstance(
       // transform. Keep the instance name and layers. An unnamed instance
       // inherits the prefab root's name.
       if (instance.name.isEmpty) instance.name = node.name;
-      instance.transform = MatrixTransform(
-        instance.transform.toMatrix4() * node.transform.toMatrix4(),
-      );
+      final rootTransform = node.transform.toMatrix4();
+      if (!rootTransform.isIdentity()) {
+        instance.transform = MatrixTransform(
+          instance.transform.toMatrix4() * rootTransform,
+        );
+      }
       instance.components.addAll([
         for (final c in node.components) _remapComponent(c, remapId),
       ]);
@@ -469,6 +472,8 @@ void _setTrs(NodeSpec node, String component, PropertyValue value) {
     translation = current.translation.clone();
     rotation = current.rotation.clone();
     scale = current.scale.clone();
+  } else {
+    current.toMatrix4().decompose(translation, rotation, scale);
   }
   switch (component) {
     case 't' when value is Vec3Value:
@@ -585,6 +590,7 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
             ? null
             : _copySkyEnvironment(r.skyEnvironment!),
         effects: EnvironmentEffectsSpec.copy(r.effects),
+        overridesEffects: r.overridesEffects,
       ),
     };
 

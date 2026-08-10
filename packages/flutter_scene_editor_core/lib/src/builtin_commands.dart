@@ -1121,6 +1121,7 @@ EnvironmentResource _copyEnvironmentResource(EnvironmentResource r) =>
           ? null
           : _copySkyEnvironment(r.skyEnvironment!),
       effects: EnvironmentEffectsSpec.copy(r.effects),
+      overridesEffects: r.overridesEffects,
     );
 
 SkyEnvironmentSpec _copySkyEnvironment(SkyEnvironmentSpec s) =>
@@ -1215,36 +1216,51 @@ void _applyLookProperties(_LookView look, Map<String, PropertyValue> props) {
         r.environmentRotationY,
       );
     }
-    _applyEnvironmentEffects(r.effects, props);
+    if (_applyEnvironmentEffects(r.effects, props)) {
+      r.overridesEffects = true;
+    }
   }
 }
 
-void _applyEnvironmentEffects(
+bool _applyEnvironmentEffects(
   EnvironmentEffectsSpec e,
   Map<String, PropertyValue> props,
 ) {
+  var changed = false;
   void boolean(String key, void Function(bool) assign) {
-    if (props[key] case BoolValue(:final value)) assign(value);
+    if (props[key] case BoolValue(:final value)) {
+      changed = true;
+      assign(value);
+    }
   }
 
   void number(String key, double current, void Function(double) assign) {
-    if (props.containsKey(key)) assign(_stageDouble(props[key], current));
+    if (props.containsKey(key)) {
+      changed = true;
+      assign(_stageDouble(props[key], current));
+    }
   }
 
   void integer(String key, int current, void Function(int) assign) {
     if (!props.containsKey(key)) return;
+    changed = true;
     assign(_stageInt(props[key]) ?? current);
   }
 
   void string(String key, String current, void Function(String) assign) {
-    if (props.containsKey(key)) assign(_stageString(props[key], current));
+    if (props.containsKey(key)) {
+      changed = true;
+      assign(_stageString(props[key], current));
+    }
   }
 
   void vector(String key, Vector3 current, void Function(Vector3) assign) {
     switch (props[key]) {
       case Vec3Value(:final value):
+        changed = true;
         assign(value.clone());
       case ColorValue(:final r, :final g, :final b):
+        changed = true;
         assign(Vector3(r, g, b));
       default:
         break;
@@ -1521,6 +1537,7 @@ void _applyEnvironmentEffects(
     e.autoExposureSpeedDown,
     (v) => e.autoExposureSpeedDown = v,
   );
+  return changed;
 }
 
 // Applies a skybox/sky-lighting change to [next], reading the prior look from

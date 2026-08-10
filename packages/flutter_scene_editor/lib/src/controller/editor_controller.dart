@@ -1322,7 +1322,7 @@ class EditorController extends ChangeNotifier {
     agxWhite: resource.agxWhite,
     agxContrast: resource.agxContrast,
     environmentRotationY: resource.environmentRotationY,
-    effects: resource.effects,
+    effects: resource.overridesEffects ? resource.effects : null,
     skybox: resource.skybox,
     skyEnvironment: resource.skyEnvironment,
   );

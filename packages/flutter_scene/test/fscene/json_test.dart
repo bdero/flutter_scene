@@ -185,6 +185,34 @@ void main() {
     expect(effects.autoExposureCompensation, 1.5);
   });
 
+  test('environment effect override presence round-trips', () {
+    final inherited = SceneDocument();
+    final inheritedEnvironment = inherited.addResource(
+      EnvironmentResource(inherited.newId(), overridesEffects: false),
+    );
+    final inheritedText = writeFscene(inherited);
+    expect(inheritedText, isNot(contains('"effects"')));
+    expect(
+      (readFscene(inheritedText).resource(inheritedEnvironment.id)
+              as EnvironmentResource)
+          .overridesEffects,
+      isFalse,
+    );
+
+    final authored = SceneDocument();
+    final authoredEnvironment = authored.addResource(
+      EnvironmentResource(authored.newId()),
+    );
+    final authoredText = writeFscene(authored);
+    expect(authoredText, contains('"effects": {}'));
+    expect(
+      (readFscene(authoredText).resource(authoredEnvironment.id)
+              as EnvironmentResource)
+          .overridesEffects,
+      isTrue,
+    );
+  });
+
   test('constant diffuse environment round-trips', () {
     final document = SceneDocument();
     final environment = document.addResource(
@@ -322,10 +350,42 @@ void main() {
       expect(migrated.formatVersion, currentFsceneVersion);
     });
 
-    test('refuses version 1 without a coordinate migration', () {
+    test('migrates a left-handed version 1 document', () {
+      final text = writeFscene(_sampleDocument())
+          .replaceFirst('"fscene": 2', '"fscene": 1')
+          .replaceFirst(
+            '"stage": {',
+            '"stage": {"handedness": "left", "unitsPerMeter": 1.0, '
+                '"upAxis": "y",',
+          );
+      final document = readFscene(text);
+      expect(document.formatVersion, currentFsceneVersion);
+    });
+
+    test('refuses a right-handed version 1 document with guidance', () {
+      final text = writeFscene(_sampleDocument())
+          .replaceFirst('"fscene": 2', '"fscene": 1')
+          .replaceFirst(
+            '"stage": {',
+            '"stage": {"handedness": "right", "unitsPerMeter": 1.0, '
+                '"upAxis": "y",',
+          );
+      expect(
+        () => readFscene(text),
+        throwsA(
+          isA<FsceneVersionException>().having(
+            (error) => error.message,
+            'message',
+            contains('Re-import the source glTF'),
+          ),
+        ),
+      );
+    });
+
+    test('refuses a document without a format version', () {
       final text = writeFscene(
         _sampleDocument(),
-      ).replaceFirst('"fscene": 2', '"fscene": 1');
+      ).replaceFirst('"fscene": 2,', '');
       expect(() => readFscene(text), throwsA(isA<FsceneVersionException>()));
     });
 

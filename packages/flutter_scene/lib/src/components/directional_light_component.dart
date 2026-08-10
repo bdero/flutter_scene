@@ -17,8 +17,20 @@ import 'package:flutter_scene/src/node.dart';
 class DirectionalLightComponent extends Component {
   /// Creates a component that lights the scene with [light].
   DirectionalLightComponent(this.light)
-    : _usesLightDirection = false,
+    : assert(
+        _hasDefaultDirection(light),
+        'DirectionalLight.direction is ignored by DirectionalLightComponent. '
+        'Aim the owning node or use DirectionalLightComponent.aimed.',
+      ),
+      _usesLightDirection = false,
       _localDirection = null;
+
+  /// Creates a component that travels along [localDirection].
+  ///
+  /// The owning node's rotation transforms this direction into world space.
+  DirectionalLightComponent.aimed(this.light, Vector3 localDirection)
+    : _usesLightDirection = false,
+      _localDirection = localDirection.clone();
 
   /// Creates the component backing the scene-level light convenience.
   ///
@@ -29,19 +41,18 @@ class DirectionalLightComponent extends Component {
     : _usesLightDirection = true,
       _localDirection = null;
 
-  /// Creates a component inside a runtime coordinate boundary.
-  @internal
-  DirectionalLightComponent.fromLocalDirection(this.light, Vector3 direction)
-    : _usesLightDirection = false,
-      _localDirection = direction.clone();
-
   /// The light this component contributes.
   DirectionalLight light;
 
   final bool _usesLightDirection;
   final Vector3? _localDirection;
 
-  static final Vector3 _localForward = Vector3(0, 0, 1);
+  static bool _hasDefaultDirection(DirectionalLight light) {
+    final direction = light.direction;
+    return (direction.x + 0.3).abs() < 1e-6 &&
+        (direction.y + 1.0).abs() < 1e-6 &&
+        (direction.z + 0.2).abs() < 1e-6;
+  }
 
   @override
   void onMount() {
@@ -60,12 +71,12 @@ class DirectionalLightComponent extends Component {
 
   /// The light's world-space travel direction.
   Vector3 get worldDirection {
-    if (_usesLightDirection) return light.direction;
+    if (_usesLightDirection) return light.direction.normalized();
     final localDirection = _localDirection;
     if (localDirection != null) {
       return node.globalTransform.rotate3(localDirection.clone()).normalized();
     }
-    return node.globalTransform.getRotation() * _localForward;
+    return (node.globalTransform.getRotation() * Vector3(0, 0, 1))..normalize();
   }
 
   /// Clones carry the light, sharing the light object like other clone
@@ -78,6 +89,6 @@ class DirectionalLightComponent extends Component {
     final localDirection = _localDirection;
     return localDirection == null
         ? DirectionalLightComponent(light)
-        : DirectionalLightComponent.fromLocalDirection(light, localDirection);
+        : DirectionalLightComponent.aimed(light, localDirection);
   }
 }

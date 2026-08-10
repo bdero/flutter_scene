@@ -110,6 +110,7 @@ LocalId copyResourceInto(
           skybox: res.skybox,
           skyEnvironment: res.skyEnvironment,
           effects: EnvironmentEffectsSpec.copy(res.effects),
+          overridesEffects: res.overridesEffects,
         ),
       );
   }

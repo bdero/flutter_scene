@@ -56,6 +56,19 @@ void main() {
     );
   });
 
+  test('overlapping scene-color readers cap accumulated snapshots', () {
+    expect(
+      sceneColorCaptureBatchCount([
+        for (var i = 0; i < 20; i++)
+          (
+            bounds: const Rect.fromLTWH(100, 100, 200, 200),
+            readsSceneColor: true,
+          ),
+      ], const Size(1000, 1000)),
+      maxSceneColorCaptureBatches,
+    );
+  });
+
   test('disjoint scene-color readers share one snapshot', () {
     expect(
       sceneColorCaptureBatchCount(const [

@@ -30,9 +30,33 @@ const Set<String> supportedFeatures = {
 typedef FsceneMigration =
     Map<String, dynamic> Function(Map<String, dynamic> json);
 
-// The built-in migration chain. Empty at v1 (the first version); a future
-// breaking change appends a `vN -> vN+1` step here.
-const List<FsceneMigration> _builtInMigrations = [];
+// Indexed by source version. Version 0 has no supported migration.
+final List<FsceneMigration> _builtInMigrations = [
+  (json) => throw const FsceneVersionException(
+    'Document version 0 cannot be migrated',
+  ),
+  _migrateV1ToV2,
+];
+
+Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
+  final stageValue = json['stage'];
+  if (stageValue is! Map) {
+    throw const FsceneFormatException('Document stage must be an object');
+  }
+  final stage = Map<String, dynamic>.from(stageValue);
+  final handedness = stage['handedness'] as String? ?? 'right';
+  if (handedness != 'left') {
+    throw const FsceneVersionException(
+      'Right-handed version 1 documents cannot be migrated. Re-import the '
+      'source glTF.',
+    );
+  }
+  stage
+    ..remove('upAxis')
+    ..remove('unitsPerMeter')
+    ..remove('handedness');
+  return Map<String, dynamic>.from(json)..['stage'] = stage;
+}
 
 /// Thrown when a `.fscene` document is malformed.
 /// {@category Serialization}
@@ -266,6 +290,7 @@ Map<String, dynamic> _encodeLook({
   required SkyboxSpec? skybox,
   required SkyEnvironmentSpec? skyEnvironment,
   required EnvironmentEffectsSpec effects,
+  required bool overridesEffects,
 }) => {
   'environment': switch (environment) {
     StudioEnvironment() => {'type': 'studio'},
@@ -287,8 +312,7 @@ Map<String, dynamic> _encodeLook({
   if (agxContrast != 1.25) 'agxContrast': agxContrast,
   if (environmentRotationY != 0.0) 'environmentRotationY': environmentRotationY,
   if (radianceCubeSize != null) 'radianceCubeSize': radianceCubeSize,
-  if (_encodeEnvironmentEffects(effects).isNotEmpty)
-    'effects': _encodeEnvironmentEffects(effects),
+  if (overridesEffects) 'effects': _encodeEnvironmentEffects(effects),
   if (skybox != null)
     'skybox': {
       'source': encodeSkySource(skybox.source),
@@ -601,6 +625,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
           skybox: r.skybox,
           skyEnvironment: r.skyEnvironment,
           effects: r.effects,
+          overridesEffects: r.overridesEffects,
         ),
       };
   }
@@ -1069,6 +1094,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         skybox: _decodeSkybox(json['skybox']),
         skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
         effects: _decodeEnvironmentEffects(json['effects']),
+        overridesEffects: json.containsKey('effects'),
       );
     default:
       throw FsceneFormatException('Unknown resource kind: $kind');

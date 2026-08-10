@@ -2,11 +2,12 @@
 /// serializes them back.
 ///
 /// The stage carries the scene-wide, non-spatial settings: the image-based
-/// lighting environment, environment intensity, exposure, tone mapping, the
-/// skybox, and sky-driven lighting. `realizeScene` builds only the node
-/// graph; apply the stage to the scene that hosts it with [realizeStage]
-/// (`loadScene` does this when given a scene). [serializeStage] reads a
-/// scene's settings back into a document, the editor-save direction.
+/// lighting environment, environment intensity, exposure, tone mapping,
+/// post-processing effects, the skybox, and sky-driven lighting.
+/// `realizeScene` builds only the node graph; apply the stage to the scene
+/// that hosts it with [realizeStage] (`loadScene` does this when given a
+/// scene). [serializeStage] reads a scene's settings back into a document,
+/// the editor-save direction.
 library;
 
 import 'dart:math' as math;
@@ -58,8 +59,8 @@ final Expando<EnvironmentSpec> _environmentSpec = Expando(
   'fscene environment spec',
 );
 
-/// Applies [document]'s stage render settings to [scene]: environment,
-/// environment intensity, exposure, tone mapping, skybox, and sky lighting.
+/// Applies [document]'s stage render settings to [scene], including the
+/// environment look, post-processing effects, skybox, and sky lighting.
 ///
 /// When the stage binds sky lighting (`skyEnvironment`), the binding owns
 /// `Scene.environment` and the stage's environment is not applied. A skybox
@@ -112,12 +113,16 @@ Future<void> realizeStage(
     radianceCubeSize: look?.radianceCubeSize,
     skybox: look?.skybox,
     skyEnvironment: look?.skyEnvironment,
-    effects: look?.effects,
+    effects: look?.overridesEffects == true ? look!.effects : null,
     bundle: bundle,
     environmentLoader: environmentLoader,
     payloadLookup: payloadLookup,
   );
-  settings.applyTo(scene);
+  if (look?.overridesEffects == true) {
+    settings.applyTo(scene);
+  } else {
+    settings.applyLookTo(scene);
+  }
 
   // Spatial environment-volume components blend over the stage as the global
   // base. Capture the just-applied stage look as that base so the components
@@ -340,10 +345,10 @@ bool reapplyEnvironmentSettingsInPlace({
   required double environmentIntensity,
   required double exposure,
   required String toneMapping,
-  double agxWhite = 16.29,
-  double agxContrast = 1.25,
-  double environmentRotationY = 0.0,
-  EnvironmentEffectsSpec? effects,
+  required double agxWhite,
+  required double agxContrast,
+  required double environmentRotationY,
+  required EnvironmentEffectsSpec? effects,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
 }) {
@@ -364,7 +369,7 @@ bool reapplyEnvironmentSettingsInPlace({
     ..agxWhite = agxWhite
     ..agxContrast = agxContrast
     ..environmentTransform = Matrix3.rotationY(environmentRotationY);
-  _applyEffectSpec(target, effects ?? EnvironmentEffectsSpec());
+  if (effects != null) _applyEffectSpec(target, effects);
 
   final liveSkyEnvironment = target.skyEnvironment;
   if (liveSkyEnvironment != null && skyEnvironment != null) {
@@ -515,10 +520,13 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.agxWhite = scene.agxWhite;
   resource.agxContrast = scene.agxContrast;
   final transform = scene.environmentTransform.storage;
+  // TODO(environment-transform): store a full orientation in the document so
+  // serialization does not discard rotations outside world Y.
   resource.environmentRotationY = math.atan2(transform[6], transform[0]);
   resource.effects = _effectSpecFromSettings(
     EnvironmentSettings.fromScene(scene),
   );
+  resource.overridesEffects = true;
 
   final skyEnvironment = scene.skyEnvironment;
   if (skyEnvironment == null) {
