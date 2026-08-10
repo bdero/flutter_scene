@@ -37,6 +37,9 @@ on:
 
 env:
   FLUTTER_DART_DATA_ASSETS: "true"
+  # The repo has more than one Argos project, so uploads name the target
+  # explicitly instead of relying on repository lookup.
+  ARGOS_PROJECT: scene/flutter_scene
 
 jobs:
   linux:
@@ -98,13 +101,16 @@ jobs:
               export ARGOS_COMMIT="$(git rev-parse HEAD)"
             fi
           fi
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || true
+          status=0
+          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}linux" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
-          # The grep misses when the upload failed and printed no URL (fork
-          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
-          # runs with pipefail on windows.
+          # The grep misses when the upload printed no URL; that miss must not
+          # fail the step, which runs with pipefail on windows.
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
+          # Tokenless auth covers fork PRs, so every run can upload. A failed
+          # upload means no visual diff at all and must not pass silently.
+          exit "$status"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
         env:
@@ -245,13 +251,16 @@ jobs:
               export ARGOS_COMMIT="$(git rev-parse HEAD)"
             fi
           fi
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || true
+          status=0
+          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}android_${{ matrix.backend }}" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
-          # The grep misses when the upload failed and printed no URL (fork
-          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
-          # runs with pipefail on windows.
+          # The grep misses when the upload printed no URL; that miss must not
+          # fail the step, which runs with pipefail on windows.
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
+          # Tokenless auth covers fork PRs, so every run can upload. A failed
+          # upload means no visual diff at all and must not pass silently.
+          exit "$status"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
         env:
@@ -314,13 +323,16 @@ jobs:
               export ARGOS_COMMIT="$(git rev-parse HEAD)"
             fi
           fi
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || true
+          status=0
+          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
-          # The grep misses when the upload failed and printed no URL (fork
-          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
-          # runs with pipefail on windows.
+          # The grep misses when the upload printed no URL; that miss must not
+          # fail the step, which runs with pipefail on windows.
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
+          # Tokenless auth covers fork PRs, so every run can upload. A failed
+          # upload means no visual diff at all and must not pass silently.
+          exit "$status"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
         env:
@@ -386,13 +398,16 @@ jobs:
               export ARGOS_COMMIT="$(git rev-parse HEAD)"
             fi
           fi
-          out=$(npx --yes @argos-ci/cli upload build/smoke --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || true
+          status=0
+          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}windows" "${reference_args[@]}" 2>&1) || status=$?
           echo "$out"
-          # The grep misses when the upload failed and printed no URL (fork
-          # PRs have no ARGOS_TOKEN); that miss must not fail the step, which
-          # runs with pipefail on windows.
+          # The grep misses when the upload printed no URL; that miss must not
+          # fail the step, which runs with pipefail on windows.
           url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
           echo "build_url=$url" >> "$GITHUB_OUTPUT"
+          # Tokenless auth covers fork PRs, so every run can upload. A failed
+          # upload means no visual diff at all and must not pass silently.
+          exit "$status"
       - name: Notify Discord on failure
         if: failure() && github.event_name != 'pull_request'
         shell: bash
