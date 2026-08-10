@@ -40,9 +40,15 @@ jobs:
   prepare:
     name: Prepare the build ref
     runs-on: ubuntu-latest
+    # A run awaiting the approval button reports as completed with an
+    # `action_required` conclusion, so the trigger alone is not the gate. Only a
+    # conclusion that means Flutter CI actually executed counts. `failure` is
+    # allowed because a lint break should still get its frames rendered.
     if: >
       github.event_name == 'push' ||
-      github.event.workflow_run.event == 'pull_request'
+      (github.event.workflow_run.event == 'pull_request' &&
+       (github.event.workflow_run.conclusion == 'success' ||
+        github.event.workflow_run.conclusion == 'failure'))
     outputs:
       branch: ${{ steps.ref.outputs.branch }}
       temp_branch: ${{ steps.ref.outputs.temp_branch }}
