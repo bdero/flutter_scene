@@ -18,12 +18,7 @@ name: codemagic smoke render
 
 on:
   push:
-    # TODO(codemagic-smoke): drop bdero/codemagic-orchestrated before merging.
-    # pull_request_target runs the workflow file from the base branch, so this
-    # cannot be exercised from a pull request until it is on master. A push
-    # event runs the file from the pushed commit, which is the only way to test
-    # it beforehand.
-    branches: [master, bdero/codemagic-orchestrated]
+    branches: [master]
   pull_request_target:
     branches: [master]
     types: [opened, synchronize, reopened, labeled]
@@ -246,6 +241,18 @@ jobs:
             exit 1
           fi
           echo "Rendered ${{ steps.frames.outputs.count }} frames."
+
+      - name: Cancel the Codemagic build
+        # Superseding this run cancels the job but not the build it started,
+        # which would otherwise hold a mac mini until it finished on its own.
+        if: cancelled() && steps.start.outputs.build_id != ''
+        env:
+          CODEMAGIC_API_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+          BUILD_ID: ${{ steps.start.outputs.build_id }}
+        run: |
+          curl -sS -X POST "https://api.codemagic.io/builds/$BUILD_ID/cancel" \
+            -H "x-auth-token: $CODEMAGIC_API_TOKEN" || true
+          echo "Requested cancellation of Codemagic build $BUILD_ID"
 
   cleanup:
     name: Delete the temporary ref
