@@ -96,9 +96,13 @@ definitions:
         # metadata is mapped by hand.
         export ARGOS_BRANCH="$CM_BRANCH"
         export ARGOS_COMMIT="$(git rev-parse HEAD)"
-        if [ "$CM_PULL_REQUEST" = "true" ]; then
+        # Keyed off the number rather than the boolean, which is not reliably
+        # the literal "true". Without it Argos has no pull request to attach the
+        # build to and the shard drops out of the review comment.
+        if [ -n "$CM_PULL_REQUEST_NUMBER" ]; then
           export ARGOS_PR_NUMBER="$CM_PULL_REQUEST_NUMBER"
-          export ARGOS_PR_BASE_BRANCH="$CM_PULL_REQUEST_DEST"
+          [ -n "$CM_PULL_REQUEST_DEST" ] && \
+            export ARGOS_PR_BASE_BRANCH="$CM_PULL_REQUEST_DEST"
         fi
 
         log="$CM_BUILD_DIR/smoke-argos.log"
