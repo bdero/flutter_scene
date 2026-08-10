@@ -89,6 +89,7 @@ definitions:
         log="$CM_BUILD_DIR/smoke-argos.log"
         status=0
         npx --yes @argos-ci/cli upload build/smoke \
+          --project "$ARGOS_PROJECT" \
           --build-name "$SMOKE_BUILD_NAME" > "$log" 2>&1 || status=$?
         cat "$log"
         grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' "$log" \
@@ -142,6 +143,7 @@ workflows:
       <<: *smoke_environment
       vars:
         FLUTTER_DART_DATA_ASSETS: "true"
+        ARGOS_PROJECT: scene/flutter_scene
         SMOKE_BUILD_NAME: macos
     cache: *smoke_cache
     triggering: *smoke_triggering
@@ -180,6 +182,7 @@ workflows:
       xcode: latest
       vars:
         FLUTTER_DART_DATA_ASSETS: "true"
+        ARGOS_PROJECT: scene/flutter_scene
         SMOKE_BUILD_NAME: ios
         SMOKE_SIM_DEVICE: iPhone 17 Pro
     cache: *smoke_cache
