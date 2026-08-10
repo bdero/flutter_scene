@@ -46,4 +46,15 @@ void main() {
     expect(material.translucentDepthWrite, isFalse);
     expect(material_internal.materialSceneInputsRevision, revision + 2);
   });
+
+  test('transmission reports a conservative scene-color sample footprint', () {
+    final material = PhysicallyBasedMaterial()
+      ..transmission = 1
+      ..thickness = 0.7
+      ..roughnessFactor = 0.08
+      ..ior = 1.45;
+
+    expect(material.sceneColorSampleBoundsExpansion, 0.7);
+    expect(material.sceneColorSampleFilterLodFraction, closeTo(0.072, 1e-9));
+  });
 }

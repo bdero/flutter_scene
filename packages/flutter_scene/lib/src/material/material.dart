@@ -331,14 +331,25 @@ abstract class Material {
   /// Per-frame engine inputs this material samples, produced only when a
   /// visible material asks for them: [RenderInput.depth] binds the linear
   /// scene depth of the opaque geometry (forcing the depth prepass), and
-  /// [RenderInput.opaqueSceneColor] binds an immutable copy of the opaque
-  /// scene color, and [RenderInput.filteredSceneColor] adds its
+  /// [RenderInput.opaqueSceneColor] binds the accumulated scene color behind
+  /// the current draw, and [RenderInput.filteredSceneColor] adds its
   /// roughness-filtered atlas.
   /// Together they enable refraction, depth-fade absorption, shoreline
   /// foam, and soft-particle style effects on translucent surfaces. The
   /// base material requests nothing; a `.fmat` material declares these with
   /// `engine_inputs:`.
   Set<RenderInput> get sceneInputs => const {};
+
+  /// Maximum local-space distance sampled beyond the current surface.
+  ///
+  /// Null means the shader may sample anywhere on screen. Unknown sampling is
+  /// kept unbounded so it cannot skip an accumulated scene-color capture.
+  @internal
+  double? get sceneColorSampleBoundsExpansion => null;
+
+  /// Fraction of the scene-color filter pyramid sampled by this material.
+  @internal
+  double get sceneColorSampleFilterLodFraction => 0;
 
   /// The metallic-roughness texture the camera depth prepass samples so
   /// screen-space reflections have a per-pixel roughness (roughness in G),

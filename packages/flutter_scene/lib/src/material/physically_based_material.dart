@@ -1333,6 +1333,13 @@ class PhysicallyBasedMaterial extends Material {
       : const {};
 
   @override
+  double get sceneColorSampleBoundsExpansion => thickness;
+
+  @override
+  double get sceneColorSampleFilterLodFraction =>
+      roughnessFactor * (ior * 2.0 - 2.0).clamp(0.0, 1.0).toDouble();
+
+  @override
   bool get translucentDepthWrite => transmission > 0.0;
 
   /// Strength of geometric specular antialiasing.

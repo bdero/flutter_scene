@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -135,6 +136,8 @@ base class _TranslucentRecord {
   // this draw so skinned items sharing one geometry keep their own skeleton.
   late gpu.Texture? jointsTexture;
   late int jointsTextureWidth;
+  ui.Rect? screenBounds;
+  ui.Rect? sceneColorSampleBounds;
 
   void reset(
     RenderItem item,
@@ -171,7 +174,126 @@ base class _TranslucentRecord {
     _material = null;
     _pipeline = null;
     jointsTexture = null;
+    screenBounds = null;
+    sceneColorSampleBounds = null;
   }
+}
+
+const int _transmissionCoverageColumns = 32;
+const int _transmissionCoverageRows = 32;
+
+base class _ScreenCoverage {
+  _ScreenCoverage(this.viewport);
+
+  final ui.Size viewport;
+  final Uint32List _rows = Uint32List(_transmissionCoverageRows);
+
+  bool overlaps(ui.Rect bounds) {
+    final cells = _cells(bounds);
+    final mask = _columnMask(cells.left, cells.right);
+    for (var row = cells.top; row <= cells.bottom; row++) {
+      if ((_rows[row] & mask) != 0) return true;
+    }
+    return false;
+  }
+
+  void add(ui.Rect bounds) {
+    final cells = _cells(bounds);
+    final left = cells.left > 0 ? cells.left - 1 : 0;
+    final right = cells.right + 1 < _transmissionCoverageColumns
+        ? cells.right + 1
+        : _transmissionCoverageColumns - 1;
+    final top = cells.top > 0 ? cells.top - 1 : 0;
+    final bottom = cells.bottom + 1 < _transmissionCoverageRows
+        ? cells.bottom + 1
+        : _transmissionCoverageRows - 1;
+    final mask = _columnMask(left, right);
+    for (var row = top; row <= bottom; row++) {
+      _rows[row] |= mask;
+    }
+  }
+
+  ({int left, int top, int right, int bottom}) _cells(ui.Rect bounds) {
+    if (viewport.isEmpty || !bounds.isFinite || bounds.isEmpty) {
+      return (
+        left: 0,
+        top: 0,
+        right: _transmissionCoverageColumns - 1,
+        bottom: _transmissionCoverageRows - 1,
+      );
+    }
+    final left = (bounds.left / viewport.width * _transmissionCoverageColumns)
+        .floor();
+    final right =
+        (bounds.right / viewport.width * _transmissionCoverageColumns).ceil() -
+        1;
+    final top = (bounds.top / viewport.height * _transmissionCoverageRows)
+        .floor();
+    final bottom =
+        (bounds.bottom / viewport.height * _transmissionCoverageRows).ceil() -
+        1;
+    return (
+      left: left.clamp(0, _transmissionCoverageColumns - 1),
+      top: top.clamp(0, _transmissionCoverageRows - 1),
+      right: right.clamp(0, _transmissionCoverageColumns - 1),
+      bottom: bottom.clamp(0, _transmissionCoverageRows - 1),
+    );
+  }
+
+  static int _columnMask(int left, int right) {
+    final width = right - left + 1;
+    if (width >= 32) return 0xffffffff;
+    return ((1 << width) - 1) << left;
+  }
+}
+
+int _sceneColorBatchEnd<T>(
+  List<T> records,
+  int cursor,
+  ui.Size viewport, {
+  required bool Function(T record) readsSceneColor,
+  required ui.Rect Function(T record) outputBounds,
+  required ui.Rect Function(T record) sampleBounds,
+}) {
+  final coverage = _ScreenCoverage(viewport);
+  var end = cursor;
+  while (end < records.length) {
+    final record = records[end];
+    if (end > cursor &&
+        readsSceneColor(record) &&
+        coverage.overlaps(sampleBounds(record))) {
+      break;
+    }
+    coverage.add(outputBounds(record));
+    end++;
+  }
+  return end;
+}
+
+/// Counts accumulated scene-color captures for sorted translucent draws.
+@visibleForTesting
+int sceneColorCaptureBatchCount(
+  List<({ui.Rect bounds, bool readsSceneColor})> records,
+  ui.Size viewport,
+) {
+  var cursor = 0;
+  var batches = 0;
+  while (cursor < records.length) {
+    while (cursor < records.length && !records[cursor].readsSceneColor) {
+      cursor++;
+    }
+    if (cursor == records.length) break;
+    batches++;
+    cursor = _sceneColorBatchEnd(
+      records,
+      cursor,
+      viewport,
+      readsSceneColor: (record) => record.readsSceneColor,
+      outputBounds: (record) => record.bounds,
+      sampleBounds: (record) => record.bounds,
+    );
+  }
+  return batches;
 }
 
 /// The viewport size of the scene color pass currently being encoded.
@@ -283,15 +405,15 @@ base class SceneEncoder {
     gpu.RenderPass renderPass,
     TransientWriter transientsBuffer,
     this._camera,
-    ui.Size dimensions,
+    this._dimensions,
     this._lighting,
     this._layerMask,
     this._cullingPlanes,
     this._cullInstances,
   ) : _renderPass = renderPass,
       _transientsBuffer = transientsBuffer {
-    currentSceneEncoderViewport = dimensions;
-    _cameraTransform = _camera.getViewTransform(dimensions);
+    currentSceneEncoderViewport = _dimensions;
+    _cameraTransform = _camera.getViewTransform(_dimensions);
     frustum = Frustum.matrix(_cameraTransform);
     // The screen-size LOD metric is perspective-specific; with any other
     // projection LOD nodes draw their highest-detail level.
@@ -305,6 +427,7 @@ base class SceneEncoder {
   }
 
   final Camera _camera;
+  final ui.Size _dimensions;
   final Lighting _lighting;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
@@ -1035,6 +1158,115 @@ base class SceneEncoder {
   int _translucentSortMicros = 0;
   int _translucentEncodeMicros = 0;
 
+  ui.Rect _screenBoundsOf(_TranslucentRecord record) {
+    final cached = record.screenBounds;
+    if (cached != null) return cached;
+    final bounds = record.item.worldBounds;
+    if (bounds == null || _dimensions.isEmpty || record.item.lod != null) {
+      return record.screenBounds = ui.Offset.zero & _dimensions;
+    }
+    return record.screenBounds = _projectBounds(bounds);
+  }
+
+  ui.Rect _sceneColorSampleBoundsOf(_TranslucentRecord record) {
+    final cached = record.sceneColorSampleBounds;
+    if (cached != null) return cached;
+    final expansion = record.material.sceneColorSampleBoundsExpansion;
+    final bounds = record.item.worldBounds;
+    if (expansion == null || bounds == null || record.item.lod != null) {
+      return record.sceneColorSampleBounds = ui.Offset.zero & _dimensions;
+    }
+    var projected = _screenBoundsOf(record);
+    if (expansion > 0) {
+      final transform = record.worldTransform.storage;
+      final scaleX = math.sqrt(
+        transform[0] * transform[0] +
+            transform[1] * transform[1] +
+            transform[2] * transform[2],
+      );
+      final scaleY = math.sqrt(
+        transform[4] * transform[4] +
+            transform[5] * transform[5] +
+            transform[6] * transform[6],
+      );
+      final scaleZ = math.sqrt(
+        transform[8] * transform[8] +
+            transform[9] * transform[9] +
+            transform[10] * transform[10],
+      );
+      final worldExpansion =
+          expansion * math.max(scaleX, math.max(scaleY, scaleZ));
+      final expanded = Aabb3.copy(bounds)
+        ..min.sub(Vector3.all(worldExpansion))
+        ..max.add(Vector3.all(worldExpansion));
+      projected = _projectBounds(expanded);
+    }
+    final filterFraction = record.material.sceneColorSampleFilterLodFraction;
+    if (filterFraction > 0 && !projected.isEmpty) {
+      final maxDimension = math.max(_dimensions.width, _dimensions.height);
+      final lod = math.log(maxDimension) / math.ln2 * filterFraction;
+      final filterRadius = 4.0 * math.pow(2.0, lod.ceil()).toDouble();
+      projected = projected.inflate(filterRadius);
+    }
+    final viewport = ui.Offset.zero & _dimensions;
+    return record.sceneColorSampleBounds = projected.intersect(viewport);
+  }
+
+  ui.Rect _projectBounds(Aabb3 bounds) {
+    if (_dimensions.isEmpty) return ui.Offset.zero & _dimensions;
+
+    final min = bounds.min;
+    final max = bounds.max;
+    var anyBehind = false;
+    var anyInFront = false;
+    var left = double.infinity;
+    var top = double.infinity;
+    var right = double.negativeInfinity;
+    var bottom = double.negativeInfinity;
+    for (var i = 0; i < 8; i++) {
+      final corner = Vector4(
+        (i & 1) == 0 ? min.x : max.x,
+        (i & 2) == 0 ? min.y : max.y,
+        (i & 4) == 0 ? min.z : max.z,
+        1,
+      );
+      final clip = _cameraTransform.transform(corner);
+      if (clip.w <= 0) {
+        anyBehind = true;
+        continue;
+      }
+      anyInFront = true;
+      final x = (clip.x / clip.w + 1) * 0.5 * _dimensions.width;
+      final y = (1 - clip.y / clip.w) * 0.5 * _dimensions.height;
+      if (x < left) left = x;
+      if (y < top) top = y;
+      if (x > right) right = x;
+      if (y > bottom) bottom = y;
+    }
+    final viewport = ui.Offset.zero & _dimensions;
+    if (!anyInFront || anyBehind) return viewport;
+    return ui.Rect.fromLTRB(
+      left.clamp(0.0, _dimensions.width),
+      top.clamp(0.0, _dimensions.height),
+      right.clamp(0.0, _dimensions.width),
+      bottom.clamp(0.0, _dimensions.height),
+    );
+  }
+
+  int _nextSceneColorBatchEnd() {
+    _prepareTranslucent();
+    assert(_translucentCursor < _translucentRecords.length);
+    assert(_readsSceneColor(_translucentRecords[_translucentCursor].material));
+    return _sceneColorBatchEnd(
+      _translucentRecords,
+      _translucentCursor,
+      _dimensions,
+      readsSceneColor: (record) => _readsSceneColor(record.material),
+      outputBounds: _screenBoundsOf,
+      sampleBounds: _sceneColorSampleBoundsOf,
+    );
+  }
+
   void _prepareTranslucent() {
     if (_translucentPrepared) return;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
@@ -1084,10 +1316,11 @@ base class SceneEncoder {
     return count;
   }
 
-  /// Whether any pending translucent draw needs filtered scene color.
-  bool get pendingTranslucentReadsFilteredSceneColor {
+  /// Whether the next overlap-safe scene-color batch needs filtered color.
+  bool get nextSceneColorBatchReadsFilteredSceneColor {
     _prepareTranslucent();
-    for (var i = _translucentCursor; i < _translucentRecords.length; i++) {
+    final end = _nextSceneColorBatchEnd();
+    for (var i = _translucentCursor; i < end; i++) {
       if (_translucentRecords[i].material.sceneInputs.contains(
         RenderInput.filteredSceneColor,
       )) {
@@ -1103,6 +1336,24 @@ base class SceneEncoder {
   /// color. Batching preserves global back-to-front order while letting the
   /// scene pass replace the render target between batches when needed.
   void flushNextTranslucentBatch({gpu.RenderPass? translucentPass}) {
+    _prepareTranslucent();
+    var end = _translucentCursor + 1;
+    while (end < _translucentRecords.length &&
+        !_readsSceneColor(_translucentRecords[end].material)) {
+      end++;
+    }
+    _flushTranslucentThrough(end, translucentPass: translucentPass);
+  }
+
+  /// Emits one scene-color batch, grouping readers that cannot overlap.
+  void flushNextSceneColorBatch({gpu.RenderPass? translucentPass}) {
+    _flushTranslucentThrough(
+      _nextSceneColorBatchEnd(),
+      translucentPass: translucentPass,
+    );
+  }
+
+  void _flushTranslucentThrough(int end, {gpu.RenderPass? translucentPass}) {
     _prepareTranslucent();
     if (_translucentCursor >= _translucentRecords.length) return;
 
@@ -1135,7 +1386,7 @@ base class SceneEncoder {
       ),
     );
 
-    do {
+    while (_translucentCursor < end) {
       final record = _translucentRecords[_translucentCursor++];
       _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
       record.material.lightListOffset = record.lightListOffset;
@@ -1178,8 +1429,7 @@ base class SceneEncoder {
           record.fade,
         );
       }
-    } while (_translucentCursor < _translucentRecords.length &&
-        !_readsSceneColor(_translucentRecords[_translucentCursor].material));
+    }
     encodeWatch?.stop();
     _translucentEncodeMicros += encodeWatch?.elapsedMicroseconds ?? 0;
 

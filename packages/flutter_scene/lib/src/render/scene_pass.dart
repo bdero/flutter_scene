@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -34,10 +33,6 @@ import 'package:flutter_scene/src/shaders.dart';
 const String kSceneColorBlackboardKey = 'scene_color';
 
 const int _maxTransmissionFilterBands = 8;
-
-/// Number of opaque scene-color snapshots used for translucent readers.
-@visibleForTesting
-int sceneColorSnapshotPassCount(int readerCount) => readerCount > 0 ? 1 : 0;
 
 /// Number of half-resolution rough-transmission bands for a viewport.
 int transmissionFilterBandCount(int width, int height) {
@@ -132,9 +127,9 @@ class ScenePass extends RenderGraphPass {
   final double _ssaoDirectLightAffect;
   final Fog? _fog;
 
-  // Material scene inputs (see Material.sceneInputs): whether to capture the
-  // opaque scene color, whether to hand materials the prepass linear depth,
-  // and the engine time for material animation.
+  // Material scene inputs (see Material.sceneInputs): whether to capture
+  // accumulated scene color, whether to hand materials the prepass linear
+  // depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
   final bool _bindSceneDepth;
   final double _time;
@@ -172,8 +167,8 @@ class ScenePass extends RenderGraphPass {
         debugName: 'scene_depth',
       ),
     );
-    // Screen-reading translucent materials sample this immutable opaque copy
-    // instead of reading from the color attachment they are writing.
+    // Screen-reading translucent batches alternate between these targets so
+    // each batch can sample the fully composed color behind it.
     final alternateColor = capture
         ? context.texturePool.acquire(
             TransientTextureDescriptor.color(
@@ -184,8 +179,8 @@ class ScenePass extends RenderGraphPass {
             ),
           )
         : null;
-    // Preserve multisample contents across split passes when scene color is
-    // captured. Other passes can keep the attachment transient.
+    // Split passes seed this attachment from resolved scene color instead of
+    // relying on multisample contents surviving between render passes.
     gpu.Texture? msaaColor;
     if (_enableMsaa) {
       msaaColor = context.texturePool.acquire(
@@ -194,9 +189,7 @@ class ScenePass extends RenderGraphPass {
           height: height,
           format: _hdrFormat,
           sampleCount: 4,
-          storageMode: capture
-              ? gpu.StorageMode.devicePrivate
-              : gpu.StorageMode.deviceTransient,
+          storageMode: gpu.StorageMode.deviceTransient,
           enableShaderReadUsage: false,
           debugName: 'hdr_scene_color_msaa',
         ),
@@ -207,9 +200,7 @@ class ScenePass extends RenderGraphPass {
     if (_enableMsaa) {
       colorAttachment.texture = msaaColor!;
       colorAttachment.resolveTexture = hdrColor;
-      colorAttachment.storeAction = capture
-          ? gpu.StoreAction.storeAndMultisampleResolve
-          : gpu.StoreAction.multisampleResolve;
+      colorAttachment.storeAction = gpu.StoreAction.multisampleResolve;
     }
     final target = gpu.RenderTarget.singleColor(
       colorAttachment,
@@ -361,72 +352,67 @@ class ScenePass extends RenderGraphPass {
     }
 
     final flushWatch = profileRendering ? (Stopwatch()..start()) : null;
-    // Screen-space transmission samples one immutable opaque snapshot. This
-    // keeps its cost independent of the number of refractive surfaces and
-    // lets every translucent draw remain in one globally sorted pass.
-    // TODO(scene-color-composition): add a distinct accumulated-color input
-    // if a custom material needs earlier translucent layers in its snapshot.
+    // Finish opaque draws and the backmost ordinary translucent run in the
+    // initial target. Later screen-reading batches alternate targets. Readers
+    // with disjoint projected bounds share a capture, while overlapping
+    // readers get the accumulated color produced by the preceding batch.
     encoder.flushOpaque();
+    if (encoder.hasPendingTranslucent &&
+        !encoder.nextTranslucentBatchReadsSceneColor) {
+      encoder.flushNextTranslucentBatch();
+    }
     rendererSubmissions.submit(commandBuffer);
 
-    final opaqueSnapshot = alternateColor!;
-    final snapshotCommands = gpu.gpuContext.createCommandBuffer();
-    final snapshotPass = snapshotCommands.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(texture: opaqueSnapshot),
-      ),
-    );
-    _encodeCopy(snapshotPass, hdrColor);
-    rendererSubmissions.submit(snapshotCommands);
-
-    lighting.opaqueSceneColor = opaqueSnapshot;
-    lighting.filteredSceneColor = null;
-    lighting.transmissionFilterBandCount = 0;
+    var currentColor = hdrColor;
+    var nextColor = alternateColor!;
     gpu.Texture? transmissionAtlas;
-    if (encoder.pendingTranslucentReadsFilteredSceneColor) {
-      final bands = transmissionFilterBandCount(width, height);
-      if (bands > 0) {
-        transmissionAtlas = context.texturePool.acquire(
-          TransientTextureDescriptor.color(
-            width: width,
-            height: math.max(1, height >> 1),
-            format: _hdrFormat,
-            debugName: 'filtered_scene_color',
-          ),
-        );
-        final transmissionMips = <gpu.Texture>[
-          for (var level = 1; level <= bands; level++)
-            context.texturePool.acquire(
-              TransientTextureDescriptor.color(
-                width: math.max(1, width >> level),
-                height: math.max(1, height >> level),
-                format: _hdrFormat,
-                debugName: 'transmission_filter_$level',
-              ),
+    List<gpu.Texture>? transmissionMips;
+    while (encoder.hasPendingTranslucent) {
+      assert(encoder.nextTranslucentBatchReadsSceneColor);
+      lighting.opaqueSceneColor = currentColor;
+      lighting.filteredSceneColor = null;
+      lighting.transmissionFilterBandCount = 0;
+      if (encoder.nextSceneColorBatchReadsFilteredSceneColor) {
+        final bands = transmissionFilterBandCount(width, height);
+        if (bands > 0) {
+          transmissionAtlas ??= context.texturePool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: math.max(1, height >> 1),
+              format: _hdrFormat,
+              debugName: 'filtered_scene_color',
             ),
-        ];
-        _encodeTransmissionFilter(
-          context,
-          opaqueSnapshot,
-          transmissionAtlas,
-          transmissionMips,
-        );
-        lighting.filteredSceneColor = transmissionAtlas;
-        lighting.transmissionFilterBandCount = bands;
+          );
+          transmissionMips ??= <gpu.Texture>[
+            for (var level = 1; level <= bands; level++)
+              context.texturePool.acquire(
+                TransientTextureDescriptor.color(
+                  width: math.max(1, width >> level),
+                  height: math.max(1, height >> level),
+                  format: _hdrFormat,
+                  debugName: 'transmission_filter_$level',
+                ),
+              ),
+          ];
+          _encodeTransmissionFilter(
+            context,
+            currentColor,
+            transmissionAtlas,
+            transmissionMips,
+          );
+          lighting.filteredSceneColor = transmissionAtlas;
+          lighting.transmissionFilterBandCount = bands;
+        }
       }
-    }
 
-    final attachment = gpu.ColorAttachment(
-      texture: _enableMsaa ? msaaColor! : hdrColor,
-      loadAction: gpu.LoadAction.load,
-    );
-    if (_enableMsaa) {
-      attachment.resolveTexture = hdrColor;
-      attachment.storeAction = gpu.StoreAction.storeAndMultisampleResolve;
-    }
-    final translucentCommands = gpu.gpuContext.createCommandBuffer();
-    final translucentPass = translucentCommands.createRenderPass(
-      gpu.RenderTarget.singleColor(
+      final attachment = gpu.ColorAttachment(
+        texture: _enableMsaa ? msaaColor! : nextColor,
+      );
+      if (_enableMsaa) {
+        attachment.resolveTexture = nextColor;
+        attachment.storeAction = gpu.StoreAction.multisampleResolve;
+      }
+      final translucentTarget = gpu.RenderTarget.singleColor(
         attachment,
         depthStencilAttachment: gpu.DepthStencilAttachment(
           texture: depth,
@@ -434,12 +420,21 @@ class ScenePass extends RenderGraphPass {
           depthStoreAction: gpu.StoreAction.store,
           depthClearValue: 1.0,
         ),
-      ),
-    );
-    encoder.flushTranslucent(translucentPass: translucentPass);
-    rendererSubmissions.submit(translucentCommands);
+      );
+      final translucentCommands = gpu.gpuContext.createCommandBuffer();
+      final translucentPass = translucentCommands.createRenderPass(
+        translucentTarget,
+      );
+      _encodeCopy(translucentPass, currentColor);
+      encoder.flushNextSceneColorBatch(translucentPass: translucentPass);
+      rendererSubmissions.submit(translucentCommands);
 
-    context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
+      final completedColor = nextColor;
+      nextColor = currentColor;
+      currentColor = completedColor;
+    }
+
+    context.blackboard.set(kSceneColorBlackboardKey, currentColor);
     flushWatch?.stop();
     if (profileRendering) {
       _recordProfile(
