@@ -14,15 +14,16 @@ name: codemagic smoke render
 #
 # Hanging off Flutter CI rather than triggering directly is what keeps this to a
 # single gate. Flutter CI is a pull_request workflow, so on a fork it does not
-# start until the Actions approval button is pressed, and this cannot start
-# until it finishes. Approving once covers every shard.
+# begin executing until the Actions approval button is pressed, and this starts
+# the moment it does. Approving once covers every shard, and these run beside
+# the other five rather than behind them.
 
 on:
   push:
     branches: [master]
   workflow_run:
     workflows: ["Flutter CI"]
-    types: [completed]
+    types: [in_progress]
 
 concurrency:
   group: >-
@@ -40,15 +41,15 @@ jobs:
   prepare:
     name: Prepare the build ref
     runs-on: ubuntu-latest
-    # A run awaiting the approval button reports as completed with an
-    # `action_required` conclusion, so the trigger alone is not the gate. Only a
-    # conclusion that means Flutter CI actually executed counts. `failure` is
-    # allowed because a lint break should still get its frames rendered.
+    # Firing on `in_progress` rather than `completed` is what keeps these
+    # shards parallel with the other five instead of queued behind them. A run
+    # held for approval sits at `action_required` and is not executing, so it
+    # still cannot start anything here before the button is pressed. The status
+    # is re-checked because the trigger alone is not the gate.
     if: >
       github.event_name == 'push' ||
       (github.event.workflow_run.event == 'pull_request' &&
-       (github.event.workflow_run.conclusion == 'success' ||
-        github.event.workflow_run.conclusion == 'failure'))
+       github.event.workflow_run.status == 'in_progress')
     outputs:
       branch: ${{ steps.ref.outputs.branch }}
       temp_branch: ${{ steps.ref.outputs.temp_branch }}
