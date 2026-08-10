@@ -375,10 +375,38 @@ class RenderScene {
   final List<RenderItem> items = [];
 
   /// The directional lights contributed by mounted
-  /// [DirectionalLightComponent]s, in registration order. The renderer
-  /// currently shades the first; the rest are collected for future
-  /// multi-light support.
+  /// [DirectionalLightComponent]s, in registration order.
   final List<DirectionalLightComponent> directionalLights = [];
+
+  /// Selects the directional light used by features that currently accept one
+  /// light, including cascaded shadows and sun scattering.
+  ///
+  /// Higher explicit priority wins. Equal priorities use emitted luminance,
+  /// matching the usual dominant-light fallback. Registration order is only
+  /// the final tie breaker for otherwise equivalent lights.
+  // TODO(directional-shadows): allocate cascade atlas slots per light so more
+  // than one directional light can cast shadows in the same view.
+  DirectionalLightComponent? get primaryDirectionalLight {
+    DirectionalLightComponent? best;
+    var bestPriority = 0;
+    var bestStrength = 0.0;
+    for (final component in directionalLights) {
+      final light = component.light;
+      final strength =
+          light.intensity *
+          (light.color.x * 0.2126 +
+              light.color.y * 0.7152 +
+              light.color.z * 0.0722);
+      if (best == null ||
+          light.priority > bestPriority ||
+          (light.priority == bestPriority && strength > bestStrength)) {
+        best = component;
+        bestPriority = light.priority;
+        bestStrength = strength;
+      }
+    }
+    return best;
+  }
 
   /// Registers [light] as an active directional light. Called by a
   /// [DirectionalLightComponent] when its owning node mounts.

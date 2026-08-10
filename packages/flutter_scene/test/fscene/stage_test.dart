@@ -64,29 +64,34 @@ SceneDocument _envDocument(void Function(EnvironmentResource) look) {
 }
 
 void main() {
-  test('applying a stage preserves unrepresented post effects', () async {
+  test('applying a stage applies authored rendering effects', () async {
     late final Scene scene;
     try {
       scene = Scene();
     } catch (_) {
       return;
     }
-    scene
-      ..ambientOcclusion.enabled = true
-      ..ambientOcclusion.radius = 1.25
-      ..ambientOcclusion.intensity = 3.5;
-    scene.postProcess.bloom
-      ..enabled = true
-      ..threshold = 0.8
-      ..intensity = 0.2;
-    scene.postProcess.colorGrading
-      ..enabled = true
-      ..saturation = 1.4;
     final document = _envDocument((environment) {
       environment
         ..environment = const EmptyEnvironment()
         ..exposure = 3
-        ..toneMapping = 'agx';
+        ..toneMapping = 'agx'
+        ..environmentRotationY = 0.5
+        ..effects = EnvironmentEffectsSpec(
+          ambientOcclusionEnabled: true,
+          ambientOcclusionRadius: 1.25,
+          ambientOcclusionIntensity: 3.5,
+          bloomEnabled: true,
+          bloomThreshold: 0.8,
+          bloomIntensity: 0.2,
+          colorGradingEnabled: true,
+          saturation: 1.4,
+          screenSpaceReflectionsEnabled: true,
+          fogEnabled: true,
+          godRaysEnabled: true,
+          depthOfFieldEnabled: true,
+          autoExposureEnabled: true,
+        );
     });
 
     await realizeStage(document, scene);
@@ -101,6 +106,11 @@ void main() {
     expect(scene.postProcess.bloom.intensity, 0.2);
     expect(scene.postProcess.colorGrading.enabled, isTrue);
     expect(scene.postProcess.colorGrading.saturation, 1.4);
+    expect(scene.screenSpaceReflections.enabled, isTrue);
+    expect(scene.fog.enabled, isTrue);
+    expect(scene.godRays.enabled, isTrue);
+    expect(scene.depthOfField.enabled, isTrue);
+    expect(scene.autoExposure.enabled, isTrue);
   });
 
   group('stage environment-resource sky JSON', () {
@@ -131,21 +141,65 @@ void main() {
       final doc = _envDocument(
         (e) => e.skyEnvironment = SkyEnvironmentSpec(
           GradientSkySpec(),
-          castShadows: true,
+          sunLight: SunLightSpec(),
         ),
       );
       expect(
-        _stageEnv(readFscene(writeFscene(doc))).skyEnvironment!.castShadows,
+        _stageEnv(
+          readFscene(writeFscene(doc)),
+        ).skyEnvironment!.sunLight!.castsShadow,
         isTrue,
       );
 
       // The default (off) stays off and is omitted from the JSON.
       _stageEnv(doc).skyEnvironment = SkyEnvironmentSpec(GradientSkySpec());
-      expect(writeFscene(doc).contains('castShadows'), isFalse);
+      expect(writeFscene(doc).contains('sunLight'), isFalse);
       expect(
-        _stageEnv(readFscene(writeFscene(doc))).skyEnvironment!.castShadows,
-        isFalse,
+        _stageEnv(readFscene(writeFscene(doc))).skyEnvironment!.sunLight,
+        isNull,
       );
+    });
+
+    test('sky sun and directional shadow settings round-trip', () {
+      final doc = _envDocument(
+        (e) => e.skyEnvironment = SkyEnvironmentSpec(
+          PhysicalSkySpec(),
+          sunLight: SunLightSpec(
+            intensityScale: 1.7,
+            priority: 3,
+            cacheStaticShadows: false,
+            shadowSoftness: 0.3,
+            shadowMaxDistance: 420,
+            shadowCascadeCount: 3,
+            shadowMapResolution: 2048,
+            shadowDepthBias: 0.04,
+            shadowNormalBias: 0.05,
+            shadowFadeRange: 12,
+            shadowCascadeSplitLambda: 0.8,
+            shadowAmbientStrength: 0.65,
+            shadowFilter: 'fixedPcf',
+            shadowCasterFaces: 'both',
+          ),
+        ),
+      );
+
+      final sun = _stageEnv(
+        readFscene(writeFscene(doc)),
+      ).skyEnvironment!.sunLight!;
+      expect(sun.intensityScale, 1.7);
+      expect(sun.priority, 3);
+      expect(sun.cacheStaticShadows, isFalse);
+      expect(sun.shadowSoftness, 0.3);
+      expect(sun.shadowMaxDistance, 420);
+      expect(sun.shadowCascadeCount, 3);
+      expect(sun.shadowMapResolution, 2048);
+      expect(sun.shadowDepthBias, 0.04);
+      expect(sun.shadowNormalBias, 0.05);
+      expect(sun.shadowFadeRange, 12);
+      expect(sun.shadowCascadeSplitLambda, 0.8);
+      expect(sun.shadowAmbientStrength, 0.65);
+      expect(sun.shadowFilter, 'fixedPcf');
+      expect(sun.shadowCasterFaces, 'both');
     });
 
     test('environment and physical sky sources round-trip', () {

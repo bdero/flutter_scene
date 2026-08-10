@@ -59,15 +59,11 @@ class ExamplePhysicsCarState extends State<ExamplePhysicsCar> {
   void initState() {
     super.initState();
 
-    scene.root.addComponent(
-      DirectionalLightComponent(
-        DirectionalLight(
-          direction: vm.Vector3(-0.5, -1.0, -0.35),
-          intensity: 3.0,
-          castsShadow: true,
-          shadowMaxDistance: 60.0,
-        ),
-      ),
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(-0.5, -1.0, -0.35),
+      intensity: 3.0,
+      castsShadow: true,
+      shadowMaxDistance: 60.0,
     );
 
     world = PhysicsWorld(RapierWorld(gravity: vm.Vector3(0, -9.81, 0)));

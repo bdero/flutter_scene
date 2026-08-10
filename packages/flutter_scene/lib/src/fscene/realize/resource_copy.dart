@@ -105,9 +105,11 @@ LocalId copyResourceInto(
           toneMapping: res.toneMapping,
           agxWhite: res.agxWhite,
           agxContrast: res.agxContrast,
+          environmentRotationY: res.environmentRotationY,
           radianceCubeSize: res.radianceCubeSize,
           skybox: res.skybox,
           skyEnvironment: res.skyEnvironment,
+          effects: EnvironmentEffectsSpec.copy(res.effects),
         ),
       );
   }

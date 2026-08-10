@@ -9,15 +9,21 @@
 /// scene's settings back into a document, the editor-save direction.
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
+import 'package:vector_math/vector_math.dart' show Matrix3;
 
+import 'package:flutter_scene/src/ambient_occlusion.dart';
+import 'package:flutter_scene/src/depth_of_field.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
+import 'package:flutter_scene/src/fog.dart';
+import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -102,14 +108,16 @@ Future<void> realizeStage(
     toneMapping: look?.toneMapping ?? 'pbrNeutral',
     agxWhite: look?.agxWhite ?? 16.29,
     agxContrast: look?.agxContrast ?? 1.25,
+    environmentRotationY: look?.environmentRotationY ?? 0.0,
     radianceCubeSize: look?.radianceCubeSize,
     skybox: look?.skybox,
     skyEnvironment: look?.skyEnvironment,
+    effects: look?.effects,
     bundle: bundle,
     environmentLoader: environmentLoader,
     payloadLookup: payloadLookup,
   );
-  settings.applyLookTo(scene);
+  settings.applyTo(scene);
 
   // Spatial environment-volume components blend over the stage as the global
   // base. Capture the just-applied stage look as that base so the components
@@ -137,9 +145,11 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   required String toneMapping,
   double agxWhite = 16.29,
   double agxContrast = 1.25,
+  double environmentRotationY = 0.0,
   int? radianceCubeSize,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
+  EnvironmentEffectsSpec? effects,
   AssetBundle? bundle,
   EnvironmentAssetLoader? environmentLoader,
   EnvironmentPayloadLookup? payloadLookup,
@@ -150,7 +160,9 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
     toneMapping: _toneMapping(toneMapping),
     agxWhite: agxWhite,
     agxContrast: agxContrast,
+    environmentTransform: Matrix3.rotationY(environmentRotationY),
   );
+  _applyEffectSpec(settings, effects ?? EnvironmentEffectsSpec());
 
   final realized = <String, SkySource?>{};
   Future<SkySource?> sourceFor(SkySourceSpec s) async =>
@@ -184,8 +196,9 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
         faceResolution: skyEnvironment.faceResolution,
         equirectWidth: skyEnvironment.equirectWidth,
       );
-      if (skyEnvironment.castShadows && source is SunSky) {
-        settings.sunLight = SunLight(source as SunSky);
+      final sunSpec = skyEnvironment.sunLight;
+      if (sunSpec != null && source is SunSky) {
+        settings.sunLight = _realizeSunLight(source as SunSky, sunSpec);
       }
     } else {
       if (source != null) {
@@ -207,6 +220,107 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   return settings;
 }
 
+void _applyEffectSpec(
+  EnvironmentSettings settings,
+  EnvironmentEffectsSpec effects,
+) {
+  settings
+    ..colorGradingEnabled = effects.colorGradingEnabled
+    ..brightness = effects.brightness
+    ..contrast = effects.contrast
+    ..saturation = effects.saturation
+    ..temperature = effects.temperature
+    ..tint = effects.tint
+    ..lift.setFrom(effects.lift)
+    ..gamma.setFrom(effects.gamma)
+    ..gain.setFrom(effects.gain)
+    ..bloomEnabled = effects.bloomEnabled
+    ..bloomThreshold = effects.bloomThreshold
+    ..bloomIntensity = effects.bloomIntensity
+    ..bloomScatter = effects.bloomScatter
+    ..vignetteEnabled = effects.vignetteEnabled
+    ..vignetteIntensity = effects.vignetteIntensity
+    ..vignetteRadius = effects.vignetteRadius
+    ..vignetteSmoothness = effects.vignetteSmoothness
+    ..chromaticAberrationEnabled = effects.chromaticAberrationEnabled
+    ..chromaticAberrationIntensity = effects.chromaticAberrationIntensity
+    ..filmGrainEnabled = effects.filmGrainEnabled
+    ..filmGrainIntensity = effects.filmGrainIntensity
+    ..ambientOcclusionEnabled = effects.ambientOcclusionEnabled
+    ..ambientOcclusionRadius = effects.ambientOcclusionRadius
+    ..ambientOcclusionIntensity = effects.ambientOcclusionIntensity
+    ..ambientOcclusionBias = effects.ambientOcclusionBias
+    ..ambientOcclusionPower = effects.ambientOcclusionPower
+    ..ambientOcclusionDetail = effects.ambientOcclusionDetail
+    ..ambientOcclusionHorizonAngle = effects.ambientOcclusionHorizonAngle
+    ..ambientOcclusionDirectLightAffect =
+        effects.ambientOcclusionDirectLightAffect
+    ..ambientOcclusionSampleCount = effects.ambientOcclusionSampleCount
+    ..ambientOcclusionHalfResolution = effects.ambientOcclusionHalfResolution
+    ..ambientOcclusionDepthMipChain = effects.ambientOcclusionDepthMipChain
+    ..ambientOcclusionSpecularMode = _byName(
+      SpecularAmbientOcclusionMode.values,
+      effects.ambientOcclusionSpecularMode,
+      SpecularAmbientOcclusionMode.none,
+    )
+    ..screenSpaceReflectionsEnabled = effects.screenSpaceReflectionsEnabled
+    ..screenSpaceReflectionsIntensity = effects.screenSpaceReflectionsIntensity
+    ..screenSpaceReflectionsMaxDistance =
+        effects.screenSpaceReflectionsMaxDistance
+    ..screenSpaceReflectionsThickness = effects.screenSpaceReflectionsThickness
+    ..screenSpaceReflectionsStride = effects.screenSpaceReflectionsStride
+    ..screenSpaceReflectionsMaxSteps = effects.screenSpaceReflectionsMaxSteps
+    ..screenSpaceReflectionsBlur = effects.screenSpaceReflectionsBlur
+    ..screenSpaceReflectionsDistanceFadeStart =
+        effects.screenSpaceReflectionsDistanceFadeStart
+    ..screenSpaceReflectionsResolutionScale =
+        effects.screenSpaceReflectionsResolutionScale
+    ..fogEnabled = effects.fogEnabled
+    ..fogMode = _byName(FogMode.values, effects.fogMode, FogMode.exponential)
+    ..fogColor.setFrom(effects.fogColor)
+    ..fogSkyColorInfluence = effects.fogSkyColorInfluence
+    ..fogDensity = effects.fogDensity
+    ..fogStart = effects.fogStart
+    ..fogEnd = effects.fogEnd
+    ..fogMaxOpacity = effects.fogMaxOpacity
+    ..fogCutoffDistance = effects.fogCutoffDistance
+    ..fogHeight = effects.fogHeight
+    ..fogHeightFalloff = effects.fogHeightFalloff
+    ..fogSunInScatter = effects.fogSunInScatter
+    ..fogSunInScatterExponent = effects.fogSunInScatterExponent
+    ..godRaysEnabled = effects.godRaysEnabled
+    ..godRaysIntensity = effects.godRaysIntensity
+    ..godRaysDensity = effects.godRaysDensity
+    ..godRaysAnisotropy = effects.godRaysAnisotropy
+    ..godRaysStepCount = effects.godRaysStepCount
+    ..godRaysMaxDistance = effects.godRaysMaxDistance
+    ..godRaysJitter = effects.godRaysJitter
+    ..godRaysColor.setFrom(effects.godRaysColor)
+    ..depthOfFieldEnabled = effects.depthOfFieldEnabled
+    ..depthOfFieldFocusDistance = effects.depthOfFieldFocusDistance
+    ..depthOfFieldFStop = effects.depthOfFieldFStop
+    ..depthOfFieldFocalLength = effects.depthOfFieldFocalLength
+    ..depthOfFieldSensorHeight = effects.depthOfFieldSensorHeight
+    ..depthOfFieldBlurScale = effects.depthOfFieldBlurScale
+    ..depthOfFieldMaxForegroundBlur = effects.depthOfFieldMaxForegroundBlur
+    ..depthOfFieldMaxBackgroundBlur = effects.depthOfFieldMaxBackgroundBlur
+    ..depthOfFieldBladeCount = effects.depthOfFieldBladeCount
+    ..depthOfFieldBladeRotation = effects.depthOfFieldBladeRotation
+    ..depthOfFieldBladeCurvature = effects.depthOfFieldBladeCurvature
+    ..depthOfFieldQuality = _byName(
+      DepthOfFieldQuality.values,
+      effects.depthOfFieldQuality,
+      DepthOfFieldQuality.medium,
+    )
+    ..autoExposureEnabled = effects.autoExposureEnabled
+    ..autoExposureStrength = effects.autoExposureStrength
+    ..autoExposureCompensation = effects.autoExposureCompensation
+    ..autoExposureMinEv = effects.autoExposureMinEv
+    ..autoExposureMaxEv = effects.autoExposureMaxEv
+    ..autoExposureSpeedUp = effects.autoExposureSpeedUp
+    ..autoExposureSpeedDown = effects.autoExposureSpeedDown;
+}
+
 /// Re-applies a resource look onto live [target] settings in place, reusing the
 /// live sky bindings and the static environment (so their baked image-based
 /// lighting is kept and re-bakes smoothly instead of from zero) when the look's
@@ -226,6 +340,10 @@ bool reapplyEnvironmentSettingsInPlace({
   required double environmentIntensity,
   required double exposure,
   required String toneMapping,
+  double agxWhite = 16.29,
+  double agxContrast = 1.25,
+  double environmentRotationY = 0.0,
+  EnvironmentEffectsSpec? effects,
   SkyboxSpec? skybox,
   SkyEnvironmentSpec? skyEnvironment,
 }) {
@@ -242,17 +360,24 @@ bool reapplyEnvironmentSettingsInPlace({
   target
     ..environmentIntensity = environmentIntensity
     ..exposure = exposure
-    ..toneMapping = _toneMapping(toneMapping);
+    ..toneMapping = _toneMapping(toneMapping)
+    ..agxWhite = agxWhite
+    ..agxContrast = agxContrast
+    ..environmentTransform = Matrix3.rotationY(environmentRotationY);
+  _applyEffectSpec(target, effects ?? EnvironmentEffectsSpec());
 
   final liveSkyEnvironment = target.skyEnvironment;
   if (liveSkyEnvironment != null && skyEnvironment != null) {
     _applySkySourceInPlace(liveSkyEnvironment.source, skyEnvironment.source);
     liveSkyEnvironment.invalidate();
     final source = liveSkyEnvironment.source;
-    final wantsSun = skyEnvironment.castShadows && source is SunSky;
+    final sunSpec = skyEnvironment.sunLight;
+    final wantsSun = sunSpec != null && source is SunSky;
     final hasSun = identical(target.sunLight?.source, source);
     if (wantsSun && !hasSun) {
-      target.sunLight = SunLight(source as SunSky);
+      target.sunLight = _realizeSunLight(source as SunSky, sunSpec);
+    } else if (wantsSun) {
+      _applySunLightSpec(target.sunLight!, sunSpec);
     } else if (!wantsSun && target.sunLight != null) {
       target.sunLight = null;
     }
@@ -389,6 +514,11 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.toneMapping = scene.toneMapping.name;
   resource.agxWhite = scene.agxWhite;
   resource.agxContrast = scene.agxContrast;
+  final transform = scene.environmentTransform.storage;
+  resource.environmentRotationY = math.atan2(transform[6], transform[0]);
+  resource.effects = _effectSpecFromSettings(
+    EnvironmentSettings.fromScene(scene),
+  );
 
   final skyEnvironment = scene.skyEnvironment;
   if (skyEnvironment == null) {
@@ -415,12 +545,10 @@ void serializeStage(Scene scene, SceneDocument document) {
     }
   } else {
     final source = _serializeSkySource(skyEnvironment.source);
-    // A sun light counts as "the sky casts shadows" only when it is driven by
-    // the same sky source the lighting is, the binding this realizer produces.
-    final castsSkyShadows = identical(
-      scene.sunLight?.source,
-      skyEnvironment.source,
-    );
+    // Only serialize a sun driven by this sky source.
+    final skySun = identical(scene.sunLight?.source, skyEnvironment.source)
+        ? scene.sunLight
+        : null;
     resource.skyEnvironment = source == null
         ? null
         : SkyEnvironmentSpec(
@@ -429,7 +557,7 @@ void serializeStage(Scene scene, SceneDocument document) {
             intervalSeconds: skyEnvironment.interval.inMicroseconds / 1e6,
             faceResolution: skyEnvironment.faceResolution,
             equirectWidth: skyEnvironment.equirectWidth,
-            castShadows: castsSkyShadows,
+            sunLight: skySun == null ? null : _serializeSunLight(skySun),
           );
   }
 
@@ -443,6 +571,94 @@ void serializeStage(Scene scene, SceneDocument document) {
         : SkyboxSpec(source, intensity: skybox.intensity);
   }
 }
+
+EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
+    EnvironmentEffectsSpec(
+      colorGradingEnabled: s.colorGradingEnabled,
+      brightness: s.brightness,
+      contrast: s.contrast,
+      saturation: s.saturation,
+      temperature: s.temperature,
+      tint: s.tint,
+      lift: s.lift.clone(),
+      gamma: s.gamma.clone(),
+      gain: s.gain.clone(),
+      bloomEnabled: s.bloomEnabled,
+      bloomThreshold: s.bloomThreshold,
+      bloomIntensity: s.bloomIntensity,
+      bloomScatter: s.bloomScatter,
+      vignetteEnabled: s.vignetteEnabled,
+      vignetteIntensity: s.vignetteIntensity,
+      vignetteRadius: s.vignetteRadius,
+      vignetteSmoothness: s.vignetteSmoothness,
+      chromaticAberrationEnabled: s.chromaticAberrationEnabled,
+      chromaticAberrationIntensity: s.chromaticAberrationIntensity,
+      filmGrainEnabled: s.filmGrainEnabled,
+      filmGrainIntensity: s.filmGrainIntensity,
+      ambientOcclusionEnabled: s.ambientOcclusionEnabled,
+      ambientOcclusionRadius: s.ambientOcclusionRadius,
+      ambientOcclusionIntensity: s.ambientOcclusionIntensity,
+      ambientOcclusionBias: s.ambientOcclusionBias,
+      ambientOcclusionPower: s.ambientOcclusionPower,
+      ambientOcclusionDetail: s.ambientOcclusionDetail,
+      ambientOcclusionHorizonAngle: s.ambientOcclusionHorizonAngle,
+      ambientOcclusionDirectLightAffect: s.ambientOcclusionDirectLightAffect,
+      ambientOcclusionSampleCount: s.ambientOcclusionSampleCount,
+      ambientOcclusionHalfResolution: s.ambientOcclusionHalfResolution,
+      ambientOcclusionDepthMipChain: s.ambientOcclusionDepthMipChain,
+      ambientOcclusionSpecularMode: s.ambientOcclusionSpecularMode.name,
+      screenSpaceReflectionsEnabled: s.screenSpaceReflectionsEnabled,
+      screenSpaceReflectionsIntensity: s.screenSpaceReflectionsIntensity,
+      screenSpaceReflectionsMaxDistance: s.screenSpaceReflectionsMaxDistance,
+      screenSpaceReflectionsThickness: s.screenSpaceReflectionsThickness,
+      screenSpaceReflectionsStride: s.screenSpaceReflectionsStride,
+      screenSpaceReflectionsMaxSteps: s.screenSpaceReflectionsMaxSteps,
+      screenSpaceReflectionsBlur: s.screenSpaceReflectionsBlur,
+      screenSpaceReflectionsDistanceFadeStart:
+          s.screenSpaceReflectionsDistanceFadeStart,
+      screenSpaceReflectionsResolutionScale:
+          s.screenSpaceReflectionsResolutionScale,
+      fogEnabled: s.fogEnabled,
+      fogMode: s.fogMode.name,
+      fogColor: s.fogColor.clone(),
+      fogSkyColorInfluence: s.fogSkyColorInfluence,
+      fogDensity: s.fogDensity,
+      fogStart: s.fogStart,
+      fogEnd: s.fogEnd,
+      fogMaxOpacity: s.fogMaxOpacity,
+      fogCutoffDistance: s.fogCutoffDistance,
+      fogHeight: s.fogHeight,
+      fogHeightFalloff: s.fogHeightFalloff,
+      fogSunInScatter: s.fogSunInScatter,
+      fogSunInScatterExponent: s.fogSunInScatterExponent,
+      godRaysEnabled: s.godRaysEnabled,
+      godRaysIntensity: s.godRaysIntensity,
+      godRaysDensity: s.godRaysDensity,
+      godRaysAnisotropy: s.godRaysAnisotropy,
+      godRaysStepCount: s.godRaysStepCount,
+      godRaysMaxDistance: s.godRaysMaxDistance,
+      godRaysJitter: s.godRaysJitter,
+      godRaysColor: s.godRaysColor.clone(),
+      depthOfFieldEnabled: s.depthOfFieldEnabled,
+      depthOfFieldFocusDistance: s.depthOfFieldFocusDistance,
+      depthOfFieldFStop: s.depthOfFieldFStop,
+      depthOfFieldFocalLength: s.depthOfFieldFocalLength,
+      depthOfFieldSensorHeight: s.depthOfFieldSensorHeight,
+      depthOfFieldBlurScale: s.depthOfFieldBlurScale,
+      depthOfFieldMaxForegroundBlur: s.depthOfFieldMaxForegroundBlur,
+      depthOfFieldMaxBackgroundBlur: s.depthOfFieldMaxBackgroundBlur,
+      depthOfFieldBladeCount: s.depthOfFieldBladeCount,
+      depthOfFieldBladeRotation: s.depthOfFieldBladeRotation,
+      depthOfFieldBladeCurvature: s.depthOfFieldBladeCurvature,
+      depthOfFieldQuality: s.depthOfFieldQuality.name,
+      autoExposureEnabled: s.autoExposureEnabled,
+      autoExposureStrength: s.autoExposureStrength,
+      autoExposureCompensation: s.autoExposureCompensation,
+      autoExposureMinEv: s.autoExposureMinEv,
+      autoExposureMaxEv: s.autoExposureMaxEv,
+      autoExposureSpeedUp: s.autoExposureSpeedUp,
+      autoExposureSpeedDown: s.autoExposureSpeedDown,
+    );
 
 /// The stage's global environment resource, creating and linking a studio
 /// default when the stage references none, so the look always has a resource
@@ -643,6 +859,57 @@ SkySourceSpec? _serializeSkySource(SkySource source) {
   );
   return null;
 }
+
+SunLight _realizeSunLight(SunSky source, SunLightSpec spec) {
+  final sun = SunLight(source);
+  _applySunLightSpec(sun, spec);
+  return sun;
+}
+
+void _applySunLightSpec(SunLight sun, SunLightSpec spec) {
+  sun
+    ..castsShadow = spec.castsShadow
+    ..intensityScale = spec.intensityScale
+    ..priority = spec.priority
+    ..cacheStaticShadows = spec.cacheStaticShadows
+    ..shadowSoftness = spec.shadowSoftness
+    ..shadowMaxDistance = spec.shadowMaxDistance
+    ..shadowCascadeCount = spec.shadowCascadeCount
+    ..shadowMapResolution = spec.shadowMapResolution
+    ..shadowDepthBias = spec.shadowDepthBias
+    ..shadowNormalBias = spec.shadowNormalBias
+    ..shadowFadeRange = spec.shadowFadeRange
+    ..shadowCascadeSplitLambda = spec.shadowCascadeSplitLambda
+    ..shadowAmbientStrength = spec.shadowAmbientStrength
+    ..shadowFilter = _byName(
+      DirectionalShadowFilter.values,
+      spec.shadowFilter,
+      DirectionalShadowFilter.rotatedPoisson,
+    )
+    ..shadowCasterFaces = _byName(
+      ShadowCasterFaces.values,
+      spec.shadowCasterFaces,
+      ShadowCasterFaces.front,
+    );
+}
+
+SunLightSpec _serializeSunLight(SunLight sun) => SunLightSpec(
+  castsShadow: sun.castsShadow,
+  intensityScale: sun.intensityScale,
+  priority: sun.priority,
+  cacheStaticShadows: sun.cacheStaticShadows,
+  shadowSoftness: sun.shadowSoftness,
+  shadowMaxDistance: sun.shadowMaxDistance,
+  shadowCascadeCount: sun.shadowCascadeCount,
+  shadowMapResolution: sun.shadowMapResolution,
+  shadowDepthBias: sun.shadowDepthBias,
+  shadowNormalBias: sun.shadowNormalBias,
+  shadowFadeRange: sun.shadowFadeRange,
+  shadowCascadeSplitLambda: sun.shadowCascadeSplitLambda,
+  shadowAmbientStrength: sun.shadowAmbientStrength,
+  shadowFilter: sun.shadowFilter.name,
+  shadowCasterFaces: sun.shadowCasterFaces.name,
+);
 
 ToneMappingMode _toneMapping(String name) {
   try {

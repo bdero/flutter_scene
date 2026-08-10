@@ -483,10 +483,12 @@ class EnvironmentResource extends ResourceSpec {
     this.toneMapping = 'pbrNeutral',
     this.agxWhite = 16.29,
     this.agxContrast = 1.25,
+    this.environmentRotationY = 0.0,
     this.radianceCubeSize,
     this.skybox,
     this.skyEnvironment,
-  });
+    EnvironmentEffectsSpec? effects,
+  }) : effects = effects ?? EnvironmentEffectsSpec();
 
   /// A human-readable label shown in the editor (not load-bearing).
   String name;
@@ -509,6 +511,9 @@ class EnvironmentResource extends ResourceSpec {
   /// Contrast applied by AgX around middle gray.
   double agxContrast;
 
+  /// Rotation around the world Y axis applied when sampling the environment.
+  double environmentRotationY;
+
   /// The reflection/ambient cubemap size, or null for the engine default.
   int? radianceCubeSize;
 
@@ -517,6 +522,280 @@ class EnvironmentResource extends ResourceSpec {
 
   /// Sky-driven lighting, when set.
   SkyEnvironmentSpec? skyEnvironment;
+
+  /// Blendable rendering and post-processing settings for this look.
+  EnvironmentEffectsSpec effects;
+}
+
+/// Rendering and post-processing settings carried by an environment resource.
+///
+/// These settings are shared by the global environment and spatial environment
+/// volumes, so every field can be blended when the camera enters a volume.
+/// {@category Documents}
+class EnvironmentEffectsSpec {
+  /// Creates effect settings with the runtime defaults.
+  EnvironmentEffectsSpec({
+    this.colorGradingEnabled = false,
+    this.brightness = 1.0,
+    this.contrast = 1.0,
+    this.saturation = 1.0,
+    this.temperature = 0.0,
+    this.tint = 0.0,
+    Vector3? lift,
+    Vector3? gamma,
+    Vector3? gain,
+    this.bloomEnabled = false,
+    this.bloomThreshold = 1.0,
+    this.bloomIntensity = 0.5,
+    this.bloomScatter = 0.7,
+    this.vignetteEnabled = false,
+    this.vignetteIntensity = 0.5,
+    this.vignetteRadius = 0.75,
+    this.vignetteSmoothness = 0.5,
+    this.chromaticAberrationEnabled = false,
+    this.chromaticAberrationIntensity = 0.5,
+    this.filmGrainEnabled = false,
+    this.filmGrainIntensity = 0.3,
+    this.ambientOcclusionEnabled = false,
+    this.ambientOcclusionRadius = 0.33,
+    this.ambientOcclusionIntensity = 2.0,
+    this.ambientOcclusionBias = 0.07,
+    this.ambientOcclusionPower = 1.5,
+    this.ambientOcclusionDetail = 0.5,
+    this.ambientOcclusionHorizonAngle = 0.06,
+    this.ambientOcclusionDirectLightAffect = 0.0,
+    this.ambientOcclusionSampleCount = 16,
+    this.ambientOcclusionHalfResolution = true,
+    this.ambientOcclusionDepthMipChain = false,
+    this.ambientOcclusionSpecularMode = 'none',
+    this.screenSpaceReflectionsEnabled = false,
+    this.screenSpaceReflectionsIntensity = 1.0,
+    this.screenSpaceReflectionsMaxDistance = 24.4,
+    this.screenSpaceReflectionsThickness = 0.46,
+    this.screenSpaceReflectionsStride = 9.0,
+    this.screenSpaceReflectionsMaxSteps = 90,
+    this.screenSpaceReflectionsBlur = 0.3,
+    this.screenSpaceReflectionsDistanceFadeStart = 0.0,
+    this.screenSpaceReflectionsResolutionScale = 1.0,
+    this.fogEnabled = false,
+    this.fogMode = 'exponential',
+    Vector3? fogColor,
+    this.fogSkyColorInfluence = 0.0,
+    this.fogDensity = 0.02,
+    this.fogStart = 0.0,
+    this.fogEnd = 200.0,
+    this.fogMaxOpacity = 1.0,
+    this.fogCutoffDistance = 0.0,
+    this.fogHeight = 0.0,
+    this.fogHeightFalloff = 0.0,
+    this.fogSunInScatter = 0.0,
+    this.fogSunInScatterExponent = 8.0,
+    this.godRaysEnabled = false,
+    this.godRaysIntensity = 1.0,
+    this.godRaysDensity = 0.5,
+    this.godRaysAnisotropy = 0.7,
+    this.godRaysStepCount = 24,
+    this.godRaysMaxDistance = 200.0,
+    this.godRaysJitter = 1.0,
+    Vector3? godRaysColor,
+    this.depthOfFieldEnabled = false,
+    this.depthOfFieldFocusDistance = 10.0,
+    this.depthOfFieldFStop = 2.8,
+    this.depthOfFieldFocalLength = 0.0,
+    this.depthOfFieldSensorHeight = 0.024,
+    this.depthOfFieldBlurScale = 1.0,
+    this.depthOfFieldMaxForegroundBlur = 24.0,
+    this.depthOfFieldMaxBackgroundBlur = 32.0,
+    this.depthOfFieldBladeCount = 0,
+    this.depthOfFieldBladeRotation = 0.0,
+    this.depthOfFieldBladeCurvature = 0.0,
+    this.depthOfFieldQuality = 'medium',
+    this.autoExposureEnabled = false,
+    this.autoExposureStrength = 0.55,
+    this.autoExposureCompensation = 0.0,
+    this.autoExposureMinEv = -1.0,
+    this.autoExposureMaxEv = 1.3,
+    this.autoExposureSpeedUp = 3.0,
+    this.autoExposureSpeedDown = 1.0,
+  }) : lift = lift ?? Vector3.zero(),
+       gamma = gamma ?? Vector3.all(1.0),
+       gain = gain ?? Vector3.all(1.0),
+       fogColor = fogColor ?? Vector3(0.6, 0.7, 0.8),
+       godRaysColor = godRaysColor ?? Vector3.all(1.0);
+
+  /// Creates an independent copy of [other].
+  EnvironmentEffectsSpec.copy(EnvironmentEffectsSpec other)
+    : this(
+        colorGradingEnabled: other.colorGradingEnabled,
+        brightness: other.brightness,
+        contrast: other.contrast,
+        saturation: other.saturation,
+        temperature: other.temperature,
+        tint: other.tint,
+        lift: other.lift.clone(),
+        gamma: other.gamma.clone(),
+        gain: other.gain.clone(),
+        bloomEnabled: other.bloomEnabled,
+        bloomThreshold: other.bloomThreshold,
+        bloomIntensity: other.bloomIntensity,
+        bloomScatter: other.bloomScatter,
+        vignetteEnabled: other.vignetteEnabled,
+        vignetteIntensity: other.vignetteIntensity,
+        vignetteRadius: other.vignetteRadius,
+        vignetteSmoothness: other.vignetteSmoothness,
+        chromaticAberrationEnabled: other.chromaticAberrationEnabled,
+        chromaticAberrationIntensity: other.chromaticAberrationIntensity,
+        filmGrainEnabled: other.filmGrainEnabled,
+        filmGrainIntensity: other.filmGrainIntensity,
+        ambientOcclusionEnabled: other.ambientOcclusionEnabled,
+        ambientOcclusionRadius: other.ambientOcclusionRadius,
+        ambientOcclusionIntensity: other.ambientOcclusionIntensity,
+        ambientOcclusionBias: other.ambientOcclusionBias,
+        ambientOcclusionPower: other.ambientOcclusionPower,
+        ambientOcclusionDetail: other.ambientOcclusionDetail,
+        ambientOcclusionHorizonAngle: other.ambientOcclusionHorizonAngle,
+        ambientOcclusionDirectLightAffect:
+            other.ambientOcclusionDirectLightAffect,
+        ambientOcclusionSampleCount: other.ambientOcclusionSampleCount,
+        ambientOcclusionHalfResolution: other.ambientOcclusionHalfResolution,
+        ambientOcclusionDepthMipChain: other.ambientOcclusionDepthMipChain,
+        ambientOcclusionSpecularMode: other.ambientOcclusionSpecularMode,
+        screenSpaceReflectionsEnabled: other.screenSpaceReflectionsEnabled,
+        screenSpaceReflectionsIntensity: other.screenSpaceReflectionsIntensity,
+        screenSpaceReflectionsMaxDistance:
+            other.screenSpaceReflectionsMaxDistance,
+        screenSpaceReflectionsThickness: other.screenSpaceReflectionsThickness,
+        screenSpaceReflectionsStride: other.screenSpaceReflectionsStride,
+        screenSpaceReflectionsMaxSteps: other.screenSpaceReflectionsMaxSteps,
+        screenSpaceReflectionsBlur: other.screenSpaceReflectionsBlur,
+        screenSpaceReflectionsDistanceFadeStart:
+            other.screenSpaceReflectionsDistanceFadeStart,
+        screenSpaceReflectionsResolutionScale:
+            other.screenSpaceReflectionsResolutionScale,
+        fogEnabled: other.fogEnabled,
+        fogMode: other.fogMode,
+        fogColor: other.fogColor.clone(),
+        fogSkyColorInfluence: other.fogSkyColorInfluence,
+        fogDensity: other.fogDensity,
+        fogStart: other.fogStart,
+        fogEnd: other.fogEnd,
+        fogMaxOpacity: other.fogMaxOpacity,
+        fogCutoffDistance: other.fogCutoffDistance,
+        fogHeight: other.fogHeight,
+        fogHeightFalloff: other.fogHeightFalloff,
+        fogSunInScatter: other.fogSunInScatter,
+        fogSunInScatterExponent: other.fogSunInScatterExponent,
+        godRaysEnabled: other.godRaysEnabled,
+        godRaysIntensity: other.godRaysIntensity,
+        godRaysDensity: other.godRaysDensity,
+        godRaysAnisotropy: other.godRaysAnisotropy,
+        godRaysStepCount: other.godRaysStepCount,
+        godRaysMaxDistance: other.godRaysMaxDistance,
+        godRaysJitter: other.godRaysJitter,
+        godRaysColor: other.godRaysColor.clone(),
+        depthOfFieldEnabled: other.depthOfFieldEnabled,
+        depthOfFieldFocusDistance: other.depthOfFieldFocusDistance,
+        depthOfFieldFStop: other.depthOfFieldFStop,
+        depthOfFieldFocalLength: other.depthOfFieldFocalLength,
+        depthOfFieldSensorHeight: other.depthOfFieldSensorHeight,
+        depthOfFieldBlurScale: other.depthOfFieldBlurScale,
+        depthOfFieldMaxForegroundBlur: other.depthOfFieldMaxForegroundBlur,
+        depthOfFieldMaxBackgroundBlur: other.depthOfFieldMaxBackgroundBlur,
+        depthOfFieldBladeCount: other.depthOfFieldBladeCount,
+        depthOfFieldBladeRotation: other.depthOfFieldBladeRotation,
+        depthOfFieldBladeCurvature: other.depthOfFieldBladeCurvature,
+        depthOfFieldQuality: other.depthOfFieldQuality,
+        autoExposureEnabled: other.autoExposureEnabled,
+        autoExposureStrength: other.autoExposureStrength,
+        autoExposureCompensation: other.autoExposureCompensation,
+        autoExposureMinEv: other.autoExposureMinEv,
+        autoExposureMaxEv: other.autoExposureMaxEv,
+        autoExposureSpeedUp: other.autoExposureSpeedUp,
+        autoExposureSpeedDown: other.autoExposureSpeedDown,
+      );
+
+  bool colorGradingEnabled;
+  double brightness;
+  double contrast;
+  double saturation;
+  double temperature;
+  double tint;
+  Vector3 lift;
+  Vector3 gamma;
+  Vector3 gain;
+  bool bloomEnabled;
+  double bloomThreshold;
+  double bloomIntensity;
+  double bloomScatter;
+  bool vignetteEnabled;
+  double vignetteIntensity;
+  double vignetteRadius;
+  double vignetteSmoothness;
+  bool chromaticAberrationEnabled;
+  double chromaticAberrationIntensity;
+  bool filmGrainEnabled;
+  double filmGrainIntensity;
+  bool ambientOcclusionEnabled;
+  double ambientOcclusionRadius;
+  double ambientOcclusionIntensity;
+  double ambientOcclusionBias;
+  double ambientOcclusionPower;
+  double ambientOcclusionDetail;
+  double ambientOcclusionHorizonAngle;
+  double ambientOcclusionDirectLightAffect;
+  int ambientOcclusionSampleCount;
+  bool ambientOcclusionHalfResolution;
+  bool ambientOcclusionDepthMipChain;
+  String ambientOcclusionSpecularMode;
+  bool screenSpaceReflectionsEnabled;
+  double screenSpaceReflectionsIntensity;
+  double screenSpaceReflectionsMaxDistance;
+  double screenSpaceReflectionsThickness;
+  double screenSpaceReflectionsStride;
+  int screenSpaceReflectionsMaxSteps;
+  double screenSpaceReflectionsBlur;
+  double screenSpaceReflectionsDistanceFadeStart;
+  double screenSpaceReflectionsResolutionScale;
+  bool fogEnabled;
+  String fogMode;
+  Vector3 fogColor;
+  double fogSkyColorInfluence;
+  double fogDensity;
+  double fogStart;
+  double fogEnd;
+  double fogMaxOpacity;
+  double fogCutoffDistance;
+  double fogHeight;
+  double fogHeightFalloff;
+  double fogSunInScatter;
+  double fogSunInScatterExponent;
+  bool godRaysEnabled;
+  double godRaysIntensity;
+  double godRaysDensity;
+  double godRaysAnisotropy;
+  int godRaysStepCount;
+  double godRaysMaxDistance;
+  double godRaysJitter;
+  Vector3 godRaysColor;
+  bool depthOfFieldEnabled;
+  double depthOfFieldFocusDistance;
+  double depthOfFieldFStop;
+  double depthOfFieldFocalLength;
+  double depthOfFieldSensorHeight;
+  double depthOfFieldBlurScale;
+  double depthOfFieldMaxForegroundBlur;
+  double depthOfFieldMaxBackgroundBlur;
+  int depthOfFieldBladeCount;
+  double depthOfFieldBladeRotation;
+  double depthOfFieldBladeCurvature;
+  String depthOfFieldQuality;
+  bool autoExposureEnabled;
+  double autoExposureStrength;
+  double autoExposureCompensation;
+  double autoExposureMinEv;
+  double autoExposureMaxEv;
+  double autoExposureSpeedUp;
+  double autoExposureSpeedDown;
 }
 
 /// A skin: the joint nodes it drives, its inverse-bind matrices (a binary
@@ -865,6 +1144,74 @@ class SkyboxSpec {
   double intensity;
 }
 
+/// A sky-driven analytic sun and its cascaded-shadow configuration.
+/// {@category Documents}
+class SunLightSpec {
+  /// Creates the spec with the runtime defaults.
+  SunLightSpec({
+    this.castsShadow = true,
+    this.intensityScale = 1.0,
+    this.priority = 0,
+    this.cacheStaticShadows = true,
+    this.shadowSoftness = 0.08,
+    this.shadowMaxDistance = 150.0,
+    this.shadowCascadeCount = 4,
+    this.shadowMapResolution = 1024,
+    this.shadowDepthBias = 0.02,
+    this.shadowNormalBias = 0.02,
+    this.shadowFadeRange = 2.0,
+    this.shadowCascadeSplitLambda = 0.6,
+    this.shadowAmbientStrength = 0.0,
+    this.shadowFilter = 'rotatedPoisson',
+    this.shadowCasterFaces = 'front',
+  });
+
+  /// Whether the sun casts cascaded shadows.
+  bool castsShadow;
+
+  /// Multiplier applied to the sky-derived sun intensity.
+  double intensityScale;
+
+  /// Priority for primary directional-light features.
+  int priority;
+
+  /// Whether static shadow casters are cached between frames.
+  bool cacheStaticShadows;
+
+  /// World-space shadow penumbra radius.
+  double shadowSoftness;
+
+  /// Maximum camera distance covered by cascaded shadows.
+  double shadowMaxDistance;
+
+  /// Number of shadow cascades.
+  int shadowCascadeCount;
+
+  /// Resolution of each cascade tile.
+  int shadowMapResolution;
+
+  /// Receiver depth bias in world units.
+  double shadowDepthBias;
+
+  /// Receiver normal bias in world units.
+  double shadowNormalBias;
+
+  /// Distance over which far shadows fade out.
+  double shadowFadeRange;
+
+  /// Blend between uniform and logarithmic cascade splits.
+  double shadowCascadeSplitLambda;
+
+  /// How strongly shadows darken image-based ambient lighting.
+  double shadowAmbientStrength;
+
+  /// Shadow sampling filter name.
+  String shadowFilter;
+
+  /// Caster faces rendered into the shadow map.
+  String shadowCasterFaces;
+}
+
 /// Sky-driven lighting: bakes a shader sky into the scene's image-based
 /// lighting on a refresh policy.
 /// {@category Documents}
@@ -876,7 +1223,7 @@ class SkyEnvironmentSpec {
     this.intervalSeconds = 1.0,
     this.faceResolution = 128,
     this.equirectWidth = 512,
-    this.castShadows = false,
+    this.sunLight,
   });
 
   /// The sky baked into the lighting. Must be a shader sky
@@ -898,10 +1245,9 @@ class SkyEnvironmentSpec {
   /// Width of the assembled equirect the prefilter and SH projection read.
   int equirectWidth;
 
-  /// Whether the sky's sun also casts hard shadows (a sky-driven
-  /// `SunLight`). Applies only when [source] is a sky with a sun
-  /// (`GradientSkySpec`/`PhysicalSkySpec`); ignored otherwise.
-  bool castShadows;
+  /// The sky-driven analytic sun, or null for image-based sky lighting only.
+  /// Applies only when [source] is a sky with a sun.
+  SunLightSpec? sunLight;
 }
 
 /// One serialized view of the scene: a camera node bound to a target and

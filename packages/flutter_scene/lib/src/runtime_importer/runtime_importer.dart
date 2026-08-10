@@ -353,13 +353,13 @@ Component? _buildLightComponent(GltfPunctualLight light) {
   final intensity = gltfLightIntensity(light);
   switch (light.type) {
     case 'directional':
-      return DirectionalLightComponent(
+      return DirectionalLightComponent.fromLocalDirection(
         DirectionalLight(
-          direction: Vector3(0.0, 0.0, -1.0),
           color: light.color.clone(),
           intensity: intensity,
           castsShadow: false,
         ),
+        Vector3(0.0, 0.0, -1.0),
       );
     case 'point':
       return PointLightComponent(

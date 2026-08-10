@@ -37,6 +37,7 @@ class SunLight {
     this.source, {
     this.castsShadow = true,
     this.intensityScale = 1.0,
+    this.priority = 0,
     this.color,
     this.intensity,
     this.cacheStaticShadows = true,
@@ -61,6 +62,10 @@ class SunLight {
 
   /// Multiplies the (sky-derived or overridden) intensity.
   double intensityScale;
+
+  /// Selects this sun for primary directional-light features. Higher values
+  /// win; see [DirectionalLight.priority].
+  int priority;
 
   /// Overrides the sky-derived sun color when non-null.
   Vector3? color;
@@ -123,6 +128,7 @@ class SunLight {
       ..negate();
     light.color.setFrom(color ?? source.sunLightColor);
     light.intensity = (intensity ?? source.sunLightIntensity) * intensityScale;
+    light.priority = priority;
     light.castsShadow = castsShadow;
     light.cacheStaticShadows = cacheStaticShadows;
     light.shadowSoftness = shadowSoftness;

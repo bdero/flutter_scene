@@ -68,3 +68,4 @@ flutter:
     # A bundled sample environment, loadable via EnvironmentMap.fromAssets.
     # (The zero-config default is the procedural EnvironmentMap.studio().)
     - assets/royal_esplanade.png
+    - screenshots/flutter_scene_logo.png

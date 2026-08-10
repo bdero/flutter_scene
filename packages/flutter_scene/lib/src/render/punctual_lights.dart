@@ -152,21 +152,27 @@ class PunctualLightBuffer {
 
   bool _warnedOverflow = false;
 
-  /// Packs the scene's [directionals] (skipping the first, the shadowed
-  /// directional the `FragInfo` path already shades), [points], and [spots]
+  /// Packs the scene's [directionals] (skipping [primaryDirectional], which
+  /// the shadow-capable `FragInfo` path already shades), [points], and [spots]
   /// into the parameters buffer, culls them against [items] using [bvh], and
   /// uploads both the parameters and per-object index textures. Returns
   /// [PunctualLighting.empty] when there are no punctual lights, so a scene with
   /// only a single directional light allocates nothing and renders as before.
   PunctualLighting build({
     required List<DirectionalLightComponent> directionals,
+    required DirectionalLightComponent? primaryDirectional,
     required List<PointLightComponent> points,
     required List<SpotLightComponent> spots,
     required List<RenderItem> items,
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
   }) {
-    final packed = _packLights(directionals, points, spots);
+    final packed = _packLights(
+      directionals,
+      points,
+      spots,
+      primaryDirectional: primaryDirectional,
+    );
     final count = packed.count;
     if (count == 0) {
       return const PunctualLighting.empty();
@@ -176,7 +182,9 @@ class PunctualLightBuffer {
     // matrix (texels 4-7) into its parameters row, so the shader can sample the
     // right shared-atlas tile without a separate matrices texture.
     if (spotShadows != null) {
-      final spotRowStart = math.max(0, directionals.length - 1) + points.length;
+      final spotRowStart =
+          directionals.where((d) => !identical(d, primaryDirectional)).length +
+          points.length;
       for (var si = 0; si < spots.length; si++) {
         final slot = spotShadows.slotOf(spots[si]);
         if (slot < 0) continue;
@@ -259,29 +267,40 @@ class PunctualLightBuffer {
   @visibleForTesting
   static (Float32List, int) packLights({
     required List<DirectionalLightComponent> directionals,
+    DirectionalLightComponent? primaryDirectional,
     required List<PointLightComponent> points,
     required List<SpotLightComponent> spots,
   }) {
-    final packed = _packLights(directionals, points, spots);
+    final packed = _packLights(
+      directionals,
+      points,
+      spots,
+      primaryDirectional:
+          primaryDirectional ??
+          (directionals.isEmpty ? null : directionals.first),
+    );
     return (packed.params, packed.count);
   }
 
   static _PackedLights _packLights(
     List<DirectionalLightComponent> directionals,
     List<PointLightComponent> points,
-    List<SpotLightComponent> spots,
-  ) {
-    final count =
-        math.max(0, directionals.length - 1) + points.length + spots.length;
+    List<SpotLightComponent> spots, {
+    DirectionalLightComponent? primaryDirectional,
+  }) {
+    final additionalDirectionalCount = directionals
+        .where((d) => !identical(d, primaryDirectional))
+        .length;
+    final count = additionalDirectionalCount + points.length + spots.length;
     final floats = Float32List(count * _floatsPerLight);
     final cullables = <CullableLight>[];
     var row = 0;
 
-    // Directional lights past the first: the first is shaded (with shadows) by
-    // the FragInfo path, the rest fold in here as attenuation-free entries with
-    // infinite influence (they reach every item).
-    for (var i = 1; i < directionals.length; i++) {
-      final component = directionals[i];
+    // The primary directional is shaded (with shadows) by the FragInfo path.
+    // Every other directional folds in here as an attenuation-free entry with
+    // infinite influence.
+    for (final component in directionals) {
+      if (identical(component, primaryDirectional)) continue;
       final light = component.light;
       final base = row * _floatsPerLight;
       floats[base + 3] = _typeDirectional;

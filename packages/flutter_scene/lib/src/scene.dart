@@ -542,8 +542,9 @@ base class Scene implements SceneGraph {
   /// a node: the light is attached to [root] (so its direction is the
   /// light's own [DirectionalLight.direction], unaffected by any node
   /// transform). For lights that should move or aim with a node, attach a
-  /// [DirectionalLightComponent] to that node instead. The renderer shades
-  /// the first directional light it finds in the graph.
+  /// [DirectionalLightComponent] to that node instead. The renderer selects
+  /// the highest-priority directional light for cascaded shadows and other
+  /// single-sun features; all directional lights contribute direct lighting.
   DirectionalLight? get directionalLight => _directionalLightComponent?.light;
 
   set directionalLight(DirectionalLight? value) {
@@ -553,7 +554,7 @@ base class Scene implements SceneGraph {
       _directionalLightComponent = null;
     }
     if (value != null) {
-      final component = DirectionalLightComponent(value);
+      final component = DirectionalLightComponent.fromLightDirection(value);
       root.addComponent(component);
       _directionalLightComponent = component;
     }
@@ -1044,12 +1045,9 @@ base class Scene implements SceneGraph {
     // scene, before the views' render passes query it.
     renderScene.rebuildIfDirty();
 
-    // The renderer shades a single directional light: the first one
-    // registered in the graph (the [directionalLight] convenience, or a
-    // [DirectionalLightComponent] attached to any node).
-    final lightComponent = renderScene.directionalLights.isEmpty
-        ? null
-        : renderScene.directionalLights.first;
+    // Cascaded shadows and other single-sun features use the selected primary.
+    // All other directional lights remain in the additional-light buffer.
+    final lightComponent = renderScene.primaryDirectionalLight;
 
     // Select this frame's shadow-casting spots (view-independent).
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
@@ -1059,6 +1057,7 @@ base class Scene implements SceneGraph {
     // per frame here rather than per view.
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
+      primaryDirectional: lightComponent,
       points: renderScene.pointLights,
       spots: renderScene.spotLights,
       items: renderScene.items,

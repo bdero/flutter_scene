@@ -48,15 +48,11 @@ class ExampleSsrState extends State<ExampleSsr> {
   void initState() {
     super.initState();
 
-    scene.root.addComponent(
-      DirectionalLightComponent(
-        DirectionalLight(
-          direction: vm.Vector3(-0.5, -1.0, -0.4),
-          intensity: 3.0,
-          castsShadow: true,
-          shadowMaxDistance: 30.0,
-        ),
-      ),
+    scene.directionalLight = DirectionalLight(
+      direction: vm.Vector3(-0.5, -1.0, -0.4),
+      intensity: 3.0,
+      castsShadow: true,
+      shadowMaxDistance: 30.0,
     );
 
     // The environment and skybox are configured live through the lighting

@@ -261,9 +261,11 @@ Map<String, dynamic> _encodeLook({
   required String toneMapping,
   required double agxWhite,
   required double agxContrast,
+  required double environmentRotationY,
   required int? radianceCubeSize,
   required SkyboxSpec? skybox,
   required SkyEnvironmentSpec? skyEnvironment,
+  required EnvironmentEffectsSpec effects,
 }) => {
   'environment': switch (environment) {
     StudioEnvironment() => {'type': 'studio'},
@@ -283,7 +285,10 @@ Map<String, dynamic> _encodeLook({
   'toneMapping': toneMapping,
   if (agxWhite != 16.29) 'agxWhite': agxWhite,
   if (agxContrast != 1.25) 'agxContrast': agxContrast,
+  if (environmentRotationY != 0.0) 'environmentRotationY': environmentRotationY,
   if (radianceCubeSize != null) 'radianceCubeSize': radianceCubeSize,
+  if (_encodeEnvironmentEffects(effects).isNotEmpty)
+    'effects': _encodeEnvironmentEffects(effects),
   if (skybox != null)
     'skybox': {
       'source': encodeSkySource(skybox.source),
@@ -296,9 +301,176 @@ Map<String, dynamic> _encodeLook({
       'intervalSeconds': skyEnvironment.intervalSeconds,
       'faceResolution': skyEnvironment.faceResolution,
       'equirectWidth': skyEnvironment.equirectWidth,
-      if (skyEnvironment.castShadows) 'castShadows': true,
+      if (skyEnvironment.sunLight != null)
+        'sunLight': _encodeSunLight(skyEnvironment.sunLight!),
     },
 };
+
+Map<String, dynamic> _encodeSunLight(SunLightSpec s) => {
+  if (!s.castsShadow) 'castsShadow': false,
+  if (s.intensityScale != 1.0) 'intensityScale': s.intensityScale,
+  if (s.priority != 0) 'priority': s.priority,
+  if (!s.cacheStaticShadows) 'cacheStaticShadows': false,
+  if (s.shadowSoftness != 0.08) 'shadowSoftness': s.shadowSoftness,
+  if (s.shadowMaxDistance != 150.0) 'shadowMaxDistance': s.shadowMaxDistance,
+  if (s.shadowCascadeCount != 4) 'shadowCascadeCount': s.shadowCascadeCount,
+  if (s.shadowMapResolution != 1024)
+    'shadowMapResolution': s.shadowMapResolution,
+  if (s.shadowDepthBias != 0.02) 'shadowDepthBias': s.shadowDepthBias,
+  if (s.shadowNormalBias != 0.02) 'shadowNormalBias': s.shadowNormalBias,
+  if (s.shadowFadeRange != 2.0) 'shadowFadeRange': s.shadowFadeRange,
+  if (s.shadowCascadeSplitLambda != 0.6)
+    'shadowCascadeSplitLambda': s.shadowCascadeSplitLambda,
+  if (s.shadowAmbientStrength != 0.0)
+    'shadowAmbientStrength': s.shadowAmbientStrength,
+  if (s.shadowFilter != 'rotatedPoisson') 'shadowFilter': s.shadowFilter,
+  if (s.shadowCasterFaces != 'front') 'shadowCasterFaces': s.shadowCasterFaces,
+};
+
+Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
+  final colorGrading = <String, dynamic>{
+    if (e.colorGradingEnabled) 'enabled': true,
+    if (e.brightness != 1.0) 'brightness': e.brightness,
+    if (e.contrast != 1.0) 'contrast': e.contrast,
+    if (e.saturation != 1.0) 'saturation': e.saturation,
+    if (e.temperature != 0.0) 'temperature': e.temperature,
+    if (e.tint != 0.0) 'tint': e.tint,
+    if (e.lift != Vector3.zero()) 'lift': _vec3Json(e.lift),
+    if (e.gamma != Vector3.all(1.0)) 'gamma': _vec3Json(e.gamma),
+    if (e.gain != Vector3.all(1.0)) 'gain': _vec3Json(e.gain),
+  };
+  final bloom = <String, dynamic>{
+    if (e.bloomEnabled) 'enabled': true,
+    if (e.bloomThreshold != 1.0) 'threshold': e.bloomThreshold,
+    if (e.bloomIntensity != 0.5) 'intensity': e.bloomIntensity,
+    if (e.bloomScatter != 0.7) 'scatter': e.bloomScatter,
+  };
+  final vignette = <String, dynamic>{
+    if (e.vignetteEnabled) 'enabled': true,
+    if (e.vignetteIntensity != 0.5) 'intensity': e.vignetteIntensity,
+    if (e.vignetteRadius != 0.75) 'radius': e.vignetteRadius,
+    if (e.vignetteSmoothness != 0.5) 'smoothness': e.vignetteSmoothness,
+  };
+  final chromaticAberration = <String, dynamic>{
+    if (e.chromaticAberrationEnabled) 'enabled': true,
+    if (e.chromaticAberrationIntensity != 0.5)
+      'intensity': e.chromaticAberrationIntensity,
+  };
+  final filmGrain = <String, dynamic>{
+    if (e.filmGrainEnabled) 'enabled': true,
+    if (e.filmGrainIntensity != 0.3) 'intensity': e.filmGrainIntensity,
+  };
+  final ao = <String, dynamic>{
+    if (e.ambientOcclusionEnabled) 'enabled': true,
+    if (e.ambientOcclusionRadius != 0.33) 'radius': e.ambientOcclusionRadius,
+    if (e.ambientOcclusionIntensity != 2.0)
+      'intensity': e.ambientOcclusionIntensity,
+    if (e.ambientOcclusionBias != 0.07) 'bias': e.ambientOcclusionBias,
+    if (e.ambientOcclusionPower != 1.5) 'power': e.ambientOcclusionPower,
+    if (e.ambientOcclusionDetail != 0.5) 'detail': e.ambientOcclusionDetail,
+    if (e.ambientOcclusionHorizonAngle != 0.06)
+      'horizonAngle': e.ambientOcclusionHorizonAngle,
+    if (e.ambientOcclusionDirectLightAffect != 0.0)
+      'directLightAffect': e.ambientOcclusionDirectLightAffect,
+    if (e.ambientOcclusionSampleCount != 16)
+      'sampleCount': e.ambientOcclusionSampleCount,
+    if (!e.ambientOcclusionHalfResolution) 'halfResolution': false,
+    if (e.ambientOcclusionDepthMipChain) 'depthMipChain': true,
+    if (e.ambientOcclusionSpecularMode != 'none')
+      'specularMode': e.ambientOcclusionSpecularMode,
+  };
+  final ssr = <String, dynamic>{
+    if (e.screenSpaceReflectionsEnabled) 'enabled': true,
+    if (e.screenSpaceReflectionsIntensity != 1.0)
+      'intensity': e.screenSpaceReflectionsIntensity,
+    if (e.screenSpaceReflectionsMaxDistance != 24.4)
+      'maxDistance': e.screenSpaceReflectionsMaxDistance,
+    if (e.screenSpaceReflectionsThickness != 0.46)
+      'thickness': e.screenSpaceReflectionsThickness,
+    if (e.screenSpaceReflectionsStride != 9.0)
+      'stride': e.screenSpaceReflectionsStride,
+    if (e.screenSpaceReflectionsMaxSteps != 90)
+      'maxSteps': e.screenSpaceReflectionsMaxSteps,
+    if (e.screenSpaceReflectionsBlur != 0.3)
+      'blur': e.screenSpaceReflectionsBlur,
+    if (e.screenSpaceReflectionsDistanceFadeStart != 0.0)
+      'distanceFadeStart': e.screenSpaceReflectionsDistanceFadeStart,
+    if (e.screenSpaceReflectionsResolutionScale != 1.0)
+      'resolutionScale': e.screenSpaceReflectionsResolutionScale,
+  };
+  final fog = <String, dynamic>{
+    if (e.fogEnabled) 'enabled': true,
+    if (e.fogMode != 'exponential') 'mode': e.fogMode,
+    if (e.fogColor != Vector3(0.6, 0.7, 0.8)) 'color': _vec3Json(e.fogColor),
+    if (e.fogSkyColorInfluence != 0.0)
+      'skyColorInfluence': e.fogSkyColorInfluence,
+    if (e.fogDensity != 0.02) 'density': e.fogDensity,
+    if (e.fogStart != 0.0) 'start': e.fogStart,
+    if (e.fogEnd != 200.0) 'end': e.fogEnd,
+    if (e.fogMaxOpacity != 1.0) 'maxOpacity': e.fogMaxOpacity,
+    if (e.fogCutoffDistance != 0.0) 'cutoffDistance': e.fogCutoffDistance,
+    if (e.fogHeight != 0.0) 'height': e.fogHeight,
+    if (e.fogHeightFalloff != 0.0) 'heightFalloff': e.fogHeightFalloff,
+    if (e.fogSunInScatter != 0.0) 'sunInScatter': e.fogSunInScatter,
+    if (e.fogSunInScatterExponent != 8.0)
+      'sunInScatterExponent': e.fogSunInScatterExponent,
+  };
+  final godRays = <String, dynamic>{
+    if (e.godRaysEnabled) 'enabled': true,
+    if (e.godRaysIntensity != 1.0) 'intensity': e.godRaysIntensity,
+    if (e.godRaysDensity != 0.5) 'density': e.godRaysDensity,
+    if (e.godRaysAnisotropy != 0.7) 'anisotropy': e.godRaysAnisotropy,
+    if (e.godRaysStepCount != 24) 'stepCount': e.godRaysStepCount,
+    if (e.godRaysMaxDistance != 200.0) 'maxDistance': e.godRaysMaxDistance,
+    if (e.godRaysJitter != 1.0) 'jitter': e.godRaysJitter,
+    if (e.godRaysColor != Vector3.all(1.0)) 'color': _vec3Json(e.godRaysColor),
+  };
+  final dof = <String, dynamic>{
+    if (e.depthOfFieldEnabled) 'enabled': true,
+    if (e.depthOfFieldFocusDistance != 10.0)
+      'focusDistance': e.depthOfFieldFocusDistance,
+    if (e.depthOfFieldFStop != 2.8) 'fStop': e.depthOfFieldFStop,
+    if (e.depthOfFieldFocalLength != 0.0)
+      'focalLength': e.depthOfFieldFocalLength,
+    if (e.depthOfFieldSensorHeight != 0.024)
+      'sensorHeight': e.depthOfFieldSensorHeight,
+    if (e.depthOfFieldBlurScale != 1.0) 'blurScale': e.depthOfFieldBlurScale,
+    if (e.depthOfFieldMaxForegroundBlur != 24.0)
+      'maxForegroundBlur': e.depthOfFieldMaxForegroundBlur,
+    if (e.depthOfFieldMaxBackgroundBlur != 32.0)
+      'maxBackgroundBlur': e.depthOfFieldMaxBackgroundBlur,
+    if (e.depthOfFieldBladeCount != 0) 'bladeCount': e.depthOfFieldBladeCount,
+    if (e.depthOfFieldBladeRotation != 0.0)
+      'bladeRotation': e.depthOfFieldBladeRotation,
+    if (e.depthOfFieldBladeCurvature != 0.0)
+      'bladeCurvature': e.depthOfFieldBladeCurvature,
+    if (e.depthOfFieldQuality != 'medium') 'quality': e.depthOfFieldQuality,
+  };
+  final autoExposure = <String, dynamic>{
+    if (e.autoExposureEnabled) 'enabled': true,
+    if (e.autoExposureStrength != 0.55) 'strength': e.autoExposureStrength,
+    if (e.autoExposureCompensation != 0.0)
+      'compensation': e.autoExposureCompensation,
+    if (e.autoExposureMinEv != -1.0) 'minEv': e.autoExposureMinEv,
+    if (e.autoExposureMaxEv != 1.3) 'maxEv': e.autoExposureMaxEv,
+    if (e.autoExposureSpeedUp != 3.0) 'speedUp': e.autoExposureSpeedUp,
+    if (e.autoExposureSpeedDown != 1.0) 'speedDown': e.autoExposureSpeedDown,
+  };
+  return {
+    if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
+    if (bloom.isNotEmpty) 'bloom': bloom,
+    if (vignette.isNotEmpty) 'vignette': vignette,
+    if (chromaticAberration.isNotEmpty)
+      'chromaticAberration': chromaticAberration,
+    if (filmGrain.isNotEmpty) 'filmGrain': filmGrain,
+    if (ao.isNotEmpty) 'ambientOcclusion': ao,
+    if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
+    if (fog.isNotEmpty) 'fog': fog,
+    if (godRays.isNotEmpty) 'godRays': godRays,
+    if (dof.isNotEmpty) 'depthOfField': dof,
+    if (autoExposure.isNotEmpty) 'autoExposure': autoExposure,
+  };
+}
 
 /// Encodes a sky source spec to its canonical JSON form (also used to key
 /// realized sky sources for sharing).
@@ -424,9 +596,11 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
           toneMapping: r.toneMapping,
           agxWhite: r.agxWhite,
           agxContrast: r.agxContrast,
+          environmentRotationY: r.environmentRotationY,
           radianceCubeSize: r.radianceCubeSize,
           skybox: r.skybox,
           skyEnvironment: r.skyEnvironment,
+          effects: r.effects,
         ),
       };
   }
@@ -724,6 +898,115 @@ PropertyOverride _decodeOverride(Map<String, dynamic> json) => PropertyOverride(
   value: decodePropertyValue(json['value']),
 );
 
+Map<String, dynamic> _map(Object? value) =>
+    value is Map ? Map<String, dynamic>.from(value) : const {};
+
+Vector3 _effectVec(Object? value, Vector3 fallback) {
+  if (value is! List || value.length < 3) return fallback;
+  return Vector3(_d(value[0]), _d(value[1]), _d(value[2]));
+}
+
+EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
+  final effects = _map(value);
+  final cg = _map(effects['colorGrading']);
+  final bloom = _map(effects['bloom']);
+  final vignette = _map(effects['vignette']);
+  final ca = _map(effects['chromaticAberration']);
+  final grain = _map(effects['filmGrain']);
+  final ao = _map(effects['ambientOcclusion']);
+  final ssr = _map(effects['screenSpaceReflections']);
+  final fog = _map(effects['fog']);
+  final rays = _map(effects['godRays']);
+  final dof = _map(effects['depthOfField']);
+  final auto = _map(effects['autoExposure']);
+  return EnvironmentEffectsSpec(
+    colorGradingEnabled: cg['enabled'] as bool? ?? false,
+    brightness: _d(cg['brightness'] ?? 1.0),
+    contrast: _d(cg['contrast'] ?? 1.0),
+    saturation: _d(cg['saturation'] ?? 1.0),
+    temperature: _d(cg['temperature'] ?? 0.0),
+    tint: _d(cg['tint'] ?? 0.0),
+    lift: _effectVec(cg['lift'], Vector3.zero()),
+    gamma: _effectVec(cg['gamma'], Vector3.all(1.0)),
+    gain: _effectVec(cg['gain'], Vector3.all(1.0)),
+    bloomEnabled: bloom['enabled'] as bool? ?? false,
+    bloomThreshold: _d(bloom['threshold'] ?? 1.0),
+    bloomIntensity: _d(bloom['intensity'] ?? 0.5),
+    bloomScatter: _d(bloom['scatter'] ?? 0.7),
+    vignetteEnabled: vignette['enabled'] as bool? ?? false,
+    vignetteIntensity: _d(vignette['intensity'] ?? 0.5),
+    vignetteRadius: _d(vignette['radius'] ?? 0.75),
+    vignetteSmoothness: _d(vignette['smoothness'] ?? 0.5),
+    chromaticAberrationEnabled: ca['enabled'] as bool? ?? false,
+    chromaticAberrationIntensity: _d(ca['intensity'] ?? 0.5),
+    filmGrainEnabled: grain['enabled'] as bool? ?? false,
+    filmGrainIntensity: _d(grain['intensity'] ?? 0.3),
+    ambientOcclusionEnabled: ao['enabled'] as bool? ?? false,
+    ambientOcclusionRadius: _d(ao['radius'] ?? 0.33),
+    ambientOcclusionIntensity: _d(ao['intensity'] ?? 2.0),
+    ambientOcclusionBias: _d(ao['bias'] ?? 0.07),
+    ambientOcclusionPower: _d(ao['power'] ?? 1.5),
+    ambientOcclusionDetail: _d(ao['detail'] ?? 0.5),
+    ambientOcclusionHorizonAngle: _d(ao['horizonAngle'] ?? 0.06),
+    ambientOcclusionDirectLightAffect: _d(ao['directLightAffect'] ?? 0.0),
+    ambientOcclusionSampleCount: (ao['sampleCount'] as num?)?.toInt() ?? 16,
+    ambientOcclusionHalfResolution: ao['halfResolution'] as bool? ?? true,
+    ambientOcclusionDepthMipChain: ao['depthMipChain'] as bool? ?? false,
+    ambientOcclusionSpecularMode: ao['specularMode'] as String? ?? 'none',
+    screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
+    screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
+    screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),
+    screenSpaceReflectionsThickness: _d(ssr['thickness'] ?? 0.46),
+    screenSpaceReflectionsStride: _d(ssr['stride'] ?? 9.0),
+    screenSpaceReflectionsMaxSteps: (ssr['maxSteps'] as num?)?.toInt() ?? 90,
+    screenSpaceReflectionsBlur: _d(ssr['blur'] ?? 0.3),
+    screenSpaceReflectionsDistanceFadeStart: _d(
+      ssr['distanceFadeStart'] ?? 0.0,
+    ),
+    screenSpaceReflectionsResolutionScale: _d(ssr['resolutionScale'] ?? 1.0),
+    fogEnabled: fog['enabled'] as bool? ?? false,
+    fogMode: fog['mode'] as String? ?? 'exponential',
+    fogColor: _effectVec(fog['color'], Vector3(0.6, 0.7, 0.8)),
+    fogSkyColorInfluence: _d(fog['skyColorInfluence'] ?? 0.0),
+    fogDensity: _d(fog['density'] ?? 0.02),
+    fogStart: _d(fog['start'] ?? 0.0),
+    fogEnd: _d(fog['end'] ?? 200.0),
+    fogMaxOpacity: _d(fog['maxOpacity'] ?? 1.0),
+    fogCutoffDistance: _d(fog['cutoffDistance'] ?? 0.0),
+    fogHeight: _d(fog['height'] ?? 0.0),
+    fogHeightFalloff: _d(fog['heightFalloff'] ?? 0.0),
+    fogSunInScatter: _d(fog['sunInScatter'] ?? 0.0),
+    fogSunInScatterExponent: _d(fog['sunInScatterExponent'] ?? 8.0),
+    godRaysEnabled: rays['enabled'] as bool? ?? false,
+    godRaysIntensity: _d(rays['intensity'] ?? 1.0),
+    godRaysDensity: _d(rays['density'] ?? 0.5),
+    godRaysAnisotropy: _d(rays['anisotropy'] ?? 0.7),
+    godRaysStepCount: (rays['stepCount'] as num?)?.toInt() ?? 24,
+    godRaysMaxDistance: _d(rays['maxDistance'] ?? 200.0),
+    godRaysJitter: _d(rays['jitter'] ?? 1.0),
+    godRaysColor: _effectVec(rays['color'], Vector3.all(1.0)),
+    depthOfFieldEnabled: dof['enabled'] as bool? ?? false,
+    depthOfFieldFocusDistance: _d(dof['focusDistance'] ?? 10.0),
+    depthOfFieldFStop: _d(dof['fStop'] ?? 2.8),
+    depthOfFieldFocalLength: _d(dof['focalLength'] ?? 0.0),
+    depthOfFieldSensorHeight: _d(dof['sensorHeight'] ?? 0.024),
+    depthOfFieldBlurScale: _d(dof['blurScale'] ?? 1.0),
+    depthOfFieldMaxForegroundBlur: _d(dof['maxForegroundBlur'] ?? 24.0),
+    depthOfFieldMaxBackgroundBlur: _d(dof['maxBackgroundBlur'] ?? 32.0),
+    depthOfFieldBladeCount: (dof['bladeCount'] as num?)?.toInt() ?? 0,
+    depthOfFieldBladeRotation: _d(dof['bladeRotation'] ?? 0.0),
+    depthOfFieldBladeCurvature: _d(dof['bladeCurvature'] ?? 0.0),
+    depthOfFieldQuality: dof['quality'] as String? ?? 'medium',
+    autoExposureEnabled: auto['enabled'] as bool? ?? false,
+    autoExposureStrength: _d(auto['strength'] ?? 0.55),
+    autoExposureCompensation: _d(auto['compensation'] ?? 0.0),
+    autoExposureMinEv: _d(auto['minEv'] ?? -1.0),
+    autoExposureMaxEv: _d(auto['maxEv'] ?? 1.3),
+    autoExposureSpeedUp: _d(auto['speedUp'] ?? 3.0),
+    autoExposureSpeedDown: _d(auto['speedDown'] ?? 1.0),
+  );
+}
+
 ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
   final kind = json['kind'] as String;
   switch (kind) {
@@ -781,9 +1064,11 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         toneMapping: json['toneMapping'] as String? ?? 'pbrNeutral',
         agxWhite: _d(json['agxWhite'] ?? 16.29),
         agxContrast: _d(json['agxContrast'] ?? 1.25),
+        environmentRotationY: _d(json['environmentRotationY'] ?? 0.0),
         radianceCubeSize: (json['radianceCubeSize'] as num?)?.toInt(),
         skybox: _decodeSkybox(json['skybox']),
         skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
+        effects: _decodeEnvironmentEffects(json['effects']),
       );
     default:
       throw FsceneFormatException('Unknown resource kind: $kind');
@@ -955,9 +1240,29 @@ SkyEnvironmentSpec? _decodeSkyEnvironment(Object? json) {
     intervalSeconds: _d(m['intervalSeconds'] ?? 1.0),
     faceResolution: (m['faceResolution'] as num?)?.toInt() ?? 128,
     equirectWidth: (m['equirectWidth'] as num?)?.toInt() ?? 512,
-    castShadows: m['castShadows'] == true,
+    sunLight: m['sunLight'] != null
+        ? _decodeSunLight(m['sunLight'] as Map)
+        : (m['castShadows'] == true ? SunLightSpec() : null),
   );
 }
+
+SunLightSpec _decodeSunLight(Map<dynamic, dynamic> m) => SunLightSpec(
+  castsShadow: m['castsShadow'] as bool? ?? true,
+  intensityScale: _d(m['intensityScale'] ?? 1.0),
+  priority: (m['priority'] as num?)?.toInt() ?? 0,
+  cacheStaticShadows: m['cacheStaticShadows'] as bool? ?? true,
+  shadowSoftness: _d(m['shadowSoftness'] ?? 0.08),
+  shadowMaxDistance: _d(m['shadowMaxDistance'] ?? 150.0),
+  shadowCascadeCount: (m['shadowCascadeCount'] as num?)?.toInt() ?? 4,
+  shadowMapResolution: (m['shadowMapResolution'] as num?)?.toInt() ?? 1024,
+  shadowDepthBias: _d(m['shadowDepthBias'] ?? 0.02),
+  shadowNormalBias: _d(m['shadowNormalBias'] ?? 0.02),
+  shadowFadeRange: _d(m['shadowFadeRange'] ?? 2.0),
+  shadowCascadeSplitLambda: _d(m['shadowCascadeSplitLambda'] ?? 0.6),
+  shadowAmbientStrength: _d(m['shadowAmbientStrength'] ?? 0.0),
+  shadowFilter: m['shadowFilter'] as String? ?? 'rotatedPoisson',
+  shadowCasterFaces: m['shadowCasterFaces'] as String? ?? 'front',
+);
 
 SkySourceSpec? _decodeSkySource(Object? json) {
   if (json == null) return null;

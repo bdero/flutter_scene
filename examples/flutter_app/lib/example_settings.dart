@@ -225,8 +225,8 @@ class ExampleSettings {
       final existing = scene.root.getComponents<DirectionalLightComponent>();
       final DirectionalLightComponent component;
       if (existing.isEmpty) {
-        component = DirectionalLightComponent(DirectionalLight());
-        scene.root.addComponent(component);
+        scene.directionalLight = DirectionalLight();
+        component = scene.root.getComponents<DirectionalLightComponent>().first;
       } else {
         component = existing.first;
       }

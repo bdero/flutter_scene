@@ -209,9 +209,9 @@ base class Node implements SceneGraph {
     } else {
       // Solve `transform == parent.globalTransform * localTransform` for
       // localTransform. (`Matrix4.invert` returns the determinant and mutates
-      // the receiver — `copyInverse` is the non-destructive version.)
+      // the receiver. `copyInverse` is the non-destructive version.)
       final parentInverse = Matrix4.identity();
-      parent.globalTransform.copyInverse(parentInverse);
+      parentInverse.copyInverse(parent.globalTransform);
       localTransform = parentInverse * transform;
     }
   }
