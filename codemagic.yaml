@@ -40,6 +40,21 @@ definitions:
       name: Flutter and engine revision
       script: flutter --version
 
+    - &script_report_build_trust
+      name: Report build trust
+      # Answers whether this provider hands secure variables to a build from a
+      # contributor fork, which decides whether fork pull requests can produce a
+      # visual diff. Prints a fingerprint of the token, never its value.
+      script: |
+        echo "repo=$CM_REPO_SLUG branch=$CM_BRANCH"
+        echo "pull_request=${CM_PULL_REQUEST:-false} number=${CM_PULL_REQUEST_NUMBER:-none} dest=${CM_PULL_REQUEST_DEST:-none}"
+        if [ -n "$ARGOS_TOKEN" ]; then
+          fp=$(printf '%s' "$ARGOS_TOKEN" | shasum -a 256 | cut -c1-8)
+          echo "ARGOS_TOKEN present, length ${#ARGOS_TOKEN}, sha256 prefix $fp"
+        else
+          echo "ARGOS_TOKEN absent"
+        fi
+
     - &script_pub_get
       name: Resolve the workspace
       script: flutter pub get
@@ -149,6 +164,7 @@ workflows:
     triggering: *smoke_triggering
     scripts:
       - *script_versions
+      - *script_report_build_trust
       - name: Enable the macOS desktop target
         script: >
           flutter config --enable-macos-desktop --enable-native-assets
@@ -189,6 +205,7 @@ workflows:
     triggering: *smoke_triggering
     scripts:
       - *script_versions
+      - *script_report_build_trust
       - name: Generate the iOS project
         # examples/smoke_render commits every platform except ios/, so the
         # simulator target is scaffolded per build. The project name is explicit
