@@ -1114,10 +1114,42 @@ EnvironmentResource _copyEnvironmentResource(EnvironmentResource r) =>
       toneMapping: r.toneMapping,
       agxWhite: r.agxWhite,
       agxContrast: r.agxContrast,
+      environmentRotationY: r.environmentRotationY,
       radianceCubeSize: r.radianceCubeSize,
       skybox: r.skybox,
-      skyEnvironment: r.skyEnvironment,
+      skyEnvironment: r.skyEnvironment == null
+          ? null
+          : _copySkyEnvironment(r.skyEnvironment!),
+      effects: EnvironmentEffectsSpec.copy(r.effects),
     );
+
+SkyEnvironmentSpec _copySkyEnvironment(SkyEnvironmentSpec s) =>
+    SkyEnvironmentSpec(
+      s.source,
+      refresh: s.refresh,
+      intervalSeconds: s.intervalSeconds,
+      faceResolution: s.faceResolution,
+      equirectWidth: s.equirectWidth,
+      sunLight: s.sunLight == null ? null : _copySunLight(s.sunLight!),
+    );
+
+SunLightSpec _copySunLight(SunLightSpec s) => SunLightSpec(
+  castsShadow: s.castsShadow,
+  intensityScale: s.intensityScale,
+  priority: s.priority,
+  cacheStaticShadows: s.cacheStaticShadows,
+  shadowSoftness: s.shadowSoftness,
+  shadowMaxDistance: s.shadowMaxDistance,
+  shadowCascadeCount: s.shadowCascadeCount,
+  shadowMapResolution: s.shadowMapResolution,
+  shadowDepthBias: s.shadowDepthBias,
+  shadowNormalBias: s.shadowNormalBias,
+  shadowFadeRange: s.shadowFadeRange,
+  shadowCascadeSplitLambda: s.shadowCascadeSplitLambda,
+  shadowAmbientStrength: s.shadowAmbientStrength,
+  shadowFilter: s.shadowFilter,
+  shadowCasterFaces: s.shadowCasterFaces,
+);
 
 EnvironmentResource _requireEnvironment(CommandContext ctx, LocalId id) {
   final existing = ctx.document.resource(id);
@@ -1153,9 +1185,342 @@ void _applyLookProperties(_LookView look, Map<String, PropertyValue> props) {
       'asset' => AssetEnvironment(
         AssetRef(_stageString(props['environmentAsset'], '')),
       ),
+      'constant' => ConstantEnvironment(switch (props['environmentColor']) {
+        Vec3Value(:final value) => value,
+        ColorValue(:final r, :final g, :final b) => Vector3(r, g, b),
+        _ => Vector3.all(0.1),
+      }),
       _ => const StudioEnvironment(),
     };
+  } else if (props['environmentColor'] case final value?) {
+    final color = switch (value) {
+      Vec3Value(:final value) => value,
+      ColorValue(:final r, :final g, :final b) => Vector3(r, g, b),
+      _ => null,
+    };
+    if (color != null && look.environment is ConstantEnvironment) {
+      look.environment = ConstantEnvironment(color);
+    }
   }
+  if (look case _EnvResourceLook(:final r)) {
+    if (props.containsKey('agxWhite')) {
+      r.agxWhite = _stageDouble(props['agxWhite'], r.agxWhite);
+    }
+    if (props.containsKey('agxContrast')) {
+      r.agxContrast = _stageDouble(props['agxContrast'], r.agxContrast);
+    }
+    if (props.containsKey('environmentRotationY')) {
+      r.environmentRotationY = _stageDouble(
+        props['environmentRotationY'],
+        r.environmentRotationY,
+      );
+    }
+    _applyEnvironmentEffects(r.effects, props);
+  }
+}
+
+void _applyEnvironmentEffects(
+  EnvironmentEffectsSpec e,
+  Map<String, PropertyValue> props,
+) {
+  void boolean(String key, void Function(bool) assign) {
+    if (props[key] case BoolValue(:final value)) assign(value);
+  }
+
+  void number(String key, double current, void Function(double) assign) {
+    if (props.containsKey(key)) assign(_stageDouble(props[key], current));
+  }
+
+  void integer(String key, int current, void Function(int) assign) {
+    if (!props.containsKey(key)) return;
+    assign(_stageInt(props[key]) ?? current);
+  }
+
+  void string(String key, String current, void Function(String) assign) {
+    if (props.containsKey(key)) assign(_stageString(props[key], current));
+  }
+
+  void vector(String key, Vector3 current, void Function(Vector3) assign) {
+    switch (props[key]) {
+      case Vec3Value(:final value):
+        assign(value.clone());
+      case ColorValue(:final r, :final g, :final b):
+        assign(Vector3(r, g, b));
+      default:
+        break;
+    }
+  }
+
+  boolean('colorGradingEnabled', (v) => e.colorGradingEnabled = v);
+  number('brightness', e.brightness, (v) => e.brightness = v);
+  number('contrast', e.contrast, (v) => e.contrast = v);
+  number('saturation', e.saturation, (v) => e.saturation = v);
+  number('temperature', e.temperature, (v) => e.temperature = v);
+  number('tint', e.tint, (v) => e.tint = v);
+  vector('lift', e.lift, (v) => e.lift = v);
+  vector('gamma', e.gamma, (v) => e.gamma = v);
+  vector('gain', e.gain, (v) => e.gain = v);
+  boolean('bloomEnabled', (v) => e.bloomEnabled = v);
+  number('bloomThreshold', e.bloomThreshold, (v) => e.bloomThreshold = v);
+  number('bloomIntensity', e.bloomIntensity, (v) => e.bloomIntensity = v);
+  number('bloomScatter', e.bloomScatter, (v) => e.bloomScatter = v);
+  boolean('vignetteEnabled', (v) => e.vignetteEnabled = v);
+  number(
+    'vignetteIntensity',
+    e.vignetteIntensity,
+    (v) => e.vignetteIntensity = v,
+  );
+  number('vignetteRadius', e.vignetteRadius, (v) => e.vignetteRadius = v);
+  number(
+    'vignetteSmoothness',
+    e.vignetteSmoothness,
+    (v) => e.vignetteSmoothness = v,
+  );
+  boolean(
+    'chromaticAberrationEnabled',
+    (v) => e.chromaticAberrationEnabled = v,
+  );
+  number(
+    'chromaticAberrationIntensity',
+    e.chromaticAberrationIntensity,
+    (v) => e.chromaticAberrationIntensity = v,
+  );
+  boolean('filmGrainEnabled', (v) => e.filmGrainEnabled = v);
+  number(
+    'filmGrainIntensity',
+    e.filmGrainIntensity,
+    (v) => e.filmGrainIntensity = v,
+  );
+  boolean('ambientOcclusionEnabled', (v) => e.ambientOcclusionEnabled = v);
+  number(
+    'ambientOcclusionRadius',
+    e.ambientOcclusionRadius,
+    (v) => e.ambientOcclusionRadius = v,
+  );
+  number(
+    'ambientOcclusionIntensity',
+    e.ambientOcclusionIntensity,
+    (v) => e.ambientOcclusionIntensity = v,
+  );
+  number(
+    'ambientOcclusionBias',
+    e.ambientOcclusionBias,
+    (v) => e.ambientOcclusionBias = v,
+  );
+  number(
+    'ambientOcclusionPower',
+    e.ambientOcclusionPower,
+    (v) => e.ambientOcclusionPower = v,
+  );
+  number(
+    'ambientOcclusionDetail',
+    e.ambientOcclusionDetail,
+    (v) => e.ambientOcclusionDetail = v,
+  );
+  number(
+    'ambientOcclusionHorizonAngle',
+    e.ambientOcclusionHorizonAngle,
+    (v) => e.ambientOcclusionHorizonAngle = v,
+  );
+  number(
+    'ambientOcclusionDirectLightAffect',
+    e.ambientOcclusionDirectLightAffect,
+    (v) => e.ambientOcclusionDirectLightAffect = v,
+  );
+  integer(
+    'ambientOcclusionSampleCount',
+    e.ambientOcclusionSampleCount,
+    (v) => e.ambientOcclusionSampleCount = v,
+  );
+  boolean(
+    'ambientOcclusionHalfResolution',
+    (v) => e.ambientOcclusionHalfResolution = v,
+  );
+  boolean(
+    'ambientOcclusionDepthMipChain',
+    (v) => e.ambientOcclusionDepthMipChain = v,
+  );
+  string(
+    'ambientOcclusionSpecularMode',
+    e.ambientOcclusionSpecularMode,
+    (v) => e.ambientOcclusionSpecularMode = v,
+  );
+  boolean(
+    'screenSpaceReflectionsEnabled',
+    (v) => e.screenSpaceReflectionsEnabled = v,
+  );
+  number(
+    'screenSpaceReflectionsIntensity',
+    e.screenSpaceReflectionsIntensity,
+    (v) => e.screenSpaceReflectionsIntensity = v,
+  );
+  number(
+    'screenSpaceReflectionsMaxDistance',
+    e.screenSpaceReflectionsMaxDistance,
+    (v) => e.screenSpaceReflectionsMaxDistance = v,
+  );
+  number(
+    'screenSpaceReflectionsThickness',
+    e.screenSpaceReflectionsThickness,
+    (v) => e.screenSpaceReflectionsThickness = v,
+  );
+  number(
+    'screenSpaceReflectionsStride',
+    e.screenSpaceReflectionsStride,
+    (v) => e.screenSpaceReflectionsStride = v,
+  );
+  integer(
+    'screenSpaceReflectionsMaxSteps',
+    e.screenSpaceReflectionsMaxSteps,
+    (v) => e.screenSpaceReflectionsMaxSteps = v,
+  );
+  number(
+    'screenSpaceReflectionsBlur',
+    e.screenSpaceReflectionsBlur,
+    (v) => e.screenSpaceReflectionsBlur = v,
+  );
+  number(
+    'screenSpaceReflectionsDistanceFadeStart',
+    e.screenSpaceReflectionsDistanceFadeStart,
+    (v) => e.screenSpaceReflectionsDistanceFadeStart = v,
+  );
+  number(
+    'screenSpaceReflectionsResolutionScale',
+    e.screenSpaceReflectionsResolutionScale,
+    (v) => e.screenSpaceReflectionsResolutionScale = v,
+  );
+  boolean('fogEnabled', (v) => e.fogEnabled = v);
+  string('fogMode', e.fogMode, (v) => e.fogMode = v);
+  vector('fogColor', e.fogColor, (v) => e.fogColor = v);
+  number(
+    'fogSkyColorInfluence',
+    e.fogSkyColorInfluence,
+    (v) => e.fogSkyColorInfluence = v,
+  );
+  number('fogDensity', e.fogDensity, (v) => e.fogDensity = v);
+  number('fogStart', e.fogStart, (v) => e.fogStart = v);
+  number('fogEnd', e.fogEnd, (v) => e.fogEnd = v);
+  number('fogMaxOpacity', e.fogMaxOpacity, (v) => e.fogMaxOpacity = v);
+  number(
+    'fogCutoffDistance',
+    e.fogCutoffDistance,
+    (v) => e.fogCutoffDistance = v,
+  );
+  number('fogHeight', e.fogHeight, (v) => e.fogHeight = v);
+  number('fogHeightFalloff', e.fogHeightFalloff, (v) => e.fogHeightFalloff = v);
+  number('fogSunInScatter', e.fogSunInScatter, (v) => e.fogSunInScatter = v);
+  number(
+    'fogSunInScatterExponent',
+    e.fogSunInScatterExponent,
+    (v) => e.fogSunInScatterExponent = v,
+  );
+  boolean('godRaysEnabled', (v) => e.godRaysEnabled = v);
+  number('godRaysIntensity', e.godRaysIntensity, (v) => e.godRaysIntensity = v);
+  number('godRaysDensity', e.godRaysDensity, (v) => e.godRaysDensity = v);
+  number(
+    'godRaysAnisotropy',
+    e.godRaysAnisotropy,
+    (v) => e.godRaysAnisotropy = v,
+  );
+  integer(
+    'godRaysStepCount',
+    e.godRaysStepCount,
+    (v) => e.godRaysStepCount = v,
+  );
+  number(
+    'godRaysMaxDistance',
+    e.godRaysMaxDistance,
+    (v) => e.godRaysMaxDistance = v,
+  );
+  number('godRaysJitter', e.godRaysJitter, (v) => e.godRaysJitter = v);
+  vector('godRaysColor', e.godRaysColor, (v) => e.godRaysColor = v);
+  boolean('depthOfFieldEnabled', (v) => e.depthOfFieldEnabled = v);
+  number(
+    'depthOfFieldFocusDistance',
+    e.depthOfFieldFocusDistance,
+    (v) => e.depthOfFieldFocusDistance = v,
+  );
+  number(
+    'depthOfFieldFStop',
+    e.depthOfFieldFStop,
+    (v) => e.depthOfFieldFStop = v,
+  );
+  number(
+    'depthOfFieldFocalLength',
+    e.depthOfFieldFocalLength,
+    (v) => e.depthOfFieldFocalLength = v,
+  );
+  number(
+    'depthOfFieldSensorHeight',
+    e.depthOfFieldSensorHeight,
+    (v) => e.depthOfFieldSensorHeight = v,
+  );
+  number(
+    'depthOfFieldBlurScale',
+    e.depthOfFieldBlurScale,
+    (v) => e.depthOfFieldBlurScale = v,
+  );
+  number(
+    'depthOfFieldMaxForegroundBlur',
+    e.depthOfFieldMaxForegroundBlur,
+    (v) => e.depthOfFieldMaxForegroundBlur = v,
+  );
+  number(
+    'depthOfFieldMaxBackgroundBlur',
+    e.depthOfFieldMaxBackgroundBlur,
+    (v) => e.depthOfFieldMaxBackgroundBlur = v,
+  );
+  integer(
+    'depthOfFieldBladeCount',
+    e.depthOfFieldBladeCount,
+    (v) => e.depthOfFieldBladeCount = v,
+  );
+  number(
+    'depthOfFieldBladeRotation',
+    e.depthOfFieldBladeRotation,
+    (v) => e.depthOfFieldBladeRotation = v,
+  );
+  number(
+    'depthOfFieldBladeCurvature',
+    e.depthOfFieldBladeCurvature,
+    (v) => e.depthOfFieldBladeCurvature = v,
+  );
+  string(
+    'depthOfFieldQuality',
+    e.depthOfFieldQuality,
+    (v) => e.depthOfFieldQuality = v,
+  );
+  boolean('autoExposureEnabled', (v) => e.autoExposureEnabled = v);
+  number(
+    'autoExposureStrength',
+    e.autoExposureStrength,
+    (v) => e.autoExposureStrength = v,
+  );
+  number(
+    'autoExposureCompensation',
+    e.autoExposureCompensation,
+    (v) => e.autoExposureCompensation = v,
+  );
+  number(
+    'autoExposureMinEv',
+    e.autoExposureMinEv,
+    (v) => e.autoExposureMinEv = v,
+  );
+  number(
+    'autoExposureMaxEv',
+    e.autoExposureMaxEv,
+    (v) => e.autoExposureMaxEv = v,
+  );
+  number(
+    'autoExposureSpeedUp',
+    e.autoExposureSpeedUp,
+    (v) => e.autoExposureSpeedUp = v,
+  );
+  number(
+    'autoExposureSpeedDown',
+    e.autoExposureSpeedDown,
+    (v) => e.autoExposureSpeedDown = v,
+  );
 }
 
 // Applies a skybox/sky-lighting change to [next], reading the prior look from
@@ -1195,7 +1560,10 @@ void _applyLookSkybox(
           intervalSeconds: priorEnv?.intervalSeconds ?? 1.0,
           faceResolution: priorEnv?.faceResolution ?? 128,
           equirectWidth: priorEnv?.equirectWidth ?? 512,
-          castShadows: castShadows,
+          sunLight: castShadows
+              ? (_copySunLight(priorEnv?.sunLight ?? SunLightSpec())
+                  ..castsShadow = true)
+              : null,
         )
       : null;
 }
@@ -1221,7 +1589,9 @@ void _applyLookSkyParameters(_LookView next, Map<String, PropertyValue> props) {
       intervalSeconds: priorEnv.intervalSeconds,
       faceResolution: priorEnv.faceResolution,
       equirectWidth: priorEnv.equirectWidth,
-      castShadows: priorEnv.castShadows,
+      sunLight: priorEnv.sunLight == null
+          ? null
+          : _copySunLight(priorEnv.sunLight!),
     );
   }
 }
@@ -1394,7 +1764,7 @@ final setSkybox = CommandEntry(
           : old.skyEnvironment != null;
       final castShadows = params.containsKey('castShadows')
           ? params['castShadows'] == true
-          : (old.skyEnvironment?.castShadows ?? false);
+          : (old.skyEnvironment?.sunLight?.castsShadow ?? false);
       _applyLookSkybox(
         next,
         old,
@@ -1583,6 +1953,64 @@ final setEnvironmentProperties = CommandEntry(
   },
 );
 
+/// Assigns or removes an environment image as one undoable operation.
+///
+/// An empty `asset` removes the image. If the visible background uses the
+/// lighting environment, removal clears that background as well.
+final setEnvironmentImage = CommandEntry(
+  name: 'setEnvironmentImage',
+  doc: 'Assign or remove an environment image.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+    ),
+    ParamSpec(name: 'asset', type: ParamType.assetRef, label: 'Image'),
+    ParamSpec(
+      name: 'showAsBackground',
+      type: ParamType.boolean,
+      label: 'Show as background',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'environmentId');
+    final existing = _requireEnvironment(ctx, id);
+    final next = _copyEnvironmentResource(existing);
+    final asset = requireString(params, 'asset').trim();
+    final showAsBackground = params.containsKey('showAsBackground')
+        ? params['showAsBackground'] == true
+        : next.skybox?.source is EnvironmentSkySpec;
+    if (asset.isEmpty) {
+      next.environment = const EmptyEnvironment();
+      if (next.skybox?.source is EnvironmentSkySpec) next.skybox = null;
+    } else {
+      next.environment = AssetEnvironment(AssetRef(asset));
+      if (showAsBackground) {
+        next.skybox = SkyboxSpec(
+          EnvironmentSkySpec(
+            blurriness: switch (next.skybox?.source) {
+              EnvironmentSkySpec(:final blurriness) => blurriness,
+              _ => 0.0,
+            },
+          ),
+          intensity: next.skybox?.intensity ?? 1.0,
+        );
+      } else if (next.skybox?.source is EnvironmentSkySpec) {
+        next.skybox = null;
+      }
+    }
+    return _environmentTransaction(
+      asset.isEmpty ? 'Remove environment image' : 'Set environment image',
+      id,
+      existing,
+      next,
+    );
+  },
+);
+
 /// Sets an environment resource's skybox and optional sky lighting, mirroring
 /// `setSkybox` for the stage.
 final setEnvironmentSkybox = CommandEntry(
@@ -1624,7 +2052,7 @@ final setEnvironmentSkybox = CommandEntry(
         : oldLook.skyEnvironment != null;
     final castShadows = params.containsKey('castShadows')
         ? params['castShadows'] == true
-        : (oldLook.skyEnvironment?.castShadows ?? false);
+        : (oldLook.skyEnvironment?.sunLight?.castsShadow ?? false);
     final next = _copyEnvironmentResource(existing);
     _applyLookSkybox(
       _EnvResourceLook(next),
@@ -1672,6 +2100,77 @@ final setEnvironmentSkyParameters = CommandEntry(
     return _environmentTransaction('Tune environment sky', id, existing, next);
   },
 );
+
+/// Tunes a sky-driven sun and its cascaded shadows.
+final setEnvironmentSunLightProperties = CommandEntry(
+  name: 'setEnvironmentSunLightProperties',
+  doc: 'Tune an environment resource sun light.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'environmentId',
+      type: ParamType.resourceRef,
+      label: 'Environment',
+    ),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Sun light settings',
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'environmentId');
+    final existing = _requireEnvironment(ctx, id);
+    final next = _copyEnvironmentResource(existing);
+    final sun = next.skyEnvironment?.sunLight;
+    if (sun == null) {
+      throw const CommandException('The environment has no analytic sun.');
+    }
+    _applySunLightProperties(sun, optionalPropertyMap(params, 'properties'));
+    return _environmentTransaction('Tune environment sun', id, existing, next);
+  },
+);
+
+void _applySunLightProperties(
+  SunLightSpec sun,
+  Map<String, PropertyValue> properties,
+) {
+  double number(String key, double current) =>
+      _stageDouble(properties[key], current);
+  int integer(String key, int current) => _stageInt(properties[key]) ?? current;
+  bool boolean(String key, bool current) => switch (properties[key]) {
+    BoolValue(:final value) => value,
+    _ => current,
+  };
+  String text(String key, String current) =>
+      _stageString(properties[key], current);
+
+  sun
+    ..castsShadow = boolean('castsShadow', sun.castsShadow)
+    ..intensityScale = number('intensityScale', sun.intensityScale)
+    ..priority = integer('priority', sun.priority)
+    ..cacheStaticShadows = boolean('cacheStaticShadows', sun.cacheStaticShadows)
+    ..shadowSoftness = number('shadowSoftness', sun.shadowSoftness)
+    ..shadowMaxDistance = number('shadowMaxDistance', sun.shadowMaxDistance)
+    ..shadowCascadeCount = integer('shadowCascadeCount', sun.shadowCascadeCount)
+    ..shadowMapResolution = integer(
+      'shadowMapResolution',
+      sun.shadowMapResolution,
+    )
+    ..shadowDepthBias = number('shadowDepthBias', sun.shadowDepthBias)
+    ..shadowNormalBias = number('shadowNormalBias', sun.shadowNormalBias)
+    ..shadowFadeRange = number('shadowFadeRange', sun.shadowFadeRange)
+    ..shadowCascadeSplitLambda = number(
+      'shadowCascadeSplitLambda',
+      sun.shadowCascadeSplitLambda,
+    )
+    ..shadowAmbientStrength = number(
+      'shadowAmbientStrength',
+      sun.shadowAmbientStrength,
+    )
+    ..shadowFilter = text('shadowFilter', sun.shadowFilter)
+    ..shadowCasterFaces = text('shadowCasterFaces', sun.shadowCasterFaces);
+}
 
 // ---------------------------------------------------------------------------
 // Prefab commands.
@@ -2090,8 +2589,10 @@ final List<CommandEntry> builtinCommands = [
   setMaterialProperties,
   createEnvironmentResource,
   setEnvironmentProperties,
+  setEnvironmentImage,
   setEnvironmentSkybox,
   setEnvironmentSkyParameters,
+  setEnvironmentSunLightProperties,
   setStageEnvironment,
   removeResource,
   setStageProperties,

@@ -196,9 +196,11 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     toneMapping: e.toneMapping,
     agxWhite: e.agxWhite,
     agxContrast: e.agxContrast,
+    environmentRotationY: e.environmentRotationY,
     radianceCubeSize: e.radianceCubeSize,
     skybox: e.skybox,
     skyEnvironment: e.skyEnvironment,
+    effects: EnvironmentEffectsSpec.copy(e.effects),
   ),
 };
 

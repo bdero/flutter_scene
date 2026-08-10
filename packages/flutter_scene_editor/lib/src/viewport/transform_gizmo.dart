@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import '../shell/editor_theme.dart';
+
 /// Axis index constants. [axisUniform] is the scale gizmo's center handle.
 const int axisX = 0;
 const int axisY = 1;
@@ -13,12 +15,15 @@ const int axisUniform = 3;
 /// The transform the gizmo edits.
 enum GizmoMode { translate, rotate, scale }
 
-/// Projects a world-space point to screen pixels. Returns null when behind the
+/// The coordinate space used to orient and apply a transform gizmo.
+enum TransformSpace { global, local }
+
+/// Projects a global-space point to screen pixels. Returns null when behind the
 /// camera.
-Offset? projectToScreen(vm.Vector3 worldPoint, Camera camera, Size viewSize) {
+Offset? projectToScreen(vm.Vector3 globalPoint, Camera camera, Size viewSize) {
   final vp = camera.getViewTransform(viewSize);
   final clip = vp.transform(
-    vm.Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1),
+    vm.Vector4(globalPoint.x, globalPoint.y, globalPoint.z, 1),
   );
   if (clip.w <= 0) return null;
   return Offset(
@@ -36,20 +41,57 @@ double _distToSegment(Offset point, Offset a, Offset b) {
   return (point - (a + Offset(ab.dx * t, ab.dy * t))).distance;
 }
 
-vm.Vector3 _axisDir(int axis) => switch (axis) {
+vm.Vector3 _globalAxisDir(int axis) => switch (axis) {
   axisX => vm.Vector3(1, 0, 0),
   axisY => vm.Vector3(0, 1, 0),
   _ => vm.Vector3(0, 0, 1),
 };
 
-const _axisColors = [
-  Color(0xFFE84040), // X red
-  Color(0xFF40C840), // Y green
-  Color(0xFF4080E8), // Z blue
-];
+/// Returns global directions for the three axes of [space].
+List<vm.Vector3> transformSpaceAxes(
+  TransformSpace space,
+  vm.Matrix4 globalTransform,
+) {
+  if (space == TransformSpace.global) {
+    return [
+      _globalAxisDir(axisX),
+      _globalAxisDir(axisY),
+      _globalAxisDir(axisZ),
+    ];
+  }
+  return [
+    for (var axis = 0; axis < 3; axis++)
+      _normalizedTransformAxis(globalTransform, axis),
+  ];
+}
+
+vm.Vector3 _normalizedTransformAxis(vm.Matrix4 transform, int axis) {
+  final direction = vm.Vector3(
+    transform.entry(0, axis),
+    transform.entry(1, axis),
+    transform.entry(2, axis),
+  );
+  if (direction.length2 < 1e-12) return _globalAxisDir(axis);
+  return direction..normalize();
+}
+
+/// Solves the local transform for a desired global transform.
+vm.Matrix4 globalToLocalTransform(
+  vm.Matrix4 desiredGlobal,
+  vm.Matrix4 parentGlobalInverse,
+) => parentGlobalInverse * desiredGlobal;
+
+/// Converts an interaction angle about a displayed local axis into the
+/// node's local quaternion angle. A mirrored global basis reverses rotation.
+double localAxisRotationAngle(
+  double interactionAngle,
+  vm.Matrix4 globalTransform,
+) => globalTransform.determinant() < 0 ? -interactionAngle : interactionAngle;
+
+const _axisColors = editorAxisColors;
 const _activeColor = Color(0xFFFFDD44);
 const _uniformColor = Color(0xFFCCCCCC);
-const double _armWorldUnits = 1.2;
+const double _armGlobalUnits = 1.2;
 
 double _gizmoScale(vm.Vector3 origin, Camera camera, Size size) {
   final dist = (camera.position - origin).length;
@@ -57,27 +99,37 @@ double _gizmoScale(vm.Vector3 origin, Camera camera, Size size) {
 }
 
 /// Points around the ring of [axis] (a circle of [radius] in the plane
-/// perpendicular to the axis), in world space.
-List<vm.Vector3> _ringPoints(vm.Vector3 origin, int axis, double radius) {
-  final u = _axisDir((axis + 1) % 3) * radius;
-  final v = _axisDir((axis + 2) % 3) * radius;
+/// perpendicular to the axis), in global space.
+List<vm.Vector3> _ringPoints(
+  vm.Vector3 origin,
+  int axis,
+  double radius, [
+  List<vm.Vector3>? axes,
+]) {
+  final basis =
+      axes ??
+      [_globalAxisDir(axisX), _globalAxisDir(axisY), _globalAxisDir(axisZ)];
+  final u = basis[(axis + 1) % 3] * radius;
+  final v = basis[(axis + 2) % 3] * radius;
   return [
     for (var i = 0; i <= 48; i++)
       origin + u * cos(i / 48 * 2 * pi) + v * sin(i / 48 * 2 * pi),
   ];
 }
 
-/// Draws the transform gizmo for the active [mode] at world [origin].
+/// Draws the transform gizmo for the active [mode] at global [origin].
 class TransformGizmoPainter extends CustomPainter {
   TransformGizmoPainter({
     required this.origin,
     required this.mode,
+    required this.axes,
     required this.camera,
     required this.activeAxis,
   });
 
   final vm.Vector3 origin;
   final GizmoMode mode;
+  final List<vm.Vector3> axes;
   final Camera camera;
   final int? activeAxis;
 
@@ -85,7 +137,7 @@ class TransformGizmoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final originScreen = projectToScreen(origin, camera, size);
     if (originScreen == null) return;
-    final scale = _gizmoScale(origin, camera, size) * _armWorldUnits;
+    final scale = _gizmoScale(origin, camera, size) * _armGlobalUnits;
 
     switch (mode) {
       case GizmoMode.translate:
@@ -107,11 +159,7 @@ class TransformGizmoPainter extends CustomPainter {
 
   void _paintArrows(Canvas canvas, Size size, Offset o, double scale) {
     for (var axis = 0; axis < 3; axis++) {
-      final tip = projectToScreen(
-        origin + _axisDir(axis) * scale,
-        camera,
-        size,
-      );
+      final tip = projectToScreen(origin + axes[axis] * scale, camera, size);
       if (tip == null) continue;
       final color = _color(axis);
       canvas.drawLine(
@@ -143,7 +191,7 @@ class TransformGizmoPainter extends CustomPainter {
     for (var axis = 0; axis < 3; axis++) {
       final path = Path();
       var started = false;
-      for (final p in _ringPoints(origin, axis, radius)) {
+      for (final p in _ringPoints(origin, axis, radius, axes)) {
         final s = projectToScreen(p, camera, size);
         if (s == null) continue;
         if (started) {
@@ -167,11 +215,7 @@ class TransformGizmoPainter extends CustomPainter {
 
   void _paintScaleHandles(Canvas canvas, Size size, Offset o, double scale) {
     for (var axis = 0; axis < 3; axis++) {
-      final tip = projectToScreen(
-        origin + _axisDir(axis) * scale,
-        camera,
-        size,
-      );
+      final tip = projectToScreen(origin + axes[axis] * scale, camera, size);
       if (tip == null) continue;
       final color = _color(axis);
       canvas.drawLine(
@@ -238,7 +282,7 @@ class EnvironmentVolumeComponentPainter extends CustomPainter {
     }
   }
 
-  // Draws a volume's region (in the node's local space, mapped to world by
+  // Draws a volume's region (in the node's local space, mapped to global by
   // [transform]) expanded outward by [pad] (the blend shell when non-zero).
   void _paintRegion(
     Canvas canvas,
@@ -352,17 +396,23 @@ class GizmoController {
 
   /// Tries to grab a handle at [pos]. Returns true and starts a drag when one
   /// is hit. Call on pointer-down.
-  bool grab(Offset pos, vm.Vector3 origin, Camera camera, Size size) {
+  bool grab(
+    Offset pos,
+    vm.Vector3 origin,
+    List<vm.Vector3> axes,
+    Camera camera,
+    Size size,
+  ) {
     final originScreen = projectToScreen(origin, camera, size);
     if (originScreen == null) return false;
-    final scaleLen = _gizmoScale(origin, camera, size) * _armWorldUnits;
+    final scaleLen = _gizmoScale(origin, camera, size) * _armGlobalUnits;
 
     int? hit;
     if (mode == GizmoMode.rotate) {
       double best = _hitRadius;
       for (var axis = 0; axis < 3; axis++) {
         final pts = [
-          for (final p in _ringPoints(origin, axis, scaleLen))
+          for (final p in _ringPoints(origin, axis, scaleLen, axes))
             projectToScreen(p, camera, size),
         ].whereType<Offset>().toList();
         for (var i = 0; i + 1 < pts.length; i++) {
@@ -382,7 +432,7 @@ class GizmoController {
         double best = _hitRadius;
         for (var axis = 0; axis < 3; axis++) {
           final tip = projectToScreen(
-            origin + _axisDir(axis) * scaleLen,
+            origin + axes[axis] * scaleLen,
             camera,
             size,
           );
@@ -401,7 +451,7 @@ class GizmoController {
     translation = vm.Vector3.zero();
     angle = 0;
     scale = vm.Vector3(1, 1, 1);
-    axisVec = hit == axisUniform ? vm.Vector3.zero() : _axisDir(hit);
+    axisVec = hit == axisUniform ? vm.Vector3.zero() : axes[hit].clone();
     _origin = originScreen;
     _lastPos = pos;
     _grabPos = pos;
@@ -409,7 +459,7 @@ class GizmoController {
     _scaleStartDist = max(1.0, (pos - originScreen).distance);
     if (hit != axisUniform) {
       _tip =
-          projectToScreen(origin + _axisDir(hit) * scaleLen, camera, size) ??
+          projectToScreen(origin + axisVec * scaleLen, camera, size) ??
           originScreen;
     }
     return true;
@@ -421,9 +471,9 @@ class GizmoController {
     if (axis == null) return;
     switch (mode) {
       case GizmoMode.translate:
-        _updateTranslate(pos, axis, origin, camera, size);
+        _updateTranslate(pos, origin, camera, size);
       case GizmoMode.rotate:
-        _updateRotate(pos, axis, origin, camera);
+        _updateRotate(pos, origin, camera);
       case GizmoMode.scale:
         _updateScale(pos, axis);
     }
@@ -432,7 +482,6 @@ class GizmoController {
 
   void _updateTranslate(
     Offset pos,
-    int axis,
     vm.Vector3 origin,
     Camera camera,
     Size size,
@@ -442,12 +491,12 @@ class GizmoController {
     if (len2 < 1e-6) return;
     final drag = pos - _lastPos;
     final dot = (drag.dx * axisSc.dx + drag.dy * axisSc.dy) / sqrt(len2);
-    final worldLen = _armWorldUnits * _gizmoScale(origin, camera, size);
-    final pixelToWorld = sqrt(len2) > 1e-3 ? worldLen / sqrt(len2) : 0.0;
-    translation += _axisDir(axis) * (dot * pixelToWorld);
+    final globalLen = _armGlobalUnits * _gizmoScale(origin, camera, size);
+    final pixelToGlobal = sqrt(len2) > 1e-3 ? globalLen / sqrt(len2) : 0.0;
+    translation += axisVec * (dot * pixelToGlobal);
   }
 
-  void _updateRotate(Offset pos, int axis, vm.Vector3 origin, Camera camera) {
+  void _updateRotate(Offset pos, vm.Vector3 origin, Camera camera) {
     final a = atan2(pos.dy - _origin.dy, pos.dx - _origin.dx);
     var delta = a - _lastAngle;
     if (delta > pi) delta -= 2 * pi;
@@ -457,7 +506,7 @@ class GizmoController {
     // flip by whether the axis points toward or away from the camera so the
     // rotation tracks the pointer.
     final viewDir = (origin - camera.position)..normalize();
-    final facing = _axisDir(axis).dot(viewDir) >= 0 ? 1.0 : -1.0;
+    final facing = axisVec.dot(viewDir) >= 0 ? 1.0 : -1.0;
     angle += -delta * facing;
   }
 

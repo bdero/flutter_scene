@@ -5,6 +5,31 @@ import 'package:flutter/widgets.dart';
 /// Where a dragged panel lands relative to a target tab group.
 enum DockZone { center, left, right, top, bottom }
 
+/// The initial editor arrangement used when no saved layout is available.
+///
+/// The left column stacks Outliner above Assets and History, the Viewport owns
+/// the center, and Inspector occupies the right column.
+DockLayout defaultEditorDockLayout() {
+  return DockLayout(
+    DockSplit(
+      Axis.horizontal,
+      [
+        DockSplit(
+          Axis.vertical,
+          [
+            DockTabs(['outliner']),
+            DockTabs(['assets', 'history']),
+          ],
+          [0.5363231641857922, 0.4636768358142078],
+        ),
+        DockTabs(['viewport']),
+        DockTabs(['inspector']),
+      ],
+      [0.20993533355494798, 0.5575395295519655, 0.23252513689308651],
+    ),
+  );
+}
+
 /// A node in the dock layout tree. Interior nodes are [DockSplit]s; leaves are
 /// [DockTabs] groups holding one or more panel ids.
 sealed class DockNode {

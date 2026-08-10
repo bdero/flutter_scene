@@ -62,8 +62,7 @@ class DockingShell extends StatefulWidget {
 
   final List<DockPanel> panels;
 
-  /// The starting arrangement. Captured once when the shell is first built;
-  /// later mutations flow out through [onLayoutChanged].
+  /// The arrangement to render. A new instance replaces the active layout.
   final DockLayout layout;
 
   final ValueChanged<DockLayout>? onLayoutChanged;
@@ -73,7 +72,7 @@ class DockingShell extends StatefulWidget {
 }
 
 class _DockingShellState extends State<DockingShell> {
-  late final DockLayout _layout = widget.layout;
+  late DockLayout _layout = widget.layout;
 
   // One key per panel so its subtree state (viewport camera, scroll
   // positions) survives docking moves, tab switches, and float/dock moves.
@@ -86,6 +85,19 @@ class _DockingShellState extends State<DockingShell> {
   @override
   void initState() {
     super.initState();
+    _normalizeFloatingPanels();
+  }
+
+  @override
+  void didUpdateWidget(DockingShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.layout, widget.layout)) {
+      _layout = widget.layout;
+      _normalizeFloatingPanels();
+    }
+  }
+
+  void _normalizeFloatingPanels() {
     // A layout persisted with floats can be restored on a build without the
     // windowing flag; re-dock those panels instead of losing them.
     if (!isWindowingEnabled && _layout.floating.isNotEmpty) {
@@ -524,7 +536,6 @@ class _WeightedSplit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontal = split.axis == Axis.horizontal;
-    final scheme = Theme.of(context).colorScheme;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -573,15 +584,12 @@ class _WeightedSplit extends StatelessWidget {
                   child: Container(
                     width: horizontal ? _thickness : null,
                     height: horizontal ? null : _thickness,
-                    color: scheme.outlineVariant,
+                    color: Colors.transparent,
                     alignment: Alignment.center,
                     child: Container(
-                      width: horizontal ? 2 : 24,
-                      height: horizontal ? 24 : 2,
-                      decoration: BoxDecoration(
-                        color: scheme.onSurfaceVariant,
-                        borderRadius: BorderRadius.circular(1),
-                      ),
+                      width: horizontal ? 1 : double.infinity,
+                      height: horizontal ? double.infinity : 1,
+                      color: Theme.of(context).dividerColor,
                     ),
                   ),
                 ),

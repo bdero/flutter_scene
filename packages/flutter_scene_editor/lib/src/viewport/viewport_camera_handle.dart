@@ -69,13 +69,12 @@ class ViewportCameraHandle {
 
   /// Aims at [bounds]' center and pulls back so the bounds' sphere fits the
   /// camera's 45 degree vertical field of view, keeping the current viewing
-  /// angles. [margin] above 1 adds padding.
-  void frame(vm.Aabb3 bounds, {double margin = 1.4}) {
+  /// angles. [margin] above 1 adds padding. [aspectRatio] ensures the bounds
+  /// also fit a portrait viewport.
+  void frame(vm.Aabb3 bounds, {double margin = 1.2, double aspectRatio = 1}) {
     final camera = _camera;
     if (camera == null) return;
-    final radius = max((bounds.max - bounds.min).length / 2, 1e-3);
-    camera.target = bounds.center.clone();
-    camera.radius = radius / sin(pi / 8) * margin;
+    camera.frame(bounds, margin: margin, aspectRatio: aspectRatio);
     _onChanged?.call();
   }
 }

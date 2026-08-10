@@ -32,17 +32,35 @@ const _environmentTypeGroup = XTypeGroup(
   extensions: <String>['hdr', 'exr', 'png', 'jpg', 'jpeg'],
 );
 
-/// Shows the native open dialog filtered to environment images (`.hdr`/`.exr`
-/// plus LDR equirect formats), and returns the chosen path, or null on cancel.
-Future<String?> pickEnvironmentPath() async {
+/// Session-local directory history for dialogs that should not follow the
+/// active scene after their first successful selection.
+class FileDialogHistory {
+  String? _prefabDirectory;
+
+  /// The active scene directory until a prefab has been added, then the most
+  /// recently added prefab's directory.
+  String? prefabInitialDirectory(String? sceneDirectory) =>
+      _prefabDirectory ?? sceneDirectory;
+
+  /// Remembers the selected prefab only after its instance was added.
+  void rememberPrefab(String path) {
+    _prefabDirectory = File(path).parent.path;
+  }
+}
+
+/// Shows the native open dialog filtered to equirectangular environment images,
+/// starting in [initialDirectory], and returns the chosen path, or null on
+/// cancel.
+Future<String?> pickEnvironmentPath({String? initialDirectory}) async {
   final file = await openFile(
     acceptedTypeGroups: const [_environmentTypeGroup],
+    initialDirectory: initialDirectory,
   );
   return file?.path;
 }
 
-/// Imports the equirectangular environment image at [path] (a `.hdr`/`.exr`
-/// HDR map or an LDR image) and sets it as an environment resource's look.
+/// Imports the equirectangular environment image at [path] and sets it as an
+/// environment resource's lighting source and visible background.
 ///
 /// [environmentId] is the target environment resource (the stage's global
 /// environment or a volume's); when null the stage's global resource is used
@@ -55,22 +73,18 @@ Future<String> importEnvironmentMap(
   EditorController controller,
   String path, {
   LocalId? environmentId,
+  bool showAsBackground = true,
 }) async {
   final assetRef = _importFileAsset(controller.baseDirectory, path);
-  // Use the HDR for both lighting and the background. Sky-driven lighting owns
-  // the scene environment, so turn it off and show the environment as the
-  // skybox. Target the given environment resource, else the stage's global one.
+  // Use the image for both lighting and the background. Target the given
+  // environment resource, else the stage's global one.
   final envId = environmentId ?? controller.document.stage.environmentRef;
   if (envId == null) return assetRef;
   final id = envId.toToken();
-  await controller.run('setEnvironmentProperties', {
+  await controller.run('setEnvironmentImage', {
     'environmentId': id,
-    'properties': {'environment': 'asset', 'environmentAsset': assetRef},
-  });
-  await controller.run('setEnvironmentSkybox', {
-    'environmentId': id,
-    'sky': 'environment',
-    'lightScene': false,
+    'asset': assetRef,
+    'showAsBackground': showAsBackground,
   });
   return assetRef;
 }
@@ -81,9 +95,12 @@ const _imageTypeGroup = XTypeGroup(
 );
 
 /// Shows the native open dialog filtered to image files, and returns the chosen
-/// path, or null on cancel.
-Future<String?> pickImagePath() async {
-  final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup]);
+/// path, or null on cancel. The dialog starts in [initialDirectory].
+Future<String?> pickImagePath({String? initialDirectory}) async {
+  final file = await openFile(
+    acceptedTypeGroups: const [_imageTypeGroup],
+    initialDirectory: initialDirectory,
+  );
   return file?.path;
 }
 
@@ -145,6 +162,16 @@ String _importFileAsset(String? sceneDir, String sourcePath) {
     // reference to relative on the first Save As.
     return sourcePath;
   }
+  final root = Directory(sceneDir).absolute.path;
+  final source = File(sourcePath).absolute.path;
+  final rootPrefix = root.endsWith(Platform.pathSeparator)
+      ? root
+      : '$root${Platform.pathSeparator}';
+  if (source.startsWith(rootPrefix)) {
+    return source
+        .substring(rootPrefix.length)
+        .replaceAll(Platform.pathSeparator, '/');
+  }
   final importedDir = Directory('$sceneDir${Platform.pathSeparator}imported')
     ..createSync(recursive: true);
   final ext = _fileExtension(sourcePath);
@@ -154,9 +181,13 @@ String _importFileAsset(String? sceneDir, String sourcePath) {
 }
 
 /// Shows the native open dialog filtered to glTF models (`.glb`/`.gltf`), and
-/// returns the chosen path, or null when the user cancels.
-Future<String?> pickModelPath() async {
-  final file = await openFile(acceptedTypeGroups: const [_modelTypeGroup]);
+/// returns the chosen path, or null when the user cancels. The dialog starts in
+/// [initialDirectory].
+Future<String?> pickModelPath({String? initialDirectory}) async {
+  final file = await openFile(
+    acceptedTypeGroups: const [_modelTypeGroup],
+    initialDirectory: initialDirectory,
+  );
   return file?.path;
 }
 
@@ -232,20 +263,34 @@ Future<EditorController> openFscene(String path) async {
 }
 
 /// Shows the native open dialog filtered to `.fscene`, and returns the chosen
-/// path, or null when the user cancels.
-Future<String?> pickOpenPath() async {
-  final file = await openFile(acceptedTypeGroups: const [_fsceneTypeGroup]);
+/// path, or null when the user cancels. The dialog starts in
+/// [initialDirectory].
+Future<String?> pickOpenPath({String? initialDirectory}) async {
+  final file = await openFile(
+    acceptedTypeGroups: const [_fsceneTypeGroup],
+    initialDirectory: initialDirectory,
+  );
   return file?.path;
 }
 
 /// Shows the native save dialog, and returns the chosen path, or null when the
-/// user cancels.
-Future<String?> pickSavePath({String? suggestedName}) async {
+/// user cancels. The dialog starts in [initialDirectory].
+Future<String?> pickSavePath({
+  String? suggestedName,
+  String? initialDirectory,
+}) async {
+  final name = suggestedName ?? 'scene.fscene';
+  final stem = name.toLowerCase().endsWith('.fscene')
+      ? name.substring(0, name.length - '.fscene'.length)
+      : name;
   final location = await getSaveLocation(
     acceptedTypeGroups: const [_fsceneTypeGroup],
-    suggestedName: suggestedName ?? 'scene.fscene',
+    suggestedName: stem,
+    initialDirectory: initialDirectory,
   );
-  return location?.path;
+  final path = location?.path;
+  if (path == null || path.toLowerCase().endsWith('.fscene')) return path;
+  return '$path.fscene';
 }
 
 /// Reads the prefab `.fscene` at [sourcePath], bakes [instance]'s delta into it

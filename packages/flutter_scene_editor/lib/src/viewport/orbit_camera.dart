@@ -120,6 +120,25 @@ class OrbitCamera {
     radius = (radius / factor).clamp(_minRadius, double.infinity);
   }
 
+  /// Centers [bounds] and adjusts the view distance without changing angles.
+  ///
+  /// The bounding sphere fits the narrower viewport axis. Orthographic views
+  /// adjust their visible height, while perspective views adjust eye distance.
+  void frame(vm.Aabb3 bounds, {double aspectRatio = 1, double margin = 1.2}) {
+    final boundsRadius = max((bounds.max - bounds.min).length * 0.5, 1e-3);
+    final aspect = max(aspectRatio, 1e-3);
+    const verticalHalfFov = pi / 8;
+    final horizontalHalfFov = atan(tan(verticalHalfFov) * aspect);
+    final limitingHalfFov = min(verticalHalfFov, horizontalHalfFov);
+    target = bounds.center.clone();
+    radius = orthographic
+        ? max(
+            boundsRadius * margin / (tan(verticalHalfFov) * min(1.0, aspect)),
+            _minRadius,
+          )
+        : max(boundsRadius * margin / sin(limitingHalfFov), _minRadius);
+  }
+
   /// Returns the world-space eye position.
   vm.Vector3 get position {
     return target +
@@ -181,8 +200,8 @@ class OrbitCamera {
 
 /// Wraps a child widget and routes pointer events to an [OrbitCamera].
 ///
-/// Left-drag = orbit. Middle-drag or Shift+left-drag = pan.
-/// Two-finger scroll = orbit; with Ctrl/Cmd = zoom; with Shift = pan.
+/// Left-drag = orbit. Middle-drag or Shift+left-drag = pan. Mouse wheel =
+/// zoom. Two-finger scroll = orbit; with Ctrl/Cmd = zoom; with Shift = pan.
 /// Pinch = zoom.
 class OrbitCameraController extends StatefulWidget {
   const OrbitCameraController({
@@ -191,11 +210,15 @@ class OrbitCameraController extends StatefulWidget {
     required this.onChanged,
     required this.child,
     this.isLocked,
+    this.dragThreshold = 4,
   });
 
   final OrbitCamera camera;
   final VoidCallback onChanged;
   final Widget child;
+
+  /// Distance a primary-button gesture travels before orbiting begins.
+  final double dragThreshold;
 
   /// When this returns true (for example when a gizmo is active), the
   /// controller ignores drags so camera navigation does not fire on top of
@@ -208,14 +231,14 @@ class OrbitCameraController extends StatefulWidget {
 
 class _OrbitCameraControllerState extends State<OrbitCameraController> {
   Offset? _lastDrag;
+  Offset? _dragOrigin;
   bool _isPanning = false;
+  bool _dragStarted = false;
   double _lastPinchScale = 1.0;
 
-  /// Routes a two-finger scroll [delta] (in [PointerScrollEvent] sign
-  /// convention, content moving down is positive dy) by the held modifiers:
-  /// plain scroll orbits, Ctrl/Cmd zooms, Shift pans. The negations give
-  /// scrolling the same feel as the equivalent drag.
-  void _handleScroll(Offset delta) {
+  /// Routes a trackpad two-finger scroll by the held modifiers. Plain scroll
+  /// orbits, Ctrl/Cmd zooms, and Shift pans.
+  void _handleTrackpadScroll(Offset delta) {
     final keys = HardwareKeyboard.instance;
     if (keys.isControlPressed || keys.isMetaPressed) {
       widget.camera.zoom(delta.dy);
@@ -234,14 +257,18 @@ class _OrbitCameraControllerState extends State<OrbitCameraController> {
       onPointerDown: (e) {
         if (widget.isLocked?.call() ?? false) {
           _lastDrag = null;
+          _dragOrigin = null;
           _isPanning = false;
+          _dragStarted = false;
           return;
         }
         _lastDrag = e.localPosition;
+        _dragOrigin = e.localPosition;
         _isPanning =
-            e.buttons == kMiddleMouseButton ||
-            (e.buttons == kPrimaryMouseButton &&
+            e.buttons & kMiddleMouseButton != 0 ||
+            (e.buttons & kPrimaryMouseButton != 0 &&
                 HardwareKeyboard.instance.isShiftPressed);
+        _dragStarted = e.buttons & kMiddleMouseButton != 0;
       },
       onPointerMove: (e) {
         if (widget.isLocked?.call() ?? false) return;
@@ -249,22 +276,44 @@ class _OrbitCameraControllerState extends State<OrbitCameraController> {
         if (last == null) return;
         final delta = e.localPosition - last;
         _lastDrag = e.localPosition;
+        if (!_dragStarted && e.buttons & kPrimaryMouseButton != 0) {
+          final origin = _dragOrigin;
+          if (origin == null ||
+              (e.localPosition - origin).distance < widget.dragThreshold) {
+            return;
+          }
+          _dragStarted = true;
+        }
         if (_isPanning) {
           widget.camera.pan(delta.dx, delta.dy);
-        } else if (e.buttons & kPrimaryMouseButton != 0) {
+        } else if (_dragStarted && e.buttons & kPrimaryMouseButton != 0) {
           widget.camera.orbit(delta.dx, delta.dy);
         }
         widget.onChanged();
       },
-      onPointerUp: (e) => _lastDrag = null,
-      onPointerCancel: (e) => _lastDrag = null,
+      onPointerUp: (e) {
+        _lastDrag = null;
+        _dragOrigin = null;
+        _dragStarted = false;
+      },
+      onPointerCancel: (e) {
+        _lastDrag = null;
+        _dragOrigin = null;
+        _dragStarted = false;
+      },
       onPointerSignal: (e) {
-        // Mouse wheels (and trackpads on platforms without gesture events)
-        // arrive here as discrete scrolls.
-        if (e is PointerScrollEvent) _handleScroll(e.scrollDelta);
+        if (widget.isLocked?.call() ?? false) return;
+        if (e is! PointerScrollEvent) return;
+        if (e.kind == PointerDeviceKind.mouse) {
+          widget.camera.zoom(-e.scrollDelta.dy);
+          widget.onChanged();
+        } else {
+          _handleTrackpadScroll(e.scrollDelta);
+        }
       },
       onPointerPanZoomStart: (e) => _lastPinchScale = 1.0,
       onPointerPanZoomUpdate: (e) {
+        if (widget.isLocked?.call() ?? false) return;
         // Trackpad gestures: the pinch scale drives zoom; two-finger pans
         // route through the modifier-aware scroll handler. The pan delta's
         // sign convention is opposite the scroll one.
@@ -273,7 +322,7 @@ class _OrbitCameraControllerState extends State<OrbitCameraController> {
           _lastPinchScale = e.scale;
           widget.onChanged();
         }
-        if (e.panDelta != Offset.zero) _handleScroll(-e.panDelta);
+        if (e.panDelta != Offset.zero) _handleTrackpadScroll(-e.panDelta);
       },
       child: widget.child,
     );

@@ -74,6 +74,7 @@ class FlutterSceneEditorApp extends StatelessWidget {
       title: 'Scene Editor',
       theme: editorDarkTheme(),
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => EditorThemeScope(child: child!),
       home: const _EditorHome(),
     );
   }
@@ -100,17 +101,14 @@ class _EditorHomeState extends State<_EditorHome> {
   final _cameraHandle = ViewportCameraHandle();
   ServerSocket? _mcpServer;
 
-  // The persisted dock layout, loaded once at startup and written back on
-  // every rearrangement.
-  String? _dockLayoutJson;
+  late final EditorSettingsStore _settingsStore;
+  late final EditorSettings _settings;
 
   // TODO(path-provider): resolve through path_provider if this app ever
   // targets more than macOS; only macos/ scaffolding is committed today.
-  File _dockLayoutFile() {
+  Directory _settingsDirectory() {
     final home = Platform.environment['HOME'] ?? '.';
-    return File(
-      '$home/Library/Application Support/FlutterSceneEditor/dock_layout.json',
-    );
+    return Directory('$home/Library/Application Support/FlutterSceneEditor');
   }
 
   // The open document's file path (null for a new unsaved scene). The app
@@ -121,12 +119,12 @@ class _EditorHomeState extends State<_EditorHome> {
   @override
   void initState() {
     super.initState();
-    try {
-      final file = _dockLayoutFile();
-      if (file.existsSync()) _dockLayoutJson = file.readAsStringSync();
-    } on IOException {
-      // Unreadable layout falls back to the default arrangement.
-    }
+    final directory = _settingsDirectory();
+    _settingsStore = EditorSettingsStore(
+      file: File('${directory.path}/settings.json'),
+      legacyDockLayoutFile: File('${directory.path}/dock_layout.json'),
+    );
+    _settings = _settingsStore.load();
     // The MCP server runs for the app's whole life (not per document), so an
     // agent can create or open a document itself and drive the editor
     // start to finish.
@@ -151,18 +149,66 @@ class _EditorHomeState extends State<_EditorHome> {
       _busy = null;
       _error = null;
     });
+    if (path != null) _rememberScene(path);
     old?.dispose();
   }
 
   void _saveDockLayout(String json) {
-    _dockLayoutJson = json;
+    _settings.dockLayout = json;
+    _persistSettings();
+  }
+
+  void _persistSettings() {
     try {
-      final file = _dockLayoutFile();
-      file.parent.createSync(recursive: true);
-      file.writeAsStringSync(json);
-    } on IOException {
-      // Best-effort persistence; the in-memory layout still applies.
+      _settingsStore.save(_settings);
+    } on FileSystemException {
+      // The active in-memory settings remain usable.
     }
+  }
+
+  void _rememberScene(String path) {
+    _settings.rememberScene(path);
+    _persistSettings();
+    if (mounted) setState(() {});
+  }
+
+  void _forgetRecentScene(String path) {
+    setState(() => _settings.forgetScene(path));
+    _persistSettings();
+  }
+
+  void _clearRecentScenes() {
+    if (_settings.recentScenes.isEmpty) return;
+    final removed = List.of(_settings.recentScenes);
+    setState(() => _settings.recentScenes.clear());
+    _persistSettings();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Recent scenes cleared'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            setState(() => _settings.restoreRecentScenes(removed));
+            _persistSettings();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _saveNamedLayout(String name, String layout) {
+    setState(() => _settings.saveNamedLayout(name, layout));
+    _persistSettings();
+  }
+
+  void _deleteNamedLayout(String name) {
+    setState(() => _settings.deleteNamedLayout(name));
+    _persistSettings();
+  }
+
+  void _setScenePath(String? path) {
+    setState(() => _scenePath = path);
+    if (path != null) _rememberScene(path);
   }
 
   Future<void> _newScene() async {
@@ -177,6 +223,10 @@ class _EditorHomeState extends State<_EditorHome> {
     );
     if (file == null) return;
     await _load('Opening scene', () => openFscene(file.path), path: file.path);
+  }
+
+  Future<void> _openRecentScene(String path) async {
+    await _load('Opening scene', () => openFscene(path), path: path);
   }
 
   Future<void> _importGltf() async {
@@ -320,7 +370,7 @@ class _EditorHomeState extends State<_EditorHome> {
             }
             await saveFscene(controller, resolved);
             controller.setBaseDirectory(File(resolved).parent.path);
-            if (mounted) setState(() => _scenePath = resolved);
+            if (mounted) _setScenePath(resolved);
             return resolved;
           },
         ),
@@ -347,8 +397,14 @@ class _EditorHomeState extends State<_EditorHome> {
         viewportRepaintBoundaryKey: _viewportKey,
         viewportCameraHandle: _cameraHandle,
         currentPath: _scenePath,
-        onDocumentPathChanged: (path) => setState(() => _scenePath = path),
-        dockLayoutJson: _dockLayoutJson,
+        onDocumentPathChanged: _setScenePath,
+        recentScenePaths: _settings.recentScenes,
+        onRemoveRecentScene: _forgetRecentScene,
+        onClearRecentScenes: _clearRecentScenes,
+        namedLayouts: _settings.namedLayouts,
+        onSaveNamedLayout: _saveNamedLayout,
+        onDeleteNamedLayout: _deleteNamedLayout,
+        dockLayoutJson: _settings.dockLayout,
         onDockLayoutChanged: _saveDockLayout,
         menuBarLeadingInset: _windowControlsInset,
         onMenuBarDragStart: _startWindowDrag,
@@ -369,6 +425,10 @@ class _EditorHomeState extends State<_EditorHome> {
           onNew: _newScene,
           onOpen: _openScene,
           onImport: _importGltf,
+          recentScenes: _settings.recentScenes,
+          onOpenRecent: _openRecentScene,
+          onRemoveRecent: _forgetRecentScene,
+          onClearRecent: _clearRecentScenes,
         ),
         Positioned(
           top: 0,
@@ -392,6 +452,10 @@ class _StartScreen extends StatelessWidget {
     required this.onNew,
     required this.onOpen,
     required this.onImport,
+    required this.recentScenes,
+    required this.onOpenRecent,
+    required this.onRemoveRecent,
+    required this.onClearRecent,
   });
 
   final String? busy;
@@ -399,58 +463,162 @@ class _StartScreen extends StatelessWidget {
   final VoidCallback onNew;
   final VoidCallback onOpen;
   final VoidCallback onImport;
+  final List<String> recentScenes;
+  final ValueChanged<String> onOpenRecent;
+  final ValueChanged<String> onRemoveRecent;
+  final VoidCallback onClearRecent;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Flutter Scene Editor',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 32),
-              if (busy != null) ...[
-                const Center(child: CircularProgressIndicator()),
-                const SizedBox(height: 12),
-                Text(busy!, textAlign: TextAlign.center),
-              ] else ...[
-                FilledButton.icon(
-                  onPressed: onNew,
-                  icon: const Icon(Icons.add),
-                  label: const Text('New scene'),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 52),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Image.asset(
+                    'packages/flutter_scene/screenshots/flutter_scene_logo.png',
+                    width: 104,
+                    height: 104,
+                    cacheWidth: 208,
+                  ),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: onOpen,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Open .fscene'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: onImport,
-                  icon: const Icon(Icons.view_in_ar),
-                  label: const Text('Import glTF (.glb / .gltf)'),
-                ),
-              ],
-              if (error != null) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: 14),
                 Text(
-                  error!,
+                  'Scene Editor',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
+                const SizedBox(height: 28),
+                if (busy != null) ...[
+                  const Center(child: CircularProgressIndicator()),
+                  const SizedBox(height: 12),
+                  Text(busy!, textAlign: TextAlign.center),
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: onNew,
+                          icon: const Icon(Icons.add),
+                          label: const Text('New scene'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onOpen,
+                          icon: const Icon(Icons.folder_open),
+                          label: const Text('Open .fscene'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onImport,
+                          icon: const Icon(Icons.view_in_ar),
+                          label: const Text('Import glTF'),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (error != null) ...[
+                  const SizedBox(height: 20),
+                  Text(
+                    error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                if (recentScenes.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Text(
+                        'Recent scenes',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: onClearRecent,
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 360),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: recentScenes.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) => _RecentSceneTile(
+                        path: recentScenes[index],
+                        onOpen: () => onOpenRecent(recentScenes[index]),
+                        onRemove: () => onRemoveRecent(recentScenes[index]),
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RecentSceneTile extends StatelessWidget {
+  const _RecentSceneTile({
+    required this.path,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  final String path;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = File(path);
+    final missing = !file.existsSync();
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        missing ? Icons.insert_drive_file_outlined : Icons.description_outlined,
+        size: 18,
+        color: missing ? Theme.of(context).colorScheme.error : null,
+      ),
+      title: Text(
+        file.path.split(Platform.pathSeparator).last,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        missing ? 'Missing  ${file.parent.path}' : file.parent.path,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: IconButton(
+        tooltip: 'Remove from recent scenes',
+        onPressed: onRemove,
+        icon: const Icon(Icons.close, size: 16),
+      ),
+      onTap: onOpen,
     );
   }
 }
