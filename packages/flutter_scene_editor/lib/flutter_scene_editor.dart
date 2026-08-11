@@ -34,6 +34,24 @@ export 'src/materials/fmat_library.dart'
         findFmatToolchain,
         fmatToolchainForInstallation;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
+export 'src/panels/console_panel.dart' show ConsolePanel;
+export 'src/project/build_config_dialog.dart' show showBuildConfigDialog;
+export 'src/project/build_toolbar.dart' show BuildToolbar;
+export 'src/project/fproject.dart'
+    show
+        BuildConfiguration,
+        FProject,
+        commandVariables,
+        defaultBuildConfigurations,
+        substituteCommandVariables,
+        tokenizeCommand;
+export 'src/project/project_runner.dart'
+    show ConsoleLine, ConsoleLineKind, ProjectRunner;
+export 'src/project/project_version_check.dart'
+    show
+        FlutterSceneVersionCheck,
+        VersionCheckSeverity,
+        checkFlutterSceneVersion;
 export 'src/settings/editor_settings.dart'
     show EditorSettings, EditorSettingsStore;
 export 'src/settings/managed_checkout_dialog.dart'
