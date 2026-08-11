@@ -91,6 +91,35 @@ dependencies:
     );
   });
 
+  test('tokenize-then-substitute keeps spaced expansions as one token', () {
+    // The runner's order (tokenize the template, substitute per token) must
+    // keep a variable expanding to a spaced path as a single argument.
+    const config = BuildConfiguration(
+      id: 'x',
+      name: 'X',
+      platform: 'macos',
+      mode: 'debug',
+      buildCommand: '',
+      runCommand: '',
+    );
+    final variables = commandVariables(
+      flutterBin: '/Users/x/Library/Application Support/Editor/bin/flutter',
+      dartBin: '/sdk/bin/dart',
+      sdkRoot: '/sdk',
+      impellerc: null,
+      projectRoot: '/proj',
+      configuration: config,
+    );
+    final argv = [
+      for (final token in tokenizeCommand(r'${FLUTTER_CLI} --version'))
+        substituteCommandVariables(token, variables),
+    ];
+    expect(argv, [
+      '/Users/x/Library/Application Support/Editor/bin/flutter',
+      '--version',
+    ]);
+  });
+
   test('tokenizeCommand splits argv with quote grouping', () {
     expect(tokenizeCommand('a b  c'), ['a', 'b', 'c']);
     expect(tokenizeCommand('run "-d my device" --x'), [
