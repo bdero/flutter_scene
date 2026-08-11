@@ -148,6 +148,13 @@ class ProjectRunner extends ChangeNotifier {
       '[${configuration.name}] ${argv.join(' ')}  (in $workingDirectory)',
       ConsoleLineKind.command,
     );
+    // Build-hook progress is invisible in normal flutter output on macOS (the
+    // assemble phase runs inside xcodebuild, which swallows it), so tail the
+    // hook runner's stderr logs directly while the command runs.
+    final hookLogs = HookLogTailer(
+      Directory('${project.resolvedProjectRoot}/.dart_tool/hooks_runner'),
+      (line) => _line(line, ConsoleLineKind.output),
+    )..start();
     final Process process;
     try {
       process = await Process.start(
@@ -158,6 +165,7 @@ class ProjectRunner extends ChangeNotifier {
         includeParentEnvironment: false,
       );
     } on ProcessException catch (e) {
+      hookLogs.stop();
       _line('Failed to start, ${e.message}', ConsoleLineKind.error);
       return null;
     }
@@ -178,6 +186,7 @@ class ProjectRunner extends ChangeNotifier {
     ]);
     final exitCode = await process.exitCode;
     await drained;
+    hookLogs.stop();
     if (isRun) {
       _run = null;
     } else {
@@ -212,5 +221,71 @@ class ProjectRunner extends ChangeNotifier {
     stopRun();
     stopBuild();
     super.dispose();
+  }
+}
+
+/// Streams new lines appended to hook runner `stderr.txt` logs while a build
+/// or run command is active. Existing content is baselined at start so only
+/// fresh output reaches the console; a shrunken file (the runner truncates
+/// each log when its hook starts) is reread from the top.
+class HookLogTailer {
+  HookLogTailer(this.root, this.emit);
+
+  final Directory root;
+  final void Function(String line) emit;
+  final Map<String, int> _offsets = {};
+  Timer? _timer;
+
+  void start() {
+    _scan(baseline: true);
+    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _scan());
+  }
+
+  void stop() {
+    if (_timer == null) return;
+    _timer!.cancel();
+    _timer = null;
+    _scan();
+  }
+
+  void _scan({bool baseline = false}) {
+    if (!root.existsSync()) return;
+    final Iterable<File> logs;
+    try {
+      logs = root
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('stderr.txt'));
+    } on FileSystemException {
+      return;
+    }
+    for (final file in logs) {
+      try {
+        final length = file.lengthSync();
+        final offset = _offsets[file.path] ?? 0;
+        if (baseline) {
+          _offsets[file.path] = length;
+          continue;
+        }
+        if (length == offset) continue;
+        final start = length < offset ? 0 : offset;
+        final raf = file.openSync();
+        try {
+          raf.setPositionSync(start);
+          final bytes = raf.readSync(length - start);
+          _offsets[file.path] = length;
+          for (final line in const LineSplitter().convert(
+            utf8.decode(bytes, allowMalformed: true),
+          )) {
+            if (line.trim().isEmpty) continue;
+            emit(line);
+          }
+        } finally {
+          raf.closeSync();
+        }
+      } on FileSystemException {
+        // The runner may be rewriting the file; catch up next tick.
+      }
+    }
   }
 }
