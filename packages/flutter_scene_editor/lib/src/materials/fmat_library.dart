@@ -17,6 +17,8 @@ import 'package:flutter_scene/src/fmat/fmat_bytes_library.dart';
 import 'package:flutter_scene/src/fmat/runtime_compile.dart';
 import 'package:scene/scene.dart' show AssetRef;
 
+import '../toolchains/flutter_installation.dart';
+
 /// The resolved offline shader compiler and the directories the generated
 /// GLSL's includes resolve against, plus provenance for diagnostics.
 final class FmatToolchain {
@@ -201,6 +203,41 @@ Future<FmatToolchain> findFmatToolchain() async {
   );
 }
 
+/// Builds the toolchain for a selected Flutter [installation], the compiler
+/// coming from the installation and the framework shaders from the editor's
+/// own resolution (they must match the editor's flutter_scene, not the SDK).
+/// Throws a [StateError] when the installation's impellerc is unresolved.
+Future<FmatToolchain> fmatToolchainForInstallation(
+  FlutterInstallation installation,
+) async {
+  final impellerc = installation.resolvedImpellerc;
+  if (impellerc == null) {
+    throw StateError(
+      'The installation "${installation.name}" has no impellerc. Bootstrap '
+      'the SDK (flutter precache) or set an explicit impellerc path in '
+      'Settings.',
+    );
+  }
+  final bundled = _bundledLayout();
+  final frameworkShaders = _findFrameworkShaders(bundled?.dataDir);
+  if (frameworkShaders == null) {
+    throw StateError(
+      'The flutter_scene framework shaders could not be resolved, so .fmat '
+      'materials cannot compile in this build. Set FLUTTER_SCENE_SHADERS to '
+      "flutter_scene's shaders directory.",
+    );
+  }
+  // shader_lib sits beside impellerc both in the SDK artifact cache and in
+  // engine out directories, so the compiler's sibling default applies.
+  return FmatToolchain(
+    impellerc: Uri.file(impellerc),
+    frameworkShaders: frameworkShaders,
+    shaderLib: null,
+    source: 'installation "${installation.name}"',
+    manifest: null,
+  );
+}
+
 // Locates flutter_scene's shaders/ directory (the framework GLSL the
 // generated material shaders include). A packaged bundle ships them under
 // its data directory; a dev-mode process reads the package_config.json it
@@ -295,12 +332,35 @@ class EditorFmatLibrary {
   FmatToolchain? _toolchain;
   String? _toolchainError;
 
+  /// Overrides how the toolchain resolves (the host routes the selected
+  /// Flutter installation through this); null falls back to
+  /// [findFmatToolchain]'s environment probing.
+  Future<FmatToolchain> Function()? toolchainResolver;
+
   /// The resolved toolchain, or null before the first fmat load (or when
   /// resolution failed; see [toolchainError]).
   FmatToolchain? get toolchain => _toolchain;
 
   /// Why toolchain resolution failed, or null.
   String? get toolchainError => _toolchainError;
+
+  /// Forgets the resolved toolchain and every compiled entry so the next load
+  /// re-resolves and recompiles (the selected installation changed). Watches
+  /// are torn down; the owner re-realizes to reload and rewatch.
+  void invalidateToolchain() {
+    _compiler = null;
+    _toolchain = null;
+    _toolchainError = null;
+    _entries.clear();
+    _pending.clear();
+    for (final subscription in _directoryWatches.values) {
+      subscription.cancel();
+    }
+    _directoryWatches.clear();
+    _fmatsByWatchedFile.clear();
+    _dirty.clear();
+    _debounce?.cancel();
+  }
 
   final Map<String, _FmatEntry> _entries = {};
   final Map<String, Future<_FmatEntry?>> _pending = {};
@@ -408,11 +468,13 @@ class EditorFmatLibrary {
 
   Future<FmatRuntimeCompiler?> _ensureCompiler() async {
     if (_compiler != null) return _compiler;
-    // A failed probe is terminal for the session (the environment will not
-    // change under a running editor); report once and stop retrying.
+    // A failed probe is terminal until the toolchain is invalidated (the
+    // environment will not change under a running editor, but the selected
+    // installation can); report once and stop retrying.
     if (_toolchainError != null) return null;
     try {
-      final toolchain = await findFmatToolchain();
+      final toolchain =
+          await (toolchainResolver?.call() ?? findFmatToolchain());
       _toolchain = toolchain;
       final cacheDir = Directory(
         '${Directory.systemTemp.path}/flutter_scene_editor/fmat_cache',
