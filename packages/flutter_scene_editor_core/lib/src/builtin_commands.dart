@@ -1007,6 +1007,106 @@ final setMaterialProperties = CommandEntry(
   },
 );
 
+final setMaterialType = CommandEntry(
+  name: 'setMaterialType',
+  doc:
+      'Change a material resource type in place, resetting its parameters. '
+      'Pass an fmat source asset when type is "fmat".',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'materialId',
+      type: ParamType.resourceRef,
+      label: 'Material',
+    ),
+    ParamSpec(name: 'type', type: ParamType.string, label: 'Type'),
+    ParamSpec(
+      name: 'asset',
+      type: ParamType.assetRef,
+      label: 'Asset (.fmat)',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'materialId');
+    final existing = ctx.document.resource(id);
+    if (existing is! MaterialResource) {
+      throw CommandException('Resource is not a material: ${id.toToken()}');
+    }
+    final type = requireString(params, 'type');
+    final assetKey = optionalString(params, 'asset');
+    if (type == 'fmat' && (assetKey == null || assetKey.isEmpty)) {
+      throw const CommandException(
+        'An fmat material needs an asset (the .fmat source path).',
+      );
+    }
+    // Parameters are type-specific, so a type change starts from the type's
+    // defaults rather than carrying stale keys.
+    final replaced = MaterialResource(
+      existing.id,
+      type: type,
+      name: existing.name,
+      asset: type == 'fmat' ? AssetRef(assetKey!) : null,
+    );
+    return Transaction(
+      name: 'Set material type',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(existing),
+          newValue: ResourceChange(replaced),
+        ),
+      ],
+    );
+  },
+);
+
+final clearMaterialProperty = CommandEntry(
+  name: 'clearMaterialProperty',
+  doc: 'Remove a single property (for example a texture slot) from a material.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'materialId',
+      type: ParamType.resourceRef,
+      label: 'Material',
+    ),
+    ParamSpec(name: 'key', type: ParamType.string, label: 'Property'),
+  ],
+  execute: (ctx, params) {
+    final id = requireResourceId(params, 'materialId');
+    final existing = ctx.document.resource(id);
+    if (existing is! MaterialResource) {
+      throw CommandException('Resource is not a material: ${id.toToken()}');
+    }
+    final key = requireString(params, 'key');
+    if (!existing.properties.containsKey(key)) {
+      return Transaction(name: 'Clear material property', records: _empty);
+    }
+    final next = Map<String, PropertyValue>.of(existing.properties)
+      ..remove(key);
+    final replaced = MaterialResource(
+      existing.id,
+      type: existing.type,
+      name: existing.name,
+      properties: next,
+      asset: existing.asset,
+    );
+    return Transaction(
+      name: 'Clear material property',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(existing),
+          newValue: ResourceChange(replaced),
+        ),
+      ],
+    );
+  },
+);
+
 final removeResource = CommandEntry(
   name: 'removeResource',
   doc: 'Remove a resource from the document.',
@@ -2674,6 +2774,8 @@ final List<CommandEntry> builtinCommands = [
   createTextureResource,
   createTextureResourceFromAsset,
   setMaterialProperties,
+  setMaterialType,
+  clearMaterialProperty,
   createEnvironmentResource,
   setEnvironmentProperties,
   setEnvironmentImage,

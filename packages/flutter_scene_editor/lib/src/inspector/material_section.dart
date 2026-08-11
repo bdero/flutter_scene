@@ -1,21 +1,25 @@
-/// Inspector editor for a mesh's material resource (base color, PBR factors,
-/// alpha mode, ...). Materials are resources, not components, so this reads the
-/// material referenced by the selected node's mesh component and commits edits
-/// through the `setMaterialProperties` command. Sliders and colors preview live
-/// on the node's realized mesh while dragging and commit one undo step on
-/// release.
+/// Inspector editor for a mesh's material resource. A single "Type" control
+/// sets or resets the material, a live preview and origin badge show what it is
+/// and where it comes from, and each texture slot is a unified resource card
+/// with its own preview, origin, and clear action. Materials are resources, not
+/// components, so this reads the material referenced by the selected node's mesh
+/// and commits edits through the command layer.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
-// ignore: implementation_imports
-// ignore: implementation_imports
 
 import '../controller/editor_controller.dart';
 import '../io/scene_io.dart';
 import 'live_fields.dart';
+import 'material_preview.dart';
 import 'property_editors.dart';
+import 'resource_origin.dart';
+import 'resource_slot_card.dart';
 
 // Material texture-property slots offered per material type. The key is the
 // material property the realizer reads (a ResourceRefValue to a texture).
@@ -32,6 +36,15 @@ List<(String, String)> _textureSlotsFor(String type) => switch (type) {
   'unlit' => _unlitTextureSlots,
   _ => const [],
 };
+
+String _typeLabel(String type) => switch (type) {
+  'physicallyBased' => 'Physically based',
+  'unlit' => 'Unlit',
+  'fmat' => 'Shader (.fmat)',
+  _ => type,
+};
+
+String _fileName(String key) => key.replaceAll('\\', '/').split('/').last;
 
 enum _Kind { factor, color, boolean, choice }
 
@@ -74,6 +87,9 @@ List<_Field> _fieldsFor(String type) => switch (type) {
 List<double> _defaultColor(String key) =>
     key == 'emissive' ? const [0, 0, 0, 1] : const [1, 1, 1, 1];
 
+// Sentinel dropdown value: reset the material to a plain default.
+const _noneValue = '__none';
+
 /// Renders editors for the material [materialId] (a [MaterialResource]) used by
 /// node [nodeId], committing changes through [controller] and previewing slider
 /// and color drags live on [nodeId]'s realized mesh.
@@ -103,130 +119,310 @@ class MaterialSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final resource = controller.document.resources[materialId];
     if (resource is! MaterialResource) return const SizedBox.shrink();
-    if (resource.type == 'fmat') return _buildFmat(context, resource);
-    final fields = _fieldsFor(resource.type);
+    final type = resource.type;
+    final isFmat = type == 'fmat';
+    final assetKey = resource.asset?.key;
+    final sourcePath = assetKey == null
+        ? null
+        : controller.resolveAssetPath(assetKey);
+    final sourceMissing =
+        isFmat &&
+        (assetKey == null ||
+            sourcePath == null ||
+            !File(sourcePath).existsSync());
+    final metadata = assetKey == null
+        ? null
+        : controller.fmatLibrary.metadataForKey(assetKey);
+    final compileError = !isFmat
+        ? null
+        : assetKey == null
+        ? 'This shader material has no source.'
+        : controller.fmatLibrary.errorForKey(assetKey);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
           child: Text(
-            'Material: ${resource.type}',
+            'Material',
             style: Theme.of(context).textTheme.labelMedium,
           ),
         ),
-        if (fields.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: LabeledControlRow(
+            label: 'Type',
+            control: _typeDropdown(context, type),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: ResourceSlotCard(
+            title: isFmat
+                ? (assetKey == null ? 'No source' : _fileName(assetKey))
+                : (resource.name.isEmpty ? _typeLabel(type) : resource.name),
+            kind: _typeLabel(type),
+            locality: materialLocality(resource),
+            path: assetKey,
+            reference: assetKey,
+            previewIcon: Icons.blur_on,
+            preview: MaterialPreview(controller: controller, nodeId: nodeId),
+            missing: sourceMissing,
+            missingLabel: 'Shader source is missing on disk',
+            onReplace: isFmat ? () => _replaceFmatSource(context) : null,
+            removeTooltip: 'Reset to a default material',
+            aspectRatio: 1.9,
+          ),
+        ),
+        if (isFmat && !sourceMissing && compileError != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+            child: Text(
+              compileError,
+              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+            ),
+          ),
+        if (isFmat && compileError == null && metadata == null)
           const Padding(
-            padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: InspectorDescriptionText(
-              'This material type has no editable properties here.',
+            padding: EdgeInsets.fromLTRB(8, 0, 8, 6),
+            child: Text(
+              'Compiling…',
               style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
             ),
-          )
+          ),
+        if (isFmat)
+          ..._fmatFields(metadata, resource.properties)
         else
-          for (final field in fields)
-            _fieldEditor(context, field, resource.properties[field.key]),
-        ..._textureSlots(context, resource),
-        _useShaderRow(),
+          ..._parametricFields(context, resource),
+        ..._textureSection(context, resource, metadata),
       ],
     );
   }
 
-  // Offers replacing this node's material with a custom `.fmat` shader
-  // material (a new resource referencing the picked source in place).
-  Widget _useShaderRow() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton(
-          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-          onPressed: () async {
-            final path = await pickFmatPath();
-            if (path != null) {
-              await assignFmatMaterial(controller, nodeId, path);
-            }
-          },
-          child: const Text(
-            'Use shader (.fmat)...',
-            style: TextStyle(fontSize: 12),
+  Widget _typeDropdown(BuildContext context, String type) {
+    const known = ['physicallyBased', 'unlit', 'fmat'];
+    return DropdownButton<String>(
+      isDense: true,
+      value: known.contains(type) ? type : 'physicallyBased',
+      items: const [
+        DropdownMenuItem(
+          value: 'physicallyBased',
+          child: Text('Physically based'),
+        ),
+        DropdownMenuItem(value: 'unlit', child: Text('Unlit')),
+        DropdownMenuItem(value: 'fmat', child: Text('Shader (.fmat)…')),
+        DropdownMenuItem(
+          value: _noneValue,
+          child: Text('None (default material)'),
+        ),
+      ],
+      onChanged: (value) => _onTypeChanged(context, type, value),
+    );
+  }
+
+  Future<void> _onTypeChanged(
+    BuildContext context,
+    String current,
+    String? value,
+  ) async {
+    if (value == null || value == current) return;
+    if (value == 'fmat') {
+      await _replaceFmatSource(context);
+      return;
+    }
+    // "None" resets to a plain default; a parametric choice switches type.
+    await controller.run('setMaterialType', {
+      'materialId': materialId.toToken(),
+      'type': value == _noneValue ? 'physicallyBased' : value,
+    });
+  }
+
+  Future<void> _replaceFmatSource(BuildContext context) async {
+    final path = await pickFmatPath();
+    if (path == null) return;
+    await controller.run('setMaterialType', {
+      'materialId': materialId.toToken(),
+      'type': 'fmat',
+      'asset': referenceFmatAsset(controller.baseDirectory, path),
+    });
+  }
+
+  List<Widget> _parametricFields(
+    BuildContext context,
+    MaterialResource resource,
+  ) {
+    final fields = _fieldsFor(resource.type);
+    if (fields.isEmpty) {
+      return const [
+        Padding(
+          padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: InspectorDescriptionText(
+            'This material type has no editable properties here.',
+            style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
           ),
         ),
+      ];
+    }
+    return [
+      for (final field in fields)
+        _fieldEditor(context, field, resource.properties[field.key]),
+    ];
+  }
+
+  // fmat parameter fields generated from the compiled sidecar schema.
+  List<Widget> _fmatFields(
+    Map<String, Object?>? metadata,
+    Map<String, PropertyValue> properties,
+  ) {
+    final parameters = (metadata?['parameters'] as List?) ?? const [];
+    return [
+      for (final raw in parameters)
+        _fmatFieldEditor((raw as Map).cast<String, Object?>(), properties),
+    ];
+  }
+
+  // Texture slots for the material (parametric slots, or fmat samplers).
+  List<Widget> _textureSection(
+    BuildContext context,
+    MaterialResource resource,
+    Map<String, Object?>? metadata,
+  ) {
+    final List<(String, String)> slots;
+    if (resource.type == 'fmat') {
+      final samplers = (metadata?['samplers'] as List?) ?? const [];
+      slots = [
+        for (final raw in samplers)
+          if ((raw as Map)['name'] case final String name) (name, name),
+      ];
+    } else {
+      slots = _textureSlotsFor(resource.type);
+    }
+    if (slots.isEmpty) return const [];
+    return [
+      const Divider(),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(8, 0, 8, 4),
+        child: Text('Textures', style: TextStyle(fontSize: 12)),
+      ),
+      for (final (label, slot) in slots)
+        _textureSlot(context, label, slot, resource.properties[slot]),
+    ];
+  }
+
+  Widget _textureSlot(
+    BuildContext context,
+    String label,
+    String slot,
+    PropertyValue? value,
+  ) {
+    final ref = value is ResourceRefValue ? value : null;
+    final texture = ref == null ? null : controller.document.resources[ref.id];
+    if (texture is! TextureResource) {
+      return _addTextureRow(context, label, slot);
+    }
+    final key = texture.asset?.key;
+    final path = key == null ? null : controller.resolveAssetPath(key);
+    final missing =
+        texture.asset != null && (path == null || !File(path).existsSync());
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: ResourceSlotCard(
+        title: key == null ? '$label texture' : _fileName(key),
+        kind: '$label · ${_textureKind(texture)}',
+        locality: textureLocality(texture),
+        path: key,
+        reference: key ?? ref!.id.toToken(),
+        preview: missing ? null : _textureThumbnail(texture, path),
+        missing: missing,
+        missingLabel: 'Image is missing on disk',
+        onReplace: () => _pickTexture(context, slot),
+        onRemove: () => controller.run('clearMaterialProperty', {
+          'materialId': materialId.toToken(),
+          'key': slot,
+        }),
+        removeTooltip: 'Remove texture',
+        aspectRatio: 2.8,
       ),
     );
   }
 
-  // The fmat editor: the source path, any compile error (the last good
-  // shaders stay live), and fields generated from the compiled sidecar's
-  // parameter schema (range hints become sliders, source_color hints become
-  // color fields, samplers become texture slots).
-  Widget _buildFmat(BuildContext context, MaterialResource resource) {
-    final key = resource.asset?.key;
-    final metadata = key == null
-        ? null
-        : controller.fmatLibrary.metadataForKey(key);
-    final error = key == null
-        ? 'This fmat material has no source asset.'
-        : controller.fmatLibrary.errorForKey(key);
-    final parameters = (metadata?['parameters'] as List?) ?? const [];
-    final samplers = (metadata?['samplers'] as List?) ?? const [];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-          child: Text(
-            'Material: fmat',
-            style: Theme.of(context).textTheme.labelMedium,
+  Widget _addTextureRow(BuildContext context, String label, String slot) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Row(
+        children: [
+          Icon(Icons.image_outlined, size: 14, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 12))),
+          FButton(
+            variant: .outline,
+            size: .xs,
+            mainAxisSize: .min,
+            onPress: () => _pickTexture(context, slot),
+            child: const Text('Add'),
           ),
-        ),
-        if (key != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
-            child: Text(
-              key,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-            child: Text(
-              error,
-              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
-            ),
-          ),
-        if (metadata == null && error == null)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Text(
-              'Compiling...',
-              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
-            ),
-          ),
-        for (final raw in parameters)
-          _fmatFieldEditor(
-            (raw as Map).cast<String, Object?>(),
-            resource.properties,
-          ),
-        if (samplers.isNotEmpty) ...[
-          const Divider(),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(8, 0, 8, 4),
-            child: Text('Textures', style: TextStyle(fontSize: 12)),
-          ),
-          for (final raw in samplers)
-            if ((raw as Map)['name'] case final String samplerName)
-              _textureSlotRow(
-                samplerName,
-                samplerName,
-                resource.properties[samplerName],
-              ),
         ],
-        _useShaderRow(),
-      ],
+      ),
     );
+  }
+
+  Future<void> _pickTexture(BuildContext context, String slot) async {
+    final path = await pickImagePath(
+      initialDirectory: controller.baseDirectory,
+    );
+    if (path != null) {
+      await importMaterialTexture(controller, materialId, slot, path);
+    }
+  }
+
+  String _textureKind(TextureResource texture) {
+    final key = texture.asset?.key;
+    if (key != null) {
+      final lower = key.toLowerCase();
+      if (lower.endsWith('.ktx2')) return 'KTX2 texture';
+      if (lower.endsWith('.png')) return 'PNG image';
+      if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+        return 'JPEG image';
+      }
+      if (lower.endsWith('.webp')) return 'WebP image';
+      return 'Image';
+    }
+    final format = controller.document.payload(texture.payload!)?.format;
+    return 'Embedded ${format ?? 'image'}';
+  }
+
+  // A small preview for a texture, or null to fall back to the slot icon.
+  Widget? _textureThumbnail(TextureResource texture, String? path) {
+    const decodable = ['.png', '.jpg', '.jpeg', '.webp'];
+    if (texture.asset != null && path != null) {
+      final lower = path.toLowerCase();
+      if (decodable.any(lower.endsWith)) {
+        return Image.file(
+          File(path),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      }
+      return null;
+    }
+    final payloadId = texture.payload;
+    if (payloadId != null) {
+      final payload = controller.document.payload(payloadId);
+      final bytes = payload?.bytes;
+      final format = payload?.format;
+      if (bytes != null &&
+          const ['png', 'jpg', 'jpeg', 'webp'].contains(format)) {
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      }
+    }
+    return null;
   }
 
   // One sidecar-declared parameter as an inspector field. Values shown are
@@ -295,51 +491,6 @@ class MaterialSection extends StatelessWidget {
           ),
         );
     }
-  }
-
-  List<Widget> _textureSlots(BuildContext context, MaterialResource resource) {
-    final slots = _textureSlotsFor(resource.type);
-    if (slots.isEmpty) return const [];
-    return [
-      const Divider(),
-      const Padding(
-        padding: EdgeInsets.fromLTRB(8, 0, 8, 4),
-        child: Text('Textures', style: TextStyle(fontSize: 12)),
-      ),
-      for (final (label, slot) in slots)
-        _textureSlotRow(label, slot, resource.properties[slot]),
-    ];
-  }
-
-  Widget _textureSlotRow(String label, String slot, PropertyValue? value) {
-    final assigned = value is ResourceRefValue;
-    return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      title: Text(label, style: const TextStyle(fontSize: 13)),
-      subtitle: Text(
-        assigned ? 'Texture assigned' : 'No texture',
-        style: TextStyle(
-          fontSize: 11,
-          color: assigned ? Colors.lightGreen : Colors.grey,
-        ),
-      ),
-      trailing: TextButton(
-        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-        onPressed: () async {
-          final path = await pickImagePath(
-            initialDirectory: controller.baseDirectory,
-          );
-          if (path != null) {
-            await importMaterialTexture(controller, materialId, slot, path);
-          }
-        },
-        child: Text(
-          assigned ? 'Replace' : 'Add',
-          style: const TextStyle(fontSize: 12),
-        ),
-      ),
-    );
   }
 
   Widget _fieldEditor(
