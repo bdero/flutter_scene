@@ -17,6 +17,7 @@ import '../inspector/reference_picker.dart';
 import '../inspector/resource_origin.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
+import '../shell/editor_theme.dart';
 
 /// Property inspector for the primary selected node.
 ///
@@ -638,8 +639,8 @@ class _AddComponentBar extends StatelessWidget {
           for (final type in available)
             PopupMenuItem<String>(
               value: type,
-              height: 28,
-              child: Text(type, style: const TextStyle(fontSize: 12)),
+              height: editorMenuItemHeight,
+              child: Text(type),
             ),
         ],
         child: Padding(

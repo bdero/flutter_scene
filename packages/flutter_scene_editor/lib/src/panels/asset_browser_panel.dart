@@ -12,6 +12,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
 
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
@@ -42,6 +43,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   final Set<String> _expandedDirectories = {};
   _AssetViewMode _viewMode = _AssetViewMode.list;
   bool _scanning = false;
+  final TextEditingController _filter = TextEditingController();
   String _query = '';
   String? _scannedDir;
 
@@ -71,6 +73,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   void dispose() {
     _ctrl.removeListener(_onDocChanged);
     _ctrl.history.removeListener(_onHistoryChanged);
+    _filter.dispose();
     super.dispose();
   }
 
@@ -182,19 +185,16 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           const Text('Assets', style: TextStyle(fontSize: 12)),
           const SizedBox(width: 12),
           Expanded(
-            child: SizedBox(
-              height: 26,
-              child: TextField(
-                style: const TextStyle(fontSize: 12),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  prefixIcon: Icon(Icons.search, size: 14),
-                  prefixIconConstraints: BoxConstraints(minWidth: 28),
-                  hintText: 'Filter',
-                  contentPadding: EdgeInsets.symmetric(vertical: 4),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (v) => setState(() => _query = v),
+            child: FTextField(
+              control: FTextFieldControl.managed(
+                controller: _filter,
+                onChange: (value) => setState(() => _query = value.text),
+              ),
+              size: .sm,
+              hint: 'Filter',
+              prefixBuilder: (_, _, _) => const Padding(
+                padding: EdgeInsets.only(left: 8, right: 4),
+                child: Icon(Icons.search, size: 14),
               ),
             ),
           ),

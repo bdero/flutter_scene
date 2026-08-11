@@ -9,6 +9,7 @@ import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 
 import 'dock_layout.dart';
+import 'editor_theme.dart';
 
 /// A panel hosted by the [DockingShell].
 class DockPanel {
@@ -450,19 +451,13 @@ class _DockTab extends StatelessWidget {
         if (onFloat != null)
           PopupMenuItem(
             value: onFloat,
-            height: 28,
-            child: const Text(
-              'Move to New Window',
-              style: TextStyle(fontSize: 12),
-            ),
+            height: editorMenuItemHeight,
+            child: const Text('Move to New Window'),
           ),
         PopupMenuItem(
           value: onHide,
-          height: 28,
-          child: Text(
-            closable ? 'Close' : 'Hide',
-            style: const TextStyle(fontSize: 12),
-          ),
+          height: editorMenuItemHeight,
+          child: Text(closable ? 'Close' : 'Hide'),
         ),
       ],
     );
