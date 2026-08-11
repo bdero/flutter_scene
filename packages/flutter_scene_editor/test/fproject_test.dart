@@ -17,33 +17,25 @@ dependencies:
 
   tearDown(() => root.deleteSync(recursive: true));
 
-  test('createDefault writes an fproject with host defaults, round trips', () {
-    Directory(
-      '${root.path}/${Platform.isMacOS
-          ? 'macos'
-          : Platform.isWindows
-          ? 'windows'
-          : 'linux'}',
-    ).createSync();
-    Directory('${root.path}/web').createSync();
+  test('createDefault writes an fproject with mode defaults, round trips', () {
     final project = FProject.createDefault(root.path);
     expect(File(project.path).existsSync(), isTrue);
-    // Host platform gets three modes, web scaffolding gets a debug config.
-    expect(project.buildConfigurations.length, 4);
-    expect(
-      project.buildConfigurations.map((config) => config.mode),
-      containsAll(['debug', 'profile', 'release']),
-    );
-    expect(
-      project.buildConfigurations.any(
-        (config) => config.platform == 'web' && config.mode == 'debug',
-      ),
-      isTrue,
-    );
-    // Run templates always carry the Flutter GPU flags.
+    // One variable-driven configuration per mode; the device is toolbar
+    // session state, not part of the configuration.
+    expect(project.buildConfigurations.length, 3);
+    expect(project.buildConfigurations.map((config) => config.mode), [
+      'debug',
+      'profile',
+      'release',
+    ]);
+    // Run templates always carry the Flutter GPU flags and reference the
+    // device and mode variables so the dropdowns change behavior.
     for (final config in project.buildConfigurations) {
       expect(config.runCommand, contains('--enable-flutter-gpu'));
       expect(config.runCommand, contains('--enable-impeller'));
+      expect(config.runCommand, contains(r'${DEVICE}'));
+      expect(config.runCommand, contains(r'--${MODE}'));
+      expect(config.buildCommand, contains(r'${BUILD_TARGET}'));
     }
 
     final loaded = FProject.load(project.path);
@@ -65,7 +57,6 @@ dependencies:
     const config = BuildConfiguration(
       id: 'x',
       name: 'X',
-      platform: 'macos',
       mode: 'profile',
       buildCommand: '',
       runCommand: '',
@@ -77,16 +68,31 @@ dependencies:
       impellerc: '/sdk/impellerc',
       projectRoot: '/proj',
       configuration: config,
+      deviceId: 'macos',
+      buildTarget: 'macos',
     );
     expect(
       substituteCommandVariables(
-        r'${FLUTTER_CLI} run -d ${PLATFORM} --${MODE}',
+        r'${FLUTTER_CLI} run -d ${DEVICE} --${MODE}',
         variables,
       ),
       '/sdk/bin/flutter run -d macos --profile',
     );
     expect(
       () => substituteCommandVariables(r'${NOPE}', variables),
+      throwsFormatException,
+    );
+    // Without a device, referencing it names the missing variable.
+    final deviceless = commandVariables(
+      flutterBin: '/sdk/bin/flutter',
+      dartBin: '/sdk/bin/dart',
+      sdkRoot: '/sdk',
+      impellerc: null,
+      projectRoot: '/proj',
+      configuration: config,
+    );
+    expect(
+      () => substituteCommandVariables(r'-d ${DEVICE}', deviceless),
       throwsFormatException,
     );
   });
@@ -97,7 +103,6 @@ dependencies:
     const config = BuildConfiguration(
       id: 'x',
       name: 'X',
-      platform: 'macos',
       mode: 'debug',
       buildCommand: '',
       runCommand: '',

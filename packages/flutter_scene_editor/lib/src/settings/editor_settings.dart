@@ -14,13 +14,15 @@ class EditorSettings {
     this.selectedInstallationId,
     List<String>? recentProjects,
     Map<String, String>? selectedBuildConfigurations,
+    Map<String, String>? selectedDevices,
   }) : namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
        flutterInstallations = List.of(flutterInstallations ?? const []),
        recentProjects = List.of(recentProjects ?? const []),
        selectedBuildConfigurations = Map.of(
          selectedBuildConfigurations ?? const {},
-       );
+       ),
+       selectedDevices = Map.of(selectedDevices ?? const {});
 
   static const int currentVersion = 1;
   static const int maximumRecentScenes = 10;
@@ -75,6 +77,15 @@ class EditorSettings {
                   (entry.value as Map)['selectedBuildConfigurationId']
                       as String,
       },
+      selectedDevices: {
+        if (json['projectState'] is Map)
+          for (final entry in (json['projectState'] as Map).entries)
+            if (entry.key is String &&
+                entry.value is Map &&
+                (entry.value as Map)['selectedDeviceId'] is String)
+              entry.key as String:
+                  (entry.value as Map)['selectedDeviceId'] as String,
+      },
     );
   }
 
@@ -97,6 +108,10 @@ class EditorSettings {
   /// project file.
   final Map<String, String> selectedBuildConfigurations;
 
+  /// Per-project selected device ids (the toolbar's device dropdown), same
+  /// keying and rationale.
+  final Map<String, String> selectedDevices;
+
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
@@ -116,10 +131,18 @@ class EditorSettings {
     if (selectedInstallationId != null)
       'selectedInstallationId': selectedInstallationId,
     if (recentProjects.isNotEmpty) 'recentProjects': recentProjects,
-    if (selectedBuildConfigurations.isNotEmpty)
+    if (selectedBuildConfigurations.isNotEmpty || selectedDevices.isNotEmpty)
       'projectState': {
-        for (final entry in selectedBuildConfigurations.entries)
-          entry.key: {'selectedBuildConfigurationId': entry.value},
+        for (final key in {
+          ...selectedBuildConfigurations.keys,
+          ...selectedDevices.keys,
+        })
+          key: {
+            if (selectedBuildConfigurations[key] case final config?)
+              'selectedBuildConfigurationId': config,
+            if (selectedDevices[key] case final device?)
+              'selectedDeviceId': device,
+          },
       },
   });
 
@@ -166,6 +189,7 @@ class EditorSettings {
   void forgetProject(String path) {
     recentProjects.removeWhere((candidate) => _samePath(candidate, path));
     selectedBuildConfigurations.remove(path);
+    selectedDevices.remove(path);
   }
 
   /// The registered installation with [id], or null (including the built-in

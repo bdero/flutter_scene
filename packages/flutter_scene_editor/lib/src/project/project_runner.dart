@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../toolchains/device_catalog.dart';
 import '../toolchains/flutter_installation.dart';
 import 'fproject.dart';
 
@@ -54,10 +55,12 @@ class ProjectRunner extends ChangeNotifier {
     required FlutterInstallation installation,
     required FProject project,
     required BuildConfiguration configuration,
+    FlutterDevice? device,
   }) => _start(
     installation: installation,
     project: project,
     configuration: configuration,
+    device: device,
     command: configuration.buildCommand,
     isRun: false,
   );
@@ -67,10 +70,12 @@ class ProjectRunner extends ChangeNotifier {
     required FlutterInstallation installation,
     required FProject project,
     required BuildConfiguration configuration,
+    FlutterDevice? device,
   }) => _start(
     installation: installation,
     project: project,
     configuration: configuration,
+    device: device,
     command: configuration.runCommand,
     isRun: true,
   );
@@ -79,6 +84,7 @@ class ProjectRunner extends ChangeNotifier {
     required FlutterInstallation installation,
     required FProject project,
     required BuildConfiguration configuration,
+    required FlutterDevice? device,
     required String command,
     required bool isRun,
   }) async {
@@ -90,6 +96,7 @@ class ProjectRunner extends ChangeNotifier {
       return null;
     }
     final List<String> argv;
+    final String workingDirectory;
     try {
       // Tokenize the template first, then substitute inside each token, so a
       // variable expanding to a path with spaces stays one argument.
@@ -100,13 +107,29 @@ class ProjectRunner extends ChangeNotifier {
         impellerc: installation.resolvedImpellerc,
         projectRoot: project.resolvedProjectRoot,
         configuration: configuration,
+        deviceId: device?.id,
+        // A persisted device id whose platform is not yet known (the catalog
+        // has not listed since launch) cannot derive a build target.
+        buildTarget: device == null || device.targetPlatform.isEmpty
+            ? null
+            : device.buildTarget,
       );
       argv = [
         for (final token in tokenizeCommand(command))
           substituteCommandVariables(token, variables),
       ];
+      workingDirectory = resolveWorkingDirectory(
+        project,
+        configuration,
+        variables,
+      );
     } on FormatException catch (e) {
-      _line(e.message, ConsoleLineKind.error);
+      _line(
+        e.message.contains('DEVICE') || e.message.contains('BUILD_TARGET')
+            ? '${e.message}. Select a device in the toolbar.'
+            : e.message,
+        ConsoleLineKind.error,
+      );
       return null;
     }
     if (argv.isEmpty) {
@@ -121,13 +144,16 @@ class ProjectRunner extends ChangeNotifier {
       ..remove('FLUTTER_PREBUILT_ENGINE_VERSION')
       ..remove('IMPELLERC');
 
-    _line('[${configuration.name}] ${argv.join(' ')}', ConsoleLineKind.command);
+    _line(
+      '[${configuration.name}] ${argv.join(' ')}  (in $workingDirectory)',
+      ConsoleLineKind.command,
+    );
     final Process process;
     try {
       process = await Process.start(
         argv.first,
         argv.sublist(1),
-        workingDirectory: project.resolvedProjectRoot,
+        workingDirectory: workingDirectory,
         environment: environment,
         includeParentEnvironment: false,
       );

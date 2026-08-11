@@ -9,62 +9,67 @@ import 'dart:convert';
 import 'dart:io';
 
 /// One build/run configuration. The commands are the source of truth for what
-/// runs; [platform] and [mode] are advisory metadata for display grouping and
-/// template regeneration.
+/// runs. [mode] drives the `${MODE}` variable, so the Mode dropdown changes
+/// behavior without editing command text; the target device is not part of
+/// the configuration (it is session state selected in the toolbar, feeding
+/// `${DEVICE}` and `${BUILD_TARGET}`).
 class BuildConfiguration {
   const BuildConfiguration({
     required this.id,
     required this.name,
-    required this.platform,
     required this.mode,
     required this.buildCommand,
     required this.runCommand,
+    this.workingDirectory = '',
   });
 
   factory BuildConfiguration.fromJson(Map<String, Object?> json) =>
+      // A legacy `platform` key is tolerated and dropped (devices replaced
+      // per-configuration platforms).
       BuildConfiguration(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
-        platform: json['platform'] as String? ?? 'macos',
         mode: json['mode'] as String? ?? 'debug',
         buildCommand: json['buildCommand'] as String? ?? '',
         runCommand: json['runCommand'] as String? ?? '',
+        workingDirectory: json['workingDirectory'] as String? ?? '',
       );
 
   final String id;
   final String name;
 
-  /// One of macos/ios/android/linux/windows/web.
-  final String platform;
-
-  /// One of debug/profile/release.
+  /// One of debug/profile/release, the `${MODE}` variable's value.
   final String mode;
 
   final String buildCommand;
   final String runCommand;
 
+  /// The command working directory relative to the project root (variables
+  /// substitute here too). Empty runs from the project root.
+  final String workingDirectory;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
-    'platform': platform,
     'mode': mode,
     'buildCommand': buildCommand,
     'runCommand': runCommand,
+    if (workingDirectory.isNotEmpty) 'workingDirectory': workingDirectory,
   };
 
   BuildConfiguration copyWith({
     String? name,
-    String? platform,
     String? mode,
     String? buildCommand,
     String? runCommand,
+    String? workingDirectory,
   }) => BuildConfiguration(
     id: id,
     name: name ?? this.name,
-    platform: platform ?? this.platform,
     mode: mode ?? this.mode,
     buildCommand: buildCommand ?? this.buildCommand,
     runCommand: runCommand ?? this.runCommand,
+    workingDirectory: workingDirectory ?? this.workingDirectory,
   );
 }
 
@@ -170,72 +175,31 @@ class FProject {
   }
 }
 
-String get _hostPlatform => Platform.isMacOS
-    ? 'macos'
-    : Platform.isWindows
-    ? 'windows'
-    : 'linux';
-
-String _buildTarget(String platform) =>
-    platform == 'android' ? 'apk' : platform;
-
-String _runDevice(String platform) => platform == 'web' ? 'chrome' : platform;
-
-BuildConfiguration _template(String platform, String mode) {
-  final title = platform == 'ios'
-      ? 'iOS'
-      : platform == 'macos'
-      ? 'macOS'
-      : '${platform[0].toUpperCase()}${platform.substring(1)}';
+BuildConfiguration buildConfigurationTemplate(String mode) {
   final modeTitle = '${mode[0].toUpperCase()}${mode.substring(1)}';
   return BuildConfiguration(
-    id: '$platform-$mode',
-    name: '$title $modeTitle',
-    platform: platform,
+    id: mode,
+    name: modeTitle,
     mode: mode,
-    buildCommand: '\${FLUTTER_CLI} build ${_buildTarget(platform)} --$mode',
+    buildCommand: r'${FLUTTER_CLI} build ${BUILD_TARGET} --${MODE}',
     runCommand:
-        '\${FLUTTER_CLI} run -d ${_runDevice(platform)} --$mode '
-        '--enable-flutter-gpu --enable-impeller',
+        r'${FLUTTER_CLI} run -d ${DEVICE} --${MODE} '
+        r'--enable-flutter-gpu --enable-impeller',
   );
 }
 
-/// Default configurations for [projectRoot], the host desktop platform in
-/// every mode plus a debug config per other platform with scaffolding
-/// present. Run templates always carry the Flutter GPU flags flutter_scene
-/// needs.
-List<BuildConfiguration> defaultBuildConfigurations(String projectRoot) {
-  final configs = <BuildConfiguration>[];
-  final host = _hostPlatform;
-  if (Directory('$projectRoot/$host').existsSync()) {
-    for (final mode in const ['debug', 'profile', 'release']) {
-      configs.add(_template(host, mode));
-    }
-  }
-  for (final platform in const [
-    'macos',
-    'ios',
-    'android',
-    'linux',
-    'windows',
-    'web',
-  ]) {
-    if (platform == host) continue;
-    if (!Directory('$projectRoot/$platform').existsSync()) continue;
-    configs.add(_template(platform, 'debug'));
-  }
-  if (configs.isEmpty) {
-    // No scaffolding at all; offer the host defaults anyway so the list is
-    // never empty (flutter create can add the platform later).
-    for (final mode in const ['debug', 'profile', 'release']) {
-      configs.add(_template(host, mode));
-    }
-  }
-  return configs;
-}
+/// Default configurations, one per mode, fully variable-driven so the Mode
+/// field and the toolbar's device selection change behavior without editing
+/// command text. Run templates always carry the Flutter GPU flags
+/// flutter_scene needs.
+List<BuildConfiguration> defaultBuildConfigurations(String projectRoot) => [
+  for (final mode in const ['debug', 'profile', 'release'])
+    buildConfigurationTemplate(mode),
+];
 
-/// The variables a build/run command may reference. Substitution applies to
-/// the two command fields only.
+/// The variables a command (and its working directory) may reference.
+/// `DEVICE`/`BUILD_TARGET` appear only when a device is selected, so a
+/// command referencing them without one fails with a nameable error.
 Map<String, String> commandVariables({
   required String flutterBin,
   required String dartBin,
@@ -243,6 +207,8 @@ Map<String, String> commandVariables({
   required String? impellerc,
   required String projectRoot,
   required BuildConfiguration configuration,
+  String? deviceId,
+  String? buildTarget,
 }) => {
   'FLUTTER_CLI': flutterBin,
   'DART_CLI': dartBin,
@@ -250,8 +216,27 @@ Map<String, String> commandVariables({
   if (impellerc != null) 'IMPELLERC': impellerc,
   'PROJECT_ROOT': projectRoot,
   'MODE': configuration.mode,
-  'PLATFORM': configuration.platform,
+  if (deviceId != null) 'DEVICE': deviceId,
+  if (buildTarget != null) 'BUILD_TARGET': buildTarget,
 };
+
+/// The directory [configuration]'s commands run from, the project root
+/// unless the configuration overrides it (relative to the project root,
+/// variables substituted; absolute overrides pass through).
+String resolveWorkingDirectory(
+  FProject project,
+  BuildConfiguration configuration,
+  Map<String, String> variables,
+) {
+  final root = project.resolvedProjectRoot;
+  final raw = configuration.workingDirectory.trim();
+  if (raw.isEmpty) return root;
+  final substituted = substituteCommandVariables(raw, variables);
+  final absolute =
+      substituted.startsWith('/') ||
+      (Platform.isWindows && RegExp(r'^[A-Za-z]:').hasMatch(substituted));
+  return absolute ? substituted : '$root/$substituted';
+}
 
 /// Replaces `${NAME}` references with [variables]. An unknown variable throws
 /// a [FormatException] naming it (a silent empty expansion hides typos).

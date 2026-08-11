@@ -1,7 +1,7 @@
 /// Editor dialog for a project's build configurations, a list with
-/// add/duplicate/remove and a detail form (name, platform, mode, command
-/// templates with variable help and reset-to-template). Edits save to the
-/// `.fproject` immediately.
+/// add/duplicate/remove and a detail form (name, mode, command templates,
+/// working directory, a live variable preview, and reset-to-template). Edits
+/// save to the `.fproject` immediately.
 library;
 
 import 'package:flutter/material.dart';
@@ -9,29 +9,42 @@ import 'package:forui/forui.dart' hide FTheme;
 
 import 'fproject.dart';
 
-const _platforms = ['macos', 'ios', 'android', 'linux', 'windows', 'web'];
 const _modes = ['debug', 'profile', 'release'];
 
 /// Shows the configuration editor for [project]. [onChanged] fires after
 /// every persisted edit (the host refreshes toolbars/selection).
+/// [previewVariables] supplies each configuration's live variable values for
+/// the preview panel (selected installation and device included).
 Future<void> showBuildConfigDialog(
   BuildContext context, {
   required FProject project,
   required void Function() onChanged,
+  Map<String, String> Function(BuildConfiguration configuration)?
+  previewVariables,
 }) {
   return showDialog<void>(
     context: context,
     builder: (context) => Dialog(
-      child: _BuildConfigEditor(project: project, onChanged: onChanged),
+      child: _BuildConfigEditor(
+        project: project,
+        onChanged: onChanged,
+        previewVariables: previewVariables,
+      ),
     ),
   );
 }
 
 class _BuildConfigEditor extends StatefulWidget {
-  const _BuildConfigEditor({required this.project, required this.onChanged});
+  const _BuildConfigEditor({
+    required this.project,
+    required this.onChanged,
+    this.previewVariables,
+  });
 
   final FProject project;
   final void Function() onChanged;
+  final Map<String, String> Function(BuildConfiguration configuration)?
+  previewVariables;
 
   @override
   State<_BuildConfigEditor> createState() => _BuildConfigEditorState();
@@ -68,12 +81,10 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
   }
 
   void _add() {
-    final defaults = defaultBuildConfigurations(_project.resolvedProjectRoot);
-    final template = defaults.first;
+    final template = buildConfigurationTemplate('debug');
     final config = BuildConfiguration(
       id: _freshId(template.id),
       name: 'New configuration',
-      platform: template.platform,
       mode: template.mode,
       buildCommand: template.buildCommand,
       runCommand: template.runCommand,
@@ -88,10 +99,10 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
     final copy = BuildConfiguration(
       id: _freshId(config.id),
       name: '${config.name} copy',
-      platform: config.platform,
       mode: config.mode,
       buildCommand: config.buildCommand,
       runCommand: config.runCommand,
+      workingDirectory: config.workingDirectory,
     );
     _mutate(() {
       _project.buildConfigurations.add(copy);
@@ -162,7 +173,7 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
                                       style: const TextStyle(fontSize: 12),
                                     ),
                                     subtitle: Text(
-                                      '${config.platform} · ${config.mode}',
+                                      config.mode,
                                       style: const TextStyle(fontSize: 10),
                                     ),
                                     onTap: () =>
@@ -214,8 +225,8 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
                         : _ConfigForm(
                             key: ValueKey(_selected!.id),
                             config: _selected!,
-                            projectRoot: _project.resolvedProjectRoot,
                             onChanged: _update,
+                            previewVariables: widget.previewVariables,
                           ),
                   ),
                 ],
@@ -243,13 +254,14 @@ class _ConfigForm extends StatefulWidget {
   const _ConfigForm({
     super.key,
     required this.config,
-    required this.projectRoot,
     required this.onChanged,
+    this.previewVariables,
   });
 
   final BuildConfiguration config;
-  final String projectRoot;
   final void Function(BuildConfiguration updated) onChanged;
+  final Map<String, String> Function(BuildConfiguration configuration)?
+  previewVariables;
 
   @override
   State<_ConfigForm> createState() => _ConfigFormState();
@@ -265,7 +277,9 @@ class _ConfigFormState extends State<_ConfigForm> {
   late final TextEditingController _run = TextEditingController(
     text: widget.config.runCommand,
   );
-  late String _platform = widget.config.platform;
+  late final TextEditingController _workingDirectory = TextEditingController(
+    text: widget.config.workingDirectory,
+  );
   late String _mode = widget.config.mode;
 
   @override
@@ -273,27 +287,22 @@ class _ConfigFormState extends State<_ConfigForm> {
     _name.dispose();
     _build.dispose();
     _run.dispose();
+    _workingDirectory.dispose();
     super.dispose();
   }
 
-  void _commit() {
-    widget.onChanged(
-      widget.config.copyWith(
-        name: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        platform: _platform,
-        mode: _mode,
-        buildCommand: _build.text.trim(),
-        runCommand: _run.text.trim(),
-      ),
-    );
-  }
+  BuildConfiguration get _current => widget.config.copyWith(
+    name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+    mode: _mode,
+    buildCommand: _build.text.trim(),
+    runCommand: _run.text.trim(),
+    workingDirectory: _workingDirectory.text.trim(),
+  );
+
+  void _commit() => widget.onChanged(_current);
 
   void _resetToTemplate() {
-    final defaults = defaultBuildConfigurations(widget.projectRoot);
-    final template = defaults.firstWhere(
-      (candidate) => candidate.platform == _platform && candidate.mode == _mode,
-      orElse: () => defaults.first,
-    );
+    final template = buildConfigurationTemplate(_mode);
     setState(() {
       _build.text = template.buildCommand;
       _run.text = template.runCommand;
@@ -310,41 +319,49 @@ class _ConfigFormState extends State<_ConfigForm> {
           _textRow('Name', _name),
           Row(
             children: [
-              _dropdownRow(
-                'Platform',
-                _platform,
-                _platforms,
-                (value) => setState(() {
-                  _platform = value;
+              Text('Mode', style: const TextStyle(fontSize: 11)),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _modes.contains(_mode) ? _mode : 'debug',
+                isDense: true,
+                items: [
+                  for (final mode in _modes)
+                    DropdownMenuItem(
+                      value: mode,
+                      child: Text(mode, style: const TextStyle(fontSize: 11)),
+                    ),
+                ],
+                onChanged: (mode) {
+                  if (mode == null) return;
+                  setState(() => _mode = mode);
                   _commit();
-                }),
-              ),
-              const SizedBox(width: 16),
-              _dropdownRow(
-                'Mode',
-                _mode,
-                _modes,
-                (value) => setState(() {
-                  _mode = value;
-                  _commit();
-                }),
+                },
               ),
             ],
           ),
           const SizedBox(height: 8),
           _textRow('Build', _build, monospace: true),
           _textRow('Run', _run, monospace: true),
+          _textRow(
+            'Directory',
+            _workingDirectory,
+            monospace: true,
+            hint:
+                'working directory relative to \${PROJECT_ROOT} (empty '
+                'runs from the project root)',
+          ),
           const SizedBox(height: 4),
           Text(
-            'Variables, \${FLUTTER_CLI} \${DART_CLI} \${FLUTTER_ROOT} '
-            '\${IMPELLERC} \${PROJECT_ROOT} \${MODE} \${PLATFORM}. Commands '
-            'run from the project root without a shell (double quotes group '
-            'arguments).',
+            'The Mode above drives \${MODE}; the toolbar device drives '
+            '\${DEVICE} and \${BUILD_TARGET}. Commands run without a shell '
+            '(double quotes group arguments).',
             style: TextStyle(
               fontSize: 10,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+          const SizedBox(height: 8),
+          _variablePreview(context),
           const SizedBox(height: 10),
           FButton(
             variant: .outline,
@@ -358,10 +375,83 @@ class _ConfigFormState extends State<_ConfigForm> {
     );
   }
 
+  /// Every variable with its live value under the current installation,
+  /// device, and this configuration.
+  Widget _variablePreview(BuildContext context) {
+    final provider = widget.previewVariables;
+    if (provider == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final variables = provider(_current);
+    const known = [
+      'FLUTTER_CLI',
+      'DART_CLI',
+      'FLUTTER_ROOT',
+      'IMPELLERC',
+      'PROJECT_ROOT',
+      'MODE',
+      'DEVICE',
+      'BUILD_TARGET',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Variables',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          for (final name in known)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 110,
+                    child: Text(
+                      '\${$name}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: SelectableText(
+                      variables[name] ??
+                          (name == 'DEVICE' || name == 'BUILD_TARGET'
+                              ? '(select a device in the toolbar)'
+                              : '(unavailable)'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        color: variables.containsKey(name)
+                            ? null
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _textRow(
     String label,
     TextEditingController controller, {
     bool monospace = false,
+    String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -378,10 +468,12 @@ class _ConfigFormState extends State<_ConfigForm> {
                 fontSize: 11,
                 fontFamily: monospace ? 'monospace' : null,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(
+                hintText: hint,
+                hintStyle: const TextStyle(fontSize: 10),
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(
                   horizontal: 8,
                   vertical: 8,
                 ),
@@ -392,33 +484,6 @@ class _ConfigFormState extends State<_ConfigForm> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _dropdownRow(
-    String label,
-    String value,
-    List<String> options,
-    void Function(String) onChanged,
-  ) {
-    return Row(
-      children: [
-        Text(label, style: const TextStyle(fontSize: 11)),
-        const SizedBox(width: 8),
-        DropdownButton<String>(
-          value: value,
-          isDense: true,
-          items: [
-            for (final option in options)
-              DropdownMenuItem(
-                value: option,
-                child: Text(option, style: const TextStyle(fontSize: 11)),
-              ),
-          ],
-          onChanged: (selected) =>
-              selected == null ? null : onChanged(selected),
-        ),
-      ],
     );
   }
 }
