@@ -332,12 +332,15 @@ class ManagedCheckouts {
         );
       }
       job._line('Commit not upstream; fetching from $fork');
+      // Fetch into a pinned ref so the commit stays reachable in the mirror
+      // (an unreferenced object would not survive gc and would not be
+      // guaranteed present in clones).
       final fetched = await _git(job, [
         '-C',
         paths.mirror,
         'fetch',
         fork,
-        revision,
+        '+$revision:refs/managed/$revision',
       ]);
       if (fetched != 0) {
         throw Exception(
@@ -348,10 +351,11 @@ class ManagedCheckouts {
     }
   }
 
-  /// Normalizes a git remote (ssh or https) to an https URL, or null.
+  /// Normalizes a git remote (ssh or https) to a fetchable URL, passing
+  /// local paths through (tests use a local fork repo), or null.
   static String? _httpsUrl(String? remote) {
     if (remote == null || remote.isEmpty) return null;
-    if (remote.startsWith('https://')) return remote;
+    if (remote.startsWith('https://') || remote.startsWith('/')) return remote;
     final ssh = RegExp(r'^git@([^:]+):(.+)$').firstMatch(remote);
     if (ssh != null) return 'https://${ssh.group(1)}/${ssh.group(2)}';
     return null;
