@@ -91,18 +91,20 @@ class ProjectRunner extends ChangeNotifier {
     }
     final List<String> argv;
     try {
-      final substituted = substituteCommandVariables(
-        command,
-        commandVariables(
-          flutterBin: installation.flutterBin,
-          dartBin: installation.dartBin,
-          sdkRoot: installation.sdkRoot,
-          impellerc: installation.resolvedImpellerc,
-          projectRoot: project.resolvedProjectRoot,
-          configuration: configuration,
-        ),
+      // Tokenize the template first, then substitute inside each token, so a
+      // variable expanding to a path with spaces stays one argument.
+      final variables = commandVariables(
+        flutterBin: installation.flutterBin,
+        dartBin: installation.dartBin,
+        sdkRoot: installation.sdkRoot,
+        impellerc: installation.resolvedImpellerc,
+        projectRoot: project.resolvedProjectRoot,
+        configuration: configuration,
       );
-      argv = tokenizeCommand(substituted);
+      argv = [
+        for (final token in tokenizeCommand(command))
+          substituteCommandVariables(token, variables),
+      ];
     } on FormatException catch (e) {
       _line(e.message, ConsoleLineKind.error);
       return null;
