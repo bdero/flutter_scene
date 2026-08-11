@@ -163,7 +163,9 @@ class MaterialSection extends StatelessWidget {
             title: isFmat
                 ? (assetKey == null ? 'No source' : _fileName(assetKey))
                 : (resource.name.isEmpty ? _typeLabel(type) : resource.name),
-            kind: _typeLabel(type),
+            // An unnamed parametric material already titles itself with the
+            // type, so the kind line only repeats it for named ones.
+            kind: !isFmat && resource.name.isEmpty ? '' : _typeLabel(type),
             locality: materialLocality(resource),
             path: assetKey,
             reference: assetKey,

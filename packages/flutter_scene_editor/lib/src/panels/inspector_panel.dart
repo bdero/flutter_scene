@@ -14,6 +14,7 @@ import '../inspector/material_section.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
+import '../inspector/resource_origin.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
 
@@ -703,6 +704,12 @@ class _PrefabBanner extends StatelessWidget {
               style: TextStyle(fontSize: 10, color: scheme.onTertiaryContainer),
             ),
           ),
+          const SizedBox(width: 4),
+          OriginBadge(
+            locality: ResourceLocality.external,
+            path: source,
+            dense: true,
+          ),
         ],
       ),
     );
@@ -736,11 +743,23 @@ class _PrefabActions extends StatelessWidget {
         _SectionHeader(label: 'Prefab'),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Text(
-            '${instance.source.key}  ($overrides override'
-            '${overrides == 1 ? '' : 's'})',
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
-            overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              OriginBadge(
+                locality: ResourceLocality.external,
+                path: instance.source.key,
+                dense: true,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${instance.source.key}  ($overrides override'
+                  '${overrides == 1 ? '' : 's'})',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -1126,6 +1145,10 @@ class _ResourceRefRow extends StatelessWidget {
     // Keep the current value selectable even if it is some other kind.
     final ids = {if (value != null) value!, ...matching}.toList();
     final canCreate = resourceKind == 'environment';
+    final selected = value == null
+        ? null
+        : controller.document.resource(value!);
+    final origin = selected == null ? null : resourceOriginOf(selected);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -1154,6 +1177,10 @@ class _ResourceRefRow extends StatelessWidget {
                     onChanged: (id) => onChanged({'\$resource': id.toToken()}),
                   ),
           ),
+          if (origin != null) ...[
+            const SizedBox(width: 4),
+            OriginBadge(locality: origin.$1, path: origin.$2, dense: true),
+          ],
           if (canCreate)
             IconButton(
               icon: const Icon(Icons.add, size: 16),
