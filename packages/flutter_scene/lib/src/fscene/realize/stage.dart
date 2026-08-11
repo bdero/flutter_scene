@@ -251,11 +251,12 @@ void _applyEffectSpec(
     ..chromaticAberrationIntensity = effects.chromaticAberrationIntensity
     ..filmGrainEnabled = effects.filmGrainEnabled
     ..filmGrainIntensity = effects.filmGrainIntensity
-    // TODO(ambient-occlusion): map method, sliceCount, stepsPerSlice,
-    // visibilityBitmask, thickness, thicknessHeuristic, and multiBounce once
-    // EnvironmentEffectsSpec (package:scene) gains them; documents keep the
-    // obscurance defaults until then.
     ..ambientOcclusionEnabled = effects.ambientOcclusionEnabled
+    ..ambientOcclusionMethod = _byName(
+      AmbientOcclusionMethod.values,
+      effects.ambientOcclusionMethod,
+      AmbientOcclusionMethod.obscurance,
+    )
     ..ambientOcclusionRadius = effects.ambientOcclusionRadius
     ..ambientOcclusionIntensity = effects.ambientOcclusionIntensity
     ..ambientOcclusionBias = effects.ambientOcclusionBias
@@ -264,7 +265,16 @@ void _applyEffectSpec(
     ..ambientOcclusionHorizonAngle = effects.ambientOcclusionHorizonAngle
     ..ambientOcclusionDirectLightAffect =
         effects.ambientOcclusionDirectLightAffect
+    ..ambientOcclusionMultiBounce = effects.ambientOcclusionMultiBounce
     ..ambientOcclusionSampleCount = effects.ambientOcclusionSampleCount
+    ..ambientOcclusionSliceCount = effects.ambientOcclusionSliceCount
+    ..ambientOcclusionStepsPerSlice = effects.ambientOcclusionStepsPerSlice
+    ..ambientOcclusionVisibilityBitmask =
+        effects.ambientOcclusionVisibilityBitmask
+    ..ambientOcclusionThickness = effects.ambientOcclusionThickness
+    ..ambientOcclusionThicknessHeuristic =
+        effects.ambientOcclusionThicknessHeuristic
+    ..ambientOcclusionBentNormals = effects.ambientOcclusionBentNormals
     ..ambientOcclusionHalfResolution = effects.ambientOcclusionHalfResolution
     ..ambientOcclusionDepthMipChain = effects.ambientOcclusionDepthMipChain
     ..ambientOcclusionSpecularMode = _byName(
@@ -608,6 +618,7 @@ EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
       filmGrainEnabled: s.filmGrainEnabled,
       filmGrainIntensity: s.filmGrainIntensity,
       ambientOcclusionEnabled: s.ambientOcclusionEnabled,
+      ambientOcclusionMethod: s.ambientOcclusionMethod.name,
       ambientOcclusionRadius: s.ambientOcclusionRadius,
       ambientOcclusionIntensity: s.ambientOcclusionIntensity,
       ambientOcclusionBias: s.ambientOcclusionBias,
@@ -615,7 +626,14 @@ EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
       ambientOcclusionDetail: s.ambientOcclusionDetail,
       ambientOcclusionHorizonAngle: s.ambientOcclusionHorizonAngle,
       ambientOcclusionDirectLightAffect: s.ambientOcclusionDirectLightAffect,
+      ambientOcclusionMultiBounce: s.ambientOcclusionMultiBounce,
       ambientOcclusionSampleCount: s.ambientOcclusionSampleCount,
+      ambientOcclusionSliceCount: s.ambientOcclusionSliceCount,
+      ambientOcclusionStepsPerSlice: s.ambientOcclusionStepsPerSlice,
+      ambientOcclusionVisibilityBitmask: s.ambientOcclusionVisibilityBitmask,
+      ambientOcclusionThickness: s.ambientOcclusionThickness,
+      ambientOcclusionThicknessHeuristic: s.ambientOcclusionThicknessHeuristic,
+      ambientOcclusionBentNormals: s.ambientOcclusionBentNormals,
       ambientOcclusionHalfResolution: s.ambientOcclusionHalfResolution,
       ambientOcclusionDepthMipChain: s.ambientOcclusionDepthMipChain,
       ambientOcclusionSpecularMode: s.ambientOcclusionSpecularMode.name,

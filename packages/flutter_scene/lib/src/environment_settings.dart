@@ -89,6 +89,7 @@ class EnvironmentSettings {
     this.ambientOcclusionVisibilityBitmask = false,
     this.ambientOcclusionThickness = 0.5,
     this.ambientOcclusionThicknessHeuristic = 0.004,
+    this.ambientOcclusionBentNormals = false,
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = SpecularAmbientOcclusionMode.none,
@@ -210,6 +211,7 @@ class EnvironmentSettings {
   bool ambientOcclusionVisibilityBitmask;
   double ambientOcclusionThickness;
   double ambientOcclusionThicknessHeuristic;
+  bool ambientOcclusionBentNormals;
   bool ambientOcclusionHalfResolution;
   bool ambientOcclusionDepthMipChain;
   SpecularAmbientOcclusionMode ambientOcclusionSpecularMode;
@@ -335,6 +337,7 @@ class EnvironmentSettings {
       ambientOcclusionVisibilityBitmask: ao.visibilityBitmask,
       ambientOcclusionThickness: ao.thickness,
       ambientOcclusionThicknessHeuristic: ao.thicknessHeuristic,
+      ambientOcclusionBentNormals: ao.bentNormals,
       ambientOcclusionHalfResolution: ao.halfResolution,
       ambientOcclusionDepthMipChain: ao.depthMipChain,
       ambientOcclusionSpecularMode: ao.specularMode,
@@ -465,6 +468,7 @@ class EnvironmentSettings {
       ..visibilityBitmask = ambientOcclusionVisibilityBitmask
       ..thickness = ambientOcclusionThickness
       ..thicknessHeuristic = ambientOcclusionThicknessHeuristic
+      ..bentNormals = ambientOcclusionBentNormals
       ..halfResolution = ambientOcclusionHalfResolution
       ..depthMipChain = ambientOcclusionDepthMipChain
       ..specularMode = ambientOcclusionSpecularMode;
@@ -624,6 +628,7 @@ class EnvironmentSettings {
       ambientOcclusionSliceCount: d.ambientOcclusionSliceCount,
       ambientOcclusionStepsPerSlice: d.ambientOcclusionStepsPerSlice,
       ambientOcclusionVisibilityBitmask: d.ambientOcclusionVisibilityBitmask,
+      ambientOcclusionBentNormals: d.ambientOcclusionBentNormals,
       ambientOcclusionThickness: _lerp(
         a.ambientOcclusionThickness,
         b.ambientOcclusionThickness,

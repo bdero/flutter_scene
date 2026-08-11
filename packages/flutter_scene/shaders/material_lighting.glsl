@@ -217,6 +217,22 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
       0.0, 1.0);
 }
 
+// Occludes indirect specular by intersecting the unoccluded-direction cone
+// around the bent normal (aperture from the visibility) with the specular
+// lobe's cone around the reflection vector (aperture from roughness). The
+// arc overlap uses a linear approximation instead of the exact spherical-cap
+// intersection (Jimenez et al. 2016, section 6).
+float ComputeBentConeOcclusion(vec3 bent_normal, vec3 reflection,
+                               float visibility, float roughness) {
+  float vis_angle = acos(sqrt(clamp(1.0 - visibility, 0.0, 1.0)));
+  float lobe_angle = max(
+      acos(clamp(exp2(-3.32193 * roughness * roughness), 0.0, 1.0)), 0.1);
+  float between = acos(clamp(dot(bent_normal, reflection), -1.0, 1.0));
+  float overlap = clamp(
+      (between - vis_angle + lobe_angle) / (2.0 * lobe_angle), 0.0, 1.0);
+  return 1.0 - smoothstep(0.0, 1.0, overlap);
+}
+
 // Approximates the light that keeps bouncing inside an occluded cavity,
 // tinted by the surface albedo, so occlusion converges toward the surface
 // color instead of black (cubic fit from Jimenez et al. 2016, "Practical
@@ -472,6 +488,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // affects indirect lighting, never the analytic direct light below.
   float occlusion = material.occlusion;
   vec3 diffuse_occlusion = vec3(occlusion);
+  vec3 ao_bent_normal = vec3(0.0);
+  float ao_bent_valid = 0.0;
 #ifndef FLUTTER_SCENE_SKIP_SSAO
   if (frag_info.ssao_params.x > 0.5) {
     vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
@@ -482,7 +500,18 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // each backend.
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
-    occlusion = min(occlusion, texture(ssao_texture, screen_uv).r);
+    vec4 ssao_sample = texture(ssao_texture, screen_uv);
+    occlusion = min(occlusion, ssao_sample.r);
+    if (frag_info.ssao_lighting.z > 0.5) {
+      // The packed view-space bent normal, rotated into world space with the
+      // camera basis the depth prepass rendered from.
+      vec3 bent_view = ssao_sample.gba * 2.0 - 1.0;
+      ao_bent_normal = normalize(
+          frag_info.camera_right.xyz * bent_view.x +
+          frag_info.camera_up.xyz * bent_view.y +
+          frag_info.camera_forward.xyz * bent_view.z);
+      ao_bent_valid = 1.0;
+    }
     // Occluded creases keep albedo-tinted bounce light instead of darkening
     // to gray.
     diffuse_occlusion = mix(
@@ -581,8 +610,13 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 k_S = FresnelSchlickRoughness(n_dot_v_energy, reflectance, roughness);
 
   // The IBL environment can be rotated; transform the lookup directions.
+  // Irradiance samples along the bent normal when the occlusion chain
+  // carries one: the SH lookup then ignores directions the screen-space
+  // march found blocked. Geometric, so normal-map detail is dropped there,
+  // which the smooth SH barely resolves anyway.
   mat3 environment_transform = mat3(frag_info.environment_transform);
-  vec3 env_normal = environment_transform * normal;
+  vec3 env_normal = environment_transform *
+                    (ao_bent_valid > 0.5 ? ao_bent_normal : normal);
   vec3 env_reflection = environment_transform * reflection_normal;
   vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 0.0),
                         vec3(0.0));
@@ -648,9 +682,16 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // reflections, so derive a dedicated specular occlusion when it is
   // enabled; otherwise the specular lobe uses the same occlusion (the
   // historical behavior).
-  float specular_occlusion = frag_info.ssao_params.y > 0.5
-      ? ComputeSpecularOcclusion(n_dot_v, occlusion, roughness)
-      : occlusion;
+  float specular_occlusion;
+  if (frag_info.ssao_params.y > 1.5 && ao_bent_valid > 0.5) {
+    specular_occlusion = ComputeBentConeOcclusion(
+        ao_bent_normal, reflect(-camera_normal, normal), occlusion, roughness);
+  } else if (frag_info.ssao_params.y > 0.5) {
+    specular_occlusion = ComputeSpecularOcclusion(n_dot_v, occlusion,
+                                                  roughness);
+  } else {
+    specular_occlusion = occlusion;
+  }
   // Sun direction and how squarely this surface faces it. `facing` ramps from
   // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
   // sun's influence falls off smoothly rather than at a hard line.

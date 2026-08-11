@@ -18,9 +18,10 @@
 // and the visibility bitmask follows Therrien et al., "Screen Space Indirect
 // Lighting with Visibility Bitmask" (2023), https://arxiv.org/abs/2301.11376.
 //
-// TODO(gtao-bent-normals): the horizon mode can accumulate a bent normal
-// almost for free, but needs a second output channel and a consumer in the
-// material shader (bent-normal IBL lookup and cone specular occlusion).
+// In horizon mode the pass can also accumulate the bent normal (the mean
+// unoccluded direction), packed view-space into the output's gba channels;
+// the material shader samples irradiance along it and derives cone specular
+// occlusion.
 
 uniform sampler2D linear_depth;
 
@@ -43,7 +44,8 @@ uniform GtaoInfo {
   // w: thickness heuristic (horizon mode).
   vec4 params2;
   // x: 1 when the visibility bitmask is enabled. y: occluder thickness
-  // (world units, bitmask mode). zw: unused.
+  // (world units, bitmask mode). z: 1 when the bent normal is computed and
+  // packed into the output's gba (horizon mode only). w: unused.
   vec4 params3;
 }
 gtao;
@@ -134,13 +136,16 @@ void main() {
   float thickness_heuristic = gtao.params2.w;
   bool use_bitmask = gtao.params3.x > 0.5;
   float thickness = gtao.params3.y;
+  bool compute_bent = gtao.params3.z > 0.5;
   float far = gtao.proj.w;
 
   vec3 origin = ViewPositionAt(v_uv, 0);
 
-  // Background texels (no geometry) are unoccluded.
+  // Background texels (no geometry) are unoccluded; the bent normal encodes
+  // straight at the camera.
   if (origin.z >= far) {
-    frag_color = vec4(1.0, 1.0, 1.0, 1.0);
+    frag_color = compute_bent ? vec4(1.0, 0.5, 0.5, 0.0)
+                              : vec4(1.0, 1.0, 1.0, 1.0);
     return;
   }
 
@@ -160,6 +165,7 @@ void main() {
 
   float inv_radius2 = 1.0 / max(radius * radius, kNumericEpsilon);
   float visibility_sum = 0.0;
+  vec3 bent_sum = vec3(0.0);
   for (int i = 0; i < MAX_GTAO_SLICES; i++) {
     if (i >= slice_count) {
       break;
@@ -226,6 +232,12 @@ void main() {
       float h1 = gamma + clamp(acos(horizon_cos0) - gamma, -kHalfPi, kHalfPi);
       visibility_sum +=
           proj_length * (IntegrateArc(h0, gamma) + IntegrateArc(h1, gamma));
+      if (compute_bent) {
+        // The mid-angle of the visible arc, rotated from the view direction
+        // toward the slice's in-plane axis.
+        float mid = 0.5 * (h0 + h1);
+        bent_sum += view_dir * cos(mid) + ortho * sin(mid);
+      }
     }
   }
 
@@ -235,5 +247,12 @@ void main() {
   float obscurance = min(intensity * (1.0 - visibility), 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
 
+  if (compute_bent) {
+    // Nudged toward the view direction so a fully occluded pixel still
+    // normalizes to a valid direction.
+    vec3 bent = normalize(bent_sum + view_dir * kNumericEpsilon);
+    frag_color = vec4(ao, bent * 0.5 + 0.5);
+    return;
+  }
   frag_color = vec4(ao, ao, ao, 1.0);
 }

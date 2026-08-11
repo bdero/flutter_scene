@@ -635,6 +635,7 @@ class Lighting {
     this.specularOcclusionMode = 0.0,
     this.ssaoDirectLightAffect = 0.0,
     this.ssaoMultiBounce = 0.0,
+    this.ssaoBentNormals = false,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -743,6 +744,9 @@ class Lighting {
   /// How much occluded indirect diffuse converges toward the surface albedo
   /// instead of black (the multi-bounce approximation).
   final double ssaoMultiBounce;
+
+  /// Whether [ssaoMap]'s gba channels carry a packed view-space bent normal.
+  final bool ssaoBentNormals;
 
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.

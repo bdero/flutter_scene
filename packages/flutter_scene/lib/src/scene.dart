@@ -1470,9 +1470,19 @@ base class Scene implements SceneGraph {
         directionalLightDirection: lightDirection,
         punctualLighting: punctualLighting,
         cascades: effectiveCascades,
-        specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
+        // The cone mode needs the bent normal; fall back to the simple
+        // estimate when the chain does not carry one.
+        specularOcclusionMode:
+            (ambientOcclusion.specularMode ==
+                            SpecularAmbientOcclusionMode.bentCone &&
+                        !ambientOcclusionCarriesBentNormals(ambientOcclusion)
+                    ? SpecularAmbientOcclusionMode.simple
+                    : ambientOcclusion.specularMode)
+                .index
+                .toDouble(),
         ssaoDirectLightAffect: ambientOcclusion.directLightAffect,
         ssaoMultiBounce: ambientOcclusion.multiBounce,
+        ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,

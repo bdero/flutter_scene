@@ -758,7 +758,15 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           if (settings.visibilityBitmask)
             _slider('Thickness', settings.thickness, 0.05, 2, (v) {
               settings.thickness = v;
-            }),
+            })
+          else
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Bent normals'),
+              value: settings.bentNormals,
+              onChanged: (value) =>
+                  setState(() => settings.bentNormals = value),
+            ),
         ] else ...[
           _slider('Bias', settings.bias, 0, 0.1, (v) {
             settings.bias = v;
@@ -776,15 +784,19 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           value: settings.halfResolution,
           onChanged: (value) => setState(() => settings.halfResolution = value),
         ),
-        SwitchListTile(
+        ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Specular occlusion'),
-          value: settings.specularMode == SpecularAmbientOcclusionMode.simple,
-          onChanged: (value) => setState(() {
-            settings.specularMode = value
-                ? SpecularAmbientOcclusionMode.simple
-                : SpecularAmbientOcclusionMode.none;
-          }),
+          trailing: DropdownButton<SpecularAmbientOcclusionMode>(
+            value: settings.specularMode,
+            onChanged: (mode) => setState(() {
+              settings.specularMode = mode ?? SpecularAmbientOcclusionMode.none;
+            }),
+            items: [
+              for (final mode in SpecularAmbientOcclusionMode.values)
+                DropdownMenuItem(value: mode, child: Text(mode.name)),
+            ],
+          ),
         ),
       ],
     );

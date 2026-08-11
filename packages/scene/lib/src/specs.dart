@@ -563,6 +563,7 @@ class EnvironmentEffectsSpec {
     this.filmGrainEnabled = false,
     this.filmGrainIntensity = 0.3,
     this.ambientOcclusionEnabled = false,
+    this.ambientOcclusionMethod = 'obscurance',
     this.ambientOcclusionRadius = 0.33,
     this.ambientOcclusionIntensity = 2.0,
     this.ambientOcclusionBias = 0.07,
@@ -570,7 +571,14 @@ class EnvironmentEffectsSpec {
     this.ambientOcclusionDetail = 0.5,
     this.ambientOcclusionHorizonAngle = 0.06,
     this.ambientOcclusionDirectLightAffect = 0.0,
+    this.ambientOcclusionMultiBounce = 0.0,
     this.ambientOcclusionSampleCount = 16,
+    this.ambientOcclusionSliceCount = 3,
+    this.ambientOcclusionStepsPerSlice = 3,
+    this.ambientOcclusionVisibilityBitmask = false,
+    this.ambientOcclusionThickness = 0.5,
+    this.ambientOcclusionThicknessHeuristic = 0.004,
+    this.ambientOcclusionBentNormals = false,
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = 'none',
@@ -654,6 +662,7 @@ class EnvironmentEffectsSpec {
         filmGrainEnabled: other.filmGrainEnabled,
         filmGrainIntensity: other.filmGrainIntensity,
         ambientOcclusionEnabled: other.ambientOcclusionEnabled,
+        ambientOcclusionMethod: other.ambientOcclusionMethod,
         ambientOcclusionRadius: other.ambientOcclusionRadius,
         ambientOcclusionIntensity: other.ambientOcclusionIntensity,
         ambientOcclusionBias: other.ambientOcclusionBias,
@@ -662,7 +671,16 @@ class EnvironmentEffectsSpec {
         ambientOcclusionHorizonAngle: other.ambientOcclusionHorizonAngle,
         ambientOcclusionDirectLightAffect:
             other.ambientOcclusionDirectLightAffect,
+        ambientOcclusionMultiBounce: other.ambientOcclusionMultiBounce,
         ambientOcclusionSampleCount: other.ambientOcclusionSampleCount,
+        ambientOcclusionSliceCount: other.ambientOcclusionSliceCount,
+        ambientOcclusionStepsPerSlice: other.ambientOcclusionStepsPerSlice,
+        ambientOcclusionVisibilityBitmask:
+            other.ambientOcclusionVisibilityBitmask,
+        ambientOcclusionThickness: other.ambientOcclusionThickness,
+        ambientOcclusionThicknessHeuristic:
+            other.ambientOcclusionThicknessHeuristic,
+        ambientOcclusionBentNormals: other.ambientOcclusionBentNormals,
         ambientOcclusionHalfResolution: other.ambientOcclusionHalfResolution,
         ambientOcclusionDepthMipChain: other.ambientOcclusionDepthMipChain,
         ambientOcclusionSpecularMode: other.ambientOcclusionSpecularMode,
@@ -742,6 +760,7 @@ class EnvironmentEffectsSpec {
   bool filmGrainEnabled;
   double filmGrainIntensity;
   bool ambientOcclusionEnabled;
+  String ambientOcclusionMethod;
   double ambientOcclusionRadius;
   double ambientOcclusionIntensity;
   double ambientOcclusionBias;
@@ -749,7 +768,14 @@ class EnvironmentEffectsSpec {
   double ambientOcclusionDetail;
   double ambientOcclusionHorizonAngle;
   double ambientOcclusionDirectLightAffect;
+  double ambientOcclusionMultiBounce;
   int ambientOcclusionSampleCount;
+  int ambientOcclusionSliceCount;
+  int ambientOcclusionStepsPerSlice;
+  bool ambientOcclusionVisibilityBitmask;
+  double ambientOcclusionThickness;
+  double ambientOcclusionThicknessHeuristic;
+  bool ambientOcclusionBentNormals;
   bool ambientOcclusionHalfResolution;
   bool ambientOcclusionDepthMipChain;
   String ambientOcclusionSpecularMode;
