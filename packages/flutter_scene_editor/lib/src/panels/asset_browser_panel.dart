@@ -12,10 +12,13 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+// ignore: implementation_imports
+import 'package:scene/scene.dart';
 
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
+import '../inspector/resource_origin.dart';
 import '../io/scene_io.dart';
 
 /// The asset browser panel.
@@ -373,18 +376,48 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     );
   }
 
+  // The origin of a pool resource: an fmat material or file-backed texture is
+  // external even though its record lives in the document, so the browser flags
+  // it the same way the inspector does.
+  (ResourceLocality, String?) _embeddedOrigin(LocalId id) {
+    final spec = _ctrl.document.resource(id);
+    return switch (spec) {
+      MaterialResource() => (materialLocality(spec), spec.asset?.key),
+      TextureResource() => (textureLocality(spec), spec.asset?.key),
+      EnvironmentResource(:final environment) =>
+        environment is AssetEnvironment
+            ? (ResourceLocality.external, environment.asset.key)
+            : (ResourceLocality.builtIn, null),
+      _ => (ResourceLocality.builtIn, null),
+    };
+  }
+
   Widget _embeddedTile(BuildContext context, EmbeddedResource r) {
     final used = r.usedBy;
     final subtitle = used.isEmpty
         ? 'Unused'
         : 'Used by ${used.length}: ${used.take(3).join(', ')}'
               '${used.length > 3 ? '…' : ''}';
+    final (locality, path) = _embeddedOrigin(r.id);
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
       visualDensity: VisualDensity.compact,
       leading: Icon(_embeddedIcon(r.kind), size: 18),
-      title: Text(r.label, style: const TextStyle(fontSize: 12)),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              r.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 6),
+          OriginBadge(locality: locality, path: path, dense: true),
+        ],
+      ),
       subtitle: Text(
         subtitle,
         style: TextStyle(

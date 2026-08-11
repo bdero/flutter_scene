@@ -20,6 +20,8 @@ import '../assets/environment_thumbnail.dart';
 import '../io/scene_io.dart';
 import 'property_editors.dart';
 import 'live_fields.dart';
+import 'resource_origin.dart';
+import 'resource_slot_card.dart';
 
 const _toneMappingModes = ['pbrNeutral', 'aces', 'reinhard', 'linear', 'agx'];
 
@@ -225,41 +227,54 @@ class EnvironmentControls extends StatelessWidget {
           ),
         ),
         if (asset != null)
-          _EnvironmentImageField(
-            displayName: _assetFileName(asset.key),
-            kind: _environmentAssetKind(asset.key),
-            resourceName: env.name,
+          ResourceSlotCard(
+            title: _assetFileName(asset.key),
+            kind: env.name.isEmpty
+                ? _environmentAssetKind(asset.key)
+                : '${_environmentAssetKind(asset.key)} · ${env.name}',
+            locality: ResourceLocality.external,
+            path: asset.key,
             reference: asset.key,
+            previewIcon: Icons.panorama_outlined,
             missing: assetPath == null || !File(assetPath).existsSync(),
+            missingLabel: 'Environment image data is unavailable',
             preview: assetPath == null
                 ? null
                 : EnvironmentThumbnail(path: assetPath),
-            editable: allowEnvironmentImport,
-            onReplace: () => _pickEnvironmentImage(
-              context,
-              showAsBackground: usesEnvironmentBackground,
-            ),
-            onRemove: _removeEnvironmentImage,
+            onReplace: allowEnvironmentImport
+                ? () => _pickEnvironmentImage(
+                    context,
+                    showAsBackground: usesEnvironmentBackground,
+                  )
+                : null,
+            onRemove: allowEnvironmentImport ? _removeEnvironmentImage : null,
+            removeTooltip: 'Remove environment image',
           ),
         if (payloadId != null)
-          _EnvironmentImageField(
-            displayName: 'Embedded environment image',
-            kind: 'Embedded ${payload?.format ?? 'image'}',
-            resourceName: env.name,
+          ResourceSlotCard(
+            title: 'Embedded environment image',
+            kind: env.name.isEmpty
+                ? 'Embedded ${payload?.format ?? 'image'}'
+                : 'Embedded ${payload?.format ?? 'image'} · ${env.name}',
+            locality: ResourceLocality.builtIn,
             reference: payloadId.toToken(),
+            previewIcon: Icons.panorama_outlined,
             missing: payload?.bytes == null,
+            missingLabel: 'Environment image data is unavailable',
             preview: payload?.bytes == null
                 ? null
                 : EnvironmentThumbnail.memory(
                     bytes: payload!.bytes!,
                     cacheKey: payloadId.toToken(),
                   ),
-            editable: allowEnvironmentImport,
-            onReplace: () => _pickEnvironmentImage(
-              context,
-              showAsBackground: usesEnvironmentBackground,
-            ),
-            onRemove: _removeEnvironmentImage,
+            onReplace: allowEnvironmentImport
+                ? () => _pickEnvironmentImage(
+                    context,
+                    showAsBackground: usesEnvironmentBackground,
+                  )
+                : null,
+            onRemove: allowEnvironmentImport ? _removeEnvironmentImage : null,
+            removeTooltip: 'Remove environment image',
           ),
         if (env.environment case ConstantEnvironment(:final color))
           ColorEditor(
@@ -334,132 +349,6 @@ String _environmentAssetKind(String key) {
   if (lower.endsWith('.exr')) return 'OpenEXR environment';
   if (lower.endsWith('.hdr')) return 'Radiance HDR environment';
   return 'Image environment';
-}
-
-class _EnvironmentImageField extends StatelessWidget {
-  const _EnvironmentImageField({
-    required this.displayName,
-    required this.kind,
-    required this.resourceName,
-    required this.reference,
-    required this.missing,
-    required this.preview,
-    required this.editable,
-    required this.onReplace,
-    required this.onRemove,
-  });
-
-  final String displayName;
-  final String kind;
-  final String resourceName;
-  final String reference;
-  final bool missing;
-  final Widget? preview;
-  final bool editable;
-  final VoidCallback onReplace;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: reference,
-      waitDuration: const Duration(milliseconds: 600),
-      child: InkWell(
-        onTap: editable ? onReplace : null,
-        borderRadius: BorderRadius.circular(5),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            border: Border.all(
-              color: missing ? scheme.error : scheme.outlineVariant,
-            ),
-            borderRadius: BorderRadius.circular(5),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AspectRatio(
-                aspectRatio: 3.2,
-                child: ColoredBox(
-                  color: scheme.surfaceContainerHighest,
-                  child: missing
-                      ? Center(
-                          child: Icon(
-                            Icons.panorama_outlined,
-                            size: 26,
-                            color: scheme.error,
-                          ),
-                        )
-                      : preview!,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            missing
-                                ? 'Environment image data is unavailable'
-                                : resourceName.isEmpty
-                                ? kind
-                                : '$kind · $resourceName',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: missing
-                                  ? scheme.error
-                                  : scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (editable) ...[
-                      const SizedBox(width: 4),
-                      FButton(
-                        variant: .ghost,
-                        size: .xs,
-                        mainAxisSize: .min,
-                        onPress: onReplace,
-                        child: const Text('Replace'),
-                      ),
-                      Tooltip(
-                        message: 'Remove environment image',
-                        child: FButton.icon(
-                          variant: .ghost,
-                          size: .xs,
-                          onPress: onRemove,
-                          child: const Icon(Icons.close, size: 14),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class ColorManagementControls extends StatelessWidget {

@@ -335,6 +335,15 @@ class EditorController extends ChangeNotifier {
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
 
+  /// The live material on [id]'s first mesh primitive (the material a preview
+  /// should show), or null when the node has no realized mesh.
+  Material? liveMeshMaterial(LocalId id) {
+    final primitives = _liveById[id]?.mesh?.primitives;
+    return primitives == null || primitives.isEmpty
+        ? null
+        : primitives.first.material;
+  }
+
   /// The source-document node id that owns [liveNode] (the node itself, or the
   /// enclosing prefab instance root for a node realized from inside a prefab),
   /// or null. Used to turn a viewport raycast hit into a selectable node.
