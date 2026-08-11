@@ -15,11 +15,18 @@ void main() {
       toneMapping: ToneMappingMode.linear,
       agxWhite: 6.0,
       agxContrast: 1.0,
+      ambientOcclusionMethod: AmbientOcclusionMethod.obscurance,
       ambientOcclusionPower: 1.0,
       ambientOcclusionDetail: 0.0,
       ambientOcclusionHorizonAngle: 0.02,
       ambientOcclusionDirectLightAffect: 0.0,
+      ambientOcclusionMultiBounce: 0.0,
       ambientOcclusionSampleCount: 8,
+      ambientOcclusionSliceCount: 2,
+      ambientOcclusionStepsPerSlice: 2,
+      ambientOcclusionVisibilityBitmask: false,
+      ambientOcclusionThickness: 0.2,
+      ambientOcclusionThicknessHeuristic: 0.0,
       ambientOcclusionHalfResolution: false,
       ambientOcclusionDepthMipChain: false,
       ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.none,
@@ -37,11 +44,18 @@ void main() {
       toneMapping: ToneMappingMode.aces,
       agxWhite: 16.0,
       agxContrast: 1.5,
+      ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
       ambientOcclusionPower: 2.0,
       ambientOcclusionDetail: 1.0,
       ambientOcclusionHorizonAngle: 0.1,
       ambientOcclusionDirectLightAffect: 0.8,
+      ambientOcclusionMultiBounce: 1.0,
       ambientOcclusionSampleCount: 32,
+      ambientOcclusionSliceCount: 4,
+      ambientOcclusionStepsPerSlice: 4,
+      ambientOcclusionVisibilityBitmask: true,
+      ambientOcclusionThickness: 0.6,
+      ambientOcclusionThicknessHeuristic: 0.5,
       ambientOcclusionHalfResolution: true,
       ambientOcclusionDepthMipChain: true,
       ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.simple,
@@ -68,7 +82,14 @@ void main() {
     expect(mid.ambientOcclusionDetail, 0.5);
     expect(mid.ambientOcclusionHorizonAngle, closeTo(0.06, 1e-9));
     expect(mid.ambientOcclusionDirectLightAffect, 0.4);
+    expect(mid.ambientOcclusionMultiBounce, 0.5);
+    expect(mid.ambientOcclusionThickness, closeTo(0.4, 1e-9));
+    expect(mid.ambientOcclusionThicknessHeuristic, 0.25);
     expect(mid.ambientOcclusionSampleCount, 32);
+    expect(mid.ambientOcclusionMethod, AmbientOcclusionMethod.groundTruth);
+    expect(mid.ambientOcclusionSliceCount, 4);
+    expect(mid.ambientOcclusionStepsPerSlice, 4);
+    expect(mid.ambientOcclusionVisibilityBitmask, isTrue);
     expect(mid.ambientOcclusionHalfResolution, isTrue);
     expect(mid.ambientOcclusionDepthMipChain, isTrue);
     expect(mid.screenSpaceReflectionsEnabled, isTrue);

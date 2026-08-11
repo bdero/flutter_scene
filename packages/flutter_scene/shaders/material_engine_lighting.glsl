@@ -120,7 +120,9 @@ uniform FragInfo {
   // not per-environment).
   vec4 radiance_blend;
   // Screen-space occlusion lighting controls. x is the fraction applied to
-  // analytic direct lights. yzw are reserved.
+  // analytic direct lights. y is the multi-bounce amount (how much occluded
+  // indirect diffuse converges toward the albedo instead of black). zw are
+  // reserved.
   vec4 ssao_lighting;
 }
 frag_info;

@@ -99,7 +99,10 @@ export 'src/importer/scene_registry.dart'
         releaseScene;
 
 export 'src/ambient_occlusion.dart'
-    show AmbientOcclusionSettings, SpecularAmbientOcclusionMode;
+    show
+        AmbientOcclusionMethod,
+        AmbientOcclusionSettings,
+        SpecularAmbientOcclusionMode;
 export 'src/auto_exposure.dart' show AutoExposureSettings;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
 export 'src/fog.dart' show Fog, FogMode;

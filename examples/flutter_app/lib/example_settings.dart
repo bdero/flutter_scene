@@ -125,7 +125,7 @@ class ExampleSettings {
   shadowDepthBias: $shadowDepthBias
   shadowNormalBias: $shadowNormalBias
   shadowAmbientStrength: $shadowAmbientStrength
-  ambientOcclusion: enabled ${ambientOcclusion.enabled}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
+  ambientOcclusion: enabled ${ambientOcclusion.enabled}, method ${ambientOcclusion.method}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, sliceCount ${ambientOcclusion.sliceCount}, stepsPerSlice ${ambientOcclusion.stepsPerSlice}, visibilityBitmask ${ambientOcclusion.visibilityBitmask}, thickness ${ambientOcclusion.thickness}, multiBounce ${ambientOcclusion.multiBounce}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
   colorGrading: enabled ${colorGrading.enabled}, brightness ${colorGrading.brightness}, contrast ${colorGrading.contrast}, saturation ${colorGrading.saturation}, temperature ${colorGrading.temperature}, tint ${colorGrading.tint}
   bloom: enabled ${bloom.enabled}, threshold ${bloom.threshold}, intensity ${bloom.intensity}, scatter ${bloom.scatter}
   godRays: enabled ${godRays.enabled}, intensity ${godRays.intensity}, density ${godRays.density}, anisotropy ${godRays.anisotropy}, stepCount ${godRays.stepCount}, maxDistance ${godRays.maxDistance}, jitter ${godRays.jitter}, color ${godRays.color.x}, ${godRays.color.y}, ${godRays.color.z}
@@ -177,10 +177,16 @@ class ExampleSettings {
 
     final ao = scene.ambientOcclusion;
     ao.enabled = ambientOcclusion.enabled;
+    ao.method = ambientOcclusion.method;
     ao.radius = ambientOcclusion.radius;
     ao.intensity = ambientOcclusion.intensity;
     ao.bias = ambientOcclusion.bias;
     ao.sampleCount = ambientOcclusion.sampleCount;
+    ao.sliceCount = ambientOcclusion.sliceCount;
+    ao.stepsPerSlice = ambientOcclusion.stepsPerSlice;
+    ao.visibilityBitmask = ambientOcclusion.visibilityBitmask;
+    ao.thickness = ambientOcclusion.thickness;
+    ao.multiBounce = ambientOcclusion.multiBounce;
     ao.halfResolution = ambientOcclusion.halfResolution;
     ao.specularMode = ambientOcclusion.specularMode;
 
