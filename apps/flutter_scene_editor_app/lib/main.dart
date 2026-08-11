@@ -173,6 +173,88 @@ class _EditorHomeState extends State<_EditorHome> {
     paths: ManagedCheckoutPaths('${_settingsDirectory().path}/sdks'),
   );
 
+  // The open project, independent of the open scene (either may be open
+  // without the other).
+  FProject? _project;
+
+  // Build/run subprocess owner, feeding the Console panel. One per app so
+  // console history survives project and scene swaps.
+  final ProjectRunner _runner = ProjectRunner();
+
+  /// The selected build configuration for the open project (per-user state in
+  /// settings), falling back to the project's first configuration.
+  BuildConfiguration? get _selectedBuildConfiguration {
+    final project = _project;
+    if (project == null) return null;
+    final remembered = project.configurationById(
+      _settings.selectedBuildConfigurations[project.path],
+    );
+    if (remembered != null) return remembered;
+    return project.buildConfigurations.isEmpty
+        ? null
+        : project.buildConfigurations.first;
+  }
+
+  void _setProject(FProject? project) {
+    setState(() => _project = project);
+    if (project != null) {
+      _settings.rememberProject(project.path);
+      _persistSettings();
+    }
+  }
+
+  Future<void> _openProject() async {
+    const group = XTypeGroup(
+      label: 'Flutter Scene project',
+      extensions: ['fproject'],
+    );
+    final file = await openFile(acceptedTypeGroups: const [group]);
+    if (file == null) return;
+    _openProjectPath(file.path);
+  }
+
+  void _openProjectPath(String path) {
+    try {
+      _setProject(FProject.load(path));
+    } on Exception catch (e) {
+      _settings.forgetProject(path);
+      _persistSettings();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to open project, $e')));
+      }
+    }
+  }
+
+  Future<void> _newProject() async {
+    final directory = await getDirectoryPath();
+    if (directory == null) return;
+    try {
+      _setProject(FProject.createDefault(directory));
+    } on FormatException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  void _closeProject() => setState(() => _project = null);
+
+  void _editBuildConfigs() {
+    final project = _project;
+    if (project == null) return;
+    showBuildConfigDialog(
+      context,
+      project: project,
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   Future<void> _showSettings() => showSettingsDialog(
     context,
     settings: _settings,
@@ -537,6 +619,40 @@ class _EditorHomeState extends State<_EditorHome> {
           old?.dispose();
         },
         onShowSettings: _showSettings,
+        projectName: _project?.name,
+        onOpenProject: _openProject,
+        onNewProject: _newProject,
+        onCloseProject: _closeProject,
+        recentProjectPaths: _settings.recentProjects,
+        onOpenRecentProject: _openProjectPath,
+        onEditBuildConfigs: _project == null ? null : _editBuildConfigs,
+        projectRunner: _runner,
+        trailing: [
+          BuildToolbar(
+            settings: _settings,
+            buildInfo: _buildInfo,
+            inspector: _inspector,
+            runner: _runner,
+            project: _project,
+            selectedConfiguration: _selectedBuildConfiguration,
+            onSelectInstallation: (id) {
+              if (_settings.selectedInstallationId == id) return;
+              setState(() => _settings.selectedInstallationId = id);
+              _persistSettings();
+              _onInstallationSelectionChanged();
+            },
+            onSelectConfiguration: (id) {
+              final project = _project;
+              if (project == null) return;
+              setState(
+                () => _settings.selectedBuildConfigurations[project.path] = id,
+              );
+              _persistSettings();
+            },
+            onManageInstallations: _showSettings,
+            onEditConfigs: _project == null ? null : _editBuildConfigs,
+          ),
+        ],
       );
     }
     // With no native title bar, the start screen offers a drag strip along

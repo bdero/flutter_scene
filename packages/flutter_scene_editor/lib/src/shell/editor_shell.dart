@@ -8,9 +8,11 @@ import '../controller/editor_controller.dart';
 import '../io/glb_import_options.dart';
 import '../io/scene_io.dart';
 import '../panels/asset_browser_panel.dart';
+import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
+import '../project/project_runner.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
@@ -25,6 +27,7 @@ const Map<String, String> _panelTitles = {
   'inspector': 'Inspector',
   'assets': 'Assets',
   'history': 'History',
+  'console': 'Console',
 };
 
 List<String> get _panelIds => _panelTitles.keys.toList();
@@ -118,6 +121,15 @@ class EditorShell extends StatefulWidget {
     this.onSaveNamedLayout,
     this.onDeleteNamedLayout,
     this.onShowSettings,
+    this.projectName,
+    this.onOpenProject,
+    this.onNewProject,
+    this.onCloseProject,
+    this.recentProjectPaths = const [],
+    this.onOpenRecentProject,
+    this.onEditBuildConfigs,
+    this.trailing = const [],
+    this.projectRunner,
   });
 
   final EditorController controller;
@@ -125,6 +137,27 @@ class EditorShell extends StatefulWidget {
   /// Opens the host's settings window (Flutter installations, ...); null
   /// hides the menu item.
   final VoidCallback? onShowSettings;
+
+  /// The open project's display name, or null with no project open.
+  final String? projectName;
+
+  /// Project lifecycle actions; null hides the corresponding menu items.
+  final VoidCallback? onOpenProject;
+  final VoidCallback? onNewProject;
+  final VoidCallback? onCloseProject;
+  final List<String> recentProjectPaths;
+  final ValueChanged<String>? onOpenRecentProject;
+
+  /// Opens the open project's build configuration editor; null when no
+  /// project is open.
+  final VoidCallback? onEditBuildConfigs;
+
+  /// Host widgets appended to the menu bar's right side (toolchain and build
+  /// controls).
+  final List<Widget> trailing;
+
+  /// The host's build/run process owner; non-null adds the Console panel.
+  final ProjectRunner? projectRunner;
 
   /// Called when the user opens a new file or clears the scene; the parent
   /// should rebuild with the new controller.
@@ -696,6 +729,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onNewViewport: _newViewport,
                   onShowToolchain: _showToolchain,
                   onShowSettings: widget.onShowSettings,
+                  projectName: widget.projectName,
+                  onOpenProject: widget.onOpenProject,
+                  onNewProject: widget.onNewProject,
+                  onCloseProject: widget.onCloseProject,
+                  recentProjectPaths: widget.recentProjectPaths,
+                  onOpenRecentProject: widget.onOpenRecentProject,
+                  onEditBuildConfigs: widget.onEditBuildConfigs,
+                  trailing: widget.trailing,
                   namedLayouts: widget.namedLayouts,
                   onApplyLayout: _applyDockLayout,
                   onSaveCurrentLayout: _saveCurrentLayoutAs,
@@ -751,6 +792,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             title: 'History',
                             child: HistoryPanel(controller: _ctrl),
                           ),
+                          if (widget.projectRunner != null)
+                            DockPanel(
+                              id: 'console',
+                              title: 'Console',
+                              child: ConsolePanel(
+                                runner: widget.projectRunner!,
+                              ),
+                            ),
                           for (final id in _extraViewportIds)
                             DockPanel(
                               id: id,
@@ -1104,6 +1153,14 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNewViewport,
     required this.onShowToolchain,
     this.onShowSettings,
+    this.projectName,
+    this.onOpenProject,
+    this.onNewProject,
+    this.onCloseProject,
+    this.recentProjectPaths = const [],
+    this.onOpenRecentProject,
+    this.onEditBuildConfigs,
+    this.trailing = const [],
     required this.namedLayouts,
     required this.onApplyLayout,
     required this.onSaveCurrentLayout,
@@ -1139,6 +1196,14 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onNewViewport;
   final VoidCallback onShowToolchain;
   final VoidCallback? onShowSettings;
+  final String? projectName;
+  final VoidCallback? onOpenProject;
+  final VoidCallback? onNewProject;
+  final VoidCallback? onCloseProject;
+  final List<String> recentProjectPaths;
+  final ValueChanged<String>? onOpenRecentProject;
+  final VoidCallback? onEditBuildConfigs;
+  final List<Widget> trailing;
   final Map<String, String> namedLayouts;
   final ValueChanged<String?> onApplyLayout;
   final VoidCallback onSaveCurrentLayout;
@@ -1172,12 +1237,7 @@ class _EditorMenuBar extends StatelessWidget {
               cacheWidth: 36,
             ),
             const SizedBox(width: 6),
-            Text(
-              currentPath != null
-                  ? 'Scene Editor  (${currentPath!.split(Platform.pathSeparator).last})'
-                  : 'Scene Editor',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
+            Text(_title(), style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(width: 16),
             _Menu(
               label: 'File',
@@ -1214,6 +1274,31 @@ class _EditorMenuBar extends StatelessWidget {
                 ),
                 _MenuItem(label: 'Save', onTap: onSave),
                 _MenuItem(label: 'Save As…', onTap: onSaveAs),
+                if (onOpenProject != null) ...[
+                  const _MenuItem.divider(),
+                  _MenuItem(label: 'Open Project…', onTap: onOpenProject),
+                  _MenuItem(label: 'New Project…', onTap: onNewProject),
+                  _MenuItem(
+                    label: 'Open Recent Project',
+                    children: recentProjectPaths.isEmpty
+                        ? const [_MenuItem(label: 'No Recent Projects')]
+                        : [
+                            for (final path in recentProjectPaths)
+                              _MenuItem(
+                                label: path.split(Platform.pathSeparator).last,
+                                detail: File(path).parent.path,
+                                onTap: () => onOpenRecentProject?.call(path),
+                              ),
+                          ],
+                  ),
+                  if (projectName != null) ...[
+                    _MenuItem(
+                      label: 'Edit Build Configurations…',
+                      onTap: onEditBuildConfigs,
+                    ),
+                    _MenuItem(label: 'Close Project', onTap: onCloseProject),
+                  ],
+                ],
                 if (onShowSettings != null) ...[
                   const _MenuItem.divider(),
                   _MenuItem(label: 'Settings…', onTap: onShowSettings),
@@ -1293,10 +1378,22 @@ class _EditorMenuBar extends StatelessWidget {
               ],
             ),
             _MenuButton(label: 'Commands', onTap: onPaletteOpen),
+            const Spacer(),
+            ...trailing,
+            const SizedBox(width: 6),
           ],
         ),
       ),
     );
+  }
+
+  String _title() {
+    final scene = currentPath?.split(Platform.pathSeparator).last;
+    final project = projectName;
+    if (project != null && scene != null) return '$project · $scene';
+    if (project != null) return 'Scene Editor  ($project)';
+    if (scene != null) return 'Scene Editor  ($scene)';
+    return 'Scene Editor';
   }
 }
 
