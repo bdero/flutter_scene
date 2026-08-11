@@ -9,6 +9,7 @@ import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
+import '../shell/editor_theme.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
@@ -1165,29 +1166,26 @@ class _ViewportSettingsButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       onSelected: (action) => action(),
       itemBuilder: (_) => [
-        const PopupMenuItem<VoidCallback>(
+        PopupMenuItem<VoidCallback>(
           enabled: false,
-          height: 28,
-          child: Text('Transform space', style: TextStyle(fontSize: 11)),
+          height: editorMenuItemHeight,
+          child: const Text('Transform space', style: TextStyle(fontSize: 11)),
         ),
-        CheckedPopupMenuItem(
-          value: () => onTransformSpaceChanged(TransformSpace.global),
+        _checkedItem(
+          label: 'Global',
           checked: transformSpace == TransformSpace.global,
-          height: 32,
-          child: const Text('Global', style: TextStyle(fontSize: 12)),
+          action: () => onTransformSpaceChanged(TransformSpace.global),
         ),
-        CheckedPopupMenuItem(
-          value: () => onTransformSpaceChanged(TransformSpace.local),
+        _checkedItem(
+          label: 'Local',
           checked: transformSpace == TransformSpace.local,
-          height: 32,
-          child: const Text('Local', style: TextStyle(fontSize: 12)),
+          action: () => onTransformSpaceChanged(TransformSpace.local),
         ),
         const PopupMenuDivider(height: 8),
-        CheckedPopupMenuItem(
-          value: () => onToggleFps(!showFps),
+        _checkedItem(
+          label: 'Show FPS',
           checked: showFps,
-          height: 32,
-          child: const Text('Show FPS', style: TextStyle(fontSize: 12)),
+          action: () => onToggleFps(!showFps),
         ),
       ],
       child: Container(
@@ -1198,6 +1196,24 @@ class _ViewportSettingsButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
         ),
         child: const Icon(Icons.settings, size: 15, color: Colors.white),
+      ),
+    );
+  }
+
+  PopupMenuItem<VoidCallback> _checkedItem({
+    required String label,
+    required bool checked,
+    required VoidCallback action,
+  }) {
+    return PopupMenuItem<VoidCallback>(
+      value: action,
+      height: editorMenuItemHeight,
+      child: Row(
+        children: [
+          editorMenuCheckmark(checked),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
       ),
     );
   }

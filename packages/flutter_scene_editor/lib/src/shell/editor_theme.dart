@@ -16,6 +16,23 @@ const editorAxisColors = [
   Color(0xFF4E86DE),
 ];
 
+/// Shared menu metrics so every dropdown and context menu spaces identically.
+const double editorMenuItemHeight = 28;
+const EdgeInsets editorMenuItemPadding = EdgeInsets.symmetric(horizontal: 10);
+const TextStyle editorMenuItemText = TextStyle(fontSize: 12);
+
+/// Secondary text inside a menu row (paths, modes, platforms).
+const TextStyle editorMenuItemDetailText = TextStyle(
+  fontSize: 10,
+  color: _mutedText,
+);
+
+/// The leading checkmark slot used by selectable menu rows.
+Widget editorMenuCheckmark(bool checked) => SizedBox(
+  width: 16,
+  child: checked ? const Icon(Icons.check, size: 14) : null,
+);
+
 final FThemeData editorForuiDarkTheme = _buildForuiTheme();
 
 FThemeData _buildForuiTheme() {
@@ -105,6 +122,27 @@ ThemeData editorDarkTheme() {
     dividerColor: _line,
     tooltipTheme: const TooltipThemeData(
       waitDuration: Duration(milliseconds: 500),
+    ),
+    // One density for every menu surface. The standard visual density opts
+    // menu items out of the global compact density, which would otherwise
+    // shrink them below editorMenuItemHeight.
+    menuTheme: const MenuThemeData(
+      style: MenuStyle(
+        padding: WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+      ),
+    ),
+    menuButtonTheme: const MenuButtonThemeData(
+      style: ButtonStyle(
+        minimumSize: WidgetStatePropertyAll(Size(0, editorMenuItemHeight)),
+        padding: WidgetStatePropertyAll(editorMenuItemPadding),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.standard,
+        textStyle: WidgetStatePropertyAll(editorMenuItemText),
+      ),
+    ),
+    popupMenuTheme: const PopupMenuThemeData(
+      menuPadding: EdgeInsets.symmetric(vertical: 4),
+      textStyle: TextStyle(fontSize: 12, color: _text),
     ),
   );
 }

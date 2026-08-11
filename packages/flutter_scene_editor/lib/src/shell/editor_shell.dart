@@ -18,6 +18,7 @@ import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
 import 'docking_shell.dart';
+import 'editor_theme.dart';
 
 /// The panels [EditorShell] registers with its [DockingShell], id to the
 /// title shown on tabs and in the View menu.
@@ -1443,26 +1444,9 @@ class _Menu extends StatefulWidget {
 }
 
 class _MenuState extends State<_Menu> {
-  static const _menuStyle = MenuStyle(
-    padding: WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-    ),
-    visualDensity: VisualDensity.compact,
-  );
-
-  static const _itemStyle = ButtonStyle(
-    minimumSize: WidgetStatePropertyAll(Size(0, 26)),
-    padding: WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    ),
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    visualDensity: VisualDensity.compact,
-  );
-
   @override
   Widget build(BuildContext context) {
     return MenuAnchor(
-      style: _menuStyle,
       menuChildren: _buildMenuItems(widget.items ?? widget.itemsBuilder!()),
       builder: (context, controller, child) => GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1488,27 +1472,20 @@ class _MenuState extends State<_Menu> {
   List<Widget> _buildMenuItems(List<_MenuItem> source) => [
     for (final item in source)
       if (item.divider)
-        const Divider(height: 1)
+        const Divider(height: 8)
       else if (item.children != null)
         SubmenuButton(
-          style: _itemStyle,
           menuChildren: _buildMenuItems(item.children!),
-          child: Text(item.label, style: const TextStyle(fontSize: 12)),
+          child: Text(item.label),
         )
       else
         MenuItemButton(
-          style: _itemStyle,
           onPressed: item.onTap,
           leadingIcon: item.checked == null
               ? null
-              : SizedBox(
-                  width: 16,
-                  child: item.checked!
-                      ? const Icon(Icons.check, size: 14)
-                      : null,
-                ),
+              : editorMenuCheckmark(item.checked!),
           child: item.detail == null && item.onRemove == null
-              ? Text(item.label, style: const TextStyle(fontSize: 12))
+              ? Text(item.label)
               : SizedBox(
                   width: 360,
                   child: Row(
@@ -1522,14 +1499,13 @@ class _MenuState extends State<_Menu> {
                               item.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
                             ),
                             if (item.detail != null)
                               Text(
                                 item.detail!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 10),
+                                style: editorMenuItemDetailText,
                               ),
                           ],
                         ),

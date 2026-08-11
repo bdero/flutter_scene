@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
 
@@ -161,16 +162,16 @@ class _CommandList extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.all(8),
-          child: TextField(
-            controller: search,
+          child: FTextField(
+            control: FTextFieldControl.managed(controller: search),
+            size: .sm,
+            hint: 'Search commands...',
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Search commands...',
-              prefixIcon: Icon(Icons.search, size: 18),
-              isDense: true,
-              border: OutlineInputBorder(),
+            prefixBuilder: (_, _, _) => const Padding(
+              padding: EdgeInsets.only(left: 8, right: 4),
+              child: Icon(Icons.search, size: 14),
             ),
-            onSubmitted: (_) {
+            onSubmit: (_) {
               if (filtered.isNotEmpty) onSelect(filtered.first);
             },
           ),

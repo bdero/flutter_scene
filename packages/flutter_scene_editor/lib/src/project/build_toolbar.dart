@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../settings/editor_settings.dart';
+import '../shell/editor_theme.dart';
 import '../toolchains/device_catalog.dart';
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
@@ -112,7 +113,6 @@ class _InstallationDropdown extends StatelessWidget {
     final selected = settings.selectedInstallation;
     final label = selected?.name ?? 'Built-in toolchain';
     return MenuAnchor(
-      style: const MenuStyle(visualDensity: VisualDensity.compact),
       menuChildren: [
         _menuRow(
           context,
@@ -136,10 +136,7 @@ class _InstallationDropdown extends StatelessWidget {
         const Divider(height: 8),
         MenuItemButton(
           onPressed: onManage,
-          child: const Text(
-            'Manage installations…',
-            style: TextStyle(fontSize: 11),
-          ),
+          child: const Text('Manage installations…'),
         ),
       ],
       builder: (context, controller, _) => Tooltip(
@@ -192,14 +189,11 @@ class _InstallationDropdown extends StatelessWidget {
   }) {
     return MenuItemButton(
       onPressed: onTap,
+      leadingIcon: editorMenuCheckmark(checked),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 18,
-            child: checked ? const Icon(Icons.check, size: 12) : null,
-          ),
-          Text(label, style: const TextStyle(fontSize: 11)),
+          Text(label),
           if (badge != null) ...[const SizedBox(width: 6), badge],
         ],
       ),
@@ -295,39 +289,24 @@ class _ConfigurationDropdown extends StatelessWidget {
             ),
           );
     return MenuAnchor(
-      style: const MenuStyle(visualDensity: VisualDensity.compact),
       menuChildren: [
         for (final config in project!.buildConfigurations)
           MenuItemButton(
             onPressed: () => onSelect(config.id),
+            leadingIcon: editorMenuCheckmark(config.id == selected?.id),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 18,
-                  child: config.id == selected?.id
-                      ? const Icon(Icons.check, size: 12)
-                      : null,
-                ),
-                Text(config.name, style: const TextStyle(fontSize: 11)),
+                Text(config.name),
                 const SizedBox(width: 6),
-                Text(
-                  config.mode,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
+                Text(config.mode, style: editorMenuItemDetailText),
               ],
             ),
           ),
         const Divider(height: 8),
         MenuItemButton(
           onPressed: onEdit,
-          child: const Text(
-            'Edit build configurations…',
-            style: TextStyle(fontSize: 11),
-          ),
+          child: const Text('Edit build configurations…'),
         ),
       ],
       builder: (context, controller, _) => Tooltip(
@@ -437,45 +416,31 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
     }
     return MenuAnchor(
       controller: _controller,
-      style: const MenuStyle(visualDensity: VisualDensity.compact),
       menuChildren: [
         if (_loading)
-          const MenuItemButton(
-            child: Text('Listing devices…', style: TextStyle(fontSize: 11)),
-          )
+          const MenuItemButton(child: Text('Listing devices…'))
         else if (_error != null)
           MenuItemButton(
             child: Text(
               'Failed to list devices, $_error',
-              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+              style: const TextStyle(color: Colors.redAccent),
             ),
           )
         else if (_devices == null || _devices!.isEmpty)
-          const MenuItemButton(
-            child: Text('No devices found', style: TextStyle(fontSize: 11)),
-          )
+          const MenuItemButton(child: Text('No devices found'))
         else
           for (final device in _devices!)
             MenuItemButton(
               onPressed: () => widget.onSelect(device),
+              leadingIcon: editorMenuCheckmark(
+                device.id == widget.selected?.id,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: 18,
-                    child: device.id == widget.selected?.id
-                        ? const Icon(Icons.check, size: 12)
-                        : null,
-                  ),
-                  Text(device.name, style: const TextStyle(fontSize: 11)),
+                  Text(device.name),
                   const SizedBox(width: 6),
-                  Text(
-                    device.targetPlatform,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
+                  Text(device.targetPlatform, style: editorMenuItemDetailText),
                 ],
               ),
             ),
@@ -483,7 +448,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
         MenuItemButton(
           closeOnActivate: false,
           onPressed: () => _fetch(refresh: true),
-          child: const Text('Refresh', style: TextStyle(fontSize: 11)),
+          child: const Text('Refresh'),
         ),
       ],
       builder: (context, controller, _) => Tooltip(
