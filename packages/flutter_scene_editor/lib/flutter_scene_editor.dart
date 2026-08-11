@@ -36,8 +36,16 @@ export 'src/materials/fmat_library.dart'
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/settings/editor_settings.dart'
     show EditorSettings, EditorSettingsStore;
+export 'src/settings/managed_checkout_dialog.dart'
+    show showManagedCheckoutDialog;
 export 'src/settings/settings_dialog.dart'
     show SettingsDialog, showSettingsDialog;
+export 'src/toolchains/managed_checkout.dart'
+    show
+        ManagedCheckoutJob,
+        ManagedCheckoutPaths,
+        ManagedCheckoutPhase,
+        ManagedCheckouts;
 export 'src/toolchains/editor_build_info.dart' show EditorBuildInfo;
 export 'src/toolchains/flutter_installation.dart'
     show
