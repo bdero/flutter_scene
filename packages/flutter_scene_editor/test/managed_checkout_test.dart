@@ -97,6 +97,47 @@ echo "fake flutter \$@"
     expect(Directory(manager.paths.mirror).existsSync(), isTrue);
   });
 
+  test('fetches a fork-only commit into the mirror by pinned ref', () async {
+    // A fork with one commit past upstream; the editor was "built" at the
+    // fork commit, so the mirror must fetch it from the fork remote.
+    final fork = '${temp.path}/fork';
+    await Process.run('cp', ['-R', upstream, fork]);
+    File('$fork/EXTRA').writeAsStringSync('fork change\n');
+    await git(['add', '-A'], cwd: fork);
+    await git([
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '-m',
+      'fork commit',
+    ], cwd: fork);
+    final head = await git(['rev-parse', 'HEAD'], cwd: fork);
+    final forkRevision = '${head.stdout}'.trim();
+
+    final manager = ManagedCheckouts(
+      paths: ManagedCheckoutPaths('${temp.path}/sdks_fork'),
+      upstreamUrl: upstream,
+    );
+    final job = await awaitJob(
+      manager.create(
+        EditorBuildInfo(
+          frameworkVersion: '9.9.9-fork',
+          frameworkRevision: forkRevision,
+          repositoryUrl: fork,
+        ),
+      ),
+    );
+    expect(job.error, isNull);
+    expect(job.log.join('\n'), contains('Commit not upstream'));
+    expect(job.result, isNotNull);
+    // The checkout really sits at the fork commit.
+    final at = await git(['-C', job.result!.sdkRoot, 'rev-parse', 'HEAD']);
+    expect('${at.stdout}'.trim(), forkRevision);
+  });
+
   test('fails cleanly for an unknown revision', () async {
     final manager = ManagedCheckouts(
       paths: ManagedCheckoutPaths('${temp.path}/sdks2'),
