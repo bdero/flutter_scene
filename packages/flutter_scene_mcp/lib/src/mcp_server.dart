@@ -57,8 +57,10 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
   FutureOr<CallToolResult> _call(String name, CallToolRequest request) async {
     final args = request.arguments ?? const <String, Object?>{};
     try {
-      if (name == 'screenshot_viewport') {
-        final result = await surface.capture();
+      if (name == 'screenshot_viewport' || name == 'screenshot_window') {
+        final result = name == 'screenshot_viewport'
+            ? await surface.capture()
+            : await surface.captureWindow();
         return CallToolResult(
           content: [
             ImageContent(

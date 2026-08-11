@@ -162,6 +162,7 @@ class EditorToolSurface {
   EditorToolSurface(
     EditorSession? Function() sessionProvider, {
     this.screenshot,
+    this.windowScreenshot,
     this.commandRunner,
     this.undoRunner,
     this.redoRunner,
@@ -177,8 +178,15 @@ class EditorToolSurface {
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
-  EditorToolSurface.of(EditorSession session, {ViewportScreenshot? screenshot})
-    : this(() => session, screenshot: screenshot);
+  EditorToolSurface.of(
+    EditorSession session, {
+    ViewportScreenshot? screenshot,
+    ViewportScreenshot? windowScreenshot,
+  }) : this(
+         () => session,
+         screenshot: screenshot,
+         windowScreenshot: windowScreenshot,
+       );
 
   final EditorSession? Function() _sessionProvider;
 
@@ -196,6 +204,10 @@ class EditorToolSurface {
 
   /// Captures the live viewport, or null in a headless session.
   final ViewportScreenshot? screenshot;
+
+  /// Captures the whole editor window (viewport plus panels), or null in a
+  /// headless session.
+  final ViewportScreenshot? windowScreenshot;
 
   /// Host-routed mutation, so applied commands reach the host's display.
   final CommandRunner? commandRunner;
@@ -253,6 +265,15 @@ class EditorToolSurface {
         description:
             'Capture the current editor viewport as a PNG image, so you can '
             'see the rendered scene exactly as the user does.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (windowScreenshot != null)
+      const ToolDefinition(
+        name: 'screenshot_window',
+        description:
+            'Capture the whole editor window as a PNG image, including the '
+            'panels around the viewport (outliner, inspector, asset browser), '
+            'so you can see the editor UI exactly as the user does.',
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (readCamera != null) ..._cameraTools,
@@ -666,9 +687,9 @@ class EditorToolSurface {
           );
         }
         return _cameraResult();
-      case 'screenshot_viewport':
-        throw const ToolError(
-          'screenshot_viewport is asynchronous; call capture() instead of '
+      case 'screenshot_viewport' || 'screenshot_window':
+        throw ToolError(
+          '$tool is asynchronous; call capture()/captureWindow() instead of '
           'dispatch()',
         );
       default:
@@ -680,12 +701,20 @@ class EditorToolSurface {
   /// tool. Throws a [ToolError] in a headless session (no [screenshot]
   /// provider). Asynchronous because image encoding is, so it sits beside
   /// the synchronous [dispatch] rather than inside it.
-  Future<Map<String, Object?>> capture() async {
-    final provider = screenshot;
+  Future<Map<String, Object?>> capture() =>
+      _captureWith(screenshot, 'viewport');
+
+  /// Captures the whole editor window as a base64 PNG, for the
+  /// `screenshot_window` tool. See [capture].
+  Future<Map<String, Object?>> captureWindow() =>
+      _captureWith(windowScreenshot, 'window');
+
+  Future<Map<String, Object?>> _captureWith(
+    ViewportScreenshot? provider,
+    String what,
+  ) async {
     if (provider == null) {
-      throw const ToolError(
-        'No viewport is available to screenshot in this session',
-      );
+      throw ToolError('No $what is available to screenshot in this session');
     }
     final shot = await provider();
     return {

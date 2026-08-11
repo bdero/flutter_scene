@@ -96,6 +96,10 @@ class _EditorHomeState extends State<_EditorHome> {
   // capture exactly what the user sees.
   final _viewportKey = GlobalKey();
 
+  // Key on a RepaintBoundary around the whole editor, so screenshot_window
+  // captures the panels around the viewport too.
+  final _windowKey = GlobalKey();
+
   // Remote control on the primary viewport's camera, for the MCP camera
   // tools (agents composing their own screenshots).
   final _cameraHandle = ViewportCameraHandle();
@@ -288,6 +292,10 @@ class _EditorHomeState extends State<_EditorHome> {
             final dpr = View.of(context).devicePixelRatio;
             return viewportScreenshot(_viewportKey, pixelRatio: dpr)();
           },
+          windowScreenshot: () {
+            final dpr = View.of(context).devicePixelRatio;
+            return viewportScreenshot(_windowKey, pixelRatio: dpr)();
+          },
           commandRunner: (command, params) =>
               _requireController.run(command, params),
           undoRunner: () async {
@@ -389,7 +397,10 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      RepaintBoundary(key: _windowKey, child: _buildHome(context));
+
+  Widget _buildHome(BuildContext context) {
     final ctrl = _controller;
     if (ctrl != null) {
       return EditorShell(
