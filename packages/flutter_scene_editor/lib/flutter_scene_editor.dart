@@ -41,8 +41,10 @@ export 'src/project/fproject.dart'
     show
         BuildConfiguration,
         FProject,
+        buildConfigurationTemplate,
         commandVariables,
         defaultBuildConfigurations,
+        resolveWorkingDirectory,
         substituteCommandVariables,
         tokenizeCommand;
 export 'src/project/project_runner.dart'
@@ -64,6 +66,8 @@ export 'src/toolchains/managed_checkout.dart'
         ManagedCheckoutPaths,
         ManagedCheckoutPhase,
         ManagedCheckouts;
+export 'src/toolchains/device_catalog.dart'
+    show DeviceCatalog, FlutterDevice;
 export 'src/toolchains/editor_build_info.dart' show EditorBuildInfo;
 export 'src/toolchains/flutter_installation.dart'
     show

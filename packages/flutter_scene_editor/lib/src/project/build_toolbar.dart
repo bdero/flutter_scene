@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../settings/editor_settings.dart';
+import '../toolchains/device_catalog.dart';
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
 import 'fproject.dart';
@@ -23,8 +24,11 @@ class BuildToolbar extends StatelessWidget {
     required this.runner,
     required this.project,
     required this.selectedConfiguration,
+    required this.deviceCatalog,
+    required this.selectedDevice,
     required this.onSelectInstallation,
     required this.onSelectConfiguration,
+    required this.onSelectDevice,
     required this.onManageInstallations,
     required this.onEditConfigs,
   });
@@ -35,8 +39,11 @@ class BuildToolbar extends StatelessWidget {
   final ProjectRunner runner;
   final FProject? project;
   final BuildConfiguration? selectedConfiguration;
+  final DeviceCatalog deviceCatalog;
+  final FlutterDevice? selectedDevice;
   final void Function(String? id) onSelectInstallation;
   final void Function(String id) onSelectConfiguration;
+  final void Function(FlutterDevice device) onSelectDevice;
   final VoidCallback onManageInstallations;
   final VoidCallback? onEditConfigs;
 
@@ -63,6 +70,13 @@ class BuildToolbar extends StatelessWidget {
           onSelect: onSelectConfiguration,
           onEdit: onEditConfigs,
         ),
+        const SizedBox(width: 4),
+        _DeviceDropdown(
+          installation: settings.selectedInstallation,
+          catalog: deviceCatalog,
+          selected: selectedDevice,
+          onSelect: onSelectDevice,
+        ),
         const SizedBox(width: 2),
         _ActionButtons(
           settings: settings,
@@ -71,6 +85,7 @@ class BuildToolbar extends StatelessWidget {
           runner: runner,
           project: project,
           configuration: selectedConfiguration,
+          device: selectedDevice,
         ),
       ],
     );
@@ -297,7 +312,7 @@ class _ConfigurationDropdown extends StatelessWidget {
                 Text(config.name, style: const TextStyle(fontSize: 11)),
                 const SizedBox(width: 6),
                 Text(
-                  '${config.platform} · ${config.mode}',
+                  config.mode,
                   style: TextStyle(
                     fontSize: 10,
                     color: scheme.onSurfaceVariant,
@@ -349,6 +364,167 @@ class _ConfigurationDropdown extends StatelessWidget {
   }
 }
 
+/// The device dropdown, sourced live from `flutter devices` against the
+/// selected installation. Selection feeds `${DEVICE}`/`${BUILD_TARGET}`.
+class _DeviceDropdown extends StatefulWidget {
+  const _DeviceDropdown({
+    required this.installation,
+    required this.catalog,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final FlutterInstallation? installation;
+  final DeviceCatalog catalog;
+  final FlutterDevice? selected;
+  final void Function(FlutterDevice device) onSelect;
+
+  @override
+  State<_DeviceDropdown> createState() => _DeviceDropdownState();
+}
+
+class _DeviceDropdownState extends State<_DeviceDropdown> {
+  final MenuController _controller = MenuController();
+  List<FlutterDevice>? _devices;
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _fetch({bool refresh = false}) async {
+    final installation = widget.installation;
+    if (installation == null || _loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final devices = await widget.catalog.list(installation, refresh: refresh);
+      if (mounted) setState(() => _devices = devices);
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final installation = widget.installation;
+    if (installation == null) {
+      return Tooltip(
+        message:
+            'Select a Flutter installation to list devices (the built-in '
+            'toolchain cannot run flutter)',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.devices_outlined,
+                size: 13,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'No device',
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return MenuAnchor(
+      controller: _controller,
+      style: const MenuStyle(visualDensity: VisualDensity.compact),
+      menuChildren: [
+        if (_loading)
+          const MenuItemButton(
+            child: Text('Listing devices…', style: TextStyle(fontSize: 11)),
+          )
+        else if (_error != null)
+          MenuItemButton(
+            child: Text(
+              'Failed to list devices, $_error',
+              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+            ),
+          )
+        else if (_devices == null || _devices!.isEmpty)
+          const MenuItemButton(
+            child: Text('No devices found', style: TextStyle(fontSize: 11)),
+          )
+        else
+          for (final device in _devices!)
+            MenuItemButton(
+              onPressed: () => widget.onSelect(device),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    child: device.id == widget.selected?.id
+                        ? const Icon(Icons.check, size: 12)
+                        : null,
+                  ),
+                  Text(device.name, style: const TextStyle(fontSize: 11)),
+                  const SizedBox(width: 6),
+                  Text(
+                    device.targetPlatform,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        const Divider(height: 8),
+        MenuItemButton(
+          closeOnActivate: false,
+          onPressed: () => _fetch(refresh: true),
+          child: const Text('Refresh', style: TextStyle(fontSize: 11)),
+        ),
+      ],
+      builder: (context, controller, _) => Tooltip(
+        message: 'Target device',
+        waitDuration: const Duration(milliseconds: 600),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(3),
+          onTap: () {
+            if (controller.isOpen) {
+              controller.close();
+            } else {
+              if (_devices == null) _fetch();
+              controller.open();
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.devices_outlined, size: 13),
+                const SizedBox(width: 4),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(
+                    widget.selected?.name ?? 'No device',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down, size: 14),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionButtons extends StatelessWidget {
   const _ActionButtons({
     required this.settings,
@@ -357,6 +533,7 @@ class _ActionButtons extends StatelessWidget {
     required this.runner,
     required this.project,
     required this.configuration,
+    required this.device,
   });
 
   final EditorSettings settings;
@@ -365,6 +542,7 @@ class _ActionButtons extends StatelessWidget {
   final ProjectRunner runner;
   final FProject? project;
   final BuildConfiguration? configuration;
+  final FlutterDevice? device;
 
   String? _blockedReason(InstallationValidation? validation) {
     final installation = settings.selectedInstallation;
@@ -378,6 +556,18 @@ class _ActionButtons extends StatelessWidget {
     }
     if (project == null) return 'Open a project first';
     if (configuration == null) return 'Select a build configuration';
+    if (device == null &&
+        ('${configuration!.buildCommand} ${configuration!.runCommand} '
+                '${configuration!.workingDirectory}')
+            .contains(r'${DEVICE}')) {
+      return 'Select a device (the configuration references \${DEVICE})';
+    }
+    if (device == null &&
+        ('${configuration!.buildCommand} ${configuration!.runCommand}')
+            .contains(r'${BUILD_TARGET}')) {
+      return 'Select a device (the configuration references '
+          r'${BUILD_TARGET})';
+    }
     return null;
   }
 
@@ -407,6 +597,7 @@ class _ActionButtons extends StatelessWidget {
                           installation: installation!,
                           project: project!,
                           configuration: configuration!,
+                          device: device,
                         ),
                 ),
                 _iconButton(
@@ -423,6 +614,7 @@ class _ActionButtons extends StatelessWidget {
                           installation: installation!,
                           project: project!,
                           configuration: configuration!,
+                          device: device,
                         ),
                 ),
               ],

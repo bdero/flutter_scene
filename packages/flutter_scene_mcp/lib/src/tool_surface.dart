@@ -170,6 +170,13 @@ typedef ProjectCommandStopper = Future<void> Function();
 /// The console tail plus building/running flags.
 typedef ConsoleReader = Map<String, Object?> Function(int tail);
 
+/// Lists devices from the selected installation ({devices: [{id, name,
+/// targetPlatform, emulator}]}).
+typedef DeviceLister = Future<Map<String, Object?>> Function({bool refresh});
+
+/// Selects the target device by id for the open project.
+typedef DeviceSelector = Future<void> Function(String id);
+
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
   /// Creates a surface over [session].
@@ -207,6 +214,8 @@ class EditorToolSurface {
     this.runProject,
     this.stopProject,
     this.readConsole,
+    this.listDevices,
+    this.selectDevice,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -293,6 +302,8 @@ class EditorToolSurface {
   final ProjectCommandStarter? runProject;
   final ProjectCommandStopper? stopProject;
   final ConsoleReader? readConsole;
+  final DeviceLister? listDevices;
+  final DeviceSelector? selectDevice;
 
   SceneQuery get _query => session.query;
 
@@ -436,6 +447,35 @@ class EditorToolSurface {
         name: 'stop_project',
         description: 'Stop the running app started by run_project.',
         inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (listDevices != null)
+      const ToolDefinition(
+        name: 'list_devices',
+        description:
+            'Devices reported by the selected Flutter installation (the '
+            'toolbar device dropdown source). Pass refresh true to relist.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'refresh': {'type': 'boolean', 'description': 'Relist devices.'},
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (selectDevice != null)
+      const ToolDefinition(
+        name: 'select_device',
+        description:
+            'Select the target device by id for the open project (feeds the '
+            'DEVICE and BUILD_TARGET command variables).',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string', 'description': 'The device id.'},
+          },
+          'required': ['id'],
+          'additionalProperties': false,
+        },
       ),
     if (readConsole != null)
       const ToolDefinition(
@@ -788,6 +828,31 @@ class EditorToolSurface {
           throw const ToolError('No project control in this session');
         }
         await stopper();
+        return {'ok': true};
+      case 'list_devices':
+        final lister = listDevices;
+        if (lister == null) {
+          throw const ToolError('No project control in this session');
+        }
+        try {
+          return await lister(refresh: args['refresh'] == true);
+        } on FormatException catch (e) {
+          throw ToolError(e.message);
+        }
+      case 'select_device':
+        final deviceSelector = selectDevice;
+        if (deviceSelector == null) {
+          throw const ToolError('No project control in this session');
+        }
+        final deviceId = args['id'];
+        if (deviceId is! String || deviceId.isEmpty) {
+          throw const ToolError('select_device needs a string "id"');
+        }
+        try {
+          await deviceSelector(deviceId);
+        } on FormatException catch (e) {
+          throw ToolError(e.message);
+        }
         return {'ok': true};
       case 'get_console':
         final reader = readConsole;

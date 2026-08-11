@@ -181,6 +181,51 @@ class _EditorHomeState extends State<_EditorHome> {
   // console history survives project and scene swaps.
   final ProjectRunner _runner = ProjectRunner();
 
+  // Device listing against the selected installation (the toolbar's device
+  // dropdown and the \${DEVICE}/\${BUILD_TARGET} variables).
+  final DeviceCatalog _deviceCatalog = DeviceCatalog();
+
+  /// The selected device for the open project. Resolved through the catalog
+  /// cache when listed; a persisted id not yet listed keeps working for
+  /// \${DEVICE} with an unknown platform.
+  FlutterDevice? get _selectedDevice {
+    final project = _project;
+    if (project == null) return null;
+    final id = _settings.selectedDevices[project.path];
+    if (id == null) return null;
+    final installation = _settings.selectedInstallation;
+    final listed = installation == null
+        ? null
+        : _deviceCatalog.cached(installation);
+    if (listed != null) {
+      for (final device in listed) {
+        if (device.id == id) return device;
+      }
+    }
+    return FlutterDevice(id: id, name: id, targetPlatform: '');
+  }
+
+  void _selectDevice(FlutterDevice device) {
+    final project = _project;
+    if (project == null) return;
+    setState(() => _settings.selectedDevices[project.path] = device.id);
+    _persistSettings();
+  }
+
+  // Warms the device cache so a persisted selection regains its platform.
+  void _warmDeviceCache() {
+    final installation = _settings.selectedInstallation;
+    if (installation == null) return;
+    unawaited(
+      _deviceCatalog
+          .list(installation)
+          .then((_) {
+            if (mounted) setState(() {});
+          })
+          .catchError((Object _) {}),
+    );
+  }
+
   /// The selected build configuration for the open project (per-user state in
   /// settings), falling back to the project's first configuration.
   BuildConfiguration? get _selectedBuildConfiguration {
@@ -200,6 +245,7 @@ class _EditorHomeState extends State<_EditorHome> {
     if (project != null) {
       _settings.rememberProject(project.path);
       _persistSettings();
+      _warmDeviceCache();
     }
   }
 
@@ -253,14 +299,10 @@ class _EditorHomeState extends State<_EditorHome> {
       'path': project.path,
       'flutterProjectRoot': project.resolvedProjectRoot,
       'selectedConfigurationId': _selectedBuildConfiguration?.id,
+      'selectedDeviceId': _settings.selectedDevices[project.path],
       'configurations': [
         for (final config in project.buildConfigurations)
-          {
-            'id': config.id,
-            'name': config.name,
-            'platform': config.platform,
-            'mode': config.mode,
-          },
+          {'id': config.id, 'name': config.name, 'mode': config.mode},
       ],
     };
   }
@@ -288,6 +330,7 @@ class _EditorHomeState extends State<_EditorHome> {
           installation: installation,
           project: project,
           configuration: configuration,
+          device: _selectedDevice,
         ),
       );
     } else {
@@ -296,6 +339,7 @@ class _EditorHomeState extends State<_EditorHome> {
           installation: installation,
           project: project,
           configuration: configuration,
+          device: _selectedDevice,
         ),
       );
     }
@@ -311,6 +355,35 @@ class _EditorHomeState extends State<_EditorHome> {
       onChanged: () {
         if (mounted) setState(() {});
       },
+      previewVariables: (configuration) =>
+          _previewVariables(project, configuration),
+    );
+  }
+
+  /// Live variable values for the config editor's preview panel.
+  Map<String, String> _previewVariables(
+    FProject project,
+    BuildConfiguration configuration,
+  ) {
+    final installation = _settings.selectedInstallation;
+    final device = _selectedDevice;
+    if (installation == null) {
+      return {
+        'PROJECT_ROOT': project.resolvedProjectRoot,
+        'MODE': configuration.mode,
+      };
+    }
+    return commandVariables(
+      flutterBin: installation.flutterBin,
+      dartBin: installation.dartBin,
+      sdkRoot: installation.sdkRoot,
+      impellerc: installation.resolvedImpellerc,
+      projectRoot: project.resolvedProjectRoot,
+      configuration: configuration,
+      deviceId: device?.id,
+      buildTarget: device == null || device.targetPlatform.isEmpty
+          ? null
+          : device.buildTarget,
     );
   }
 
@@ -668,6 +741,39 @@ class _EditorHomeState extends State<_EditorHome> {
           buildProject: () => _startFromMcp(run: false),
           runProject: () => _startFromMcp(run: true),
           stopProject: () async => _runner.stopRun(),
+          listDevices: ({bool refresh = false}) async {
+            final installation = _settings.selectedInstallation;
+            if (installation == null) {
+              throw const FormatException(
+                'No Flutter installation is selected; devices come from '
+                'flutter devices against it.',
+              );
+            }
+            final devices = await _deviceCatalog.list(
+              installation,
+              refresh: refresh,
+            );
+            if (mounted) setState(() {});
+            return {
+              'devices': [
+                for (final device in devices)
+                  {
+                    'id': device.id,
+                    'name': device.name,
+                    'targetPlatform': device.targetPlatform,
+                    'emulator': device.emulator,
+                  },
+              ],
+            };
+          },
+          selectDevice: (id) async {
+            final project = _project;
+            if (project == null) {
+              throw const FormatException('No project is open');
+            }
+            setState(() => _settings.selectedDevices[project.path] = id);
+            _persistSettings();
+          },
           readConsole: (tail) => {
             'building': _runner.building,
             'running': _runner.running,
@@ -752,6 +858,9 @@ class _EditorHomeState extends State<_EditorHome> {
               );
               _persistSettings();
             },
+            deviceCatalog: _deviceCatalog,
+            selectedDevice: _selectedDevice,
+            onSelectDevice: _selectDevice,
             onManageInstallations: _showSettings,
             onEditConfigs: _project == null ? null : _editBuildConfigs,
           ),
