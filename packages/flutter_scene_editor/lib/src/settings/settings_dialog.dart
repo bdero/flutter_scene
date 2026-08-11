@@ -20,8 +20,8 @@ Future<void> showSettingsDialog(
   required EditorBuildInfo buildInfo,
   required void Function() onChanged,
   required void Function() onSelectionChanged,
-  Future<void> Function(BuildContext context)? onCreateManaged,
-  Future<void> Function(BuildContext context, FlutterInstallation installation)?
+  Future<FlutterInstallation?> Function(BuildContext context)? onCreateManaged,
+  Future<bool> Function(BuildContext context, FlutterInstallation installation)?
   onDeleteManaged,
 }) {
   return showDialog<void>(
@@ -63,13 +63,14 @@ class SettingsDialog extends StatefulWidget {
   /// toolchain).
   final void Function() onSelectionChanged;
 
-  /// Creates a managed checkout matching the editor's build; null hides the
-  /// affordance (identity unknown).
-  final Future<void> Function(BuildContext context)? onCreateManaged;
+  /// Creates a managed checkout matching the editor's build and returns its
+  /// installation record (null on failure/cancel); null hides the affordance.
+  final Future<FlutterInstallation?> Function(BuildContext context)?
+  onCreateManaged;
 
-  /// Deletes a managed checkout from disk; null leaves managed rows
-  /// undeletable.
-  final Future<void> Function(
+  /// Deletes a managed checkout from disk, returning whether it was deleted;
+  /// null leaves managed rows undeletable.
+  final Future<bool> Function(
     BuildContext context,
     FlutterInstallation installation,
   )?
@@ -157,6 +158,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
     widget.onSelectionChanged();
   }
 
+  Future<void> _createManaged(BuildContext context) async {
+    final created = await widget.onCreateManaged!(context);
+    if (created == null || !mounted) return;
+    _mutate(() {
+      _settings.flutterInstallations.removeWhere(
+        (candidate) => candidate.id == created.id,
+      );
+      _settings.flutterInstallations.add(created);
+      _highlightedId = created.id;
+    });
+    _selectActive(created.id);
+  }
+
+  Future<void> _deleteManaged(FlutterInstallation installation) async {
+    final deleted = await widget.onDeleteManaged!(context, installation);
+    if (!deleted || !mounted) return;
+    _removeInstallation(installation);
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -195,7 +215,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     variant: .outline,
                     size: .xs,
                     mainAxisSize: .min,
-                    onPress: () => widget.onCreateManaged!(context),
+                    onPress: () => _createManaged(context),
                     prefix: const Icon(Icons.download_outlined, size: 14),
                     child: const Text('Create managed checkout…'),
                   ),
@@ -345,7 +365,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
       },
       onDeleteManaged: widget.onDeleteManaged == null
           ? null
-          : () => widget.onDeleteManaged!(context, installation),
+          : () => _deleteManaged(installation),
     );
   }
 

@@ -169,6 +169,10 @@ class _EditorHomeState extends State<_EditorHome> {
     unawaited(controller.recompose());
   }
 
+  late final ManagedCheckouts _managedCheckouts = ManagedCheckouts(
+    paths: ManagedCheckoutPaths('${_settingsDirectory().path}/sdks'),
+  );
+
   Future<void> _showSettings() => showSettingsDialog(
     context,
     settings: _settings,
@@ -179,7 +183,67 @@ class _EditorHomeState extends State<_EditorHome> {
       if (mounted) setState(() {});
     },
     onSelectionChanged: _onInstallationSelectionChanged,
+    onCreateManaged: _buildInfo.isKnown ? _createManagedCheckout : null,
+    onDeleteManaged: _deleteManagedCheckout,
   );
+
+  Future<FlutterInstallation?> _createManagedCheckout(
+    BuildContext context,
+  ) async {
+    final job = _managedCheckouts.create(_buildInfo);
+    await showManagedCheckoutDialog(context, job);
+    if (!job.done) job.cancel();
+    final result = job.result;
+    if (result != null) _inspector.invalidate(result.flutterBin);
+    return result;
+  }
+
+  Future<bool> _deleteManagedCheckout(
+    BuildContext context,
+    FlutterInstallation installation,
+  ) async {
+    final (cacheBytes, checkoutBytes) = await _managedCheckouts.sizeOf(
+      installation,
+    );
+    if (!context.mounted) return false;
+    String gb(int bytes) => (bytes / (1 << 30)).toStringAsFixed(2);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete managed checkout?'),
+        content: Text(
+          '"${installation.name}" will be removed from disk.\n\n'
+          'Tool and artifact cache, ${gb(cacheBytes)} GB\n'
+          'Git checkout, ${gb(checkoutBytes)} GB\n\n'
+          'Recreating it later downloads the caches again (the shared git '
+          'mirror is kept).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    try {
+      await _managedCheckouts.delete(installation);
+    } on FileSystemException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          SnackBar(content: Text('Failed to delete the checkout, $e')),
+        );
+      }
+      return false;
+    }
+    _inspector.invalidate(installation.flutterBin);
+    return true;
+  }
 
   EditorController get _requireController {
     final controller = _controller;
