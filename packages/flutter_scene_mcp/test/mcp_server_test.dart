@@ -110,5 +110,44 @@ void main() {
         await server.shutdown();
       },
     );
+
+    test(
+      'offers and serves the window screenshot tool when a provider is set',
+      () async {
+        final viewportPixels = Uint8List.fromList([1, 2, 3, 4]);
+        final windowPixels = Uint8List.fromList([5, 6, 7, 8]);
+        final surface = EditorToolSurface.of(
+          _session(),
+          screenshot: () async =>
+              ScreenshotResult(pngBytes: viewportPixels, width: 2, height: 1),
+          windowScreenshot: () async =>
+              ScreenshotResult(pngBytes: windowPixels, width: 4, height: 2),
+        );
+        final server = await _connect(surface);
+
+        final tools = (await server.listTools(
+          ListToolsRequest(),
+        )).tools.map((t) => t.name).toSet();
+        expect(tools, contains('screenshot_window'));
+
+        final shot = await server.callTool(
+          CallToolRequest(name: 'screenshot_window'),
+        );
+        final image = shot.content.single as ImageContent;
+        expect(image.mimeType, 'image/png');
+        expect(base64Decode(image.data), windowPixels);
+        await server.shutdown();
+      },
+    );
+
+    test('omits the window screenshot tool without a provider', () async {
+      final surface = EditorToolSurface.of(_session());
+      final server = await _connect(surface);
+      final tools = (await server.listTools(
+        ListToolsRequest(),
+      )).tools.map((t) => t.name).toSet();
+      expect(tools, isNot(contains('screenshot_window')));
+      await server.shutdown();
+    });
   });
 }
