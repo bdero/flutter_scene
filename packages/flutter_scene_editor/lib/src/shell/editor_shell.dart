@@ -117,9 +117,14 @@ class EditorShell extends StatefulWidget {
     this.namedLayouts = const {},
     this.onSaveNamedLayout,
     this.onDeleteNamedLayout,
+    this.onShowSettings,
   });
 
   final EditorController controller;
+
+  /// Opens the host's settings window (Flutter installations, ...); null
+  /// hides the menu item.
+  final VoidCallback? onShowSettings;
 
   /// Called when the user opens a new file or clears the scene; the parent
   /// should rebuild with the new controller.
@@ -690,6 +695,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onTogglePanel: _togglePanel,
                   onNewViewport: _newViewport,
                   onShowToolchain: _showToolchain,
+                  onShowSettings: widget.onShowSettings,
                   namedLayouts: widget.namedLayouts,
                   onApplyLayout: _applyDockLayout,
                   onSaveCurrentLayout: _saveCurrentLayoutAs,
@@ -1097,6 +1103,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onTogglePanel,
     required this.onNewViewport,
     required this.onShowToolchain,
+    this.onShowSettings,
     required this.namedLayouts,
     required this.onApplyLayout,
     required this.onSaveCurrentLayout,
@@ -1131,6 +1138,7 @@ class _EditorMenuBar extends StatelessWidget {
   final ValueChanged<String> onTogglePanel;
   final VoidCallback onNewViewport;
   final VoidCallback onShowToolchain;
+  final VoidCallback? onShowSettings;
   final Map<String, String> namedLayouts;
   final ValueChanged<String?> onApplyLayout;
   final VoidCallback onSaveCurrentLayout;
@@ -1206,6 +1214,10 @@ class _EditorMenuBar extends StatelessWidget {
                 ),
                 _MenuItem(label: 'Save', onTap: onSave),
                 _MenuItem(label: 'Save As…', onTap: onSaveAs),
+                if (onShowSettings != null) ...[
+                  const _MenuItem.divider(),
+                  _MenuItem(label: 'Settings…', onTap: onShowSettings),
+                ],
               ],
             ),
             _Menu(

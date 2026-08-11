@@ -2,17 +2,29 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import '../toolchains/flutter_installation.dart';
+
 /// Persisted editor preferences shared across documents.
 class EditorSettings {
   EditorSettings({
     this.dockLayout,
     Map<String, String>? namedLayouts,
     List<String>? recentScenes,
+    List<FlutterInstallation>? flutterInstallations,
+    this.selectedInstallationId,
+    List<String>? recentProjects,
+    Map<String, String>? selectedBuildConfigurations,
   }) : namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
-       recentScenes = List.of(recentScenes ?? const []);
+       recentScenes = List.of(recentScenes ?? const []),
+       flutterInstallations = List.of(flutterInstallations ?? const []),
+       recentProjects = List.of(recentProjects ?? const []),
+       selectedBuildConfigurations = Map.of(
+         selectedBuildConfigurations ?? const {},
+       );
 
   static const int currentVersion = 1;
   static const int maximumRecentScenes = 10;
+  static const int maximumRecentProjects = 10;
 
   factory EditorSettings.fromJsonString(String source) {
     final decoded = jsonDecode(source);
@@ -41,12 +53,49 @@ class EditorSettings {
           for (final path in json['recentScenes'] as List)
             if (path is String) path,
       ].take(maximumRecentScenes).toList(),
+      flutterInstallations: [
+        if (json['flutterInstallations'] is List)
+          for (final entry in json['flutterInstallations'] as List)
+            if (entry is Map)
+              FlutterInstallation.fromJson(entry.cast<String, Object?>()),
+      ],
+      selectedInstallationId: json['selectedInstallationId'] as String?,
+      recentProjects: [
+        if (json['recentProjects'] is List)
+          for (final path in json['recentProjects'] as List)
+            if (path is String) path,
+      ].take(maximumRecentProjects).toList(),
+      selectedBuildConfigurations: {
+        if (json['projectState'] is Map)
+          for (final entry in (json['projectState'] as Map).entries)
+            if (entry.key is String &&
+                entry.value is Map &&
+                (entry.value as Map)['selectedBuildConfigurationId'] is String)
+              entry.key as String:
+                  (entry.value as Map)['selectedBuildConfigurationId']
+                      as String,
+      },
     );
   }
 
   String? dockLayout;
   final LinkedHashMap<String, String> namedLayouts;
   final List<String> recentScenes;
+
+  /// Registered Flutter installations (the global toolchain registry).
+  final List<FlutterInstallation> flutterInstallations;
+
+  /// The globally selected installation's id, or null for the built-in
+  /// bundled toolchain.
+  String? selectedInstallationId;
+
+  /// Recently opened `.fproject` paths, newest first.
+  final List<String> recentProjects;
+
+  /// Per-project selected build configuration ids, keyed by the `.fproject`
+  /// absolute path. Per-user state deliberately kept out of the committed
+  /// project file.
+  final Map<String, String> selectedBuildConfigurations;
 
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
@@ -60,6 +109,18 @@ class EditorSettings {
         if (_encodeLayout(entry.value) case final layout?) entry.key: layout,
     },
     'recentScenes': recentScenes,
+    if (flutterInstallations.isNotEmpty)
+      'flutterInstallations': [
+        for (final installation in flutterInstallations) installation.toJson(),
+      ],
+    if (selectedInstallationId != null)
+      'selectedInstallationId': selectedInstallationId,
+    if (recentProjects.isNotEmpty) 'recentProjects': recentProjects,
+    if (selectedBuildConfigurations.isNotEmpty)
+      'projectState': {
+        for (final entry in selectedBuildConfigurations.entries)
+          entry.key: {'selectedBuildConfigurationId': entry.value},
+      },
   });
 
   static Map<String, Object?>? _encodeLayout(String? source) {
@@ -91,6 +152,36 @@ class EditorSettings {
       ..clear()
       ..addAll(paths.take(maximumRecentScenes));
   }
+
+  /// Adds [path] to the front of the recent projects, capped like scenes.
+  void rememberProject(String path) {
+    final absolute = File(path).absolute.path;
+    recentProjects.removeWhere((candidate) => _samePath(candidate, absolute));
+    recentProjects.insert(0, absolute);
+    if (recentProjects.length > maximumRecentProjects) {
+      recentProjects.removeRange(maximumRecentProjects, recentProjects.length);
+    }
+  }
+
+  void forgetProject(String path) {
+    recentProjects.removeWhere((candidate) => _samePath(candidate, path));
+    selectedBuildConfigurations.remove(path);
+  }
+
+  /// The registered installation with [id], or null (including the built-in
+  /// toolchain's null id).
+  FlutterInstallation? installationById(String? id) {
+    if (id == null) return null;
+    for (final installation in flutterInstallations) {
+      if (installation.id == id) return installation;
+    }
+    return null;
+  }
+
+  /// The currently selected installation, or null for the built-in toolchain
+  /// (also the fallback when the selected id no longer exists).
+  FlutterInstallation? get selectedInstallation =>
+      installationById(selectedInstallationId);
 
   /// Saves a named snapshot, replacing an exact or case-insensitive match.
   void saveNamedLayout(String name, String layout) {

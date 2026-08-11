@@ -4,6 +4,7 @@
 // TODO(docking): drop these ignores when the windowing API is stable.
 // ignore_for_file: invalid_use_of_internal_member
 // ignore_for_file: implementation_imports
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -120,6 +121,11 @@ class _EditorHomeState extends State<_EditorHome> {
   // in agreement.
   String? _scenePath;
 
+  // The identity this build was made with (bundled by the build hook) and
+  // the prober behind installation health badges.
+  EditorBuildInfo _buildInfo = EditorBuildInfo.unknown;
+  final InstallationInspector _inspector = InstallationInspector();
+
   @override
   void initState() {
     super.initState();
@@ -129,11 +135,51 @@ class _EditorHomeState extends State<_EditorHome> {
       legacyDockLayoutFile: File('${directory.path}/dock_layout.json'),
     );
     _settings = _settingsStore.load();
+    unawaited(
+      EditorBuildInfo.load(
+        'packages/flutter_scene_editor_app/editor_build_info.json',
+      ).then((info) {
+        if (mounted) setState(() => _buildInfo = info);
+      }),
+    );
     // The MCP server runs for the app's whole life (not per document), so an
     // agent can create or open a document itself and drive the editor
     // start to finish.
     _startMcpServer();
   }
+
+  // Routes the fmat compiler through the selected Flutter installation; no
+  // selection falls back to the bundled/detected toolchain.
+  Future<FmatToolchain> _resolveToolchain() {
+    final selected = _settings.selectedInstallation;
+    if (selected == null) return findFmatToolchain();
+    return fmatToolchainForInstallation(selected);
+  }
+
+  void _configureController(EditorController controller) {
+    controller.fmatLibrary.toolchainResolver = _resolveToolchain;
+  }
+
+  // The selected installation changed; recompile fmats through the new
+  // toolchain.
+  void _onInstallationSelectionChanged() {
+    final controller = _controller;
+    if (controller == null) return;
+    controller.fmatLibrary.invalidateToolchain();
+    unawaited(controller.recompose());
+  }
+
+  Future<void> _showSettings() => showSettingsDialog(
+    context,
+    settings: _settings,
+    inspector: _inspector,
+    buildInfo: _buildInfo,
+    onChanged: () {
+      _persistSettings();
+      if (mounted) setState(() {});
+    },
+    onSelectionChanged: _onInstallationSelectionChanged,
+  );
 
   EditorController get _requireController {
     final controller = _controller;
@@ -146,6 +192,7 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   void _replaceController(EditorController controller, {String? path}) {
+    _configureController(controller);
     final old = _controller;
     setState(() {
       _controller = controller;
@@ -420,10 +467,12 @@ class _EditorHomeState extends State<_EditorHome> {
         menuBarLeadingInset: _windowControlsInset,
         onMenuBarDragStart: _startWindowDrag,
         onControllerReplaced: (newCtrl) {
+          _configureController(newCtrl);
           final old = _controller;
           setState(() => _controller = newCtrl);
           old?.dispose();
         },
+        onShowSettings: _showSettings,
       );
     }
     // With no native title bar, the start screen offers a drag strip along

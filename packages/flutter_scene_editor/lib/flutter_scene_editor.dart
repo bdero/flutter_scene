@@ -27,9 +27,25 @@ export 'src/io/scene_io.dart'
         pickModelPath,
         pickOpenPath,
         saveFscene;
+export 'src/materials/fmat_library.dart'
+    show
+        EditorFmatLibrary,
+        FmatToolchain,
+        findFmatToolchain,
+        fmatToolchainForInstallation;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/settings/editor_settings.dart'
     show EditorSettings, EditorSettingsStore;
+export 'src/settings/settings_dialog.dart'
+    show SettingsDialog, showSettingsDialog;
+export 'src/toolchains/editor_build_info.dart' show EditorBuildInfo;
+export 'src/toolchains/flutter_installation.dart'
+    show
+        FlutterInstallation,
+        InstallationInspector,
+        InstallationProbe,
+        InstallationSeverity,
+        InstallationValidation;
 export 'src/shell/editor_shell.dart' show EditorShell;
 export 'src/shell/editor_theme.dart'
     show EditorThemeScope, editorDarkTheme, editorForuiDarkTheme;

@@ -12,11 +12,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  data_assets: ^0.20.0
   file_selector: ^1.0.0
   flutter_scene_editor:
     path: ../../packages/flutter_scene_editor
   flutter_scene_mcp:
     path: ../../packages/flutter_scene_mcp
+  hooks: ^2.0.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0
