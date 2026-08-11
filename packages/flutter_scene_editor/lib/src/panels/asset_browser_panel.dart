@@ -12,8 +12,6 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-// ignore: implementation_imports
-import 'package:scene/scene.dart';
 
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
@@ -376,29 +374,16 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     );
   }
 
-  // The origin of a pool resource: an fmat material or file-backed texture is
-  // external even though its record lives in the document, so the browser flags
-  // it the same way the inspector does.
-  (ResourceLocality, String?) _embeddedOrigin(LocalId id) {
-    final spec = _ctrl.document.resource(id);
-    return switch (spec) {
-      MaterialResource() => (materialLocality(spec), spec.asset?.key),
-      TextureResource() => (textureLocality(spec), spec.asset?.key),
-      EnvironmentResource(:final environment) =>
-        environment is AssetEnvironment
-            ? (ResourceLocality.external, environment.asset.key)
-            : (ResourceLocality.builtIn, null),
-      _ => (ResourceLocality.builtIn, null),
-    };
-  }
-
   Widget _embeddedTile(BuildContext context, EmbeddedResource r) {
     final used = r.usedBy;
     final subtitle = used.isEmpty
         ? 'Unused'
         : 'Used by ${used.length}: ${used.take(3).join(', ')}'
               '${used.length > 3 ? '…' : ''}';
-    final (locality, path) = _embeddedOrigin(r.id);
+    final spec = _ctrl.document.resource(r.id);
+    final (locality, path) = spec == null
+        ? (ResourceLocality.builtIn, null)
+        : resourceOriginOf(spec);
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),

@@ -32,6 +32,21 @@ ResourceLocality textureLocality(TextureResource texture) =>
     ? ResourceLocality.external
     : ResourceLocality.builtIn;
 
+/// The locality of any pool resource, plus the external path when it has one.
+/// A resource's record always lives in the document; "external" means its
+/// content comes from a file on disk (an `.fmat` source, an image asset, an
+/// environment image).
+(ResourceLocality, String?) resourceOriginOf(ResourceSpec spec) =>
+    switch (spec) {
+      MaterialResource() => (materialLocality(spec), spec.asset?.key),
+      TextureResource() => (textureLocality(spec), spec.asset?.key),
+      EnvironmentResource(:final environment) =>
+        environment is AssetEnvironment
+            ? (ResourceLocality.external, environment.asset.key)
+            : (ResourceLocality.builtIn, null),
+      _ => (ResourceLocality.builtIn, null),
+    };
+
 /// A compact pill marking a resource reference as built into the document or an
 /// external file. External badges carry the file path in a tooltip so it is
 /// always clear what is being referenced from where.
