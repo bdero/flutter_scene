@@ -1044,13 +1044,22 @@ class EditorController extends ChangeNotifier {
     }
     // Creating an unreferenced resource has no live-scene effect. Primitive
     // creation builds its geometry and material before attaching either to a
-    // node, so realizing the entire existing scene here is pure waste.
+    // node, so realizing the entire existing scene here is pure waste. An fmat
+    // material is the exception: compile it now (async) so the realizer has it
+    // cached when a mesh later references it, instead of the synchronous
+    // component realize degrading to unlit.
     if (transaction.records.every(
       (r) =>
           r.slot == ChangeSlot.poolResource &&
           r.oldValue is ResourceChange &&
           (r.oldValue as ResourceChange).value == null,
     )) {
+      final fmatCreates = transaction.records
+          .map((r) => r.targetId)
+          .where(_isFmatMaterial)
+          .toSet();
+      if (fmatCreates.isEmpty) return;
+      await _reflectMaterials(fmatCreates);
       return;
     }
     // An environment-resource edit re-resolves only the affected environments
@@ -1139,6 +1148,12 @@ class EditorController extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  // Whether resource [id] is an fmat material (which compiles asynchronously).
+  bool _isFmatMaterial(LocalId id) {
+    final res = document.resource(id);
+    return res is MaterialResource && res.type == 'fmat';
   }
 
   // Whether any changed fmat material resource cannot be reconciled onto its
