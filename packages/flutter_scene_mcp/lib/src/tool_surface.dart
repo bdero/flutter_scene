@@ -146,6 +146,30 @@ typedef DocumentOpener = Future<void> Function(String path);
 /// [FormatException] when no path is known yet.
 typedef DocumentSaver = Future<String> Function({String? path});
 
+/// Opens (or creates for a directory) an `.fproject`; returns the same shape
+/// as [ProjectInfo].
+typedef ProjectOpener = Future<Map<String, Object?>> Function(String path);
+
+/// Closes the open project.
+typedef ProjectCloser = Future<void> Function();
+
+/// The open project's info (name, path, root, configurations, selected
+/// configuration id), or null with no project open.
+typedef ProjectInfo = Map<String, Object?>? Function();
+
+/// Selects the project's build configuration by id.
+typedef BuildConfigurationSelector = Future<void> Function(String id);
+
+/// Starts the selected configuration's build/run command; returns whether it
+/// started.
+typedef ProjectCommandStarter = Future<bool> Function();
+
+/// Stops the running app/build.
+typedef ProjectCommandStopper = Future<void> Function();
+
+/// The console tail plus building/running flags.
+typedef ConsoleReader = Map<String, Object?> Function(int tail);
+
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
   /// Creates a surface over [session].
@@ -175,6 +199,14 @@ class EditorToolSurface {
     this.newDocument,
     this.openDocument,
     this.saveDocument,
+    this.openProject,
+    this.closeProject,
+    this.projectInfo,
+    this.selectBuildConfiguration,
+    this.buildProject,
+    this.runProject,
+    this.stopProject,
+    this.readConsole,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -251,6 +283,17 @@ class EditorToolSurface {
   /// lifecycle control.
   final DocumentSaver? saveDocument;
 
+  /// Project lifecycle and build/run control; null members hide the
+  /// corresponding tools (a headless session).
+  final ProjectOpener? openProject;
+  final ProjectCloser? closeProject;
+  final ProjectInfo? projectInfo;
+  final BuildConfigurationSelector? selectBuildConfiguration;
+  final ProjectCommandStarter? buildProject;
+  final ProjectCommandStarter? runProject;
+  final ProjectCommandStopper? stopProject;
+  final ConsoleReader? readConsole;
+
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
@@ -317,6 +360,93 @@ class EditorToolSurface {
             'path': {
               'type': 'string',
               'description': 'Absolute path for the .fscene file.',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (openProject != null)
+      const ToolDefinition(
+        name: 'open_project',
+        description:
+            'Open a .fproject (or a Flutter project directory, creating a '
+            'default .fproject beside its pubspec.yaml). Independent of the '
+            'open scene. Returns the project info with its build '
+            'configurations.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {
+              'type': 'string',
+              'description':
+                  'Absolute path to a .fproject file or a Flutter project '
+                  'directory.',
+            },
+          },
+          'required': ['path'],
+          'additionalProperties': false,
+        },
+      ),
+    if (closeProject != null)
+      const ToolDefinition(
+        name: 'close_project',
+        description: 'Close the open project (the scene stays open).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (projectInfo != null)
+      const ToolDefinition(
+        name: 'get_project',
+        description:
+            'The open project (name, root, build configurations, selected '
+            'configuration), or projectOpen false.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (selectBuildConfiguration != null)
+      const ToolDefinition(
+        name: 'select_build_configuration',
+        description: 'Select the project build configuration by id.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string', 'description': 'The configuration id.'},
+          },
+          'required': ['id'],
+          'additionalProperties': false,
+        },
+      ),
+    if (buildProject != null)
+      const ToolDefinition(
+        name: 'build_project',
+        description:
+            'Start the selected configuration\'s build command (streams into '
+            'the console; poll get_console).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (runProject != null)
+      const ToolDefinition(
+        name: 'run_project',
+        description:
+            'Start the selected configuration\'s run command, the Play '
+            'button (streams into the console; poll get_console; '
+            'stop_project stops it).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (stopProject != null)
+      const ToolDefinition(
+        name: 'stop_project',
+        description: 'Stop the running app started by run_project.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (readConsole != null)
+      const ToolDefinition(
+        name: 'get_console',
+        description: 'The build/run console tail plus building/running flags.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'tail': {
+              'type': 'integer',
+              'description': 'Lines from the end (default 100).',
             },
           },
           'additionalProperties': false,
@@ -596,6 +726,76 @@ class EditorToolSurface {
         } on FormatException catch (e) {
           throw ToolError(e.message);
         }
+      case 'open_project':
+        final opener = openProject;
+        if (opener == null) {
+          throw const ToolError('No project control in this session');
+        }
+        final projectPath = args['path'];
+        if (projectPath is! String || projectPath.isEmpty) {
+          throw const ToolError('open_project needs a string "path"');
+        }
+        try {
+          return await opener(projectPath);
+        } on FormatException catch (e) {
+          throw ToolError(e.message);
+        }
+      case 'close_project':
+        final closer = closeProject;
+        if (closer == null) {
+          throw const ToolError('No project control in this session');
+        }
+        await closer();
+        return {'ok': true};
+      case 'get_project':
+        final info = projectInfo;
+        if (info == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return info() ?? {'projectOpen': false};
+      case 'select_build_configuration':
+        final selector = selectBuildConfiguration;
+        if (selector == null) {
+          throw const ToolError('No project control in this session');
+        }
+        final id = args['id'];
+        if (id is! String || id.isEmpty) {
+          throw const ToolError(
+            'select_build_configuration needs a string "id"',
+          );
+        }
+        try {
+          await selector(id);
+        } on FormatException catch (e) {
+          throw ToolError(e.message);
+        }
+        return {'ok': true};
+      case 'build_project':
+        final builder = buildProject;
+        if (builder == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return {'ok': true, 'started': await builder()};
+      case 'run_project':
+        final startRunner = runProject;
+        if (startRunner == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return {'ok': true, 'started': await startRunner()};
+      case 'stop_project':
+        final stopper = stopProject;
+        if (stopper == null) {
+          throw const ToolError('No project control in this session');
+        }
+        await stopper();
+        return {'ok': true};
+      case 'get_console':
+        final reader = readConsole;
+        if (reader == null) {
+          throw const ToolError('No project control in this session');
+        }
+        final tail = args['tail'];
+        return reader(tail is num ? tail.toInt() : 100);
       case 'import_environment':
         final envImporter = importEnvironment;
         if (envImporter == null) {
