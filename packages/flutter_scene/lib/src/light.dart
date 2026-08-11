@@ -634,6 +634,7 @@ class Lighting {
     this.ssaoMap,
     this.specularOcclusionMode = 0.0,
     this.ssaoDirectLightAffect = 0.0,
+    this.ssaoMultiBounce = 0.0,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -738,6 +739,10 @@ class Lighting {
 
   /// Fraction of screen-space occlusion applied to analytic direct lights.
   final double ssaoDirectLightAffect;
+
+  /// How much occluded indirect diffuse converges toward the surface albedo
+  /// instead of black (the multi-bounce approximation).
+  final double ssaoMultiBounce;
 
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.

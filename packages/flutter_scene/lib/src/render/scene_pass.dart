@@ -79,6 +79,7 @@ class ScenePass extends RenderGraphPass {
     List<ShadowCascade> cascades = const [],
     double specularOcclusionMode = 0.0,
     double ssaoDirectLightAffect = 0.0,
+    double ssaoMultiBounce = 0.0,
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
@@ -106,6 +107,7 @@ class ScenePass extends RenderGraphPass {
        _cascades = cascades,
        _specularOcclusionMode = specularOcclusionMode,
        _ssaoDirectLightAffect = ssaoDirectLightAffect,
+       _ssaoMultiBounce = ssaoMultiBounce,
        _fog = fog,
        _cullingPlanes = cullingPlanes,
        _includeOffscreen = includeOffscreen;
@@ -127,6 +129,7 @@ class ScenePass extends RenderGraphPass {
   final List<ShadowCascade> _cascades;
   final double _specularOcclusionMode;
   final double _ssaoDirectLightAffect;
+  final double _ssaoMultiBounce;
   final Fog? _fog;
 
   // Material scene inputs (see Material.sceneInputs): whether to capture
@@ -278,6 +281,7 @@ class ScenePass extends RenderGraphPass {
       ssaoMap: ssaoMap,
       specularOcclusionMode: ssaoMap == null ? 0.0 : _specularOcclusionMode,
       ssaoDirectLightAffect: ssaoMap == null ? 0.0 : _ssaoDirectLightAffect,
+      ssaoMultiBounce: ssaoMap == null ? 0.0 : _ssaoMultiBounce,
       viewportSize: _dimensions,
       fog: _fog,
       sceneDepthLinear: _bindSceneDepth

@@ -217,6 +217,19 @@ float ComputeSpecularOcclusion(float n_dot_v, float occlusion,
       0.0, 1.0);
 }
 
+// Approximates the light that keeps bouncing inside an occluded cavity,
+// tinted by the surface albedo, so occlusion converges toward the surface
+// color instead of black (cubic fit from Jimenez et al. 2016, "Practical
+// Realtime Strategies for Accurate Indirect Occlusion"). Applied only to
+// indirect diffuse.
+vec3 MultiBounceOcclusion(float visibility, vec3 albedo) {
+  vec3 a = 2.0404 * albedo - 0.3324;
+  vec3 b = -4.7951 * albedo + 0.6417;
+  vec3 c = 2.7552 * albedo + 0.6903;
+  return max(vec3(visibility),
+             ((visibility * a + b) * visibility + c) * visibility);
+}
+
 // The number of additional analytic lights (point, spot, and directional
 // lights past the first) the loop below can shade in one draw. Must match
 // kMaxPunctualLights in lib/src/render/punctual_lights.dart. The loop is
@@ -458,6 +471,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // screen-space ambient occlusion when it is enabled. Occlusion only ever
   // affects indirect lighting, never the analytic direct light below.
   float occlusion = material.occlusion;
+  vec3 diffuse_occlusion = vec3(occlusion);
 #ifndef FLUTTER_SCENE_SKIP_SSAO
   if (frag_info.ssao_params.x > 0.5) {
     vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
@@ -469,6 +483,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
     occlusion = min(occlusion, texture(ssao_texture, screen_uv).r);
+    // Occluded creases keep albedo-tinted bounce light instead of darkening
+    // to gray.
+    diffuse_occlusion = mix(
+        vec3(occlusion), MultiBounceOcclusion(occlusion, albedo),
+        clamp(frag_info.ssao_lighting.y, 0.0, 1.0));
   }
 #endif
 
@@ -670,7 +689,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float ambient_shadow = mix(1.0, sun_visibility, frag_info.radiance_blend.y);
 
   vec3 ambient =
-      (indirect_diffuse * occlusion + indirect_specular * specular_occlusion) *
+      (indirect_diffuse * diffuse_occlusion +
+       indirect_specular * specular_occlusion) *
       ambient_shadow;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   ambient += material.diffuse_transmission_color * (1.0 - metallic) *

@@ -2,6 +2,7 @@ import 'package:example_app/example_car.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart'
     show
+        AmbientOcclusionMethod,
         AntiAliasingMode,
         DepthOfFieldQuality,
         Scene,
@@ -722,17 +723,52 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           value: settings.enabled,
           onChanged: (value) => setState(() => settings.enabled = value),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Ground-truth method'),
+          value: settings.method == AmbientOcclusionMethod.groundTruth,
+          onChanged: (value) => setState(() {
+            settings.method = value
+                ? AmbientOcclusionMethod.groundTruth
+                : AmbientOcclusionMethod.obscurance;
+          }),
+        ),
         _slider('Radius', settings.radius, 0.05, 2, (v) {
           settings.radius = v;
         }),
         _slider('Intensity', settings.intensity, 0, 3, (v) {
           settings.intensity = v;
         }),
-        _slider('Bias', settings.bias, 0, 0.1, (v) {
-          settings.bias = v;
-        }),
-        _slider('Samples', settings.sampleCount.toDouble(), 4, 32, (v) {
-          settings.sampleCount = v.round();
+        if (settings.method == AmbientOcclusionMethod.groundTruth) ...[
+          _slider('Slices', settings.sliceCount.toDouble(), 1, 8, (v) {
+            settings.sliceCount = v.round();
+          }),
+          _slider('Steps per slice', settings.stepsPerSlice.toDouble(), 1, 8, (
+            v,
+          ) {
+            settings.stepsPerSlice = v.round();
+          }),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Visibility bitmask'),
+            value: settings.visibilityBitmask,
+            onChanged: (value) =>
+                setState(() => settings.visibilityBitmask = value),
+          ),
+          if (settings.visibilityBitmask)
+            _slider('Thickness', settings.thickness, 0.05, 2, (v) {
+              settings.thickness = v;
+            }),
+        ] else ...[
+          _slider('Bias', settings.bias, 0, 0.1, (v) {
+            settings.bias = v;
+          }),
+          _slider('Samples', settings.sampleCount.toDouble(), 4, 32, (v) {
+            settings.sampleCount = v.round();
+          }),
+        ],
+        _slider('Multi bounce', settings.multiBounce, 0, 1, (v) {
+          settings.multiBounce = v;
         }),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

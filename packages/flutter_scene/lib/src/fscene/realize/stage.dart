@@ -251,6 +251,10 @@ void _applyEffectSpec(
     ..chromaticAberrationIntensity = effects.chromaticAberrationIntensity
     ..filmGrainEnabled = effects.filmGrainEnabled
     ..filmGrainIntensity = effects.filmGrainIntensity
+    // TODO(ambient-occlusion): map method, sliceCount, stepsPerSlice,
+    // visibilityBitmask, thickness, thicknessHeuristic, and multiBounce once
+    // EnvironmentEffectsSpec (package:scene) gains them; documents keep the
+    // obscurance defaults until then.
     ..ambientOcclusionEnabled = effects.ambientOcclusionEnabled
     ..ambientOcclusionRadius = effects.ambientOcclusionRadius
     ..ambientOcclusionIntensity = effects.ambientOcclusionIntensity

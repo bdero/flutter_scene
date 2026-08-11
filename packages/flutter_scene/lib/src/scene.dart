@@ -1472,6 +1472,7 @@ base class Scene implements SceneGraph {
         cascades: effectiveCascades,
         specularOcclusionMode: ambientOcclusion.specularMode.index.toDouble(),
         ssaoDirectLightAffect: ambientOcclusion.directLightAffect,
+        ssaoMultiBounce: ambientOcclusion.multiBounce,
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,

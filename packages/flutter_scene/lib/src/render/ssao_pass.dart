@@ -81,11 +81,13 @@ final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
   heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
 );
 
-/// Evaluates Scalable Ambient Obscurance over the camera linear-depth
+/// Evaluates screen-space ambient occlusion over the camera linear-depth
 /// target and publishes the raw (unblurred) occlusion for [SsaoBlurPass].
 ///
-/// A single full-screen fragment pass, no compute. See
-/// `flutter_scene_ssao.frag` for the algorithm.
+/// A single full-screen fragment pass, no compute. The fragment shader is
+/// selected by [AmbientOcclusionSettings.method]; see
+/// `flutter_scene_ssao.frag` and `flutter_scene_gtao.frag` for the
+/// algorithms.
 class SsaoPass extends RenderGraphPass {
   SsaoPass({
     required ui.Size dimensions,
@@ -107,7 +109,10 @@ class SsaoPass extends RenderGraphPass {
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
-  static final gpu.Shader _fragmentShader = baseShaderLibrary['SsaoFragment']!;
+  static final gpu.Shader _obscuranceShader =
+      baseShaderLibrary['SsaoFragment']!;
+  static final gpu.Shader _groundTruthShader =
+      baseShaderLibrary['GtaoFragment']!;
   static final gpu.Shader _downsampleShader =
       baseShaderLibrary['DepthDownsampleFragment']!;
 
@@ -200,11 +205,14 @@ class SsaoPass extends RenderGraphPass {
       ),
     );
 
+    final groundTruth = _settings.method == AmbientOcclusionMethod.groundTruth;
+    final fragmentShader = groundTruth ? _groundTruthShader : _obscuranceShader;
+
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: occlusion)),
     );
-    renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, fragmentShader));
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
 
@@ -223,37 +231,54 @@ class SsaoPass extends RenderGraphPass {
       ..[4] = tanHalfFovX
       ..[5] = tanHalfFovY
       ..[6] = _near
-      ..[7] = _far
-      ..[8] = _settings.radius
-      ..[9] = _settings.bias
-      ..[10] = _settings.intensity
-      ..[11] = projScale
-      ..[12] = _settings.sampleCount.toDouble()
-      ..[13] = mipLevels.toDouble()
-      ..[14] = _settings.horizonAngle
-      ..[15] = _settings.power
-      ..[16] = _settings.detail;
+      ..[7] = _far;
+    if (groundTruth) {
+      // Must match the GtaoInfo layout in flutter_scene_gtao.frag.
+      info
+        ..[8] = _settings.radius
+        ..[9] = _settings.intensity
+        ..[10] = _settings.power
+        ..[11] = projScale
+        ..[12] = _settings.sliceCount.clamp(1, 8).toDouble()
+        ..[13] = _settings.stepsPerSlice.clamp(1, 8).toDouble()
+        ..[14] = mipLevels.toDouble()
+        ..[15] = _settings.thicknessHeuristic.clamp(0.0, 1.0)
+        ..[16] = _settings.visibilityBitmask ? 1.0 : 0.0
+        ..[17] = _settings.thickness;
+    } else {
+      // Must match the SsaoInfo layout in flutter_scene_ssao.frag.
+      info
+        ..[8] = _settings.radius
+        ..[9] = _settings.bias
+        ..[10] = _settings.intensity
+        ..[11] = projScale
+        ..[12] = _settings.sampleCount.toDouble()
+        ..[13] = mipLevels.toDouble()
+        ..[14] = _settings.horizonAngle
+        ..[15] = _settings.power
+        ..[16] = _settings.detail;
+    }
     renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('SsaoInfo'),
+      fragmentShader.getUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('depth_mip1'),
+      fragmentShader.getUniformSlot('depth_mip1'),
       mip1,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('depth_mip2'),
+      fragmentShader.getUniformSlot('depth_mip2'),
       mip2,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('depth_mip3'),
+      fragmentShader.getUniformSlot('depth_mip3'),
       mip3,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('linear_depth'),
+      fragmentShader.getUniformSlot('linear_depth'),
       linearDepth,
       sampler: _nearestClamp,
     );

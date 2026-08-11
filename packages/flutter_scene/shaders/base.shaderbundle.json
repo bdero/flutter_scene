@@ -87,6 +87,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_ssao.frag"
   },
+  "GtaoFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_gtao.frag"
+  },
   "DepthDownsampleFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_downsample.frag"

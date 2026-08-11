@@ -74,6 +74,7 @@ class EnvironmentSettings {
     this.filmGrainEnabled = false,
     this.filmGrainIntensity = 0.3,
     this.ambientOcclusionEnabled = false,
+    this.ambientOcclusionMethod = AmbientOcclusionMethod.obscurance,
     this.ambientOcclusionRadius = 0.33,
     this.ambientOcclusionIntensity = 2.0,
     this.ambientOcclusionBias = 0.07,
@@ -81,7 +82,13 @@ class EnvironmentSettings {
     this.ambientOcclusionDetail = 0.5,
     this.ambientOcclusionHorizonAngle = 0.06,
     this.ambientOcclusionDirectLightAffect = 0.0,
+    this.ambientOcclusionMultiBounce = 0.0,
     this.ambientOcclusionSampleCount = 16,
+    this.ambientOcclusionSliceCount = 3,
+    this.ambientOcclusionStepsPerSlice = 3,
+    this.ambientOcclusionVisibilityBitmask = false,
+    this.ambientOcclusionThickness = 0.5,
+    this.ambientOcclusionThicknessHeuristic = 0.004,
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = SpecularAmbientOcclusionMode.none,
@@ -188,6 +195,7 @@ class EnvironmentSettings {
 
   // Ambient occlusion.
   bool ambientOcclusionEnabled;
+  AmbientOcclusionMethod ambientOcclusionMethod;
   double ambientOcclusionRadius;
   double ambientOcclusionIntensity;
   double ambientOcclusionBias;
@@ -195,7 +203,13 @@ class EnvironmentSettings {
   double ambientOcclusionDetail;
   double ambientOcclusionHorizonAngle;
   double ambientOcclusionDirectLightAffect;
+  double ambientOcclusionMultiBounce;
   int ambientOcclusionSampleCount;
+  int ambientOcclusionSliceCount;
+  int ambientOcclusionStepsPerSlice;
+  bool ambientOcclusionVisibilityBitmask;
+  double ambientOcclusionThickness;
+  double ambientOcclusionThicknessHeuristic;
   bool ambientOcclusionHalfResolution;
   bool ambientOcclusionDepthMipChain;
   SpecularAmbientOcclusionMode ambientOcclusionSpecularMode;
@@ -306,6 +320,7 @@ class EnvironmentSettings {
       filmGrainEnabled: grain.enabled,
       filmGrainIntensity: grain.intensity,
       ambientOcclusionEnabled: ao.enabled,
+      ambientOcclusionMethod: ao.method,
       ambientOcclusionRadius: ao.radius,
       ambientOcclusionIntensity: ao.intensity,
       ambientOcclusionBias: ao.bias,
@@ -313,7 +328,13 @@ class EnvironmentSettings {
       ambientOcclusionDetail: ao.detail,
       ambientOcclusionHorizonAngle: ao.horizonAngle,
       ambientOcclusionDirectLightAffect: ao.directLightAffect,
+      ambientOcclusionMultiBounce: ao.multiBounce,
       ambientOcclusionSampleCount: ao.sampleCount,
+      ambientOcclusionSliceCount: ao.sliceCount,
+      ambientOcclusionStepsPerSlice: ao.stepsPerSlice,
+      ambientOcclusionVisibilityBitmask: ao.visibilityBitmask,
+      ambientOcclusionThickness: ao.thickness,
+      ambientOcclusionThicknessHeuristic: ao.thicknessHeuristic,
       ambientOcclusionHalfResolution: ao.halfResolution,
       ambientOcclusionDepthMipChain: ao.depthMipChain,
       ambientOcclusionSpecularMode: ao.specularMode,
@@ -429,6 +450,7 @@ class EnvironmentSettings {
 
     scene.ambientOcclusion
       ..enabled = ambientOcclusionEnabled
+      ..method = ambientOcclusionMethod
       ..radius = ambientOcclusionRadius
       ..intensity = ambientOcclusionIntensity
       ..bias = ambientOcclusionBias
@@ -436,7 +458,13 @@ class EnvironmentSettings {
       ..detail = ambientOcclusionDetail
       ..horizonAngle = ambientOcclusionHorizonAngle
       ..directLightAffect = ambientOcclusionDirectLightAffect
+      ..multiBounce = ambientOcclusionMultiBounce
       ..sampleCount = ambientOcclusionSampleCount
+      ..sliceCount = ambientOcclusionSliceCount
+      ..stepsPerSlice = ambientOcclusionStepsPerSlice
+      ..visibilityBitmask = ambientOcclusionVisibilityBitmask
+      ..thickness = ambientOcclusionThickness
+      ..thicknessHeuristic = ambientOcclusionThicknessHeuristic
       ..halfResolution = ambientOcclusionHalfResolution
       ..depthMipChain = ambientOcclusionDepthMipChain
       ..specularMode = ambientOcclusionSpecularMode;
@@ -586,7 +614,26 @@ class EnvironmentSettings {
         b.ambientOcclusionDirectLightAffect,
         t,
       ),
+      ambientOcclusionMethod: d.ambientOcclusionMethod,
+      ambientOcclusionMultiBounce: _lerp(
+        a.ambientOcclusionMultiBounce,
+        b.ambientOcclusionMultiBounce,
+        t,
+      ),
       ambientOcclusionSampleCount: d.ambientOcclusionSampleCount,
+      ambientOcclusionSliceCount: d.ambientOcclusionSliceCount,
+      ambientOcclusionStepsPerSlice: d.ambientOcclusionStepsPerSlice,
+      ambientOcclusionVisibilityBitmask: d.ambientOcclusionVisibilityBitmask,
+      ambientOcclusionThickness: _lerp(
+        a.ambientOcclusionThickness,
+        b.ambientOcclusionThickness,
+        t,
+      ),
+      ambientOcclusionThicknessHeuristic: _lerp(
+        a.ambientOcclusionThicknessHeuristic,
+        b.ambientOcclusionThicknessHeuristic,
+        t,
+      ),
       ambientOcclusionHalfResolution: d.ambientOcclusionHalfResolution,
       ambientOcclusionDepthMipChain: d.ambientOcclusionDepthMipChain,
       ambientOcclusionSpecularMode: d.ambientOcclusionSpecularMode,
