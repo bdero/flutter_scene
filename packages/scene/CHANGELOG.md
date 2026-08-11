@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- Ambient-occlusion effects carry `method`, `sliceCount`, `stepsPerSlice`, `visibilityBitmask`, `thickness`, `thicknessHeuristic`, `bentNormals`, and `multiBounce`.
 - `.fscene` version 2 fixes every document to the native coordinate system and migrates left-handed version 1 documents.
 - Removed `Handedness`, `UpAxis`, `StageMetadata.unitsPerMeter`, `NodeSpec.excludeFromWindingParity`, and `SkyEnvironmentSpec.castShadows`.
 - Documents must declare their `.fscene` version.

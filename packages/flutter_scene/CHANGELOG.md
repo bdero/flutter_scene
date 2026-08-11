@@ -2,6 +2,8 @@
 
 * Ground-truth ambient occlusion via `AmbientOcclusionSettings.method`, integrating horizon-slice visibility with `sliceCount`/`stepsPerSlice` controls and an optional constant-thickness `visibilityBitmask` mode.
 * `AmbientOcclusionSettings.multiBounce` keeps albedo-tinted bounce light in occluded creases instead of darkening them to gray.
+* `AmbientOcclusionSettings.bentNormals` steers indirect diffuse along the average unoccluded direction and enables `SpecularAmbientOcclusionMode.bentCone`.
+* Environment resources persist every ambient-occlusion control, including the new method, slice, thickness, bent-normal, and multi-bounce fields.
 * Breaking change, `.fscene` version 2 uses one native coordinate system and offline glTF import bakes source coordinates into it.
 * Removed `Handedness`, `UpAxis`, `StageMetadata.unitsPerMeter`, `NodeSpec.excludeFromWindingParity`, `SkyEnvironmentSpec.castShadows`, and the directional-light component schema's `direction` property.
 * Runtime glTF import keeps source buffers unchanged and resolves coordinate winding in the renderer.

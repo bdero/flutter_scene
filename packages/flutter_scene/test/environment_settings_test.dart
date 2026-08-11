@@ -56,6 +56,7 @@ void main() {
       ambientOcclusionVisibilityBitmask: true,
       ambientOcclusionThickness: 0.6,
       ambientOcclusionThicknessHeuristic: 0.5,
+      ambientOcclusionBentNormals: true,
       ambientOcclusionHalfResolution: true,
       ambientOcclusionDepthMipChain: true,
       ambientOcclusionSpecularMode: SpecularAmbientOcclusionMode.simple,
@@ -90,6 +91,7 @@ void main() {
     expect(mid.ambientOcclusionSliceCount, 4);
     expect(mid.ambientOcclusionStepsPerSlice, 4);
     expect(mid.ambientOcclusionVisibilityBitmask, isTrue);
+    expect(mid.ambientOcclusionBentNormals, isTrue);
     expect(mid.ambientOcclusionHalfResolution, isTrue);
     expect(mid.ambientOcclusionDepthMipChain, isTrue);
     expect(mid.screenSpaceReflectionsEnabled, isTrue);

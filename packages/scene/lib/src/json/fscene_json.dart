@@ -396,6 +396,8 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   };
   final ao = <String, dynamic>{
     if (e.ambientOcclusionEnabled) 'enabled': true,
+    if (e.ambientOcclusionMethod != 'obscurance')
+      'method': e.ambientOcclusionMethod,
     if (e.ambientOcclusionRadius != 0.33) 'radius': e.ambientOcclusionRadius,
     if (e.ambientOcclusionIntensity != 2.0)
       'intensity': e.ambientOcclusionIntensity,
@@ -406,8 +408,20 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
       'horizonAngle': e.ambientOcclusionHorizonAngle,
     if (e.ambientOcclusionDirectLightAffect != 0.0)
       'directLightAffect': e.ambientOcclusionDirectLightAffect,
+    if (e.ambientOcclusionMultiBounce != 0.0)
+      'multiBounce': e.ambientOcclusionMultiBounce,
     if (e.ambientOcclusionSampleCount != 16)
       'sampleCount': e.ambientOcclusionSampleCount,
+    if (e.ambientOcclusionSliceCount != 3)
+      'sliceCount': e.ambientOcclusionSliceCount,
+    if (e.ambientOcclusionStepsPerSlice != 3)
+      'stepsPerSlice': e.ambientOcclusionStepsPerSlice,
+    if (e.ambientOcclusionVisibilityBitmask) 'visibilityBitmask': true,
+    if (e.ambientOcclusionThickness != 0.5)
+      'thickness': e.ambientOcclusionThickness,
+    if (e.ambientOcclusionThicknessHeuristic != 0.004)
+      'thicknessHeuristic': e.ambientOcclusionThicknessHeuristic,
+    if (e.ambientOcclusionBentNormals) 'bentNormals': true,
     if (!e.ambientOcclusionHalfResolution) 'halfResolution': false,
     if (e.ambientOcclusionDepthMipChain) 'depthMipChain': true,
     if (e.ambientOcclusionSpecularMode != 'none')
@@ -977,6 +991,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     filmGrainEnabled: grain['enabled'] as bool? ?? false,
     filmGrainIntensity: _d(grain['intensity'] ?? 0.3),
     ambientOcclusionEnabled: ao['enabled'] as bool? ?? false,
+    ambientOcclusionMethod: ao['method'] as String? ?? 'obscurance',
     ambientOcclusionRadius: _d(ao['radius'] ?? 0.33),
     ambientOcclusionIntensity: _d(ao['intensity'] ?? 2.0),
     ambientOcclusionBias: _d(ao['bias'] ?? 0.07),
@@ -984,7 +999,15 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     ambientOcclusionDetail: _d(ao['detail'] ?? 0.5),
     ambientOcclusionHorizonAngle: _d(ao['horizonAngle'] ?? 0.06),
     ambientOcclusionDirectLightAffect: _d(ao['directLightAffect'] ?? 0.0),
+    ambientOcclusionMultiBounce: _d(ao['multiBounce'] ?? 0.0),
     ambientOcclusionSampleCount: (ao['sampleCount'] as num?)?.toInt() ?? 16,
+    ambientOcclusionSliceCount: (ao['sliceCount'] as num?)?.toInt() ?? 3,
+    ambientOcclusionStepsPerSlice: (ao['stepsPerSlice'] as num?)?.toInt() ?? 3,
+    ambientOcclusionVisibilityBitmask:
+        ao['visibilityBitmask'] as bool? ?? false,
+    ambientOcclusionThickness: _d(ao['thickness'] ?? 0.5),
+    ambientOcclusionThicknessHeuristic: _d(ao['thicknessHeuristic'] ?? 0.004),
+    ambientOcclusionBentNormals: ao['bentNormals'] as bool? ?? false,
     ambientOcclusionHalfResolution: ao['halfResolution'] as bool? ?? true,
     ambientOcclusionDepthMipChain: ao['depthMipChain'] as bool? ?? false,
     ambientOcclusionSpecularMode: ao['specularMode'] as String? ?? 'none',

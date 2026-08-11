@@ -1348,6 +1348,44 @@ bool _applyEnvironmentEffects(
     e.ambientOcclusionSampleCount,
     (v) => e.ambientOcclusionSampleCount = v,
   );
+  string(
+    'ambientOcclusionMethod',
+    e.ambientOcclusionMethod,
+    (v) => e.ambientOcclusionMethod = v,
+  );
+  number(
+    'ambientOcclusionMultiBounce',
+    e.ambientOcclusionMultiBounce,
+    (v) => e.ambientOcclusionMultiBounce = v,
+  );
+  integer(
+    'ambientOcclusionSliceCount',
+    e.ambientOcclusionSliceCount,
+    (v) => e.ambientOcclusionSliceCount = v,
+  );
+  integer(
+    'ambientOcclusionStepsPerSlice',
+    e.ambientOcclusionStepsPerSlice,
+    (v) => e.ambientOcclusionStepsPerSlice = v,
+  );
+  boolean(
+    'ambientOcclusionVisibilityBitmask',
+    (v) => e.ambientOcclusionVisibilityBitmask = v,
+  );
+  number(
+    'ambientOcclusionThickness',
+    e.ambientOcclusionThickness,
+    (v) => e.ambientOcclusionThickness = v,
+  );
+  number(
+    'ambientOcclusionThicknessHeuristic',
+    e.ambientOcclusionThicknessHeuristic,
+    (v) => e.ambientOcclusionThicknessHeuristic = v,
+  );
+  boolean(
+    'ambientOcclusionBentNormals',
+    (v) => e.ambientOcclusionBentNormals = v,
+  );
   boolean(
     'ambientOcclusionHalfResolution',
     (v) => e.ambientOcclusionHalfResolution = v,

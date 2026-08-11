@@ -109,6 +109,16 @@ class AmbientOcclusionSettings {
   /// [visibilityBitmask] is disabled.
   double thicknessHeuristic = 0.004;
 
+  /// Also computes the bent normal (the average unoccluded direction) and
+  /// carries it with the occlusion. Indirect diffuse then samples irradiance
+  /// along the bent normal, so occluded surfaces stop picking up light from
+  /// directions that are blocked, and
+  /// [SpecularAmbientOcclusionMode.bentCone] becomes available. The bent
+  /// normal is geometric (reconstructed from depth), so it does not carry
+  /// normal-map detail. Only used by [AmbientOcclusionMethod.groundTruth]
+  /// when [visibilityBitmask] is disabled.
+  bool bentNormals = false;
+
   /// Evaluates the occlusion buffer at half resolution and bilaterally
   /// upsamples it, cutting the occlusion pixel work to a quarter at the
   /// cost of fine detail. Recommended on mobile.
@@ -180,4 +190,13 @@ enum SpecularAmbientOcclusionMode {
   /// section 4.10.2). Cheap; tightens reflections in cavities on smoother
   /// surfaces while leaving rough surfaces unchanged.
   simple,
+
+  /// Indirect specular is occluded by intersecting the unoccluded-direction
+  /// cone around the bent normal with the specular lobe's cone around the
+  /// reflection vector (Jimenez et al. 2016, section 6, with a linear
+  /// overlap approximation). Directional, so reflections darken only when
+  /// the lobe actually points into blocked directions. Requires
+  /// [AmbientOcclusionSettings.bentNormals]; falls back to [simple] when
+  /// the bent normal is unavailable.
+  bentCone,
 }

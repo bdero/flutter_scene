@@ -15,7 +15,8 @@ uniform BlurInfo {
   // xy: texel size (reciprocal of the occlusion target size). z: depth
   // falloff scale (world units). w: 1 on the final pass, otherwise 0.
   vec4 texel;
-  // xy: filter axis. zw: unused.
+  // xy: filter axis. z: 1 when gba carries a packed bent normal that must be
+  // renormalized after filtering. w: unused.
   vec4 axis;
 }
 blur;
@@ -43,7 +44,7 @@ void main() {
   float depth_scale = max(blur.texel.z, kEpsilon);
   vec2 gradient = vec2(dFdx(center_depth), dFdy(center_depth));
 
-  float ao_sum = 0.0;
+  vec4 ao_sum = vec4(0.0);
   float weight_sum = 0.0;
   for (int i = -BLUR_RADIUS; i <= BLUR_RADIUS; i++) {
     vec2 pixel_offset = blur.axis.xy * float(i);
@@ -52,14 +53,21 @@ void main() {
     float slope = clamp(dot(gradient, pixel_offset), -depth_scale, depth_scale);
     float delta = abs(depth - (center_depth + slope));
     float weight = GaussianWeight(i) * exp(-delta / depth_scale);
-    ao_sum += texture(ao_texture, uv).r * weight;
+    ao_sum += texture(ao_texture, uv) * weight;
     weight_sum += weight;
   }
 
-  float ao = ao_sum / max(weight_sum, kEpsilon);
+  vec4 result = ao_sum / max(weight_sum, kEpsilon);
   if (blur.texel.w > 0.5) {
-    ao += (InterleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+    result.r += (InterleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+    if (blur.axis.z > 0.5) {
+      // The filtered mean of packed unit directions shortens; renormalize
+      // before the material samples it.
+      vec3 bent = result.gba * 2.0 - 1.0;
+      bent = normalize(bent + vec3(0.0, 0.0, -kEpsilon));
+      result.gba = bent * 0.5 + 0.5;
+    }
   }
-  ao = clamp(ao, 0.0, 1.0);
-  frag_color = vec4(ao, ao, ao, 1.0);
+  result.r = clamp(result.r, 0.0, 1.0);
+  frag_color = result;
 }

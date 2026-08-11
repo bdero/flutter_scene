@@ -33,6 +33,14 @@ const gpu.PixelFormat _aoFormat = gpu.PixelFormat.r8g8b8a8UNormInt;
 /// The depth prepass, occlusion pass, and blur all run at this resolution so
 /// the depth texture is sampled 1:1 (sampling a full-resolution depth from a
 /// half-resolution pass would alias on detailed geometry).
+/// Whether the occlusion chain computes bent normals and packs them into the
+/// occlusion texture's gba channels. Requires the ground-truth method's
+/// horizon mode; the bitmask and obscurance estimators have no bent normal.
+bool ambientOcclusionCarriesBentNormals(AmbientOcclusionSettings settings) =>
+    settings.method == AmbientOcclusionMethod.groundTruth &&
+    !settings.visibilityBitmask &&
+    settings.bentNormals;
+
 ui.Size ambientOcclusionTargetSize(
   ui.Size dimensions,
   AmbientOcclusionSettings settings,
@@ -244,7 +252,8 @@ class SsaoPass extends RenderGraphPass {
         ..[14] = mipLevels.toDouble()
         ..[15] = _settings.thicknessHeuristic.clamp(0.0, 1.0)
         ..[16] = _settings.visibilityBitmask ? 1.0 : 0.0
-        ..[17] = _settings.thickness;
+        ..[17] = _settings.thickness
+        ..[18] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
     } else {
       // Must match the SsaoInfo layout in flutter_scene_ssao.frag.
       info
@@ -355,7 +364,8 @@ class SsaoBlurPass extends RenderGraphPass {
         ..[2] = depthScale
         ..[3] = finalPass ? 1.0 : 0.0
         ..[4] = axisX
-        ..[5] = axisY;
+        ..[5] = axisY
+        ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
       renderPass.bindUniform(
         _fragmentShader.getUniformSlot('BlurInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),

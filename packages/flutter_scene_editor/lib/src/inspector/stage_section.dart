@@ -828,6 +828,15 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 'ambientOcclusionEnabled',
                 e.ambientOcclusionEnabled,
               ),
+              _select(
+                'Method',
+                'ambientOcclusionMethod',
+                e.ambientOcclusionMethod,
+                const [
+                  ('obscurance', 'Obscurance'),
+                  ('groundTruth', 'Ground truth'),
+                ],
+              ),
               _slider(
                 'Radius',
                 'ambientOcclusionRadius',
@@ -868,12 +877,52 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 'ambientOcclusionDirectLightAffect',
                 e.ambientOcclusionDirectLightAffect,
               ),
+              _slider(
+                'Multi bounce',
+                'ambientOcclusionMultiBounce',
+                e.ambientOcclusionMultiBounce,
+              ),
               _integer(
                 'Samples',
                 'ambientOcclusionSampleCount',
                 e.ambientOcclusionSampleCount,
                 min: 4,
                 max: 64,
+              ),
+              _integer(
+                'Slices',
+                'ambientOcclusionSliceCount',
+                e.ambientOcclusionSliceCount,
+                min: 1,
+                max: 8,
+              ),
+              _integer(
+                'Steps per slice',
+                'ambientOcclusionStepsPerSlice',
+                e.ambientOcclusionStepsPerSlice,
+                min: 1,
+                max: 8,
+              ),
+              _toggle(
+                'Visibility bitmask',
+                'ambientOcclusionVisibilityBitmask',
+                e.ambientOcclusionVisibilityBitmask,
+              ),
+              _slider(
+                'Thickness',
+                'ambientOcclusionThickness',
+                e.ambientOcclusionThickness,
+                max: 4,
+              ),
+              _slider(
+                'Thickness heuristic',
+                'ambientOcclusionThicknessHeuristic',
+                e.ambientOcclusionThicknessHeuristic,
+              ),
+              _toggle(
+                'Bent normals',
+                'ambientOcclusionBentNormals',
+                e.ambientOcclusionBentNormals,
               ),
               _toggle(
                 'Half resolution',
@@ -889,7 +938,11 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 'Specular occlusion',
                 'ambientOcclusionSpecularMode',
                 e.ambientOcclusionSpecularMode,
-                const [('none', 'None'), ('simple', 'Simple')],
+                const [
+                  ('none', 'None'),
+                  ('simple', 'Simple'),
+                  ('bentCone', 'Bent cone'),
+                ],
               ),
             ],
           ),
