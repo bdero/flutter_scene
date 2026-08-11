@@ -87,14 +87,20 @@ class ManagedCheckoutJob extends ChangeNotifier {
 
 /// Creates, measures, and deletes managed checkouts.
 class ManagedCheckouts {
-  ManagedCheckouts({required this.paths, HttpClient? httpClient})
-    : _http = httpClient ?? HttpClient();
+  ManagedCheckouts({
+    required this.paths,
+    HttpClient? httpClient,
+    this.upstreamUrl = defaultUpstreamUrl,
+  }) : _http = httpClient ?? HttpClient();
 
-  static const upstreamUrl = 'https://github.com/flutter/flutter.git';
+  static const defaultUpstreamUrl = 'https://github.com/flutter/flutter.git';
   static const storageBase = 'https://storage.googleapis.com';
 
   final ManagedCheckoutPaths paths;
   final HttpClient _http;
+
+  /// The flutter repository cloned into the mirror (a local path in tests).
+  final String upstreamUrl;
 
   /// Whether [installation] lives under this manager's checkout root.
   bool owns(FlutterInstallation installation) =>

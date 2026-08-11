@@ -243,6 +243,65 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _closeProject() => setState(() => _project = null);
 
+  /// The MCP `get_project` payload.
+  Map<String, Object?>? _projectInfo() {
+    final project = _project;
+    if (project == null) return null;
+    return {
+      'projectOpen': true,
+      'name': project.name,
+      'path': project.path,
+      'flutterProjectRoot': project.resolvedProjectRoot,
+      'selectedConfigurationId': _selectedBuildConfiguration?.id,
+      'configurations': [
+        for (final config in project.buildConfigurations)
+          {
+            'id': config.id,
+            'name': config.name,
+            'platform': config.platform,
+            'mode': config.mode,
+          },
+      ],
+    };
+  }
+
+  /// Starts the selected configuration over MCP, mirroring the toolbar's
+  /// gating (a real installation, a project, a configuration).
+  Future<bool> _startFromMcp({required bool run}) async {
+    final installation = _settings.selectedInstallation;
+    final project = _project;
+    final configuration = _selectedBuildConfiguration;
+    if (installation == null) {
+      throw const FormatException(
+        'No Flutter installation is selected (the built-in toolchain cannot '
+        'run flutter). Configure one in Settings.',
+      );
+    }
+    if (project == null || configuration == null) {
+      throw const FormatException(
+        'Open a project and select a build configuration first',
+      );
+    }
+    if (run) {
+      unawaited(
+        _runner.startRun(
+          installation: installation,
+          project: project,
+          configuration: configuration,
+        ),
+      );
+    } else {
+      unawaited(
+        _runner.startBuild(
+          installation: installation,
+          project: project,
+          configuration: configuration,
+        ),
+      );
+    }
+    return true;
+  }
+
   void _editBuildConfigs() {
     final project = _project;
     if (project == null) return;
@@ -573,6 +632,50 @@ class _EditorHomeState extends State<_EditorHome> {
             controller.setBaseDirectory(File(resolved).parent.path);
             if (mounted) _setScenePath(resolved);
             return resolved;
+          },
+          openProject: (path) async {
+            final FProject project;
+            if (FileSystemEntity.isDirectorySync(path)) {
+              final existing = Directory(path)
+                  .listSync()
+                  .whereType<File>()
+                  .where((file) => file.path.endsWith('.fproject'))
+                  .toList();
+              project = existing.isNotEmpty
+                  ? FProject.load(existing.first.path)
+                  : FProject.createDefault(path);
+            } else {
+              project = FProject.load(path);
+            }
+            _setProject(project);
+            return _projectInfo()!;
+          },
+          closeProject: () async => _closeProject(),
+          projectInfo: _projectInfo,
+          selectBuildConfiguration: (id) async {
+            final project = _project;
+            if (project == null) {
+              throw const FormatException('No project is open');
+            }
+            if (project.configurationById(id) == null) {
+              throw FormatException('No build configuration "$id"');
+            }
+            setState(
+              () => _settings.selectedBuildConfigurations[project.path] = id,
+            );
+            _persistSettings();
+          },
+          buildProject: () => _startFromMcp(run: false),
+          runProject: () => _startFromMcp(run: true),
+          stopProject: () async => _runner.stopRun(),
+          readConsole: (tail) => {
+            'building': _runner.building,
+            'running': _runner.running,
+            'lines': [
+              for (final line
+                  in _runner.console.reversed.take(tail).toList().reversed)
+                line.text,
+            ],
           },
         ),
       );
