@@ -1,3 +1,12 @@
+## 0.23.0
+
+* Parallax-corrected reflection probes via `ReflectionProbeComponent`, capturing the scene into a local environment whose reflections track the probe's box.
+* `Scene.captureEnvironment` renders the scene's lighting at a point into a new `EnvironmentMap`.
+* SMAA anti-aliasing via `AntiAliasingMode.smaa`, cleaner edges than FXAA with far less texture blurring.
+* Lens flares via `BloomSettings.lensFlare`, ghost chains and a halo with chromatic dispersion off the bloom pyramid.
+* Clearcoat now responds to rect area lights.
+* Screen-space indirect light reprojects its radiance history, so the bounce stays put under camera motion.
+
 ## 0.22.2
 
 * Four new agent skills alongside `flutter_scene-idioms`: `flutter_scene-verification-loop` (the run-settle-capture-correct visual loop and the blind-pairwise judgment rule), `flutter_scene-looks` (copy-paste `EnvironmentSettings` presets for a deliberate look), `flutter_scene-procedural` (terrain, noise, and instancing from code), and `flutter_scene-performance` (frame-budget measurement and a fixed remediation order). `dart run flutter_scene:init` and `dart run flutter_scene:skills` now install every bundled skill.
