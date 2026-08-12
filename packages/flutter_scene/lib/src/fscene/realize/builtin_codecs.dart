@@ -32,7 +32,9 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/render_extras_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
+import 'package:flutter_scene/src/fscene/realize/ui_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/mesh.dart';
@@ -41,10 +43,17 @@ import 'package:flutter_scene/src/mesh.dart';
 /// light, camera) into [registry].
 void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
   registry
-    // Registered before the mesh codec so serialize claims a particle emitter
-    // (which subclasses the mesh component) before the mesh codec sees it.
+    // Registered before the mesh codec so serialize claims a particle
+    // emitter, trail, LOD, or splat component (all subclass the mesh
+    // component) before the mesh codec sees it.
     ..register(ParticleEmitterCodec())
     ..register(MeshParticleEmitterCodec())
+    ..register(TrailCodec())
+    ..register(LodCodec())
+    ..register(SplatCodec())
+    // TODO(instanced-mesh-codec): InstancedMeshComponent stays code-driven
+    // (its bulk instance arrays have no document form yet); add a codec once
+    // instance data can ride payloads.
     ..register(MeshCodec())
     ..register(MaterialsVariantsCodec())
     ..register(DirectionalLightCodec())
@@ -53,8 +62,11 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(SpotLightCodec())
     ..register(CameraCodec())
     ..register(EnvironmentVolumeCodec())
+    ..register(WidgetCodec())
+    ..register(SemanticsCodec())
     ..register(AudioSourceCodec())
-    ..register(AudioListenerCodec());
+    ..register(AudioListenerCodec())
+    ..register(AudioEngineCodec());
   registerPhysicsComponentCodecs(registry);
 }
 

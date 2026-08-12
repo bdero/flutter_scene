@@ -7,3 +7,4 @@ library;
 
 export 'src/soloud_audio.dart'
     show SoloudAudioBus, SoloudAudioClip, SoloudAudioEngine, SoloudAudioVoice;
+export 'src/soloud_backend.dart' show registerSoloudAudioBackend;
