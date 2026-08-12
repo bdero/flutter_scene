@@ -39,8 +39,8 @@ class VmServiceLink {
   VmServiceLink._(this._socket) {
     _subscription = _socket.messages.listen(
       _onMessage,
-      onError: (Object _) => _failAll('the VM service connection errored'),
-      onDone: () => _failAll('the VM service connection closed'),
+      onError: (Object _) => _markDead('the VM service connection errored'),
+      onDone: () => _markDead('the VM service connection closed'),
     );
   }
 
@@ -54,6 +54,12 @@ class VmServiceLink {
   int _requestId = 0;
   final Map<int, Completer<Map<String, Object?>>> _pending = {};
   bool _disposed = false;
+  bool _dead = false;
+
+  /// Whether the underlying socket can still carry requests. False after the
+  /// connection errors or closes; the holder should drop this link and
+  /// connect a new one.
+  bool get isAlive => !_dead && !_disposed;
 
   void _onMessage(dynamic message) {
     if (message is! String) return;
@@ -68,6 +74,11 @@ class VmServiceLink {
     final key = id is int ? id : (id is String ? int.tryParse(id) : null);
     if (key == null) return;
     _pending.remove(key)?.complete(decoded.cast<String, Object?>());
+  }
+
+  void _markDead(String reason) {
+    _dead = true;
+    _failAll(reason);
   }
 
   void _failAll(String reason) {
@@ -87,9 +98,13 @@ class VmServiceLink {
     String method, [
     Map<String, Object?> params = const {},
   ]) {
-    if (_disposed) {
+    if (_disposed || _dead) {
       return Future.value({
-        'error': {'message': 'the VM service link is disposed'},
+        'error': {
+          'message': _disposed
+              ? 'the VM service link is disposed'
+              : 'the VM service connection is closed',
+        },
       });
     }
     final id = ++_requestId;

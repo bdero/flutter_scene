@@ -178,7 +178,7 @@ class FProject {
   String? get resolvedDefaultScene {
     final scene = defaultScene;
     if (scene == null || scene.isEmpty) return null;
-    if (scene.startsWith('/')) return scene;
+    if (_isAbsolutePath(scene)) return scene;
     return '$resolvedProjectRoot/$scene';
   }
 
@@ -339,17 +339,20 @@ SceneProjectContext findSceneProjectContext(
           ..sort();
     if (candidates.isNotEmpty) {
       final dirName = dirPath.replaceAll('\\', '/').split('/').last;
-      final preferred = '$dirPath/$dirName.fproject';
+      // Compare basenames; candidates carry `\` separators on Windows.
+      final preferred = candidates.where(
+        (c) => c.replaceAll('\\', '/').split('/').last == '$dirName.fproject',
+      );
       return (
-        fprojectPath: candidates.contains(preferred)
-            ? preferred
-            : candidates.first,
+        fprojectPath: preferred.isNotEmpty ? preferred.first : candidates.first,
         pubspecDirectory: null,
       );
     }
     if (pubspecDirectory == null &&
         entries.whereType<File>().any(
-          (f) => f.path.endsWith('/pubspec.yaml'),
+          // Match on the basename; listSync yields `\` separators on
+          // Windows, so a '/pubspec.yaml' suffix never matches there.
+          (f) => f.uri.pathSegments.last == 'pubspec.yaml',
         )) {
       pubspecDirectory = dirPath;
     }
@@ -473,10 +476,20 @@ String resolveWorkingDirectory(
   final raw = configuration.workingDirectory.trim();
   if (raw.isEmpty) return root;
   final substituted = substituteCommandVariables(raw, variables);
-  final absolute =
-      substituted.startsWith('/') ||
-      (Platform.isWindows && RegExp(r'^[A-Za-z]:').hasMatch(substituted));
-  return absolute ? substituted : '$root/$substituted';
+  return _isAbsolutePath(substituted) ? substituted : '$root/$substituted';
+}
+
+/// Whether [path] is absolute (POSIX or Windows drive-letter form).
+bool _isAbsolutePath(String path) =>
+    path.startsWith('/') ||
+    (Platform.isWindows && RegExp(r'^[A-Za-z]:').hasMatch(path));
+
+/// Whether [path] lives under directory [root], tolerant of `\` separators
+/// (directory listings yield them on Windows).
+bool pathIsWithin(String root, String path) {
+  final r = root.replaceAll('\\', '/');
+  final p = path.replaceAll('\\', '/');
+  return p.startsWith(r.endsWith('/') ? r : '$r/');
 }
 
 /// Replaces `${NAME}` references with [variables]. An unknown variable throws

@@ -25,20 +25,16 @@ class ConsoleLine {
 
 enum ConsoleLineKind { command, output, error, status }
 
-/// The environment for project subprocesses, the editor's own minus
-/// SDK-management variables (they can break flutter run on some versions when
-/// inherited).
-Map<String, String> projectChildEnvironment() => Map.of(Platform.environment)
-  ..remove('FLUTTER_GIT_URL')
-  ..remove('FLUTTER_PREBUILT_ENGINE_VERSION')
-  ..remove('IMPELLERC');
-
 /// The editor's task subprocess owner. Listen for console and state changes.
 class ProjectRunner extends ChangeNotifier {
   static const int maxConsoleLines = 2000;
+  // Trim in chunks; trimming one line per append is O(length) every line
+  // once the buffer is at capacity.
+  static const int _trimSlack = 256;
 
   final List<ConsoleLine> console = [];
   Process? _build;
+  bool _notifyScheduled = false;
 
   bool get building => _build != null;
 
@@ -53,10 +49,16 @@ class ProjectRunner extends ChangeNotifier {
 
   void _line(String text, ConsoleLineKind kind) {
     console.add(ConsoleLine(text, kind: kind));
-    if (console.length > maxConsoleLines) {
+    if (console.length > maxConsoleLines + _trimSlack) {
       console.removeRange(0, console.length - maxConsoleLines);
     }
-    notifyListeners();
+    // One stdout chunk can split into many lines; notify once per burst.
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      notifyListeners();
+    });
   }
 
   /// Starts the configuration's build command. Returns the exit code, or
