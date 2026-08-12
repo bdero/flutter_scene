@@ -652,14 +652,27 @@ class _SchemaPropertyRow extends StatelessWidget {
         return CurveField(label: label, value: value, onChanged: onChanged);
       case ComponentPropertyKind.gradient:
         return GradientEditor(label: label, value: value, onChanged: onChanged);
+      case ComponentPropertyKind.object:
+        return _ObjectRow(
+          label: label,
+          def: def,
+          value: value is MapValue ? value as MapValue : null,
+          controller: controller,
+          onChanged: onChanged,
+        );
+      case ComponentPropertyKind.union:
+        return _UnionRow(
+          label: label,
+          def: def,
+          value: value is MapValue ? value as MapValue : null,
+          controller: controller,
+          onChanged: onChanged,
+        );
       case ComponentPropertyKind.matrix4:
       case ComponentPropertyKind.list:
       case ComponentPropertyKind.map:
-      case ComponentPropertyKind.object:
-      case ComponentPropertyKind.union:
-        // TODO(component-property-editors): matrix4/list/map/object/union
-        // editors (unions and structured lists land with the components that
-        // need them).
+        // TODO(component-property-editors): matrix4, structured list, and
+        // open-map editors (lists land with the components that need them).
         return _ReadOnlyRow(label: label, text: '(${def.kind.name})');
     }
   }
@@ -673,6 +686,154 @@ class _SchemaPropertyRow extends StatelessWidget {
       message: doc,
       waitDuration: const Duration(milliseconds: 600),
       child: editor,
+    );
+  }
+}
+
+/// Loosens a typed [PropertyValue] back into the raw JSON shape the command
+/// layer coerces, so structured editors can resubmit whole objects with one
+/// field changed.
+Object? _rawFromValue(PropertyValue? value) => switch (value) {
+  null => null,
+  BoolValue(:final value) => value,
+  IntValue(:final value) => value,
+  DoubleValue(:final value) => value,
+  StringValue(:final value) => value,
+  Vec2Value(:final value) => {'x': value.x, 'y': value.y},
+  Vec3Value(:final value) => {'x': value.x, 'y': value.y, 'z': value.z},
+  Vec4Value(:final value) => {
+    'x': value.x,
+    'y': value.y,
+    'z': value.z,
+    'w': value.w,
+  },
+  QuaternionValue(:final value) => {
+    r'$quat': {'x': value.x, 'y': value.y, 'z': value.z, 'w': value.w},
+  },
+  Matrix4Value(:final value) => [for (final v in value.storage) v],
+  ColorValue() => {'r': value.r, 'g': value.g, 'b': value.b, 'a': value.a},
+  ResourceRefValue(:final id) => {r'$resource': id.toToken()},
+  NodeRefValue(:final id) => {r'$node': id.toToken()},
+  ListValue(:final values) => [for (final v in values) _rawFromValue(v)],
+  MapValue(:final values) => {
+    for (final entry in values.entries) entry.key: _rawFromValue(entry.value),
+  },
+};
+
+/// Nested-object editor: renders the declared fields and resubmits the whole
+/// object on any field change.
+class _ObjectRow extends StatelessWidget {
+  const _ObjectRow({
+    required this.label,
+    required this.def,
+    required this.value,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final String label;
+  final ComponentPropertyDef def;
+  final MapValue? value;
+  final EditorController controller;
+  final void Function(Object?) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = def.objectFields ?? const <ComponentPropertyDef>[];
+    final current = value?.values ?? const <String, PropertyValue>{};
+    void submitField(String name, Object? raw) {
+      final merged = <String, Object?>{
+        for (final entry in current.entries)
+          entry.key: _rawFromValue(entry.value),
+      };
+      merged[name] = raw;
+      onChanged(merged);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(label, style: const TextStyle(fontSize: 11)),
+          ),
+          for (final field in fields)
+            _SchemaPropertyRow(
+              componentType: '',
+              def: field,
+              value: current[field.name] ?? field.defaultValue,
+              controller: controller,
+              onChanged: (raw) => submitField(field.name, raw),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tagged-union editor: a variant dropdown plus the selected variant's
+/// fields, resubmitting the whole union value on any change.
+class _UnionRow extends StatelessWidget {
+  const _UnionRow({
+    required this.label,
+    required this.def,
+    required this.value,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final String label;
+  final ComponentPropertyDef def;
+  final MapValue? value;
+  final EditorController controller;
+  final void Function(Object?) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final variants = def.unionVariants ?? const {};
+    final current = value?.values ?? const <String, PropertyValue>{};
+    final tagValue = current[def.unionTag];
+    final tag = tagValue is StringValue && variants.containsKey(tagValue.value)
+        ? tagValue.value
+        : (variants.isEmpty ? null : variants.keys.first);
+    final fields = tag == null
+        ? const <ComponentPropertyDef>[]
+        : variants[tag]!;
+
+    void submitField(String name, Object? raw) {
+      final merged = <String, Object?>{
+        def.unionTag: tag,
+        for (final entry in current.entries)
+          if (entry.key != def.unionTag) entry.key: _rawFromValue(entry.value),
+      };
+      merged[name] = raw;
+      onChanged(merged);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _EnumRow(
+            label: label,
+            value: tag,
+            options: variants.keys.toList(),
+            // Switching variants starts from that variant's defaults.
+            onChanged: (nextTag) => onChanged({def.unionTag: nextTag}),
+          ),
+          for (final field in fields)
+            _SchemaPropertyRow(
+              componentType: '',
+              def: field,
+              value: current[field.name] ?? field.defaultValue,
+              controller: controller,
+              onChanged: (raw) => submitField(field.name, raw),
+            ),
+        ],
+      ),
     );
   }
 }
