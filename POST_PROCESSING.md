@@ -20,6 +20,15 @@ scene.postProcess.bloom
   ..intensity = 0.5   // how strongly the glow is added back
   ..scatter = 0.7;    // blur spread, 0 to 1
 
+scene.postProcess.bloom.lensFlare
+  ..enabled = true              // rides the bloom chain, needs bloom on
+  ..intensity = 1.0             // flare strength relative to the bloom
+  ..ghostCount = 4              // internal-reflection ghosts, up to 8
+  ..ghostSpacing = 0.3          // spacing along the line through center
+  ..haloRadius = 0.35           // circular halo radius, in screen UV
+  ..haloIntensity = 1.0         // halo strength relative to the ghosts
+  ..chromaticAberration = 0.005; // radial dispersion of the features
+
 scene.postProcess.colorGrading
   ..enabled = true
   ..brightness = 1.0
