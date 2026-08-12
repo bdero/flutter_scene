@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
+import 'package:flutter_scene/src/components/reflection_probe_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -524,6 +525,23 @@ class RenderScene {
   /// Unregisters [volume]. Called when its owning node unmounts.
   void removeEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
     environmentVolumeComponents.remove(volume);
+  }
+
+  /// The reflection probes contributed by mounted
+  /// [ReflectionProbeComponent]s, in registration order. Each contributes
+  /// its captured environment to the image-based-lighting cross-fade by
+  /// camera position, and pending captures render before the frame's views.
+  final List<ReflectionProbeComponent> reflectionProbeComponents = [];
+
+  /// Registers [probe] as an active reflection probe. Called by a
+  /// [ReflectionProbeComponent] when its owning node mounts.
+  void addReflectionProbeComponent(ReflectionProbeComponent probe) {
+    reflectionProbeComponents.add(probe);
+  }
+
+  /// Unregisters [probe]. Called when its owning node unmounts.
+  void removeReflectionProbeComponent(ReflectionProbeComponent probe) {
+    reflectionProbeComponents.remove(probe);
   }
 
   /// The mounted [CameraComponent]s, in mount order. The first is the

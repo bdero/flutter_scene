@@ -17,6 +17,7 @@ import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
+import 'components/reflection_probe_component.dart';
 import 'fog.dart';
 import 'god_rays.dart';
 import 'light.dart';
@@ -35,6 +36,13 @@ import 'render/bloom_pass.dart';
 import 'render/custom_render_pass.dart';
 import 'render/depth_prepass.dart';
 import 'render/fxaa_pass.dart';
+import 'render/scene_color_blit_pass.dart';
+import 'render/sky_bake.dart'
+    show
+        buildEnvironmentFromFaces,
+        createHdrCaptureTarget,
+        cubeFaceBases,
+        cubeFaceOverscan;
 import 'render/smaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
@@ -641,6 +649,111 @@ base class Scene implements SceneGraph {
   EnvironmentMap? _crossfadeEnvironment;
   double _crossfadeBlend = 0.0;
 
+  // Reused across probe-capture faces; each face's beginFrame recycles the
+  // previous face's intermediate attachments, which is safe on one
+  // submission queue (the GPU executes the faces in submission order).
+  TransientTexturePool? _probeCapturePool;
+
+  /// Captures the scene's linear HDR lighting at [position] into a new
+  /// [EnvironmentMap]: renders the scene into six cube faces (with shadows
+  /// and analytic lights, without screen-space effects or post-processing),
+  /// then prefilters the result like any other environment.
+  ///
+  /// The returned environment reflects the scene at the moment of capture;
+  /// nothing re-captures it. For a node-anchored probe with
+  /// parallax-corrected sampling and automatic blending, use
+  /// [ReflectionProbeComponent] instead.
+  ///
+  /// The engine resources must be loaded ([isReadyToRender]); throws
+  /// [StateError] otherwise.
+  /// {@category Lighting and environment}
+  EnvironmentMap captureEnvironment({
+    required Vector3 position,
+    int faceResolution = 128,
+    int equirectWidth = 512,
+    int layerMask = 0xFFFFFFFF,
+  }) {
+    if (!isReadyToRender) {
+      throw StateError(
+        'Scene.captureEnvironment requires the engine resources; await '
+        'Scene.initializeStaticResources() first.',
+      );
+    }
+    renderScene.rebuildIfDirty();
+    final lightComponent = renderScene.primaryDirectionalLight;
+    final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final punctualLighting = _punctualLightBuffer.build(
+      directionals: renderScene.directionalLights,
+      primaryDirectional: lightComponent,
+      points: renderScene.pointLights,
+      spots: renderScene.spotLights,
+      areas: renderScene.rectAreaLights,
+      items: renderScene.items,
+      bvh: renderScene.bvh,
+      spotShadows: spotShadowFrame,
+    );
+    return _captureEnvironmentAt(
+      position: position,
+      faceResolution: faceResolution,
+      equirectWidth: equirectWidth,
+      layerMask: layerMask,
+      environmentMap: environment ?? Material.getDefaultEnvironmentMap(),
+      transientsBuffer: uniformTransients,
+      lightComponent: lightComponent,
+      punctualLighting: punctualLighting,
+      spotShadowFrame: spotShadowFrame,
+    );
+  }
+
+  EnvironmentMap _captureEnvironmentAt({
+    required Vector3 position,
+    required int faceResolution,
+    required int equirectWidth,
+    required int layerMask,
+    required EnvironmentMap environmentMap,
+    required TransientWriter transientsBuffer,
+    required DirectionalLightComponent? lightComponent,
+    required PunctualLighting punctualLighting,
+    required SpotShadowFrame? spotShadowFrame,
+  }) {
+    final pool = _probeCapturePool ??= TransientTexturePool();
+    // Faces render with the cube-seam overscan widening so the assembled
+    // equirect's edge texel centers land on the cube-edge directions.
+    final fov = 2.0 * math.atan(1.0 / cubeFaceOverscan(faceResolution));
+    final size = ui.Size(faceResolution.toDouble(), faceResolution.toDouble());
+    final faces = <gpu.Texture>[];
+    for (final (forward, up) in cubeFaceBases) {
+      final face = createHdrCaptureTarget(faceResolution);
+      pool.beginFrame();
+      _renderViewToTexture(
+        view: RenderView(
+          camera: PerspectiveCamera(
+            fovRadiansY: fov,
+            position: position,
+            target: position + forward,
+            up: up,
+          ),
+          layerMask: layerMask,
+        ),
+        outputColor: face,
+        pixelSize: size,
+        pool: pool,
+        environmentMap: environmentMap,
+        transientsBuffer: transientsBuffer,
+        lightComponent: lightComponent,
+        punctualLighting: punctualLighting,
+        spotShadowFrame: spotShadowFrame,
+        captureLinearColor: true,
+      );
+      faces.add(face);
+    }
+    return buildEnvironmentFromFaces(
+      faces,
+      faceResolution,
+      equirectWidth: equirectWidth,
+    );
+  }
+
   // Applies the camera-position blend of the manual [environmentVolumes] and
   // the mounted environment-volume components over [baseEnvironment] to the
   // live look fields, before the environment is used this frame. A no-op unless
@@ -648,7 +761,12 @@ base class Scene implements SceneGraph {
   void _applyEnvironmentVolumes(Camera camera) {
     final base = baseEnvironment;
     final components = renderScene.environmentVolumeComponents;
-    if (base == null || (environmentVolumes.isEmpty && components.isEmpty)) {
+    final probes = <ReflectionProbeComponent>[
+      for (final p in renderScene.reflectionProbeComponents)
+        if (p.internalCrossfadeSettings != null) p,
+    ];
+    final hasVolumes = environmentVolumes.isNotEmpty || components.isNotEmpty;
+    if ((base == null && probes.isEmpty) || (!hasVolumes && probes.isEmpty)) {
       _crossfadeEnvironment = null;
       _crossfadeBlend = 0.0;
       return;
@@ -668,13 +786,34 @@ base class Scene implements SceneGraph {
           c.priority,
         ),
     ];
-    blendEnvironmentContributions(base, contributions).applyTo(this);
+    if (base != null && contributions.isNotEmpty) {
+      blendEnvironmentContributions(base, contributions).applyTo(this);
+    }
+    // Reflection probes join only the image-based-lighting cross-fade; their
+    // settings carry nothing but the captured environment, so they never
+    // drag the scene's other look fields. Without a base environment
+    // snapshot, the current environment stands in as the cross-fade base.
+    final crossfadeBase =
+        base ??
+        EnvironmentSettings(
+          environment: environment ?? Material.getDefaultEnvironmentMap(),
+          skyEnvironment: skyEnvironment,
+        );
+    final crossfadeContributions = <EnvironmentContribution>[
+      ...contributions,
+      for (final p in probes)
+        EnvironmentContribution(
+          p.internalCrossfadeSettings!,
+          (p.coverage(position) * p.weight).clamp(0.0, 1.0),
+          p.priority,
+        ),
+    ];
     // Keep the image-based lighting continuous across the midpoint: hold the
     // primary environment and pass the secondary plus a blend factor to the
     // material, rather than letting applyTo switch it.
     final crossfade = resolveEnvironmentCrossfadeFromContributions(
-      base,
-      contributions,
+      crossfadeBase,
+      crossfadeContributions,
     );
     if (crossfade.secondary != null) {
       environment = crossfade.primary;
@@ -1188,6 +1327,28 @@ base class Scene implements SceneGraph {
       spotShadows: spotShadowFrame,
     );
 
+    // Pending reflection-probe captures render before any view. The frame's
+    // cross-fade was resolved before this point, so a probe's very first
+    // capture reaches the lighting one frame later.
+    for (final probe in renderScene.reflectionProbeComponents) {
+      if (!probe.capturePending) {
+        continue;
+      }
+      probe.internalStoreCapture(
+        _captureEnvironmentAt(
+          position: probe.worldCenter,
+          faceResolution: probe.faceResolution,
+          equirectWidth: 512,
+          layerMask: 0xFFFFFFFF,
+          environmentMap: environmentMap,
+          transientsBuffer: transientsBuffer,
+          lightComponent: lightComponent,
+          punctualLighting: punctualLighting,
+          spotShadowFrame: spotShadowFrame,
+        ),
+      );
+    }
+
     // Texture-target views render first so screen views (and the HUD)
     // composite this frame's captures, the simple form of the
     // produce-before-consume rule.
@@ -1517,6 +1678,11 @@ base class Scene implements SceneGraph {
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
     RenderGraphCapturer? capturer,
+    // A linear-HDR capture (environment probes): the graph stops after the
+    // scene pass and blits the lit scene color into [outputColor], with no
+    // reflections, indirect-light history, post-processing, anti-aliasing,
+    // or display-referred chain.
+    bool captureLinearColor = false,
   }) {
     // A capture frame observes the pool from graph construction on, so
     // display-chain and custom-pass destinations acquired before execute are
@@ -1525,9 +1691,9 @@ base class Scene implements SceneGraph {
       pool = ObservedTexturePool(pool, capturer);
     }
     final camera = view.camera;
-    final effectiveAa = _resolveAntiAliasingMode(
-      view.antiAliasingMode ?? _antiAliasingMode,
-    );
+    final effectiveAa = captureLinearColor
+        ? AntiAliasingMode.none
+        : _resolveAntiAliasingMode(view.antiAliasingMode ?? _antiAliasingMode);
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
     final enableSmaa =
@@ -1695,7 +1861,10 @@ base class Scene implements SceneGraph {
         : null;
     // Reflections run after the scene is drawn (they sample the lit color),
     // so capture whether they apply here and add the pass below.
-    final wantSsr = perspectiveCamera != null && screenSpaceReflections.enabled;
+    final wantSsr =
+        !captureLinearColor &&
+        perspectiveCamera != null &&
+        screenSpaceReflections.enabled;
     // A custom pass may request depth/normals; normals imply depth.
     final wantCustomNormals = customInputs.contains(RenderInput.normals);
     final wantCustomDepth =
@@ -1703,9 +1872,9 @@ base class Scene implements SceneGraph {
     // Flutter GPU does not expose whether a stored depth/stencil attachment is
     // shader-readable, so its readability cannot be assumed.
     // TODO(flutter-gpu): Reuse stored depth once that capability is exposed.
-    final wantIndirectLight = ambientOcclusionCarriesIndirectLight(
-      ambientOcclusion,
-    );
+    final wantIndirectLight =
+        !captureLinearColor &&
+        ambientOcclusionCarriesIndirectLight(ambientOcclusion);
     // The occlusion texture's channels carry radiance while indirect light
     // is on, so the contact-shadow term has nowhere to ride.
     // TODO(sampler-budget): lift this exclusivity with a dedicated sampler
@@ -1874,6 +2043,15 @@ base class Scene implements SceneGraph {
         ),
       );
       _ssgiHistoryViewProjection = camera.getViewTransform(pixelSize);
+    }
+    if (captureLinearColor) {
+      graph.addPass(SceneColorBlitPass(output: outputColor));
+      graph.execute(
+        transientsBuffer: transientsBuffer,
+        texturePool: pool,
+        observer: capturer,
+      );
+      return;
     }
     // Screen-space reflections refine the lit HDR color in place, before
     // bloom and tone mapping, so reflected highlights bloom and tone-map

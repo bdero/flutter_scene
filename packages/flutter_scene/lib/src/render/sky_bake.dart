@@ -276,6 +276,48 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
   );
 }
 
+/// The six cube-face (forward, up) bases in the order the equirect assembly
+/// samples them, for callers rendering their own faces (scene captures).
+List<(Vector3, Vector3)> get cubeFaceBases => _faceBases;
+
+/// The overscan factor for an [n] x [n] face render (see [_faceOverscan]).
+/// A face camera's 90-degree field of view widens to `2 * atan(1 / factor)`
+/// so its edge texel centers land on the cube-edge directions.
+double cubeFaceOverscan(int n) => _faceOverscan(n);
+
+/// Creates a square fp16 render target for one capture face.
+gpu.Texture createHdrCaptureTarget(int size) => _hdrRenderTarget(size, size);
+
+/// Assembles six rendered cube faces (ordered and oriented per
+/// [cubeFaceBases], rendered with the [cubeFaceOverscan] widening) into a
+/// complete [EnvironmentMap]: equirect assembly, GPU diffuse-SH projection,
+/// and the prefiltered radiance bake, all on the GPU.
+EnvironmentMap buildEnvironmentFromFaces(
+  List<gpu.Texture> faces,
+  int faceResolution, {
+  int equirectWidth = 512,
+}) {
+  final equirect = _hdrRenderTarget(equirectWidth, equirectWidth ~/ 2);
+  _assembleEquirect(faces, equirect, faceResolution);
+  final sh = _createShTarget();
+  _projectSh(equirect, sh);
+  final atlas = EnvironmentMap.effectiveMipRadianceLayout
+      ? prefilterEquirectRadianceToCube(
+          equirect,
+          sourceIsLinear: true,
+          size: EnvironmentMap.radianceCubeSize,
+        )
+      : prefilterEquirectRadiance(
+          equirect,
+          sourceIsLinear: true,
+          mipLayout: false,
+        );
+  return EnvironmentMap.fromGpuTextures(
+    prefilteredRadiance: atlas,
+    diffuseShTexture: sh,
+  );
+}
+
 /// An incremental sky bake: one GPU pass per [advance] call, so a refreshing
 /// sky-driven environment costs a bounded slice per frame instead of a spike.
 ///

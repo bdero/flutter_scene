@@ -43,8 +43,15 @@ uniform FragInfo {
   // Rough-transmission atlas. x: available. y: valid band count. zw:
   // reciprocal atlas dimensions.
   vec4 transmission_info;
-  vec4 diffuse_sh7;
-  vec4 diffuse_sh8;
+  // The primary environment's parallax box proxy (a reflection probe's
+  // capture volume). probe_box.xyz is the world-space box center (also the
+  // capture point) and probe_box.w is 1 when the proxy is active;
+  // probe_extents.xyz is the box half extents. When active, reflection
+  // lookups intersect the reflected ray with the box and sample toward the
+  // hit. These reuse the retired diffuse-SH uniform rows (SH now rides the
+  // sh_coefficients texture).
+  vec4 probe_box;
+  vec4 probe_extents;
   // Directional light: xyz = direction the light travels (toward the scene),
   // w = shadow filter (0 rotated Poisson, 1 fixed PCF). The second vector's
   // rgb is color premultiplied by intensity.
