@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
+import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
@@ -161,20 +163,26 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _configureController(EditorController controller) {
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
-    // Foreign component types already learned (cache or a live session)
-    // carry over to every controller the editor swaps in.
-    if (_foreignSchemas.isNotEmpty) {
-      controller.adoptForeignSchemas(
-        _foreignSchemas.values,
-        provenance: _foreignProvenance,
-      );
+    // Foreign component types already learned (cache, package manifests,
+    // source extraction, or a live session) carry over to every controller
+    // the editor swaps in, keeping their original provenance.
+    final byProvenance = <String, List<ComponentSchema>>{};
+    for (final entry in _foreignSchemas.entries) {
+      byProvenance
+          .putIfAbsent(_foreignSchemaProvenance[entry.key] ?? 'cache', () => [])
+          .add(entry.value);
+    }
+    // Cache first so fresher provenances win their type slots.
+    for (final provenance in ['cache', ...byProvenance.keys]) {
+      final schemas = byProvenance.remove(provenance);
+      if (schemas == null || schemas.isEmpty) continue;
+      controller.adoptForeignSchemas(schemas, provenance: provenance);
     }
   }
 
-  // The latest foreign component schemas by type, and where they came from
-  // ('live' beats 'cache' in the controller's merge).
+  // The latest foreign component schemas by type, with their provenance.
   final Map<String, ComponentSchema> _foreignSchemas = {};
-  String _foreignProvenance = 'cache';
+  final Map<String, String> _foreignSchemaProvenance = {};
   AppSessionState _lastSessionState = AppSessionState.idle;
 
   String _schemaCachePath(FProject project) =>
@@ -192,9 +200,11 @@ class _EditorHomeState extends State<_EditorHome> {
         jsonDecode(file.readAsStringSync()),
       );
       if (schemas.isEmpty) return;
-      _foreignProvenance = 'cache';
       for (final schema in schemas) {
+        // The cache never overwrites a fresher in-memory provenance.
+        if (_foreignSchemas.containsKey(schema.type)) continue;
         _foreignSchemas[schema.type] = schema;
+        _foreignSchemaProvenance[schema.type] = 'cache';
       }
       _controller?.adoptForeignSchemas(schemas, provenance: 'cache');
     } catch (_) {
@@ -217,9 +227,9 @@ class _EditorHomeState extends State<_EditorHome> {
         final schemas = await _session.fetchComponentSchemas();
         if (schemas == null || schemas.isEmpty) continue;
         if (!mounted) return;
-        _foreignProvenance = 'live';
         for (final schema in schemas) {
           _foreignSchemas[schema.type] = schema;
+          _foreignSchemaProvenance[schema.type] = 'live';
         }
         _controller?.adoptForeignSchemas(schemas, provenance: 'live');
         final project = _project;
@@ -322,12 +332,94 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _setProject(FProject? project) {
     setState(() => _project = project);
+    _sourceWatch?.cancel();
+    _sourceWatch = null;
     if (project != null) {
       _settings.rememberProject(project.path);
       _persistSettings();
       _warmDeviceCache();
       _loadCachedComponentSchemas(project);
+      _loadPackageManifestSchemas(project);
+      _startComponentSourceWatch(project);
     }
+  }
+
+  StreamSubscription<FileSystemEvent>? _sourceWatch;
+  Timer? _sourceDebounce;
+
+  /// Adopts component schemas shipped by the project's resolved dependencies
+  /// (their flutter_scene_components.json manifests), so installing a
+  /// component package is enough for the editor to know its types.
+  void _loadPackageManifestSchemas(FProject project) {
+    try {
+      final root = project.resolvedProjectRoot;
+      for (final found in scanPackageManifests(
+        '$root/.dart_tool/package_config.json',
+      )) {
+        final schemas = decodeComponentSchemas(found.manifest['schemas']);
+        if (schemas.isEmpty) continue;
+        for (final schema in schemas) {
+          _foreignSchemas[schema.type] = schema;
+          _foreignSchemaProvenance[schema.type] = 'package:${found.package}';
+        }
+        _controller?.adoptForeignSchemas(
+          schemas,
+          provenance: 'package:${found.package}',
+        );
+      }
+    } catch (_) {
+      // Manifest scanning is best effort; the live channel still covers
+      // registered packages.
+    }
+  }
+
+  /// Watches the project's Dart sources; a save re-extracts annotated
+  /// components, regenerates their codecs/registrar/manifest, and updates
+  /// the editor's schemas, so saving the file is the whole gesture.
+  void _startComponentSourceWatch(FProject project) {
+    final lib = Directory('${project.resolvedProjectRoot}/lib');
+    if (!lib.existsSync()) return;
+    unawaited(_runComponentGeneration(project));
+    _sourceWatch = lib.watch(recursive: true).listen((event) {
+      final path = event.path;
+      if (!path.endsWith('.dart') ||
+          path.endsWith('.fscene.dart') ||
+          path.endsWith('.g.dart')) {
+        return;
+      }
+      _sourceDebounce?.cancel();
+      _sourceDebounce = Timer(const Duration(milliseconds: 400), () {
+        unawaited(_runComponentGeneration(project));
+      });
+    });
+  }
+
+  Future<void> _runComponentGeneration(FProject project) async {
+    final root = project.resolvedProjectRoot;
+    final ProjectGenerationResult result;
+    try {
+      // The tier-1 parse is CPU-bound; keep it off the UI isolate.
+      result = await Isolate.run(() => generateProjectComponents(root));
+    } catch (e) {
+      _runner.addLine('Component extraction failed, $e', ConsoleLineKind.error);
+      return;
+    }
+    if (!mounted) return;
+    for (final diagnostic in result.diagnostics) {
+      _runner.addLine('$diagnostic', ConsoleLineKind.status);
+    }
+    for (final path in result.filesWritten) {
+      _runner.addLine(
+        'Generated ${path.substring(root.length + 1)}',
+        ConsoleLineKind.status,
+      );
+    }
+    if (result.schemas.isEmpty) return;
+    for (final schema in result.schemas) {
+      _foreignSchemas[schema.type] = schema;
+      _foreignSchemaProvenance[schema.type] = 'source';
+    }
+    _controller?.adoptForeignSchemas(result.schemas, provenance: 'source');
   }
 
   Future<void> _openProject() async {

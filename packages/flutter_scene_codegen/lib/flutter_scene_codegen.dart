@@ -23,3 +23,5 @@ export 'src/manifest.dart'
         decodeComponentManifest,
         encodeComponentManifest,
         scanPackageManifests;
+export 'src/project_generator.dart'
+    show ProjectGenerationResult, generateProjectComponents;

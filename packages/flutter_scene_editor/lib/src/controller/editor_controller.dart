@@ -364,23 +364,29 @@ class EditorController extends ChangeNotifier {
   /// data bags, the inspector edits them from the schema, and Add Component
   /// offers them. Live-fetched schemas replace earlier placeholder versions
   /// of the same type ([provenance] `live` wins over `cache`).
+  // Compiled-in codecs always win; live fetches and source extraction are
+  // peers (whichever arrived last is freshest); package manifests beat the
+  // cache; the cache never overwrites anything.
+  static int _provenanceRank(String? provenance) => switch (provenance) {
+    null => 3,
+    'live' || 'source' => 2,
+    'cache' => 0,
+    _ => 1,
+  };
+
   void adoptForeignSchemas(
     Iterable<ComponentSchema> schemas, {
     required String provenance,
   }) {
     var changed = false;
+    final incomingRank = _provenanceRank(provenance);
     for (final schema in schemas) {
       final existing = _componentRegistry.codecFor(schema.type);
-      final existingProvenance = foreignTypeProvenance[schema.type];
-      if (existing != null && existingProvenance == null) {
-        // A compiled-in codec always wins over a schema.
-        continue;
-      }
-      if (existing != null &&
-          existingProvenance == 'live' &&
-          provenance != 'live') {
-        continue;
-      }
+      final existingRank = existing == null
+          ? -1
+          : _provenanceRank(foreignTypeProvenance[schema.type]);
+      if (incomingRank < existingRank) continue;
+      if (existingRank == 3) continue;
       _componentRegistry.register(PlaceholderComponentCodec(schema));
       foreignTypeProvenance[schema.type] = provenance;
       changed = true;
