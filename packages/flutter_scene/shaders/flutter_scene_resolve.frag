@@ -53,6 +53,10 @@ uniform ResolveInfo {
   float _pad7;
 
   vec4 agx_params;
+
+  // x: grading-LUT blend, 0 disables. y: the cube edge length (the strip
+  // texture is y*y wide and y tall). zw: reserved.
+  vec4 lut_params;
 }
 resolve_info;
 
@@ -63,11 +67,30 @@ uniform sampler2D bloom_color;
 // is disabled.
 uniform sampler2D exposure_factor;
 
+// The grading LUT strip: the cube's blue slices side by side, red along x
+// inside a slice, green along y.
+uniform sampler2D grading_lut;
+
 in vec2 v_uv;
 
 out vec4 frag_color;
 
 #include <tone_mapping.glsl>
+
+// Samples the grading cube stored as a strip, lerping the two blue slices
+// spanning the input's blue coordinate.
+vec3 ApplyGradingLut(vec3 c, float size) {
+  vec3 scaled = clamp(c, 0.0, 1.0) * (size - 1.0);
+  float slice0 = floor(scaled.z);
+  float slice1 = min(slice0 + 1.0, size - 1.0);
+  vec2 texel = vec2(1.0 / (size * size), 1.0 / size);
+  vec2 base = vec2(scaled.x + 0.5, scaled.y + 0.5);
+  vec3 tap0 =
+      texture(grading_lut, (base + vec2(slice0 * size, 0.0)) * texel).rgb;
+  vec3 tap1 =
+      texture(grading_lut, (base + vec2(slice1 * size, 0.0)) * texel).rgb;
+  return mix(tap0, tap1, scaled.z - slice0);
+}
 
 vec3 LinearToSRGB(vec3 color) {
   return mix(color * 12.92,
@@ -181,6 +204,13 @@ void main() {
   // The swapchain texture is a plain UNorm render target, so encode the
   // resolved linear color before handing it to Texture.asImage().
   mapped = LinearToSRGB(mapped);
+
+  // Film-look LUT on the display-encoded color, matching how grading tools
+  // author display-referred .cube looks.
+  if (resolve_info.lut_params.x > 0.0) {
+    vec3 graded = ApplyGradingLut(mapped, resolve_info.lut_params.y);
+    mapped = mix(mapped, graded, resolve_info.lut_params.x);
+  }
 
   frag_color = vec4(mapped * alpha, alpha);
 }

@@ -217,6 +217,7 @@ export 'src/texture/mipmap.dart' show TextureContent;
 // Physics is an optional contract, exported from
 // `package:flutter_scene/physics.dart`.
 export 'src/post_process/post_effect.dart' show PostEffect, PostInsertion;
+export 'src/post_process/color_lut.dart' show ColorLut;
 export 'src/post_process/post_process.dart'
     show
         BloomSettings,

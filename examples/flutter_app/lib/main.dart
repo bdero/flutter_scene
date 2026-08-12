@@ -37,6 +37,7 @@ import 'example_physics.dart';
 import 'example_physics_box3d.dart';
 import 'example_physics_car.dart';
 import 'example_render_target.dart';
+import 'example_luts.dart';
 import 'example_settings.dart';
 import 'example_chrome.dart';
 import 'example_shapes.dart';
@@ -862,6 +863,31 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Tint', grading.tint, -1, 1, (v) {
           grading.tint = v;
         }),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Film look'),
+          trailing: DropdownButton<String>(
+            value: exampleLuts.entries
+                .firstWhere(
+                  (e) => e.value == grading.lut,
+                  orElse: () => exampleLuts.entries.first,
+                )
+                .key,
+            onChanged: (name) => setState(() {
+              ensureExampleLuts();
+              grading.lut = exampleLuts[name];
+            }),
+            items: [
+              'None',
+              'Teal & orange',
+              'Silver film',
+            ].map((n) => DropdownMenuItem(value: n, child: Text(n))).toList(),
+          ),
+        ),
+        if (grading.lut != null)
+          _slider('Look blend', grading.lutBlend, 0, 1, (v) {
+            grading.lutBlend = v;
+          }),
       ],
     );
   }

@@ -6,7 +6,7 @@ import 'package:flutter_scene/src/tone_mapping.dart';
 
 /// Number of floats in the `ResolveInfo` uniform block: eleven std140 rows
 /// of four floats each.
-const int kResolveInfoFloatCount = 44;
+const int kResolveInfoFloatCount = 48;
 
 /// Packs the resolve pass's `ResolveInfo` uniform block.
 ///
@@ -100,6 +100,12 @@ Float32List packResolveInfo({
   info[41] = toeA;
   info[42] = slope;
   info[43] = shoulderWidth * shoulderWidth / shoulderMax * slope;
+
+  // Row 11: the grading LUT. x is the blend (0 disables), y the cube edge
+  // length.
+  final lut = grading.lut;
+  info[44] = lut != null ? grading.lutBlend.clamp(0.0, 1.0) : 0.0;
+  info[45] = lut?.size.toDouble() ?? 0.0;
 
   return info;
 }

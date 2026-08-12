@@ -77,7 +77,7 @@ void main() {
         settings: PostProcessSettings(),
       );
       expect(info.length, kResolveInfoFloatCount);
-      expect(info.length, 44);
+      expect(info.length, 48);
     });
 
     test('packs the resolve controls', () {

@@ -164,6 +164,8 @@ class ExampleSettings {
     grading.lift.setFrom(colorGrading.lift);
     grading.gamma.setFrom(colorGrading.gamma);
     grading.gain.setFrom(colorGrading.gain);
+    grading.lut = colorGrading.lut;
+    grading.lutBlend = colorGrading.lutBlend;
 
     final aberration = scene.postProcess.chromaticAberration;
     aberration.enabled = chromaticAberration.enabled;

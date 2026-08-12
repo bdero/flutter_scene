@@ -1,6 +1,7 @@
 ## 0.21.0
 
 * Screen-space contact shadows for the sun via `DirectionalLight.contactShadows`, grounding small contacts that shadow-map resolution and bias miss.
+* Film-look color grading via `ColorGradingSettings.lut`, loading Adobe `.cube` tables with `ColorLut.fromCubeAsset` and blending with `lutBlend`.
 * Percentage-closer soft shadows via `DirectionalShadowFilter.pcss`, sharpening shadows at contact and widening them with caster distance scaled by `DirectionalLight.angularRadius`.
 
 * Ground-truth ambient occlusion via `AmbientOcclusionSettings.method`, integrating horizon-slice visibility with `sliceCount`/`stepsPerSlice` controls and an optional constant-thickness `visibilityBitmask` mode.
