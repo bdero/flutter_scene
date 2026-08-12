@@ -275,6 +275,7 @@ void _applyEffectSpec(
     ..ambientOcclusionThicknessHeuristic =
         effects.ambientOcclusionThicknessHeuristic
     ..ambientOcclusionBentNormals = effects.ambientOcclusionBentNormals
+    ..ambientOcclusionIndirectLight = effects.ambientOcclusionIndirectLight
     ..ambientOcclusionHalfResolution = effects.ambientOcclusionHalfResolution
     ..ambientOcclusionDepthMipChain = effects.ambientOcclusionDepthMipChain
     ..ambientOcclusionSpecularMode = _byName(
@@ -634,6 +635,7 @@ EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
       ambientOcclusionThickness: s.ambientOcclusionThickness,
       ambientOcclusionThicknessHeuristic: s.ambientOcclusionThicknessHeuristic,
       ambientOcclusionBentNormals: s.ambientOcclusionBentNormals,
+      ambientOcclusionIndirectLight: s.ambientOcclusionIndirectLight,
       ambientOcclusionHalfResolution: s.ambientOcclusionHalfResolution,
       ambientOcclusionDepthMipChain: s.ambientOcclusionDepthMipChain,
       ambientOcclusionSpecularMode: s.ambientOcclusionSpecularMode.name,

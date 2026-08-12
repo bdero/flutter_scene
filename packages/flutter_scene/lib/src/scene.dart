@@ -609,6 +609,11 @@ base class Scene implements SceneGraph {
   // live [environment] toward it this frame, resolved from the volume blend so
   // reflections and ambient cross-fade instead of switching. Null/0 when a
   // single environment is in effect. Read by the render path into ScenePass.
+  // Last frame's scene color, held one frame for the screen-space
+  // indirect-light gather (the transient pool's two-frame ring keeps the
+  // texture valid until then).
+  gpu.Texture? _ssgiHistoryColor;
+
   EnvironmentMap? _crossfadeEnvironment;
   double _crossfadeBlend = 0.0;
 
@@ -1399,7 +1404,15 @@ base class Scene implements SceneGraph {
     // Flutter GPU does not expose whether a stored depth/stencil attachment is
     // shader-readable, so its readability cannot be assumed.
     // TODO(flutter-gpu): Reuse stored depth once that capability is exposed.
+    final wantIndirectLight = ambientOcclusionCarriesIndirectLight(
+      ambientOcclusion,
+    );
+    // The occlusion texture's channels carry radiance while indirect light
+    // is on, so the contact-shadow term has nowhere to ride.
+    // TODO(sampler-budget): lift this exclusivity with a dedicated sampler
+    // once flutter/flutter#189332 raises the practical fragment budget.
     final wantContactShadows =
+        !wantIndirectLight &&
         light != null &&
         light.contactShadows &&
         (lightDirection ?? light.direction).length2 > 0.0;
@@ -1469,6 +1482,7 @@ base class Scene implements SceneGraph {
             contactDistance: wantContactShadows
                 ? light.contactShadowDistance
                 : 0.0,
+            sceneRadiance: wantIndirectLight ? _ssgiHistoryColor : null,
           ),
         );
         graph.addPass(
@@ -1506,6 +1520,7 @@ base class Scene implements SceneGraph {
         ssaoMultiBounce: ambientOcclusion.multiBounce,
         ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
         ssaoContactShadows: wantContactShadows && perspectiveCamera != null,
+        ssaoIndirectLight: wantIndirectLight && perspectiveCamera != null,
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
@@ -1516,6 +1531,14 @@ base class Scene implements SceneGraph {
         includeOffscreen: _warmUpIncludeOffscreen,
       ),
     );
+    if (wantIndirectLight) {
+      graph.addPass(
+        SceneColorHistoryPass(
+          current: _ssgiHistoryColor,
+          store: (texture) => _ssgiHistoryColor = texture,
+        ),
+      );
+    }
     // Screen-space reflections refine the lit HDR color in place, before
     // bloom and tone mapping, so reflected highlights bloom and tone-map
     // with the rest of the image.

@@ -93,6 +93,7 @@ class EnvironmentSettings {
     this.ambientOcclusionThickness = 0.5,
     this.ambientOcclusionThicknessHeuristic = 0.004,
     this.ambientOcclusionBentNormals = false,
+    this.ambientOcclusionIndirectLight = 0.0,
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = SpecularAmbientOcclusionMode.none,
@@ -217,6 +218,7 @@ class EnvironmentSettings {
   double ambientOcclusionThickness;
   double ambientOcclusionThicknessHeuristic;
   bool ambientOcclusionBentNormals;
+  double ambientOcclusionIndirectLight;
   bool ambientOcclusionHalfResolution;
   bool ambientOcclusionDepthMipChain;
   SpecularAmbientOcclusionMode ambientOcclusionSpecularMode;
@@ -345,6 +347,7 @@ class EnvironmentSettings {
       ambientOcclusionThickness: ao.thickness,
       ambientOcclusionThicknessHeuristic: ao.thicknessHeuristic,
       ambientOcclusionBentNormals: ao.bentNormals,
+      ambientOcclusionIndirectLight: ao.indirectLight,
       ambientOcclusionHalfResolution: ao.halfResolution,
       ambientOcclusionDepthMipChain: ao.depthMipChain,
       ambientOcclusionSpecularMode: ao.specularMode,
@@ -478,6 +481,7 @@ class EnvironmentSettings {
       ..thickness = ambientOcclusionThickness
       ..thicknessHeuristic = ambientOcclusionThicknessHeuristic
       ..bentNormals = ambientOcclusionBentNormals
+      ..indirectLight = ambientOcclusionIndirectLight
       ..halfResolution = ambientOcclusionHalfResolution
       ..depthMipChain = ambientOcclusionDepthMipChain
       ..specularMode = ambientOcclusionSpecularMode;
@@ -644,6 +648,11 @@ class EnvironmentSettings {
       ambientOcclusionStepsPerSlice: d.ambientOcclusionStepsPerSlice,
       ambientOcclusionVisibilityBitmask: d.ambientOcclusionVisibilityBitmask,
       ambientOcclusionBentNormals: d.ambientOcclusionBentNormals,
+      ambientOcclusionIndirectLight: _lerp(
+        a.ambientOcclusionIndirectLight,
+        b.ambientOcclusionIndirectLight,
+        t,
+      ),
       ambientOcclusionThickness: _lerp(
         a.ambientOcclusionThickness,
         b.ambientOcclusionThickness,

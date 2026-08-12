@@ -790,11 +790,14 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
             onChanged: (value) =>
                 setState(() => settings.visibilityBitmask = value),
           ),
-          if (settings.visibilityBitmask)
+          if (settings.visibilityBitmask) ...[
             _slider('Thickness', settings.thickness, 0.05, 2, (v) {
               settings.thickness = v;
-            })
-          else
+            }),
+            _slider('Indirect light', settings.indirectLight, 0, 12, (v) {
+              settings.indirectLight = v;
+            }),
+          ] else
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Bent normals'),

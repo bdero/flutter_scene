@@ -88,6 +88,17 @@ class AmbientOcclusionSettings {
   /// caps at 8.
   int stepsPerSlice = 3;
 
+  /// Strength of one-bounce screen-space indirect light gathered along the
+  /// occlusion march, `0.0` (the default) disabling it. Radiance from the
+  /// previous frame's scene color is credited to each newly visible sector,
+  /// so lit surfaces bleed their color onto neighbors. Requires
+  /// [AmbientOcclusionMethod.groundTruth] with [visibilityBitmask]; while
+  /// active the chain renders in half-float and the sun's contact shadows
+  /// are unavailable (the channels carry radiance instead).
+  /// TODO(ssgi-reprojection): the radiance is sampled unreprojected, so fast
+  /// camera motion drags the bounce by one frame.
+  double indirectLight = 0.0;
+
   /// Models occluders as surfaces with a constant [thickness] instead of an
   /// infinitely thick height field, by marking occluded sectors of the
   /// hemisphere in a per-slice bitmask. Cuts the over-darkening that thin

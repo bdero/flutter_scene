@@ -426,6 +426,8 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.ambientOcclusionThicknessHeuristic != 0.004)
       'thicknessHeuristic': e.ambientOcclusionThicknessHeuristic,
     if (e.ambientOcclusionBentNormals) 'bentNormals': true,
+    if (e.ambientOcclusionIndirectLight != 0.0)
+      'indirectLight': e.ambientOcclusionIndirectLight,
     if (!e.ambientOcclusionHalfResolution) 'halfResolution': false,
     if (e.ambientOcclusionDepthMipChain) 'depthMipChain': true,
     if (e.ambientOcclusionSpecularMode != 'none')
@@ -1012,6 +1014,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     ambientOcclusionThickness: _d(ao['thickness'] ?? 0.5),
     ambientOcclusionThicknessHeuristic: _d(ao['thicknessHeuristic'] ?? 0.004),
     ambientOcclusionBentNormals: ao['bentNormals'] as bool? ?? false,
+    ambientOcclusionIndirectLight: _d(ao['indirectLight'] ?? 0.0),
     ambientOcclusionHalfResolution: ao['halfResolution'] as bool? ?? true,
     ambientOcclusionDepthMipChain: ao['depthMipChain'] as bool? ?? false,
     ambientOcclusionSpecularMode: ao['specularMode'] as String? ?? 'none',

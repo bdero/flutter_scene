@@ -7,9 +7,12 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/ambient_occlusion.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
+import 'package:flutter_scene/src/render/scene_pass.dart'
+    show kSceneColorBlackboardKey;
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:vector_math/vector_math.dart';
 
@@ -41,6 +44,15 @@ bool ambientOcclusionCarriesBentNormals(AmbientOcclusionSettings settings) =>
     settings.method == AmbientOcclusionMethod.groundTruth &&
     !settings.visibilityBitmask &&
     settings.bentNormals;
+
+/// Whether the occlusion chain gathers screen-space indirect light, which
+/// switches its targets to half-float with radiance in rgb and visibility
+/// in a. Requires the ground-truth method's visibility bitmask.
+bool ambientOcclusionCarriesIndirectLight(AmbientOcclusionSettings settings) =>
+    settings.enabled &&
+    settings.method == AmbientOcclusionMethod.groundTruth &&
+    settings.visibilityBitmask &&
+    settings.indirectLight > 0.0;
 
 ui.Size ambientOcclusionTargetSize(
   ui.Size dimensions,
@@ -106,13 +118,15 @@ class SsaoPass extends RenderGraphPass {
     required double far,
     Vector3? contactDirectionView,
     double contactDistance = 0.0,
+    gpu.Texture? sceneRadiance,
   }) : _dimensions = dimensions,
        _settings = settings,
        _fovRadiansY = fovRadiansY,
        _near = near,
        _far = far,
        _contactDirectionView = contactDirectionView,
-       _contactDistance = contactDistance;
+       _contactDistance = contactDistance,
+       _sceneRadiance = sceneRadiance;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
@@ -124,6 +138,10 @@ class SsaoPass extends RenderGraphPass {
   // contact-shadow term; distance 0 leaves it off.
   final Vector3? _contactDirectionView;
   final double _contactDistance;
+
+  // Last frame's scene color for the indirect-light gather, or null on the
+  // first frame (a black placeholder stands in).
+  final gpu.Texture? _sceneRadiance;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -214,11 +232,12 @@ class SsaoPass extends RenderGraphPass {
     final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
     final aoWidth = aoSize.width.toInt();
     final aoHeight = aoSize.height.toInt();
+    final indirect = ambientOcclusionCarriesIndirectLight(_settings);
     final occlusion = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: aoWidth,
         height: aoHeight,
-        format: _aoFormat,
+        format: indirect ? gpu.PixelFormat.r16g16b16a16Float : _aoFormat,
         debugName: 'ssao_raw',
       ),
     );
@@ -265,7 +284,8 @@ class SsaoPass extends RenderGraphPass {
         ..[15] = _settings.thicknessHeuristic.clamp(0.0, 1.0)
         ..[16] = _settings.visibilityBitmask ? 1.0 : 0.0
         ..[17] = _settings.thickness
-        ..[18] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
+        ..[18] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0
+        ..[19] = indirect ? _settings.indirectLight : 0.0;
     } else {
       // Must match the SsaoInfo layout in flutter_scene_ssao.frag. With
       // occlusion disabled (a contact-shadow-only chain) the sampling zeroes
@@ -313,6 +333,13 @@ class SsaoPass extends RenderGraphPass {
       linearDepth,
       sampler: _nearestClamp,
     );
+    if (groundTruth) {
+      renderPass.bindTexture(
+        fragmentShader.getUniformSlot('scene_radiance'),
+        _sceneRadiance ?? Material.getBlackPlaceholderTexture(),
+        sampler: _linearClamp,
+      );
+    }
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
 
@@ -352,6 +379,9 @@ class SsaoBlurPass extends RenderGraphPass {
     final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
     final aoWidth = aoSize.width.toInt();
     final aoHeight = aoSize.height.toInt();
+    final blurFormat = ambientOcclusionCarriesIndirectLight(_settings)
+        ? gpu.PixelFormat.r16g16b16a16Float
+        : _aoFormat;
 
     // The plane-aware filter removes the local slope before this threshold is
     // applied, so it can reject real depth steps much more tightly.
@@ -368,7 +398,7 @@ class SsaoBlurPass extends RenderGraphPass {
         TransientTextureDescriptor.color(
           width: aoWidth,
           height: aoHeight,
-          format: _aoFormat,
+          format: blurFormat,
           debugName: debugName,
         ),
       );
@@ -423,5 +453,63 @@ class SsaoBlurPass extends RenderGraphPass {
     );
 
     context.blackboard.set(kSsaoTextureBlackboardKey, blurred);
+  }
+}
+
+/// Copies the frame's scene color into a scene-owned history texture for
+/// next frame's indirect-light gather. The target is owned by the caller
+/// (not the transient pool), so holding it across frames is safe.
+class SceneColorHistoryPass extends RenderGraphPass {
+  SceneColorHistoryPass({required this.current, required this.store});
+
+  /// The history texture from previous frames, reused when sizes match.
+  final gpu.Texture? current;
+
+  /// Receives the texture holding this frame's color.
+  final void Function(gpu.Texture) store;
+
+  static final gpu.Shader _vertexShader =
+      baseShaderLibrary['FullscreenVertex']!;
+  static final gpu.Shader _copyShader = baseShaderLibrary['CopyFragment']!;
+
+  @override
+  String get name => 'SceneColorHistoryPass';
+
+  @override
+  void execute(RenderGraphContext context) {
+    final source = context.blackboard.get<gpu.Texture>(
+      kSceneColorBlackboardKey,
+    );
+    if (source == null) {
+      return;
+    }
+    var target = current;
+    if (target == null ||
+        target.width != source.width ||
+        target.height != source.height) {
+      target = gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        source.width,
+        source.height,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: true,
+      );
+    }
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
+    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _copyShader));
+    renderPass.setColorBlendEnable(false);
+    bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
+    renderPass.bindTexture(
+      _copyShader.getUniformSlot('source_texture'),
+      source,
+      sampler: _nearestClamp,
+    );
+    drawCompat(renderPass, 6);
+    rendererSubmissions.submit(commandBuffer);
+    store(target);
   }
 }

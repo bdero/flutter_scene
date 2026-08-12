@@ -1,6 +1,7 @@
 ## 0.21.0
 
 * Screen-space contact shadows for the sun via `DirectionalLight.contactShadows`, grounding small contacts that shadow-map resolution and bias miss.
+* Screen-space indirect light via `AmbientOcclusionSettings.indirectLight`, crediting one bounce of scene radiance to newly visible sectors of the occlusion bitmask.
 * Rect area lights via `RectAreaLight` and `RectAreaLightComponent`, shaded with linearly transformed cosines so panel highlights stretch and fall off physically.
 * Film-look color grading via `ColorGradingSettings.lut`, loading Adobe `.cube` tables with `ColorLut.fromCubeAsset` and blending with `lutBlend`.
 * Percentage-closer soft shadows via `DirectionalShadowFilter.pcss`, sharpening shadows at contact and widening them with caster distance scaled by `DirectionalLight.angularRadius`.
