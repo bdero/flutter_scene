@@ -263,8 +263,9 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   void _openProjectPath(String path) {
+    final FProject project;
     try {
-      _setProject(FProject.load(path));
+      project = FProject.load(path);
     } on Exception catch (e) {
       _settings.forgetProject(path);
       _persistSettings();
@@ -273,14 +274,19 @@ class _EditorHomeState extends State<_EditorHome> {
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to open project, $e')));
       }
+      return;
     }
+    _setProject(project);
+    unawaited(_openProjectScene(project));
   }
 
   Future<void> _newProject() async {
     final directory = await getDirectoryPath();
     if (directory == null) return;
     try {
-      _setProject(FProject.createDefault(directory));
+      final project = FProject.createDefault(directory);
+      _setProject(project);
+      unawaited(_openProjectScene(project));
     } on FormatException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -301,6 +307,7 @@ class _EditorHomeState extends State<_EditorHome> {
       'name': project.name,
       'path': project.path,
       'flutterProjectRoot': project.resolvedProjectRoot,
+      if (project.defaultScene != null) 'defaultScene': project.defaultScene,
       'selectedConfigurationId': _selectedBuildConfiguration?.id,
       'selectedDeviceId': _settings.selectedDevices[project.path],
       'configurations': [
@@ -540,11 +547,13 @@ class _EditorHomeState extends State<_EditorHome> {
     final old = _controller;
     setState(() {
       _controller = controller;
-      _scenePath = path;
       _busy = null;
       _error = null;
     });
-    if (path != null) _rememberScene(path);
+    // Route through _setScenePath so every open path (start screen, recents,
+    // MCP) gets the project-first hooks (recents, ancestor discovery, last
+    // scene).
+    _setScenePath(path);
     old?.dispose();
   }
 
@@ -569,6 +578,11 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _forgetRecentScene(String path) {
     setState(() => _settings.forgetScene(path));
+    _persistSettings();
+  }
+
+  void _forgetRecentProject(String path) {
+    setState(() => _settings.forgetProject(path));
     _persistSettings();
   }
 
@@ -603,7 +617,98 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _setScenePath(String? path) {
     setState(() => _scenePath = path);
-    if (path != null) _rememberScene(path);
+    if (path == null) return;
+    _rememberScene(path);
+    _resolveProjectForScene(path);
+    _recordLastScene(path);
+  }
+
+  /// Project-first scene context. A scene opened on its own joins the
+  /// nearest ancestor project (opening or switching to it); without one, a
+  /// nearby pubspec earns a one-tap offer to initialize a project there.
+  void _resolveProjectForScene(String scenePath) {
+    final discovery = findSceneProjectContext(scenePath);
+    final discovered = discovery.fprojectPath;
+    if (discovered != null) {
+      if (_project?.path == discovered) return;
+      try {
+        _setProject(FProject.load(discovered));
+      } on Exception catch (e) {
+        _runner.addLine(
+          'Could not open the scene\'s project ($discovered), $e',
+          ConsoleLineKind.error,
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Opened project ${_project!.name}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    final pubspecDirectory = discovery.pubspecDirectory;
+    if (_project == null && pubspecDirectory != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'This scene lives in a Flutter project without an .fproject '
+            '($pubspecDirectory)',
+          ),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Create project',
+            onPressed: () {
+              try {
+                _setProject(FProject.createDefault(pubspecDirectory));
+                _recordLastScene(_scenePath ?? scenePath);
+              } on FormatException catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(e.message)));
+              }
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Remembers the open scene as the project's resume point when it lives
+  /// under the project root.
+  void _recordLastScene(String path) {
+    final project = _project;
+    if (project == null) return;
+    if (!path.startsWith('${project.resolvedProjectRoot}/')) return;
+    if (_settings.lastScenes[project.path] == path) return;
+    _settings.lastScenes[project.path] = path;
+    _persistSettings();
+  }
+
+  /// Opens the project's resume scene (per-user last scene, then the
+  /// committed defaultScene), or an empty scene so the editor shell appears
+  /// even for a scene-less project. A scene already open inside the project
+  /// stays.
+  Future<void> _openProjectScene(FProject project) async {
+    final current = _scenePath;
+    if (current != null &&
+        current.startsWith('${project.resolvedProjectRoot}/')) {
+      return;
+    }
+    var scenePath = _settings.lastScenes[project.path];
+    if (scenePath == null || !File(scenePath).existsSync()) {
+      final fallback = project.resolvedDefaultScene;
+      scenePath = fallback != null && File(fallback).existsSync()
+          ? fallback
+          : null;
+    }
+    if (scenePath != null) {
+      final path = scenePath;
+      await _load('Opening scene', () => openFscene(path), path: path);
+    } else if (_controller == null) {
+      await _load('Creating scene', () => EditorController.empty());
+    }
   }
 
   Future<void> _newScene() async {
@@ -788,6 +893,9 @@ class _EditorHomeState extends State<_EditorHome> {
               project = FProject.load(path);
             }
             _setProject(project);
+            // Resume the project's scene without holding up the response (a
+            // large scene loads for a while).
+            unawaited(_openProjectScene(project));
             return _projectInfo()!;
           },
           closeProject: () async => _closeProject(),
@@ -900,6 +1008,7 @@ class _EditorHomeState extends State<_EditorHome> {
         },
         onShowSettings: _showSettings,
         projectName: _project?.name,
+        projectRootDirectory: _project?.resolvedProjectRoot,
         onOpenProject: _openProject,
         onNewProject: _newProject,
         onCloseProject: _closeProject,
@@ -960,6 +1069,11 @@ class _EditorHomeState extends State<_EditorHome> {
         _StartScreen(
           busy: _busy,
           error: _error,
+          onNewProject: _newProject,
+          onOpenProject: _openProject,
+          recentProjects: _settings.recentProjects,
+          onOpenRecentProject: _openProjectPath,
+          onRemoveRecentProject: _forgetRecentProject,
           onNew: _newScene,
           onOpen: _openScene,
           onImport: _importGltf,
@@ -987,6 +1101,11 @@ class _StartScreen extends StatelessWidget {
   const _StartScreen({
     required this.busy,
     required this.error,
+    required this.onNewProject,
+    required this.onOpenProject,
+    required this.recentProjects,
+    required this.onOpenRecentProject,
+    required this.onRemoveRecentProject,
     required this.onNew,
     required this.onOpen,
     required this.onImport,
@@ -998,6 +1117,11 @@ class _StartScreen extends StatelessWidget {
 
   final String? busy;
   final String? error;
+  final VoidCallback onNewProject;
+  final VoidCallback onOpenProject;
+  final List<String> recentProjects;
+  final ValueChanged<String> onOpenRecentProject;
+  final ValueChanged<String> onRemoveRecentProject;
   final VoidCallback onNew;
   final VoidCallback onOpen;
   final VoidCallback onImport;
@@ -1037,11 +1161,33 @@ class _StartScreen extends StatelessWidget {
                   const Center(child: CircularProgressIndicator()),
                   const SizedBox(height: 12),
                   Text(busy!, textAlign: TextAlign.center),
-                ] else
+                ] else ...[
+                  // A project (an .fproject beside a Flutter app's pubspec)
+                  // is the primary entry point; scenes open inside it.
                   Row(
                     children: [
                       Expanded(
                         child: FilledButton.icon(
+                          onPressed: onOpenProject,
+                          icon: const Icon(Icons.folder_special_outlined),
+                          label: const Text('Open project'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: onNewProject,
+                          icon: const Icon(Icons.create_new_folder_outlined),
+                          label: const Text('New project'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
                           onPressed: onNew,
                           icon: const Icon(Icons.add),
                           label: const Text('New scene'),
@@ -1065,6 +1211,7 @@ class _StartScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                ],
                 if (error != null) ...[
                   const SizedBox(height: 20),
                   Text(
@@ -1075,8 +1222,36 @@ class _StartScreen extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (recentScenes.isNotEmpty) ...[
+                if (recentProjects.isNotEmpty) ...[
                   const SizedBox(height: 32),
+                  Text(
+                    'Recent projects',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: recentProjects.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) => _RecentProjectTile(
+                        path: recentProjects[index],
+                        onOpen: () =>
+                            onOpenRecentProject(recentProjects[index]),
+                        onRemove: () =>
+                            onRemoveRecentProject(recentProjects[index]),
+                      ),
+                    ),
+                  ),
+                ],
+                if (recentScenes.isNotEmpty) ...[
+                  const SizedBox(height: 24),
                   Row(
                     children: [
                       Text(
@@ -1092,7 +1267,7 @@ class _StartScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Container(
-                    constraints: const BoxConstraints(maxHeight: 360),
+                    constraints: const BoxConstraints(maxHeight: 220),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surfaceContainer,
                       border: Border.all(color: Theme.of(context).dividerColor),
@@ -1115,6 +1290,50 @@ class _StartScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RecentProjectTile extends StatelessWidget {
+  const _RecentProjectTile({
+    required this.path,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  final String path;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = File(path);
+    final missing = !file.existsSync();
+    final base = file.path.split(Platform.pathSeparator).last;
+    final name = base.endsWith('.fproject')
+        ? base.substring(0, base.length - '.fproject'.length)
+        : base;
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        Icons.folder_special_outlined,
+        size: 18,
+        color: missing
+            ? Theme.of(context).colorScheme.error
+            : Theme.of(context).colorScheme.primary,
+      ),
+      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        missing ? 'Missing  ${file.parent.path}' : file.parent.path,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: IconButton(
+        tooltip: 'Remove from recent projects',
+        onPressed: onRemove,
+        icon: const Icon(Icons.close, size: 16),
+      ),
+      onTap: onOpen,
     );
   }
 }

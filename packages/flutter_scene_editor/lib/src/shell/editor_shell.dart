@@ -124,6 +124,7 @@ class EditorShell extends StatefulWidget {
     this.onDeleteNamedLayout,
     this.onShowSettings,
     this.projectName,
+    this.projectRootDirectory,
     this.onOpenProject,
     this.onNewProject,
     this.onCloseProject,
@@ -144,6 +145,10 @@ class EditorShell extends StatefulWidget {
 
   /// The open project's display name, or null with no project open.
   final String? projectName;
+
+  /// The open project's resolved root directory; scopes the asset browser to
+  /// the whole project instead of the open scene's directory.
+  final String? projectRootDirectory;
 
   /// Project lifecycle actions; null hides the corresponding menu items.
   final VoidCallback? onOpenProject;
@@ -797,6 +802,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: AssetBrowserPanel(
                               controller: _ctrl,
                               onImportModel: _importModelFromBrowser,
+                              projectRoot: widget.projectRootDirectory,
+                              onOpenScene: _openPath,
                             ),
                           ),
                           DockPanel(
@@ -1256,10 +1263,37 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'File',
               items: [
-                _MenuItem(label: 'New', onTap: onNew),
-                _MenuItem(label: 'Open…', onTap: onOpen),
+                // Project-first: the project group leads, scenes open inside
+                // its context.
+                if (onOpenProject != null) ...[
+                  _MenuItem(label: 'Open Project…', onTap: onOpenProject),
+                  _MenuItem(label: 'New Project…', onTap: onNewProject),
+                  _MenuItem(
+                    label: 'Open Recent Project',
+                    children: recentProjectPaths.isEmpty
+                        ? const [_MenuItem(label: 'No Recent Projects')]
+                        : [
+                            for (final path in recentProjectPaths)
+                              _MenuItem(
+                                label: path.split(Platform.pathSeparator).last,
+                                detail: File(path).parent.path,
+                                onTap: () => onOpenRecentProject?.call(path),
+                              ),
+                          ],
+                  ),
+                  if (projectName != null) ...[
+                    _MenuItem(
+                      label: 'Edit Build Configurations…',
+                      onTap: onEditBuildConfigs,
+                    ),
+                    _MenuItem(label: 'Close Project', onTap: onCloseProject),
+                  ],
+                  const _MenuItem.divider(),
+                ],
+                _MenuItem(label: 'New Scene', onTap: onNew),
+                _MenuItem(label: 'Open Scene…', onTap: onOpen),
                 _MenuItem(
-                  label: 'Open Recent',
+                  label: 'Open Recent Scene',
                   children: recentScenePaths.isEmpty
                       ? const [_MenuItem(label: 'No Recent Scenes')]
                       : [
@@ -1288,31 +1322,6 @@ class _EditorMenuBar extends StatelessWidget {
                 ),
                 _MenuItem(label: 'Save', onTap: onSave),
                 _MenuItem(label: 'Save As…', onTap: onSaveAs),
-                if (onOpenProject != null) ...[
-                  const _MenuItem.divider(),
-                  _MenuItem(label: 'Open Project…', onTap: onOpenProject),
-                  _MenuItem(label: 'New Project…', onTap: onNewProject),
-                  _MenuItem(
-                    label: 'Open Recent Project',
-                    children: recentProjectPaths.isEmpty
-                        ? const [_MenuItem(label: 'No Recent Projects')]
-                        : [
-                            for (final path in recentProjectPaths)
-                              _MenuItem(
-                                label: path.split(Platform.pathSeparator).last,
-                                detail: File(path).parent.path,
-                                onTap: () => onOpenRecentProject?.call(path),
-                              ),
-                          ],
-                  ),
-                  if (projectName != null) ...[
-                    _MenuItem(
-                      label: 'Edit Build Configurations…',
-                      onTap: onEditBuildConfigs,
-                    ),
-                    _MenuItem(label: 'Close Project', onTap: onCloseProject),
-                  ],
-                ],
                 if (onShowSettings != null) ...[
                   const _MenuItem.divider(),
                   _MenuItem(label: 'Settings…', onTap: onShowSettings),

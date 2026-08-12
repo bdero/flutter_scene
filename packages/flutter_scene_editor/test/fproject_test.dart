@@ -124,6 +124,49 @@ dependencies:
     expect(const RunParameters().toJson(), isEmpty);
   });
 
+  test('ancestor discovery finds the nearest fproject or pubspec', () {
+    final scenes = Directory('${root.path}/assets/levels')
+      ..createSync(recursive: true);
+    final scenePath = '${scenes.path}/town.fscene';
+    File(scenePath).writeAsStringSync('{}');
+
+    // Only a pubspec above; discovery offers it for initialization.
+    var context = findSceneProjectContext(
+      scenePath,
+      stopAtDirectory: root.path,
+    );
+    expect(context.fprojectPath, isNull);
+    expect(context.pubspecDirectory, Directory(root.path).absolute.path);
+
+    // With a project file, the nearest one wins and the pubspec offer clears.
+    final project = FProject.createDefault(root.path);
+    context = findSceneProjectContext(scenePath, stopAtDirectory: root.path);
+    expect(context.fprojectPath, project.path);
+    expect(context.pubspecDirectory, isNull);
+
+    // Several project files in one directory; the directory-named one wins.
+    File('${root.path}/aaa.fproject').writeAsStringSync('{"version": 2}');
+    context = findSceneProjectContext(scenePath, stopAtDirectory: root.path);
+    expect(context.fprojectPath, project.path);
+
+    // The walk does not ascend past the stop directory.
+    context = findSceneProjectContext(scenePath, stopAtDirectory: scenes.path);
+    expect(context.fprojectPath, isNull);
+    expect(context.pubspecDirectory, isNull);
+  });
+
+  test('defaultScene round trips and resolves against the root', () {
+    final project = FProject.createDefault(root.path);
+    project.defaultScene = 'assets/main.fscene';
+    project.save();
+    final reloaded = FProject.load(project.path);
+    expect(reloaded.defaultScene, 'assets/main.fscene');
+    expect(
+      reloaded.resolvedDefaultScene,
+      '${Directory(root.path).absolute.path}/assets/main.fscene',
+    );
+  });
+
   test('createDefault requires a pubspec', () {
     final empty = Directory.systemTemp.createTempSync('not_flutter_');
     addTearDown(() => empty.deleteSync(recursive: true));

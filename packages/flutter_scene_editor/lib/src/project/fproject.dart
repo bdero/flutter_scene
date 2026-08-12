@@ -151,6 +151,7 @@ class FProject {
     required this.flutterProjectRoot,
     required List<BuildConfiguration> buildConfigurations,
     List<ProjectTask> tasks = const [],
+    this.defaultScene,
   }) : buildConfigurations = List.of(buildConfigurations),
        tasks = List.of(tasks);
 
@@ -167,6 +168,19 @@ class FProject {
   /// Free-form command templates runnable from the toolbar's configuration
   /// menu (raw subprocesses, no app lifecycle).
   final List<ProjectTask> tasks;
+
+  /// The committed scene a fresh checkout opens to, relative to the project
+  /// root, or null. A per-user last-opened scene (editor settings) wins over
+  /// this when present.
+  String? defaultScene;
+
+  /// [defaultScene] resolved to an absolute path, or null.
+  String? get resolvedDefaultScene {
+    final scene = defaultScene;
+    if (scene == null || scene.isEmpty) return null;
+    if (scene.startsWith('/')) return scene;
+    return '$resolvedProjectRoot/$scene';
+  }
 
   String get name {
     final base = path.replaceAll('\\', '/').split('/').last;
@@ -231,6 +245,7 @@ class FProject {
       flutterProjectRoot: json['flutterProjectRoot'] as String? ?? '.',
       buildConfigurations: configurations,
       tasks: tasks,
+      defaultScene: json['defaultScene'] as String?,
     );
   }
 
@@ -246,6 +261,8 @@ class FProject {
     final encoded = const JsonEncoder.withIndent('  ').convert({
       'version': currentVersion,
       'flutterProjectRoot': flutterProjectRoot,
+      if (defaultScene case final scene? when scene.isNotEmpty)
+        'defaultScene': scene,
       'buildConfigurations': [
         for (final config in buildConfigurations) config.toJson(),
       ],
@@ -279,6 +296,67 @@ class FProject {
     project.save();
     return project;
   }
+}
+
+/// What ancestor-directory discovery found for a scene, the nearest
+/// `.fproject` when one exists, and otherwise the nearest directory with a
+/// `pubspec.yaml` (the candidate for offering project initialization).
+typedef SceneProjectContext = ({
+  String? fprojectPath,
+  String? pubspecDirectory,
+});
+
+/// Walks up from [scenePath]'s directory looking for a `.fproject`, so a
+/// scene opened on its own lands in its project's context. The nearest
+/// project file wins (with several in one directory, one named after the
+/// directory is preferred, then the lexicographically first). The walk stops
+/// after [stopAtDirectory] (default the user's home directory, so a stray
+/// project file near the filesystem root cannot capture everything; paths
+/// outside home walk to the root).
+SceneProjectContext findSceneProjectContext(
+  String scenePath, {
+  String? stopAtDirectory,
+}) {
+  final stopAt = Directory(
+    stopAtDirectory ?? Platform.environment['HOME'] ?? '/',
+  ).absolute.path.replaceAll(RegExp(r'[/\\]$'), '');
+  String? pubspecDirectory;
+  var dir = File(scenePath).absolute.parent;
+  for (var depth = 0; depth < 64; depth++) {
+    final dirPath = dir.path.replaceAll(RegExp(r'[/\\]$'), '');
+    final List<FileSystemEntity> entries;
+    try {
+      entries = dir.listSync(followLinks: false);
+    } on FileSystemException {
+      break;
+    }
+    final candidates =
+        entries
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.fproject'))
+            .map((f) => f.path)
+            .toList()
+          ..sort();
+    if (candidates.isNotEmpty) {
+      final dirName = dirPath.replaceAll('\\', '/').split('/').last;
+      final preferred = '$dirPath/$dirName.fproject';
+      return (
+        fprojectPath: candidates.contains(preferred)
+            ? preferred
+            : candidates.first,
+        pubspecDirectory: null,
+      );
+    }
+    if (pubspecDirectory == null &&
+        entries.whereType<File>().any(
+          (f) => f.path.endsWith('/pubspec.yaml'),
+        )) {
+      pubspecDirectory = dirPath;
+    }
+    if (dirPath == stopAt || dir.parent.path == dir.path) break;
+    dir = dir.parent;
+  }
+  return (fprojectPath: null, pubspecDirectory: pubspecDirectory);
 }
 
 BuildConfiguration buildConfigurationTemplate(String mode) {
