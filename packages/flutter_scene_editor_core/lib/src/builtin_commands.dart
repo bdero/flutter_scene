@@ -695,7 +695,11 @@ final addComponent = CommandEntry(
     final type = requireString(params, 'componentType');
     final component = ComponentSpec(
       type,
-      properties: optionalPropertyMap(params, 'properties'),
+      properties: optionalPropertyMap(
+        params,
+        'properties',
+        schema: ctx.componentSchema?.call(type),
+      ),
     );
     return Transaction(
       name: 'Add component ($type)',
@@ -762,7 +766,11 @@ final setComponentProperties = CommandEntry(
       type,
       properties: {
         ...existing.properties,
-        ...optionalPropertyMap(params, 'properties'),
+        ...optionalPropertyMap(
+          params,
+          'properties',
+          schema: ctx.componentSchema?.call(type),
+        ),
       },
     );
     return Transaction(

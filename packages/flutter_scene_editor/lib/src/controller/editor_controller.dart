@@ -50,7 +50,24 @@ class EditorController extends ChangeNotifier {
     this.scene,
     this.baseDirectory,
     this._componentRegistry,
-  );
+  ) {
+    // Component commands coerce and clamp property values against the
+    // registered schemas (plus the universal properties every component
+    // carries).
+    session.componentSchemaLookup = (type) {
+      final codec = _componentRegistry.codecFor(type);
+      if (codec == null) return null;
+      final schema = codec.schema;
+      return ComponentSchema(
+        schema.type,
+        doc: schema.doc,
+        icon: schema.icon,
+        version: schema.version,
+        formerTypes: schema.formerTypes,
+        properties: [...schema.properties, ...universalComponentProperties],
+      );
+    };
+  }
 
   /// The headless editing session (document, commands, history, selection).
   final EditorSession session;

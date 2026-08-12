@@ -11,6 +11,7 @@
 library;
 
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
 
 import 'change.dart';
 
@@ -91,11 +92,17 @@ class ParamSpec {
 /// current values and for minting fresh ids). Commands do not mutate here;
 /// they return a [Transaction] the session commits.
 class CommandContext {
-  /// Creates a context over [document].
-  CommandContext(this.document);
+  /// Creates a context over [document], optionally with a [componentSchema]
+  /// lookup so component commands can coerce and clamp property values
+  /// against their declared descriptors.
+  CommandContext(this.document, {this.componentSchema});
 
   /// The document being edited (read access plus [SceneDocument.newId]).
   final SceneDocument document;
+
+  /// Resolves a component type to its schema, or null when unknown (the
+  /// host decides what is registered; commands fall back to shape-guessing).
+  final ComponentSchema? Function(String type)? componentSchema;
 }
 
 /// Thrown when a command receives invalid or missing parameters.
