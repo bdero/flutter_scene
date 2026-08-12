@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import 'package:scene/scene.dart';
 
+import '../../hot_reload/fingerprinted_bundle.dart';
+
 /// The project directory scene sources load from, set by the launcher (the
 /// editor's Play session passes the open project's root).
 const String _sourceRootDefine = String.fromEnvironment(
@@ -85,6 +87,22 @@ final class SceneSourceLoader {
       (key.endsWith('.fscene') || key.endsWith('.fsceneb')) &&
       _fileFor(key).existsSync();
 
+  /// When [error] is a filesystem failure (a macOS App Sandbox denial being
+  /// the common one; stat can succeed where open is refused), deactivates
+  /// source loading for the rest of the run so every load falls back to the
+  /// bundled DataAssets, and returns true. Anything else returns false.
+  bool deactivateOnAccessError(Object error, String key) {
+    if (error is! FileSystemException) return false;
+    _active = null;
+    debugPrint(
+      'flutter_scene: cannot read scene sources under $root '
+      '("$key": ${error.message}); falling back to bundled assets. On macOS '
+      'this is usually the App Sandbox; allow file access in '
+      'DebugProfile.entitlements to load sources directly.',
+    );
+    return true;
+  }
+
   /// Reads and prepares the document at project-relative [key], recording
   /// every file consumed (the document, plus its payload sidecar) into
   /// [dependencies] as keys [bundle] can hash for hot reload.
@@ -128,18 +146,33 @@ final class SceneSourceLoader {
       return;
     }
     dependencies.add(sidecarKey);
-    final SceneDocument sidecar;
-    try {
-      sidecar = readFsceneb(await file.readAsBytes());
-    } on Exception catch (e) {
-      debugPrint(
-        'flutter_scene: payload source "$sidecarKey" failed to read: $e',
+    // A sidecar can be huge (bistro's is ~900MB, ~0.9s to read and parse);
+    // cache the parsed payloads by mtime+size so the repeated reloads of an
+    // edit session re-attach the same byte buffers instead of re-reading.
+    final stat = file.statSync();
+    var cached = _sidecarCache[sidecarKey];
+    if (cached == null ||
+        cached.mtimeUs != stat.modified.microsecondsSinceEpoch ||
+        cached.length != stat.size) {
+      final Map<LocalId, PayloadSpec> payloads;
+      try {
+        payloads = readFsceneb(await file.readAsBytes()).payloads;
+      } on Exception catch (e) {
+        debugPrint(
+          'flutter_scene: payload source "$sidecarKey" failed to read: $e',
+        );
+        return;
+      }
+      cached = _SidecarCache(
+        stat.modified.microsecondsSinceEpoch,
+        stat.size,
+        payloads,
       );
-      return;
+      _sidecarCache[sidecarKey] = cached;
     }
     for (final entry in document.payloads.entries) {
       if (entry.value.bytes != null) continue;
-      final supplied = sidecar.payloads[entry.key];
+      final supplied = cached.payloads[entry.key];
       final bytes = supplied?.bytes;
       if (supplied == null ||
           bytes == null ||
@@ -153,6 +186,8 @@ final class SceneSourceLoader {
       entry.value.bytes = bytes;
     }
   }
+
+  final Map<String, _SidecarCache> _sidecarCache = {};
 
   /// Rewrites document-relative image, environment, and prefab references to
   /// project-relative keys when the referenced file exists, mirroring how the
@@ -235,6 +270,14 @@ final class SceneSourceLoader {
       a.length == b.length;
 }
 
+class _SidecarCache {
+  _SidecarCache(this.mtimeUs, this.length, this.payloads);
+
+  final int mtimeUs;
+  final int length;
+  final Map<LocalId, PayloadSpec> payloads;
+}
+
 // The directory part of a project-relative key, or empty.
 String _dirOf(String key) {
   final slash = key.lastIndexOf('/');
@@ -260,8 +303,10 @@ String _normalizeKey(String path) => path.replaceAll('\\', '/');
 
 /// Serves project files by project-relative key, falling back to the real
 /// bundle for everything else (DataAssets, `AssetManifest.bin`). Byte loads
-/// are never cached, so hot-reload hashing re-reads the file each pass.
-final class _SourceOverlayBundle extends CachingAssetBundle {
+/// are never cached, so hot-reload re-reads see the changed file, and
+/// file-backed keys fingerprint by stat so change scans never read them.
+final class _SourceOverlayBundle extends CachingAssetBundle
+    implements FingerprintedAssetBundle {
   _SourceOverlayBundle(this.root);
 
   final String root;
@@ -273,6 +318,13 @@ final class _SourceOverlayBundle extends CachingAssetBundle {
       return ByteData.sublistView(await file.readAsBytes());
     }
     return rootBundle.load(key);
+  }
+
+  @override
+  int? fingerprintFor(String key) {
+    final stat = File('$root/$key').statSync();
+    if (stat.type == FileSystemEntityType.notFound) return null;
+    return Object.hash(stat.modified.microsecondsSinceEpoch, stat.size);
   }
 
   @override

@@ -34,14 +34,17 @@ Future<SceneDiff> reloadScene(
   SceneDocument newDocument, {
   FsceneComponentRegistry? registry,
   AssetBundle? bundle,
+  ResourceRealizer? resources,
 }) async {
   final diff = diffScene(oldDocument, newDocument);
   if (diff.isEmpty) return diff;
 
   final reg = registry ?? defaultComponentRegistry();
-  final resources = ResourceRealizer(newDocument, bundle: bundle);
-  await resources.preload();
-  final context = RealizeContext(newDocument, resources: resources);
+  // Callers on a reload loop pass a realizer pre-seeded via adoptUnchanged so
+  // only changed resources rebuild; a fresh one re-realizes everything.
+  final realizer = resources ?? ResourceRealizer(newDocument, bundle: bundle);
+  await realizer.preload();
+  final context = RealizeContext(newDocument, resources: realizer);
 
   // Index the live graph by document id.
   final live = <LocalId, Node>{};

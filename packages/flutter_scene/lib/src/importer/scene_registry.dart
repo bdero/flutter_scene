@@ -204,14 +204,20 @@ final class SceneRegistry {
     final source = bundle == null ? activeSceneSourceLoader() : null;
     final sourceKey = source?.resolveScene(sourcePath);
     if (source != null && sourceKey != null) {
-      return _loadRealized(
-        key: sourceKey,
-        bundle: source.bundle,
-        readComposed: (seen) => _readComposedSource(source, sourceKey, seen),
-        registry: registry,
-        onReload: onReload,
-        applyStageTo: applyStageTo,
-      );
+      try {
+        return await _loadRealized(
+          key: sourceKey,
+          bundle: source.bundle,
+          readComposed: (seen) => _readComposedSource(source, sourceKey, seen),
+          registry: registry,
+          onReload: onReload,
+          applyStageTo: applyStageTo,
+        );
+      } catch (e) {
+        // An unreadable source (sandboxed app) turns source loading off and
+        // falls through to the bundled DataAsset below.
+        if (!source.deactivateOnAccessError(e, sourceKey)) rethrow;
+      }
     }
 
     final key = resolveKey(sourcePath, package: package);
@@ -342,6 +348,7 @@ final class SceneRegistry {
       // so a strong capture would keep every discarded instance alive forever,
       // accumulating registrations that re-patch dead graphs on each reload.
       var current = template.document;
+      var currentResources = template.resources;
       final dependencies = {...template.dependencies};
       final weakRoot = WeakReference(root);
       final weakStageScene = applyStageTo == null
@@ -364,14 +371,24 @@ final class SceneRegistry {
           dependencies
             ..clear()
             ..addAll(seen);
+          // Seed the new realizer from the live one so only changed
+          // resources rebuild (a full re-realize costs seconds at scale),
+          // and cache the result as the template for future instance loads.
+          final nextResources = ResourceRealizer(next, bundle: assetBundle)
+            ..adoptUnchanged(currentResources);
           final diff = await reloadScene(
             liveRoot,
             current,
             next,
             registry: registry,
             bundle: assetBundle,
+            resources: nextResources,
           );
           current = next;
+          currentResources = nextResources;
+          _sceneTemplates[key] = Future.value(
+            _SceneTemplate(next, nextResources, {...seen}),
+          );
           final stageScene = weakStageScene?.target;
           if (diff.stageChanged && stageScene != null) {
             await realizeStage(next, stageScene, bundle: assetBundle);
