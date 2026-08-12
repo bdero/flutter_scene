@@ -7,6 +7,8 @@
 library;
 
 export 'src/hosting/hosting.dart' show SceneHost;
+export 'src/network_transform_codec.dart'
+    show NetworkTransformCodec, registerNetComponentCodecs;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 export 'src/scene_replication.dart' show ReplicaNodeBuilder, SceneReplication;
 export 'src/transform_replica.dart' show TransformReplicaVectors;

@@ -21,6 +21,10 @@ final class NetworkTransformComponent extends Component {
     this.delay = const Duration(milliseconds: 100),
   }) {
     _push();
+    // TODO(replication-unsubscribe): dashwire_replication 0.2.0 has no
+    // listener removal, so these subscriptions (and through them this
+    // component) live as long as the replica; add removal upstream and tear
+    // down on detach.
     replica.position.onChanged((_, _) => _push());
     replica.rotation.onChanged((_, _) => _push());
   }

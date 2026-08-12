@@ -371,16 +371,43 @@ class _ComponentEditor extends StatelessWidget {
       );
     }
 
+    Widget row(ComponentPropertyDef def) => _SchemaPropertyRow(
+      componentType: component.type,
+      def: def,
+      value: component.properties[def.name] ?? def.defaultValue,
+      controller: controller,
+      onChanged: (v) => _set(def.name, v),
+    );
+
+    // Ungrouped properties render flat; each declared group folds into an
+    // accordion section, in first-appearance order.
+    final ungrouped = [
+      for (final def in schema)
+        if (def.group == null) def,
+    ];
+    final groups = <String, List<ComponentPropertyDef>>{};
+    for (final def in schema) {
+      final group = def.group;
+      if (group != null) groups.putIfAbsent(group, () => []).add(def);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final def in schema)
-          _SchemaPropertyRow(
-            componentType: component.type,
-            def: def,
-            value: component.properties[def.name] ?? def.defaultValue,
-            controller: controller,
-            onChanged: (v) => _set(def.name, v),
+        for (final def in ungrouped) row(def),
+        if (groups.isNotEmpty)
+          InspectorAccordion(
+            identity: '${node.id.toToken()}/${component.type}',
+            children: [
+              for (final entry in groups.entries)
+                InspectorAccordionItem(
+                  title: Text(entry.key),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [for (final def in entry.value) row(def)],
+                  ),
+                ),
+            ],
           ),
         for (final entry in extras)
           _PropertyValueRow(
