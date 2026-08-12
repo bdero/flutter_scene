@@ -214,5 +214,9 @@
   "SmaaBlendFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_smaa_blend.frag"
+  },
+  "LensFlareFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_lens_flare.frag"
   }
 }

@@ -394,6 +394,17 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.bloomIntensity != 0.15) 'intensity': e.bloomIntensity,
     if (e.bloomScatter != 0.7) 'scatter': e.bloomScatter,
   };
+  final lensFlare = <String, dynamic>{
+    if (e.lensFlareEnabled) 'enabled': true,
+    if (e.lensFlareIntensity != 1.0) 'intensity': e.lensFlareIntensity,
+    if (e.lensFlareGhostCount != 4) 'ghostCount': e.lensFlareGhostCount,
+    if (e.lensFlareGhostSpacing != 0.3) 'ghostSpacing': e.lensFlareGhostSpacing,
+    if (e.lensFlareHaloRadius != 0.35) 'haloRadius': e.lensFlareHaloRadius,
+    if (e.lensFlareHaloIntensity != 1.0)
+      'haloIntensity': e.lensFlareHaloIntensity,
+    if (e.lensFlareChromaticAberration != 0.005)
+      'chromaticAberration': e.lensFlareChromaticAberration,
+  };
   final vignette = <String, dynamic>{
     if (e.vignetteEnabled) 'enabled': true,
     if (e.vignetteIntensity != 0.5) 'intensity': e.vignetteIntensity,
@@ -524,6 +535,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
     if (bloom.isNotEmpty) 'bloom': bloom,
+    if (lensFlare.isNotEmpty) 'lensFlare': lensFlare,
     if (vignette.isNotEmpty) 'vignette': vignette,
     if (chromaticAberration.isNotEmpty)
       'chromaticAberration': chromaticAberration,
@@ -993,6 +1005,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final effects = _map(value);
   final cg = _map(effects['colorGrading']);
   final bloom = _map(effects['bloom']);
+  final lensFlare = _map(effects['lensFlare']);
   final vignette = _map(effects['vignette']);
   final ca = _map(effects['chromaticAberration']);
   final grain = _map(effects['filmGrain']);
@@ -1018,6 +1031,13 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     bloomThreshold: _d(bloom['threshold'] ?? 1.0),
     bloomIntensity: _d(bloom['intensity'] ?? 0.15),
     bloomScatter: _d(bloom['scatter'] ?? 0.7),
+    lensFlareEnabled: lensFlare['enabled'] as bool? ?? false,
+    lensFlareIntensity: _d(lensFlare['intensity'] ?? 1.0),
+    lensFlareGhostCount: (lensFlare['ghostCount'] as num? ?? 4).toInt(),
+    lensFlareGhostSpacing: _d(lensFlare['ghostSpacing'] ?? 0.3),
+    lensFlareHaloRadius: _d(lensFlare['haloRadius'] ?? 0.35),
+    lensFlareHaloIntensity: _d(lensFlare['haloIntensity'] ?? 1.0),
+    lensFlareChromaticAberration: _d(lensFlare['chromaticAberration'] ?? 0.005),
     vignetteEnabled: vignette['enabled'] as bool? ?? false,
     vignetteIntensity: _d(vignette['intensity'] ?? 0.5),
     vignetteRadius: _d(vignette['radius'] ?? 0.75),

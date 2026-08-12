@@ -1388,6 +1388,37 @@ bool _applyEnvironmentEffects(
   number('bloomThreshold', e.bloomThreshold, (v) => e.bloomThreshold = v);
   number('bloomIntensity', e.bloomIntensity, (v) => e.bloomIntensity = v);
   number('bloomScatter', e.bloomScatter, (v) => e.bloomScatter = v);
+  boolean('lensFlareEnabled', (v) => e.lensFlareEnabled = v);
+  number(
+    'lensFlareIntensity',
+    e.lensFlareIntensity,
+    (v) => e.lensFlareIntensity = v,
+  );
+  number(
+    'lensFlareGhostCount',
+    e.lensFlareGhostCount.toDouble(),
+    (v) => e.lensFlareGhostCount = v.round(),
+  );
+  number(
+    'lensFlareGhostSpacing',
+    e.lensFlareGhostSpacing,
+    (v) => e.lensFlareGhostSpacing = v,
+  );
+  number(
+    'lensFlareHaloRadius',
+    e.lensFlareHaloRadius,
+    (v) => e.lensFlareHaloRadius = v,
+  );
+  number(
+    'lensFlareHaloIntensity',
+    e.lensFlareHaloIntensity,
+    (v) => e.lensFlareHaloIntensity = v,
+  );
+  number(
+    'lensFlareChromaticAberration',
+    e.lensFlareChromaticAberration,
+    (v) => e.lensFlareChromaticAberration = v,
+  );
   boolean('vignetteEnabled', (v) => e.vignetteEnabled = v);
   number(
     'vignetteIntensity',

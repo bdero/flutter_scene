@@ -572,6 +572,49 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Lens flares off the bloom chain: a single intense emissive card in a
+  // dim scene must bloom and cast a ghost chain through the screen center
+  // plus a halo ring. Guards the whole bloom pyramid (its only golden) and
+  // the flare ghost/halo/dispersion math across backends.
+  SmokeScene('lens_flare', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.05;
+    scene.postProcess.bloom
+      ..enabled = true
+      ..threshold = 1.0
+      ..intensity = 0.5
+      ..scatter = 0.6;
+    scene.postProcess.bloom.lensFlare
+      ..enabled = true
+      ..intensity = 2.0
+      ..ghostCount = 5
+      ..ghostSpacing = 0.35
+      ..haloRadius = 0.3
+      ..haloIntensity = 1.5
+      ..chromaticAberration = 0.01;
+    final emissive = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.0, 0.0, 0.0, 1.0)
+      ..emissiveFactor = vm.Vector4(1.0, 0.9, 0.7, 1.0)
+      ..emissiveStrength = 40.0
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.3, 0.3, 0.05)), emissive))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.8, 0.9, 0)),
+    );
+    final ground = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.2, 0.2, 0.22, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(Node(mesh: Mesh(PlaneGeometry(width: 2.6, depth: 2.2), ground)));
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.4, 1.0, 3.6),
+        target: vm.Vector3(-0.1, 0.55, 0),
+      ),
+    );
+  }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {

@@ -717,6 +717,48 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
+          title: _title(context, 'Lens flare', e.lensFlareEnabled),
+          child: Column(
+            children: [
+              _toggle('Enabled', 'lensFlareEnabled', e.lensFlareEnabled),
+              _slider(
+                'Intensity',
+                'lensFlareIntensity',
+                e.lensFlareIntensity,
+                max: 4,
+              ),
+              _slider(
+                'Ghosts',
+                'lensFlareGhostCount',
+                e.lensFlareGhostCount.toDouble(),
+                max: 8,
+              ),
+              _slider(
+                'Ghost spacing',
+                'lensFlareGhostSpacing',
+                e.lensFlareGhostSpacing,
+              ),
+              _slider(
+                'Halo radius',
+                'lensFlareHaloRadius',
+                e.lensFlareHaloRadius,
+              ),
+              _slider(
+                'Halo intensity',
+                'lensFlareHaloIntensity',
+                e.lensFlareHaloIntensity,
+                max: 4,
+              ),
+              _slider(
+                'Dispersion',
+                'lensFlareChromaticAberration',
+                e.lensFlareChromaticAberration,
+                max: 0.05,
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
           title: _title(
             context,
             'Ambient occlusion',

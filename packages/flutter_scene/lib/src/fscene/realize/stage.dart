@@ -284,6 +284,13 @@ void _applyEffectSpec(
     ..bloomThreshold = effects.bloomThreshold
     ..bloomIntensity = effects.bloomIntensity
     ..bloomScatter = effects.bloomScatter
+    ..lensFlareEnabled = effects.lensFlareEnabled
+    ..lensFlareIntensity = effects.lensFlareIntensity
+    ..lensFlareGhostCount = effects.lensFlareGhostCount
+    ..lensFlareGhostSpacing = effects.lensFlareGhostSpacing
+    ..lensFlareHaloRadius = effects.lensFlareHaloRadius
+    ..lensFlareHaloIntensity = effects.lensFlareHaloIntensity
+    ..lensFlareChromaticAberration = effects.lensFlareChromaticAberration
     ..vignetteEnabled = effects.vignetteEnabled
     ..vignetteIntensity = effects.vignetteIntensity
     ..vignetteRadius = effects.vignetteRadius
@@ -663,6 +670,13 @@ EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
       bloomThreshold: s.bloomThreshold,
       bloomIntensity: s.bloomIntensity,
       bloomScatter: s.bloomScatter,
+      lensFlareEnabled: s.lensFlareEnabled,
+      lensFlareIntensity: s.lensFlareIntensity,
+      lensFlareGhostCount: s.lensFlareGhostCount,
+      lensFlareGhostSpacing: s.lensFlareGhostSpacing,
+      lensFlareHaloRadius: s.lensFlareHaloRadius,
+      lensFlareHaloIntensity: s.lensFlareHaloIntensity,
+      lensFlareChromaticAberration: s.lensFlareChromaticAberration,
       vignetteEnabled: s.vignetteEnabled,
       vignetteIntensity: s.vignetteIntensity,
       vignetteRadius: s.vignetteRadius,
