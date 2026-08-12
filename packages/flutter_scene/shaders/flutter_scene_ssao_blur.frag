@@ -15,8 +15,8 @@ uniform BlurInfo {
   // xy: texel size (reciprocal of the occlusion target size). z: depth
   // falloff scale (world units). w: 1 on the final pass, otherwise 0.
   vec4 texel;
-  // xy: filter axis. z: 1 when gba carries a packed bent normal that must be
-  // renormalized after filtering. w: unused.
+  // xy: filter axis. z: 1 when ba carries an octahedrally packed bent normal
+  // that must be renormalized after filtering. w: unused.
   vec4 axis;
 }
 blur;
@@ -29,6 +29,7 @@ out vec4 frag_color;
 const float kEpsilon = 0.0001;
 
 #include <interleaved_gradient_noise.glsl>
+#include <octahedral.glsl>
 
 float GaussianWeight(int offset) {
   int i = abs(offset);
@@ -61,11 +62,9 @@ void main() {
   if (blur.texel.w > 0.5) {
     result.r += (InterleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
     if (blur.axis.z > 0.5) {
-      // The filtered mean of packed unit directions shortens; renormalize
-      // before the material samples it.
-      vec3 bent = result.gba * 2.0 - 1.0;
-      bent = normalize(bent + vec3(0.0, 0.0, -kEpsilon));
-      result.gba = bent * 0.5 + 0.5;
+      // Filtering octahedral coordinates off-lattice skews the direction
+      // slightly; a decode/encode round trip snaps it back to unit length.
+      result.ba = OctEncode(OctDecode(result.ba));
     }
   }
   result.r = clamp(result.r, 0.0, 1.0);
