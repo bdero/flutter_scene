@@ -106,6 +106,14 @@ final class SceneSourceLoader {
   /// Reads and prepares the document at project-relative [key], recording
   /// every file consumed (the document, plus its payload sidecar) into
   /// [dependencies] as keys [bundle] can hash for hot reload.
+  ///
+  /// TODO(source-textures): content edits to a referenced external image are
+  /// invisible here (the document is unchanged); track referenced image files
+  /// and refresh their textures on reload.
+  /// TODO(source-prefab-cache): a re-read `.fsceneb` prefab allocates fresh
+  /// payload buffers each reload, so its resources fail the identity check in
+  /// ResourceRealizer.adoptUnchanged and rebuild; cache parsed prefab
+  /// documents by mtime+size the way the payload sidecar is.
   Future<SceneDocument> readDocument(
     String key,
     Set<String> dependencies,
