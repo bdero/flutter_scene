@@ -19,9 +19,10 @@
 // Lighting with Visibility Bitmask" (2023), https://arxiv.org/abs/2301.11376.
 //
 // In horizon mode the pass can also accumulate the bent normal (the mean
-// unoccluded direction), packed view-space into the output's gba channels;
-// the material shader samples irradiance along it and derives cone specular
-// occlusion.
+// unoccluded direction), octahedrally packed view-space into the output's ba
+// channels; the material shader samples irradiance along it and derives cone
+// specular occlusion. The g channel is reserved for the screen-space
+// contact-shadow term and holds 1 (unshadowed) here.
 
 uniform sampler2D linear_depth;
 
@@ -45,7 +46,7 @@ uniform GtaoInfo {
   vec4 params2;
   // x: 1 when the visibility bitmask is enabled. y: occluder thickness
   // (world units, bitmask mode). z: 1 when the bent normal is computed and
-  // packed into the output's gba (horizon mode only). w: unused.
+  // octahedrally packed into the output's ba (horizon mode only). w: unused.
   vec4 params3;
 }
 gtao;
@@ -67,6 +68,7 @@ const uint kSectorCount = 32u;
 
 #define AO_INFO gtao
 #include <ssao_geometry.glsl>
+#include <octahedral.glsl>
 
 // Closed-form integral of cosine-weighted visibility over the arc from the
 // slice-plane normal angle [gamma] up to the horizon angle [h].
@@ -149,8 +151,9 @@ void main() {
   // Background texels (no geometry) are unoccluded; the bent normal encodes
   // straight at the camera.
   if (origin.z >= far) {
-    frag_color = compute_bent ? vec4(1.0, 0.5, 0.5, 0.0)
-                              : vec4(1.0, 1.0, 1.0, 1.0);
+    frag_color = compute_bent
+        ? vec4(1.0, 1.0, OctEncode(vec3(0.0, 0.0, -1.0)))
+        : vec4(1.0, 1.0, 1.0, 1.0);
     return;
   }
 
@@ -256,8 +259,8 @@ void main() {
     // Nudged toward the view direction so a fully occluded pixel still
     // normalizes to a valid direction.
     vec3 bent = normalize(bent_sum + view_dir * kNumericEpsilon);
-    frag_color = vec4(ao, bent * 0.5 + 0.5);
+    frag_color = vec4(ao, 1.0, OctEncode(bent));
     return;
   }
-  frag_color = vec4(ao, ao, ao, 1.0);
+  frag_color = vec4(ao, 1.0, ao, 1.0);
 }

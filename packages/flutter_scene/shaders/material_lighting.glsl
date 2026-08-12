@@ -12,6 +12,7 @@
 
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
+#include <octahedral.glsl>
 
 // Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
 // The coefficients already include the cosine convolution and 1/pi, so
@@ -505,7 +506,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     if (frag_info.ssao_lighting.z > 0.5) {
       // The packed view-space bent normal, rotated into world space with the
       // camera basis the depth prepass rendered from.
-      vec3 bent_view = ssao_sample.gba * 2.0 - 1.0;
+      vec3 bent_view = OctDecode(ssao_sample.ba);
       ao_bent_normal = normalize(
           frag_info.camera_right.xyz * bent_view.x +
           frag_info.camera_up.xyz * bent_view.y +
