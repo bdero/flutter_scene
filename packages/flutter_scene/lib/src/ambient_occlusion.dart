@@ -95,8 +95,12 @@ class AmbientOcclusionSettings {
   /// [AmbientOcclusionMethod.groundTruth] with [visibilityBitmask]; while
   /// active the chain renders in half-float and the sun's contact shadows
   /// are unavailable (the channels carry radiance instead).
-  /// TODO(ssgi-reprojection): the radiance is sampled unreprojected, so fast
-  /// camera motion drags the bounce by one frame.
+  ///
+  /// The history is reprojected through the previous frame's camera, so the
+  /// bounce stays put under camera motion; light bounced off a *moving*
+  /// object still lags one frame.
+  /// TODO(velocity-reprojection): object motion needs a velocity pass, the
+  /// same infrastructure temporal anti-aliasing would introduce.
   double indirectLight = 0.0;
 
   /// Models occluders as surfaces with a constant [thickness] instead of an

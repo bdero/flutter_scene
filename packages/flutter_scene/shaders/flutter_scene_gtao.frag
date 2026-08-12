@@ -57,6 +57,11 @@ uniform GtaoInfo {
   // xyz: view-space direction toward the sun. w: the contact-shadow march
   // distance in world units, 0 when contact shadows are off.
   vec4 contact;
+  // Maps view-space positions to the radiance history's clip space (last
+  // frame's view-projection times the current view-to-world), so the
+  // indirect-light gather reads each tap where it sat when the history was
+  // rendered instead of dragging a frame behind the camera.
+  mat4 reproject;
 }
 gtao;
 
@@ -106,6 +111,25 @@ uint CountBits(uint v) {
   v = (v & 0x33333333u) + ((v >> 2u) & 0x33333333u);
   v = (v + (v >> 4u)) & 0x0F0F0F0Fu;
   return (v * 0x01010101u) >> 24u;
+}
+
+// Where a view-space position landed on screen when the radiance history
+// was rendered, for the indirect-light gather. Falls back to [fallback]
+// (the tap's current-frame UV) when the point was behind or outside last
+// frame's view. Single return so the inlined body stays loop-safe for the
+// Direct3D shader compiler.
+vec2 HistoryUv(vec3 view_pos, vec2 fallback) {
+  vec4 clip = gtao.reproject * vec4(view_pos, 1.0);
+  vec2 uv = fallback;
+  if (clip.w > kNumericEpsilon) {
+    vec2 candidate =
+        vec2(0.5, 0.5) + vec2(0.5, -0.5) * (clip.xy / clip.w);
+    if (all(greaterThanEqual(candidate, vec2(0.0))) &&
+        all(lessThanEqual(candidate, vec2(1.0)))) {
+      uv = candidate;
+    }
+  }
+  return uv;
 }
 
 // Returns the sector mask a sample covers. The sample's front face and an
@@ -262,7 +286,7 @@ void main() {
             float receiver0 = max(dot(normal, dir0), 0.0);
             vec3 emitter_n0 = -cross(normalize(sample0 - last_sample0), axis);
             float emitter0 = max(dot(emitter_n0, -dir0), 0.0);
-            vec3 rad0 = texture(scene_radiance, uv0).rgb;
+            vec3 rad0 = texture(scene_radiance, HistoryUv(sample0, uv0)).rgb;
             rad0 *= 8.0 / max(8.0, dot(rad0, vec3(0.299, 0.587, 0.114)));
             gi_sum += rad0 * (float(CountBits(fresh0)) / float(kSectorCount)) *
                       receiver0 * emitter0;
@@ -272,7 +296,7 @@ void main() {
             float receiver1 = max(dot(normal, dir1), 0.0);
             vec3 emitter_n1 = cross(normalize(sample1 - last_sample1), axis);
             float emitter1 = max(dot(emitter_n1, -dir1), 0.0);
-            vec3 rad1 = texture(scene_radiance, uv1).rgb;
+            vec3 rad1 = texture(scene_radiance, HistoryUv(sample1, uv1)).rgb;
             rad1 *= 8.0 / max(8.0, dot(rad1, vec3(0.299, 0.587, 0.114)));
             gi_sum += rad1 * (float(CountBits(fresh1)) / float(kSectorCount)) *
                       receiver1 * emitter1;

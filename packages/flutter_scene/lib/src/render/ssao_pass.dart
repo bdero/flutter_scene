@@ -119,6 +119,7 @@ class SsaoPass extends RenderGraphPass {
     Vector3? contactDirectionView,
     double contactDistance = 0.0,
     gpu.Texture? sceneRadiance,
+    Matrix4? ssgiReprojection,
   }) : _dimensions = dimensions,
        _settings = settings,
        _fovRadiansY = fovRadiansY,
@@ -126,7 +127,8 @@ class SsaoPass extends RenderGraphPass {
        _far = far,
        _contactDirectionView = contactDirectionView,
        _contactDistance = contactDistance,
-       _sceneRadiance = sceneRadiance;
+       _sceneRadiance = sceneRadiance,
+       _ssgiReprojection = ssgiReprojection;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
@@ -142,6 +144,10 @@ class SsaoPass extends RenderGraphPass {
   // Last frame's scene color for the indirect-light gather, or null on the
   // first frame (a black placeholder stands in).
   final gpu.Texture? _sceneRadiance;
+
+  // Maps the gather's view-space positions to the radiance history's clip
+  // space (last frame's view-projection times the current view-to-world).
+  final Matrix4? _ssgiReprojection;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -262,7 +268,9 @@ class SsaoPass extends RenderGraphPass {
     // screen-space disk. Based on the occlusion target's own height.
     final projScale = aoHeight / (2.0 * tanHalfFovY);
 
-    final info = Float32List(24)
+    // The ground-truth path appends the mat4 reprojection for the
+    // indirect-light history sample; the obscurance struct stays 6 vec4s.
+    final info = Float32List(groundTruth ? 40 : 24)
       ..[0] = aoWidth.toDouble()
       ..[1] = aoHeight.toDouble()
       ..[2] = 1.0 / aoWidth
@@ -308,6 +316,11 @@ class SsaoPass extends RenderGraphPass {
         ..[21] = contactDirection.y
         ..[22] = contactDirection.z
         ..[23] = _contactDistance;
+    }
+    if (groundTruth) {
+      // Identity reprojects nothing sensible, but the history is a black
+      // placeholder whenever the matrix is absent, so the sample is moot.
+      (_ssgiReprojection ?? Matrix4.identity()).copyIntoArray(info, 24);
     }
     renderPass.bindUniform(
       fragmentShader.getUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),

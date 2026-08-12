@@ -9,7 +9,8 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart' show Matrix3, Ray, Vector3;
+import 'package:vector_math/vector_math.dart'
+    show Matrix3, Matrix4, Ray, Vector3;
 import 'ambient_occlusion.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
@@ -620,6 +621,11 @@ base class Scene implements SceneGraph {
   // indirect-light gather (the transient pool's two-frame ring keeps the
   // texture valid until then).
   gpu.Texture? _ssgiHistoryColor;
+
+  // The view-projection that rendered [_ssgiHistoryColor], so the gather can
+  // reproject its radiance taps to where each point sat last frame. Null
+  // until the first indirect-light frame stores one.
+  Matrix4? _ssgiHistoryViewProjection;
 
   EnvironmentMap? _crossfadeEnvironment;
   double _crossfadeBlend = 0.0;
@@ -1756,6 +1762,36 @@ base class Scene implements SceneGraph {
             toLight.dot(cameraForward),
           );
         }
+        Matrix4? ssgiReprojection;
+        if (wantIndirectLight) {
+          // Maps the gather's view-space positions (the camera basis above,
+          // forward along +z) to the history frame's clip space. On the
+          // first frame the current view-projection stands in, which lands
+          // every tap back on its own screen position.
+          final position = camera.position;
+          final viewToWorld = Matrix4(
+            cameraRight.x,
+            cameraRight.y,
+            cameraRight.z,
+            0.0, //
+            cameraUp.x,
+            cameraUp.y,
+            cameraUp.z,
+            0.0, //
+            cameraForward.x,
+            cameraForward.y,
+            cameraForward.z,
+            0.0, //
+            position.x,
+            position.y,
+            position.z,
+            1.0,
+          );
+          ssgiReprojection =
+              (_ssgiHistoryViewProjection ??
+                  camera.getViewTransform(pixelSize)) *
+              viewToWorld;
+        }
         graph.addPass(
           SsaoPass(
             dimensions: pixelSize,
@@ -1768,6 +1804,7 @@ base class Scene implements SceneGraph {
                 ? light.contactShadowDistance
                 : 0.0,
             sceneRadiance: wantIndirectLight ? _ssgiHistoryColor : null,
+            ssgiReprojection: ssgiReprojection,
           ),
         );
         graph.addPass(
@@ -1823,6 +1860,7 @@ base class Scene implements SceneGraph {
           store: (texture) => _ssgiHistoryColor = texture,
         ),
       );
+      _ssgiHistoryViewProjection = camera.getViewTransform(pixelSize);
     }
     // Screen-space reflections refine the lit HDR color in place, before
     // bloom and tone mapping, so reflected highlights bloom and tone-map
