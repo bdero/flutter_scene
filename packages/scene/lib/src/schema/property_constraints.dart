@@ -87,8 +87,8 @@ final class Range extends PropertyConstraint<num> {
   };
 }
 
-/// The slider range for a numeric value, presentation only (values outside
-/// remain valid, the Unreal UIMin/ClampMin split).
+/// The slider range for a numeric value, presentation only; values outside
+/// it remain valid, unlike [Range].
 final class SoftRange extends PropertyConstraint<num> {
   const SoftRange(this.min, this.max);
 
