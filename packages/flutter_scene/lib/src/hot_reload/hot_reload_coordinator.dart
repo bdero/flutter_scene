@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_scene/src/fscene/source/source_scene_loader.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/hot_reload/fingerprinted_bundle.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene_encoder.dart';
@@ -202,6 +203,11 @@ class HotReloadCoordinator {
 
   void _seedBytesHash(String key, AssetBundle bundle, Map<String, int> store) {
     if (store.containsKey(key) || !_seeding.add(key)) return;
+    final fingerprint = _fingerprintFor(bundle, key);
+    if (fingerprint != null) {
+      store[key] = fingerprint;
+      return;
+    }
     bundle
         .load(key)
         .then((data) {
@@ -282,6 +288,15 @@ class HotReloadCoordinator {
     final changedKeys = <String>{};
     for (final entry in bundles.entries) {
       final key = entry.key;
+      // A file-backed key probes by stat instead of read+hash, so a huge
+      // payload sidecar does not cost seconds per refresh.
+      final fingerprint = _fingerprintFor(entry.value, key);
+      if (fingerprint != null) {
+        if (_sceneHashes[key] == fingerprint) continue; // unchanged
+        _sceneHashes[key] = fingerprint;
+        changedKeys.add(key);
+        continue;
+      }
       entry.value.evict(key);
       List<int> bytes;
       try {
@@ -493,6 +508,9 @@ class HotReloadCoordinator {
       }
     }
   }
+
+  static int? _fingerprintFor(AssetBundle bundle, String key) =>
+      bundle is FingerprintedAssetBundle ? bundle.fingerprintFor(key) : null;
 
   static int _fnv1a(String s) => _fnv1aBytes(s.codeUnits);
 

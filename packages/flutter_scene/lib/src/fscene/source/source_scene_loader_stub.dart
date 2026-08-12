@@ -32,6 +32,8 @@ final class SceneSourceLoader {
       throw UnsupportedError('source loading needs dart:io');
   bool isSourceKey(String key) =>
       throw UnsupportedError('source loading needs dart:io');
+  bool deactivateOnAccessError(Object error, String key) =>
+      throw UnsupportedError('source loading needs dart:io');
   Future<SceneDocument> readDocument(String key, Set<String> dependencies) =>
       throw UnsupportedError('source loading needs dart:io');
 }

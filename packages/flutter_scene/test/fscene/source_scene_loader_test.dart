@@ -154,6 +154,21 @@ void main() {
     expect(loader.isSourceKey('imported/missing.png'), isFalse);
   });
 
+  test('an access error deactivates source loading for the run', () {
+    final loader = activeSceneSourceLoader()!;
+    expect(loader.deactivateOnAccessError(StateError('other'), 'x'), isFalse);
+    expect(activeSceneSourceLoader(), isNotNull);
+    expect(
+      loader.deactivateOnAccessError(
+        const FileSystemException('Cannot open file', 'x'),
+        'x',
+      ),
+      isTrue,
+    );
+    expect(activeSceneSourceLoader(), isNull);
+    expect(sceneSourceLoadingActive, isFalse);
+  });
+
   test('the overlay bundle serves project files by key', () async {
     write('scenes/blob.bin', [9, 8, 7]);
     final loader = activeSceneSourceLoader()!;

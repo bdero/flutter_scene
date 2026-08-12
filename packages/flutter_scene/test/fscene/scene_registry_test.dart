@@ -362,13 +362,16 @@ void main() {
         final root = await registry.loadScene('assets/retry', bundle: bundle);
         expect(root.getChildByName('one'), isNotNull);
 
-        // A hot reload drops the cached template while the first load still
-        // holds its claim, so the next load rebuilds it under that claim.
+        // A hot reload replaces the cached template with the freshly re-read
+        // one, so a later load of the same scene shares the reloaded
+        // resources instead of rebuilding them.
         bundle.assets[key] = named('two');
         HotReloadCoordinator.instance.onReassemble();
         await _settle(() => root.getChildByName('two') != null);
-        expect(sceneTemplateCacheCount(), 0);
+        expect(sceneTemplateCacheCount(), 1);
 
+        // With the cache emptied, a failing read must not cache the failure.
+        clearSceneTemplateCache();
         bundle.failLoads = true;
         Object? error;
         try {

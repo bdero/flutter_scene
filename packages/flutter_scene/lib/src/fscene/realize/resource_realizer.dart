@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:collection/collection.dart' show DeepCollectionEquality;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:vector_math/vector_math.dart';
@@ -84,6 +85,101 @@ class ResourceRealizer {
   final Map<LocalId, Material> _materials = {};
   final Map<LocalId, gpu.Texture> _textures = {};
   final Map<LocalId, EnvironmentSettings> _environments = {};
+
+  /// Carries realized resources over from [previous] (the realizer the live
+  /// scene was built with) for every resource whose spec and payload bytes
+  /// are unchanged, so a hot reload rebuilds only what actually changed
+  /// instead of re-uploading the whole document (seconds for a large scene).
+  /// Call before [preload]; [preload] skips carried-over entries.
+  ///
+  /// Unchanged payload bytes are detected by object identity, which holds for
+  /// sidecar-cached source loads and for documents sharing chunk buffers; a
+  /// byte-equal but distinct buffer just rebuilds that resource.
+  void adoptUnchanged(ResourceRealizer previous) {
+    const equality = DeepCollectionEquality();
+    final oldResources = _encodedResources(previous.document);
+    final newResources = _encodedResources(document);
+
+    bool payloadUnchanged(LocalId id) {
+      final old = previous.document.payloads[id];
+      final current = document.payloads[id];
+      if (old == null || current == null) return false;
+      return old.encoding == current.encoding &&
+          old.layout == current.layout &&
+          old.format == current.format &&
+          old.width == current.width &&
+          old.height == current.height &&
+          old.length == current.length &&
+          identical(old.bytes, current.bytes);
+    }
+
+    bool specUnchanged(LocalId id) =>
+        equality.equals(oldResources[id], newResources[id]);
+
+    final adoptedTextures = <LocalId>{};
+    for (final entry in document.resources.entries) {
+      final id = entry.key;
+      final resource = entry.value;
+      if (!specUnchanged(id)) continue;
+      switch (resource) {
+        case GeometryResource():
+          if (resource.vertices case final vertices?
+              when !payloadUnchanged(vertices)) {
+            continue;
+          }
+          if (resource.indices case final indices?
+              when !payloadUnchanged(indices)) {
+            continue;
+          }
+          final geometry = previous._geometries[id];
+          if (geometry != null) _geometries[id] = geometry;
+        case TextureResource():
+          if (resource.payload case final payload?
+              when !payloadUnchanged(payload)) {
+            continue;
+          }
+          final texture = previous._textures[id];
+          if (texture != null) {
+            _textures[id] = texture;
+            adoptedTextures.add(id);
+          }
+        case EnvironmentResource():
+          if (resource.environment case PayloadEnvironment(
+            :final payload,
+          ) when !payloadUnchanged(payload)) {
+            continue;
+          }
+          final environment = previous._environments[id];
+          if (environment != null) _environments[id] = environment;
+        default:
+          break;
+      }
+    }
+    // A material realizes against its referenced textures, so it carries over
+    // only when they all did.
+    for (final entry in document.resources.entries) {
+      final id = entry.key;
+      final resource = entry.value;
+      if (resource is! MaterialResource || !specUnchanged(id)) continue;
+      final textureRefs = [
+        for (final value in resource.properties.values)
+          if (value case ResourceRefValue(:final id)) id,
+      ];
+      if (!textureRefs.every(adoptedTextures.contains)) continue;
+      final material = previous._materials[id];
+      if (material != null) _materials[id] = material;
+    }
+  }
+
+  static Map<LocalId, Object?> _encodedResources(SceneDocument document) {
+    final encoded = (encodeDocument(document)['resources'] as Map?) ?? const {};
+    final byId = <LocalId, Object?>{};
+    for (final entry in encoded.entries) {
+      // Encoded keys are '<prefix>:<idToken>'; parse strips the prefix.
+      byId[LocalId.parse(entry.key as String)] = entry.value;
+    }
+    return byId;
+  }
 
   /// The live geometry for resource [id], realized and memoized on first use.
   /// The result is stamped with its origin so the serializer can recover it.
@@ -192,8 +288,9 @@ class ResourceRealizer {
     for (final resource in document.resources.values) {
       // Every texture preloads, not only the ones the sync path cannot do at
       // all: an rgba8 payload realizes synchronously but builds its mip chain
-      // on the calling thread, and preloading moves that off it.
-      if (resource is TextureResource) {
+      // on the calling thread, and preloading moves that off it. Entries
+      // carried over by [adoptUnchanged] are already live.
+      if (resource is TextureResource && !_textures.containsKey(resource.id)) {
         textures.add(_preloadTexture(resource));
       }
     }
@@ -201,7 +298,8 @@ class ResourceRealizer {
 
     final materials = <Future<void>>[];
     for (final resource in document.resources.values) {
-      if (resource is MaterialResource) {
+      if (resource is MaterialResource &&
+          !_materials.containsKey(resource.id)) {
         if (resource.type == 'fmat') {
           materials.add(_preloadFmat(resource));
         } else if (resource.type == 'physical') {
@@ -216,7 +314,8 @@ class ResourceRealizer {
     // synchronous component realize path.
     if (!includeEnvironments) return;
     for (final resource in document.resources.values) {
-      if (resource is EnvironmentResource) {
+      if (resource is EnvironmentResource &&
+          !_environments.containsKey(resource.id)) {
         _environments[resource.id] = await realizeEnvironmentSettings(
           environment: resource.environment,
           environmentIntensity: resource.environmentIntensity,
