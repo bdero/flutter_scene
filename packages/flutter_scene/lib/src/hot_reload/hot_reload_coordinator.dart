@@ -4,6 +4,10 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:scene/schema.dart' show encodeComponentSchemas;
+
+import 'package:flutter_scene/src/fscene/realize/realize.dart'
+    show defaultComponentRegistry;
 import 'package:flutter_scene/src/fscene/source/source_scene_loader.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/fingerprinted_bundle.dart';
@@ -41,10 +45,12 @@ class HotReloadCoordinator {
   /// The process-wide coordinator.
   static final HotReloadCoordinator instance = HotReloadCoordinator._();
 
-  /// Registers `ext.flutter_scene.reloadScene`, the debug VM-service entry an
-  /// attached editor invokes to refresh changed assets without a hot reload.
-  /// The response reports whether scenes load straight from project sources
-  /// (when they do not, the caller needs a rebuild for edits to be visible).
+  /// Registers the debug VM-service dev channel an attached editor drives:
+  /// `ext.flutter_scene.reloadScene` refreshes changed assets without a hot
+  /// reload (reporting whether scenes load straight from project sources),
+  /// and `ext.flutter_scene.componentSchemas` exports the process registry's
+  /// component schemas as data, so an out-of-process editor renders
+  /// inspectors for component types it was never compiled with.
   void _registerDevService() {
     if (!kDebugMode) return;
     try {
@@ -57,6 +63,21 @@ class HotReloadCoordinator {
           jsonEncode({
             'type': 'Success',
             'sourceLoading': sceneSourceLoadingActive,
+          }),
+        );
+      });
+      developer.registerExtension('ext.flutter_scene.componentSchemas', (
+        method,
+        params,
+      ) async {
+        // Read live at call time, so registrations made after startup are
+        // always visible without any change notification.
+        return developer.ServiceExtensionResponse.result(
+          jsonEncode({
+            'type': 'Success',
+            'schemas': encodeComponentSchemas(
+              defaultComponentRegistry().schemas,
+            ),
           }),
         );
       });

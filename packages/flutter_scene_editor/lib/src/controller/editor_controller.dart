@@ -31,6 +31,7 @@ import 'package:flutter_scene/src/fmat/material_registry.dart'
     show fmatSourcePathOf;
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
+import 'package:flutter_scene/src/fscene/realize/placeholder_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
@@ -348,6 +349,44 @@ class EditorController extends ChangeNotifier {
   /// declares none, or is unknown).
   List<ComponentPropertyDef> componentSchema(String type) =>
       _componentRegistry.codecFor(type)?.propertySchema ?? const [];
+
+  /// The full portable schema of component [type], or null when unknown.
+  ComponentSchema? componentSchemaFor(String type) =>
+      _componentRegistry.codecFor(type)?.schema;
+
+  /// Where each foreign (schema-only) component type came from, keyed by
+  /// type: `live` (fetched from the running app), `cache` (a prior fetch), or
+  /// a package name. Types absent from this map are compiled in.
+  final Map<String, String> foreignTypeProvenance = {};
+
+  /// Registers placeholder codecs for [schemas] whose types have no codec in
+  /// this controller's registry, so documents carrying them realize as inert
+  /// data bags, the inspector edits them from the schema, and Add Component
+  /// offers them. Live-fetched schemas replace earlier placeholder versions
+  /// of the same type ([provenance] `live` wins over `cache`).
+  void adoptForeignSchemas(
+    Iterable<ComponentSchema> schemas, {
+    required String provenance,
+  }) {
+    var changed = false;
+    for (final schema in schemas) {
+      final existing = _componentRegistry.codecFor(schema.type);
+      final existingProvenance = foreignTypeProvenance[schema.type];
+      if (existing != null && existingProvenance == null) {
+        // A compiled-in codec always wins over a schema.
+        continue;
+      }
+      if (existing != null &&
+          existingProvenance == 'live' &&
+          provenance != 'live') {
+        continue;
+      }
+      _componentRegistry.register(PlaceholderComponentCodec(schema));
+      foreignTypeProvenance[schema.type] = provenance;
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
 
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];

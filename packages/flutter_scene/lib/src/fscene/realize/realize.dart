@@ -34,12 +34,27 @@ void applyTransformSpec(Node node, TransformSpec spec) {
   }
 }
 
-/// Returns a registry preloaded with the built-in component codecs.
+FsceneComponentRegistry? _defaultRegistry;
+
+/// The process-wide component registry, preloaded with the built-in codecs.
+///
+/// This is the registry every load and realize call uses when none is passed
+/// explicitly, so a package registrar called once in `main()` (for example
+/// `registerFmodComponentCodecs()`) makes its component types loadable
+/// everywhere, with no per-call plumbing. Tests wanting isolation construct
+/// their own [FsceneComponentRegistry] and pass it explicitly.
 FsceneComponentRegistry defaultComponentRegistry() {
+  final existing = _defaultRegistry;
+  if (existing != null) return existing;
   final registry = FsceneComponentRegistry();
   registerBuiltinComponentCodecs(registry);
-  return registry;
+  return _defaultRegistry = registry;
 }
+
+/// Replaces the process-wide registry (null restores the built-ins on next
+/// use). For tests that must not leak registrations across cases.
+@visibleForTesting
+void debugResetDefaultComponentRegistry() => _defaultRegistry = null;
 
 /// Realizes [document] into a live [Node] graph.
 ///

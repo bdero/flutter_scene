@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:scene/schema.dart';
 
 import '../toolchains/device_catalog.dart';
 import '../toolchains/flutter_installation.dart';
@@ -374,6 +375,36 @@ class AppSession extends ChangeNotifier {
       ConsoleLineKind.status,
     );
     return true;
+  }
+
+  /// Fetches the running app's registered component schemas over the VM
+  /// service (`ext.flutter_scene.componentSchemas`), the authoritative source
+  /// for the editor's foreign-component support. Returns null when the app
+  /// is not running, has no VM service, or does not register the extension.
+  Future<List<ComponentSchema>?> fetchComponentSchemas() async {
+    final wsUri = _vmServiceUri;
+    if (_state != AppSessionState.running || wsUri == null) return null;
+    final VmServiceLink link;
+    try {
+      final pending = _vmLink ??= VmServiceLink.connect(
+        wsUri,
+        connector: _vmSocketConnector,
+      );
+      link = await pending;
+    } catch (e) {
+      _vmLink = null;
+      log('VM service connection failed, $e', ConsoleLineKind.error);
+      return null;
+    }
+    final result = await link.callExtension(
+      'ext.flutter_scene.componentSchemas',
+      onError: (message) => log(
+        'Component schemas unavailable, $message',
+        ConsoleLineKind.status,
+      ),
+    );
+    if (result == null) return null;
+    return decodeComponentSchemas(result['schemas']);
   }
 
   /// Stops the app (a daemon `app.stop`, escalating to killing the tool

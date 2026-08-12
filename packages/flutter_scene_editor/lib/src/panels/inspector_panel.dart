@@ -822,7 +822,22 @@ class _AddComponentBar extends StatelessWidget {
             PopupMenuItem<String>(
               value: type,
               height: editorMenuItemHeight,
-              child: Text(type),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(type),
+                  // Foreign types (known by schema, realized as data in the
+                  // editor) show where the schema came from.
+                  if (controller.foreignTypeProvenance[type]
+                      case final provenance?) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      provenance == 'live' ? 'project' : provenance,
+                      style: const TextStyle(fontSize: 9, color: Colors.grey),
+                    ),
+                  ],
+                ],
+              ),
             ),
         ],
         child: Padding(

@@ -253,6 +253,17 @@ void documentTests() {
             return true;
           },
           appState: () => {'state': 'running', 'appId': 'app-1'},
+          listComponentTypes: () => [
+            {'type': 'spin', 'doc': 'Spins.', 'provenance': 'live'},
+          ],
+          describeComponentType: (type) => type == 'spin'
+              ? {
+                  'type': 'spin',
+                  'properties': [
+                    {'name': 'speed', 'kind': 'number'},
+                  ],
+                }
+              : null,
         );
         final names = surface.bootstrapTools().map((t) => t.name);
         expect(
@@ -276,6 +287,20 @@ void documentTests() {
         expect(
           (await surface.dispatch('get_app_state', {}))['state'],
           'running',
+        );
+        final types = await surface.dispatch('list_component_types', {});
+        expect((types['types'] as List).single, {
+          'type': 'spin',
+          'doc': 'Spins.',
+          'provenance': 'live',
+        });
+        final described = await surface.dispatch('describe_component_type', {
+          'type': 'spin',
+        });
+        expect(described['type'], 'spin');
+        expect(
+          () => surface.dispatch('describe_component_type', {'type': 'nope'}),
+          throwsA(isA<ToolError>()),
         );
         await surface.dispatch('stop_project', {});
         expect(log, ['run', 'restart', 'reload', 'reloadScene', 'stop']);

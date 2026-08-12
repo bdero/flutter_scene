@@ -83,6 +83,8 @@ export 'src/fscene/realize/component_schema.dart'
         propertyValuesEqual;
 export 'src/fscene/realize/declarative_codec.dart'
     show ComponentField, DeclarativeComponentCodec, PropertyReader;
+export 'src/fscene/realize/placeholder_codec.dart'
+    show ForeignComponent, PlaceholderComponentCodec;
 export 'src/fscene/realize/loader.dart'
     show
         loadFsceneAsset,
