@@ -186,6 +186,14 @@ class ExampleSettings {
     sceneBloom.threshold = bloom.threshold;
     sceneBloom.intensity = bloom.intensity;
     sceneBloom.scatter = bloom.scatter;
+    final sceneFlare = sceneBloom.lensFlare;
+    sceneFlare.enabled = bloom.lensFlare.enabled;
+    sceneFlare.intensity = bloom.lensFlare.intensity;
+    sceneFlare.ghostCount = bloom.lensFlare.ghostCount;
+    sceneFlare.ghostSpacing = bloom.lensFlare.ghostSpacing;
+    sceneFlare.haloRadius = bloom.lensFlare.haloRadius;
+    sceneFlare.haloIntensity = bloom.lensFlare.haloIntensity;
+    sceneFlare.chromaticAberration = bloom.lensFlare.chromaticAberration;
 
     final ao = scene.ambientOcclusion;
     ao.enabled = ambientOcclusion.enabled;

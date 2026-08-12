@@ -613,6 +613,13 @@ class EnvironmentEffectsSpec {
     this.bloomThreshold = 1.0,
     this.bloomIntensity = 0.15,
     this.bloomScatter = 0.7,
+    this.lensFlareEnabled = false,
+    this.lensFlareIntensity = 1.0,
+    this.lensFlareGhostCount = 4,
+    this.lensFlareGhostSpacing = 0.3,
+    this.lensFlareHaloRadius = 0.35,
+    this.lensFlareHaloIntensity = 1.0,
+    this.lensFlareChromaticAberration = 0.005,
     this.vignetteEnabled = false,
     this.vignetteIntensity = 0.5,
     this.vignetteRadius = 0.75,
@@ -715,6 +722,13 @@ class EnvironmentEffectsSpec {
         bloomThreshold: other.bloomThreshold,
         bloomIntensity: other.bloomIntensity,
         bloomScatter: other.bloomScatter,
+        lensFlareEnabled: other.lensFlareEnabled,
+        lensFlareIntensity: other.lensFlareIntensity,
+        lensFlareGhostCount: other.lensFlareGhostCount,
+        lensFlareGhostSpacing: other.lensFlareGhostSpacing,
+        lensFlareHaloRadius: other.lensFlareHaloRadius,
+        lensFlareHaloIntensity: other.lensFlareHaloIntensity,
+        lensFlareChromaticAberration: other.lensFlareChromaticAberration,
         vignetteEnabled: other.vignetteEnabled,
         vignetteIntensity: other.vignetteIntensity,
         vignetteRadius: other.vignetteRadius,
@@ -822,6 +836,16 @@ class EnvironmentEffectsSpec {
   double bloomThreshold;
   double bloomIntensity;
   double bloomScatter;
+
+  /// Screen-space lens flares, generated inside the bloom chain (bloom
+  /// must be enabled for them to run).
+  bool lensFlareEnabled;
+  double lensFlareIntensity;
+  int lensFlareGhostCount;
+  double lensFlareGhostSpacing;
+  double lensFlareHaloRadius;
+  double lensFlareHaloIntensity;
+  double lensFlareChromaticAberration;
   bool vignetteEnabled;
   double vignetteIntensity;
   double vignetteRadius;

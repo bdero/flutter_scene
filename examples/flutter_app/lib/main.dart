@@ -981,6 +981,33 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Scatter', settings.scatter, 0, 1, (v) {
           settings.scatter = v;
         }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Lens flare'),
+          value: settings.lensFlare.enabled,
+          onChanged: (value) =>
+              setState(() => settings.lensFlare.enabled = value),
+        ),
+        _slider('Flare intensity', settings.lensFlare.intensity, 0, 4, (v) {
+          settings.lensFlare.intensity = v;
+        }),
+        _slider('Ghosts', settings.lensFlare.ghostCount.toDouble(), 0, 8, (v) {
+          settings.lensFlare.ghostCount = v.round();
+        }),
+        _slider('Ghost spacing', settings.lensFlare.ghostSpacing, 0, 1, (v) {
+          settings.lensFlare.ghostSpacing = v;
+        }),
+        _slider('Halo radius', settings.lensFlare.haloRadius, 0, 1, (v) {
+          settings.lensFlare.haloRadius = v;
+        }),
+        _slider('Halo intensity', settings.lensFlare.haloIntensity, 0, 4, (v) {
+          settings.lensFlare.haloIntensity = v;
+        }),
+        _slider('Dispersion', settings.lensFlare.chromaticAberration, 0, 0.05, (
+          v,
+        ) {
+          settings.lensFlare.chromaticAberration = v;
+        }),
       ],
     );
   }

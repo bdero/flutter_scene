@@ -133,4 +133,40 @@ class BloomSettings {
 
   /// Spread of the blur, from `0` to `1`. Higher values bloom wider.
   double scatter = 0.7;
+
+  /// Screen-space lens flares, generated inside the bloom chain. Only run
+  /// while bloom is [enabled].
+  final LensFlareSettings lensFlare = LensFlareSettings();
+}
+
+/// Screen-space lens flares: a chain of ghosts mirrored through the screen
+/// center and a circular halo, with radial chromatic dispersion, generated
+/// from the bloom pyramid. Rides the bloom chain, so bloom must be enabled
+/// and the flare brightness scales with [BloomSettings.intensity].
+///
+/// Reachable through `Scene.postProcess.bloom.lensFlare`.
+/// {@category Rendering}
+class LensFlareSettings {
+  /// Whether lens flares run. Off by default.
+  bool enabled = false;
+
+  /// Strength of the flare features relative to the bloom they ride in.
+  double intensity = 1.0;
+
+  /// Number of internal-reflection ghosts along the line through the
+  /// screen center, at most 8.
+  int ghostCount = 4;
+
+  /// Spacing between successive ghosts, as a fraction of the distance from
+  /// the source's mirrored position to the screen center.
+  double ghostSpacing = 0.3;
+
+  /// Radius of the circular halo, in UV units of the screen.
+  double haloRadius = 0.35;
+
+  /// Strength of the halo relative to the ghosts. `0` disables the halo.
+  double haloIntensity = 1.0;
+
+  /// Radial chromatic dispersion of the flare features, in UV units.
+  double chromaticAberration = 0.005;
 }

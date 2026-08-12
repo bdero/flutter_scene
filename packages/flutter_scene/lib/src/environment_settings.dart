@@ -68,6 +68,13 @@ class EnvironmentSettings {
     this.bloomThreshold = 1.0,
     this.bloomIntensity = 0.15,
     this.bloomScatter = 0.7,
+    this.lensFlareEnabled = false,
+    this.lensFlareIntensity = 1.0,
+    this.lensFlareGhostCount = 4,
+    this.lensFlareGhostSpacing = 0.3,
+    this.lensFlareHaloRadius = 0.35,
+    this.lensFlareHaloIntensity = 1.0,
+    this.lensFlareChromaticAberration = 0.005,
     this.vignetteEnabled = false,
     this.vignetteIntensity = 0.5,
     this.vignetteRadius = 0.75,
@@ -185,6 +192,13 @@ class EnvironmentSettings {
   double bloomThreshold;
   double bloomIntensity;
   double bloomScatter;
+  bool lensFlareEnabled;
+  double lensFlareIntensity;
+  int lensFlareGhostCount;
+  double lensFlareGhostSpacing;
+  double lensFlareHaloRadius;
+  double lensFlareHaloIntensity;
+  double lensFlareChromaticAberration;
 
   // Vignette.
   bool vignetteEnabled;
@@ -322,6 +336,13 @@ class EnvironmentSettings {
       bloomThreshold: bloom.threshold,
       bloomIntensity: bloom.intensity,
       bloomScatter: bloom.scatter,
+      lensFlareEnabled: bloom.lensFlare.enabled,
+      lensFlareIntensity: bloom.lensFlare.intensity,
+      lensFlareGhostCount: bloom.lensFlare.ghostCount,
+      lensFlareGhostSpacing: bloom.lensFlare.ghostSpacing,
+      lensFlareHaloRadius: bloom.lensFlare.haloRadius,
+      lensFlareHaloIntensity: bloom.lensFlare.haloIntensity,
+      lensFlareChromaticAberration: bloom.lensFlare.chromaticAberration,
       vignetteEnabled: vignette.enabled,
       vignetteIntensity: vignette.intensity,
       vignetteRadius: vignette.radius,
@@ -447,6 +468,14 @@ class EnvironmentSettings {
       ..threshold = bloomThreshold
       ..intensity = bloomIntensity
       ..scatter = bloomScatter;
+    bloom.lensFlare
+      ..enabled = lensFlareEnabled
+      ..intensity = lensFlareIntensity
+      ..ghostCount = lensFlareGhostCount
+      ..ghostSpacing = lensFlareGhostSpacing
+      ..haloRadius = lensFlareHaloRadius
+      ..haloIntensity = lensFlareHaloIntensity
+      ..chromaticAberration = lensFlareChromaticAberration;
 
     final vignette = scene.postProcess.vignette;
     vignette
@@ -589,6 +618,29 @@ class EnvironmentSettings {
       bloomThreshold: _lerp(a.bloomThreshold, b.bloomThreshold, t),
       bloomIntensity: _lerp(a.bloomIntensity, b.bloomIntensity, t),
       bloomScatter: _lerp(a.bloomScatter, b.bloomScatter, t),
+      lensFlareEnabled: d.lensFlareEnabled,
+      lensFlareIntensity: _lerp(a.lensFlareIntensity, b.lensFlareIntensity, t),
+      lensFlareGhostCount: d.lensFlareGhostCount,
+      lensFlareGhostSpacing: _lerp(
+        a.lensFlareGhostSpacing,
+        b.lensFlareGhostSpacing,
+        t,
+      ),
+      lensFlareHaloRadius: _lerp(
+        a.lensFlareHaloRadius,
+        b.lensFlareHaloRadius,
+        t,
+      ),
+      lensFlareHaloIntensity: _lerp(
+        a.lensFlareHaloIntensity,
+        b.lensFlareHaloIntensity,
+        t,
+      ),
+      lensFlareChromaticAberration: _lerp(
+        a.lensFlareChromaticAberration,
+        b.lensFlareChromaticAberration,
+        t,
+      ),
       vignetteEnabled: d.vignetteEnabled,
       vignetteIntensity: _lerp(a.vignetteIntensity, b.vignetteIntensity, t),
       vignetteRadius: _lerp(a.vignetteRadius, b.vignetteRadius, t),
