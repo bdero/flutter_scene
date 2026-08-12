@@ -134,9 +134,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # swangle_indirect renders GLES through ANGLE on SwiftShader Vulkan.
+          # The legacy swiftshader_indirect translator (SwiftShader 4.0 GL)
+          # drops most analytic-light contribution, so every sun/punctual-lit
+          # scene rendered dark on this lane before the switch.
           - backend: gles
             expected_backend: opengles
-            emulator_options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+            emulator_options: -no-window -gpu swangle_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           - backend: vulkan
             expected_backend: vulkan
             emulator_options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim -camera-back none
