@@ -1340,69 +1340,56 @@ class MaterialsVariantsCodec extends ComponentCodec {
 }
 
 /// Codec for [RectAreaLightComponent].
-class RectAreaLightCodec extends ComponentCodec {
+class RectAreaLightCodec
+    extends DeclarativeComponentCodec<RectAreaLightComponent> {
   @override
   String get type => 'rectAreaLight';
 
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
+  @override
+  List<ComponentField<RectAreaLightComponent>> get fields => [
+    ComponentField.vec3(
       'color',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(1, 1, 1)),
+      defaultValue: () => Vector3(1, 1, 1),
       doc: 'Linear RGB light color.',
-      read: (c) => Vec3Value((c as RectAreaLightComponent).light.color.clone()),
+      constraints: const [RgbColor()],
+      get: (c) => c.light.color,
+      set: (c, v) => c.light.color = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'intensity',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Emitted radiance of the panel surface.',
-      min: 0,
-      read: (c) => DoubleValue((c as RectAreaLightComponent).light.intensity),
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
+      get: (c) => c.light.intensity,
+      set: (c, v) => c.light.intensity = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'width',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Panel width along the node local X axis.',
-      min: 0,
-      read: (c) => DoubleValue((c as RectAreaLightComponent).light.width),
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.width,
+      set: (c, v) => c.light.width = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'height',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Panel height along the node local Y axis.',
-      min: 0,
-      read: (c) => DoubleValue((c as RectAreaLightComponent).light.height),
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.height,
+      set: (c, v) => c.light.height = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'range',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Distance the light reaches, or 0 for infinite range.',
-      min: 0,
-      read: (c) => DoubleValue((c as RectAreaLightComponent).light.range),
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.range,
+      set: (c, v) => c.light.range = v,
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is RectAreaLightComponent;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    return RectAreaLightComponent(
-      RectAreaLight(
-        color: readVec3(p, 'color', vec3Default('color')),
-        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
-        width: readDouble(p, 'width', numberDefault('width')),
-        height: readDouble(p, 'height', numberDefault('height')),
-        range: readDouble(p, 'range', numberDefault('range')),
-      ),
-    );
-  }
+  RectAreaLightComponent create(PropertyReader props) =>
+      RectAreaLightComponent(RectAreaLight());
 }
