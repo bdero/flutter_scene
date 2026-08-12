@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene_editor/src/project/vm_service_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A scripted daemon endpoint standing in for `flutter run --machine`.
@@ -70,6 +72,44 @@ class FakeRunProcess implements Process {
   }
 }
 
+/// A scripted VM Service endpoint answering JSON-RPC by method name.
+class FakeVmSocket implements VmServiceSocket {
+  FakeVmSocket(this.handlers);
+
+  final Map<String, Object? Function(Map<String, Object?> params)> handlers;
+  final List<Map<String, Object?>> calls = [];
+  final _controller = StreamController<dynamic>();
+  bool closed = false;
+
+  @override
+  Stream<dynamic> get messages => _controller.stream;
+
+  @override
+  void send(String text) {
+    final message = (jsonDecode(text) as Map).cast<String, Object?>();
+    calls.add(message);
+    final handler = handlers[message['method']];
+    _controller.add(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': message['id'],
+        if (handler == null)
+          'error': {'code': -32601, 'message': 'method not found'}
+        else
+          'result': handler(
+            ((message['params'] as Map?) ?? const {}).cast<String, Object?>(),
+          ),
+      }),
+    );
+  }
+
+  @override
+  Future<void> close() async {
+    closed = true;
+    await _controller.close();
+  }
+}
+
 void main() {
   late FakeRunProcess process;
   late AppSession session;
@@ -120,9 +160,10 @@ void main() {
 
   test('launch composes the machine invocation and tracks state', () async {
     final root = await tempRoot();
+    final launched = project(root);
     final ok = await session.launch(
       installation: installation,
-      project: project(root),
+      project: launched,
       configuration: buildConfigurationTemplate('debug'),
       device: device,
     );
@@ -135,6 +176,8 @@ void main() {
       '-d',
       'macos',
       '--debug',
+      '--dart-define=FLUTTER_SCENE_SOURCE_ROOT='
+          '${launched.resolvedProjectRoot}',
       '--target',
       'lib/main.dart',
       '--enable-flutter-gpu',
@@ -264,6 +307,119 @@ void main() {
       ),
       isFalse,
     );
+    process.exit(0);
+    await pumpEventQueue();
+  });
+
+  /// Launches a running debug session whose VM service is [socket].
+  Future<AppSession> runningSession(FakeVmSocket socket) async {
+    var connections = 0;
+    final vmSession = AppSession(
+      log: (text, kind) => lines.add((text, kind)),
+      processStarter:
+          (
+            executable,
+            arguments, {
+            required workingDirectory,
+            required environment,
+          }) async => process,
+      vmSocketConnector: (wsUri) async {
+        connections++;
+        expect(wsUri, 'ws://127.0.0.1:1/ws');
+        expect(connections, 1, reason: 'the link is cached per session');
+        return socket;
+      },
+    );
+    addTearDown(vmSession.dispose);
+    final root = await tempRoot();
+    await vmSession.launch(
+      installation: installation,
+      project: project(root),
+      configuration: buildConfigurationTemplate('debug'),
+      device: device,
+    );
+    process.emitEvent('app.start', {'appId': 'app-1'});
+    process.emitEvent('app.debugPort', {'wsUri': 'ws://127.0.0.1:1/ws'});
+    process.emitEvent('app.started', {});
+    await pumpEventQueue();
+    return vmSession;
+  }
+
+  test('reloadScenes drives the flutter_scene extension', () async {
+    final socket = FakeVmSocket({
+      'getVM': (_) => {
+        'isolates': [
+          {'id': 'isolates/1'},
+        ],
+      },
+      'getIsolate': (params) {
+        expect(params['isolateId'], 'isolates/1');
+        return {
+          'extensionRPCs': ['ext.flutter_scene.reloadScene'],
+        };
+      },
+      'ext.flutter_scene.reloadScene': (params) {
+        expect(params['isolateId'], 'isolates/1');
+        return {'type': 'Success', 'sourceLoading': true};
+      },
+    });
+    final vmSession = await runningSession(socket);
+
+    expect(await vmSession.reloadScenes(), isTrue);
+    expect(await vmSession.reloadScenes(), isTrue);
+    expect(
+      lines.where((line) => line.$1.startsWith('Reloaded scenes in place')),
+      hasLength(2),
+    );
+
+    process.exit(0);
+    await pumpEventQueue();
+    expect(socket.closed, isTrue, reason: 'exit disposes the link');
+  });
+
+  test(
+    'reloadScenes reports false when no isolate has the extension',
+    () async {
+      final socket = FakeVmSocket({
+        'getVM': (_) => {
+          'isolates': [
+            {'id': 'isolates/1'},
+          ],
+        },
+        'getIsolate': (_) => {'extensionRPCs': <String>[]},
+      });
+      final vmSession = await runningSession(socket);
+
+      expect(await vmSession.reloadScenes(), isFalse);
+      expect(
+        lines.any((line) => line.$1.startsWith('Scene reload unavailable')),
+        isTrue,
+      );
+
+      process.exit(0);
+      await pumpEventQueue();
+    },
+  );
+
+  test('reloadScenes reports false without source-direct loading', () async {
+    final socket = FakeVmSocket({
+      'getVM': (_) => {
+        'isolates': [
+          {'id': 'isolates/1'},
+        ],
+      },
+      'getIsolate': (_) => {
+        'extensionRPCs': ['ext.flutter_scene.reloadScene'],
+      },
+      'ext.flutter_scene.reloadScene': (_) => {
+        'type': 'Success',
+        'sourceLoading': false,
+      },
+    });
+    final vmSession = await runningSession(socket);
+
+    expect(await vmSession.reloadScenes(), isFalse);
+
     process.exit(0);
     await pumpEventQueue();
   });

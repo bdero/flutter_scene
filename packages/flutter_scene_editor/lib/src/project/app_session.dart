@@ -15,6 +15,7 @@ import '../toolchains/device_catalog.dart';
 import '../toolchains/flutter_installation.dart';
 import 'fproject.dart';
 import 'project_runner.dart';
+import 'vm_service_link.dart';
 
 enum AppSessionState { idle, launching, running, restarting, stopping }
 
@@ -43,17 +44,23 @@ Future<Process> _startProcess(
 /// Owns at most one running app. Listen for state changes; output flows into
 /// the shared Console through [log].
 class AppSession extends ChangeNotifier {
-  AppSession({required this.log, SessionProcessStarter? processStarter})
-    : _startProcess0 = processStarter ?? _startProcess;
+  AppSession({
+    required this.log,
+    SessionProcessStarter? processStarter,
+    VmSocketConnector? vmSocketConnector,
+  }) : _startProcess0 = processStarter ?? _startProcess,
+       _vmSocketConnector = vmSocketConnector;
 
   final void Function(String text, ConsoleLineKind kind) log;
   final SessionProcessStarter _startProcess0;
+  final VmSocketConnector? _vmSocketConnector;
 
   AppSessionState _state = AppSessionState.idle;
   Process? _process;
   HookLogTailer? _hookLogs;
   String? _appId;
   String? _vmServiceUri;
+  Future<VmServiceLink>? _vmLink;
   String _mode = '';
   String? _deviceId;
   int _requestId = 0;
@@ -117,6 +124,12 @@ class AppSession extends ChangeNotifier {
         '-d',
         device.id,
         '--${configuration.mode}',
+        // Debug sessions read scene sources straight from the project, so an
+        // editor save is visible to ext.flutter_scene.reloadScene without a
+        // rebuild (flutter_scene ignores the define outside debug).
+        if (configuration.mode == 'debug')
+          '--dart-define=FLUTTER_SCENE_SOURCE_ROOT='
+              '${project.resolvedProjectRoot}',
         '--target',
         substituteCommandVariables(configuration.run.target, variables),
         for (final arg in configuration.run.args)
@@ -179,6 +192,7 @@ class AppSession extends ChangeNotifier {
     _process = null;
     _appId = null;
     _vmServiceUri = null;
+    _disposeVmLink();
     for (final pending in _pending.values) {
       if (!pending.isCompleted) {
         pending.complete({'error': 'the app exited'});
@@ -317,6 +331,51 @@ class AppSession extends ChangeNotifier {
     return ok;
   }
 
+  void _disposeVmLink() {
+    final pending = _vmLink;
+    _vmLink = null;
+    if (pending != null) {
+      unawaited(
+        pending.then((link) => link.dispose()).catchError((Object _) {}),
+      );
+    }
+  }
+
+  /// Asks the running app to reload changed scene assets in place through
+  /// flutter_scene's `ext.flutter_scene.reloadScene` debug extension.
+  /// Returns whether the app refreshed from project sources (false means the
+  /// caller should fall back to a hot restart, because the app is not
+  /// running, has no VM service, does not register the extension, or was not
+  /// launched with source-direct loading).
+  Future<bool> reloadScenes() async {
+    final wsUri = _vmServiceUri;
+    if (_state != AppSessionState.running || wsUri == null) return false;
+    final VmServiceLink link;
+    try {
+      final pending = _vmLink ??= VmServiceLink.connect(
+        wsUri,
+        connector: _vmSocketConnector,
+      );
+      link = await pending;
+    } catch (e) {
+      _vmLink = null;
+      log('VM service connection failed, $e', ConsoleLineKind.error);
+      return false;
+    }
+    final watch = Stopwatch()..start();
+    final result = await link.callExtension(
+      'ext.flutter_scene.reloadScene',
+      onError: (message) =>
+          log('Scene reload unavailable, $message', ConsoleLineKind.status),
+    );
+    if (result == null || result['sourceLoading'] != true) return false;
+    log(
+      'Reloaded scenes in place in ${watch.elapsedMilliseconds}ms',
+      ConsoleLineKind.status,
+    );
+    return true;
+  }
+
   /// Stops the app (a daemon `app.stop`, escalating to killing the tool
   /// process when the daemon does not comply).
   Future<void> stop() async {
@@ -344,6 +403,7 @@ class AppSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposeVmLink();
     _process?.kill();
     super.dispose();
   }

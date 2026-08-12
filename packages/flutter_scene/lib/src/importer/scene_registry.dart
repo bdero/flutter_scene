@@ -7,6 +7,7 @@ import '../fscene/realize/realize.dart';
 import '../fscene/realize/resource_realizer.dart';
 import '../fscene/realize/stage.dart';
 import '../fscene/reload/reload.dart';
+import '../fscene/source/source_scene_loader.dart';
 import '../fscene/stream/stream.dart' as stream;
 import '../hot_reload/hot_reload_coordinator.dart';
 import '../node.dart';
@@ -196,6 +197,23 @@ final class SceneRegistry {
     SceneReloadCallback? onReload,
     Scene? applyStageTo,
   }) async {
+    // Debug source-direct mode: when the app was launched with a scene
+    // source root and this scene's source exists there, read it (and its
+    // prefabs) straight from the project so saves are visible without a
+    // rebuild. Anything without a source file falls back to its DataAsset.
+    final source = bundle == null ? activeSceneSourceLoader() : null;
+    final sourceKey = source?.resolveScene(sourcePath);
+    if (source != null && sourceKey != null) {
+      return _loadRealized(
+        key: sourceKey,
+        bundle: source.bundle,
+        readComposed: (seen) => _readComposedSource(source, sourceKey, seen),
+        registry: registry,
+        onReload: onReload,
+        applyStageTo: applyStageTo,
+      );
+    }
+
     final key = resolveKey(sourcePath, package: package);
     final assetBundle = bundle ?? rootBundle;
 
@@ -219,6 +237,63 @@ final class SceneRegistry {
             )
           : document;
     }
+
+    return _loadRealized(
+      key: key,
+      bundle: assetBundle,
+      readComposed: readComposed,
+      registry: registry,
+      onReload: onReload,
+      applyStageTo: applyStageTo,
+    );
+  }
+
+  /// Reads and composes the scene at project-relative [sourceKey] from
+  /// source files, recording every file and asset consumed into [seen].
+  Future<SceneDocument> _readComposedSource(
+    SceneSourceLoader source,
+    String sourceKey,
+    Set<String> seen,
+  ) async {
+    final document = await source.readDocument(sourceKey, seen);
+    if (!document.nodes.values.any((n) => n.instance != null)) {
+      return document;
+    }
+    return composeSceneAsync(
+      document,
+      load: (ref) {
+        final refKey = ref.key;
+        if (source.isSourceKey(refKey)) {
+          return source.readDocument(refKey, seen);
+        }
+        // No source file (a .glb import, or a prefab from another package):
+        // fall back to the built DataAsset. A relative reference resolves
+        // against the host scene's directory; nested source prefabs already
+        // rebased their references, so the host approximation only matters
+        // for references that are missing from the project anyway.
+        final assetKey = isSceneAssetKey(refKey)
+            ? refKey
+            : resolveRefKey(sourceKey, refKey, null);
+        seen.add(assetKey);
+        return _readDocument(
+          assetKey,
+          source.bundle,
+        ).then((document) => _resolveRefs(document, assetKey));
+      },
+    );
+  }
+
+  /// The shared template-cache + realize + hot-reload-registration tail of
+  /// [loadScene], over any document composition path.
+  Future<Node> _loadRealized({
+    required String key,
+    required AssetBundle bundle,
+    required Future<SceneDocument> Function(Set<String> seen) readComposed,
+    FsceneComponentRegistry? registry,
+    SceneReloadCallback? onReload,
+    Scene? applyStageTo,
+  }) async {
+    final assetBundle = bundle;
 
     Future<_SceneTemplate> loadTemplate() async {
       final seen = <String>{key};
@@ -328,7 +403,10 @@ final class SceneRegistry {
     AssetBundle? bundle,
     FsceneComponentRegistry? registry,
   }) async {
-    final assetBundle = bundle ?? rootBundle;
+    // Debug source-direct mode: stream subtree content from project sources
+    // the way loadScene reads whole scenes from them.
+    final source = bundle == null ? activeSceneSourceLoader() : null;
+    final assetBundle = source?.bundle ?? bundle ?? rootBundle;
 
     Future<Set<String>> streamIn(Node target) async {
       final seen = <String>{};
@@ -337,6 +415,9 @@ final class SceneRegistry {
         registry: registry,
         bundle: assetBundle,
         load: (ref) {
+          if (source != null && source.isSourceKey(ref.key)) {
+            return source.readDocument(ref.key, seen);
+          }
           final key = isSceneAssetKey(ref.key)
               ? ref.key
               : resolveKey(ref.key, package: package);
@@ -560,6 +641,11 @@ Future<bool> releaseScene(
   String? package,
   AssetBundle? bundle,
 }) async {
+  // Source-direct templates cache under their project-relative source key.
+  final sourceKey = bundle == null
+      ? activeSceneSourceLoader()?.resolveScene(sourcePath)
+      : null;
+  if (sourceKey != null) return _releaseSceneTemplateClaim(sourceKey);
   final registry = await SceneRegistry.load(bundle: bundle);
   final key = registry.resolveKey(sourcePath, package: package);
   return _releaseSceneTemplateClaim(key);

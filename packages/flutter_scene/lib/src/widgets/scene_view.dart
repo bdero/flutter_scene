@@ -338,11 +338,20 @@ class _SceneViewState extends State<SceneView>
     if (widget.autoTick) {
       _ticker = createTicker(_onTick)..start();
     }
+    if (kDebugMode) {
+      // Repaint after extension-driven asset refreshes (an editor's
+      // ext.flutter_scene.reloadScene has no reassemble to trigger one).
+      HotReloadCoordinator.instance.assetsRefreshed.addListener(
+        _onAssetsRefreshed,
+      );
+    }
     _revealed = !_gated;
     if (_gated) {
       _startRevealWatch();
     }
   }
+
+  void _onAssetsRefreshed() => _repaint.notify();
 
   // Creates the owned scene for the declarative form and applies every scene
   // prop, the single creation path for initState and constructor-form
@@ -589,6 +598,11 @@ class _SceneViewState extends State<SceneView>
 
   @override
   void dispose() {
+    if (kDebugMode) {
+      HotReloadCoordinator.instance.assetsRefreshed.removeListener(
+        _onAssetsRefreshed,
+      );
+    }
     SemanticsBinding.instance.removeSemanticsEnabledListener(
       _onSemanticsChanged,
     );

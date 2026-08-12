@@ -223,6 +223,7 @@ class EditorToolSurface {
     this.stopProject,
     this.hotRestart,
     this.hotReload,
+    this.reloadScene,
     this.appState,
     this.readConsole,
     this.listDevices,
@@ -314,6 +315,7 @@ class EditorToolSurface {
   final ProjectCommandStopper? stopProject;
   final SessionRestarter? hotRestart;
   final SessionRestarter? hotReload;
+  final SessionRestarter? reloadScene;
   final AppStateReader? appState;
   final ConsoleReader? readConsole;
   final DeviceLister? listDevices;
@@ -475,6 +477,16 @@ class EditorToolSurface {
       const ToolDefinition(
         name: 'hot_reload',
         description: 'Hot reload the running app session (debug mode).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (reloadScene != null)
+      const ToolDefinition(
+        name: 'reload_scene',
+        description:
+            'Ask the running debug session to reload changed scene assets in '
+            'place over the VM service (sub-second; needs source-direct '
+            'loading, which Play sessions launch with). Returns ok false when '
+            'the session cannot, in which case hot_restart is the fallback.',
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (appState != null)
@@ -879,6 +891,12 @@ class EditorToolSurface {
           throw const ToolError('No project control in this session');
         }
         return {'ok': await reloader()};
+      case 'reload_scene':
+        final sceneReloader = reloadScene;
+        if (sceneReloader == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return {'ok': await sceneReloader()};
       case 'get_app_state':
         final stateReader = appState;
         if (stateReader == null) {
