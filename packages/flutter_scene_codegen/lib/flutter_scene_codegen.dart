@@ -1,0 +1,25 @@
+/// Static extraction and code generation for annotated flutter_scene
+/// components: parse `@SceneComponent` classes, generate their fscene
+/// codecs and a project registrar, and read/write the
+/// `flutter_scene_components.json` manifest.
+///
+/// The CLI entry point is `dart run flutter_scene_codegen:generate`.
+library;
+
+export 'src/extractor.dart'
+    show
+        ExtractedComponent,
+        ExtractedProperty,
+        ExtractionDiagnostic,
+        ExtractionResult,
+        ExtractionSeverity,
+        extractComponents;
+export 'src/generator.dart'
+    show codecClassNameFor, generateCodecLibrary, generateProjectRegistrar;
+export 'src/manifest.dart'
+    show
+        ComponentManifest,
+        componentManifestFileName,
+        decodeComponentManifest,
+        encodeComponentManifest,
+        scanPackageManifests;
