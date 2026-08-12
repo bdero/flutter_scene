@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:scene/physics.dart' as sim;
@@ -230,9 +232,10 @@ class RigidBody extends Component {
   void onMount() {
     final world = findAncestorWorld(node);
     if (world == null) {
-      throw StateError(
-        'RigidBody mounted with no PhysicsWorld on an ancestor node',
-      );
+      // Stay inert (an editor viewport, or a scene assembled before its
+      // world). TODO(physics-remount): register when a world mounts later.
+      debugPrint('RigidBody mounted with no PhysicsWorld ancestor; inert');
+      return;
     }
     _world = world;
     final handle = world.simulation.createBody(

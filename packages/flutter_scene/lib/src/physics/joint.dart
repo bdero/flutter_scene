@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
@@ -57,14 +59,13 @@ abstract class Joint extends Component {
     );
   }
 
-  int _resolveBody(Node bodyNode, String side) {
+  int? _resolveBody(Node bodyNode, String side) {
     final body = bodyNode.getComponent<RigidBody>();
     final handle = body?.handle;
     if (handle == null) {
-      throw StateError(
-        'Joint requires a mounted RigidBody on its $side node; add the '
-        'bodies before the joint',
-      );
+      // TODO(physics-remount): connect when the body registers.
+      debugPrint('Joint has no registered RigidBody on its $side node; inert');
+      return null;
     }
     return handle;
   }
@@ -73,21 +74,31 @@ abstract class Joint extends Component {
   void onMount() {
     final world = findAncestorWorld(node);
     if (world == null) {
-      throw StateError(
-        'Joint mounted with no PhysicsWorld on an ancestor node',
-      );
+      // Stay inert (an editor viewport, or a scene assembled before its
+      // world). TODO(physics-remount): register when a world mounts later.
+      debugPrint('Joint mounted with no PhysicsWorld ancestor; inert');
+      return;
     }
     if (!world.simulation.supportsJoints) {
-      throw UnsupportedError('${world.backendName} has no joints');
+      debugPrint('${world.backendName} has no joints; joint is inert');
+      return;
+    }
+    final bodyA = _resolveBody(node, 'own');
+    if (bodyA == null) return;
+    final other = otherNode;
+    final int bodyB;
+    int? anchorHandle;
+    if (other != null) {
+      final resolved = _resolveBody(other, 'other');
+      if (resolved == null) return;
+      bodyB = resolved;
+    } else {
+      bodyB = anchorHandle = world.simulation.createAnchorBody();
     }
     _world = world;
-    _bodyA = _resolveBody(node, 'own');
-    final other = otherNode;
-    if (other != null) {
-      _bodyB = _resolveBody(other, 'other');
-    } else {
-      _bodyB = _anchorHandle = world.simulation.createAnchorBody();
-    }
+    _bodyA = bodyA;
+    _bodyB = bodyB;
+    _anchorHandle = anchorHandle;
     _handle = world.simulation.createJoint(
       buildDesc(_bodyA, _bodyB, _collisionsEnabled),
     );
