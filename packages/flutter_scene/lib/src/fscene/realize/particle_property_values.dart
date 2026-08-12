@@ -10,6 +10,7 @@
 ///  * curve: `{keys: [{t, v}, ...]}`
 ///  * gradient: `{stops: [{t, color: {r, g, b, a}}, ...]}`
 ///  * distribution: `{kind: 'constant'|'uniform'|'curve'|'uniformCurve', ...}`
+///  * color distribution: `{kind: 'constant'|'gradient'|'uniform', ...}`
 ///
 /// Decoding is tolerant: missing or malformed entries fall back to sensible
 /// defaults rather than throwing, so a hand-edited document still loads.
@@ -134,3 +135,49 @@ FloatDistribution decodeFloatDistribution(
     _ => ConstantFloat(_d(m['value'], fallback)),
   };
 }
+
+// --- ColorDistribution ---
+
+/// Encodes [distribution] as a tagged map keyed on its variant.
+MapValue encodeColorDistribution(ColorDistribution distribution) {
+  return switch (distribution) {
+    ConstantColor(:final color) => MapValue({
+      'kind': const StringValue('constant'),
+      'color': ColorValue(color.x, color.y, color.z, color.w),
+    }),
+    GradientColor(:final gradient) => MapValue({
+      'kind': const StringValue('gradient'),
+      'gradient': encodeColorGradient(gradient),
+    }),
+    UniformColor(:final a, :final b) => MapValue({
+      'kind': const StringValue('uniform'),
+      'a': ColorValue(a.x, a.y, a.z, a.w),
+      'b': ColorValue(b.x, b.y, b.z, b.w),
+    }),
+  };
+}
+
+/// Decodes a [ColorDistribution] from [value]; an unrecognized or absent value
+/// yields a [ConstantColor] of [fallback] (opaque white when omitted).
+ColorDistribution decodeColorDistribution(
+  PropertyValue? value, {
+  Vector4? fallback,
+}) {
+  final fallbackColor = fallback ?? Vector4(1, 1, 1, 1);
+  if (value is! MapValue) return ConstantColor(fallbackColor);
+  final m = value.values;
+  final kind = m['kind'] is StringValue
+      ? (m['kind']! as StringValue).value
+      : 'constant';
+  return switch (kind) {
+    'gradient' => GradientColor(decodeColorGradient(m['gradient'])),
+    'uniform' => UniformColor(
+      _c(m['a'], fallbackColor),
+      _c(m['b'], fallbackColor),
+    ),
+    _ => ConstantColor(_c(m['color'], fallbackColor)),
+  };
+}
+
+Vector4 _c(PropertyValue? v, Vector4 fallback) =>
+    v is ColorValue ? Vector4(v.r, v.g, v.b, v.a) : fallback.clone();

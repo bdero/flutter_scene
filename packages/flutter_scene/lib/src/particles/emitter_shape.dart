@@ -151,11 +151,15 @@ class BoxEmitterShape extends EmitterShape {
   /// Creates a box emitter spanning `[-halfExtents, halfExtents]`, heading
   /// along [direction] (default +Y).
   BoxEmitterShape({Vector3? halfExtents, Vector3? direction})
-    : direction = (direction?.clone() ?? Vector3(0, 1, 0))..normalize(),
+    : halfExtents = halfExtents?.clone() ?? Vector3.all(0.5),
+      direction = (direction?.clone() ?? Vector3(0, 1, 0))..normalize(),
       _box = UniformBoxVec3(
         (halfExtents?.clone() ?? Vector3.all(0.5))..scale(-1.0),
         halfExtents?.clone() ?? Vector3.all(0.5),
       );
+
+  /// The box half-size on each axis.
+  final Vector3 halfExtents;
 
   /// The unit emission direction shared by every particle.
   final Vector3 direction;

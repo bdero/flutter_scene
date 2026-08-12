@@ -43,6 +43,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     // Registered before the mesh codec so serialize claims a particle emitter
     // (which subclasses the mesh component) before the mesh codec sees it.
     ..register(ParticleEmitterCodec())
+    ..register(MeshParticleEmitterCodec())
     ..register(MeshCodec())
     ..register(MaterialsVariantsCodec())
     ..register(DirectionalLightCodec())
