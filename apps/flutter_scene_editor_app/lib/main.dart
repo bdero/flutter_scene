@@ -177,9 +177,12 @@ class _EditorHomeState extends State<_EditorHome> {
   // without the other).
   FProject? _project;
 
-  // Build/run subprocess owner, feeding the Console panel. One per app so
-  // console history survives project and scene swaps.
+  // Task subprocess owner, feeding the Console panel. One per app so console
+  // history survives project and scene swaps.
   final ProjectRunner _runner = ProjectRunner();
+
+  // The Play session (flutter run --machine), logging into the same console.
+  late final AppSession _session = AppSession(log: _runner.addLine);
 
   // Device listing against the selected installation (the toolbar's device
   // dropdown and the \${DEVICE}/\${BUILD_TARGET} variables).
@@ -307,9 +310,9 @@ class _EditorHomeState extends State<_EditorHome> {
     };
   }
 
-  /// Starts the selected configuration over MCP, mirroring the toolbar's
-  /// gating (a real installation, a project, a configuration).
-  Future<bool> _startFromMcp({required bool run}) async {
+  /// The gated launch context (installation, project, configuration), or a
+  /// [FormatException] naming what is missing.
+  (FlutterInstallation, FProject, BuildConfiguration) _launchContext() {
     final installation = _settings.selectedInstallation;
     final project = _project;
     final configuration = _selectedBuildConfiguration;
@@ -324,27 +327,90 @@ class _EditorHomeState extends State<_EditorHome> {
         'Open a project and select a build configuration first',
       );
     }
-    if (run) {
-      unawaited(
-        _runner.startRun(
-          installation: installation,
-          project: project,
-          configuration: configuration,
-          device: _selectedDevice,
-        ),
-      );
-    } else {
-      unawaited(
-        _runner.startBuild(
-          installation: installation,
-          project: project,
-          configuration: configuration,
-          device: _selectedDevice,
-        ),
-      );
-    }
+    return (installation, project, configuration);
+  }
+
+  /// Starts the selected configuration's build command (the Build button and
+  /// the MCP build_project tool).
+  Future<bool> _startBuild() async {
+    final (installation, project, configuration) = _launchContext();
+    unawaited(
+      _runner.startBuild(
+        installation: installation,
+        project: project,
+        configuration: configuration,
+        device: _selectedDevice,
+      ),
+    );
     return true;
   }
+
+  /// Launches the Play session (the Play button and the MCP run_project
+  /// tool). The session always targets a concrete device.
+  Future<bool> _startPlaySession() async {
+    final (installation, project, configuration) = _launchContext();
+    final device = _selectedDevice;
+    if (device == null) {
+      throw const FormatException('Select a device in the toolbar');
+    }
+    return _session.launch(
+      installation: installation,
+      project: project,
+      configuration: configuration,
+      device: device,
+    );
+  }
+
+  void _runTask(ProjectTask task) {
+    try {
+      final (installation, project, configuration) = _launchContext();
+      unawaited(
+        _runner.startTask(
+          installation: installation,
+          project: project,
+          configuration: configuration,
+          task: task,
+          device: _selectedDevice,
+        ),
+      );
+    } on FormatException catch (e) {
+      _runner.addLine(e.message, ConsoleLineKind.error);
+    }
+  }
+
+  bool get _restartOnSceneSave {
+    final project = _project;
+    return project != null &&
+        (_settings.restartOnSceneSave[project.path] ?? false);
+  }
+
+  void _toggleRestartOnSceneSave() {
+    final project = _project;
+    if (project == null) return;
+    setState(
+      () => _settings.restartOnSceneSave[project.path] = !_restartOnSceneSave,
+    );
+    _persistSettings();
+  }
+
+  /// The scene was written to disk; hot-restart the running session when the
+  /// per-project toggle is on.
+  void _onSceneSaved(String path) {
+    if (!_restartOnSceneSave) return;
+    if (_session.state != AppSessionState.running) return;
+    unawaited(_session.restart(reason: 'save'));
+  }
+
+  /// The MCP get_app_state payload.
+  Map<String, Object?> _appState() => {
+    'state': _session.state.name,
+    if (_session.appId != null) 'appId': _session.appId,
+    if (_session.active) 'mode': _session.mode,
+    if (_session.deviceId != null) 'deviceId': _session.deviceId,
+    if (_session.vmServiceUri != null) 'vmServiceUri': _session.vmServiceUri,
+    'supportsHotReload': _session.active && _session.supportsHotReload,
+    'supportsHotRestart': _session.active && _session.supportsHotRestart,
+  };
 
   void _editBuildConfigs() {
     final project = _project;
@@ -704,6 +770,7 @@ class _EditorHomeState extends State<_EditorHome> {
             await saveFscene(controller, resolved);
             controller.setBaseDirectory(File(resolved).parent.path);
             if (mounted) _setScenePath(resolved);
+            _onSceneSaved(resolved);
             return resolved;
           },
           openProject: (path) async {
@@ -738,9 +805,12 @@ class _EditorHomeState extends State<_EditorHome> {
             );
             _persistSettings();
           },
-          buildProject: () => _startFromMcp(run: false),
-          runProject: () => _startFromMcp(run: true),
-          stopProject: () async => _runner.stopRun(),
+          buildProject: _startBuild,
+          runProject: _startPlaySession,
+          stopProject: () => _session.stop(),
+          hotRestart: () => _session.restart(),
+          hotReload: () => _session.restart(fullRestart: false),
+          appState: _appState,
           listDevices: ({bool refresh = false}) async {
             final installation = _settings.selectedInstallation;
             if (installation == null) {
@@ -776,7 +846,7 @@ class _EditorHomeState extends State<_EditorHome> {
           },
           readConsole: (tail) => {
             'building': _runner.building,
-            'running': _runner.running,
+            'running': _session.active,
             'lines': [
               for (final line
                   in _runner.console.reversed.take(tail).toList().reversed)
@@ -794,6 +864,7 @@ class _EditorHomeState extends State<_EditorHome> {
   @override
   void dispose() {
     _mcpServer?.close();
+    _session.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -836,12 +907,15 @@ class _EditorHomeState extends State<_EditorHome> {
         onOpenRecentProject: _openProjectPath,
         onEditBuildConfigs: _project == null ? null : _editBuildConfigs,
         projectRunner: _runner,
+        appSession: _session,
+        onDocumentSaved: _onSceneSaved,
         trailing: [
           BuildToolbar(
             settings: _settings,
             buildInfo: _buildInfo,
             inspector: _inspector,
             runner: _runner,
+            session: _session,
             project: _project,
             selectedConfiguration: _selectedBuildConfiguration,
             onSelectInstallation: (id) {
@@ -863,6 +937,18 @@ class _EditorHomeState extends State<_EditorHome> {
             onSelectDevice: _selectDevice,
             onManageInstallations: _showSettings,
             onEditConfigs: _project == null ? null : _editBuildConfigs,
+            onPlay: () {
+              try {
+                unawaited(_startPlaySession());
+              } on FormatException catch (e) {
+                _runner.addLine(e.message, ConsoleLineKind.error);
+              }
+            },
+            onRunTask: _runTask,
+            restartOnSave: _restartOnSceneSave,
+            onToggleRestartOnSave: _project == null
+                ? null
+                : _toggleRestartOnSceneSave,
           ),
         ],
       );

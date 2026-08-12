@@ -82,4 +82,17 @@ void main() {
 
     expect(settings.recentScenes, removed);
   });
+
+  test('restart-on-scene-save round trips per project and forgets', () {
+    final settings = EditorSettings(
+      restartOnSceneSave: {'/p/a.fproject': true},
+      selectedDevices: {'/p/a.fproject': 'macos'},
+    );
+    final reloaded = EditorSettings.fromJsonString(settings.toJsonString());
+    expect(reloaded.restartOnSceneSave['/p/a.fproject'], isTrue);
+    expect(reloaded.selectedDevices['/p/a.fproject'], 'macos');
+
+    reloaded.forgetProject('/p/a.fproject');
+    expect(reloaded.restartOnSceneSave, isEmpty);
+  });
 }

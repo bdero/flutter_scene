@@ -15,6 +15,7 @@ class EditorSettings {
     List<String>? recentProjects,
     Map<String, String>? selectedBuildConfigurations,
     Map<String, String>? selectedDevices,
+    Map<String, bool>? restartOnSceneSave,
   }) : namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
        flutterInstallations = List.of(flutterInstallations ?? const []),
@@ -22,7 +23,8 @@ class EditorSettings {
        selectedBuildConfigurations = Map.of(
          selectedBuildConfigurations ?? const {},
        ),
-       selectedDevices = Map.of(selectedDevices ?? const {});
+       selectedDevices = Map.of(selectedDevices ?? const {}),
+       restartOnSceneSave = Map.of(restartOnSceneSave ?? const {});
 
   static const int currentVersion = 1;
   static const int maximumRecentScenes = 10;
@@ -86,6 +88,15 @@ class EditorSettings {
               entry.key as String:
                   (entry.value as Map)['selectedDeviceId'] as String,
       },
+      restartOnSceneSave: {
+        if (json['projectState'] is Map)
+          for (final entry in (json['projectState'] as Map).entries)
+            if (entry.key is String &&
+                entry.value is Map &&
+                (entry.value as Map)['restartOnSceneSave'] is bool)
+              entry.key as String:
+                  (entry.value as Map)['restartOnSceneSave'] as bool,
+      },
     );
   }
 
@@ -112,6 +123,10 @@ class EditorSettings {
   /// keying and rationale.
   final Map<String, String> selectedDevices;
 
+  /// Per-project "hot restart the running session on scene save" toggles,
+  /// same keying and rationale.
+  final Map<String, bool> restartOnSceneSave;
+
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
@@ -131,17 +146,22 @@ class EditorSettings {
     if (selectedInstallationId != null)
       'selectedInstallationId': selectedInstallationId,
     if (recentProjects.isNotEmpty) 'recentProjects': recentProjects,
-    if (selectedBuildConfigurations.isNotEmpty || selectedDevices.isNotEmpty)
+    if (selectedBuildConfigurations.isNotEmpty ||
+        selectedDevices.isNotEmpty ||
+        restartOnSceneSave.isNotEmpty)
       'projectState': {
         for (final key in {
           ...selectedBuildConfigurations.keys,
           ...selectedDevices.keys,
+          ...restartOnSceneSave.keys,
         })
           key: {
             if (selectedBuildConfigurations[key] case final config?)
               'selectedBuildConfigurationId': config,
             if (selectedDevices[key] case final device?)
               'selectedDeviceId': device,
+            if (restartOnSceneSave[key] case final restart?)
+              'restartOnSceneSave': restart,
           },
       },
   });
@@ -190,6 +210,7 @@ class EditorSettings {
     recentProjects.removeWhere((candidate) => _samePath(candidate, path));
     selectedBuildConfigurations.remove(path);
     selectedDevices.remove(path);
+    restartOnSceneSave.remove(path);
   }
 
   /// The registered installation with [id], or null (including the built-in

@@ -28,13 +28,12 @@ dependencies:
       'profile',
       'release',
     ]);
-    // Run templates always carry the Flutter GPU flags and reference the
-    // device and mode variables so the dropdowns change behavior.
+    // Run parameters always carry the Flutter GPU flags; the device and mode
+    // are session state the editor composes into the invocation.
     for (final config in project.buildConfigurations) {
-      expect(config.runCommand, contains('--enable-flutter-gpu'));
-      expect(config.runCommand, contains('--enable-impeller'));
-      expect(config.runCommand, contains(r'${DEVICE}'));
-      expect(config.runCommand, contains(r'--${MODE}'));
+      expect(config.run.args, contains('--enable-flutter-gpu'));
+      expect(config.run.args, contains('--enable-impeller'));
+      expect(config.run.target, RunParameters.defaultTarget);
       expect(config.buildCommand, contains(r'${BUILD_TARGET}'));
     }
 
@@ -45,6 +44,84 @@ dependencies:
       project.buildConfigurations.length,
     );
     expect(loaded.resolvedProjectRoot, Directory(root.path).absolute.path);
+  });
+
+  test('loading a v1 fproject migrates a default-shaped runCommand', () {
+    File('${root.path}/game.fproject').writeAsStringSync('''
+{
+  "version": 1,
+  "flutterProjectRoot": ".",
+  "buildConfigurations": [
+    {
+      "id": "debug",
+      "name": "Debug",
+      "mode": "debug",
+      "buildCommand": "\${FLUTTER_CLI} build \${BUILD_TARGET} --\${MODE}",
+      "runCommand": "\${FLUTTER_CLI} run -d \${DEVICE} --\${MODE} --enable-flutter-gpu --enable-impeller --target lib/game.dart"
+    }
+  ]
+}
+''');
+    final project = FProject.load('${root.path}/game.fproject');
+    expect(project.tasks, isEmpty);
+    final config = project.buildConfigurations.single;
+    expect(config.run.target, 'lib/game.dart');
+    expect(config.run.args, ['--enable-flutter-gpu', '--enable-impeller']);
+  });
+
+  test('loading a v1 fproject preserves a custom runCommand as a task', () {
+    File('${root.path}/game.fproject').writeAsStringSync('''
+{
+  "version": 1,
+  "flutterProjectRoot": ".",
+  "buildConfigurations": [
+    {
+      "id": "echo",
+      "name": "Echo",
+      "mode": "debug",
+      "buildCommand": "",
+      "runCommand": "/bin/echo hello \${PROJECT_ROOT}"
+    }
+  ]
+}
+''');
+    final project = FProject.load('${root.path}/game.fproject');
+    final task = project.tasks.single;
+    expect(task.command, r'/bin/echo hello ${PROJECT_ROOT}');
+    expect(task.name, contains('Echo'));
+    // The configuration falls back to default run parameters.
+    expect(
+      project.buildConfigurations.single.run.args,
+      contains('--enable-flutter-gpu'),
+    );
+
+    // Saving persists v2 with the migrated task; a reload is stable.
+    project.save();
+    final reloaded = FProject.load(project.path);
+    expect(reloaded.tasks.single.command, task.command);
+    expect(reloaded.buildConfigurations.single.run.args, isNotEmpty);
+  });
+
+  test('a hardcoded device keeps the whole runCommand as a task', () {
+    const command = r'${FLUTTER_CLI} run -d chrome --${MODE}';
+    final migrated = migrateV1RunCommand(
+      command,
+      configId: 'web',
+      configName: 'Web',
+    );
+    expect(migrated.task, isNotNull);
+    expect(migrated.task!.command, command);
+  });
+
+  test('run parameters round trip through json', () {
+    const params = RunParameters(
+      target: 'lib/other.dart',
+      args: ['--dart-define=A=1'],
+    );
+    expect(RunParameters.fromJson(params.toJson()).target, 'lib/other.dart');
+    expect(RunParameters.fromJson(params.toJson()).args, ['--dart-define=A=1']);
+    // Defaults serialize to nothing.
+    expect(const RunParameters().toJson(), isEmpty);
   });
 
   test('createDefault requires a pubspec', () {
@@ -59,7 +136,6 @@ dependencies:
       name: 'X',
       mode: 'profile',
       buildCommand: '',
-      runCommand: '',
     );
     final variables = commandVariables(
       flutterBin: '/sdk/bin/flutter',
@@ -105,7 +181,6 @@ dependencies:
       name: 'X',
       mode: 'debug',
       buildCommand: '',
-      runCommand: '',
     );
     final variables = commandVariables(
       flutterBin: '/Users/x/Library/Application Support/Editor/bin/flutter',

@@ -67,7 +67,6 @@ void main() {
       name: 'X',
       mode: 'debug',
       buildCommand: '',
-      runCommand: '',
       workingDirectory: workingDirectory,
     );
 

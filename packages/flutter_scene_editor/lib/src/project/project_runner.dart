@@ -1,7 +1,8 @@
-/// Runs a project's build/run commands as streamed subprocesses feeding the
-/// Console panel. At most one build and one run live at a time; commands run
+/// Runs a project's build command and tasks as streamed subprocesses feeding
+/// the Console panel. At most one subprocess lives at a time; commands run
 /// argv-style (no shell) from the project root with SDK-management variables
-/// scrubbed from the child environment.
+/// scrubbed from the child environment. The Play session (flutter run under
+/// the machine protocol) is AppSession's job, not this runner's.
 library;
 
 import 'dart:async';
@@ -24,22 +25,31 @@ class ConsoleLine {
 
 enum ConsoleLineKind { command, output, error, status }
 
-/// The editor's build/run process owner. Listen for console and state
-/// changes.
+/// The environment for project subprocesses, the editor's own minus
+/// SDK-management variables (they can break flutter run on some versions when
+/// inherited).
+Map<String, String> projectChildEnvironment() => Map.of(Platform.environment)
+  ..remove('FLUTTER_GIT_URL')
+  ..remove('FLUTTER_PREBUILT_ENGINE_VERSION')
+  ..remove('IMPELLERC');
+
+/// The editor's task subprocess owner. Listen for console and state changes.
 class ProjectRunner extends ChangeNotifier {
   static const int maxConsoleLines = 2000;
 
   final List<ConsoleLine> console = [];
   Process? _build;
-  Process? _run;
 
   bool get building => _build != null;
-  bool get running => _run != null;
 
   void clearConsole() {
     console.clear();
     notifyListeners();
   }
+
+  /// Appends one console line (also the sink AppSession logs through, so
+  /// session and task output share one Console).
+  void addLine(String text, ConsoleLineKind kind) => _line(text, kind);
 
   void _line(String text, ConsoleLineKind kind) {
     console.add(ConsoleLine(text, kind: kind));
@@ -62,22 +72,23 @@ class ProjectRunner extends ChangeNotifier {
     configuration: configuration,
     device: device,
     command: configuration.buildCommand,
-    isRun: false,
+    label: configuration.name,
   );
 
-  /// Starts the configuration's run command (the Play button).
-  Future<int?> startRun({
+  /// Starts a free-form project task's command template.
+  Future<int?> startTask({
     required FlutterInstallation installation,
     required FProject project,
     required BuildConfiguration configuration,
+    required ProjectTask task,
     FlutterDevice? device,
   }) => _start(
     installation: installation,
     project: project,
     configuration: configuration,
     device: device,
-    command: configuration.runCommand,
-    isRun: true,
+    command: task.command,
+    label: task.name,
   );
 
   Future<int?> _start({
@@ -86,13 +97,10 @@ class ProjectRunner extends ChangeNotifier {
     required BuildConfiguration configuration,
     required FlutterDevice? device,
     required String command,
-    required bool isRun,
+    required String label,
   }) async {
-    if (isRun ? running : building) {
-      _line(
-        'A ${isRun ? 'run' : 'build'} is already in progress.',
-        ConsoleLineKind.error,
-      );
+    if (building) {
+      _line('A command is already in progress.', ConsoleLineKind.error);
       return null;
     }
     final List<String> argv;
@@ -137,15 +145,10 @@ class ProjectRunner extends ChangeNotifier {
       return null;
     }
 
-    // The child environment is the editor's minus SDK-management variables
-    // (they can break flutter run on some versions when inherited).
-    final environment = Map.of(Platform.environment)
-      ..remove('FLUTTER_GIT_URL')
-      ..remove('FLUTTER_PREBUILT_ENGINE_VERSION')
-      ..remove('IMPELLERC');
+    final environment = projectChildEnvironment();
 
     _line(
-      '[${configuration.name}] ${argv.join(' ')}  (in $workingDirectory)',
+      '[$label] ${argv.join(' ')}  (in $workingDirectory)',
       ConsoleLineKind.command,
     );
     // Build-hook progress is invisible in normal flutter output on macOS (the
@@ -169,11 +172,7 @@ class ProjectRunner extends ChangeNotifier {
       _line('Failed to start, ${e.message}', ConsoleLineKind.error);
       return null;
     }
-    if (isRun) {
-      _run = process;
-    } else {
-      _build = process;
-    }
+    _build = process;
     notifyListeners();
 
     Future<void> tail(Stream<List<int>> stream, ConsoleLineKind kind) => stream
@@ -187,25 +186,17 @@ class ProjectRunner extends ChangeNotifier {
     final exitCode = await process.exitCode;
     await drained;
     hookLogs.stop();
-    if (isRun) {
-      _run = null;
-    } else {
-      _build = null;
-    }
+    _build = null;
     _line(
-      '[${configuration.name}] exited with $exitCode',
+      '[$label] exited with $exitCode',
       exitCode == 0 ? ConsoleLineKind.status : ConsoleLineKind.error,
     );
     return exitCode;
   }
 
-  /// Stops the running app (SIGTERM, then SIGKILL after a grace period).
-  void stopRun() => _stop(_run);
-
-  /// Stops the running build.
-  void stopBuild() => _stop(_build);
-
-  void _stop(Process? process) {
+  /// Stops the running command (SIGTERM, then SIGKILL after a grace period).
+  void stopBuild() {
+    final process = _build;
     if (process == null) return;
     process.kill();
     unawaited(
@@ -218,7 +209,6 @@ class ProjectRunner extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopRun();
     stopBuild();
     super.dispose();
   }
