@@ -11,6 +11,7 @@ import 'package:scene/schema.dart';
 
 /// Marks a class extending `Component` as a serializable scene component
 /// carrying document type tag [type].
+/// {@category Scene graph}
 class SceneComponent {
   const SceneComponent(
     this.type, {
@@ -36,6 +37,7 @@ class SceneComponent {
 ///
 /// The bare form derives the property kind from the field's declared type;
 /// the typed variants pin the kind and add kind-appropriate options.
+/// {@category Scene graph}
 class SceneProperty {
   const SceneProperty({
     this.group,
@@ -54,6 +56,7 @@ class SceneProperty {
 }
 
 /// A boolean property.
+/// {@category Scene graph}
 class BoolProperty extends SceneProperty {
   const BoolProperty({
     super.group,
@@ -67,6 +70,7 @@ class BoolProperty extends SceneProperty {
 }
 
 /// An integer property. [min] and [max] lower to an [IntRange].
+/// {@category Scene graph}
 class IntProperty extends SceneProperty {
   const IntProperty({
     this.min,
@@ -89,6 +93,7 @@ class IntProperty extends SceneProperty {
 
 /// A floating-point property. [min]/[max] lower to a [Range],
 /// [softMin]/[softMax] to a [SoftRange], and [step] to a [Step].
+/// {@category Scene graph}
 class NumberProperty extends SceneProperty {
   const NumberProperty({
     this.min,
@@ -123,6 +128,7 @@ class NumberProperty extends SceneProperty {
 
 /// A string property. [multiline] lowers to a [Multiline] constraint and
 /// [pattern] to a [TextPattern].
+/// {@category Scene graph}
 class StringProperty extends SceneProperty {
   const StringProperty({
     this.multiline = false,
@@ -145,6 +151,7 @@ class StringProperty extends SceneProperty {
 
 /// An enum property, carried as the value name string with the enum's
 /// values as options.
+/// {@category Scene graph}
 class EnumProperty extends SceneProperty {
   const EnumProperty({
     super.group,
@@ -158,6 +165,7 @@ class EnumProperty extends SceneProperty {
 }
 
 /// A 2-component vector property.
+/// {@category Scene graph}
 class Vec2Property extends SceneProperty {
   const Vec2Property({
     super.group,
@@ -172,6 +180,7 @@ class Vec2Property extends SceneProperty {
 
 /// A 3-component vector property. [rgbColor] lowers to an [RgbColor]
 /// constraint and [normalized] to a [Normalized].
+/// {@category Scene graph}
 class Vec3Property extends SceneProperty {
   const Vec3Property({
     this.rgbColor = false,
@@ -193,6 +202,7 @@ class Vec3Property extends SceneProperty {
 }
 
 /// A 4-component vector property.
+/// {@category Scene graph}
 class Vec4Property extends SceneProperty {
   const Vec4Property({
     super.group,
@@ -206,6 +216,7 @@ class Vec4Property extends SceneProperty {
 }
 
 /// A rotation quaternion property.
+/// {@category Scene graph}
 class QuaternionProperty extends SceneProperty {
   const QuaternionProperty({
     super.group,
@@ -219,6 +230,7 @@ class QuaternionProperty extends SceneProperty {
 }
 
 /// An RGBA color property.
+/// {@category Scene graph}
 class ColorProperty extends SceneProperty {
   const ColorProperty({
     super.group,
@@ -233,6 +245,7 @@ class ColorProperty extends SceneProperty {
 
 /// A source-path asset reference property, carried as the asset key string.
 /// [extensions] lowers to an [AssetExtensions] constraint.
+/// {@category Scene graph}
 class AssetProperty extends SceneProperty {
   const AssetProperty({
     this.extensions = const [],
@@ -251,6 +264,7 @@ class AssetProperty extends SceneProperty {
 
 /// A document resource reference property (`geometry`, `material`,
 /// `texture`, `environment`).
+/// {@category Scene graph}
 class ResourceProperty extends SceneProperty {
   const ResourceProperty({
     required this.resourceKind,
@@ -268,6 +282,7 @@ class ResourceProperty extends SceneProperty {
 }
 
 /// A document node reference property.
+/// {@category Scene graph}
 class NodeProperty extends SceneProperty {
   const NodeProperty({
     super.group,
@@ -282,6 +297,7 @@ class NodeProperty extends SceneProperty {
 
 /// A number stored in radians and edited in degrees, lowering to an
 /// [AngleRadians] constraint plus a [Range] when [min] or [max] is given.
+/// {@category Scene graph}
 class AngleProperty extends SceneProperty {
   const AngleProperty({
     this.min,

@@ -53,6 +53,8 @@ export 'src/fscene/realize/audio_codecs.dart'
         registerAudioEngineBackend;
 export 'src/fscene/realize/builtin_codecs.dart'
     show registerBuiltinComponentCodecs;
+export 'src/fscene/realize/physics_codecs.dart'
+    show PhysicsBackendFactory, physicsBackendFactory, registerPhysicsBackend;
 export 'src/fscene/realize/ui_codecs.dart'
     show WidgetSlotBuilder, registerWidgetSlot, widgetSlotBuilder;
 export 'package:scene/scene.dart' show diffScene, SceneDiff, NodeChange;
