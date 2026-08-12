@@ -248,6 +248,10 @@ void documentTests() {
             log.add('reload');
             return true;
           },
+          reloadScene: () async {
+            log.add('reloadScene');
+            return true;
+          },
           appState: () => {'state': 'running', 'appId': 'app-1'},
         );
         final names = surface.bootstrapTools().map((t) => t.name);
@@ -258,6 +262,7 @@ void documentTests() {
             'stop_project',
             'hot_restart',
             'hot_reload',
+            'reload_scene',
             'get_app_state',
           ]),
         );
@@ -267,12 +272,13 @@ void documentTests() {
         });
         expect(await surface.dispatch('hot_restart', {}), {'ok': true});
         expect(await surface.dispatch('hot_reload', {}), {'ok': true});
+        expect(await surface.dispatch('reload_scene', {}), {'ok': true});
         expect(
           (await surface.dispatch('get_app_state', {}))['state'],
           'running',
         );
         await surface.dispatch('stop_project', {});
-        expect(log, ['run', 'restart', 'reload', 'stop']);
+        expect(log, ['run', 'restart', 'reload', 'reloadScene', 'stop']);
 
         // A headless surface offers none of them.
         final headless = EditorToolSurface(() => null);

@@ -400,12 +400,16 @@ class _EditorHomeState extends State<_EditorHome> {
     _persistSettings();
   }
 
-  /// The scene was written to disk; hot-restart the running session when the
-  /// per-project toggle is on.
+  /// The scene was written to disk; refresh the running session when the
+  /// per-project toggle is on. A debug session patches scenes in place over
+  /// the VM service; anything else falls back to a hot restart.
   void _onSceneSaved(String path) {
     if (!_restartOnSceneSave) return;
     if (_session.state != AppSessionState.running) return;
-    unawaited(_session.restart(reason: 'save'));
+    unawaited(() async {
+      if (await _session.reloadScenes()) return;
+      await _session.restart(reason: 'save');
+    }());
   }
 
   /// The MCP get_app_state payload.
@@ -918,6 +922,7 @@ class _EditorHomeState extends State<_EditorHome> {
           stopProject: () => _session.stop(),
           hotRestart: () => _session.restart(),
           hotReload: () => _session.restart(fullRestart: false),
+          reloadScene: () => _session.reloadScenes(),
           appState: _appState,
           listDevices: ({bool refresh = false}) async {
             final installation = _settings.selectedInstallation;

@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter_scene/src/fscene/source/source_scene_loader.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -31,10 +33,41 @@ import 'package:flutter_scene/src/scene_encoder.dart';
 /// its scene) alive. Everything here is gated on [kDebugMode] and tree-shaken
 /// from release builds.
 class HotReloadCoordinator {
-  HotReloadCoordinator._();
+  HotReloadCoordinator._() {
+    _registerDevService();
+  }
 
   /// The process-wide coordinator.
   static final HotReloadCoordinator instance = HotReloadCoordinator._();
+
+  /// Registers `ext.flutter_scene.reloadScene`, the debug VM-service entry an
+  /// attached editor invokes to refresh changed assets without a hot reload.
+  /// The response reports whether scenes load straight from project sources
+  /// (when they do not, the caller needs a rebuild for edits to be visible).
+  void _registerDevService() {
+    if (!kDebugMode) return;
+    try {
+      developer.registerExtension('ext.flutter_scene.reloadScene', (
+        method,
+        params,
+      ) async {
+        await refresh();
+        return developer.ServiceExtensionResponse.result(
+          jsonEncode({
+            'type': 'Success',
+            'sourceLoading': sceneSourceLoadingActive,
+          }),
+        );
+      });
+    } catch (_) {
+      // Unsupported embedder, or already registered.
+    }
+  }
+
+  /// Notifies after each refresh pass so mounted `SceneView`s repaint (an
+  /// extension-driven refresh has no reassemble to do it).
+  Listenable get assetsRefreshed => _assetsRefreshed;
+  final _RefreshNotifier _assetsRefreshed = _RefreshNotifier();
 
   final List<_MaterialRegistration> _materials = <_MaterialRegistration>[];
   final List<_SceneRegistration> _scenes = <_SceneRegistration>[];
@@ -201,8 +234,20 @@ class HotReloadCoordinator {
     if (!kDebugMode) return;
     if (_refreshing) return;
     _refreshing = true;
-    _refresh().whenComplete(() => _refreshing = false);
+    refresh().whenComplete(() => _refreshing = false);
   }
+
+  /// One full refresh pass, awaitable and serialized (a call while a pass is
+  /// in flight runs its own pass after, so a save landing mid-refresh is
+  /// never missed). No-op outside debug.
+  Future<void> refresh() {
+    if (!kDebugMode) return Future.value();
+    final run = _refreshChain.then((_) => _refresh());
+    _refreshChain = run.catchError((Object _) {});
+    return run.whenComplete(_assetsRefreshed.notify);
+  }
+
+  Future<void> _refreshChain = Future.value();
 
   Future<void> _refresh() async {
     _materials.removeWhere((r) => r.material.target == null);
@@ -459,6 +504,10 @@ class HotReloadCoordinator {
     }
     return hash;
   }
+}
+
+class _RefreshNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
 }
 
 class _MaterialRegistration {
