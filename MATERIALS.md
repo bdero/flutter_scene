@@ -450,6 +450,79 @@ visible in the fragment stage; the world-space outputs already encode it.
 
 ---
 
+# Portable shader rules
+
+flutter_scene runs your GLSL on Metal, Vulkan, OpenGL ES 3.0, WebGL2, and
+Direct3D 11 (through a GLES-to-HLSL translation on Windows). The dialect is
+GLSL ES 3.00. A shader that follows these rules works on every backend on the
+first try; a shader that breaks one typically works on your machine and fails
+on someone else's, so treat them as hard requirements rather than advice.
+
+**Bound loops by a compile-time constant and break inside.** A loop condition
+that depends on a uniform is rejected by conforming GLES compilers. Write
+
+```glsl
+for (int i = 0; i < MAX_STEPS; i++) {  // MAX_STEPS is a #define or const
+  if (i >= step_count) break;          // step_count may be a uniform
+  ...
+}
+```
+
+**Never `return` early from inside a loop**, and prefer a single `return` at
+the end of any function that contains a loop. A mid-loop return compiles into
+a construct that crashes the Direct3D shader compiler outright, so the
+failure is an app crash on Windows, not an artifact. Accumulate into a local
+and return it once.
+
+**Build bit masks with left shifts.** Right-shifting a uint whose high bit is
+set (`0xFFFFFFFFu >> n`) executes as a signed arithmetic shift on the
+Direct3D path and smears the sign bit. A low mask of `count` bits is
+
+```glsl
+uint mask = count >= 32u ? 0xFFFFFFFFu : (1u << count) - 1u;
+```
+
+**Stay inside the ES 3.00 toolbox.** `bitCount()`, `bitfieldExtract()`, and
+`textureGather()` do not exist at this floor (WebGL2 never gets them). The
+texture vocabulary is `texture`, `texelFetch`, `textureLod`, and
+`textureSize`. Popcounts and gathers are written by hand.
+
+**Budget 16 texture units, counting both stages.** Minimum-spec GLES and
+Direct3D 11 expose 16 combined samplers. The engine's lit framework already
+binds 15 in the fragment stage, and skinned meshes bind one more in the
+vertex stage, so a lit material has no free sampler slots on minimum-spec
+backends; sampler-heavy work belongs in `unlit` materials or packed into
+fewer textures. A sampler over budget renders correctly on desktop GL and
+Metal and fails on Windows and mobile GLES.
+
+**Reference every resource you declare.** If a declared sampler or uniform
+becomes unused, dead-code elimination strips it while the runtime reflection
+still lists it, which crashes at bind time on some backends. Either use it or
+remove the declaration. In a `.fmat` vertex hook, derive your outputs from
+the mesh inputs rather than replacing them wholesale, or the compiler strips
+the vertex attribute out from under the mesh.
+
+**Sample float32 textures as nearest.** Linear filtering of fp32 textures is
+an optional extension that software rasterizers and some mobile drivers
+lack. Data and depth textures are sampled nearest; interpolate in the shader
+if needed.
+
+**Declare `highp` on samplers that carry depth or data.** Samplers default to
+`mediump`, and mobile GPUs honor it (desktop drivers ignore it, which hides
+the bug). fp16 precision quantizes depth and packed data hard enough to break
+comparisons that work everywhere else:
+
+```glsl
+uniform highp sampler2D my_data_texture;
+```
+
+**Pack into one render target.** There is no multiple-render-target support
+on GLES or the web, and single-channel and float formats are not universally
+renderable. Post-process style work packs its outputs into the channels of
+one RGBA8 or RGBA16F target.
+
+---
+
 # Building: the `buildMaterials` hook
 
 `buildMaterials` (from `package:flutter_scene/build_hooks.dart`) preprocesses
@@ -835,6 +908,11 @@ garbage on some backends).
 **Wrong reflections on one backend only (raw `ShaderMaterial`).** The material
 is probably missing its `radianceCubeFragmentShader`, so it samples the 2D
 radiance slot where the backend builds a cubemap.
+
+**Works on your machine, broken or crashing on another platform.** Almost
+always one of the portable shader rules above (loop shape, sampler budget,
+precision, or a construct outside ES 3.00). Check the shader against that
+list before suspecting the platform.
 
 ---
 
