@@ -11,8 +11,14 @@ import 'package:scene/src/scene_document.dart';
 import 'package:scene/src/specs.dart';
 
 /// The current `.fscene` format version this build reads and writes.
+///
+/// Version 3 documents delta-serialize component properties (a value equal
+/// to its schema default is omitted) and nest structured settings such as
+/// audio `attenuation`; the encoding itself is unchanged, but a version 2
+/// reader would silently drop the nested keys, so writers stamp 3 and old
+/// readers refuse loudly.
 /// {@category Serialization}
-const int currentFsceneVersion = 2;
+const int currentFsceneVersion = 3;
 
 /// The format feature flags this build understands. A document that lists a
 /// feature outside this set in its `featuresRequired` is refused.
@@ -36,6 +42,9 @@ final List<FsceneMigration> _builtInMigrations = [
     'Document version 0 cannot be migrated',
   ),
   _migrateV1ToV2,
+  // 2 -> 3 changed writer conventions only (delta-serialized component
+  // properties, nested audio attenuation); version 2 documents read as-is.
+  (json) => json,
 ];
 
 Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {

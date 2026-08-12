@@ -336,24 +336,27 @@ void main() {
     test('refuses a newer-than-supported version', () {
       final text = writeFscene(
         _sampleDocument(),
-      ).replaceFirst('"fscene": 2', '"fscene": 999');
+      ).replaceFirst('"fscene": $currentFsceneVersion', '"fscene": 999');
       expect(() => readFscene(text), throwsA(isA<FsceneVersionException>()));
     });
 
     test('runs the migration chain to the current version', () {
       final currentText = writeFscene(_sampleDocument());
-      final v0Text = currentText.replaceFirst('"fscene": 2', '"fscene": 0');
+      final v0Text = currentText.replaceFirst(
+        '"fscene": $currentFsceneVersion',
+        '"fscene": 0',
+      );
       expect(() => readFscene(v0Text), throwsA(isA<FsceneVersionException>()));
       final migrated = readFscene(
         v0Text,
-        migrations: [(json) => json, (json) => json],
+        migrations: [(json) => json, (json) => json, (json) => json],
       );
       expect(migrated.formatVersion, currentFsceneVersion);
     });
 
     test('migrates a left-handed version 1 document', () {
       final text = writeFscene(_sampleDocument())
-          .replaceFirst('"fscene": 2', '"fscene": 1')
+          .replaceFirst('"fscene": $currentFsceneVersion', '"fscene": 1')
           .replaceFirst(
             '"stage": {',
             '"stage": {"handedness": "left", "unitsPerMeter": 1.0, '
@@ -365,7 +368,7 @@ void main() {
 
     test('refuses a right-handed version 1 document with guidance', () {
       final text = writeFscene(_sampleDocument())
-          .replaceFirst('"fscene": 2', '"fscene": 1')
+          .replaceFirst('"fscene": $currentFsceneVersion', '"fscene": 1')
           .replaceFirst(
             '"stage": {',
             '"stage": {"handedness": "right", "unitsPerMeter": 1.0, '
@@ -426,7 +429,7 @@ void main() {
     test('refuses a document without a format version', () {
       final text = writeFscene(
         _sampleDocument(),
-      ).replaceFirst('"fscene": 2,', '');
+      ).replaceFirst('"fscene": $currentFsceneVersion,', '');
       expect(() => readFscene(text), throwsA(isA<FsceneVersionException>()));
     });
 

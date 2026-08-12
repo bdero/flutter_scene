@@ -211,14 +211,20 @@ class ComponentPropertyDef {
       doc: json['doc'] as String?,
       group: json['group'] as String?,
       resourceKind: json['resourceKind'] as String?,
-      options: (json['options'] as List?)?.cast<String>(),
+      // Materialize eagerly; a lazy cast view defers its element TypeError
+      // to whoever iterates it (the inspector, at render time).
+      options: json['options'] is List
+          ? [for (final option in json['options'] as List) option as String]
+          : null,
       constraints: [
         if (json['constraints'] is List)
           for (final entry in json['constraints'] as List)
             if (entry is Map)
               PropertyConstraint.fromJson(entry.cast<String, Object?>()),
       ],
-      formerNames: (json['formerNames'] as List?)?.cast<String>() ?? const [],
+      formerNames: json['formerNames'] is List
+          ? [for (final name in json['formerNames'] as List) name as String]
+          : const [],
       transient: json['transient'] == true,
       itemDef: json['item'] is Map
           ? fromJson((json['item'] as Map).cast<String, Object?>())
@@ -300,7 +306,9 @@ class ComponentSchema {
       doc: json['doc'] as String?,
       icon: json['icon'] as String?,
       version: (json['version'] as num?)?.toInt() ?? 1,
-      formerTypes: (json['formerTypes'] as List?)?.cast<String>() ?? const [],
+      formerTypes: json['formerTypes'] is List
+          ? [for (final type in json['formerTypes'] as List) type as String]
+          : const [],
       properties: [
         if (json['properties'] is List)
           for (final entry in json['properties'] as List)
@@ -327,6 +335,9 @@ List<ComponentSchema> decodeComponentSchemas(Object? json) {
     } on FormatException {
       // A malformed entry (or a future format) never breaks the readable
       // ones; schema lists come from caches and manifests of varying age.
+    } on TypeError {
+      // Same skip for shape mismatches fromJson's casts surface (a string
+      // where a map was expected, a non-string list element).
     }
   }
   return schemas;

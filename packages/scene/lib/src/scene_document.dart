@@ -24,7 +24,7 @@ class SceneDocument {
        stage = stage ?? StageMetadata();
 
   /// The coarse format version this document targets.
-  int formatVersion = 2;
+  int formatVersion = 3;
 
   /// The document's global id, minted once at creation.
   final DocumentId documentId;
