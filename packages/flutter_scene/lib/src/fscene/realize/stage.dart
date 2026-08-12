@@ -911,6 +911,9 @@ void _applySunLightSpec(SunLight sun, SunLightSpec spec) {
     ..shadowFadeRange = spec.shadowFadeRange
     ..shadowCascadeSplitLambda = spec.shadowCascadeSplitLambda
     ..shadowAmbientStrength = spec.shadowAmbientStrength
+    ..contactShadows = spec.contactShadows
+    ..contactShadowDistance = spec.contactShadowDistance
+    ..angularRadius = spec.angularRadius
     ..shadowFilter = _byName(
       DirectionalShadowFilter.values,
       spec.shadowFilter,
@@ -938,6 +941,9 @@ SunLightSpec _serializeSunLight(SunLight sun) => SunLightSpec(
   shadowCascadeSplitLambda: sun.shadowCascadeSplitLambda,
   shadowAmbientStrength: sun.shadowAmbientStrength,
   shadowFilter: sun.shadowFilter.name,
+  contactShadows: sun.contactShadows,
+  contactShadowDistance: sun.contactShadowDistance,
+  angularRadius: sun.angularRadius,
   shadowCasterFaces: sun.shadowCasterFaces.name,
 );
 

@@ -1195,6 +1195,9 @@ class SunLightSpec {
     this.shadowCascadeSplitLambda = 0.6,
     this.shadowAmbientStrength = 0.0,
     this.shadowFilter = 'rotatedPoisson',
+    this.contactShadows = false,
+    this.contactShadowDistance = 0.3,
+    this.angularRadius = 0.005,
     this.shadowCasterFaces = 'front',
   });
 
@@ -1239,6 +1242,9 @@ class SunLightSpec {
 
   /// Shadow sampling filter name.
   String shadowFilter;
+  bool contactShadows;
+  double contactShadowDistance;
+  double angularRadius;
 
   /// Caster faces rendered into the shadow map.
   String shadowCasterFaces;

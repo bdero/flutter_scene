@@ -72,6 +72,12 @@ class ExampleSettings {
   /// World-space radius of the shadow penumbra. `0` is a hard edge.
   double shadowSoftness = 0.08;
 
+  /// PCSS light size and screen-space contact shadows for the key light.
+  DirectionalShadowFilter shadowFilter = DirectionalShadowFilter.rotatedPoisson;
+  double angularRadius = 0.005;
+  bool contactShadows = false;
+  double contactShadowDistance = 0.3;
+
   /// World-space width of the fade band at the far shadow edge.
   double shadowFadeRange = 2.0;
 
@@ -117,6 +123,10 @@ class ExampleSettings {
   lightColor: ${lightColor.x}, ${lightColor.y}, ${lightColor.z}
   lightCastsShadow: $lightCastsShadow
   shadowSoftness: $shadowSoftness
+  shadowFilter: $shadowFilter
+  angularRadius: $angularRadius
+  contactShadows: $contactShadows
+  contactShadowDistance: $contactShadowDistance
   shadowFadeRange: $shadowFadeRange
   shadowCascadeCount: $shadowCascadeCount
   shadowMaxDistance: $shadowMaxDistance
@@ -243,6 +253,10 @@ class ExampleSettings {
       light.color.setFrom(lightColor);
       light.castsShadow = lightCastsShadow;
       light.shadowSoftness = shadowSoftness;
+      light.shadowFilter = shadowFilter;
+      light.angularRadius = angularRadius;
+      light.contactShadows = contactShadows;
+      light.contactShadowDistance = contactShadowDistance;
       light.shadowFadeRange = shadowFadeRange;
       light.shadowCascadeCount = shadowCascadeCount;
       light.shadowMaxDistance = shadowMaxDistance;

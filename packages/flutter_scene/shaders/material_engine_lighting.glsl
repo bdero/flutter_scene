@@ -35,7 +35,8 @@ uniform FragInfo {
   // scene_depth sample. w: tan of the half vertical field of view.
   vec4 camera_forward;
   // Remaining camera basis axes for projecting world-space offsets back to
-  // screen UV. The w components are reserved.
+  // screen UV. camera_right.w carries the sun's angular radius (radians) for
+  // the soft-shadow penumbra; camera_up.w is reserved.
   vec4 camera_right;
   vec4 camera_up;
   // Rough-transmission atlas. x: available. y: valid band count. zw:

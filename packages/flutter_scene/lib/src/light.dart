@@ -41,6 +41,13 @@ enum DirectionalShadowFilter {
   /// A deterministic 17-tap grid with stable, visibly stepped texel edges.
   /// This avoids the per-fragment rotation used by [rotatedPoisson].
   fixedPcf,
+
+  /// Percentage-closer soft shadows. A blocker search widens the penumbra
+  /// with the caster's distance from the receiver, so shadows sharpen at
+  /// contact and soften with reach, scaled by
+  /// [DirectionalLight.angularRadius] and capped by
+  /// [DirectionalLight.shadowSoftness]. Costs 9 extra shadow-map taps.
+  pcss,
 }
 
 /// An infinitely-distant light source (e.g. the sun) that illuminates
@@ -89,6 +96,7 @@ class DirectionalLight {
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.contactShadows = false,
     this.contactShadowDistance = 0.3,
+    this.angularRadius = 0.005,
   }) : direction = direction ?? defaultDirection,
        color = color ?? Vector3(1.0, 1.0, 1.0);
 
@@ -191,6 +199,12 @@ class DirectionalLight {
   /// distances keep the effect to tight contacts; long ones read as a cheap
   /// shadow substitute but show screen-space artifacts sooner.
   double contactShadowDistance;
+
+  /// The light's angular radius in radians, driving how quickly
+  /// [DirectionalShadowFilter.pcss] penumbras widen with caster distance.
+  /// The default is close to the physical sun; larger values read as an
+  /// overcast or stylized key light.
+  double angularRadius;
 
   /// Which faces are rendered into the shadow map. Defaults to
   /// [ShadowCasterFaces.front]; use [ShadowCasterFaces.back] for solid,
