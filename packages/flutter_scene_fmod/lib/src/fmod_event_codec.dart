@@ -1,5 +1,4 @@
 import 'package:flutter_scene/fscene.dart';
-import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_fmod/src/fmod_audio.dart';
 
 /// Registers this package's component codecs into [registry], letting
@@ -19,79 +18,122 @@ void registerFmodComponentCodecs(FsceneComponentRegistry registry) {
 /// Codec for [FmodEventSource] (`fmodEvent` components). Scenes using it
 /// realize correctly only with this package's registry (see
 /// [registerFmodComponentCodecs]); other apps skip the component.
-class FmodEventCodec extends ComponentCodec {
+class FmodEventCodec extends DeclarativeComponentCodec<FmodEventSource> {
   @override
   String get type => 'fmodEvent';
 
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
-      'event',
-      ComponentPropertyKind.string,
-      const StringValue(''),
-      doc: 'The FMOD Studio event path (event:/...).',
-      read: (c) => StringValue((c as FmodEventSource).eventPath),
+  @override
+  List<ComponentField<FmodEventSource>> get fields => [
+    ComponentField(
+      const ComponentPropertyDef(
+        'event',
+        ComponentPropertyKind.string,
+        defaultValue: StringValue(''),
+        doc: 'The FMOD Studio event path (event:/...).',
+        constraints: [TextPattern(r'^event:/.+')],
+      ),
+      read: (c, _) => StringValue(c.eventPath),
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'autoplay',
-      ComponentPropertyKind.boolean,
-      const BoolValue(false),
+      defaultValue: false,
       doc: 'Start the event as soon as the source mounts.',
-      read: (c) => BoolValue((c as FmodEventSource).autoplay),
+      get: (c) => c.autoplay,
+      set: (c, v) => c.autoplay = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'volume',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Gain, 1.0 is unity.',
-      min: 0,
-      read: (c) => DoubleValue((c as FmodEventSource).volume),
+      constraints: const [Range.nonNegative(), SoftRange(0, 1)],
+      get: (c) => c.volume,
+      set: (c, v) => c.volume = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'pitch',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Playback rate multiplier.',
-      min: 0,
-      read: (c) => DoubleValue((c as FmodEventSource).pitch),
+      constraints: const [Range.nonNegative(), SoftRange(0, 2)],
+      get: (c) => c.pitch,
+      set: (c, v) => c.pitch = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'positional',
-      ComponentPropertyKind.boolean,
-      const BoolValue(true),
+      defaultValue: true,
       doc: 'Spatialize at the node, or play flat when false.',
-      read: (c) => BoolValue((c as FmodEventSource).positional),
+      get: (c) => c.positional,
+      set: (c, v) => c.positional = v,
     ),
-    ComponentPropertyDef(
-      'parameters',
-      ComponentPropertyKind.map,
-      MapValue(const {}),
-      doc: 'Initial event parameter values by name.',
-      read: (c) => MapValue({
-        for (final entry in (c as FmodEventSource).parameters.entries)
+    ComponentField.boolean(
+      'overrideDistances',
+      defaultValue: false,
+      doc:
+          'Override the event\'s authored min/max distances with the '
+          'attenuation settings.',
+      get: (c) => c.overrideDistances,
+      set: (c, v) => c.overrideDistances = v,
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'minDistance',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(1.0),
+        doc: 'Distance where attenuation begins (with overrideDistances).',
+        constraints: [Range.nonNegative()],
+      ),
+      read: (c, _) => DoubleValue(c.attenuation.minDistance),
+      write: (c, v, _) {
+        if (v is DoubleValue) c.attenuation.minDistance = v.value;
+      },
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'maxDistance',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(500.0),
+        doc:
+            'Distance beyond which attenuation stops (with '
+            'overrideDistances).',
+        constraints: [Range.nonNegative()],
+      ),
+      read: (c, _) => DoubleValue(c.attenuation.maxDistance),
+      write: (c, v, _) {
+        if (v is DoubleValue) c.attenuation.maxDistance = v.value;
+      },
+    ),
+    ComponentField(
+      ComponentPropertyDef(
+        'parameters',
+        ComponentPropertyKind.map,
+        defaultValue: MapValue(const {}),
+        doc: 'Initial event parameter values by name.',
+      ),
+      read: (c, _) => MapValue({
+        for (final entry in c.parameters.entries)
           entry.key: DoubleValue(entry.value),
       }),
+      write: (c, v, _) {
+        if (v is! MapValue) return;
+        for (final entry in v.values.entries) {
+          final value = entry.value;
+          if (value is DoubleValue) {
+            c.setParameter(entry.key, value.value);
+          } else if (value is IntValue) {
+            c.setParameter(entry.key, value.value.toDouble());
+          }
+        }
+      },
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is FmodEventSource;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    final parametersValue = p['parameters'];
+  FmodEventSource create(PropertyReader props) {
+    final parameters = props.value('parameters');
     return FmodEventSource(
-      readString(p, 'event', stringDefault('event')),
-      autoplay: readBool(p, 'autoplay', boolDefault('autoplay')),
-      volume: readDouble(p, 'volume', numberDefault('volume')),
-      pitch: readDouble(p, 'pitch', numberDefault('pitch')),
-      positional: readBool(p, 'positional', boolDefault('positional')),
+      props.string('event'),
       parameters: {
-        if (parametersValue is MapValue)
-          for (final entry in parametersValue.values.entries)
+        if (parameters is MapValue)
+          for (final entry in parameters.values.entries)
             if (entry.value is DoubleValue)
               entry.key: (entry.value as DoubleValue).value
             else if (entry.value is IntValue)

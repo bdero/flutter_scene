@@ -316,21 +316,27 @@ class ResourceRealizer {
     for (final resource in document.resources.values) {
       if (resource is EnvironmentResource &&
           !_environments.containsKey(resource.id)) {
-        _environments[resource.id] = await realizeEnvironmentSettings(
-          environment: resource.environment,
-          environmentIntensity: resource.environmentIntensity,
-          exposure: resource.exposure,
-          toneMapping: resource.toneMapping,
-          agxWhite: resource.agxWhite,
-          agxContrast: resource.agxContrast,
-          environmentRotationY: resource.environmentRotationY,
-          radianceCubeSize: resource.radianceCubeSize,
-          skybox: resource.skybox,
-          skyEnvironment: resource.skyEnvironment,
-          effects: resource.effects,
-          bundle: bundle,
-          environmentLoader: environmentLoader,
-          payloadLookup: document.payload,
+        // Origin-tagged below so a component holding the realized settings
+        // can recover the source resource at serialize time.
+        _environments[resource.id] = tagResourceOrigin(
+          await realizeEnvironmentSettings(
+            environment: resource.environment,
+            environmentIntensity: resource.environmentIntensity,
+            exposure: resource.exposure,
+            toneMapping: resource.toneMapping,
+            agxWhite: resource.agxWhite,
+            agxContrast: resource.agxContrast,
+            environmentRotationY: resource.environmentRotationY,
+            radianceCubeSize: resource.radianceCubeSize,
+            skybox: resource.skybox,
+            skyEnvironment: resource.skyEnvironment,
+            effects: resource.effects,
+            bundle: bundle,
+            environmentLoader: environmentLoader,
+            payloadLookup: document.payload,
+          ),
+          document,
+          resource.id,
         );
       }
     }

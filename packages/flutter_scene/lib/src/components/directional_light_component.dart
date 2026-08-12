@@ -56,6 +56,10 @@ class DirectionalLightComponent extends Component {
   final bool _usesLightDirection;
   final Vector3? _localDirection;
 
+  /// The fixed node-local travel direction set by [DirectionalLightComponent.aimed]
+  /// (a copy), or null when the node's rotation aims the light.
+  Vector3? get localDirection => _localDirection?.clone();
+
   static bool _hasDefaultDirection(DirectionalLight light) {
     final direction = light.direction;
     final expected = DirectionalLight.defaultDirection;

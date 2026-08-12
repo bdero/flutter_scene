@@ -44,6 +44,8 @@ sealed class PropertyConstraint<T> {
         return PowerOfTwo(min: i(value, 'min') ?? 1, max: i(value, 'max'));
       case 'angleRadians':
         return const AngleRadians();
+      case 'rgbColor':
+        return const RgbColor();
       case 'normalized':
         return const Normalized();
       case 'layerMask32':
@@ -143,6 +145,15 @@ final class AngleRadians extends PropertyConstraint<num> {
 
   @override
   Map<String, Object?> toJson() => const {'angleRadians': true};
+}
+
+/// A vec3 that carries a linear RGB color (light colors), edited with a
+/// color picker while staying vector-encoded for document compatibility.
+final class RgbColor extends PropertyConstraint<Object> {
+  const RgbColor();
+
+  @override
+  Map<String, Object?> toJson() => const {'rgbColor': true};
 }
 
 /// A vector normalized on write (joint axes).
