@@ -105,6 +105,10 @@ class AppSession extends ChangeNotifier {
       );
       return false;
     }
+    // Claim the session before the first await; overlapping launch() calls
+    // (double-click Play, UI plus MCP) would otherwise both pass the guard
+    // and spawn two processes.
+    _setState(AppSessionState.launching);
     final List<String> argv;
     final String workingDirectory;
     try {
@@ -143,6 +147,7 @@ class AppSession extends ChangeNotifier {
       );
     } on FormatException catch (e) {
       log(e.message, ConsoleLineKind.error);
+      _setState(AppSessionState.idle);
       return false;
     }
 
@@ -160,6 +165,7 @@ class AppSession extends ChangeNotifier {
       );
     } on ProcessException catch (e) {
       log('Failed to start, ${e.message}', ConsoleLineKind.error);
+      _setState(AppSessionState.idle);
       return false;
     }
     _process = process;
@@ -167,7 +173,6 @@ class AppSession extends ChangeNotifier {
     _deviceId = device.id;
     _appId = null;
     _vmServiceUri = null;
-    _setState(AppSessionState.launching);
     // Session launches build under the hood; surface hook progress the same
     // way task subprocesses do.
     _hookLogs = HookLogTailer(
@@ -244,6 +249,10 @@ class AppSession extends ChangeNotifier {
         notifyListeners();
       case 'app.started':
         log('App started', ConsoleLineKind.status);
+        // The build is over; end the hook-log poll rather than scanning the
+        // hooks_runner tree every tick for the rest of the session.
+        _hookLogs?.stop();
+        _hookLogs = null;
         _setState(AppSessionState.running);
       case 'app.progress':
         final progressMessage = params['message'];
@@ -342,6 +351,31 @@ class AppSession extends ChangeNotifier {
     }
   }
 
+  /// The cached VM service link, reconnecting when the cached one's socket
+  /// has dropped (a dead link would swallow every later request). Null when
+  /// connecting fails.
+  Future<VmServiceLink?> _connectedVmLink(String wsUri) async {
+    final cached = _vmLink;
+    if (cached != null) {
+      try {
+        final link = await cached;
+        if (link.isAlive) return link;
+      } catch (_) {}
+      _disposeVmLink();
+    }
+    try {
+      final pending = _vmLink = VmServiceLink.connect(
+        wsUri,
+        connector: _vmSocketConnector,
+      );
+      return await pending;
+    } catch (e) {
+      _vmLink = null;
+      log('VM service connection failed, $e', ConsoleLineKind.error);
+      return null;
+    }
+  }
+
   /// Asks the running app to reload changed scene assets in place through
   /// flutter_scene's `ext.flutter_scene.reloadScene` debug extension.
   /// Returns whether the app refreshed from project sources (false means the
@@ -351,18 +385,8 @@ class AppSession extends ChangeNotifier {
   Future<bool> reloadScenes() async {
     final wsUri = _vmServiceUri;
     if (_state != AppSessionState.running || wsUri == null) return false;
-    final VmServiceLink link;
-    try {
-      final pending = _vmLink ??= VmServiceLink.connect(
-        wsUri,
-        connector: _vmSocketConnector,
-      );
-      link = await pending;
-    } catch (e) {
-      _vmLink = null;
-      log('VM service connection failed, $e', ConsoleLineKind.error);
-      return false;
-    }
+    final link = await _connectedVmLink(wsUri);
+    if (link == null) return false;
     final watch = Stopwatch()..start();
     final result = await link.callExtension(
       'ext.flutter_scene.reloadScene',
@@ -384,18 +408,8 @@ class AppSession extends ChangeNotifier {
   Future<List<ComponentSchema>?> fetchComponentSchemas() async {
     final wsUri = _vmServiceUri;
     if (_state != AppSessionState.running || wsUri == null) return null;
-    final VmServiceLink link;
-    try {
-      final pending = _vmLink ??= VmServiceLink.connect(
-        wsUri,
-        connector: _vmSocketConnector,
-      );
-      link = await pending;
-    } catch (e) {
-      _vmLink = null;
-      log('VM service connection failed, $e', ConsoleLineKind.error);
-      return null;
-    }
+    final link = await _connectedVmLink(wsUri);
+    if (link == null) return null;
     final result = await link.callExtension(
       'ext.flutter_scene.componentSchemas',
       onError: (message) => log(
@@ -416,10 +430,12 @@ class AppSession extends ChangeNotifier {
     final appId = _appId;
     if (appId != null) {
       try {
-        await _request('app.stop', {
+        final response = await _request('app.stop', {
           'appId': appId,
         }).timeout(const Duration(seconds: 10));
-        return;
+        // An error reply means the app is not stopping; fall through to
+        // killing the process rather than sticking in `stopping`.
+        if (response['error'] == null) return;
       } on TimeoutException {
         // Fall through to killing the process.
       }

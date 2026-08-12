@@ -32,7 +32,9 @@ FlutterSceneVersionCheck checkFlutterSceneVersion(
   String? resolved = _lockedVersion('$root/pubspec.lock');
   String source = 'pubspec.lock';
   if (resolved == null) {
-    final (constraint, path) = _pubspecDependency('$root/pubspec.yaml');
+    final (:constraint, :path, :present) = _pubspecDependency(
+      '$root/pubspec.yaml',
+    );
     if (path != null) {
       resolved = _pubspecVersion(
         '${Directory('$root/$path').absolute.path}/pubspec.yaml',
@@ -41,6 +43,10 @@ FlutterSceneVersionCheck checkFlutterSceneVersion(
     } else if (constraint != null) {
       resolved = constraint.replaceFirst('^', '');
       source = 'pubspec.yaml constraint';
+    } else if (present) {
+      // A git/hosted/sdk block dependency carries no version to compare
+      // without a lockfile; that is not a missing dependency.
+      return FlutterSceneVersionCheck.ok;
     }
   }
   if (resolved == null) {
@@ -87,29 +93,40 @@ String? _lockedVersion(String lockPath) {
   final file = File(lockPath);
   if (!file.existsSync()) return null;
   final match = RegExp(
-    r'^  flutter_scene:\n(?:^    .*\n){0,8}?^    version:\s*"([^"]+)"',
+    r'^  flutter_scene:\r?\n(?:^    .*\r?\n){0,8}?^    version:\s*"([^"]+)"',
     multiLine: true,
   ).firstMatch(file.readAsStringSync());
   return match?.group(1);
 }
 
-/// The flutter_scene dependency in a pubspec.yaml, as
-/// (inline constraint, path) with exactly one non-null on a hit.
-(String?, String?) _pubspecDependency(String pubspecPath) {
+/// The flutter_scene dependency in a pubspec.yaml. At most one of
+/// [constraint]/[path] is non-null; [present] is true whenever the
+/// dependency key exists in any form (including git/hosted blocks).
+({String? constraint, String? path, bool present}) _pubspecDependency(
+  String pubspecPath,
+) {
   final file = File(pubspecPath);
-  if (!file.existsSync()) return (null, null);
+  if (!file.existsSync()) return (constraint: null, path: null, present: false);
   final content = file.readAsStringSync();
+  final present = RegExp(
+    r'^  flutter_scene:',
+    multiLine: true,
+  ).hasMatch(content);
   final inline = RegExp(
-    r'^  flutter_scene:\s*(\S+)\s*$',
+    r'^  flutter_scene:[ \t]*([^\s#]+)[ \t]*\r?$',
     multiLine: true,
   ).firstMatch(content);
-  if (inline != null) return (inline.group(1), null);
+  if (inline != null) {
+    return (constraint: inline.group(1), path: null, present: present);
+  }
   final block = RegExp(
-    r'^  flutter_scene:\s*\n(?:^    .*\n){0,4}?^    path:\s*(\S+)',
+    r'^  flutter_scene:\s*\r?\n(?:^    .*\r?\n){0,4}?^    path:\s*(\S+)',
     multiLine: true,
   ).firstMatch(content);
-  if (block != null) return (null, block.group(1));
-  return (null, null);
+  if (block != null) {
+    return (constraint: null, path: block.group(1), present: present);
+  }
+  return (constraint: null, path: null, present: present);
 }
 
 /// The `version:` field of a pubspec.yaml, or null.

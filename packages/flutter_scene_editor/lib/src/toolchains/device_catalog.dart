@@ -53,14 +53,12 @@ class DeviceCatalog {
     String executable,
     List<String> args,
   ) {
-    // SDK-management variables never leak into tool invocations.
-    final environment = Map.of(Platform.environment)
-      ..remove('FLUTTER_GIT_URL')
-      ..remove('FLUTTER_PREBUILT_ENGINE_VERSION');
+    // The same scrub every project subprocess gets; a stray IMPELLERC or
+    // SDK-management variable never leaks into tool invocations.
     return Process.run(
       executable,
       args,
-      environment: environment,
+      environment: projectChildEnvironment(),
       includeParentEnvironment: false,
     );
   }

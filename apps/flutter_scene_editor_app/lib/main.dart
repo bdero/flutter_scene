@@ -334,6 +334,8 @@ class _EditorHomeState extends State<_EditorHome> {
     setState(() => _project = project);
     _sourceWatch?.cancel();
     _sourceWatch = null;
+    _sourceDebounce?.cancel();
+    _sourceDebounce = null;
     if (project != null) {
       _settings.rememberProject(project.path);
       _persistSettings();
@@ -466,7 +468,9 @@ class _EditorHomeState extends State<_EditorHome> {
     }
   }
 
-  void _closeProject() => setState(() => _project = null);
+  // Through _setProject so the lib/ source watcher and its debounce end with
+  // the project instead of generating into a closed one.
+  void _closeProject() => _setProject(null);
 
   /// The MCP `get_project` payload.
   Map<String, Object?>? _projectInfo() {
@@ -854,7 +858,7 @@ class _EditorHomeState extends State<_EditorHome> {
   void _recordLastScene(String path) {
     final project = _project;
     if (project == null) return;
-    if (!path.startsWith('${project.resolvedProjectRoot}/')) return;
+    if (!pathIsWithin(project.resolvedProjectRoot, path)) return;
     if (_settings.lastScenes[project.path] == path) return;
     _settings.lastScenes[project.path] = path;
     _persistSettings();
@@ -866,8 +870,7 @@ class _EditorHomeState extends State<_EditorHome> {
   /// stays.
   Future<void> _openProjectScene(FProject project) async {
     final current = _scenePath;
-    if (current != null &&
-        current.startsWith('${project.resolvedProjectRoot}/')) {
+    if (current != null && pathIsWithin(project.resolvedProjectRoot, current)) {
       return;
     }
     var scenePath = _settings.lastScenes[project.path];
@@ -1237,11 +1240,17 @@ class _EditorHomeState extends State<_EditorHome> {
             onManageInstallations: _showSettings,
             onEditConfigs: _project == null ? null : _editBuildConfigs,
             onPlay: () {
-              try {
-                unawaited(_startPlaySession());
-              } on FormatException catch (e) {
-                _runner.addLine(e.message, ConsoleLineKind.error);
-              }
+              // The throw lands in the future, not here; handle it there so
+              // launch-blocked errors still reach the console.
+              unawaited(
+                _startPlaySession().catchError((Object e) {
+                  _runner.addLine(
+                    e is FormatException ? e.message : '$e',
+                    ConsoleLineKind.error,
+                  );
+                  return false;
+                }),
+              );
             },
             onRunTask: _runTask,
             restartOnSave: _restartOnSceneSave,

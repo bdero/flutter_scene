@@ -50,6 +50,7 @@ export 'src/project/fproject.dart'
         defaultBuildConfigurations,
         findSceneProjectContext,
         migrateV1RunCommand,
+        pathIsWithin,
         resolveWorkingDirectory,
         substituteCommandVariables,
         tokenizeCommand;

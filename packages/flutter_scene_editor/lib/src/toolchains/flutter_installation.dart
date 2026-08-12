@@ -319,3 +319,11 @@ class _ProbeStamp {
   @override
   int get hashCode => Object.hash(binModified, stampModified);
 }
+
+/// The environment for project subprocesses, the editor's own minus
+/// SDK-management variables (they can break flutter run on some versions when
+/// inherited) and the editor's IMPELLERC override.
+Map<String, String> projectChildEnvironment() => Map.of(Platform.environment)
+  ..remove('FLUTTER_GIT_URL')
+  ..remove('FLUTTER_PREBUILT_ENGINE_VERSION')
+  ..remove('IMPELLERC');
