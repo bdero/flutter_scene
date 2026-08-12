@@ -27,6 +27,7 @@ import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
+import 'package:flutter_scene/src/fscene/realize/physics_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
@@ -54,6 +55,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(EnvironmentVolumeCodec())
     ..register(AudioSourceCodec())
     ..register(AudioListenerCodec());
+  registerPhysicsComponentCodecs(registry);
 }
 
 /// Codec for [EnvironmentVolumeComponent]. Realizes the look from a referenced
