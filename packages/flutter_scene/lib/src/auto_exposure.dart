@@ -39,13 +39,12 @@ class AutoExposureSettings {
   double compensation = 0.0;
 
   /// The lowest the correction may go, in EV stops relative to the base
-  /// exposure. `-1` (the default) lets bright scenes be darkened to half.
-  double minEv = -1.0;
+  /// exposure. `-4` (the default) lets bright scenes darken to a sixteenth.
+  double minEv = -4.0;
 
   /// The highest the correction may go, in EV stops relative to the base
-  /// exposure. `1.3` (the default) lets dark scenes be brightened to about
-  /// 2.5x.
-  double maxEv = 1.3;
+  /// exposure. `4` (the default) lets dark scenes brighten up to sixteenfold.
+  double maxEv = 4.0;
 
   /// Adaptation rate while the scene gets brighter (the correction falls),
   /// in blends per second. Adapting to brightness is faster than adapting

@@ -30,7 +30,7 @@ void main() {
     test('chromatic aberration', () {
       final aberration = ChromaticAberrationSettings();
       expect(aberration.enabled, isFalse);
-      expect(aberration.intensity, 0.5);
+      expect(aberration.intensity, 0.2);
     });
 
     test('vignette', () {
@@ -51,7 +51,7 @@ void main() {
       final bloom = BloomSettings();
       expect(bloom.enabled, isFalse);
       expect(bloom.threshold, 1.0);
-      expect(bloom.intensity, 0.5);
+      expect(bloom.intensity, 0.3);
       expect(bloom.scatter, 0.7);
     });
   });

@@ -66,7 +66,7 @@ void _configureAmbientOcclusion(Scene scene) {
     ..radius = 1.0
     ..bias = 0.0
     ..horizonAngle = 0.06
-    ..intensity = 3.0
+    ..intensity = 1.5
     ..power = 1.5
     ..detail = 0.5
     ..directLightAffect = 0.59

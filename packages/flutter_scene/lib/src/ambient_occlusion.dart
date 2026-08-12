@@ -27,14 +27,13 @@ class AmbientOcclusionSettings {
   /// contact creases.
   double radius = 0.33;
 
-  /// Nonnegative scalar applied to averaged obscurance before conversion to
-  /// visibility. `0.0` removes screen-space occlusion. Output obscurance
+  /// Nonnegative scalar on the occlusion strength. `1.0` is each method's
+  /// calibrated look ([AmbientOcclusionMethod.groundTruth] matches ray-traced
+  /// visibility there; [AmbientOcclusionMethod.obscurance] is normalized to
+  /// its tuned strength), so the same value reads consistently across both
+  /// methods. `0.0` removes screen-space occlusion. Output obscurance
   /// saturates at `0.98` before [power] is applied.
-  ///
-  /// [AmbientOcclusionMethod.groundTruth] is calibrated against ray-traced
-  /// visibility, so values near `1.0` keep it physical there; the default
-  /// suits the punchier [AmbientOcclusionMethod.obscurance] estimate.
-  double intensity = 2.0;
+  double intensity = 1.0;
 
   /// Contrast power applied to the final visibility. Values above `1.0`
   /// deepen already-occluded regions without increasing the raw estimate.
