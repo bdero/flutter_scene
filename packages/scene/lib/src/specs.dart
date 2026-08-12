@@ -579,6 +579,7 @@ class EnvironmentEffectsSpec {
     this.ambientOcclusionThickness = 0.5,
     this.ambientOcclusionThicknessHeuristic = 0.004,
     this.ambientOcclusionBentNormals = false,
+    this.ambientOcclusionIndirectLight = 0.0,
     this.ambientOcclusionHalfResolution = true,
     this.ambientOcclusionDepthMipChain = false,
     this.ambientOcclusionSpecularMode = 'none',
@@ -681,6 +682,7 @@ class EnvironmentEffectsSpec {
         ambientOcclusionThicknessHeuristic:
             other.ambientOcclusionThicknessHeuristic,
         ambientOcclusionBentNormals: other.ambientOcclusionBentNormals,
+        ambientOcclusionIndirectLight: other.ambientOcclusionIndirectLight,
         ambientOcclusionHalfResolution: other.ambientOcclusionHalfResolution,
         ambientOcclusionDepthMipChain: other.ambientOcclusionDepthMipChain,
         ambientOcclusionSpecularMode: other.ambientOcclusionSpecularMode,
@@ -776,6 +778,7 @@ class EnvironmentEffectsSpec {
   double ambientOcclusionThickness;
   double ambientOcclusionThicknessHeuristic;
   bool ambientOcclusionBentNormals;
+  double ambientOcclusionIndirectLight;
   bool ambientOcclusionHalfResolution;
   bool ambientOcclusionDepthMipChain;
   String ambientOcclusionSpecularMode;

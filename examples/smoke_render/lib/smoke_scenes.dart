@@ -359,6 +359,59 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Screen-space indirect light: a sunlit red wall beside a white floor and
+  // cuboid. The bitmask gather must bleed red bounce onto the floor and the
+  // cuboid's wall-facing side. Guards the fp16 chain, the sector-delta
+  // radiance credit, and the material composite across backends.
+  SmokeScene('ssgi', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.15;
+    scene.ambientOcclusion
+      ..enabled = true
+      ..method = AmbientOcclusionMethod.groundTruth
+      ..radius = 1.4
+      ..intensity = 1.0
+      ..sliceCount = 3
+      ..stepsPerSlice = 6
+      ..visibilityBitmask = true
+      ..thickness = 0.4
+      ..indirectLight = 8.0
+      ..halfResolution = false
+      ..depthMipChain = true;
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.85, -0.7, 0.25),
+        DirectionalLight(intensity: 3.0),
+      ),
+    );
+    final white = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.85, 0.85, 0.85, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    final red = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.9, 0.05, 0.03, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(Node(mesh: Mesh(PlaneGeometry(width: 2.8, depth: 2.2), white)));
+    // The red wall stands on the -x side, its sunlit face toward the floor.
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.2, 1.6, 2.2)), red))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-1.4, 0.8, 0)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.7, 0.9, 0.7)), white))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.3, 0.45, 0.2)),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(2.4, 2.3, 3.8),
+        target: vm.Vector3(-0.45, 0.35, 0),
+      ),
+    );
+  }),
   // Rect area lights via linearly transformed cosines: a warm wide panel and
   // a cool tall panel over a glossy plane. Guards the LTC atlas tiles, the
   // edge integration, and the stretched panel reflections across backends.

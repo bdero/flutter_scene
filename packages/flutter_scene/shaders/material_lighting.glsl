@@ -592,7 +592,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
     ssao_sample = texture(ssao_texture, screen_uv);
-    occlusion = min(occlusion, ssao_sample.r);
+    // With indirect light active the texture carries radiance in rgb and
+    // visibility in a; otherwise visibility rides in r.
+    occlusion = min(
+        occlusion,
+        frag_info.camera_up.w > 0.5 ? ssao_sample.a : ssao_sample.r);
     if (frag_info.ssao_lighting.z > 0.5) {
       // The packed view-space bent normal, rotated into world space with the
       // camera basis the depth prepass rendered from.
@@ -832,6 +836,14 @@ vec4 EvaluateLighting(MaterialInputs material) {
       (indirect_diffuse * diffuse_occlusion +
        indirect_specular * specular_occlusion) *
       ambient_shadow;
+#ifndef FLUTTER_SCENE_SKIP_SSAO
+  // Screen-space bounce: the occlusion pass's gathered radiance lights the
+  // diffuse lobe. Its own bitfield already resolved visibility, so only the
+  // baked occlusion map applies.
+  if (frag_info.camera_up.w > 0.5) {
+    ambient += ssao_sample.rgb * diffuse_color * material.occlusion;
+  }
+#endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   ambient += material.diffuse_transmission_color * (1.0 - metallic) *
              material.diffuse_transmission *

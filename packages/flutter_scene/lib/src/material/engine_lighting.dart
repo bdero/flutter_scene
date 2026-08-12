@@ -119,6 +119,10 @@ class EngineLightingUniforms {
         ? lighting.environmentBlend.clamp(0.0, 1.0)
         : 0.0;
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
+    // camera_up.w flags the occlusion texture's indirect-light layout
+    // (radiance in rgb, visibility in a). radiance_blend.zw are the per-draw
+    // punctual light slice, so they cannot carry frame flags.
+    fragInfo[31] = lighting.ssaoIndirectLight ? 1.0 : 0.0;
     // ssao_lighting at [164..167]: x is the fraction of screen-space
     // occlusion applied to analytic direct lights, y the multi-bounce
     // amount, z whether the occlusion texture's ba carry a packed bent

@@ -82,6 +82,7 @@ class ScenePass extends RenderGraphPass {
     double ssaoMultiBounce = 0.0,
     bool ssaoBentNormals = false,
     bool ssaoContactShadows = false,
+    bool ssaoIndirectLight = false,
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
@@ -112,6 +113,7 @@ class ScenePass extends RenderGraphPass {
        _ssaoMultiBounce = ssaoMultiBounce,
        _ssaoBentNormals = ssaoBentNormals,
        _ssaoContactShadows = ssaoContactShadows,
+       _ssaoIndirectLight = ssaoIndirectLight,
        _fog = fog,
        _cullingPlanes = cullingPlanes,
        _includeOffscreen = includeOffscreen;
@@ -136,6 +138,7 @@ class ScenePass extends RenderGraphPass {
   final double _ssaoMultiBounce;
   final bool _ssaoBentNormals;
   final bool _ssaoContactShadows;
+  final bool _ssaoIndirectLight;
   final Fog? _fog;
 
   // Material scene inputs (see Material.sceneInputs): whether to capture
@@ -290,6 +293,7 @@ class ScenePass extends RenderGraphPass {
       ssaoMultiBounce: ssaoMap == null ? 0.0 : _ssaoMultiBounce,
       ssaoBentNormals: ssaoMap != null && _ssaoBentNormals,
       ssaoContactShadows: ssaoMap != null && _ssaoContactShadows,
+      ssaoIndirectLight: ssaoMap != null && _ssaoIndirectLight,
       viewportSize: _dimensions,
       fog: _fog,
       sceneDepthLinear: _bindSceneDepth

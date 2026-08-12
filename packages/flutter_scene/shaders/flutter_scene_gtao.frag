@@ -33,6 +33,10 @@ uniform sampler2D depth_mip1;
 uniform sampler2D depth_mip2;
 uniform sampler2D depth_mip3;
 
+// Last frame's scene color for the indirect-light gather; black on the
+// first frame.
+uniform sampler2D scene_radiance;
+
 uniform GtaoInfo {
   // x, y: occlusion target size in pixels. z, w: its reciprocal.
   vec4 viewport;
@@ -46,7 +50,9 @@ uniform GtaoInfo {
   vec4 params2;
   // x: 1 when the visibility bitmask is enabled. y: occluder thickness
   // (world units, bitmask mode). z: 1 when the bent normal is computed and
-  // octahedrally packed into the output's ba (horizon mode only). w: unused.
+  // octahedrally packed into the output's ba (horizon mode only). w: the
+  // indirect-light intensity (bitmask mode; 0 disables the gather and >0
+  // switches the output to radiance in rgb with visibility in a).
   vec4 params3;
   // xyz: view-space direction toward the sun. w: the contact-shadow march
   // distance in world units, 0 when contact shadows are off.
@@ -102,12 +108,12 @@ uint CountBits(uint v) {
   return (v * 0x01010101u) >> 24u;
 }
 
-// Marks the sectors covered by a sample as occluded. The sample's front face
-// and an assumed back face [thickness] behind it (along the view direction)
-// bound an angular range in the slice plane; the range maps onto the 32
-// sectors spanning the hemisphere around the projected normal angle [gamma].
-uint OccludeSectors(vec3 delta, vec3 view_dir, float side, float gamma,
-                    float thickness, uint bits) {
+// Returns the sector mask a sample covers. The sample's front face and an
+// assumed back face [thickness] behind it (along the view direction) bound
+// an angular range in the slice plane; the range maps onto the 32 sectors
+// spanning the hemisphere around the projected normal angle [gamma].
+uint SectorMask(vec3 delta, vec3 view_dir, float side, float gamma,
+                float thickness) {
   vec3 delta_back = delta - view_dir * thickness;
   float front = acos(clamp(
       dot(delta, view_dir) *
@@ -133,7 +139,7 @@ uint OccludeSectors(vec3 delta, vec3 view_dir, float side, float gamma,
   uint mask = count >= kSectorCount
       ? 0xFFFFFFFFu
       : ((1u << count) - 1u) << start;
-  return bits | mask;
+  return mask;
 }
 
 void main() {
@@ -155,6 +161,10 @@ void main() {
   // Background texels (no geometry) are unoccluded; the bent normal encodes
   // straight at the camera.
   if (origin.z >= far) {
+    if (gtao.params3.w > 0.0) {
+      frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
     frag_color = compute_bent
         ? vec4(1.0, 1.0, OctEncode(vec3(0.0, 0.0, -1.0)))
         : vec4(1.0, 1.0, 1.0, 1.0);
@@ -181,8 +191,10 @@ void main() {
   }
 
   float inv_radius2 = 1.0 / max(radius * radius, kNumericEpsilon);
+  float gi_intensity = gtao.params3.w;
   float visibility_sum = 0.0;
   vec3 bent_sum = vec3(0.0);
+  vec3 gi_sum = vec3(0.0);
   for (int i = 0; i < MAX_GTAO_SLICES; i++) {
     if (i >= slice_count) {
       break;
@@ -207,6 +219,8 @@ void main() {
     float horizon_cos0 = -1.0;
     float horizon_cos1 = -1.0;
     uint occluded_sectors = 0u;
+    vec3 last_sample0 = origin;
+    vec3 last_sample1 = origin;
 
     for (int j = 0; j < MAX_GTAO_STEPS; j++) {
       if (j >= step_count) {
@@ -224,13 +238,48 @@ void main() {
             int(floor(log2(max(1.0, pixel_offset)))) - 3, 0, mip_levels - 1);
       }
       vec2 uv_offset = omega * pixel_offset * gtao.viewport.zw;
-      vec3 delta0 = ViewPositionAt(v_uv + uv_offset, level) - origin;
-      vec3 delta1 = ViewPositionAt(v_uv - uv_offset, level) - origin;
+      vec2 uv0 = v_uv + uv_offset;
+      vec2 uv1 = v_uv - uv_offset;
+      vec3 sample0 = ViewPositionAt(uv0, level);
+      vec3 sample1 = ViewPositionAt(uv1, level);
+      vec3 delta0 = sample0 - origin;
+      vec3 delta1 = sample1 - origin;
       if (use_bitmask) {
-        occluded_sectors = OccludeSectors(
-            delta0, view_dir, 1.0, gamma, thickness, occluded_sectors);
-        occluded_sectors = OccludeSectors(
-            delta1, view_dir, -1.0, gamma, thickness, occluded_sectors);
+        uint mask0 = SectorMask(delta0, view_dir, 1.0, gamma, thickness);
+        uint mask1 = SectorMask(delta1, view_dir, -1.0, gamma, thickness);
+        uint fresh0 = mask0 & ~occluded_sectors;
+        occluded_sectors |= mask0;
+        uint fresh1 = mask1 & ~occluded_sectors;
+        occluded_sectors |= mask1;
+        if (gi_intensity > 0.0) {
+          // One bounce of indirect light: each newly occluded sector credits
+          // the blocking surface's radiance, weighted by the receiver cosine
+          // and the emitter's facing (its normal approximated from the depth
+          // gradient along the march). Sector counting bakes in solid angle
+          // and distance falloff, as in ray tracing.
+          if (fresh0 != 0u) {
+            vec3 dir0 = normalize(delta0);
+            float receiver0 = max(dot(normal, dir0), 0.0);
+            vec3 emitter_n0 = -cross(normalize(sample0 - last_sample0), axis);
+            float emitter0 = max(dot(emitter_n0, -dir0), 0.0);
+            vec3 rad0 = texture(scene_radiance, uv0).rgb;
+            rad0 *= 8.0 / max(8.0, dot(rad0, vec3(0.299, 0.587, 0.114)));
+            gi_sum += rad0 * (float(CountBits(fresh0)) / float(kSectorCount)) *
+                      receiver0 * emitter0;
+          }
+          if (fresh1 != 0u) {
+            vec3 dir1 = normalize(delta1);
+            float receiver1 = max(dot(normal, dir1), 0.0);
+            vec3 emitter_n1 = cross(normalize(sample1 - last_sample1), axis);
+            float emitter1 = max(dot(emitter_n1, -dir1), 0.0);
+            vec3 rad1 = texture(scene_radiance, uv1).rgb;
+            rad1 *= 8.0 / max(8.0, dot(rad1, vec3(0.299, 0.587, 0.114)));
+            gi_sum += rad1 * (float(CountBits(fresh1)) / float(kSectorCount)) *
+                      receiver1 * emitter1;
+          }
+        }
+        last_sample0 = sample0;
+        last_sample1 = sample1;
       } else {
         horizon_cos0 = UpdateHorizon(
             delta0, view_dir, horizon_cos0, inv_radius2, thickness_heuristic);
@@ -259,6 +308,15 @@ void main() {
   }
 
   float visibility = clamp(visibility_sum / float(slice_count), 0.0, 1.0);
+  if (gi_intensity > 0.0) {
+    // Radiance in rgb, shaped visibility in a; the material composites the
+    // bounce into indirect diffuse.
+    float gi_obscurance = min(intensity * (1.0 - visibility), 0.98);
+    frag_color = vec4(
+        gi_sum * (gi_intensity / float(slice_count)),
+        pow(clamp(1.0 - gi_obscurance, 0.0, 1.0), power));
+    return;
+  }
   // Shared output shaping with the obscurance shader, so intensity and power
   // keep one meaning across both methods.
   float obscurance = min(intensity * (1.0 - visibility), 0.98);

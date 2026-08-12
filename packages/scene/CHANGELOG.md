@@ -4,7 +4,7 @@
 
 - Sun lights carry `contactShadows`, `contactShadowDistance`, and `angularRadius`.
 
-- Ambient-occlusion effects carry `method`, `sliceCount`, `stepsPerSlice`, `visibilityBitmask`, `thickness`, `thicknessHeuristic`, `bentNormals`, and `multiBounce`.
+- Ambient-occlusion effects carry `indirectLight`, `method`, `sliceCount`, `stepsPerSlice`, `visibilityBitmask`, `thickness`, `thicknessHeuristic`, `bentNormals`, and `multiBounce`.
 - Retuned effect defaults, ambient-occlusion intensity `1.0`, bloom intensity `0.15`, chromatic aberration `0.2`, auto-exposure clamps `-4`/`4` EV.
 - `.fscene` version 2 fixes every document to the native coordinate system and migrates left-handed version 1 documents.
 - Removed `Handedness`, `UpAxis`, `StageMetadata.unitsPerMeter`, `NodeSpec.excludeFromWindingParity`, and `SkyEnvironmentSpec.castShadows`.

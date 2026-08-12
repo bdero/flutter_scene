@@ -706,6 +706,7 @@ class Lighting {
     this.ssaoMultiBounce = 0.0,
     this.ssaoBentNormals = false,
     this.ssaoContactShadows = false,
+    this.ssaoIndirectLight = false,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -820,6 +821,10 @@ class Lighting {
 
   /// Whether [ssaoMap]'s g channel carries the sun contact-shadow term.
   final bool ssaoContactShadows;
+
+  /// Whether [ssaoMap] carries gathered indirect radiance in rgb with the
+  /// visibility in a (instead of visibility in r).
+  final bool ssaoIndirectLight;
 
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.

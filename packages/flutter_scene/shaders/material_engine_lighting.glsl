@@ -36,7 +36,8 @@ uniform FragInfo {
   vec4 camera_forward;
   // Remaining camera basis axes for projecting world-space offsets back to
   // screen UV. camera_right.w carries the sun's angular radius (radians) for
-  // the soft-shadow penumbra; camera_up.w is reserved.
+  // the soft-shadow penumbra; camera_up.w flags the occlusion texture's
+  // indirect-light layout (radiance in rgb, visibility in a).
   vec4 camera_right;
   vec4 camera_up;
   // Rough-transmission atlas. x: available. y: valid band count. zw:
@@ -116,9 +117,10 @@ uniform FragInfo {
   // the IBL ambient (0 leaves the ambient physical, 1 darkens it as much as the
   // direct light). z: the number of additional analytic lights packed into the
   // punctual_lights data texture (point, spot, and directional lights past the
-  // first shadowed one); the material loops over this many. w reserved. Both
-  // environments share RadianceLayoutInfo (the layout is a per-backend choice,
-  // not per-environment).
+  // first shadowed one); the material loops over this many. w is the
+  // per-object slice offset into the light-index buffer. Both environments
+  // share RadianceLayoutInfo (the layout is a per-backend choice, not
+  // per-environment).
   vec4 radiance_blend;
   // Screen-space occlusion lighting controls. x is the fraction applied to
   // analytic direct lights. y is the multi-bounce amount (how much occluded
