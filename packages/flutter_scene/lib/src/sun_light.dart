@@ -51,6 +51,8 @@ class SunLight {
     this.shadowCascadeSplitLambda = 0.6,
     this.shadowAmbientStrength = 0.0,
     this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
+    this.contactShadows = false,
+    this.contactShadowDistance = 0.3,
     this.shadowCasterFaces = ShadowCasterFaces.front,
   });
 
@@ -111,6 +113,13 @@ class SunLight {
   /// Shadow sampling pattern; see [DirectionalLight.shadowFilter].
   DirectionalShadowFilter shadowFilter;
 
+  /// Screen-space contact shadows; see [DirectionalLight.contactShadows].
+  bool contactShadows;
+
+  /// Contact-shadow march distance; see
+  /// [DirectionalLight.contactShadowDistance].
+  double contactShadowDistance;
+
   /// Which faces are rendered into the shadow map; see
   /// [DirectionalLight.shadowCasterFaces].
   ShadowCasterFaces shadowCasterFaces;
@@ -141,6 +150,8 @@ class SunLight {
     light.shadowCascadeSplitLambda = shadowCascadeSplitLambda;
     light.shadowAmbientStrength = shadowAmbientStrength;
     light.shadowFilter = shadowFilter;
+    light.contactShadows = contactShadows;
+    light.contactShadowDistance = contactShadowDistance;
     light.shadowCasterFaces = shadowCasterFaces;
     return light;
   }

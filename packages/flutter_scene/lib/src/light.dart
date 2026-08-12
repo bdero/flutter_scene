@@ -87,6 +87,8 @@ class DirectionalLight {
     this.shadowAmbientStrength = 0.0,
     this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
     this.shadowCasterFaces = ShadowCasterFaces.front,
+    this.contactShadows = false,
+    this.contactShadowDistance = 0.3,
   }) : direction = direction ?? defaultDirection,
        color = color ?? Vector3(1.0, 1.0, 1.0);
 
@@ -177,6 +179,18 @@ class DirectionalLight {
 
   /// The percentage-closer filtering pattern used to sample the shadow map.
   DirectionalShadowFilter shadowFilter;
+
+  /// Marches the camera depth buffer toward the light for small-scale
+  /// contact shadowing that shadow-map resolution and bias miss. Runs on the
+  /// screen-space occlusion chain (enabling this adds those passes even with
+  /// ambient occlusion off) and needs a perspective camera. Applies whether
+  /// or not [castsShadow] is set.
+  bool contactShadows;
+
+  /// How far the contact-shadow march reaches, in world units. Short
+  /// distances keep the effect to tight contacts; long ones read as a cheap
+  /// shadow substitute but show screen-space artifacts sooner.
+  double contactShadowDistance;
 
   /// Which faces are rendered into the shadow map. Defaults to
   /// [ShadowCasterFaces.front]; use [ShadowCasterFaces.back] for solid,
@@ -636,6 +650,7 @@ class Lighting {
     this.ssaoDirectLightAffect = 0.0,
     this.ssaoMultiBounce = 0.0,
     this.ssaoBentNormals = false,
+    this.ssaoContactShadows = false,
     this.viewportSize = ui.Size.zero,
     this.fog,
     this.sceneDepthLinear,
@@ -747,6 +762,9 @@ class Lighting {
 
   /// Whether [ssaoMap]'s gba channels carry a packed view-space bent normal.
   final bool ssaoBentNormals;
+
+  /// Whether [ssaoMap]'s g channel carries the sun contact-shadow term.
+  final bool ssaoContactShadows;
 
   /// The color-pass render-target size, used to map `gl_FragCoord` into the
   /// occlusion texture's UV. Zero when occlusion is off.

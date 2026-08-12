@@ -491,6 +491,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 diffuse_occlusion = vec3(occlusion);
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
+  vec4 ssao_sample = vec4(1.0);
 #ifndef FLUTTER_SCENE_SKIP_SSAO
   if (frag_info.ssao_params.x > 0.5) {
     vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
@@ -501,7 +502,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // each backend.
     // Both terms estimate the same visibility. Multiplying them counts the
     // same blocked hemisphere twice and over-darkens surfaces with baked AO.
-    vec4 ssao_sample = texture(ssao_texture, screen_uv);
+    ssao_sample = texture(ssao_texture, screen_uv);
     occlusion = min(occlusion, ssao_sample.r);
     if (frag_info.ssao_lighting.z > 0.5) {
       // The packed view-space bent normal, rotated into world space with the
@@ -721,6 +722,14 @@ vec4 EvaluateLighting(MaterialInputs material) {
        facing > 0.0)
           ? SampleShadow(v_position, GetWorldNormal())
           : 1.0;
+#endif
+#ifndef FLUTTER_SCENE_SKIP_SSAO
+  // Screen-space contact shadow for the sun, marched by the occlusion pass.
+  // Applies whether or not a shadow map is active, grounding small contacts
+  // that shadow-map resolution and bias miss.
+  if (frag_info.ssao_lighting.w > 0.5) {
+    shadow = min(shadow, ssao_sample.g);
+  }
 #endif
   float sun_visibility = facing * shadow;
 

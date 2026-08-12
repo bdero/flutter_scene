@@ -33,6 +33,9 @@ uniform SsaoInfo {
   vec4 params2;
   // x: immediate-neighbour detail intensity. yzw: unused.
   vec4 params3;
+  // xyz: view-space direction toward the sun. w: the contact-shadow march
+  // distance in world units, 0 when contact shadows are off.
+  vec4 contact;
 }
 ssao;
 
@@ -51,6 +54,7 @@ const float kNumericEpsilon = 0.0001;
 
 #define AO_INFO ssao
 #include <ssao_geometry.glsl>
+#include <contact_shadow.glsl>
 
 float SampleObscurance(vec3 normal, vec3 delta, float falloff_scale,
                        float horizon) {
@@ -93,6 +97,12 @@ void main() {
   // that survives filtering as horizontal and vertical bands.
   float noise = InterleavedGradientNoise(gl_FragCoord.xy);
   float rotation = noise * 2.0 * kPi;
+
+  float contact_visibility = 1.0;
+  if (ssao.contact.w > 0.0) {
+    contact_visibility = MarchContactShadow(
+        origin, InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0)));
+  }
   float spiral_turns = sample_count <= 8 ? 3.0
       : (sample_count <= 12 ? 5.0 : (sample_count <= 20 ? 7.0 : 14.0));
 
@@ -168,5 +178,5 @@ void main() {
   obscurance = min(intensity * 2.0 * obscurance, 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
 
-  frag_color = vec4(ao, ao, ao, 1.0);
+  frag_color = vec4(ao, contact_visibility, ao, 1.0);
 }
