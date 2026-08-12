@@ -87,12 +87,26 @@ final class SceneSourceLoader {
       (key.endsWith('.fscene') || key.endsWith('.fsceneb')) &&
       _fileFor(key).existsSync();
 
-  /// When [error] is a filesystem failure (a macOS App Sandbox denial being
-  /// the common one; stat can succeed where open is refused), deactivates
-  /// source loading for the rest of the run so every load falls back to the
-  /// bundled DataAssets, and returns true. Anything else returns false.
+  /// When [error] is a filesystem failure, returns true so this load falls
+  /// back to the bundled DataAssets. A permission denial (the macOS App
+  /// Sandbox being the common one; stat can succeed where open is refused)
+  /// additionally deactivates source loading for the rest of the run; a
+  /// transient failure (a sidecar mid-rewrite during a save, a file deleted
+  /// between stat and read) keeps it active so the next load retries the
+  /// sources. Anything else returns false.
   bool deactivateOnAccessError(Object error, String key) {
     if (error is! FileSystemException) return false;
+    final errno = error.osError?.errorCode;
+    // EPERM, EACCES, and Windows ERROR_ACCESS_DENIED.
+    final denied =
+        errno == 1 || errno == 13 || (Platform.isWindows && errno == 5);
+    if (!denied) {
+      debugPrint(
+        'flutter_scene: failed reading scene source "$key" '
+        '(${error.message}); using the bundled asset for this load.',
+      );
+      return true;
+    }
     _active = null;
     debugPrint(
       'flutter_scene: cannot read scene sources under $root '

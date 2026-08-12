@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 /// An inert data-bag component standing in for a type whose real
 /// implementation lives in another process (or an unregistered package).
 /// Carries the spec it was realized from, untouched.
+/// {@category Assets and loading}
 class ForeignComponent extends Component {
   ForeignComponent(this.spec);
 
@@ -26,6 +27,7 @@ class ForeignComponent extends Component {
 }
 
 /// Realizes and serializes one schema-described type as [ForeignComponent]s.
+/// {@category Assets and loading}
 class PlaceholderComponentCodec extends ComponentCodec {
   PlaceholderComponentCodec(this._schema);
 

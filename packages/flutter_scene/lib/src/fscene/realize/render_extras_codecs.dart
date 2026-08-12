@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
+import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/geometry/splat_geometry.dart';
@@ -449,10 +450,12 @@ class SplatCodec extends ComponentCodec {
     if (asset is StringValue && asset.value.isNotEmpty) {
       _splatAsset[component] = asset.value;
     }
-    final opacity = properties['opacity'];
-    if (opacity is DoubleValue) component.opacity = opacity.value;
-    final splatScale = properties['splatScale'];
-    if (splatScale is DoubleValue) component.splatScale = splatScale.value;
+    component.opacity = readDouble(properties, 'opacity', component.opacity);
+    component.splatScale = readDouble(
+      properties,
+      'splatScale',
+      component.splatScale,
+    );
     final tint = properties['tint'];
     if (tint is Vec4Value) component.tint = tint.value.clone();
     final shDegree = properties['shDegree'];

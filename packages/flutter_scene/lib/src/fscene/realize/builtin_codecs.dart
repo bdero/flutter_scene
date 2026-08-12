@@ -143,9 +143,17 @@ class EnvironmentVolumeCodec
   @override
   EnvironmentVolumeComponent create(PropertyReader props) {
     final envId = props.resourceId('environment');
-    final settings =
-        (envId == null ? null : props.context.resources?.environment(envId)) ??
-        EnvironmentSettings();
+    var settings = envId == null
+        ? null
+        : props.context.resources?.environment(envId);
+    if (settings == null) {
+      settings = EnvironmentSettings();
+      if (envId != null) {
+        // Keep the authored reference on the fallback so a save made while
+        // the resource is unavailable does not drop it.
+        tagResourceOrigin(settings, props.context.document, envId);
+      }
+    }
     return EnvironmentVolumeComponent(settings: settings);
   }
 }

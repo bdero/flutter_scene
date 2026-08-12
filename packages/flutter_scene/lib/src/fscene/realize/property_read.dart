@@ -20,10 +20,15 @@ double readDouble(
   };
 }
 
-/// Reads an `int` property, or returns [fallback].
+/// Reads an `int` property, accepting a double too (JSON writers may encode
+/// whole numbers either way), or returns [fallback].
 int readInt(Map<String, PropertyValue> props, String key, int fallback) {
   final v = props[key];
-  return v is IntValue ? v.value : fallback;
+  return switch (v) {
+    IntValue(:final value) => value,
+    DoubleValue(:final value) => value.round(),
+    _ => fallback,
+  };
 }
 
 /// Reads a `bool` property, or returns [fallback].
