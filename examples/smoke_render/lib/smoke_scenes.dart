@@ -525,7 +525,16 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1.1, 0.12, 0.8)), material))
         ..localTransform = vm.Matrix4.translation(vm.Vector3(0.7, 0.1, -0.4)),
     );
-    return (scene: scene, camera: _shadowCamera());
+    // Framed farther back than _shadowCamera: the plane here is wider, and
+    // the narrow Android capture (412x512) otherwise crops the corners onto
+    // it, tripping the corners-clear sanity check.
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(3.3, 3.1, 3.8),
+        target: vm.Vector3(0, 0.2, 0),
+      ),
+    );
   }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
