@@ -1,0 +1,18 @@
+name: flutter_scene_codegen
+description: Static extraction and code generation for annotated flutter_scene components.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # The extractor targets the 12.x AST surface (ClassDeclaration.namePart
+  # and body landed in 12, ArgumentList.arguments changed shape in 13).
+  analyzer: ">=12.0.0 <13.0.0"
+  dart_style: ">=3.0.0 <3.1.9"
+  scene: ^0.2.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  test: ^1.26.0
