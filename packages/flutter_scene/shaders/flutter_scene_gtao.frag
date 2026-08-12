@@ -120,8 +120,13 @@ uint OccludeSectors(vec3 delta, vec3 view_dir, float side, float gamma,
   uint start = min(uint(min_max.x * float(kSectorCount)), kSectorCount - 1u);
   uint count = uint(ceil(clamp(min_max.y - min_max.x, 0.0, 1.0) *
                          float(kSectorCount)));
-  uint mask =
-      count > 0u ? (0xFFFFFFFFu >> (kSectorCount - count)) << start : 0u;
+  // Build the sector mask with left shifts only. A right shift of an
+  // all-ones literal executes as a signed arithmetic shift through some
+  // GLES translation layers (the ANGLE Direct3D path), which floods the
+  // mask and marks every sector occluded.
+  uint mask = count >= kSectorCount
+      ? 0xFFFFFFFFu
+      : ((1u << count) - 1u) << start;
   return bits | mask;
 }
 
