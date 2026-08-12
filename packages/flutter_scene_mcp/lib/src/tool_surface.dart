@@ -175,6 +175,12 @@ typedef SessionRestarter = Future<bool> Function();
 /// supportsHotReload, supportsHotRestart).
 typedef AppStateReader = Map<String, Object?> Function();
 
+/// Lists the registered component types (type, doc, provenance).
+typedef ComponentTypeLister = List<Map<String, Object?>> Function();
+
+/// The full schema JSON for one component type, or null when unknown.
+typedef ComponentTypeDescriber = Map<String, Object?>? Function(String type);
+
 /// The console tail plus building/running flags.
 typedef ConsoleReader = Map<String, Object?> Function(int tail);
 
@@ -225,6 +231,8 @@ class EditorToolSurface {
     this.hotReload,
     this.reloadScene,
     this.appState,
+    this.listComponentTypes,
+    this.describeComponentType,
     this.readConsole,
     this.listDevices,
     this.selectDevice,
@@ -317,6 +325,8 @@ class EditorToolSurface {
   final SessionRestarter? hotReload;
   final SessionRestarter? reloadScene;
   final AppStateReader? appState;
+  final ComponentTypeLister? listComponentTypes;
+  final ComponentTypeDescriber? describeComponentType;
   final ConsoleReader? readConsole;
   final DeviceLister? listDevices;
   final DeviceSelector? selectDevice;
@@ -488,6 +498,32 @@ class EditorToolSurface {
             'loading, which Play sessions launch with). Returns ok false when '
             'the session cannot, in which case hot_restart is the fallback.',
         inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (listComponentTypes != null)
+      const ToolDefinition(
+        name: 'list_component_types',
+        description:
+            'The component types nodes can carry (builtin, package, and '
+            'schema-discovered project types), with docs and provenance. '
+            'Use describe_component_type for a type\'s full property schema.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (describeComponentType != null)
+      const ToolDefinition(
+        name: 'describe_component_type',
+        description:
+            'The full property schema of one component type: property names, '
+            'kinds, defaults, constraints, and docs, as consumed by the '
+            'inspector. Feeds correct addComponent/setComponentProperties '
+            'calls.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'type': {'type': 'string', 'description': 'The component type.'},
+          },
+          'required': ['type'],
+          'additionalProperties': false,
+        },
       ),
     if (appState != null)
       const ToolDefinition(
@@ -897,6 +933,28 @@ class EditorToolSurface {
           throw const ToolError('No project control in this session');
         }
         return {'ok': await sceneReloader()};
+      case 'list_component_types':
+        final lister = listComponentTypes;
+        if (lister == null) {
+          throw const ToolError('No component registry in this session');
+        }
+        return {'types': lister()};
+      case 'describe_component_type':
+        final describer = describeComponentType;
+        if (describer == null) {
+          throw const ToolError('No component registry in this session');
+        }
+        final typeName = args['type'];
+        if (typeName is! String || typeName.isEmpty) {
+          throw const ToolError(
+            'describe_component_type needs a string "type"',
+          );
+        }
+        final schema = describer(typeName);
+        if (schema == null) {
+          throw ToolError('Unknown component type: $typeName');
+        }
+        return schema;
       case 'get_app_state':
         final stateReader = appState;
         if (stateReader == null) {
@@ -1235,6 +1293,9 @@ class EditorToolSurface {
             for (final entry in c.properties.entries)
               entry.key: _propertyJson(entry.value),
           },
+          // Declared kinds for the carried properties, when the type's
+          // schema is known (see describe_component_type for the full one).
+          if (_componentKinds(c) case final kinds?) 'kinds': kinds,
         },
     ],
     'children': [
@@ -1244,6 +1305,22 @@ class EditorToolSurface {
   };
 
   // --- helpers ------------------------------------------------------------
+
+  Map<String, Object?>? _componentKinds(ComponentSpec component) {
+    final schema = describeComponentType?.call(component.type);
+    if (schema == null) return null;
+    final kinds = <String, Object?>{};
+    if (schema['properties'] is List) {
+      for (final def in schema['properties'] as List) {
+        if (def is! Map) continue;
+        final name = def['name'];
+        if (name is String && component.properties.containsKey(name)) {
+          kinds[name] = def['kind'];
+        }
+      }
+    }
+    return kinds.isEmpty ? null : kinds;
+  }
 
   String _requireRef(Map<String, Object?> args) {
     final ref = args['ref'];

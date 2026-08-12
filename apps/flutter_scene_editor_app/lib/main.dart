@@ -5,6 +5,7 @@
 // ignore_for_file: invalid_use_of_internal_member
 // ignore_for_file: implementation_imports
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -13,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
+import 'package:scene/schema.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
@@ -129,6 +131,7 @@ class _EditorHomeState extends State<_EditorHome> {
   @override
   void initState() {
     super.initState();
+    _session.addListener(_onSessionChangedForSchemas);
     final directory = _settingsDirectory();
     _settingsStore = EditorSettingsStore(
       file: File('${directory.path}/settings.json'),
@@ -158,6 +161,80 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _configureController(EditorController controller) {
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
+    // Foreign component types already learned (cache or a live session)
+    // carry over to every controller the editor swaps in.
+    if (_foreignSchemas.isNotEmpty) {
+      controller.adoptForeignSchemas(
+        _foreignSchemas.values,
+        provenance: _foreignProvenance,
+      );
+    }
+  }
+
+  // The latest foreign component schemas by type, and where they came from
+  // ('live' beats 'cache' in the controller's merge).
+  final Map<String, ComponentSchema> _foreignSchemas = {};
+  String _foreignProvenance = 'cache';
+  AppSessionState _lastSessionState = AppSessionState.idle;
+
+  String _schemaCachePath(FProject project) =>
+      '${project.resolvedProjectRoot}/.dart_tool/flutter_scene_editor/'
+      'component_schemas.json';
+
+  /// Loads the per-project schema cache so foreign components are known
+  /// before any Play session runs (they stay marked cache-sourced until a
+  /// live fetch confirms them).
+  void _loadCachedComponentSchemas(FProject project) {
+    try {
+      final file = File(_schemaCachePath(project));
+      if (!file.existsSync()) return;
+      final schemas = decodeComponentSchemas(
+        jsonDecode(file.readAsStringSync()),
+      );
+      if (schemas.isEmpty) return;
+      _foreignProvenance = 'cache';
+      for (final schema in schemas) {
+        _foreignSchemas[schema.type] = schema;
+      }
+      _controller?.adoptForeignSchemas(schemas, provenance: 'cache');
+    } catch (_) {
+      // A stale or corrupt cache regenerates on the next live fetch.
+    }
+  }
+
+  /// The session reached running; fetch its registered component schemas
+  /// (authoritative) and refresh the project cache. The dev channel registers
+  /// when the app first touches flutter_scene, so retry once shortly after.
+  void _onSessionChangedForSchemas() {
+    final state = _session.state;
+    if (state == _lastSessionState) return;
+    _lastSessionState = state;
+    if (state != AppSessionState.running) return;
+    unawaited(() async {
+      for (final delay in const [Duration(seconds: 2), Duration(seconds: 6)]) {
+        await Future<void>.delayed(delay);
+        if (_session.state != AppSessionState.running) return;
+        final schemas = await _session.fetchComponentSchemas();
+        if (schemas == null || schemas.isEmpty) continue;
+        if (!mounted) return;
+        _foreignProvenance = 'live';
+        for (final schema in schemas) {
+          _foreignSchemas[schema.type] = schema;
+        }
+        _controller?.adoptForeignSchemas(schemas, provenance: 'live');
+        final project = _project;
+        if (project != null) {
+          try {
+            File(_schemaCachePath(project))
+              ..createSync(recursive: true)
+              ..writeAsStringSync(jsonEncode(encodeComponentSchemas(schemas)));
+          } catch (_) {
+            // Cache write is best effort.
+          }
+        }
+        return;
+      }
+    }());
   }
 
   // The selected installation changed; recompile fmats through the new
@@ -249,6 +326,7 @@ class _EditorHomeState extends State<_EditorHome> {
       _settings.rememberProject(project.path);
       _persistSettings();
       _warmDeviceCache();
+      _loadCachedComponentSchemas(project);
     }
   }
 
@@ -924,6 +1002,21 @@ class _EditorHomeState extends State<_EditorHome> {
           hotReload: () => _session.restart(fullRestart: false),
           reloadScene: () => _session.reloadScenes(),
           appState: _appState,
+          listComponentTypes: () {
+            final controller = _requireController;
+            return [
+              for (final type in controller.componentTypes())
+                {
+                  'type': type,
+                  if (controller.componentSchemaFor(type)?.doc case final doc?)
+                    'doc': doc,
+                  'provenance':
+                      controller.foreignTypeProvenance[type] ?? 'registered',
+                },
+            ];
+          },
+          describeComponentType: (type) =>
+              _requireController.componentSchemaFor(type)?.toJson(),
           listDevices: ({bool refresh = false}) async {
             final installation = _settings.selectedInstallation;
             if (installation == null) {
