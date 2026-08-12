@@ -12,6 +12,7 @@ import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
+import '../project/app_session.dart';
 import '../project/project_runner.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../viewport/viewport_panel.dart';
@@ -131,6 +132,8 @@ class EditorShell extends StatefulWidget {
     this.onEditBuildConfigs,
     this.trailing = const [],
     this.projectRunner,
+    this.appSession,
+    this.onDocumentSaved,
   });
 
   final EditorController controller;
@@ -157,8 +160,16 @@ class EditorShell extends StatefulWidget {
   /// controls).
   final List<Widget> trailing;
 
-  /// The host's build/run process owner; non-null adds the Console panel.
+  /// The host's task subprocess owner; non-null adds the Console panel.
   final ProjectRunner? projectRunner;
+
+  /// The host's Play session, shown in the Console panel's controls.
+  final AppSession? appSession;
+
+  /// Called after the document is written to disk (Save and Save As), with
+  /// the saved path. Hosts hook save-triggered behavior here (for example
+  /// hot-restarting the running session).
+  final ValueChanged<String>? onDocumentSaved;
 
   /// Called when the user opens a new file or clears the scene; the parent
   /// should rebuild with the new controller.
@@ -799,6 +810,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                               title: 'Console',
                               child: ConsolePanel(
                                 runner: widget.projectRunner!,
+                                session: widget.appSession,
                               ),
                             ),
                           for (final id in _extraViewportIds)
@@ -958,6 +970,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       // A new scene had no base directory; after saving it lives next to the
       // file, so relative references and the asset browser resolve from there.
       _ctrl.setBaseDirectory(File(path).parent.path);
+      widget.onDocumentSaved?.call(path);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

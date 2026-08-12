@@ -35,15 +35,19 @@ export 'src/materials/fmat_library.dart'
         fmatToolchainForInstallation;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/panels/console_panel.dart' show ConsolePanel;
+export 'src/project/app_session.dart' show AppSession, AppSessionState;
 export 'src/project/build_config_dialog.dart' show showBuildConfigDialog;
 export 'src/project/build_toolbar.dart' show BuildToolbar;
 export 'src/project/fproject.dart'
     show
         BuildConfiguration,
         FProject,
+        ProjectTask,
+        RunParameters,
         buildConfigurationTemplate,
         commandVariables,
         defaultBuildConfigurations,
+        migrateV1RunCommand,
         resolveWorkingDirectory,
         substituteCommandVariables,
         tokenizeCommand;
@@ -66,8 +70,7 @@ export 'src/toolchains/managed_checkout.dart'
         ManagedCheckoutPaths,
         ManagedCheckoutPhase,
         ManagedCheckouts;
-export 'src/toolchains/device_catalog.dart'
-    show DeviceCatalog, FlutterDevice;
+export 'src/toolchains/device_catalog.dart' show DeviceCatalog, FlutterDevice;
 export 'src/toolchains/editor_build_info.dart' show EditorBuildInfo;
 export 'src/toolchains/flutter_installation.dart'
     show

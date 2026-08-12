@@ -1,15 +1,17 @@
-/// The Console dock panel, the streamed output of the project runner's build
-/// and run subprocesses, with stop/clear controls.
+/// The Console dock panel, the streamed output of task subprocesses and the
+/// Play session, with stop/clear controls.
 library;
 
 import 'package:flutter/material.dart';
 
+import '../project/app_session.dart';
 import '../project/project_runner.dart';
 
 class ConsolePanel extends StatefulWidget {
-  const ConsolePanel({super.key, required this.runner});
+  const ConsolePanel({super.key, required this.runner, this.session});
 
   final ProjectRunner runner;
+  final AppSession? session;
 
   @override
   State<ConsolePanel> createState() => _ConsolePanelState();
@@ -23,6 +25,7 @@ class _ConsolePanelState extends State<ConsolePanel> {
   void initState() {
     super.initState();
     widget.runner.addListener(_onChanged);
+    widget.session?.addListener(_onChanged);
     _scroll.addListener(() {
       if (!_scroll.hasClients) return;
       _pinnedToEnd =
@@ -33,6 +36,7 @@ class _ConsolePanelState extends State<ConsolePanel> {
   @override
   void dispose() {
     widget.runner.removeListener(_onChanged);
+    widget.session?.removeListener(_onChanged);
     _scroll.dispose();
     super.dispose();
   }
@@ -85,12 +89,12 @@ class _ConsolePanelState extends State<ConsolePanel> {
                     style: TextStyle(fontSize: 11),
                   ),
                 ),
-              if (runner.running)
+              if (widget.session case final session? when session.active)
                 TextButton(
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                   ),
-                  onPressed: runner.stopRun,
+                  onPressed: session.stop,
                   child: const Text('Stop', style: TextStyle(fontSize: 11)),
                 ),
               IconButton(

@@ -229,6 +229,64 @@ void documentTests() {
       );
     });
 
+    test(
+      'session tools route through the host hooks and gate on them',
+      () async {
+        final log = <String>[];
+        final surface = EditorToolSurface(
+          () => null,
+          runProject: () async {
+            log.add('run');
+            return true;
+          },
+          stopProject: () async => log.add('stop'),
+          hotRestart: () async {
+            log.add('restart');
+            return true;
+          },
+          hotReload: () async {
+            log.add('reload');
+            return true;
+          },
+          appState: () => {'state': 'running', 'appId': 'app-1'},
+        );
+        final names = surface.bootstrapTools().map((t) => t.name);
+        expect(
+          names,
+          containsAll([
+            'run_project',
+            'stop_project',
+            'hot_restart',
+            'hot_reload',
+            'get_app_state',
+          ]),
+        );
+        expect(await surface.dispatch('run_project', {}), {
+          'ok': true,
+          'started': true,
+        });
+        expect(await surface.dispatch('hot_restart', {}), {'ok': true});
+        expect(await surface.dispatch('hot_reload', {}), {'ok': true});
+        expect(
+          (await surface.dispatch('get_app_state', {}))['state'],
+          'running',
+        );
+        await surface.dispatch('stop_project', {});
+        expect(log, ['run', 'restart', 'reload', 'stop']);
+
+        // A headless surface offers none of them.
+        final headless = EditorToolSurface(() => null);
+        expect(
+          headless.bootstrapTools().map((t) => t.name),
+          isNot(contains('hot_restart')),
+        );
+        expect(
+          () => headless.dispatch('hot_restart', {}),
+          throwsA(isA<ToolError>()),
+        );
+      },
+    );
+
     test('new/open/save route through the host hooks', () async {
       final log = <String>[];
       final surface = EditorToolSurface(

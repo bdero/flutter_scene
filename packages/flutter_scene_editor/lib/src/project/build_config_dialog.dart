@@ -87,7 +87,7 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
       name: 'New configuration',
       mode: template.mode,
       buildCommand: template.buildCommand,
-      runCommand: template.runCommand,
+      run: template.run,
     );
     _mutate(() {
       _project.buildConfigurations.add(config);
@@ -101,13 +101,38 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
       name: '${config.name} copy',
       mode: config.mode,
       buildCommand: config.buildCommand,
-      runCommand: config.runCommand,
+      run: config.run,
       workingDirectory: config.workingDirectory,
     );
     _mutate(() {
       _project.buildConfigurations.add(copy);
       _selectedId = copy.id;
     });
+  }
+
+  void _addTask() {
+    var id = 'task';
+    var counter = 2;
+    while (_project.taskById(id) != null) {
+      id = 'task-${counter++}';
+    }
+    _mutate(
+      () => _project.tasks.add(
+        ProjectTask(id: id, name: 'New task', command: ''),
+      ),
+    );
+  }
+
+  void _updateTask(ProjectTask updated) {
+    final index = _project.tasks.indexWhere((task) => task.id == updated.id);
+    if (index < 0) return;
+    _mutate(() => _project.tasks[index] = updated);
+  }
+
+  void _removeTask(ProjectTask task) {
+    _mutate(
+      () => _project.tasks.removeWhere((candidate) => candidate.id == task.id),
+    );
   }
 
   void _remove(BuildConfiguration config) {
@@ -233,6 +258,8 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
               ),
             ),
             const SizedBox(height: 10),
+            _tasksSection(context),
+            const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: FButton(
@@ -245,6 +272,142 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Free-form command templates, runnable from the toolbar's configuration
+  /// menu as raw subprocesses.
+  Widget _tasksSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 120),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Tasks',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'free-form commands, run from the configuration menu',
+                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Add task',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add, size: 14),
+                onPressed: _addTask,
+              ),
+            ],
+          ),
+          if (_project.tasks.isNotEmpty)
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final task in _project.tasks)
+                    _TaskRow(
+                      key: ValueKey(task.id),
+                      task: task,
+                      onChanged: _updateTask,
+                      onRemove: () => _removeTask(task),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TaskRow extends StatefulWidget {
+  const _TaskRow({
+    super.key,
+    required this.task,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final ProjectTask task;
+  final void Function(ProjectTask updated) onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  State<_TaskRow> createState() => _TaskRowState();
+}
+
+class _TaskRowState extends State<_TaskRow> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.task.name,
+  );
+  late final TextEditingController _command = TextEditingController(
+    text: widget.task.command,
+  );
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _command.dispose();
+    super.dispose();
+  }
+
+  void _commit() => widget.onChanged(
+    widget.task.copyWith(
+      name: _name.text.trim(),
+      command: _command.text.trim(),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    InputDecoration decoration(String hint) => InputDecoration(
+      isDense: true,
+      hintText: hint,
+      hintStyle: const TextStyle(fontSize: 10),
+      border: const OutlineInputBorder(),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 140,
+            child: TextField(
+              controller: _name,
+              style: const TextStyle(fontSize: 11),
+              decoration: decoration('name'),
+              onSubmitted: (_) => _commit(),
+              onTapOutside: (_) => _commit(),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: _command,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              decoration: decoration(r'command template, e.g. ${DART_CLI} …'),
+              onSubmitted: (_) => _commit(),
+              onTapOutside: (_) => _commit(),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove task',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close, size: 14),
+            onPressed: widget.onRemove,
+          ),
+        ],
       ),
     );
   }
@@ -274,8 +437,11 @@ class _ConfigFormState extends State<_ConfigForm> {
   late final TextEditingController _build = TextEditingController(
     text: widget.config.buildCommand,
   );
-  late final TextEditingController _run = TextEditingController(
-    text: widget.config.runCommand,
+  late final TextEditingController _runTarget = TextEditingController(
+    text: widget.config.run.target,
+  );
+  late final TextEditingController _runArgs = TextEditingController(
+    text: widget.config.run.args.join(' '),
   );
   late final TextEditingController _workingDirectory = TextEditingController(
     text: widget.config.workingDirectory,
@@ -286,7 +452,8 @@ class _ConfigFormState extends State<_ConfigForm> {
   void dispose() {
     _name.dispose();
     _build.dispose();
-    _run.dispose();
+    _runTarget.dispose();
+    _runArgs.dispose();
     _workingDirectory.dispose();
     super.dispose();
   }
@@ -295,7 +462,12 @@ class _ConfigFormState extends State<_ConfigForm> {
     name: _name.text.trim().isEmpty ? null : _name.text.trim(),
     mode: _mode,
     buildCommand: _build.text.trim(),
-    runCommand: _run.text.trim(),
+    run: RunParameters(
+      target: _runTarget.text.trim().isEmpty
+          ? RunParameters.defaultTarget
+          : _runTarget.text.trim(),
+      args: tokenizeCommand(_runArgs.text.trim()),
+    ),
     workingDirectory: _workingDirectory.text.trim(),
   );
 
@@ -305,7 +477,8 @@ class _ConfigFormState extends State<_ConfigForm> {
     final template = buildConfigurationTemplate(_mode);
     setState(() {
       _build.text = template.buildCommand;
-      _run.text = template.runCommand;
+      _runTarget.text = template.run.target;
+      _runArgs.text = template.run.args.join(' ');
     });
     _commit();
   }
@@ -341,7 +514,20 @@ class _ConfigFormState extends State<_ConfigForm> {
           ),
           const SizedBox(height: 8),
           _textRow('Build', _build, monospace: true),
-          _textRow('Run', _run, monospace: true),
+          _textRow(
+            'Run target',
+            _runTarget,
+            monospace: true,
+            hint: 'entrypoint passed as --target (default lib/main.dart)',
+          ),
+          _textRow(
+            'Run args',
+            _runArgs,
+            monospace: true,
+            hint:
+                'extra flutter run arguments; the editor supplies the device, '
+                'mode, and --machine',
+          ),
           _textRow(
             'Directory',
             _workingDirectory,
@@ -354,7 +540,8 @@ class _ConfigFormState extends State<_ConfigForm> {
           Text(
             'The Mode above drives \${MODE}; the toolbar device drives '
             '\${DEVICE} and \${BUILD_TARGET}. Commands run without a shell '
-            '(double quotes group arguments).',
+            '(double quotes group arguments). Play launches an editor-managed '
+            'flutter run session composed from the run fields.',
             style: TextStyle(
               fontSize: 10,
               color: Theme.of(context).colorScheme.onSurfaceVariant,

@@ -1,8 +1,10 @@
 /// The menu bar's right-side toolchain and build controls, the Flutter
 /// installation dropdown (global selection with health badges), the build
-/// configuration dropdown (per-project selection with the flutter_scene
-/// version badge), and the Build and Play buttons. Buttons disable with an
-/// explanatory tooltip rather than a bare gray state.
+/// configuration dropdown (per-project selection, the flutter_scene version
+/// badge, and project tasks), the device dropdown, the Build button, and the
+/// Play session cluster (launch, then hot reload/restart/stop with a state
+/// chip while an app runs). Buttons disable with an explanatory tooltip
+/// rather than a bare gray state.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import '../shell/editor_theme.dart';
 import '../toolchains/device_catalog.dart';
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
+import 'app_session.dart';
 import 'fproject.dart';
 import 'project_runner.dart';
 import 'project_version_check.dart';
@@ -23,6 +26,7 @@ class BuildToolbar extends StatelessWidget {
     required this.buildInfo,
     required this.inspector,
     required this.runner,
+    required this.session,
     required this.project,
     required this.selectedConfiguration,
     required this.deviceCatalog,
@@ -32,12 +36,17 @@ class BuildToolbar extends StatelessWidget {
     required this.onSelectDevice,
     required this.onManageInstallations,
     required this.onEditConfigs,
+    required this.onPlay,
+    this.onRunTask,
+    this.restartOnSave = false,
+    this.onToggleRestartOnSave,
   });
 
   final EditorSettings settings;
   final EditorBuildInfo buildInfo;
   final InstallationInspector inspector;
   final ProjectRunner runner;
+  final AppSession session;
   final FProject? project;
   final BuildConfiguration? selectedConfiguration;
   final DeviceCatalog deviceCatalog;
@@ -47,6 +56,16 @@ class BuildToolbar extends StatelessWidget {
   final void Function(FlutterDevice device) onSelectDevice;
   final VoidCallback onManageInstallations;
   final VoidCallback? onEditConfigs;
+
+  /// Launches the Play session (the host owns the launch context).
+  final VoidCallback onPlay;
+
+  /// Runs a project task as a raw subprocess.
+  final void Function(ProjectTask task)? onRunTask;
+
+  /// Whether saving the scene hot-restarts the running session.
+  final bool restartOnSave;
+  final VoidCallback? onToggleRestartOnSave;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +89,7 @@ class BuildToolbar extends StatelessWidget {
           versionCheck: versionCheck,
           onSelect: onSelectConfiguration,
           onEdit: onEditConfigs,
+          onRunTask: onRunTask,
         ),
         const SizedBox(width: 4),
         _DeviceDropdown(
@@ -84,9 +104,13 @@ class BuildToolbar extends StatelessWidget {
           buildInfo: buildInfo,
           inspector: inspector,
           runner: runner,
+          session: session,
           project: project,
           configuration: selectedConfiguration,
           device: selectedDevice,
+          onPlay: onPlay,
+          restartOnSave: restartOnSave,
+          onToggleRestartOnSave: onToggleRestartOnSave,
         ),
       ],
     );
@@ -244,6 +268,7 @@ class _ConfigurationDropdown extends StatelessWidget {
     required this.versionCheck,
     required this.onSelect,
     required this.onEdit,
+    this.onRunTask,
   });
 
   final FProject? project;
@@ -251,6 +276,7 @@ class _ConfigurationDropdown extends StatelessWidget {
   final FlutterSceneVersionCheck versionCheck;
   final void Function(String id) onSelect;
   final VoidCallback? onEdit;
+  final void Function(ProjectTask task)? onRunTask;
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +329,18 @@ class _ConfigurationDropdown extends StatelessWidget {
               ],
             ),
           ),
+        if (project!.tasks.isNotEmpty && onRunTask != null) ...[
+          const Divider(height: 8),
+          for (final task in project!.tasks)
+            MenuItemButton(
+              onPressed: () => onRunTask!(task),
+              leadingIcon: const SizedBox(
+                width: 16,
+                child: Icon(Icons.play_arrow_outlined, size: 14),
+              ),
+              child: Text(task.name),
+            ),
+        ],
         const Divider(height: 8),
         MenuItemButton(
           onPressed: onEdit,
@@ -496,20 +534,28 @@ class _ActionButtons extends StatelessWidget {
     required this.buildInfo,
     required this.inspector,
     required this.runner,
+    required this.session,
     required this.project,
     required this.configuration,
     required this.device,
+    required this.onPlay,
+    this.restartOnSave = false,
+    this.onToggleRestartOnSave,
   });
 
   final EditorSettings settings;
   final EditorBuildInfo buildInfo;
   final InstallationInspector inspector;
   final ProjectRunner runner;
+  final AppSession session;
   final FProject? project;
   final BuildConfiguration? configuration;
   final FlutterDevice? device;
+  final VoidCallback onPlay;
+  final bool restartOnSave;
+  final VoidCallback? onToggleRestartOnSave;
 
-  String? _blockedReason(InstallationValidation? validation) {
+  String? _commonBlockedReason(InstallationValidation? validation) {
     final installation = settings.selectedInstallation;
     if (installation == null) {
       return 'Select a Flutter installation (the built-in toolchain cannot '
@@ -521,20 +567,30 @@ class _ActionButtons extends StatelessWidget {
     }
     if (project == null) return 'Open a project first';
     if (configuration == null) return 'Select a build configuration';
-    if (device == null &&
-        ('${configuration!.buildCommand} ${configuration!.runCommand} '
-                '${configuration!.workingDirectory}')
-            .contains(r'${DEVICE}')) {
+    return null;
+  }
+
+  // The build command is a free-form template; a device is only needed when
+  // the template references it.
+  String? _buildBlockedReason(InstallationValidation? validation) {
+    final common = _commonBlockedReason(validation);
+    if (common != null) return common;
+    final referenced =
+        '${configuration!.buildCommand} ${configuration!.workingDirectory}';
+    if (device == null && referenced.contains(r'${DEVICE}')) {
       return 'Select a device (the configuration references \${DEVICE})';
     }
-    if (device == null &&
-        ('${configuration!.buildCommand} ${configuration!.runCommand}')
-            .contains(r'${BUILD_TARGET}')) {
+    if (device == null && referenced.contains(r'${BUILD_TARGET}')) {
       return 'Select a device (the configuration references '
           r'${BUILD_TARGET})';
     }
     return null;
   }
+
+  // The session always targets a concrete device.
+  String? _playBlockedReason(InstallationValidation? validation) =>
+      _commonBlockedReason(validation) ??
+      (device == null ? 'Select a device' : null);
 
   @override
   Widget build(BuildContext context) {
@@ -545,18 +601,28 @@ class _ActionButtons extends StatelessWidget {
           ? null
           : inspector.validate(installation, buildInfo),
       builder: (context, snapshot) {
-        final reason = _blockedReason(snapshot.data);
         return ListenableBuilder(
-          listenable: runner,
+          listenable: Listenable.merge([runner, session]),
           builder: (context, _) {
+            final buildReason = _buildBlockedReason(snapshot.data);
+            final playReason = _playBlockedReason(snapshot.data);
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _iconButton(
                   context,
+                  icon: Icons.autorenew,
+                  tooltip: restartOnSave
+                      ? 'Restart on scene save is on'
+                      : 'Restart the running app on scene save',
+                  active: restartOnSave,
+                  onPressed: onToggleRestartOnSave,
+                ),
+                _iconButton(
+                  context,
                   icon: Icons.build_outlined,
-                  tooltip: reason ?? 'Build (${configuration?.name})',
-                  onPressed: reason != null || runner.building
+                  tooltip: buildReason ?? 'Build (${configuration?.name})',
+                  onPressed: buildReason != null || runner.building
                       ? null
                       : () => runner.startBuild(
                           installation: installation!,
@@ -565,23 +631,42 @@ class _ActionButtons extends StatelessWidget {
                           device: device,
                         ),
                 ),
-                _iconButton(
-                  context,
-                  icon: runner.running ? Icons.stop : Icons.play_arrow_outlined,
-                  tooltip: runner.running
-                      ? 'Stop'
-                      : reason ?? 'Play (${configuration?.name})',
-                  onPressed: runner.running
-                      ? runner.stopRun
-                      : reason != null
-                      ? null
-                      : () => runner.startRun(
-                          installation: installation!,
-                          project: project!,
-                          configuration: configuration!,
-                          device: device,
-                        ),
-                ),
+                if (!session.active)
+                  _iconButton(
+                    context,
+                    icon: Icons.play_arrow_outlined,
+                    tooltip: playReason ?? 'Play (${configuration?.name})',
+                    onPressed: playReason != null ? null : onPlay,
+                  )
+                else ...[
+                  _SessionStateChip(session: session),
+                  if (session.supportsHotReload)
+                    _iconButton(
+                      context,
+                      icon: Icons.bolt_outlined,
+                      tooltip: 'Hot reload',
+                      onPressed: session.state == AppSessionState.running
+                          ? () => session.restart(fullRestart: false)
+                          : null,
+                    ),
+                  if (session.supportsHotRestart)
+                    _iconButton(
+                      context,
+                      icon: Icons.restart_alt,
+                      tooltip: 'Hot restart',
+                      onPressed: session.state == AppSessionState.running
+                          ? () => session.restart()
+                          : null,
+                    ),
+                  _iconButton(
+                    context,
+                    icon: Icons.stop,
+                    tooltip: 'Stop',
+                    onPressed: session.state == AppSessionState.stopping
+                        ? null
+                        : session.stop,
+                  ),
+                ],
               ],
             );
           },
@@ -595,24 +680,63 @@ class _ActionButtons extends StatelessWidget {
     required IconData icon,
     required String tooltip,
     required VoidCallback? onPressed,
+    bool active = false,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 400),
       child: InkWell(
         borderRadius: BorderRadius.circular(3),
         onTap: onPressed,
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+          decoration: active
+              ? BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(3),
+                )
+              : null,
           child: Icon(
             icon,
             size: 15,
-            color: onPressed == null
-                ? Theme.of(context).colorScheme.onSurfaceVariant
+            color: active
+                ? scheme.primary
+                : onPressed == null
+                ? scheme.onSurfaceVariant
                 : null,
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The running session's state as a small chip next to its controls.
+class _SessionStateChip extends StatelessWidget {
+  const _SessionStateChip({required this.session});
+
+  final AppSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = switch (session.state) {
+      AppSessionState.launching => 'Launching…',
+      AppSessionState.running => 'Running',
+      AppSessionState.restarting => 'Restarting…',
+      AppSessionState.stopping => 'Stopping…',
+      AppSessionState.idle => '',
+    };
+    if (label.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 10, color: scheme.primary)),
     );
   }
 }

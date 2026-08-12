@@ -167,6 +167,14 @@ typedef ProjectCommandStarter = Future<bool> Function();
 /// Stops the running app/build.
 typedef ProjectCommandStopper = Future<void> Function();
 
+/// Restarts the running app session; returns whether the daemon reported
+/// success.
+typedef SessionRestarter = Future<bool> Function();
+
+/// The app session's state (state, appId, mode, deviceId, vmServiceUri,
+/// supportsHotReload, supportsHotRestart).
+typedef AppStateReader = Map<String, Object?> Function();
+
 /// The console tail plus building/running flags.
 typedef ConsoleReader = Map<String, Object?> Function(int tail);
 
@@ -213,6 +221,9 @@ class EditorToolSurface {
     this.buildProject,
     this.runProject,
     this.stopProject,
+    this.hotRestart,
+    this.hotReload,
+    this.appState,
     this.readConsole,
     this.listDevices,
     this.selectDevice,
@@ -301,6 +312,9 @@ class EditorToolSurface {
   final ProjectCommandStarter? buildProject;
   final ProjectCommandStarter? runProject;
   final ProjectCommandStopper? stopProject;
+  final SessionRestarter? hotRestart;
+  final SessionRestarter? hotReload;
+  final AppStateReader? appState;
   final ConsoleReader? readConsole;
   final DeviceLister? listDevices;
   final DeviceSelector? selectDevice;
@@ -437,15 +451,39 @@ class EditorToolSurface {
       const ToolDefinition(
         name: 'run_project',
         description:
-            'Start the selected configuration\'s run command, the Play '
-            'button (streams into the console; poll get_console; '
-            'stop_project stops it).',
+            'Launch the Play session, an editor-managed flutter run for the '
+            'selected configuration and device. Structured progress streams '
+            'into the console; poll get_app_state for the lifecycle '
+            '(launching/running), then hot_restart/hot_reload/stop_project '
+            'drive it.',
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (stopProject != null)
       const ToolDefinition(
         name: 'stop_project',
-        description: 'Stop the running app started by run_project.',
+        description: 'Stop the app session started by run_project.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (hotRestart != null)
+      const ToolDefinition(
+        name: 'hot_restart',
+        description:
+            'Hot restart the running app session (debug and profile modes).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (hotReload != null)
+      const ToolDefinition(
+        name: 'hot_reload',
+        description: 'Hot reload the running app session (debug mode).',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (appState != null)
+      const ToolDefinition(
+        name: 'get_app_state',
+        description:
+            'The app session lifecycle state (idle/launching/running/'
+            'restarting/stopping) plus appId, mode, device, and VM service '
+            'URI when running.',
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (listDevices != null)
@@ -829,6 +867,24 @@ class EditorToolSurface {
         }
         await stopper();
         return {'ok': true};
+      case 'hot_restart':
+        final restarter = hotRestart;
+        if (restarter == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return {'ok': await restarter()};
+      case 'hot_reload':
+        final reloader = hotReload;
+        if (reloader == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return {'ok': await reloader()};
+      case 'get_app_state':
+        final stateReader = appState;
+        if (stateReader == null) {
+          throw const ToolError('No project control in this session');
+        }
+        return stateReader();
       case 'list_devices':
         final lister = listDevices;
         if (lister == null) {

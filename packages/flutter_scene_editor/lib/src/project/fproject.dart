@@ -8,10 +8,75 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-/// One build/run configuration. The commands are the source of truth for what
-/// runs. [mode] drives the `${MODE}` variable, so the Mode dropdown changes
-/// behavior without editing command text; the target device is not part of
-/// the configuration (it is session state selected in the toolbar, feeding
+/// Parameters for the editor-owned run session (`flutter run --machine`).
+///
+/// Run is not a free-form command; the editor composes the invocation so it
+/// can own the machine protocol (structured progress, hot restart, stop).
+/// [args] are extra `flutter run` arguments appended after the editor's own
+/// (device, mode, target); each token is variable-substituted like command
+/// templates. Free-form automation belongs in a [ProjectTask].
+class RunParameters {
+  const RunParameters({this.target = defaultTarget, this.args = const []});
+
+  factory RunParameters.fromJson(Map<String, Object?> json) => RunParameters(
+    target: json['target'] as String? ?? defaultTarget,
+    args: [
+      if (json['args'] is List)
+        for (final arg in json['args'] as List)
+          if (arg is String) arg,
+    ],
+  );
+
+  static const String defaultTarget = 'lib/main.dart';
+
+  /// The entrypoint passed as `--target`, relative to the working directory.
+  final String target;
+
+  /// Extra `flutter run` arguments (variable-substituted per token).
+  final List<String> args;
+
+  Map<String, Object?> toJson() => {
+    if (target != defaultTarget) 'target': target,
+    if (args.isNotEmpty) 'args': args,
+  };
+
+  RunParameters copyWith({String? target, List<String>? args}) =>
+      RunParameters(target: target ?? this.target, args: args ?? this.args);
+}
+
+/// A named free-form command template, run as a raw subprocess with Console
+/// streaming and no app lifecycle (the escape hatch custom run commands
+/// migrate into).
+class ProjectTask {
+  const ProjectTask({
+    required this.id,
+    required this.name,
+    required this.command,
+  });
+
+  factory ProjectTask.fromJson(Map<String, Object?> json) => ProjectTask(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    command: json['command'] as String? ?? '',
+  );
+
+  final String id;
+  final String name;
+  final String command;
+
+  Map<String, Object?> toJson() => {'id': id, 'name': name, 'command': command};
+
+  ProjectTask copyWith({String? name, String? command}) => ProjectTask(
+    id: id,
+    name: name ?? this.name,
+    command: command ?? this.command,
+  );
+}
+
+/// One build/run configuration. [buildCommand] is a free-form template; run
+/// is structured (see [RunParameters]). [mode] drives the `${MODE}` variable
+/// and the session's `--mode` flag; the target device is not part of the
+/// configuration (it is session state selected in the toolbar, feeding
 /// `${DEVICE}` and `${BUILD_TARGET}`).
 class BuildConfiguration {
   const BuildConfiguration({
@@ -19,7 +84,7 @@ class BuildConfiguration {
     required this.name,
     required this.mode,
     required this.buildCommand,
-    required this.runCommand,
+    this.run = const RunParameters(),
     this.workingDirectory = '',
   });
 
@@ -31,7 +96,11 @@ class BuildConfiguration {
         name: json['name'] as String? ?? '',
         mode: json['mode'] as String? ?? 'debug',
         buildCommand: json['buildCommand'] as String? ?? '',
-        runCommand: json['runCommand'] as String? ?? '',
+        run: json['run'] is Map
+            ? RunParameters.fromJson(
+                (json['run'] as Map).cast<String, Object?>(),
+              )
+            : const RunParameters(),
         workingDirectory: json['workingDirectory'] as String? ?? '',
       );
 
@@ -42,7 +111,9 @@ class BuildConfiguration {
   final String mode;
 
   final String buildCommand;
-  final String runCommand;
+
+  /// Parameters for the editor-owned run session.
+  final RunParameters run;
 
   /// The command working directory relative to the project root (variables
   /// substitute here too). Empty runs from the project root.
@@ -53,7 +124,7 @@ class BuildConfiguration {
     'name': name,
     'mode': mode,
     'buildCommand': buildCommand,
-    'runCommand': runCommand,
+    if (run.toJson().isNotEmpty) 'run': run.toJson(),
     if (workingDirectory.isNotEmpty) 'workingDirectory': workingDirectory,
   };
 
@@ -61,14 +132,14 @@ class BuildConfiguration {
     String? name,
     String? mode,
     String? buildCommand,
-    String? runCommand,
+    RunParameters? run,
     String? workingDirectory,
   }) => BuildConfiguration(
     id: id,
     name: name ?? this.name,
     mode: mode ?? this.mode,
     buildCommand: buildCommand ?? this.buildCommand,
-    runCommand: runCommand ?? this.runCommand,
+    run: run ?? this.run,
     workingDirectory: workingDirectory ?? this.workingDirectory,
   );
 }
@@ -79,9 +150,11 @@ class FProject {
     required this.path,
     required this.flutterProjectRoot,
     required List<BuildConfiguration> buildConfigurations,
-  }) : buildConfigurations = List.of(buildConfigurations);
+    List<ProjectTask> tasks = const [],
+  }) : buildConfigurations = List.of(buildConfigurations),
+       tasks = List.of(tasks);
 
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
 
   /// The absolute `.fproject` file path.
   final String path;
@@ -90,6 +163,10 @@ class FProject {
   String flutterProjectRoot;
 
   final List<BuildConfiguration> buildConfigurations;
+
+  /// Free-form command templates runnable from the toolbar's configuration
+  /// menu (raw subprocesses, no app lifecycle).
+  final List<ProjectTask> tasks;
 
   String get name {
     final base = path.replaceAll('\\', '/').split('/').last;
@@ -125,16 +202,44 @@ class FProject {
     if (version is! num || version.toInt() > currentVersion) {
       throw const FormatException('Unsupported .fproject version');
     }
+    final configurations = <BuildConfiguration>[];
+    final tasks = <ProjectTask>[
+      if (json['tasks'] is List)
+        for (final entry in json['tasks'] as List)
+          if (entry is Map) ProjectTask.fromJson(entry.cast<String, Object?>()),
+    ];
+    if (json['buildConfigurations'] is List) {
+      for (final entry in json['buildConfigurations'] as List) {
+        if (entry is! Map) continue;
+        final configJson = entry.cast<String, Object?>();
+        final config = BuildConfiguration.fromJson(configJson);
+        if (version.toInt() < 2 && configJson['runCommand'] is String) {
+          final migrated = migrateV1RunCommand(
+            configJson['runCommand'] as String,
+            configId: config.id,
+            configName: config.name,
+          );
+          configurations.add(config.copyWith(run: migrated.run));
+          if (migrated.task != null) tasks.add(migrated.task!);
+        } else {
+          configurations.add(config);
+        }
+      }
+    }
     return FProject(
       path: absolute,
       flutterProjectRoot: json['flutterProjectRoot'] as String? ?? '.',
-      buildConfigurations: [
-        if (json['buildConfigurations'] is List)
-          for (final entry in json['buildConfigurations'] as List)
-            if (entry is Map)
-              BuildConfiguration.fromJson(entry.cast<String, Object?>()),
-      ],
+      buildConfigurations: configurations,
+      tasks: tasks,
     );
+  }
+
+  ProjectTask? taskById(String? id) {
+    if (id == null) return null;
+    for (final task in tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
   }
 
   void save() {
@@ -144,6 +249,7 @@ class FProject {
       'buildConfigurations': [
         for (final config in buildConfigurations) config.toJson(),
       ],
+      if (tasks.isNotEmpty) 'tasks': [for (final task in tasks) task.toJson()],
     });
     final file = File(path);
     final temporary = File('$path.tmp');
@@ -182,20 +288,77 @@ BuildConfiguration buildConfigurationTemplate(String mode) {
     name: modeTitle,
     mode: mode,
     buildCommand: r'${FLUTTER_CLI} build ${BUILD_TARGET} --${MODE}',
-    runCommand:
-        r'${FLUTTER_CLI} run -d ${DEVICE} --${MODE} '
-        r'--enable-flutter-gpu --enable-impeller',
+    run: const RunParameters(
+      args: ['--enable-flutter-gpu', '--enable-impeller'],
+    ),
   );
 }
 
 /// Default configurations, one per mode, fully variable-driven so the Mode
 /// field and the toolbar's device selection change behavior without editing
-/// command text. Run templates always carry the Flutter GPU flags
+/// command text. Run arguments always carry the Flutter GPU flags
 /// flutter_scene needs.
 List<BuildConfiguration> defaultBuildConfigurations(String projectRoot) => [
   for (final mode in const ['debug', 'profile', 'release'])
     buildConfigurationTemplate(mode),
 ];
+
+/// A v1 `runCommand` converted to the v2 model, structured [run] parameters
+/// when the command has the editor-composable shape, and otherwise a
+/// preserved [task] alongside default run parameters so nothing is lost.
+typedef MigratedRunCommand = ({RunParameters run, ProjectTask? task});
+
+/// Converts a v1 free-form `runCommand` template.
+///
+/// A command of the shape `${FLUTTER_CLI} run ...` whose tokens are all
+/// expressible as run parameters (`-d ${DEVICE}`, `--${MODE}` or the literal
+/// mode flags, `--target`, plus arbitrary `-`/`--` flags) becomes
+/// [RunParameters]. Anything else (a different executable, a hardcoded
+/// device, positional arguments) is preserved verbatim as a [ProjectTask].
+MigratedRunCommand migrateV1RunCommand(
+  String runCommand, {
+  required String configId,
+  required String configName,
+}) {
+  ProjectTask asTask() => ProjectTask(
+    id: '$configId-run',
+    name: '$configName run (migrated)',
+    command: runCommand,
+  );
+  final fallback = buildConfigurationTemplate('debug').run;
+  final tokens = tokenizeCommand(runCommand.trim());
+  if (tokens.length < 2 ||
+      tokens[0] != r'${FLUTTER_CLI}' ||
+      tokens[1] != 'run') {
+    return (run: fallback, task: tokens.isEmpty ? null : asTask());
+  }
+  var target = RunParameters.defaultTarget;
+  final args = <String>[];
+  const modeFlags = ['--\${MODE}', '--debug', '--profile', '--release'];
+  for (var i = 2; i < tokens.length; i++) {
+    final token = tokens[i];
+    if (token == '-d' || token == '--device-id') {
+      if (i + 1 < tokens.length && tokens[i + 1] == r'${DEVICE}') {
+        i++;
+        continue;
+      }
+      return (run: fallback, task: asTask());
+    }
+    if (modeFlags.contains(token)) continue;
+    if (token == '--target' || token == '-t') {
+      if (i + 1 >= tokens.length) return (run: fallback, task: asTask());
+      target = tokens[++i];
+      continue;
+    }
+    if (token.startsWith('--target=')) {
+      target = token.substring('--target='.length);
+      continue;
+    }
+    if (!token.startsWith('-')) return (run: fallback, task: asTask());
+    args.add(token);
+  }
+  return (run: RunParameters(target: target, args: args), task: null);
+}
 
 /// The variables a command (and its working directory) may reference.
 /// `DEVICE`/`BUILD_TARGET` appear only when a device is selected, so a
