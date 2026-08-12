@@ -121,11 +121,12 @@ class EngineLightingUniforms {
     fragInfo[161] = light?.shadowAmbientStrength.clamp(0.0, 1.0) ?? 0.0;
     // ssao_lighting at [164..167]: x is the fraction of screen-space
     // occlusion applied to analytic direct lights, y the multi-bounce
-    // amount, z whether the occlusion texture's gba carry a packed bent
-    // normal. w reserved.
+    // amount, z whether the occlusion texture's ba carry a packed bent
+    // normal, w whether its g channel carries the sun contact shadow.
     fragInfo[164] = lighting.ssaoDirectLightAffect.clamp(0.0, 1.0);
     fragInfo[165] = lighting.ssaoMultiBounce.clamp(0.0, 1.0);
     fragInfo[166] = lighting.ssaoBentNormals ? 1.0 : 0.0;
+    fragInfo[167] = lighting.ssaoContactShadows ? 1.0 : 0.0;
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index

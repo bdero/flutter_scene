@@ -8,7 +8,7 @@ import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:vector_math/vector_math.dart' show Matrix3, Ray;
+import 'package:vector_math/vector_math.dart' show Matrix3, Ray, Vector3;
 import 'ambient_occlusion.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
@@ -1398,14 +1398,25 @@ base class Scene implements SceneGraph {
     // Flutter GPU does not expose whether a stored depth/stencil attachment is
     // shader-readable, so its readability cannot be assumed.
     // TODO(flutter-gpu): Reuse stored depth once that capability is exposed.
+    final wantContactShadows =
+        light != null &&
+        light.contactShadows &&
+        (lightDirection ?? light.direction).length2 > 0.0;
     final wantDepthPrepass =
         bindSceneDepth ||
         wantCustomNormals ||
         wantSsr ||
         ambientOcclusion.enabled ||
+        wantContactShadows ||
         wantCustomDepth;
     if (perspectiveCamera != null) {
-      final wantAo = ambientOcclusion.enabled;
+      // The occlusion chain also carries the sun contact-shadow term, so it
+      // runs (with occlusion sampling zeroed) when only contact shadows ask
+      // for it.
+      final wantAo = ambientOcclusion.enabled || wantContactShadows;
+      final cameraForward = camera.forward;
+      final cameraRight = camera.up.cross(cameraForward)..normalize();
+      final cameraUp = cameraForward.cross(cameraRight)..normalize();
       if (wantDepthPrepass) {
         // Ambient occlusion evaluates its chain (depth prepass, occlusion,
         // blur) at one resolution so depth is sampled 1:1 (a half-resolution
@@ -1421,9 +1432,6 @@ base class Scene implements SceneGraph {
         // Reflections need the interpolated view-space normal, so the prepass
         // writes it alongside depth (it carries the camera basis to rotate
         // world normals into view space). Occlusion needs only depth.
-        final cameraForward = camera.forward;
-        final cameraRight = camera.up.cross(cameraForward)..normalize();
-        final cameraUp = cameraForward.cross(cameraRight)..normalize();
         graph.addPass(
           DepthPrepass(
             camera: camera,
@@ -1440,6 +1448,15 @@ base class Scene implements SceneGraph {
         );
       }
       if (wantAo) {
+        Vector3? contactDirectionView;
+        if (wantContactShadows) {
+          final toLight = -(lightDirection ?? light.direction).normalized();
+          contactDirectionView = Vector3(
+            toLight.dot(cameraRight),
+            toLight.dot(cameraUp),
+            toLight.dot(cameraForward),
+          );
+        }
         graph.addPass(
           SsaoPass(
             dimensions: pixelSize,
@@ -1447,6 +1464,10 @@ base class Scene implements SceneGraph {
             fovRadiansY: perspectiveCamera.fovRadiansY,
             near: perspectiveCamera.near,
             far: perspectiveCamera.far,
+            contactDirectionView: contactDirectionView,
+            contactDistance: wantContactShadows
+                ? light.contactShadowDistance
+                : 0.0,
           ),
         );
         graph.addPass(
@@ -1483,6 +1504,7 @@ base class Scene implements SceneGraph {
         ssaoDirectLightAffect: ambientOcclusion.directLightAffect,
         ssaoMultiBounce: ambientOcclusion.multiBounce,
         ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
+        ssaoContactShadows: wantContactShadows && perspectiveCamera != null,
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,

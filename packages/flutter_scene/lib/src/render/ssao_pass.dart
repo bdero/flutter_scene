@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:vector_math/vector_math.dart';
 
 /// Render-graph blackboard key under which [SsaoBlurPass] publishes the
 /// final ambient-occlusion texture (occlusion factor in `.r`, 1 =
@@ -103,17 +104,26 @@ class SsaoPass extends RenderGraphPass {
     required double fovRadiansY,
     required double near,
     required double far,
+    Vector3? contactDirectionView,
+    double contactDistance = 0.0,
   }) : _dimensions = dimensions,
        _settings = settings,
        _fovRadiansY = fovRadiansY,
        _near = near,
-       _far = far;
+       _far = far,
+       _contactDirectionView = contactDirectionView,
+       _contactDistance = contactDistance;
 
   final ui.Size _dimensions;
   final AmbientOcclusionSettings _settings;
   final double _fovRadiansY;
   final double _near;
   final double _far;
+
+  // View-space direction toward the sun and the march distance for the
+  // contact-shadow term; distance 0 leaves it off.
+  final Vector3? _contactDirectionView;
+  final double _contactDistance;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -213,7 +223,9 @@ class SsaoPass extends RenderGraphPass {
       ),
     );
 
-    final groundTruth = _settings.method == AmbientOcclusionMethod.groundTruth;
+    final aoActive = _settings.enabled;
+    final groundTruth =
+        aoActive && _settings.method == AmbientOcclusionMethod.groundTruth;
     final fragmentShader = groundTruth ? _groundTruthShader : _obscuranceShader;
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
@@ -231,7 +243,7 @@ class SsaoPass extends RenderGraphPass {
     // screen-space disk. Based on the occlusion target's own height.
     final projScale = aoHeight / (2.0 * tanHalfFovY);
 
-    final info = Float32List(20)
+    final info = Float32List(24)
       ..[0] = aoWidth.toDouble()
       ..[1] = aoHeight.toDouble()
       ..[2] = 1.0 / aoWidth
@@ -255,17 +267,27 @@ class SsaoPass extends RenderGraphPass {
         ..[17] = _settings.thickness
         ..[18] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
     } else {
-      // Must match the SsaoInfo layout in flutter_scene_ssao.frag.
+      // Must match the SsaoInfo layout in flutter_scene_ssao.frag. With
+      // occlusion disabled (a contact-shadow-only chain) the sampling zeroes
+      // out and the shader returns full visibility.
       info
         ..[8] = _settings.radius
         ..[9] = _settings.bias
-        ..[10] = _settings.intensity
+        ..[10] = aoActive ? _settings.intensity : 0.0
         ..[11] = projScale
-        ..[12] = _settings.sampleCount.toDouble()
+        ..[12] = aoActive ? _settings.sampleCount.toDouble() : 0.0
         ..[13] = mipLevels.toDouble()
         ..[14] = _settings.horizonAngle
         ..[15] = _settings.power
-        ..[16] = _settings.detail;
+        ..[16] = aoActive ? _settings.detail : 0.0;
+    }
+    final contactDirection = _contactDirectionView;
+    if (contactDirection != null && _contactDistance > 0.0) {
+      info
+        ..[20] = contactDirection.x
+        ..[21] = contactDirection.y
+        ..[22] = contactDirection.z
+        ..[23] = _contactDistance;
     }
     renderPass.bindUniform(
       fragmentShader.getUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),

@@ -48,6 +48,9 @@ uniform GtaoInfo {
   // (world units, bitmask mode). z: 1 when the bent normal is computed and
   // octahedrally packed into the output's ba (horizon mode only). w: unused.
   vec4 params3;
+  // xyz: view-space direction toward the sun. w: the contact-shadow march
+  // distance in world units, 0 when contact shadows are off.
+  vec4 contact;
 }
 gtao;
 
@@ -69,6 +72,7 @@ const uint kSectorCount = 32u;
 #define AO_INFO gtao
 #include <ssao_geometry.glsl>
 #include <octahedral.glsl>
+#include <contact_shadow.glsl>
 
 // Closed-form integral of cosine-weighted visibility over the arc from the
 // slice-plane normal angle [gamma] up to the horizon angle [h].
@@ -171,6 +175,11 @@ void main() {
   float offset_noise =
       InterleavedGradientNoise(gl_FragCoord.xy + vec2(47.0, 17.0));
 
+  float contact_visibility = 1.0;
+  if (gtao.contact.w > 0.0) {
+    contact_visibility = MarchContactShadow(origin, offset_noise);
+  }
+
   float inv_radius2 = 1.0 / max(radius * radius, kNumericEpsilon);
   float visibility_sum = 0.0;
   vec3 bent_sum = vec3(0.0);
@@ -259,8 +268,8 @@ void main() {
     // Nudged toward the view direction so a fully occluded pixel still
     // normalizes to a valid direction.
     vec3 bent = normalize(bent_sum + view_dir * kNumericEpsilon);
-    frag_color = vec4(ao, 1.0, OctEncode(bent));
+    frag_color = vec4(ao, contact_visibility, OctEncode(bent));
     return;
   }
-  frag_color = vec4(ao, 1.0, ao, 1.0);
+  frag_color = vec4(ao, contact_visibility, ao, 1.0);
 }
