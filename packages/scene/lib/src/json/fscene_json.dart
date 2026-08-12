@@ -376,7 +376,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   final bloom = <String, dynamic>{
     if (e.bloomEnabled) 'enabled': true,
     if (e.bloomThreshold != 1.0) 'threshold': e.bloomThreshold,
-    if (e.bloomIntensity != 0.5) 'intensity': e.bloomIntensity,
+    if (e.bloomIntensity != 0.3) 'intensity': e.bloomIntensity,
     if (e.bloomScatter != 0.7) 'scatter': e.bloomScatter,
   };
   final vignette = <String, dynamic>{
@@ -387,7 +387,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   };
   final chromaticAberration = <String, dynamic>{
     if (e.chromaticAberrationEnabled) 'enabled': true,
-    if (e.chromaticAberrationIntensity != 0.5)
+    if (e.chromaticAberrationIntensity != 0.2)
       'intensity': e.chromaticAberrationIntensity,
   };
   final filmGrain = <String, dynamic>{
@@ -399,7 +399,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.ambientOcclusionMethod != 'obscurance')
       'method': e.ambientOcclusionMethod,
     if (e.ambientOcclusionRadius != 0.33) 'radius': e.ambientOcclusionRadius,
-    if (e.ambientOcclusionIntensity != 2.0)
+    if (e.ambientOcclusionIntensity != 1.0)
       'intensity': e.ambientOcclusionIntensity,
     if (e.ambientOcclusionBias != 0.07) 'bias': e.ambientOcclusionBias,
     if (e.ambientOcclusionPower != 1.5) 'power': e.ambientOcclusionPower,
@@ -499,8 +499,8 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.autoExposureStrength != 0.55) 'strength': e.autoExposureStrength,
     if (e.autoExposureCompensation != 0.0)
       'compensation': e.autoExposureCompensation,
-    if (e.autoExposureMinEv != -1.0) 'minEv': e.autoExposureMinEv,
-    if (e.autoExposureMaxEv != 1.3) 'maxEv': e.autoExposureMaxEv,
+    if (e.autoExposureMinEv != -4.0) 'minEv': e.autoExposureMinEv,
+    if (e.autoExposureMaxEv != 4.0) 'maxEv': e.autoExposureMaxEv,
     if (e.autoExposureSpeedUp != 3.0) 'speedUp': e.autoExposureSpeedUp,
     if (e.autoExposureSpeedDown != 1.0) 'speedDown': e.autoExposureSpeedDown,
   };
@@ -980,20 +980,20 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     gain: _effectVec(cg['gain'], Vector3.all(1.0)),
     bloomEnabled: bloom['enabled'] as bool? ?? false,
     bloomThreshold: _d(bloom['threshold'] ?? 1.0),
-    bloomIntensity: _d(bloom['intensity'] ?? 0.5),
+    bloomIntensity: _d(bloom['intensity'] ?? 0.3),
     bloomScatter: _d(bloom['scatter'] ?? 0.7),
     vignetteEnabled: vignette['enabled'] as bool? ?? false,
     vignetteIntensity: _d(vignette['intensity'] ?? 0.5),
     vignetteRadius: _d(vignette['radius'] ?? 0.75),
     vignetteSmoothness: _d(vignette['smoothness'] ?? 0.5),
     chromaticAberrationEnabled: ca['enabled'] as bool? ?? false,
-    chromaticAberrationIntensity: _d(ca['intensity'] ?? 0.5),
+    chromaticAberrationIntensity: _d(ca['intensity'] ?? 0.2),
     filmGrainEnabled: grain['enabled'] as bool? ?? false,
     filmGrainIntensity: _d(grain['intensity'] ?? 0.3),
     ambientOcclusionEnabled: ao['enabled'] as bool? ?? false,
     ambientOcclusionMethod: ao['method'] as String? ?? 'obscurance',
     ambientOcclusionRadius: _d(ao['radius'] ?? 0.33),
-    ambientOcclusionIntensity: _d(ao['intensity'] ?? 2.0),
+    ambientOcclusionIntensity: _d(ao['intensity'] ?? 1.0),
     ambientOcclusionBias: _d(ao['bias'] ?? 0.07),
     ambientOcclusionPower: _d(ao['power'] ?? 1.5),
     ambientOcclusionDetail: _d(ao['detail'] ?? 0.5),
@@ -1058,8 +1058,8 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     autoExposureEnabled: auto['enabled'] as bool? ?? false,
     autoExposureStrength: _d(auto['strength'] ?? 0.55),
     autoExposureCompensation: _d(auto['compensation'] ?? 0.0),
-    autoExposureMinEv: _d(auto['minEv'] ?? -1.0),
-    autoExposureMaxEv: _d(auto['maxEv'] ?? 1.3),
+    autoExposureMinEv: _d(auto['minEv'] ?? -4.0),
+    autoExposureMaxEv: _d(auto['maxEv'] ?? 4.0),
     autoExposureSpeedUp: _d(auto['speedUp'] ?? 3.0),
     autoExposureSpeedDown: _d(auto['speedDown'] ?? 1.0),
   );

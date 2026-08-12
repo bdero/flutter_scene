@@ -162,7 +162,10 @@ void main() {
   // Both terms are means. `detail` is therefore the additive strength of the
   // four-neighbour mean before `intensity` scales their combined obscurance.
   float obscurance = wide_obscurance + detail * detail_sum * 0.25;
-  obscurance = min(intensity * obscurance, 0.98);
+  // The estimator's raw mean reads weak, so it is normalized to the tuned
+  // strength here and intensity 1.0 is the calibrated default (matching the
+  // ground-truth shader's convention).
+  obscurance = min(intensity * 2.0 * obscurance, 0.98);
   float ao = pow(clamp(1.0 - obscurance, 0.0, 1.0), power);
 
   frag_color = vec4(ao, ao, ao, 1.0);

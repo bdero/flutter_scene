@@ -10,8 +10,8 @@ void main() {
       expect(settings.enabled, isFalse);
       expect(settings.strength, 0.55);
       expect(settings.compensation, 0.0);
-      expect(settings.minEv, -1.0);
-      expect(settings.maxEv, 1.3);
+      expect(settings.minEv, -4.0);
+      expect(settings.maxEv, 4.0);
       expect(settings.speedUp, 3.0);
       expect(settings.speedDown, 1.0);
     });
@@ -85,7 +85,7 @@ void main() {
         meanLogLuminance: math.log(1e-4),
         settings: AutoExposureSettings(),
       );
-      expect(factor, closeTo(math.pow(2.0, 1.3), 1e-9));
+      expect(factor, closeTo(math.pow(2.0, 4.0), 1e-9));
     });
 
     test('a bright scene clamps to minEv', () {
@@ -93,7 +93,7 @@ void main() {
         meanLogLuminance: math.log(50.0),
         settings: AutoExposureSettings(),
       );
-      expect(factor, closeTo(0.5, 1e-9));
+      expect(factor, closeTo(0.0625, 1e-9));
     });
   });
 
